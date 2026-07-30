@@ -142,6 +142,7 @@ public class AgiCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("AgiCommand 初始化失败", ex);
             WriteError(ex.Message);
         }
         finally
@@ -295,6 +296,7 @@ public class AgiCommand : CommandBase
             }
             catch (Exception ex)
             {
+                Logger.Error("AgiCommand 对话循环异常", ex, input);
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
                 WriteError($"[{errorType}失败] {GetFriendlyErrorMessage(ex)}");
             }

@@ -196,6 +196,7 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ProviderCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -253,6 +254,7 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ProviderCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -311,6 +313,7 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ProviderCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 

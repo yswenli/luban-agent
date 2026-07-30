@@ -96,6 +96,7 @@ public class BrowseCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("BrowseCommand 初始化失败", ex);
             WriteError(ex.Message);
         }
     }
@@ -208,6 +209,7 @@ public class BrowseCommand : CommandBase
             }
             catch (Exception ex)
             {
+                Logger.Error("BrowseCommand 对话循环异常", ex);
                 Console.WriteLine();
                 WriteError(ex.Message);
             }

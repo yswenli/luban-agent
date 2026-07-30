@@ -74,6 +74,7 @@ public static class DatabaseInitializer
             }
             catch (Exception ex)
             {
+                Logger.Error("数据库初始化异常", ex);
                 Console.WriteLine($"数据库更名失败: {ex.Message}");
             }
         }

@@ -77,6 +77,7 @@ public class ModelManager
         }
         catch (Exception ex)
         {
+            Logger.Error("嵌入模型准备失败", ex);
             reportStatus?.Invoke($"解压失败: {ex.Message}");
             return Task.FromResult(false);
         }

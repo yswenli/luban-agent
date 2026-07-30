@@ -204,6 +204,7 @@ public class RuleCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("RuleCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -308,6 +309,7 @@ public class RuleCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("RuleCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -380,6 +382,7 @@ public class RuleCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("RuleCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -458,6 +461,7 @@ public class RuleCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("RuleCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 

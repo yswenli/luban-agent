@@ -209,6 +209,7 @@ public class MCPCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("MCPCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -284,6 +285,7 @@ public class MCPCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("MCPCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -361,6 +363,7 @@ public class MCPCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("MCPCommand 操作异常", ex);
             WriteError(ex.Message);
         }
     }
@@ -445,6 +448,7 @@ public class MCPCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("MCPCommand 操作异常", ex);
             WriteError(ex.Message);
         }
     }

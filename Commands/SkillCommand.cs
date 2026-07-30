@@ -242,6 +242,7 @@ public class SkillCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("SkillCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -337,6 +338,7 @@ public class SkillCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("SkillCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -409,6 +411,7 @@ public class SkillCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("SkillCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -487,6 +490,7 @@ public class SkillCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("SkillCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -574,6 +578,7 @@ public class SkillCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("SkillCommand 操作异常", ex);
             WriteError(ex.Message);
         }
     }

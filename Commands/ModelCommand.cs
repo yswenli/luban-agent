@@ -179,6 +179,7 @@ public class ModelCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ModelCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -254,6 +255,7 @@ public class ModelCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ModelCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -328,6 +330,7 @@ public class ModelCommand : CommandBase
         }
         catch (Exception ex)
         {
+            Logger.Error("ModelCommand 操作异常", ex);
             WriteError(ex.Message);
         }
 
@@ -365,6 +368,7 @@ public class ModelCommand : CommandBase
             }
             catch (Exception ex)
             {
+                Logger.Error("ModelCommand 操作异常", ex);
                 WriteError(ex.Message);
             }
 
@@ -442,6 +446,7 @@ public class ModelCommand : CommandBase
             }
             catch (Exception ex)
             {
+                Logger.Error("ModelCommand 操作异常", ex);
                 WriteError(ex.Message);
             }
         }
@@ -464,6 +469,7 @@ public class ModelCommand : CommandBase
             }
             catch (Exception ex)
             {
+                Logger.Error("ModelCommand 操作异常", ex);
                 WriteError(ex.Message);
             }
         }
