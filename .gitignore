@@ -5,3 +5,6 @@
 /.vs
 /bin/Debug/net8.0
 /obj
+/bin/Release/net8.0
+/Properties/PublishProfiles
+/LubanAgent.csproj.user
