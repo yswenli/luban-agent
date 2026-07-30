@@ -298,60 +298,9 @@ public class AgiCommand : CommandBase
             {
                 Logger.Error("AgiCommand 对话循环异常", ex, input);
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
-                WriteError($"[{errorType}失败] {GetFriendlyErrorMessage(ex)}");
+                WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
             }
         }
-    }
-
-    /// <summary>
-    /// 获取友好的错误信息
-    /// </summary>
-    private static string GetFriendlyErrorMessage(Exception ex)
-    {
-        var message = ex.Message;
-        
-        // 检查是否是 API 相关错误
-        if (message.Contains("404") || message.Contains("Not Found"))
-        {
-            return "API 请求失败：模型不存在或 API 端点配置错误。请检查：\n" +
-                   "  1. 选择的模型是否支持\n" +
-                   "  2. API 端点配置是否正确\n" +
-                   "  3. API Key 是否有效";
-        }
-        
-        if (message.Contains("401") || message.Contains("Unauthorized"))
-        {
-            return "API 认证失败：API Key 无效或已过期。请检查 API Key 配置。";
-        }
-        
-        if (message.Contains("403") || message.Contains("Forbidden"))
-        {
-            return "API 访问被拒绝：没有权限访问该模型或 API。请检查 API Key 权限。";
-        }
-        
-        if (message.Contains("429") || message.Contains("Too Many Requests"))
-        {
-            return "API 请求过于频繁：已达到速率限制。请稍后再试。";
-        }
-        
-        if (message.Contains("500") || message.Contains("Internal Server Error"))
-        {
-            return "API 服务器错误：服务端出现问题。请稍后再试或联系服务商。";
-        }
-        
-        if (message.Contains("503") || message.Contains("Service Unavailable"))
-        {
-            return "API 服务不可用：服务暂时不可用。请稍后再试。";
-        }
-        
-        // 如果是 ClientResultException，提取更友好的信息
-        if (ex is System.ClientModel.ClientResultException clientEx)
-        {
-            return $"API 调用失败：{clientEx.Message}\n请检查模型配置和 API Key。";
-        }
-        
-        // 默认返回原始错误信息
-        return ex.Message;
     }
 
     private static string TruncateValue(object? value, int maxLength = 50)

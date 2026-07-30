@@ -107,56 +107,65 @@ public class ProviderCommand : CommandBase
                 providerName = "deepseek";
                 Console.Write("请输入 DeepSeek API Key: ");
                 apiKey = ReadPassword();
-                baseUrl = "https://api.deepseek.com";
+                baseUrl = "https://api.deepseek.com/v1";
                 break;
 
             case "4":
                 providerName = "kimi";
                 Console.Write("请输入 Kimi API Key: ");
                 apiKey = ReadPassword();
-                baseUrl = "https://api.moonshot.cn";
+                baseUrl = "https://api.moonshot.cn/v1";
                 break;
 
             case "5":
                 providerName = "glm";
                 Console.Write("请输入智谱 API Key: ");
                 apiKey = ReadPassword();
-                baseUrl = "https://open.bigmodel.cn";
+                baseUrl = "https://open.bigmodel.cn/api/paas/v4";
                 break;
 
             case "6":
                 providerName = "qwen";
                 Console.Write("请输入通义千问 API Key: ");
                 apiKey = ReadPassword();
-                baseUrl = "https://dashscope.aliyuncs.com";
+                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
                 break;
 
             case "7":
                 providerName = "doubao";
                 Console.Write("请输入豆包 API Key: ");
                 apiKey = ReadPassword();
+                baseUrl = "https://ark.cn-beijing.volces.com/api/v3";
                 break;
 
             case "8":
                 providerName = "claude";
                 Console.Write("请输入 Claude API Key: ");
                 apiKey = ReadPassword();
-                baseUrl = "https://api.anthropic.com";
+                Console.WriteLine();
+                Console.WriteLine("注意: Claude 使用 Anthropic Messages API，与 OpenAI 格式不同。");
+                Console.WriteLine("如需使用 Claude，请通过第三方代理（如 one-api）转换为 OpenAI 兼容格式。");
+                Console.WriteLine("或者选择 '自定义 OpenAI 兼容 API' 手动配置代理地址。");
+                Console.Write("请输入 Claude 代理地址 (留空则使用默认，可能无法工作): ");
+                baseUrl = Console.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(baseUrl))
+                    baseUrl = "https://api.anthropic.com/v1";
                 break;
 
             case "9":
                 providerName = "gemini";
                 Console.Write("请输入 Google AI API Key: ");
                 apiKey = ReadPassword();
+                baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
                 break;
 
             case "10":
                 providerName = "ollama";
                 apiKey = "ollama";
-                Console.Write("请输入 Ollama 服务地址 (默认 http://localhost:11434): ");
+                Console.Write("请输入 Ollama 服务地址 (默认 http://localhost:11434/v1): ");
                 baseUrl = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(baseUrl))
-                    baseUrl = "http://localhost:11434";
+                    baseUrl = "http://localhost:11434/v1";
                 break;
 
             case "11":

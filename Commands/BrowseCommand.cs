@@ -211,7 +211,7 @@ public class BrowseCommand : CommandBase
             {
                 Logger.Error("BrowseCommand 对话循环异常", ex);
                 Console.WriteLine();
-                WriteError(ex.Message);
+                WriteError(GetFriendlyApiErrorMessage(ex));
             }
         }
     }
