@@ -5,21 +5,23 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-
-
-		<!-- AOT核心开关 -->
-		<!--<PublishAot>true</PublishAot>
-		<SelfContained>true</SelfContained>
-		<PublishSingleFile>true</PublishSingleFile>
+		<PublishAot>False</PublishAot>
+		
+		<PublishSingleFile>false</PublishSingleFile>
+		<SelfContained>false</SelfContained>
 		<PublishTrimmed>true</PublishTrimmed>
-		<RuntimeIdentifier>win-x64</RuntimeIdentifier> -->
+		<TrimMode>partial</TrimMode>
 
-		<!-- 优化体积 -->
-		<!-- <StripSymbols>true</StripSymbols>
-		<Optimize>true</Optimize>-->
-		<!-- 关闭调试信息 -->
-		<!-- <DebugType>none</DebugType>-->
+		<StripSymbols>true</StripSymbols>
+		<Optimize>true</Optimize>
+		<DebugType>none</DebugType>
 
+		<!-- 屏蔽语言包 -->
+		<SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+		<GenerateSatelliteAssemblies>false</GenerateSatelliteAssemblies>
+		<UseResourceManifest>false</UseResourceManifest>
+		<StartupObject>LubanAgent.Program</StartupObject>
+		<ApplicationIcon>favicon.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -27,6 +29,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Content Include="favicon.ico" />
 		<Content Include="Model\bge-small-zh-v1.5.zip">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
