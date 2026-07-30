@@ -14,14 +14,6 @@
 *描述：MCP 命令 - 查看 MCP 客户端 (list/add/update/delete/switch/connect/tools)
 *
 *****************************************************************************/
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.MCP;
-using Microsoft.Extensions.Configuration;
-
 namespace LubanAgent.Commands;
 
 /// <summary>

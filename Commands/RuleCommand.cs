@@ -14,14 +14,6 @@
 *描述：Rule 命令 - 查看和管理规则 (list/add/update/delete/switch)
 *
 *****************************************************************************/
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Rules;
-using Microsoft.Extensions.Configuration;
-
 namespace LubanAgent.Commands;
 
 /// <summary>

@@ -14,12 +14,6 @@
 *描述：统计命令 - 会话与 Token 统计
 *
  *****************************************************************************/
-using System;
-using System.Threading.Tasks;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Sessions;
-using Microsoft.Extensions.Configuration;
-
 namespace LubanAgent.Commands;
 
 /// <summary>

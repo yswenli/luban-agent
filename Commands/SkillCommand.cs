@@ -11,17 +11,6 @@
 *描述：Skill 命令 - 查看和执行 Skill (list/add/update/delete/switch)
 *
 *****************************************************************************/
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Skills;
-using LuBan.Common;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace LubanAgent.Commands;
 
 /// <summary>

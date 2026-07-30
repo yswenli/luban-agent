@@ -16,19 +16,44 @@
 namespace LubanAgent.Commands;
 
 /// <summary>
-/// Provider 管理命令
+/// Provider 管理命令，支持添加、更新、删除、列表和切换 Provider
 /// </summary>
+/// <remarks>
+/// 支持的子命令:
+/// - list: 列出所有已配置的 Provider
+/// - add: 添加新的 Provider
+/// - update: 更新现有 Provider 的 API Key 或 Base URL
+/// - delete: 删除 Provider
+/// - switch: 切换当前使用的 Provider 和模型
+/// 
+/// 注意: OpenAI 兼容的 API 需要 BaseUrl 包含完整的 API 版本路径（如 /v1），
+/// SDK 会在 Endpoint 后直接拼接 /chat/completions
+/// </remarks>
 public class ProviderCommand : CommandBase
 {
+    /// <summary>
+    /// 命令名称
+    /// </summary>
     public override string Name => "provider";
 
+    /// <summary>
+    /// 命令描述
+    /// </summary>
     public override string Description => "管理 AI Provider（-list/-add/-update/-delete/-switch）";
 
+    /// <summary>
+    /// 创建 ProviderCommand 实例
+    /// </summary>
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
     public ProviderCommand(ConfigManager configManager, IConfiguration configuration)
         : base(configManager, configuration)
     {
     }
 
+    /// <summary>
+    /// 显示命令帮助信息
+    /// </summary>
     public override Task ExecuteAsync()
     {
         Console.WriteLine();
@@ -42,6 +67,11 @@ public class ProviderCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行子命令
+    /// </summary>
+    /// <param name="args">子命令参数</param>
+    /// <returns>是否已处理</returns>
     public override Task<bool> ExecuteAsync(string[] args)
     {
         if (args.Length == 0)
@@ -61,6 +91,11 @@ public class ProviderCommand : CommandBase
         };
     }
 
+    /// <summary>
+    /// 添加新的 Provider，通过交互式菜单选择类型并输入凭据
+    /// </summary>
+    /// <param name="args">未使用的参数</param>
+    /// <returns>是否已处理</returns>
     private Task<bool> ExecuteAddAsync(string[] args)
     {
         Console.WriteLine();
@@ -84,6 +119,9 @@ public class ProviderCommand : CommandBase
         string apiKey;
         string? baseUrl = null;
 
+        // 根据选择的 Provider 类型设置默认 BaseUrl
+        // 注意: OpenAI SDK 的 Endpoint 属性是完整的基础 URL，SDK 会直接在其后拼接 /chat/completions
+        // 因此 BaseUrl 必须包含 API 版本路径（如 /v1）
         switch (choice)
         {
             case "1":
@@ -202,13 +240,18 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
-            Logger.Error("ProviderCommand 操作异常", ex);
+            Logger.Error("ProviderCommand 添加 Provider 异常", ex, providerName);
             WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 更新现有 Provider 的 API Key 或 Base URL
+    /// </summary>
+    /// <param name="args">未使用的参数</param>
+    /// <returns>是否已处理</returns>
     private Task<bool> ExecuteUpdateAsync(string[] args)
     {
         Console.WriteLine();
@@ -260,13 +303,18 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
-            Logger.Error("ProviderCommand 操作异常", ex);
+            Logger.Error("ProviderCommand 更新 Provider 异常", ex, provider.Name);
             WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 删除指定的 Provider
+    /// </summary>
+    /// <param name="args">未使用的参数</param>
+    /// <returns>是否已处理</returns>
     private Task<bool> ExecuteDeleteAsync(string[] args)
     {
         Console.WriteLine();
@@ -309,6 +357,7 @@ public class ProviderCommand : CommandBase
             providers.RemoveAt(index - 1);
             ConfigManager.Save();
             
+            // 如果当前选择的模型属于被删除的 Provider，清除选择
             if (ConfigManager.SelectedModel?.StartsWith($"{provider.Name}:") == true)
             {
                 ConfigManager.SetSelectedModel("");
@@ -319,13 +368,17 @@ public class ProviderCommand : CommandBase
         }
         catch (Exception ex)
         {
-            Logger.Error("ProviderCommand 操作异常", ex);
+            Logger.Error("ProviderCommand 删除 Provider 异常", ex, provider.Name);
             WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 列出所有已配置的 Provider
+    /// </summary>
+    /// <returns>是否已处理</returns>
     private Task<bool> ExecuteListAsync()
     {
         Console.WriteLine();
@@ -353,6 +406,11 @@ public class ProviderCommand : CommandBase
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 切换当前使用的 Provider 和模型
+    /// </summary>
+    /// <param name="args">可选的 Provider 名称参数</param>
+    /// <returns>是否已处理</returns>
     private Task<bool> ExecuteSwitchAsync(string[] args)
     {
         var providers = ConfigManager.Providers;
@@ -364,6 +422,7 @@ public class ProviderCommand : CommandBase
 
         string providerName;
 
+        // 支持直接通过参数指定 Provider 名称
         if (args.Length > 0)
         {
             providerName = args[0].ToLower();
@@ -397,6 +456,8 @@ public class ProviderCommand : CommandBase
         }
 
         var allModels = ConfigManager.GetAllModels(providerName);
+        
+        // 如果 Provider 没有预定义模型，让用户手动输入模型名称
         if (allModels.Count == 0)
         {
             Console.WriteLine();
@@ -437,6 +498,11 @@ public class ProviderCommand : CommandBase
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 将 API Key 脱敏显示，只显示前4位和后4位
+    /// </summary>
+    /// <param name="apiKey">原始 API Key</param>
+    /// <returns>脱敏后的字符串</returns>
     private static string MaskApiKey(string apiKey)
     {
         if (string.IsNullOrEmpty(apiKey) || apiKey.Length <= 8)

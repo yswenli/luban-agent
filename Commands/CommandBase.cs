@@ -14,13 +14,6 @@
 *描述：命令基类
 *
 *****************************************************************************/
-using System.Threading.Tasks;
-using LuBan.AIAgent;
-using LuBan.AIAgent.Configuration;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace LubanAgent.Commands;
 
 /// <summary>
