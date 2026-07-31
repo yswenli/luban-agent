@@ -82,6 +82,14 @@ Supports custom Skills to easily extend your unique capabilities.
 - **Error Handling**: Critical node failure skips successors, non-critical failure continues execution
 - **Dual-Mode Invocation**: Explicit orchestration via `/orchestrate` command, or auto-invoked by main Agent
 
+### 📂 Workspace & Knowledge Base
+- **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
+- **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations
+- **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
+- **Vector Store Isolation**: Index data from different workspaces is completely isolated, no cross-workspace data leaks
+- **Path Authorization Management**: Workspace authorization integrates with PathGuard; only authorized workspace root directories are accessible
+- **Default Config Generation**: RAG workspaces automatically generate default `rag-config.json` upon creation
+
 ---
 
 ## 🚀 Quick Start
@@ -232,7 +240,7 @@ luban-agent-cli /p -l
 - **Up/Down Arrows** - Browse command history
 - **Esc Key** - Clear current input
 - **Command Prefix** - All commands start with `/`
-- **Number Shortcuts** - Support numbers 1-11 for quick command selection
+- **Number Shortcuts** - Support numbers 1-13 for quick command selection
 
 ### Command List
 
@@ -246,29 +254,37 @@ luban-agent-cli /p -l
 | `/session` | `/se` | `6` | Manage Chat Sessions (-list/-new/-clear/-switch) |
 | `/agi` | `/a` | `7` | General Agent Conversation |
 | `/browse` | `/b` | `8` | Website-specific Agent Operations |
-| `/stats` | `/st` | `9` | Session & Token Statistics (-days N) |
+| `/stats` | `/st` | `9` | Session & Token Statistics (-days N, --all across workspaces) |
 | `/orchestrate` | `/o` | `10` | Composite Task Orchestration (DAG decomposition + SubAgent scheduling) |
-| `/exit` | - | `11` | Exit Program |
+| `/work` | `/w` | `11` | Workspace Management (-list/-new/-switch/-delete/-info/-authorize) |
+| `/rag` | `/rg` | `12` | Knowledge Base Management (-new/-index/-search/-list/-delete) |
+| `/exit` | - | `13` | Exit Program |
 
 ### Sub-command Shorthand
 
 | Shorthand | Full Command | Applicable Commands |
 |-----------|--------------|---------------------|
 | `-l` | `-list` | All management commands |
-| `-a` | `-add` | All management commands |
+| `-a` | `-add` | All management commands (Note: in `/work`, `-add` is an alias for `-authorize`) |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP |
+| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
 | `-d` | `-days` | Stats (statistics days) |
 | `-s` | `-switch` | All management commands |
-| `-n` | `-new` | Session |
+| `-n` | `-new` | Session/Work/Rag |
 | `-c` | `-clear` | Session |
 | `-c` | `-connect` | MCP |
 | `-t` | `-tools` | MCP |
+| `-i` | `-index` | Rag (index files) |
+| `-info` | `-info` | Work (workspace info) |
+| `-add` | `-authorize` | Work (authorize workspace) |
 
 **Examples**:
 - `/p -l` = `/provider -list`
 - `/st -d 7` = `/stats -days 7`
+- `/st --all` = Statistics across all workspaces
 - `/mp -c filesystem` = `/mcp -connect filesystem`
+- `/work -n D:\MyProject` = Create workspace
+- `/rag -i *.md` = Index Markdown files in current RAG workspace
 
 ---
 
@@ -337,6 +353,86 @@ You: Query the 10 most recent records from the users table
 ...
 ```
 
+### Use Case 5: Workspace Management
+
+```
+# Create workspace
+> /work -new D:\MyProject
+✓ Created workspace: MyProject - D:\MyProject
+
+# List all workspaces
+> /work -list
+┌──────────┬──────┬──────────────┬──────┬────────────┬──────┐
+│ Name     │ Type │ Root         │ Sess │ Last Active│ Auth │
+├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
+│ * MyProject │ Normal │ D:\MyProject │ 3  │ 2026-07-31 │ ✓   │
+│   Docs      │ RAG    │ D:\Docs      │ 0  │ -          │ ✗   │
+└──────────┴──────┴──────────────┴──────┴────────────┴──────┘
+
+# Switch workspace
+> /work -switch MyProject
+✓ Switched to workspace: MyProject
+  Root: D:\MyProject
+  Enter /agi to start working
+
+# Authorize workspace access
+> /work -authorize
+═══ Workspace Authorization ═══
+Workspace: MyProject
+Root: D:\MyProject
+⚠️  AI Agent will be authorized to access this directory and its subdirectories
+Authorize? (y/N): y
+✓ Workspace authorized
+```
+
+**Workspace Notes**:
+
+- On startup, automatically creates or restores a workspace using the current directory
+- Each workspace has its own session history and configuration directory (`.luban-agent/`)
+- Switching workspaces automatically restores the most recent session for that workspace
+- After authorization, AI Agent can access the root directory and its subdirectories
+
+### Use Case 6: RAG Knowledge Base Q&A
+
+```
+# 1. Create RAG knowledge base
+> /rag -new D:\KnowledgeBase "My Knowledge Base"
+✓ Created RAG knowledge base: My Knowledge Base - D:\KnowledgeBase
+
+# 2. Switch to RAG workspace
+> /work -switch "My Knowledge Base"
+✓ Switched to workspace: My Knowledge Base
+
+# 3. Authorize and index files
+> /rag -index *.md
+Indexing workspace: My Knowledge Base
+✓ Indexing complete
+  Scanned files: 25
+  New files: 25
+  Total chunks: 142
+
+# 4. Search test
+> /rag -search "how to configure workspace"
+Found 3 relevant results:
+File: D:\KnowledgeBase\setup.md
+Content: Workspace configuration requires...
+
+# 5. Direct Q&A (auto-retrieval augmented)
+> /agi
+Mode: Knowledge Base Q&A (auto-retrieval augmented)
+
+👶 How to create a workspace?
+🤖 According to the knowledge base documentation, use the /work -new command...
+```
+
+**RAG Knowledge Base Notes**:
+
+- RAG workspace is a special workspace type focused on file management and knowledge Q&A
+- Supports indexing `.txt` and `.md` files by default
+- After indexing, `/agi` conversations automatically retrieve relevant documents and inject context
+- Vector data from different RAG workspaces is completely isolated
+- A default `rag-config.json` configuration file is automatically generated under the workspace root directory
+
 ---
 
 ## 🏗️ Project Structure
@@ -353,17 +449,24 @@ LubanAgent/
 │   ├── AgiCommand.cs          # General Agent conversation
 │   ├── BrowseCommand.cs       # Browser Agent
 │   ├── StatsCommand.cs        # Statistics
-│   └── OrchestrateCommand.cs  # Composite task orchestration
+│   ├── OrchestrateCommand.cs  # Composite task orchestration
+│   ├── WorkCommand.cs         # Workspace management
+│   └── RagCommand.cs          # RAG knowledge base management
 ├── Services/              # Core services
 │   ├── ConsoleAppService.cs   # Command dispatch & interaction
-│   └── SessionManager.cs      # Session persistence
+│   ├── SessionManager.cs      # Session persistence
+│   ├── WorkspaceManager.cs    # Workspace management & authorization
+│   ├── AgentProfile.cs        # Agent profile base class
+│   ├── NormalAgentProfile.cs  # Normal workspace profile
+│   └── RagAgentProfile.cs     # RAG workspace profile
 ├── Repositories/          # Data access layer
 │   ├── SessionRepository.cs   # Session storage
+│   ├── WorkspaceRepository.cs # Workspace storage
 │   └── RagRepository.cs       # RAG data storage
 ├── Retrieval/             # Semantic retrieval
 │   ├── ModelManager.cs        # Embedding model management
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX embedding generator
-│   └── SqliteVectorStore.cs   # SQLite vector store
+│   └── SqliteVectorStore.cs   # SQLite vector store (workspace isolation)
 ├── Infrastructure/        # Infrastructure
 │   └── DatabaseInitializer.cs # Database initialization
 ├── Entities/              # Data entities
@@ -573,6 +676,9 @@ Available tools for github:
 - 📦 Hot-load external tool plugin assemblies via `ExternalPlugins` configuration
 - 🔗 Integrate with RagFlow / Dify / Coze and other AI platforms via [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/)
 - 🧩 **Multi-Agent Orchestration**: `/orchestrate` command decomposes composite tasks into DAG, SubAgents execute in serial/parallel hybrid mode, with critical node failure skipping, timeout control, and context passing
+- 📂 **Workspace Isolation**: `/work` command manages workspaces, each with its own session history and config directory; switching workspaces auto-restores the most recent session
+- 🔍 **RAG Knowledge Base**: `/rag` command creates knowledge base workspaces; after indexing `.txt`/`.md` files, `/agi` auto-retrieves and augments Q&A; vector data is fully isolated across workspaces
+- 📁 **Workspace Config Directory**: Each workspace root automatically creates `.luban-agent/` for custom `skills`, `rules`, `mcps` configurations; RAG workspaces also generate a default `rag-config.json`
 
 ---
 

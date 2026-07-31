@@ -82,6 +82,14 @@
 - **错误处理**：关键节点失败跳过后继，非关键节点失败继续执行
 - **双模式调用**：`/orchestrate` 命令显式编排，或主 Agent 自动调用编排工具
 
+### 📂 工作区与知识库
+- **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
+- **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
+- **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
+- **向量存储隔离**：不同工作区的索引数据完全隔离，互不串读
+- **路径授权管理**：工作区授权与 PathGuard 集成，仅授权的工作区根目录可访问
+- **默认配置生成**：RAG 工作区创建时自动生成 `rag-config.json` 默认配置
+
 ---
 
 ## 🚀 快速开始
@@ -232,7 +240,7 @@ luban-agent-cli /p -l
 - **上/下箭头** - 浏览历史命令
 - **Esc 键** - 清除当前输入
 - **命令前缀** - 所有命令以 `/` 开头
-- **数字快捷键** - 支持数字 1-11 快速选择命令
+- **数字快捷键** - 支持数字 1-13 快速选择命令
 
 ### 命令列表
 
@@ -246,29 +254,37 @@ luban-agent-cli /p -l
 | `/session` | `/se` | `6` | 管理对话会话 (-list/-new/-clear/-switch) |
 | `/agi` | `/a` | `7` | 通用 Agent 对话 |
 | `/browse` | `/b` | `8` | 针对网站操作特异化 Agent |
-| `/stats` | `/st` | `9` | 会话与 Token 统计 (-days N) |
+| `/stats` | `/st` | `9` | 会话与 Token 统计 (-days N, --all 跨工作区) |
 | `/orchestrate` | `/o` | `10` | 复合任务编排（DAG 拆解 + SubAgent 调度） |
-| `/exit` | - | `11` | 退出程序 |
+| `/work` | `/w` | `11` | 工作区管理 (-list/-new/-switch/-delete/-info/-authorize) |
+| `/rag` | `/rg` | `12` | 知识库管理 (-new/-index/-search/-list/-delete) |
+| `/exit` | - | `13` | 退出程序 |
 
 ### 子命令简写
 
 | 简写 | 完整命令 | 适用场景 |
 |------|---------|---------|
 | `-l` | `-list` | 所有管理命令 |
-| `-a` | `-add` | 所有管理命令 |
+| `-a` | `-add` | 所有管理命令（注：`/work` 中 `-add` 为 `-authorize` 别名） |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP |
+| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
 | `-d` | `-days` | Stats（统计天数） |
 | `-s` | `-switch` | 所有管理命令 |
-| `-n` | `-new` | Session |
+| `-n` | `-new` | Session/Work/Rag |
 | `-c` | `-clear` | Session |
 | `-c` | `-connect` | MCP |
 | `-t` | `-tools` | MCP |
+| `-i` | `-index` | Rag（索引文件） |
+| `-info` | `-info` | Work（工作区信息） |
+| `-add` | `-authorize` | Work（授权工作区） |
 
 **示例**：
 - `/p -l` = `/provider -list`
 - `/st -d 7` = `/stats -days 7`
+- `/st --all` = 跨所有工作区统计
 - `/mp -c filesystem` = `/mcp -connect filesystem`
+- `/work -n D:\MyProject` = 创建工作区
+- `/rag -i *.md` = 索引当前 RAG 工作区的 Markdown 文件
 
 ---
 
@@ -367,6 +383,86 @@ luban-agent-cli /p -l
 - 节点间通过 `{dep:xxx}` 占位符传递上下文
 - 流式输出执行进度，实时显示节点状态
 
+### 场景六：工作区管理
+
+```
+# 创建工作区
+> /work -new D:\MyProject
+✓ 已创建工作区: MyProject - D:\MyProject
+
+# 列出所有工作区
+> /work -list
+┌──────────┬──────┬──────────────┬──────┬────────────┬──────┐
+│ 名称     │ 类型 │ 根目录       │ 会话 │ 最后活跃   │ 授权 │
+├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
+│ * MyProject │ 普通 │ D:\MyProject │ 3    │ 2026-07-31 │ ✓    │
+│   Docs      │ RAG  │ D:\Docs      │ 0    │ -          │ ✗    │
+└──────────┴──────┴──────────────┴──────┴────────────┴──────┘
+
+# 切换工作区
+> /work -switch MyProject
+✓ 已切换到工作区: MyProject
+  根目录: D:\MyProject
+  输入 /agi 开始工作
+
+# 授权工作区访问
+> /work -authorize
+═══ 工作区授权确认 ═══
+工作区: MyProject
+根目录: D:\MyProject
+⚠️  AI Agent 将被授权访问此目录及其子目录
+是否授权？(y/N): y
+✓ 已授权工作区
+```
+
+**工作区说明**：
+
+- 启动时自动以当前目录创建或恢复工作区
+- 每个工作区拥有独立的会话历史与配置目录（`.luban-agent/`）
+- 切换工作区时自动恢复该工作区的最近会话
+- 工作区授权后，AI Agent 可访问根目录及其子目录
+
+### 场景七：RAG 知识库问答
+
+```
+# 1. 创建 RAG 知识库
+> /rag -new D:\KnowledgeBase 我的知识库
+✓ 已创建 RAG 知识库: 我的知识库 - D:\KnowledgeBase
+
+# 2. 切换到 RAG 工作区
+> /work -switch 我的知识库
+✓ 已切换到工作区: 我的知识库
+
+# 3. 授权并索引文件
+> /rag -index *.md
+开始索引工作区: 我的知识库
+✓ 索引完成
+  扫描文件: 25
+  新增文件: 25
+  总切块数: 142
+
+# 4. 检索测试
+> /rag -search 如何配置工作区
+找到 3 条相关结果：
+文件: D:\KnowledgeBase\setup.md
+内容: 工作区配置需要...
+
+# 5. 直接问答（自动检索增强）
+> /agi
+模式: 知识库问答（自动检索增强）
+
+👶 如何创建工作区？
+🤖 根据知识库文档，创建工作区使用 /work -new 命令...
+```
+
+**RAG 知识库说明**：
+
+- RAG 工作区是特殊工作区，专注于文件管理与知识问答
+- 默认支持 `.txt` 和 `.md` 文件索引
+- 索引后通过 `/agi` 对话时自动检索相关文档并注入上下文
+- 不同 RAG 工作区的向量数据完全隔离
+- 工作区根目录下自动生成 `.luban-agent/rag-config.json` 配置文件
+
 ---
 
 ## 🏗️ 项目结构
@@ -383,17 +479,24 @@ LubanAgent/
 │   ├── AgiCommand.cs          # 通用 Agent 对话
 │   ├── BrowseCommand.cs       # 浏览器 Agent
 │   ├── StatsCommand.cs        # 统计信息
-│   └── OrchestrateCommand.cs  # 复合任务编排
+│   ├── OrchestrateCommand.cs  # 复合任务编排
+│   ├── WorkCommand.cs         # 工作区管理
+│   └── RagCommand.cs          # RAG 知识库管理
 ├── Services/              # 核心服务
 │   ├── ConsoleAppService.cs   # 命令分发与交互
-│   └── SessionManager.cs      # 会话持久化
+│   ├── SessionManager.cs      # 会话持久化
+│   ├── WorkspaceManager.cs    # 工作区管理与授权
+│   ├── AgentProfile.cs        # Agent 配置基类
+│   ├── NormalAgentProfile.cs  # 普通工作区配置
+│   └── RagAgentProfile.cs     # RAG 工作区配置
 ├── Repositories/          # 数据访问层
 │   ├── SessionRepository.cs   # 会话存储
+│   ├── WorkspaceRepository.cs # 工作区存储
 │   └── RagRepository.cs       # RAG 数据存储
 ├── Retrieval/             # 语义检索
 │   ├── ModelManager.cs        # 嵌入模型管理
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX 嵌入生成器
-│   └── SqliteVectorStore.cs   # SQLite 向量存储
+│   └── SqliteVectorStore.cs   # SQLite 向量存储（工作区隔离）
 ├── Infrastructure/        # 基础设施
 │   └── DatabaseInitializer.cs # 数据库初始化
 ├── Entities/              # 数据实体
@@ -603,6 +706,9 @@ github 可用的工具：
 - 📦 通过 `ExternalPlugins` 配置可热加载外部工具插件程序集
 - 🔗 结合 [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/) 可对接 RagFlow / Dify / Coze 等 AI 平台
 - 🧩 **多 Agent 编排**：`/orchestrate` 命令将复合任务拆解为 DAG，SubAgent 串行/并行混合执行，支持关键节点失败跳过、超时控制、上下文传递
+- 📂 **工作区隔离**：`/work` 命令管理工作区，每个工作区有独立的会话历史与配置目录，切换工作区自动恢复最近会话
+- 🔍 **RAG 知识库**：`/rag` 命令创建知识库工作区，索引 `.txt`/`.md` 文件后通过 `/agi` 自动检索增强问答，不同工作区向量数据完全隔离
+- 📁 **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置，RAG 工作区还会生成默认 `rag-config.json`
 
 ---
 
