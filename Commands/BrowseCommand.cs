@@ -78,10 +78,17 @@ public class BrowseCommand : CommandBase
         Console.WriteLine();
         Console.WriteLine("输入自然语言指令来操作网站 (输入 'done' 结束):");
         Console.WriteLine("例如: '导航到登录页面', '点击提交按钮', '在搜索框输入关键词'");
+        Console.WriteLine("按 ESC 可暂停当前操作，输入 'c' 继续，输入 'q' 终止");
         Console.WriteLine();
 
         var systemPrompt = BuildSystemPrompt(url);
         using var serviceProvider = BuildServiceProvider();
+
+        // 任务根目录确认（浏览器场景主要用于下载/截图保存路径限制）
+        var pathGuard = serviceProvider.GetRequiredService<PathGuard>();
+        var options = serviceProvider.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
+        var taskScope = TaskSessionScope.CreateInteractive(pathGuard, options, "/browse");
+        if (taskScope == null) return;
 
         try
         {
@@ -99,6 +106,10 @@ public class BrowseCommand : CommandBase
             Logger.Error("BrowseCommand 初始化失败", ex);
             WriteError(ex.Message);
         }
+        finally
+        {
+            taskScope?.Dispose();
+        }
     }
 
     /// <summary>
@@ -115,8 +126,24 @@ public class BrowseCommand : CommandBase
             - TypeTextAsync: 在输入框中输入文本
             - ScreenshotAsync: 截取页面截图
             - GetContentAsync: 获取页面内容
+            - WaitForSelectorAsync: 等待元素出现
+            - GetCurrentUrlAsync: 获取当前页面 URL
 
-            请根据用户的自然语言描述，使用合适的工具来完成任务。";
+            请根据用户的自然语言描述，使用合适的工具来完成任务。
+
+            【错误处理与重试策略】
+            当工具返回失败结果时，你必须遵循以下策略，绝不能直接放弃或静默结束：
+            1. **重试**: 同一操作最多重试 2 次（共 3 次尝试）。重试时可调整策略（如更换选择器、缩短等待时间）。
+            2. **换方法**: 若重试仍失败，尝试替代方案。例如：
+               - 导航失败 → 尝试搜索引擎获取信息（如 https://www.bing.com/search?q=关键词）
+               - 点击失败 → 尝试用 JavaScript 执行或更换选择器
+               - 获取内容失败 → 尝试截图让用户查看，或缩小 CSS 选择器范围
+            3. **降级**: 若所有技术手段均失败，用已获取的部分信息给出力所能及的结果。
+            4. **告知用户**: 无论成功与否，最终必须向用户清晰说明：
+               - 成功时：汇报任务完成情况与关键结果
+               - 失败时：说明失败原因、已尝试的方法，并给出下一步建议
+
+            绝不允许在工具失败后直接结束对话而不给出任何说明。";
     }
 
     /// <summary>
@@ -143,24 +170,37 @@ public class BrowseCommand : CommandBase
 
             Console.WriteLine();
 
+            // ESC 键监听器：任务执行期间按 ESC 暂停
+            using var escListener = new EscKeyListener();
+            // 即时反馈：回车后立即显示 spinner
+            using var spinner = new ResponseSpinner("正在处理浏览器指令...");
+
             try
             {
                 var finalResponseBuilder = new System.Text.StringBuilder();
-                var cancelled = false;
                 var hasContent = false;
 
-                using var cts = new CancellationTokenSource();
-                var cancellationToken = cts.Token;
+                escListener.Start();
+                spinner.Start();
 
                 try
                 {
-                    await foreach (var update in agent.RunStreamingAsync(input, cancellationToken))
+                    await foreach (var update in agent.RunStreamingAsync(input, escListener.Token))
                     {
+                        if (update.Contents != null && update.Contents.Any())
+                        {
+                            spinner.Stop();
+                        }
+
                         if (update.Contents == null) continue;
 
                         foreach (var content in update.Contents)
                         {
-                            if (content is Microsoft.Extensions.AI.TextContent text && !string.IsNullOrWhiteSpace(text.Text))
+                            if (content is Microsoft.Extensions.AI.FunctionCallContent functionCall)
+                            {
+                                spinner.UpdateStatus($"正在执行: {functionCall.Name}");
+                            }
+                            else if (content is Microsoft.Extensions.AI.TextContent text && !string.IsNullOrWhiteSpace(text.Text))
                             {
                                 if (!hasContent)
                                 {
@@ -180,18 +220,27 @@ public class BrowseCommand : CommandBase
                         Console.WriteLine();
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (escListener.IsPaused)
                 {
-                    cancelled = true;
-                }
+                    spinner.Stop();
+                    escListener.Stop();
 
-                if (cancelled)
-                {
+                    var resumed = escListener.WaitForResumeOrCancel();
+                    if (!resumed)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("已终止当前操作");
+                        Console.ResetColor();
+                        continue;
+                    }
+
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("已取消当前操作");
+                    Console.WriteLine("⚠️  流式响应已中断，请重新输入您的指令");
                     Console.ResetColor();
                     continue;
                 }
+
+                escListener.Stop();
 
                 var finalResponse = finalResponseBuilder.ToString();
                 if (!hasContent && string.IsNullOrEmpty(finalResponse))
@@ -203,12 +252,14 @@ public class BrowseCommand : CommandBase
             }
             catch (OperationCanceledException)
             {
+                spinner.Stop();
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("操作已取消");
                 Console.ResetColor();
             }
             catch (Exception ex)
             {
+                spinner.Stop();
                 Logger.Error("BrowseCommand 对话循环异常", ex);
                 Console.WriteLine();
                 WriteError(GetFriendlyApiErrorMessage(ex));

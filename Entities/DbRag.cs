@@ -51,6 +51,12 @@ public class DbRagFile : EntityBase
     /// </summary>
     [SugarColumn(ColumnDescription = "索引时间", IsNullable = false)]
     public DateTime IndexedTime { get; set; }
+
+    /// <summary>
+    /// 工作区ID
+    /// </summary>
+    [SugarColumn(ColumnDescription = "工作区ID", Length = 64, IsNullable = false)]
+    public string WorkspaceId { get; set; } = "";
 }
 
 /// <summary>
@@ -118,4 +124,10 @@ public class DbRagChunk : EntityBase
     /// </summary>
     [SugarColumn(ColumnDescription = "嵌入模型", Length = 64, IsNullable = false)]
     public string ModelId { get; set; } = "";
+
+    /// <summary>
+    /// 工作区ID
+    /// </summary>
+    [SugarColumn(ColumnDescription = "工作区ID", Length = 64, IsNullable = false)]
+    public string WorkspaceId { get; set; } = "";
 }

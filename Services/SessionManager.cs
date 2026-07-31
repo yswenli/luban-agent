@@ -201,6 +201,14 @@ public class SessionManager : ISessionManager
     }
 
     /// <summary>
+    /// 清除当前会话（切换到无会话状态）
+    /// </summary>
+    public void ClearCurrentSession()
+    {
+        _currentSession = null;
+    }
+
+    /// <summary>
     /// 物理删除全部会话及消息数据
     /// </summary>
     public async Task ClearAllSessionsAsync()

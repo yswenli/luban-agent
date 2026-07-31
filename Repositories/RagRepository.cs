@@ -22,6 +22,33 @@ namespace LubanAgent.Repositories;
 public class RagFileRepository : BaseRepository<DbRagFile>
 {
     public RagFileRepository(long tenantId = LuBanOrmConst.DefaultTenantId) : base(tenantId) { }
+
+    /// <summary>
+    /// 按文件路径和工作区查找
+    /// </summary>
+    public async Task<DbRagFile?> GetByFilePathAsync(string filePath, string workspaceId)
+    {
+        return await GetFirstAsync(f => f.FilePath == filePath && f.WorkspaceId == workspaceId && !f.IsDelete);
+    }
+
+    /// <summary>
+    /// 获取工作区的所有已索引文件
+    /// </summary>
+    public async Task<List<DbRagFile>> GetByWorkspaceAsync(string workspaceId)
+    {
+        return await AsQueryable()
+            .Where(f => f.WorkspaceId == workspaceId && !f.IsDelete)
+            .OrderByDescending(f => f.IndexedTime)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 物理删除工作区的所有文件索引
+    /// </summary>
+    public async Task DeleteByWorkspaceAsync(string workspaceId)
+    {
+        await DeleteAsync(f => f.WorkspaceId == workspaceId);
+    }
 }
 
 /// <summary>

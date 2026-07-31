@@ -23,7 +23,7 @@
 
 		<!-- dotnet tool 全局安装支持 -->
 		<PackAsTool>true</PackAsTool>
-		<ToolCommandName>luban</ToolCommandName>
+		<ToolCommandName>luban-agent-cli</ToolCommandName>
 		<PackageId>LuBan.Agent.CLI</PackageId>
 		<PackageVersion>1.0.0</PackageVersion>
 		<Authors>yswenli</Authors>

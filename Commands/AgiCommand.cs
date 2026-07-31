@@ -69,10 +69,17 @@ public class AgiCommand : CommandBase
         // 这样可以确保所有服务（包括 IRetrievalService）都可用
         var serviceProvider = _serviceProvider;
 
+        // 任务根目录确认
+        var pathGuard = serviceProvider.GetRequiredService<PathGuard>();
+        var options = serviceProvider.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
+        using var taskScope = TaskSessionScope.CreateInteractive(pathGuard, options, "/agi");
+        if (taskScope == null) return;
+
         Console.WriteLine();
         Console.WriteLine("可用工具: 文件系统、脚本执行、浏览器、数据库、Redis、Web请求");
         Console.WriteLine("提示: AI 会自动判断是否需要使用工具来回答你的问题");
         Console.WriteLine("      危险操作（写入、删除、执行脚本）需要用户确认");
+        Console.WriteLine("      按 ESC 可暂停当前操作，输入 'c' 继续，输入 'q' 终止");
         Console.WriteLine("      输入 / 命令可执行操作，如 /session switch 1");
         Console.WriteLine("示例: 帮我查一下D盘下面有哪些目录");
         Console.WriteLine($"当前会话: {currentSession.Title ?? "未命名"}");
@@ -178,24 +185,31 @@ public class AgiCommand : CommandBase
 
             var hasToolCalls = false;
 
+            // ESC 键监听器：任务执行期间按 ESC 暂停
+            using var escListener = new EscKeyListener();
+            // 即时反馈：回车后立即显示 spinner，首个 chunk 到达后停止
+            using var spinner = new ResponseSpinner("正在思考...");
+
             try
             {
                 var finalResponseBuilder = new System.Text.StringBuilder();
-                var cancelled = false;
                 var toolCalls = new System.Collections.Generic.List<string>();
                 var hasThinkingContent = false;
-                // var hasToolCalls = false; // moved outside
                 var hasAnswerContent = false;
 
-                using var cts = new CancellationTokenSource();
-                var cancellationToken = cts.Token;
-
-                await Console.Out.WriteLineAsync();
+                escListener.Start();
+                spinner.Start();
 
                 try
                 {
-                    await foreach (var update in agent.RunStreamingAsync(input, cancellationToken))
+                    await foreach (var update in agent.RunStreamingAsync(input, escListener.Token))
                     {
+                        // 首个 chunk 到达，停止 spinner
+                        if (update.Contents != null && update.Contents.Any())
+                        {
+                            spinner.Stop();
+                        }
+
                         if (update.Contents == null) continue;
 
                         foreach (var content in update.Contents)
@@ -262,33 +276,44 @@ public class AgiCommand : CommandBase
                         Console.ResetColor();
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (escListener.IsPaused)
                 {
-                    cancelled = true;
-                }
-                
-                if (cancelled)
-                {
-                    Console.WriteLine();
+                    // ESC 触发的暂停
+                    spinner.Stop();
+                    escListener.Stop();
+
+                    var resumed = escListener.WaitForResumeOrCancel();
+                    if (!resumed)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("已终止当前操作");
+                        Console.ResetColor();
+                        continue;
+                    }
+
+                    // 用户选择继续：由于流式已中断，提示用户重新发送
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("已取消当前操作");
+                    Console.WriteLine("⚠️  流式响应已中断，请重新输入您的问题");
                     Console.ResetColor();
                     continue;
                 }
-                
+
+                escListener.Stop();
+
                 var finalResponse = finalResponseBuilder.ToString();
-                
+
                 if (!hasAnswerContent && string.IsNullOrEmpty(finalResponse))
                 {
                     Console.ForegroundColor = ConsoleColor.DarkGray;
                     Console.WriteLine("（无响应）");
                     Console.ResetColor();
                 }
-                
+
                 Console.WriteLine();
             }
             catch (OperationCanceledException)
             {
+                spinner.Stop();
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("操作已取消");
@@ -296,6 +321,7 @@ public class AgiCommand : CommandBase
             }
             catch (Exception ex)
             {
+                spinner.Stop();
                 Logger.Error("AgiCommand 对话循环异常", ex, input);
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
                 WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");

@@ -74,6 +74,14 @@ Supports custom Skills to easily extend your unique capabilities.
 - Hot-loading support for external MCP servers
 - Standard JSON-RPC protocol, seamlessly integrated with the ecosystem
 
+### 🧩 Multi-Agent Task Orchestration
+- **Composite Task Decomposition**: Main Agent decomposes natural language tasks into DAG task graphs
+- **Serial/Parallel Hybrid Orchestration**: Layer-based topological sort, parallel within same layer, serial across layers
+- **SubAgent Scheduling**: Each DAG node executed by independent SubAgent with tool group isolation
+- **Context Passing**: Nodes reference predecessor outputs via `{dep:xxx}` placeholders
+- **Error Handling**: Critical node failure skips successors, non-critical failure continues execution
+- **Dual-Mode Invocation**: Explicit orchestration via `/orchestrate` command, or auto-invoked by main Agent
+
 ---
 
 ## 🚀 Quick Start
@@ -97,6 +105,23 @@ cd luban-framework/luban-agent
 # Run the program
 dotnet run
 ```
+
+### Global Installation (Optional)
+
+To invoke `luban-agent-cli` from any directory, install it as a .NET global tool:
+
+```bash
+# Pack
+dotnet pack -c Release -o ./artifacts
+
+# Install globally
+dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
+```
+
+Once installed, the `luban-agent-cli` command is available from any directory. Configuration (`appsettings.json`) is always loaded first from the application directory; an `appsettings.json` in the current working directory can override it.
+
+> **Update**: re-run `dotnet pack`, then `dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts`
+> **Uninstall**: `dotnet tool uninstall -g LuBan.Agent.CLI`
 
 ### 3. Configure Your First AI Provider
 
@@ -175,13 +200,39 @@ You: Show me what directories are on drive D
 
 LuBan Agent provides a simple yet powerful command system:
 
+### Direct Command-Line Execution
+
+In addition to the interactive menu, commands can be executed directly via command-line arguments. Execution completes and exits automatically without entering the interactive menu. **This is especially useful for scripted invocation and running one-off tasks from any directory.**
+
+```bash
+# Syntax: luban-agent-cli /<command> [sub-command args...]
+# First argument is the command (starts with /), rest are sub-command args
+
+# Create a new session from any directory
+luban-agent-cli /se -n "New Session"
+
+# Switch session from any directory
+luban-agent-cli /se -s "New Session"
+
+# List all sessions
+luban-agent-cli /se -l
+
+# List configured providers
+luban-agent-cli /p -l
+```
+
+> **Notes**:
+> - The first argument must start with `/` (e.g., `/se`, `/p`); otherwise the interactive menu is launched
+> - Sub-command shorthands are supported (`-l`=`-list`, `-s`=`-switch`, `-n`=`-new`, etc.), identical to interactive mode
+> - Database and session data are always stored in the application directory, never polluting the current working directory
+
 ### Command Input Methods
 
 - **Tab Auto-completion** - Type partial command and press Tab to auto-complete
 - **Up/Down Arrows** - Browse command history
 - **Esc Key** - Clear current input
 - **Command Prefix** - All commands start with `/`
-- **Number Shortcuts** - Support numbers 1-10 for quick command selection
+- **Number Shortcuts** - Support numbers 1-11 for quick command selection
 
 ### Command List
 
@@ -196,7 +247,8 @@ LuBan Agent provides a simple yet powerful command system:
 | `/agi` | `/a` | `7` | General Agent Conversation |
 | `/browse` | `/b` | `8` | Website-specific Agent Operations |
 | `/stats` | `/st` | `9` | Session & Token Statistics (-days N) |
-| `/exit` | - | `10` | Exit Program |
+| `/orchestrate` | `/o` | `10` | Composite Task Orchestration (DAG decomposition + SubAgent scheduling) |
+| `/exit` | - | `11` | Exit Program |
 
 ### Sub-command Shorthand
 
@@ -300,7 +352,8 @@ LubanAgent/
 │   ├── SessionCommand.cs      # Session management
 │   ├── AgiCommand.cs          # General Agent conversation
 │   ├── BrowseCommand.cs       # Browser Agent
-│   └── StatsCommand.cs        # Statistics
+│   ├── StatsCommand.cs        # Statistics
+│   └── OrchestrateCommand.cs  # Composite task orchestration
 ├── Services/              # Core services
 │   ├── ConsoleAppService.cs   # Command dispatch & interaction
 │   └── SessionManager.cs      # Session persistence
@@ -508,7 +561,8 @@ Available tools for github:
 
 ## 💡 Tips
 
-- 💬 Model routing uses `provider:model` format. Add new Providers via `/provider -add`
+- 💬 Model routing uses `provider:model` format; add new providers via `/provider -add`
+- 📌 **Direct command-line execution supported**: `luban-agent-cli /se -s "New Session"` runs a single command from any directory and exits, no interactive menu needed (see [Command Reference](#-command-reference))
 - 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, database, Redis, web requests, and semantic retrieval
 - ⚠️ **ToolConfirmationService** automatically requests user confirmation for dangerous operations (write, delete, execute)
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
@@ -518,6 +572,7 @@ Available tools for github:
 - 🔌 **MCP Tool Integration** - external MCP server tools automatically exposed to Agent
 - 📦 Hot-load external tool plugin assemblies via `ExternalPlugins` configuration
 - 🔗 Integrate with RagFlow / Dify / Coze and other AI platforms via [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/)
+- 🧩 **Multi-Agent Orchestration**: `/orchestrate` command decomposes composite tasks into DAG, SubAgents execute in serial/parallel hybrid mode, with critical node failure skipping, timeout control, and context passing
 
 ---
 

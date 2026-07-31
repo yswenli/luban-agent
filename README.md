@@ -74,6 +74,14 @@
 - 支持外部 MCP 服务器热加载
 - 标准 JSON-RPC 协议，无缝对接生态
 
+### 🧩 多 Agent 任务编排
+- **复合任务自动拆解**：主 Agent 将自然语言任务拆解为 DAG 任务图谱
+- **串行/并行混合编排**：基于拓扑分层，同层节点并行执行，跨层串行执行
+- **SubAgent 调度**：每个 DAG 节点由独立 SubAgent 执行，支持工具组隔离
+- **上下文传递**：节点间通过 `{dep:xxx}` 占位符引用前驱输出
+- **错误处理**：关键节点失败跳过后继，非关键节点失败继续执行
+- **双模式调用**：`/orchestrate` 命令显式编排，或主 Agent 自动调用编排工具
+
 ---
 
 ## 🚀 快速开始
@@ -97,6 +105,23 @@ cd luban-framework/luban-agent
 # 运行程序
 dotnet run
 ```
+
+### 全局安装（可选）
+
+如果想从任意目录直接调用 `luban-agent-cli` 命令，可将其安装为 .NET 全局工具：
+
+```bash
+# 打包
+dotnet pack -c Release -o ./artifacts
+
+# 全局安装
+dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
+```
+
+安装完成后，即可在任意目录通过 `luban-agent-cli` 命令启动。配置文件（`appsettings.json`）始终优先从程序所在目录加载，当前工作目录下的 `appsettings.json` 可作为覆盖项。
+
+> **更新**：重新 `dotnet pack` 后执行 `dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts`
+> **卸载**：`dotnet tool uninstall -g LuBan.Agent.CLI`
 
 ### 3. 配置你的第一个 AI Provider
 
@@ -175,13 +200,39 @@ OpenAI 支持的模型:
 
 LuBan Agent 提供了简洁而强大的命令系统：
 
+### 直接命令行执行
+
+除交互式菜单外，还支持通过命令行参数直接执行命令，执行完毕后自动退出，不进入交互菜单。**这在脚本化调用、从任意目录快速执行单次任务时非常实用。**
+
+```bash
+# 语法：luban-agent-cli /<命令> [子命令参数...]
+# 首个参数为命令（以 / 开头），其余为子命令参数
+
+# 从任意目录创建新会话
+luban-agent-cli /se -n 新会话
+
+# 从任意目录切换会话
+luban-agent-cli /se -s 新会话
+
+# 列出所有会话
+luban-agent-cli /se -l
+
+# 列出已配置的 Provider
+luban-agent-cli /p -l
+```
+
+> **说明**：
+> - 首个参数必须以 `/` 开头（如 `/se`、`/p`），否则进入交互式菜单
+> - 子命令支持简写（`-l`=`-list`、`-s`=`-switch`、`-n`=`-new` 等），与交互模式完全一致
+> - 数据库与会话配置始终保存在程序所在目录，不会污染当前工作目录
+
 ### 命令输入方式
 
 - **Tab 自动完成** - 输入部分命令后按 Tab 自动补全
 - **上/下箭头** - 浏览历史命令
 - **Esc 键** - 清除当前输入
 - **命令前缀** - 所有命令以 `/` 开头
-- **数字快捷键** - 支持数字 1-10 快速选择命令
+- **数字快捷键** - 支持数字 1-11 快速选择命令
 
 ### 命令列表
 
@@ -196,7 +247,8 @@ LuBan Agent 提供了简洁而强大的命令系统：
 | `/agi` | `/a` | `7` | 通用 Agent 对话 |
 | `/browse` | `/b` | `8` | 针对网站操作特异化 Agent |
 | `/stats` | `/st` | `9` | 会话与 Token 统计 (-days N) |
-| `/exit` | - | `10` | 退出程序 |
+| `/orchestrate` | `/o` | `10` | 复合任务编排（DAG 拆解 + SubAgent 调度） |
+| `/exit` | - | `11` | 退出程序 |
 
 ### 子命令简写
 
@@ -285,6 +337,36 @@ LuBan Agent 提供了简洁而强大的命令系统：
 ...
 ```
 
+### 场景五：复合任务编排
+
+```
+> /orchestrate
+
+📝 调研 LuBan 框架并生成对比报告
+
+🔄 开始规划任务图谱...
+✓ 规划完成: 已生成 4 个节点的任务图谱
+▶ 开始执行节点: research
+✓ 节点完成: research
+▶ 开始执行节点: analyze
+✓ 节点完成: analyze
+── 第 2 层执行完成 ──
+▶ 开始执行节点: compare
+✓ 节点完成: compare
+▶ 开始执行节点: report
+✓ 节点完成: report
+── 第 3 层执行完成 ──
+🎯 编排完成: completed
+```
+
+**编排说明**：
+
+- 输入复合任务后，AI 自动拆解为 DAG 任务图谱
+- 每个节点由独立 SubAgent 执行，支持工具组隔离
+- 同层节点并行执行，跨层节点串行执行
+- 节点间通过 `{dep:xxx}` 占位符传递上下文
+- 流式输出执行进度，实时显示节点状态
+
 ---
 
 ## 🏗️ 项目结构
@@ -300,7 +382,8 @@ LubanAgent/
 │   ├── SessionCommand.cs      # 会话管理
 │   ├── AgiCommand.cs          # 通用 Agent 对话
 │   ├── BrowseCommand.cs       # 浏览器 Agent
-│   └── StatsCommand.cs        # 统计信息
+│   ├── StatsCommand.cs        # 统计信息
+│   └── OrchestrateCommand.cs  # 复合任务编排
 ├── Services/              # 核心服务
 │   ├── ConsoleAppService.cs   # 命令分发与交互
 │   └── SessionManager.cs      # 会话持久化
@@ -509,6 +592,7 @@ github 可用的工具：
 ## 💡 小贴士
 
 - 💬 模型路由使用 `provider:model` 格式，新增 Provider 只需通过 `/provider -add` 添加
+- 📌 **支持直接命令行执行**：`luban-agent-cli /se -s 新会话` 即可从任意目录执行单次命令并退出，无需进入交互菜单（详见[命令一览](#-命令一览)）
 - 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、数据库、Redis、Web 请求、语义检索
 - ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
@@ -518,6 +602,7 @@ github 可用的工具：
 - 🔌 **MCP 工具集成**，外部 MCP 服务器工具自动暴露给 Agent
 - 📦 通过 `ExternalPlugins` 配置可热加载外部工具插件程序集
 - 🔗 结合 [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/) 可对接 RagFlow / Dify / Coze 等 AI 平台
+- 🧩 **多 Agent 编排**：`/orchestrate` 命令将复合任务拆解为 DAG，SubAgent 串行/并行混合执行，支持关键节点失败跳过、超时控制、上下文传递
 
 ---
 

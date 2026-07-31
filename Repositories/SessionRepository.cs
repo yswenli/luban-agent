@@ -100,6 +100,43 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
+    /// 获取工作区下的所有会话
+    /// </summary>
+    public async Task<List<DbSession>> GetByWorkspaceAsync(string workspaceId)
+    {
+        return await AsQueryable()
+            .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
+            .OrderByDescending(s => s.UpdateTime)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 获取工作区最近活跃会话
+    /// </summary>
+    public async Task<DbSession?> GetLatestSessionAsync(string workspaceId)
+    {
+        return await GetFirstAsync(s => s.WorkspaceId == workspaceId && !s.IsDelete);
+    }
+
+    /// <summary>
+    /// 按标题和工作区查找会话
+    /// </summary>
+    public async Task<DbSession?> GetByTitleAndWorkspaceAsync(string title, string workspaceId)
+    {
+        return await GetFirstAsync(s =>
+            s.Title != null && s.Title.Contains(title) &&
+            s.WorkspaceId == workspaceId && !s.IsDelete);
+    }
+
+    /// <summary>
+    /// 软删除工作区下的所有会话
+    /// </summary>
+    public async Task SoftDeleteByWorkspaceAsync(string workspaceId)
+    {
+        await LogicDeleteAsync(s => s.WorkspaceId == workspaceId);
+    }
+
+    /// <summary>
     /// 全局聚合统计
     /// </summary>
     public async Task<(int sessions, int messages, long tokens, DateTime? earliest)> GetGlobalStatsAsync(DateTime? since)

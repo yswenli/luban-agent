@@ -64,6 +64,11 @@ public class DbSession : EntityBase
     [SugarColumn(ColumnDescription = "总Token数", IsNullable = false)]
     public int TotalTokens { get; set; } = 0;
 
+    /// <summary>
+    /// 工作区ID
+    /// </summary>
+    [SugarColumn(ColumnDescription = "工作区ID", Length = 64, IsNullable = true)]
+    public string? WorkspaceId { get; set; }
 }
 
 /// <summary>

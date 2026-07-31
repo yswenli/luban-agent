@@ -46,6 +46,7 @@ public class ConsoleAppService
         "/agi", "/a",
         "/browse", "/b",
         "/stats", "/st",
+        "/orchestrate", "/o",
         "/exit"
     };
 
@@ -62,7 +63,8 @@ public class ConsoleAppService
         ["se"] = "session",
         ["a"] = "agi",
         ["b"] = "browse",
-        ["st"] = "stats"
+        ["st"] = "stats",
+        ["o"] = "orchestrate"
     };
 
     /// <summary>
@@ -119,6 +121,7 @@ public class ConsoleAppService
         RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, TryExecuteCommandAsync));
         RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync));
         RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager));
+        RegisterCommand(new OrchestrateCommand(_configManager, _configuration, _serviceProvider));
     }
 
     /// <summary>
@@ -161,6 +164,50 @@ public class ConsoleAppService
 
             await ExecuteCommandAsync(input);
         }
+    }
+
+    /// <summary>
+    /// 直接执行命令行参数指定的命令，执行完毕后退出。
+    /// 例如：LuBanAgent /se -s 新会话
+    /// </summary>
+    /// <param name="args">命令行参数数组。</param>
+    public async Task RunDirectAsync(string[] args)
+    {
+        // 首个参数为命令（带 / 前缀），其余为子命令参数
+        var commandInput = NormalizeInput(args[0]);
+
+        if (commandInput == "exit")
+            return;
+
+        // 提取子命令参数（跳过首个命令参数）
+        var subArgs = args.Length > 1 ? args[1..] : Array.Empty<string>();
+
+        // 展开子命令缩写（-l → list, -a → add 等）
+        var expandedArgs = ExpandSubCommandAliases(subArgs);
+
+        var commandName = GetCommandName(args[0]);
+        if (commandName == null)
+        {
+            Console.WriteLine($"未知命令: {args[0]}");
+            return;
+        }
+
+        if (!_commands.TryGetValue(commandName, out var command))
+        {
+            Console.WriteLine($"未知命令: {args[0]}");
+            return;
+        }
+
+        // 有子命令参数时先尝试带参数执行
+        if (expandedArgs.Length > 0)
+        {
+            var handled = await command.ExecuteAsync(expandedArgs);
+            if (handled)
+                return;
+        }
+
+        // 没有参数或命令不支持子命令，走交互式执行
+        await command.ExecuteAsync();
     }
 
     /// <summary>
@@ -224,6 +271,7 @@ public class ConsoleAppService
         Console.WriteLine("  /agi /a        - 通用 Agent 对话");
         Console.WriteLine("  /browse /b     - 针对网站操作特异化 Agent");
         Console.WriteLine("  /stats /st     - 会话与 Token 统计 (-days N)");
+        Console.WriteLine("  /orchestrate /o - 复合任务编排（DAG 拆解 + SubAgent 调度）");
         Console.WriteLine("  /exit          - 退出程序");
         Console.WriteLine();
         Console.WriteLine("子命令简写: -l=-list, -a=-add, -u=-update, -d=-delete, -s=-switch, -n=-new, -c=-clear, -t=-tools");
@@ -329,7 +377,8 @@ public class ConsoleAppService
                 7 => "agi",
                 8 => "browse",
                 9 => "stats",
-                10 => "exit",
+                10 => "orchestrate",
+                11 => "exit",
                 _ => null
             };
         }
