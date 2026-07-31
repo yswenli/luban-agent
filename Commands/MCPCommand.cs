@@ -87,8 +87,6 @@ public class MCPCommand : CommandBase
 
     private Task ListClientsAsync()
     {
-        Console.WriteLine();
-
         var clients = _mcpRegistry.GetAll();
         var disabledExternal = ConfigManager.McpServers
             .Where(s => !s.Enabled)
@@ -102,38 +100,45 @@ public class MCPCommand : CommandBase
             return Task.CompletedTask;
         }
 
-        foreach (var client in clients)
+        try
         {
-            var status = client.IsConnected ? "已连接" : "未连接";
-            var type = _mcpRegistry.IsBuiltin(client.Name) ? "内置" : "外部";
-            Console.WriteLine($"  [{status}] [{type}] {client.Name}");
-            Console.WriteLine($"     {client.Description}");
+            Console.ForegroundColor = ConsoleColor.Green;
+
             Console.WriteLine();
-        }
 
-        if (disabledExternal.Count > 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("[已禁用的外部 MCP 服务器]");
-            Console.ResetColor();
-            foreach (var cfg in disabledExternal)
+            foreach (var client in clients)
             {
-                Console.WriteLine($"  [已禁用] [外部] {cfg.Name}");
-                Console.WriteLine($"     {cfg.Description}");
+                var status = client.IsConnected ? "已连接" : "未连接";
+                var type = _mcpRegistry.IsBuiltin(client.Name) ? "内置" : "外部";
+                Console.WriteLine($"  [{status}] [{type}] {client.Name}");
+                Console.WriteLine($"     {client.Description}");
                 Console.WriteLine();
             }
-        }
 
-        if (disabledBuiltin.Count > 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("[已禁用的内置 MCP 客户端]");
-            Console.ResetColor();
-            foreach (var name in disabledBuiltin)
+            if (disabledExternal.Count > 0)
             {
-                Console.WriteLine($"  [已禁用] [内置] {name}");
-                Console.WriteLine();
+                Console.WriteLine("[已禁用的外部 MCP 服务器]");
+                foreach (var cfg in disabledExternal)
+                {
+                    Console.WriteLine($"  [已禁用] [外部] {cfg.Name}");
+                    Console.WriteLine($"     {cfg.Description}");
+                    Console.WriteLine();
+                }
             }
+
+            if (disabledBuiltin.Count > 0)
+            {
+                Console.WriteLine("[已禁用的内置 MCP 客户端]");
+                foreach (var name in disabledBuiltin)
+                {
+                    Console.WriteLine($"  [已禁用] [内置] {name}");
+                    Console.WriteLine();
+                }
+            }
+        }
+        finally
+        {
+            Console.ResetColor();
         }
 
         return Task.CompletedTask;

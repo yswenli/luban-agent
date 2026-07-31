@@ -74,8 +74,6 @@ public class SkillCommand : CommandBase
 
     private Task ListSkillsAsync()
     {
-        Console.WriteLine();
-
         var skills = _skillRegistry.GetAll();
         var customIds = new HashSet<string>(ConfigManager.CustomSkills.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
         var disabledBuiltin = new HashSet<string>(ConfigManager.DisabledBuiltinSkills, StringComparer.OrdinalIgnoreCase);
@@ -88,59 +86,62 @@ public class SkillCommand : CommandBase
 
         var categories = skills.Select(s => s.Category).Distinct().ToList();
 
-        foreach (var category in categories)
+        try
         {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"[{category}]");
-            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Green;
 
-            foreach (var skill in skills.Where(s => s.Category == category))
+            Console.WriteLine();
+
+            foreach (var category in categories)
             {
-                var tags = new List<string>();
-                if (customIds.Contains(skill.Id))
+                Console.WriteLine($"[{category}]");
+
+                foreach (var skill in skills.Where(s => s.Category == category))
                 {
-                    tags.Add("自定义");
-                    var cfg = ConfigManager.CustomSkills.First(c => c.Id == skill.Id);
-                    if (!cfg.Enabled) tags.Add("已禁用");
+                    var tags = new List<string>();
+                    if (customIds.Contains(skill.Id))
+                    {
+                        tags.Add("自定义");
+                        var cfg = ConfigManager.CustomSkills.First(c => c.Id == skill.Id);
+                        if (!cfg.Enabled) tags.Add("已禁用");
+                    }
+                    var tagStr = tags.Count > 0 ? $" [{string.Join("/", tags)}]" : "";
+
+                    Console.WriteLine($"  {skill.Id,-20} - {skill.Name}{tagStr}");
+                    Console.WriteLine($"  {"",-20}   {skill.Description}");
+
+                    if (skill.Examples.Any())
+                    {
+                        Console.WriteLine($"  {"",-20}   示例: {skill.Examples.First()}");
+                    }
+                    Console.WriteLine();
                 }
-                var tagStr = tags.Count > 0 ? $" [{string.Join("/", tags)}]" : "";
+            }
 
-                Console.WriteLine($"  {skill.Id,-20} - {skill.Name}{tagStr}");
-                Console.WriteLine($"  {"",-20}   {skill.Description}");
-
-                if (skill.Examples.Any())
+            if (disabledBuiltin.Count > 0)
+            {
+                Console.WriteLine("[已禁用的内置 Skill]");
+                foreach (var id in disabledBuiltin)
                 {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"  {"",-20}   示例: {skill.Examples.First()}");
-                    Console.ResetColor();
+                    Console.WriteLine($"  {id,-20} - [已禁用]");
+                }
+                Console.WriteLine();
+            }
+
+            var disabledCustom = ConfigManager.CustomSkills.Where(c => !c.Enabled).ToList();
+            if (disabledCustom.Count > 0)
+            {
+                Console.WriteLine("[已禁用的自定义 Skill]");
+                foreach (var cfg in disabledCustom)
+                {
+                    Console.WriteLine($"  {cfg.Id,-20} - {cfg.Name} [自定义/已禁用]");
                 }
                 Console.WriteLine();
             }
         }
-
-        if (disabledBuiltin.Count > 0)
+        finally
         {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("[已禁用的内置 Skill]");
             Console.ResetColor();
-            foreach (var id in disabledBuiltin)
-            {
-                Console.WriteLine($"  {id,-20} - [已禁用]");
-            }
-            Console.WriteLine();
-        }
-
-        var disabledCustom = ConfigManager.CustomSkills.Where(c => !c.Enabled).ToList();
-        if (disabledCustom.Count > 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("[已禁用的自定义 Skill]");
-            Console.ResetColor();
-            foreach (var cfg in disabledCustom)
-            {
-                Console.WriteLine($"  {cfg.Id,-20} - {cfg.Name} [自定义/已禁用]");
-            }
-            Console.WriteLine();
         }
 
         return Task.CompletedTask;

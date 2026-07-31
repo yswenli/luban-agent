@@ -22,6 +22,7 @@ namespace LubanAgent.Commands;
 public class BrowseCommand : CommandBase
 {
     private readonly Func<string, Task<bool>>? _executeCommandAsync;
+    private readonly IWorkspaceManager? _workspaceManager;
 
     /// <summary>
     /// 命令名称
@@ -36,10 +37,11 @@ public class BrowseCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public BrowseCommand(ConfigManager configManager, IConfiguration configuration, Func<string, Task<bool>>? executeCommandAsync = null)
+    public BrowseCommand(ConfigManager configManager, IConfiguration configuration, Func<string, Task<bool>>? executeCommandAsync = null, IWorkspaceManager? workspaceManager = null)
         : base(configManager, configuration)
     {
         _executeCommandAsync = executeCommandAsync;
+        _workspaceManager = workspaceManager;
     }
 
     /// <summary>
@@ -51,6 +53,28 @@ public class BrowseCommand : CommandBase
         {
             WriteError("请先使用 model switch 命令选择模型");
             return;
+        }
+
+        // 1. 获取当前工作区并检查授权（与 AgiCommand 保持一致）
+        var workspace = _workspaceManager?.CurrentWorkspace;
+        if (workspace == null)
+        {
+            WriteError("请先使用 /work -switch 切换到工作区");
+            return;
+        }
+
+        // 2. RAG 工作区禁用 /browse（仅支持知识库问答，不支持浏览器操作）
+        if (workspace.Type == "Rag")
+        {
+            WriteError("RAG 知识库工作区不支持浏览器操作，请使用 /work -switch 切换到普通工作区");
+            return;
+        }
+
+        // 3. 检查授权状态
+        if (!workspace.IsAuthorized)
+        {
+            var authorized = await _workspaceManager!.EnsureAuthorizedAsync(workspace);
+            if (!authorized) return;
         }
 
         Console.WriteLine();
@@ -84,12 +108,6 @@ public class BrowseCommand : CommandBase
         var systemPrompt = BuildSystemPrompt(url);
         using var serviceProvider = BuildServiceProvider();
 
-        // 任务根目录确认（浏览器场景主要用于下载/截图保存路径限制）
-        var pathGuard = serviceProvider.GetRequiredService<PathGuard>();
-        var options = serviceProvider.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
-        var taskScope = TaskSessionScope.CreateInteractive(pathGuard, options, "/browse");
-        if (taskScope == null) return;
-
         try
         {
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
@@ -105,10 +123,6 @@ public class BrowseCommand : CommandBase
         {
             Logger.Error("BrowseCommand 初始化失败", ex);
             WriteError(ex.Message);
-        }
-        finally
-        {
-            taskScope?.Dispose();
         }
     }
 

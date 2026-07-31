@@ -76,8 +76,6 @@ public class RuleCommand : CommandBase
 
     private Task ListRulesAsync()
     {
-        Console.WriteLine();
-
         var rules = _ruleEngine.GetAllRules();
         var customIds = new HashSet<string>(ConfigManager.CustomRules.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
 
@@ -87,26 +85,37 @@ public class RuleCommand : CommandBase
             return Task.CompletedTask;
         }
 
-        foreach (var rule in rules)
+        try
         {
-            var status = rule.IsEnabled ? "✅" : "❌";
-            var isCustom = customIds.Contains(rule.Id);
-            var tag = isCustom ? " [自定义]" : "";
-
-            Console.WriteLine($"  {status} {rule.Id,-20} - {rule.Name}{tag}");
-            Console.WriteLine($"     优先级: {rule.Priority}");
-
-            if (isCustom)
-            {
-                var cfg = ConfigManager.CustomRules.First(c => c.Id.Equals(rule.Id, StringComparison.OrdinalIgnoreCase));
-                Console.WriteLine($"     ActionTypePattern: {cfg.ActionTypePattern}  TargetPattern: {cfg.TargetPattern}  Action: {cfg.Action}");
-            }
-            else
-            {
-                Console.WriteLine($"     {rule.Description}");
-            }
+            Console.ForegroundColor = ConsoleColor.Green;
 
             Console.WriteLine();
+
+            foreach (var rule in rules)
+            {
+                var status = rule.IsEnabled ? "✅" : "❌";
+                var isCustom = customIds.Contains(rule.Id);
+                var tag = isCustom ? " [自定义]" : "";
+
+                Console.WriteLine($"  {status} {rule.Id,-20} - {rule.Name}{tag}");
+                Console.WriteLine($"     优先级: {rule.Priority}");
+
+                if (isCustom)
+                {
+                    var cfg = ConfigManager.CustomRules.First(c => c.Id.Equals(rule.Id, StringComparison.OrdinalIgnoreCase));
+                    Console.WriteLine($"     ActionTypePattern: {cfg.ActionTypePattern}  TargetPattern: {cfg.TargetPattern}  Action: {cfg.Action}");
+                }
+                else
+                {
+                    Console.WriteLine($"     {rule.Description}");
+                }
+
+                Console.WriteLine();
+            }
+        }
+        finally
+        {
+            Console.ResetColor();
         }
 
         return Task.CompletedTask;

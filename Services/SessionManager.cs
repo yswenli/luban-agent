@@ -25,6 +25,11 @@ public class SessionManager : ISessionManager
     private readonly SessionMessageRepository _messageRepo;
 
     /// <summary>
+    /// 工作区管理器（保留字段以支持未来扩展，当前 CreateSessionAsync 通过静态访问器绑定工作区）
+    /// </summary>
+    private readonly IWorkspaceManager? _workspaceManager;
+
+    /// <summary>
     /// 当前活动会话
     /// </summary>
     private SessionInfo? _currentSession;
@@ -32,10 +37,19 @@ public class SessionManager : ISessionManager
     /// <summary>
     /// 创建 SessionManager 实例
     /// </summary>
-    public SessionManager()
+    public SessionManager() : this(null)
+    {
+    }
+
+    /// <summary>
+    /// 创建 SessionManager 实例（支持工作区绑定）
+    /// </summary>
+    /// <param name="workspaceManager">工作区管理器（当前未使用，保留以支持未来扩展）</param>
+    public SessionManager(IWorkspaceManager? workspaceManager)
     {
         _sessionRepo = new SessionRepository();
         _messageRepo = new SessionMessageRepository();
+        _workspaceManager = workspaceManager;
     }
 
     /// <summary>
@@ -44,7 +58,7 @@ public class SessionManager : ISessionManager
     public SessionInfo? CurrentSession => _currentSession;
 
     /// <summary>
-    /// 创建新会话
+    /// 创建新会话（自动绑定当前工作区，若存在）
     /// </summary>
     public async Task<SessionInfo> CreateSessionAsync(string? userId = null, string? title = null)
     {
@@ -55,7 +69,9 @@ public class SessionManager : ISessionManager
             UserId = userId,
             Title = title ?? "新对话",
             CreateTime = DateTime.Now,
-            IsDelete = false
+            IsDelete = false,
+            // 绑定当前工作区（通过 WorkspaceManager 静态访问器，避免循环依赖）
+            WorkspaceId = WorkspaceManager.Current?.WorkspaceId
         };
 
         await _sessionRepo.InsertAsync(session);

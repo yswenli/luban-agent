@@ -90,9 +90,10 @@ public interface IWorkspaceManager
     Task SwitchWorkspaceAsync(string workspaceId);
 
     /// <summary>
-    /// 获取所有工作区
+    /// 获取用户的所有工作区
     /// </summary>
-    Task<IEnumerable<WorkspaceInfo>> GetAllWorkspacesAsync();
+    /// <param name="userId">用户ID，null 表示获取全部</param>
+    Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync(string? userId = null);
 
     /// <summary>
     /// 确保工作区已授权
@@ -102,13 +103,13 @@ public interface IWorkspaceManager
     Task<bool> EnsureAuthorizedAsync(WorkspaceInfo workspace);
 
     /// <summary>
-    /// 加载工作区配置
+    /// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
     /// </summary>
     /// <param name="workspace">工作区信息</param>
-    Task LoadWorkspaceConfigAsync(WorkspaceInfo workspace);
+    Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace);
 
     /// <summary>
-    /// 轻量设置当前工作区（不执行完整切换流程，用于启动时）
+    /// 设置当前工作区并恢复最近会话（用于启动时）
     /// </summary>
     /// <param name="workspaceId">工作区ID</param>
     Task SetCurrentAsync(string workspaceId);
@@ -124,17 +125,29 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly ISessionManager _sessionManager;
     private readonly IOptions<LuBanAgentOptions> _options;
 
+    /// <summary>
+    /// 工作区注入的 PathGuard roots（仅记录工作区注入部分，避免误删全局 roots）
+    /// </summary>
+    private readonly HashSet<string> _injectedRoots = new(StringComparer.OrdinalIgnoreCase);
+
     private static WorkspaceInfo? _current;
+    private static readonly object _currentLock = new();
 
     /// <summary>
     /// 当前工作区（静态访问，供非 DI 组件如 SqliteVectorStore、SessionManager 使用）
     /// </summary>
-    public static WorkspaceInfo? Current => _current;
+    public static WorkspaceInfo? Current
+    {
+        get
+        {
+            lock (_currentLock) return _current;
+        }
+    }
 
     /// <summary>
     /// 当前工作区
     /// </summary>
-    public WorkspaceInfo? CurrentWorkspace => _current;
+    public WorkspaceInfo? CurrentWorkspace => Current;
 
     /// <summary>
     /// 创建 WorkspaceManager 实例
@@ -152,15 +165,24 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 创建工作区
+    /// 创建工作区（内部含路径唯一性校验，避免 TOCTOU 竞态）
     /// </summary>
     public async Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = "Normal")
     {
+        var fullPath = Path.GetFullPath(rootPath);
+
+        // 内部唯一性校验（防止绕过 WorkCommand 的调用方造成重复）
+        var existing = await _repo.GetByRootPathAsync(fullPath);
+        if (existing != null)
+        {
+            throw new InvalidOperationException($"工作区已存在: {existing.Name} ({existing.RootPath})");
+        }
+
         var ws = new DbWorkspace
         {
             WorkspaceId = Guid.NewGuid().ToString("N"),
-            Name = name ?? Path.GetFileName(rootPath),
-            RootPath = Path.GetFullPath(rootPath),
+            Name = name ?? Path.GetFileName(fullPath),
+            RootPath = fullPath,
             Type = type,
             IsAuthorized = false,
             ConfigPath = ".luban-agent",
@@ -168,7 +190,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             IsDelete = false
         };
         await _repo.InsertAsync(ws);
-        InitializeConfigDirectory(ws.RootPath, type);
+        EnsureConfigDirectory(ws.RootPath, type);
         return ToWorkspaceInfo(ws);
     }
 
@@ -177,37 +199,45 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     public async Task SwitchWorkspaceAsync(string workspaceId)
     {
-        if (_current != null && _current.IsAuthorized)
-            RemoveWorkspaceRootFromPathGuard(_current.RootPath);
+        // 1. 移除上一工作区的 RootPath（仅工作区注入部分，保留全局配置）
+        WorkspaceInfo? previous;
+        lock (_currentLock) previous = _current;
 
+        if (previous != null && previous.IsAuthorized)
+            RemoveWorkspaceRootFromPathGuard(previous.RootPath);
+
+        // 2. 加载新工作区
         var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
         if (ws == null) throw new InvalidOperationException($"工作区不存在: {workspaceId}");
 
-        _current = ToWorkspaceInfo(ws);
+        var newCurrent = ToWorkspaceInfo(ws);
+        lock (_currentLock) _current = newCurrent;
 
-        if (_current.IsAuthorized)
-            AddWorkspaceRootToPathGuard(_current.RootPath);
+        // 3. 注入新工作区的 RootPath（如果已授权）
+        if (newCurrent.IsAuthorized)
+            AddWorkspaceRootToPathGuard(newCurrent.RootPath);
 
+        // 4. 恢复最近活跃会话
         var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId);
         if (latest != null)
             await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
         else
             _sessionManager.ClearCurrentSession();
 
-        await LoadWorkspaceConfigAsync(_current);
+        // 5. 确保配置目录存在
+        await EnsureConfigDirectoryAsync(newCurrent);
+
+        // 6. 更新 LastActiveAt
         await _repo.UpdateLastActiveAtAsync(workspaceId);
     }
 
     /// <summary>
-    /// 轻量设置当前工作区（不执行完整切换流程，用于启动时）
+    /// 设置当前工作区并恢复最近会话（用于启动时）
     /// </summary>
     public async Task SetCurrentAsync(string workspaceId)
     {
-        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
-        if (ws == null) return;
-        _current = ToWorkspaceInfo(ws);
-        if (_current.IsAuthorized)
-            AddWorkspaceRootToPathGuard(_current.RootPath);
+        // 复用 SwitchWorkspaceAsync 的完整流程，确保会话恢复与配置检查
+        await SwitchWorkspaceAsync(workspaceId);
     }
 
     /// <summary>
@@ -226,7 +256,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         AnsiConsole.MarkupLine("[yellow]  - 执行脚本（需二次确认）[/]");
         AnsiConsole.WriteLine();
 
-        var confirm = AnsiConsole.Confirm("[yellow]是否授权？[/]", defaultValue: true);
+        // 授权为敏感操作，默认值 false（需用户明确输入 y）
+        var confirm = AnsiConsole.Confirm("[yellow]是否授权？[/]", defaultValue: false);
         if (!confirm)
         {
             AnsiConsole.MarkupLine("[red]✗ 工作区未授权，操作失败[/]");
@@ -235,41 +266,58 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         await _repo.UpdateAuthorizationAsync(workspace.WorkspaceId, true);
         workspace.IsAuthorized = true;
+
+        // 同步更新 _current（避免传入对象为副本时状态不一致）
+        lock (_currentLock)
+        {
+            if (_current != null && _current.WorkspaceId == workspace.WorkspaceId)
+            {
+                _current.IsAuthorized = true;
+            }
+        }
+
         AddWorkspaceRootToPathGuard(workspace.RootPath);
         AnsiConsole.MarkupLine("[green]✓ 已授权工作区[/]");
         return true;
     }
 
     /// <summary>
-    /// 加载工作区配置
+    /// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
     /// </summary>
-    public Task LoadWorkspaceConfigAsync(WorkspaceInfo workspace)
+    public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
     {
         if (workspace.ConfigPath != null)
         {
             var configDir = Path.Combine(workspace.RootPath, workspace.ConfigPath);
             if (!Directory.Exists(configDir))
             {
-                try { InitializeConfigDirectory(workspace.RootPath, workspace.Type); }
-                catch { }
+                try { EnsureConfigDirectory(workspace.RootPath, workspace.Type); }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
+                }
             }
         }
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// 获取所有工作区
+    /// 获取用户的所有工作区（userId 为 null 时获取全部）
     /// </summary>
-    public async Task<IEnumerable<WorkspaceInfo>> GetAllWorkspacesAsync()
+    public async Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync(string? userId = null)
     {
-        var list = await _repo.GetAllAsync();
+        List<DbWorkspace> list;
+        if (string.IsNullOrEmpty(userId))
+            list = await _repo.GetAllAsync();
+        else
+            list = await _repo.GetUserWorkspacesAsync(userId);
         return list.Select(ToWorkspaceInfo);
     }
 
     /// <summary>
     /// 初始化配置目录
     /// </summary>
-    private void InitializeConfigDirectory(string rootPath, string type)
+    private void EnsureConfigDirectory(string rootPath, string type)
     {
         var configDir = Path.Combine(rootPath, ".luban-agent");
         Directory.CreateDirectory(configDir);
@@ -306,13 +354,11 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 将工作区根目录加入 PathGuard 允许列表
+    /// 将工作区根目录加入 PathGuard 允许列表，并记录到 _injectedRoots
     /// </summary>
     private void AddWorkspaceRootToPathGuard(string rootPath)
     {
-        var normalized = Path.GetFullPath(rootPath);
-        if (!normalized.EndsWith(Path.DirectorySeparatorChar))
-            normalized += Path.DirectorySeparatorChar;
+        var normalized = NormalizeRoot(rootPath);
 
         var roots = _options.Value.Tools.FileSystem.AllowedRoots ?? new List<string>();
         if (!roots.Any(r => string.Equals(r, normalized, StringComparison.OrdinalIgnoreCase)))
@@ -320,20 +366,37 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             roots = new List<string>(roots) { normalized };
             _options.Value.Tools.FileSystem.AllowedRoots = roots;
         }
+        _injectedRoots.Add(normalized);
     }
 
     /// <summary>
-    /// 将工作区根目录从 PathGuard 允许列表移除
+    /// 从 PathGuard 允许列表移除工作区根目录（仅移除工作区注入部分，保留全局配置的 roots）
     /// </summary>
     private void RemoveWorkspaceRootFromPathGuard(string rootPath)
     {
-        var normalized = Path.GetFullPath(rootPath);
-        if (!normalized.EndsWith(Path.DirectorySeparatorChar))
-            normalized += Path.DirectorySeparatorChar;
+        var normalized = NormalizeRoot(rootPath);
+
+        if (!_injectedRoots.Contains(normalized))
+        {
+            // 非工作区注入的 root（来自全局配置），不移除
+            return;
+        }
+        _injectedRoots.Remove(normalized);
 
         var roots = _options.Value.Tools.FileSystem.AllowedRoots ?? new List<string>();
         roots = roots.Where(r => !string.Equals(r, normalized, StringComparison.OrdinalIgnoreCase)).ToList();
         _options.Value.Tools.FileSystem.AllowedRoots = roots;
+    }
+
+    /// <summary>
+    /// 规范化根目录路径（末尾加分隔符）
+    /// </summary>
+    private static string NormalizeRoot(string rootPath)
+    {
+        var normalized = Path.GetFullPath(rootPath);
+        if (!normalized.EndsWith(Path.DirectorySeparatorChar))
+            normalized += Path.DirectorySeparatorChar;
+        return normalized;
     }
 
     /// <summary>

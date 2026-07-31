@@ -57,4 +57,28 @@ public class RagFileRepository : BaseRepository<DbRagFile>
 public class RagChunkRepository : BaseRepository<DbRagChunk>
 {
     public RagChunkRepository(long tenantId = LuBanOrmConst.DefaultTenantId) : base(tenantId) { }
+
+    /// <summary>
+    /// 物理删除工作区的所有切块
+    /// </summary>
+    public async Task DeleteByWorkspaceAsync(string workspaceId)
+    {
+        await DeleteAsync(c => c.WorkspaceId == workspaceId);
+    }
+
+    /// <summary>
+    /// 软删除指定文件的所有切块
+    /// </summary>
+    public async Task SoftDeleteByFileAsync(long fileId)
+    {
+        await UpdateAsync(c => new DbRagChunk { IsDelete = true, UpdateTime = DateTime.Now }, c => c.FileId == fileId);
+    }
+
+    /// <summary>
+    /// 获取工作区切块数量
+    /// </summary>
+    public async Task<int> CountByWorkspaceAsync(string workspaceId)
+    {
+        return await AsQueryable().Where(c => c.WorkspaceId == workspaceId && !c.IsDelete).CountAsync();
+    }
 }

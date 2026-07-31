@@ -17,11 +17,12 @@
 namespace LubanAgent.Commands;
 
 /// <summary>
-/// Session 命令 - 管理会话
+/// Session 命令 - 管理会话（按当前工作区过滤）
 /// </summary>
 public class SessionCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
+    private readonly SessionRepository _sessionRepo;
 
     /// <summary>
     /// 命令名称
@@ -36,10 +37,11 @@ public class SessionCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager)
+    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo)
         : base(configManager, configuration)
     {
         _sessionManager = sessionManager;
+        _sessionRepo = sessionRepo;
     }
 
     /// <summary>
@@ -96,23 +98,40 @@ public class SessionCommand : CommandBase
 
     private async Task ListSessionsAsync()
     {
-        var sessions = (await _sessionManager.GetUserSessionsAsync("default")).ToList();
-
-        Console.WriteLine();
-        Console.WriteLine("历史会话（创建时间倒序）：");
-
-        if (sessions.Count == 0)
+        // 按当前工作区过滤会话
+        var wsId = WorkspaceManager.Current?.WorkspaceId;
+        if (string.IsNullOrEmpty(wsId))
         {
-            Console.WriteLine("  （无历史会话）");
+            WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
-        foreach (var session in sessions)
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
+
+        try
         {
-            var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
-            var marker = isCurrent ? " (当前)" : "";
-            Console.WriteLine($"  {session.CreatedAt:yyyy-MM-dd HH:mm}  {session.Title ?? "未命名"}{marker}");
-            Console.WriteLine($"     消息: {session.MessageCount} | Token: {session.TotalTokens}");
+            Console.ForegroundColor = ConsoleColor.Green;
+
+            Console.WriteLine();
+            Console.WriteLine("历史会话（创建时间倒序）：");
+
+            if (sessions.Count == 0)
+            {
+                Console.WriteLine("  （无历史会话）");
+                return;
+            }
+
+            foreach (var session in sessions)
+            {
+                var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
+                var marker = isCurrent ? " (当前)" : "";
+                Console.WriteLine($"  {session.CreateTime:yyyy-MM-dd HH:mm}  {session.Title ?? "未命名"}{marker}");
+                Console.WriteLine($"     消息: {session.MessageCount} | Token: {session.TotalTokens}");
+            }
+        }
+        finally
+        {
+            Console.ResetColor();
         }
     }
 
@@ -138,10 +157,18 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        var sessions = (await _sessionManager.GetUserSessionsAsync("default")).ToList();
+        // 按当前工作区过滤会话
+        var wsId = WorkspaceManager.Current?.WorkspaceId;
+        if (string.IsNullOrEmpty(wsId))
+        {
+            WriteError("请先使用 /work -switch 切换到工作区");
+            return;
+        }
+
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
         var matched = sessions
             .Where(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(s => s.CreatedAt)
+            .OrderByDescending(s => s.CreateTime)
             .FirstOrDefault();
 
         if (matched == null)

@@ -14,6 +14,8 @@
 *描述：通用 Agent 对话命令，支持工具调用和 thinking 显示
 *
 *****************************************************************************/
+using LuBan.AIAgent.Plugins;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -23,6 +25,7 @@ public class AgiCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IWorkspaceManager _workspaceManager;
     private readonly Func<string, Task<bool>>? _executeCommandAsync;
 
     /// <summary>
@@ -38,11 +41,12 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, Func<string, Task<bool>>? executeCommandAsync = null)
+    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, IWorkspaceManager workspaceManager, Func<string, Task<bool>>? executeCommandAsync = null)
         : base(configManager, configuration)
     {
         _sessionManager = sessionManager;
         _serviceProvider = serviceProvider;
+        _workspaceManager = workspaceManager;
         _executeCommandAsync = executeCommandAsync;
     }
 
@@ -57,7 +61,22 @@ public class AgiCommand : CommandBase
             return;
         }
 
-        // 创建或获取当前会话
+        // 1. 获取当前工作区
+        var workspace = _workspaceManager.CurrentWorkspace;
+        if (workspace == null)
+        {
+            WriteError("请先使用 /work -switch 切换到工作区");
+            return;
+        }
+
+        // 2. 检查授权状态（替代原 TaskSessionScope.CreateInteractive）
+        if (!workspace.IsAuthorized)
+        {
+            var authorized = await _workspaceManager.EnsureAuthorizedAsync(workspace);
+            if (!authorized) return;
+        }
+
+        // 3. 创建或获取当前会话
         var currentSession = _sessionManager.CurrentSession;
         if (currentSession == null)
         {
@@ -69,14 +88,24 @@ public class AgiCommand : CommandBase
         // 这样可以确保所有服务（包括 IRetrievalService）都可用
         var serviceProvider = _serviceProvider;
 
-        // 任务根目录确认
-        var pathGuard = serviceProvider.GetRequiredService<PathGuard>();
-        var options = serviceProvider.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
-        using var taskScope = TaskSessionScope.CreateInteractive(pathGuard, options, "/agi");
-        if (taskScope == null) return;
+        // 4. 按工作区类型选择 Profile
+        AgentProfile profile = workspace.Type == "Rag"
+            ? new RagAgentProfile(workspace)
+            : new NormalAgentProfile(workspace);
+
+        // 5. 确保工作区配置目录存在（配置由 AgentProfile 按需加载）
+        await _workspaceManager.EnsureConfigDirectoryAsync(workspace);
 
         Console.WriteLine();
-        Console.WriteLine("可用工具: 文件系统、脚本执行、浏览器、数据库、Redis、Web请求");
+        Console.WriteLine($"工作区: {workspace.Name} ({workspace.RootPath})");
+        if (workspace.Type == "Rag")
+        {
+            Console.WriteLine("模式: 知识库问答（自动检索增强）");
+        }
+        else
+        {
+            Console.WriteLine("可用工具: 文件系统、脚本执行、浏览器、数据库、Redis、Web请求");
+        }
         Console.WriteLine("提示: AI 会自动判断是否需要使用工具来回答你的问题");
         Console.WriteLine("      危险操作（写入、删除、执行脚本）需要用户确认");
         Console.WriteLine("      按 ESC 可暂停当前操作，输入 'c' 继续，输入 'q' 终止");
@@ -118,34 +147,18 @@ public class AgiCommand : CommandBase
             };
 
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
-            
-            // 创建 Agent 时不指定 toolGroups，启用所有工具
-            var agent = await agentFactory.CreateAsync(
-                modelName: ConfigManager.SelectedModel,
-                useSessionHistory: true,
-                systemPrompt: @"你是一个智能助手，拥有以下工具能力：
+            var ruleEngine = serviceProvider.GetRequiredService<RuleEngine>();
+            var pluginRegistry = serviceProvider.GetRequiredService<ToolPluginRegistry>();
 
-1. **文件系统操作**：可以读取文件、写入文件、列出目录内容
-2. **脚本执行**：可以执行 Shell、Python、Lua 等脚本
-3. **浏览器自动化**：可以打开网页、点击元素、输入文本、截图
-4. **数据库操作**：可以执行 SQL 查询
-5. **Redis 操作**：可以执行 Redis 命令
-6. **Web 请求**：可以发送 HTTP 请求
-
-当用户的请求涉及上述操作时，**必须使用相应的工具**来完成，不要说'我无法访问'或'我没有这个能力'。
-
-例如：
-- 用户说'帮我看看 D 盘有什么文件' -> 使用 list_directory 工具
-- 用户说'读取某个文件的内容' -> 使用 read_file 工具
-- 用户说'执行这个命令' -> 使用 run_shell 工具
-- 用户说'打开某个网页' -> 使用浏览器工具
-
-请立即使用工具来帮助用户完成任务。");
+            // 创建 Agent（Profile 内部注册 Rules/McpServers 后调用工厂）
+            var agent = await profile.CreateAgentAsync(
+                agentFactory, ConfigManager.SelectedModel, workspace, ruleEngine, pluginRegistry);
 
             Console.WriteLine("✓ 工具插件已加载（根据 appsettings.json 配置启用）");
             Console.WriteLine();
 
-            await RunChatLoop(agent);
+            // 运行聊天循环（RAG 工作区带自动检索注入）
+            await RunChatLoop(agent, profile, workspace, serviceProvider);
         }
         catch (Exception ex)
         {
@@ -162,7 +175,7 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 运行对话循环，支持工具调用显示、ESC 取消和 / 命令
     /// </summary>
-    private async Task RunChatLoop(LuBanAgent agent)
+    private async Task RunChatLoop(LuBanAgent agent, AgentProfile profile, WorkspaceInfo workspace, IServiceProvider serviceProvider)
     {
         while (true)
         {
@@ -181,6 +194,13 @@ public class AgiCommand : CommandBase
                 var handled = await _executeCommandAsync(input);
                 if (handled)
                     continue;
+            }
+
+            // RAG 自动检索注入：将检索结果拼接到用户输入前
+            string finalInput = input;
+            if (profile.RetrievalMode == "auto")
+            {
+                finalInput = await InjectRetrievalContextAsync(input, workspace, serviceProvider);
             }
 
             var hasToolCalls = false;
@@ -202,7 +222,7 @@ public class AgiCommand : CommandBase
 
                 try
                 {
-                    await foreach (var update in agent.RunStreamingAsync(input, escListener.Token))
+                    await foreach (var update in agent.RunStreamingAsync(finalInput, escListener.Token))
                     {
                         // 首个 chunk 到达，停止 spinner
                         if (update.Contents != null && update.Contents.Any())
@@ -220,10 +240,11 @@ public class AgiCommand : CommandBase
                                 {
                                     if (!hasThinkingContent)
                                     {
-                                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                                        Console.ForegroundColor = ConsoleColor.Gray;
                                         Console.WriteLine("💭 思考过程:");
                                         hasThinkingContent = true;
                                     }
+                                    Console.ForegroundColor = ConsoleColor.Gray;
                                     Console.Write(reasoning.Text);
                                 }
                             }
@@ -234,9 +255,8 @@ public class AgiCommand : CommandBase
                                     if (hasThinkingContent)
                                     {
                                         Console.WriteLine();
-                                        Console.ResetColor();
                                     }
-                                    Console.ForegroundColor = ConsoleColor.Cyan;
+                                    Console.ForegroundColor = ConsoleColor.Gray;
                                     Console.WriteLine("工具调用过程:");
                                     hasToolCalls = true;
                                 }
@@ -247,6 +267,7 @@ public class AgiCommand : CommandBase
                                     if (functionCall.Arguments.Count > 3) args += ", ...";
                                     toolInfo += $"({args})";
                                 }
+                                Console.ForegroundColor = ConsoleColor.Gray;
                                 Console.WriteLine($"  {toolInfo}");
                                 toolCalls.Add(toolInfo);
                             }
@@ -259,11 +280,11 @@ public class AgiCommand : CommandBase
                                         Console.WriteLine();
                                         Console.ResetColor();
                                     }
-                                    Console.ForegroundColor = ConsoleColor.Green;
+                                    Console.ForegroundColor = ConsoleColor.Blue;
                                     Console.Write("🤖 ");
-                                    Console.ResetColor();
                                     hasAnswerContent = true;
                                 }
+                                Console.ForegroundColor = ConsoleColor.Blue;
                                 Console.Write(text.Text);
                                 finalResponseBuilder.Append(text.Text);
                             }
@@ -326,6 +347,51 @@ public class AgiCommand : CommandBase
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
                 WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
             }
+        }
+    }
+
+    /// <summary>
+    /// RAG 自动检索注入：将检索结果拼接到用户输入前
+    /// </summary>
+    /// <param name="query">用户原始输入</param>
+    /// <param name="workspace">当前工作区</param>
+    /// <param name="serviceProvider">服务提供者</param>
+    /// <returns>拼接检索上下文后的输入；检索失败时返回原始输入</returns>
+    private async Task<string> InjectRetrievalContextAsync(string query, WorkspaceInfo workspace, IServiceProvider serviceProvider)
+    {
+        try
+        {
+            var retrievalService = serviceProvider.GetService<IRetrievalService>();
+            if (retrievalService == null) return query;
+
+            var results = await retrievalService.SearchAsync(query);
+            if (results == null || results.Count == 0) return query;
+
+            // 多版本去重：相同 SymbolName 优先最新（以 StartLine 作为版本代理）
+            var deduped = results
+                .GroupBy(r => r.SymbolName ?? r.FilePath)
+                .Select(g => g.OrderByDescending(r => r.StartLine).First())
+                .Take(5)
+                .ToList();
+
+            var context = new StringBuilder();
+            context.AppendLine("以下是从知识库检索到的相关文档片段：");
+            context.AppendLine("---");
+            foreach (var r in deduped)
+            {
+                context.AppendLine($"文件: {r.FilePath}");
+                context.AppendLine($"内容: {r.Content}");
+                context.AppendLine("---");
+            }
+            context.AppendLine();
+            context.AppendLine("请基于以上文档片段回答用户问题：");
+            context.AppendLine(query);
+
+            return context.ToString();
+        }
+        catch
+        {
+            return query; // 检索失败降级为原始输入
         }
     }
 

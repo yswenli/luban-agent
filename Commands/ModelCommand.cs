@@ -63,8 +63,6 @@ public class ModelCommand : CommandBase
 
     private Task<bool> ExecuteListAsync()
     {
-        Console.WriteLine();
-
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
@@ -72,30 +70,42 @@ public class ModelCommand : CommandBase
             return Task.FromResult(true);
         }
 
-        Console.WriteLine("所有可用模型:");
-        foreach (var p in providers)
+        try
         {
-            var displayName = ProviderModels.GetDisplayName(p.Name);
-            Console.WriteLine($"  {displayName}:");
+            Console.ForegroundColor = ConsoleColor.Green;
 
-            var allModels = ConfigManager.GetAllModels(p.Name);
-            if (allModels.Count == 0)
+            Console.WriteLine();
+
+            Console.WriteLine("所有可用模型:");
+            foreach (var p in providers)
             {
-                Console.WriteLine("    (无可用模型)");
-            }
-            else
-            {
-                foreach (var model in allModels)
+                var displayName = ProviderModels.GetDisplayName(p.Name);
+                Console.WriteLine($"  {displayName}:");
+
+                var allModels = ConfigManager.GetAllModels(p.Name);
+                if (allModels.Count == 0)
                 {
-                    var isSelected = ConfigManager.SelectedModel == $"{p.Name}:{model}";
-                    var selected = isSelected ? " (当前)" : "";
-                    var custom = p.CustomModels?.Contains(model) == true ? " [自定义]" : "";
-                    Console.WriteLine($"    - {model}{selected}{custom}");
+                    Console.WriteLine("    (无可用模型)");
+                }
+                else
+                {
+                    foreach (var model in allModels)
+                    {
+                        var isSelected = ConfigManager.SelectedModel == $"{p.Name}:{model}";
+                        var selected = isSelected ? " (当前)" : "";
+                        var custom = p.CustomModels?.Contains(model) == true ? " [自定义]" : "";
+                        Console.WriteLine($"    - {model}{selected}{custom}");
+                    }
                 }
             }
+
+            Console.WriteLine();
+        }
+        finally
+        {
+            Console.ResetColor();
         }
 
-        Console.WriteLine();
         if (!string.IsNullOrEmpty(ConfigManager.SelectedModel))
         {
             WriteSuccess($"当前选择的模型: {ConfigManager.SelectedModel}");

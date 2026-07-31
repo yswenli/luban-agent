@@ -28,9 +28,17 @@ public class ConsoleAppService
     private readonly RuleEngine _ruleEngine;
     private readonly MCPRegistry _mcpRegistry;
     private readonly ISessionManager _sessionManager;
+    private readonly IWorkspaceManager _workspaceManager;
+    private readonly WorkspaceRepository _workspaceRepo;
+    private readonly SessionRepository _sessionRepo;
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, ICommand> _commands;
     private readonly List<string> _commandHistory;
+
+    /// <summary>
+    /// RAG 检索服务（懒加载，避免 RAG 未启用时强制依赖）
+    /// </summary>
+    private LuBan.AIAgent.Retrieval.IRetrievalService? _retrievalService;
 
     /// <summary>
     /// 可用的命令名称列表（用于 Tab 自动完成）
@@ -47,6 +55,8 @@ public class ConsoleAppService
         "/browse", "/b",
         "/stats", "/st",
         "/orchestrate", "/o",
+        "/work", "/w",
+        "/rag", "/rg",
         "/exit"
     };
 
@@ -64,7 +74,9 @@ public class ConsoleAppService
         ["a"] = "agi",
         ["b"] = "browse",
         ["st"] = "stats",
-        ["o"] = "orchestrate"
+        ["o"] = "orchestrate",
+        ["w"] = "work",
+        ["rg"] = "rag"
     };
 
     /// <summary>
@@ -92,6 +104,9 @@ public class ConsoleAppService
         RuleEngine ruleEngine,
         MCPRegistry mcpRegistry,
         ISessionManager sessionManager,
+        IWorkspaceManager workspaceManager,
+        WorkspaceRepository workspaceRepo,
+        SessionRepository sessionRepo,
         IServiceProvider serviceProvider)
     {
         _configManager = configManager;
@@ -100,6 +115,9 @@ public class ConsoleAppService
         _ruleEngine = ruleEngine;
         _mcpRegistry = mcpRegistry;
         _sessionManager = sessionManager;
+        _workspaceManager = workspaceManager;
+        _workspaceRepo = workspaceRepo;
+        _sessionRepo = sessionRepo;
         _serviceProvider = serviceProvider;
         _commands = new Dictionary<string, ICommand>();
         _commandHistory = new List<string>();
@@ -117,11 +135,27 @@ public class ConsoleAppService
         RegisterCommand(new SkillCommand(_configManager, _configuration, _skillRegistry));
         RegisterCommand(new RuleCommand(_configManager, _configuration, _ruleEngine));
         RegisterCommand(new MCPCommand(_configManager, _configuration, _mcpRegistry));
-        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager));
-        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, TryExecuteCommandAsync));
-        RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync));
-        RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager));
+        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
+        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, TryExecuteCommandAsync));
+        RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager));
+        RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
         RegisterCommand(new OrchestrateCommand(_configManager, _configuration, _serviceProvider));
+        RegisterCommand(new WorkCommand(_configManager, _configuration, _workspaceManager, _workspaceRepo, _sessionRepo));
+
+        // RagCommand 依赖 IRetrievalService（懒加载：仅当 RAG 启用时可用）
+        _retrievalService = _serviceProvider.GetService<LuBan.AIAgent.Retrieval.IRetrievalService>();
+        if (_retrievalService != null)
+        {
+            RegisterCommand(new RagCommand(
+                _configManager,
+                _configuration,
+                _workspaceManager,
+                _workspaceRepo,
+                _retrievalService,
+                new RagFileRepository(),
+                new RagChunkRepository(),
+                _sessionRepo));
+        }
     }
 
     /// <summary>
@@ -270,8 +304,10 @@ public class ConsoleAppService
         Console.WriteLine("  /session /se   - 管理对话会话 (-list/-new/-clear/-switch)");
         Console.WriteLine("  /agi /a        - 通用 Agent 对话");
         Console.WriteLine("  /browse /b     - 针对网站操作特异化 Agent");
-        Console.WriteLine("  /stats /st     - 会话与 Token 统计 (-days N)");
+        Console.WriteLine("  /stats /st     - 会话与 Token 统计 (-days N, --all 跨工作区)");
         Console.WriteLine("  /orchestrate /o - 复合任务编排（DAG 拆解 + SubAgent 调度）");
+        Console.WriteLine("  /work /w       - 工作区管理 (-list/-new/-switch/-delete/-info/-authorize)");
+        Console.WriteLine("  /rag /rg       - 知识库管理 (-new/-index/-search/-list/-delete)");
         Console.WriteLine("  /exit          - 退出程序");
         Console.WriteLine();
         Console.WriteLine("子命令简写: -l=-list, -a=-add, -u=-update, -d=-delete, -s=-switch, -n=-new, -c=-clear, -t=-tools");
@@ -378,7 +414,9 @@ public class ConsoleAppService
                 8 => "browse",
                 9 => "stats",
                 10 => "orchestrate",
-                11 => "exit",
+                11 => "work",
+                12 => "rag",
+                13 => "exit",
                 _ => null
             };
         }

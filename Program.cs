@@ -36,6 +36,31 @@ class Program
         var (embedder, modelManager) = await PrepareRetrievalAsync(configuration);
         using var serviceProvider = BuildServiceProvider(configuration, embedder, modelManager);
 
+        // 隐式创建/恢复工作区
+        try
+        {
+            // 使用绝对路径，避免 GetByRootPathAsync 查询与 CreateWorkspaceAsync 存储路径不一致
+            var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+            var workspaceRepo = serviceProvider.GetRequiredService<WorkspaceRepository>();
+            var workspaceManager = serviceProvider.GetRequiredService<IWorkspaceManager>();
+            var existing = await workspaceRepo.GetByRootPathAsync(cwd);
+            if (existing == null)
+            {
+                var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: "Normal");
+                await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+                Console.WriteLine($"已创建工作区: {ws.Name} ({ws.RootPath})");
+            }
+            else
+            {
+                await workspaceManager.SetCurrentAsync(existing.WorkspaceId);
+                Console.WriteLine($"当前工作区: {existing.Name} ({existing.RootPath})");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"工作区初始化失败: {ex.Message}");
+        }
+
         var appService = serviceProvider.GetRequiredService<ConsoleAppService>();
 
         // 支持命令行参数直接执行命令，例如：LuBanAgent /se -s 新会话
@@ -124,6 +149,11 @@ class Program
         services.AddLuBanAgent(configuration);
 
         services.AddSingleton<ISessionManager, SessionManager>();
+
+        // 注册工作区服务
+        services.AddSingleton<SessionRepository>();
+        services.AddSingleton<WorkspaceRepository>();
+        services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 
         if (embedder != null)
         {

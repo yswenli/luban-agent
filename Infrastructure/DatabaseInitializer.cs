@@ -25,6 +25,11 @@ public static class DatabaseInitializer
     private static int _initialized;
 
     /// <summary>
+    /// 已存在数据库被视为有效（>100KB）时跳过初始化的阈值（字节）。
+    /// </summary>
+    private const long SkipInitThresholdBytes = 100L * 1024; // 100KB
+
+    /// <summary>
     /// 初始化数据库
     /// </summary>
     public static void Initialize()
@@ -32,10 +37,81 @@ public static class DatabaseInitializer
         if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0) return;
         FixRelativeConnectionString();
         MigrateLegacyDatabase();
+
+        // 检查主数据库文件：已存在且大小超过 100KB 视为已有有效数据，跳过建库/建表/播种子/建视图
+        TrySkipInitIfDbExistsAndLarge();
         LuBanOrm.Init();
+
         EnsureIsCompactedColumn();
         EnsureWorkspaceIdColumns();
         var dbPath = GetDatabasePath();
+    }
+
+    /// <summary>
+    /// 检查主 SQLite 数据库文件：若已存在且大小超过阈值（100KB），
+    /// 则设置 LuBanOrm.IsInitTableAndDataComplete = true，
+    /// 使 LuBanOrm.Init() → InitDatabase() 入口直接 return，跳过建库、建表、播种子、建视图。
+    /// 仅当检测到满足条件并已设置标志时返回 true。
+    /// </summary>
+    private static bool TrySkipInitIfDbExistsAndLarge()
+    {
+        var options = LuBanOrm.DbConnectionOptions;
+        if (options?.ConnectionConfigs == null) return false;
+
+        foreach (var config in options.ConnectionConfigs)
+        {
+            if (config.DbType != SqlSugar.DbType.Sqlite) continue;
+
+            var dbPath = ParseSqliteDataSourcePath(config.ConnectionString);
+            if (string.IsNullOrEmpty(dbPath)) continue;
+
+            try
+            {
+                var fi = new FileInfo(dbPath);
+                if (!fi.Exists) continue;
+
+                if (fi.Length > SkipInitThresholdBytes)
+                {
+                    Console.WriteLine($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），跳过初始化库、表、种子、视图。");
+                    // InitDatabase() 开头判断：if (IsInitTableAndDataComplete == true) return;
+                    // 置为 true 后，所有初始化（库/表/视图/种子）都会被跳过
+                    LuBanOrm.IsInitTableAndDataComplete = true;
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），小于阈值 100KB，将执行初始化。");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("检查数据库文件状态失败，继续按默认流程初始化", ex, dbPath);
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 从 SQLite 连接字符串中解析 Data Source（文件路径）。支持 "Data Source=xxx" 或 "DataSource=xxx"。
+    /// </summary>
+    private static string? ParseSqliteDataSourcePath(string? connectionString)
+    {
+        if (string.IsNullOrEmpty(connectionString)) return null;
+
+        var parts = connectionString.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            var kv = part.Split(['='], 2);
+            if (kv.Length != 2) continue;
+            var key = kv[0].Trim();
+            var val = kv[1].Trim();
+            if (key.Equals("Data Source", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("DataSource", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrEmpty(val) ? null : Path.GetFullPath(val);
+            }
+        }
+        return null;
     }
 
     /// <summary>
