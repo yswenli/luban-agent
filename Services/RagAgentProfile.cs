@@ -99,52 +99,28 @@ public class RagAgentProfile : AgentProfile
     /// <summary>
     /// 注册工作区相关的自定义规则。
     /// </summary>
-    /// <param name="engine">规则引擎</param>
-    /// <param name="workspace">工作区信息</param>
     /// <remarks>
-    /// 当前框架的 <see cref="RuleEngine"/> 通过 <c>ConfigManager</c> 惰性合并自定义规则，
-    /// 不支持运行时直接注册。<see cref="RagPrecisionRule"/> 亦为标记规则，
-    /// 实际的多版本去重逻辑在 <c>AgiCommand.InjectRetrievalContextAsync</c> 中实现。
+    /// 框架 <see cref="RuleEngine"/> 通过 <c>ConfigManager.CustomRules</c> 惰性合并自定义规则，
+    /// 不支持运行时直接注册。RAG 的多版本去重逻辑在 <c>AgiCommand.InjectRetrievalContextAsync</c> 中实现，
+    /// 不依赖规则引擎。工作区 rules 目录下的规则文件由 <see cref="LoadCustomRules"/> 加载。
     /// </remarks>
     protected override Task RegisterRulesAsync(RuleEngine engine, WorkspaceInfo workspace)
     {
-        var customRules = LoadCustomRules(workspace);
-        foreach (var rule in customRules)
-        {
-            // no-op: RuleEngine 不支持运行时注册，规则经 ConfigManager.CustomRules 惰性合并
-        }
-        // RagPrecisionRule 注册亦为 no-op（框架限制），实际多版本去重在 AgiCommand.InjectRetrievalContextAsync
+        // 触发规则文件加载与校验（实际合并由 ConfigManager 完成）
+        LoadCustomRules(workspace);
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// 注册工作区相关的 MCP 服务器。
     /// </summary>
-    /// <param name="registry">工具插件注册表</param>
-    /// <param name="workspace">工作区信息</param>
     /// <remarks>
-    /// 扫描工作区 mcps 目录下的配置文件。当前框架的 <see cref="ToolPluginRegistry"/>
-    /// 通过 DI 加载插件，不支持运行时注册 MCP 服务器，此处为预留实现。
+    /// 框架 <see cref="ToolPluginRegistry"/> 通过 DI 加载插件，不支持运行时注册 MCP 服务器。
+    /// 工作区 mcps 目录下的配置文件需通过 <c>ConfigManager.AddMcpServer</c> 持久化注册，
+    /// 当前版本暂未实现该桥接逻辑。
     /// </remarks>
     protected override Task RegisterMcpServersAsync(ToolPluginRegistry registry, WorkspaceInfo workspace)
     {
-        if (workspace.ConfigPath == null) return Task.CompletedTask;
-
-        var mcpsDir = Path.Combine(workspace.RootPath, workspace.ConfigPath, "mcps");
-        if (!Directory.Exists(mcpsDir)) return Task.CompletedTask;
-
-        foreach (var file in Directory.GetFiles(mcpsDir, "*.json"))
-        {
-            try
-            {
-                // TODO: MCP 服务器注册逻辑依赖框架 API（ConfigManager.AddMcpServer），
-                // 当前 ToolPluginRegistry 无运行时注册方法，此处为预留实现。
-            }
-            catch
-            {
-                // 忽略单个 MCP 配置文件解析失败
-            }
-        }
         return Task.CompletedTask;
     }
 }

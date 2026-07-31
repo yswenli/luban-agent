@@ -69,7 +69,7 @@ public class AgiCommand : CommandBase
             return;
         }
 
-        // 2. 检查授权状态（替代原 TaskSessionScope.CreateInteractive）
+        // 2. 检查授权状态
         if (!workspace.IsAuthorized)
         {
             var authorized = await _workspaceManager.EnsureAuthorizedAsync(workspace);
@@ -91,7 +91,7 @@ public class AgiCommand : CommandBase
         // 4. 按工作区类型选择 Profile
         AgentProfile profile = workspace.Type == "Rag"
             ? new RagAgentProfile(workspace)
-            : new NormalAgentProfile(workspace);
+            : new NormalAgentProfile();
 
         // 5. 确保工作区配置目录存在（配置由 AgentProfile 按需加载）
         await _workspaceManager.EnsureConfigDirectoryAsync(workspace);
@@ -367,7 +367,8 @@ public class AgiCommand : CommandBase
             var results = await retrievalService.SearchAsync(query);
             if (results == null || results.Count == 0) return query;
 
-            // 多版本去重：相同 SymbolName 优先最新（以 StartLine 作为版本代理）
+            // 去重：相同 SymbolName（或 FilePath）的检索结果按 StartLine 降序取第一条
+            // 注：RetrievalResult 无 IndexedTime 字段，StartLine 作为内容位置的近似排序依据
             var deduped = results
                 .GroupBy(r => r.SymbolName ?? r.FilePath)
                 .Select(g => g.OrderByDescending(r => r.StartLine).First())

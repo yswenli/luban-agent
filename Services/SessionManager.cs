@@ -25,11 +25,6 @@ public class SessionManager : ISessionManager
     private readonly SessionMessageRepository _messageRepo;
 
     /// <summary>
-    /// 工作区管理器（保留字段以支持未来扩展，当前 CreateSessionAsync 通过静态访问器绑定工作区）
-    /// </summary>
-    private readonly IWorkspaceManager? _workspaceManager;
-
-    /// <summary>
     /// 当前活动会话
     /// </summary>
     private SessionInfo? _currentSession;
@@ -37,19 +32,14 @@ public class SessionManager : ISessionManager
     /// <summary>
     /// 创建 SessionManager 实例
     /// </summary>
-    public SessionManager() : this(null)
-    {
-    }
-
-    /// <summary>
-    /// 创建 SessionManager 实例（支持工作区绑定）
-    /// </summary>
-    /// <param name="workspaceManager">工作区管理器（当前未使用，保留以支持未来扩展）</param>
-    public SessionManager(IWorkspaceManager? workspaceManager)
+    /// <remarks>
+    /// 工作区绑定通过 <see cref="WorkspaceManager.Current"/> 静态访问器在
+    /// <see cref="CreateSessionAsync"/> 中完成，无需构造函数注入。
+    /// </remarks>
+    public SessionManager()
     {
         _sessionRepo = new SessionRepository();
         _messageRepo = new SessionMessageRepository();
-        _workspaceManager = workspaceManager;
     }
 
     /// <summary>
