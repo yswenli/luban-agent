@@ -14,6 +14,7 @@
 *描述：工作区管理服务，管理工作区生命周期、授权、配置加载
 *
 *****************************************************************************/
+using LuBan.Common.IO;
 using LuBan.DI;
 
 namespace LubanAgent.Services;
@@ -132,6 +133,23 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
     private static WorkspaceInfo? _current;
     private static readonly object _currentLock = new();
+
+    /// <summary>
+    /// 静态构造：将临时文件统一重定向到当前工作区的 .luban-agent/temp 目录。
+    /// 工作区不存在时回退到系统临时目录。
+    /// </summary>
+    static WorkspaceManager()
+    {
+        TempDirectory.Resolver = () =>
+        {
+            var ws = Current;
+            if (!string.IsNullOrEmpty(ws?.RootPath) && !string.IsNullOrEmpty(ws?.ConfigPath))
+            {
+                return Path.Combine(ws.RootPath, ws.ConfigPath, "temp");
+            }
+            return null;
+        };
+    }
 
     /// <summary>
     /// 当前工作区（静态访问，供非 DI 组件如 SqliteVectorStore、SessionManager 使用）
@@ -297,6 +315,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
                     AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
                 }
             }
+            // 清理超过 24 小时的工作区临时文件
+            try { TempDirectory.Cleanup(TimeSpan.FromDays(1)); }
+            catch { }
         }
         return Task.CompletedTask;
     }
@@ -324,6 +345,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         Directory.CreateDirectory(Path.Combine(configDir, "skills"));
         Directory.CreateDirectory(Path.Combine(configDir, "rules"));
         Directory.CreateDirectory(Path.Combine(configDir, "mcps"));
+        Directory.CreateDirectory(Path.Combine(configDir, "temp"));
 
         var configPath = Path.Combine(configDir, "config.json");
         if (!File.Exists(configPath))
