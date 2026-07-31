@@ -111,6 +111,9 @@ class Program
         configManager.Load();
         services.AddSingleton(configManager);
 
+        // 注册 LuBan 文件日志
+        services.AddLogging(builder => builder.AddLuBanFileLogger());
+
         // 注册 IChatClient，使用 ConfigManager 动态创建
         services.AddScoped<IChatClient>(sp =>
         {
