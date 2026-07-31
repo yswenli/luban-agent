@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net8.0
 *机器名称：WALLE
@@ -28,21 +28,48 @@ class Program
     {
         ConsoleUtil.PrintName();
 
+        var configuration = BuildConfiguration(args);
+        // 先将全局配置设置到 ConfigUtil，确保 LuBanOrm 静态构造时能从程序目录加载 appsettings.json
+        configuration.InitConfigUtil();
         DatabaseInitializer.Initialize();
 
-        var configuration = BuildConfiguration(args);
         var (embedder, modelManager) = await PrepareRetrievalAsync(configuration);
         using var serviceProvider = BuildServiceProvider(configuration, embedder, modelManager);
 
         var appService = serviceProvider.GetRequiredService<ConsoleAppService>();
-        await appService.RunAsync();
+
+        // 支持命令行参数直接执行命令，例如：LuBanAgent /se -s 新会话
+        if (args.Length > 0 && IsDirectCommand(args[0]))
+        {
+            await appService.RunDirectAsync(args);
+        }
+        else
+        {
+            await appService.RunAsync();
+        }
+    }
+
+    /// <summary>
+    /// 判断参数是否为直接执行命令（以 / 开头且非配置参数）。
+    /// </summary>
+    /// <param name="arg">首个命令行参数。</param>
+    /// <returns>是直接命令返回 true，否则 false。</returns>
+    private static bool IsDirectCommand(string arg)
+    {
+        if (string.IsNullOrEmpty(arg)) return false;
+        // 以 / 开头且长度大于 1（排除单纯的 /）
+        // 排除配置参数（如 --key=value 形式）
+        return arg.StartsWith('/') && arg.Length > 1 && !arg.StartsWith("--");
     }
 
     private static IConfiguration BuildConfiguration(string[] args)
     {
+        // 优先使用程序所在目录的 appsettings.json，确保在其他目录启动时也能正确加载配置
+        var baseDir = AppContext.BaseDirectory;
         var builder = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
+            .SetBasePath(baseDir)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json"), optional: true, reloadOnChange: false)
             .AddEnvironmentVariables()
             .AddCommandLine(args);
         return builder.Build();
@@ -107,6 +134,13 @@ class Program
         }
 
         services.AddSingleton<ConsoleAppService>();
-        return services.BuildServiceProvider();
+
+        var sp = services.BuildServiceProvider();
+
+        // 注入 ILoggerFactory 和 STJ 序列化器给 static Logger
+        Logger.SetLogger(sp.GetRequiredService<ILoggerFactory>());
+        Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
+
+        return sp;
     }
 }

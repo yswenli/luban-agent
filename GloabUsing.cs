@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net8.0
 *机器名称：WALLE
@@ -16,6 +16,7 @@
 *****************************************************************************/
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Configuration;
+global using LuBan.AIAgent.Infrastructure;
 global using LuBan.AIAgent.MCP;
 global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Rules;
@@ -23,6 +24,7 @@ global using LuBan.AIAgent.Services;
 global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Common;
+global using LuBan.Logging;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
@@ -36,6 +38,7 @@ global using LubanAgent.Services;
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.DependencyInjection;
+global using Microsoft.Extensions.Logging;
 global using Microsoft.Extensions.Options;
 global using Microsoft.ML.OnnxRuntime;
 global using Microsoft.ML.OnnxRuntime.Tensors;
