@@ -67,11 +67,26 @@ public class ModelManager
             return Task.FromResult(false);
         }
 
+        var tempDir = Path.Combine(Path.GetTempPath(), "LuBanModel_" + Guid.NewGuid().ToString("N"));
         try
         {
             reportStatus?.Invoke($"正在解压模型到 {ModelDirectory}…");
+            Directory.CreateDirectory(tempDir);
+            ZipFile.ExtractToDirectory(LocalZipPath, tempDir);
             Directory.CreateDirectory(ModelDirectory);
-            ZipFile.ExtractToDirectory(LocalZipPath, ModelDirectory, overwriteFiles: true);
+            foreach (var file in _spec.Files)
+            {
+                var fileName = Path.GetFileName(file.LocalName);
+                var source = Directory.EnumerateFiles(tempDir, fileName, SearchOption.AllDirectories).FirstOrDefault();
+                if (source == null)
+                {
+                    reportStatus?.Invoke($"模型包中缺少文件: {fileName}");
+                    return Task.FromResult(false);
+                }
+                var target = Path.Combine(ModelDirectory, file.LocalName);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(source, target, overwrite: true);
+            }
             reportStatus?.Invoke("解压完成");
             return Task.FromResult(IsModelReady());
         }
@@ -80,6 +95,10 @@ public class ModelManager
             Logger.Error("嵌入模型准备失败", ex);
             reportStatus?.Invoke($"解压失败: {ex.Message}");
             return Task.FromResult(false);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
         }
     }
 }

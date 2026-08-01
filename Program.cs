@@ -118,8 +118,10 @@ class Program
         if (!ok || !mm.IsModelReady())
         {
             Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine($"嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用（不影响其他功能）");
             Console.WriteLine($"请将模型包放到: {mm.LocalZipPath}");
+            Console.ResetColor();
             Console.WriteLine();
             return (null, null);
         }
