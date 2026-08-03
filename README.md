@@ -75,12 +75,12 @@
 - 标准 JSON-RPC 协议，无缝对接生态
 
 ### 🧩 多 Agent 任务编排
-- **复合任务自动拆解**：主 Agent 将自然语言任务拆解为 DAG 任务图谱
+- **复合任务自动拆解**：主 Agent 识别复杂任务后自动拆解为 DAG 任务图谱
 - **串行/并行混合编排**：基于拓扑分层，同层节点并行执行，跨层串行执行
 - **SubAgent 调度**：每个 DAG 节点由独立 SubAgent 执行，支持工具组隔离
 - **上下文传递**：节点间通过 `{dep:xxx}` 占位符引用前驱输出
 - **错误处理**：关键节点失败跳过后继，非关键节点失败继续执行
-- **双模式调用**：`/orchestrate` 命令显式编排，或主 Agent 自动调用编排工具
+- **无感集成**：在 `/agi` 对话中自动触发，无需手动切换命令
 
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
@@ -240,7 +240,7 @@ luban-agent-cli /p -l
 - **上/下箭头** - 浏览历史命令
 - **Esc 键** - 清除当前输入
 - **命令前缀** - 所有命令以 `/` 开头
-- **数字快捷键** - 支持数字 1-13 快速选择命令
+- **数字快捷键** - 支持数字 1-12 快速选择命令
 
 ### 命令列表
 
@@ -252,13 +252,12 @@ luban-agent-cli /p -l
 | `/rule` | `/r` | `4` | 查看和管理规则 (-list/-add/-update/-delete/-switch) |
 | `/mcp` | `/mp` | `5` | 查看 MCP 客户端 (-list/-add/-update/-delete/-switch/-connect/-tools) |
 | `/session` | `/se` | `6` | 管理对话会话 (-list/-new/-clear/-switch) |
-| `/agi` | `/a` | `7` | 通用 Agent 对话 |
+| `/agi` | `/a` | `7` | 通用 Agent 对话（支持自动编排复合任务） |
 | `/browse` | `/b` | `8` | 针对网站操作特异化 Agent |
 | `/stats` | `/st` | `9` | 会话与 Token 统计 (-days N, --all 跨工作区) |
-| `/orchestrate` | `/o` | `10` | 复合任务编排（DAG 拆解 + SubAgent 调度） |
-| `/work` | `/w` | `11` | 工作区管理 (-list/-new/-switch/-delete/-info/-authorize) |
-| `/rag` | `/rg` | `12` | 知识库管理 (-new/-index/-search/-list/-delete) |
-| `/exit` | - | `13` | 退出程序 |
+| `/work` | `/w` | `10` | 工作区管理 (-list/-new/-switch/-delete/-info/-authorize) |
+| `/rag` | `/rg` | `11` | 知识库管理 (-new/-index/-search/-list/-delete) |
+| `/exit` | - | `12` | 退出程序 |
 
 ### 子命令简写
 
@@ -353,35 +352,65 @@ luban-agent-cli /p -l
 ...
 ```
 
-### 场景五：复合任务编排
+### 场景五：复合任务自动编排
+
+在 `/agi` 对话中，AI 会自动识别复合任务并启用 DAG 编排：
 
 ```
-> /orchestrate
+> /agi
 
-📝 调研 LuBan 框架并生成对比报告
+👶 调研 LuBan 和 LangChain 两个框架，对比它们的优缺点，生成一份对比报告
+
+💭 思考过程:
+这是一个复合任务，需要拆解为多个子任务并行执行...
 
 🔄 开始规划任务图谱...
 ✓ 规划完成: 已生成 4 个节点的任务图谱
-▶ 开始执行节点: research
-✓ 节点完成: research
-▶ 开始执行节点: analyze
-✓ 节点完成: analyze
-── 第 2 层执行完成 ──
+
+▶ 开始执行节点: research-luban
+  [SubAgent] 调用 web_search 搜索 LuBan 框架特性...
+✓ 节点完成: research-luban
+
+▶ 开始执行节点: research-langchain
+  [SubAgent] 调用 web_search 搜索 LangChain 框架特性...
+✓ 节点完成: research-langchain
+── 第 1 层执行完成（并行） ──
+
 ▶ 开始执行节点: compare
+  [SubAgent] 基于前驱结果进行对比分析...
 ✓ 节点完成: compare
+── 第 2 层执行完成 ──
+
 ▶ 开始执行节点: report
+  [SubAgent] 生成对比报告...
 ✓ 节点完成: report
 ── 第 3 层执行完成 ──
-🎯 编排完成: completed
+
+🎯 编排完成
+
+🤖 对比报告已生成：
+
+## LuBan vs LangChain 对比
+
+### 架构设计
+- **LuBan**: 基于 .NET 生态，深度集成 Microsoft.Extensions.AI...
+- **LangChain**: Python 生态，社区活跃...
+
+### 工具集成
+...
+
+### 推荐场景
+...
 ```
 
 **编排说明**：
 
-- 输入复合任务后，AI 自动拆解为 DAG 任务图谱
+- 输入复合任务后，AI 自动判断是否需要拆解
 - 每个节点由独立 SubAgent 执行，支持工具组隔离
-- 同层节点并行执行，跨层节点串行执行
+- 同层节点并行执行（如同时调研两个框架），跨层节点串行执行
 - 节点间通过 `{dep:xxx}` 占位符传递上下文
 - 流式输出执行进度，实时显示节点状态
+- 无需手动切换命令，在 `/agi` 对话中自然触发
 
 ### 场景六：工作区管理
 
@@ -476,10 +505,9 @@ LubanAgent/
 │   ├── RuleCommand.cs         # 规则管理
 │   ├── MCPCommand.cs          # MCP 客户端管理
 │   ├── SessionCommand.cs      # 会话管理
-│   ├── AgiCommand.cs          # 通用 Agent 对话
+│   ├── AgiCommand.cs          # 通用 Agent 对话（支持自动编排）
 │   ├── BrowseCommand.cs       # 浏览器 Agent
 │   ├── StatsCommand.cs        # 统计信息
-│   ├── OrchestrateCommand.cs  # 复合任务编排
 │   ├── WorkCommand.cs         # 工作区管理
 │   └── RagCommand.cs          # RAG 知识库管理
 ├── Services/              # 核心服务
@@ -552,6 +580,14 @@ LubanAgent/
         "MaxFileSizeKB": 5120,
         "DefaultTopK": 5
       }
+    },
+    "Orchestration": {
+      "Enabled": true,
+      "PlannerType": "Composite",
+      "ExposeAsTool": true,
+      "MaxParallelism": 3,
+      "MaxNodes": 20,
+      "DefaultNodeTimeoutSeconds": 120
     }
   }
 }
@@ -705,7 +741,7 @@ github 可用的工具：
 - 🔌 **MCP 工具集成**，外部 MCP 服务器工具自动暴露给 Agent
 - 📦 通过 `ExternalPlugins` 配置可热加载外部工具插件程序集
 - 🔗 结合 [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/) 可对接 RagFlow / Dify / Coze 等 AI 平台
-- 🧩 **多 Agent 编排**：`/orchestrate` 命令将复合任务拆解为 DAG，SubAgent 串行/并行混合执行，支持关键节点失败跳过、超时控制、上下文传递
+- 🧩 **多 Agent 编排**：`/agi` 对话中 AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行，支持关键节点失败跳过、超时控制、上下文传递
 - 📂 **工作区隔离**：`/work` 命令管理工作区，每个工作区有独立的会话历史与配置目录，切换工作区自动恢复最近会话
 - 🔍 **RAG 知识库**：`/rag` 命令创建知识库工作区，索引 `.txt`/`.md` 文件后通过 `/agi` 自动检索增强问答，不同工作区向量数据完全隔离
 - 📁 **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置，RAG 工作区还会生成默认 `rag-config.json`

@@ -54,7 +54,6 @@ public class ConsoleAppService
         "/agi", "/a",
         "/browse", "/b",
         "/stats", "/st",
-        "/orchestrate", "/o",
         "/work", "/w",
         "/rag", "/rg",
         "/exit"
@@ -74,7 +73,6 @@ public class ConsoleAppService
         ["a"] = "agi",
         ["b"] = "browse",
         ["st"] = "stats",
-        ["o"] = "orchestrate",
         ["w"] = "work",
         ["rg"] = "rag"
     };
@@ -139,7 +137,6 @@ public class ConsoleAppService
         RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, TryExecuteCommandAsync));
         RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager));
         RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
-        RegisterCommand(new OrchestrateCommand(_configManager, _configuration, _serviceProvider));
         RegisterCommand(new WorkCommand(_configManager, _configuration, _workspaceManager, _workspaceRepo, _sessionRepo));
 
         // RagCommand 依赖 IRetrievalService（懒加载：仅当 RAG 启用时可用）
@@ -305,7 +302,6 @@ public class ConsoleAppService
         Console.WriteLine("  /agi /a        - 通用 Agent 对话");
         Console.WriteLine("  /browse /b     - 针对网站操作特异化 Agent");
         Console.WriteLine("  /stats /st     - 会话与 Token 统计 (-days N, --all 跨工作区)");
-        Console.WriteLine("  /orchestrate /o - 复合任务编排（DAG 拆解 + SubAgent 调度）");
         Console.WriteLine("  /work /w       - 工作区管理 (-list/-new/-switch/-delete/-info/-authorize)");
         Console.WriteLine("  /rag /rg       - 知识库管理 (-new/-index/-search/-list/-delete)");
         Console.WriteLine("  /exit          - 退出程序");
@@ -413,10 +409,9 @@ public class ConsoleAppService
                 7 => "agi",
                 8 => "browse",
                 9 => "stats",
-                10 => "orchestrate",
-                11 => "work",
-                12 => "rag",
-                13 => "exit",
+                10 => "work",
+                11 => "rag",
+                12 => "exit",
                 _ => null
             };
         }

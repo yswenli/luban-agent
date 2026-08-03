@@ -148,6 +148,17 @@ class Program
 
         services.AddLuBanAgent(configuration);
 
+        services.AddScoped<LuBan.AIAgent.LuBanAgentFactory>();
+        services.AddScoped<LuBan.AIAgent.ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBan.AIAgent.LuBanAgentFactory>());
+        services.AddScoped<LuBan.AIAgent.Orchestration.SubAgentFactory>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.ContextStore>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.DagScheduler>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.Planner.TemplateTaskPlanner>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.Planner.LlmTaskPlanner>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.Planner.CompositeTaskPlanner>();
+        services.AddScoped<LuBan.AIAgent.Orchestration.Planner.ITaskPlanner>(sp => sp.GetRequiredService<LuBan.AIAgent.Orchestration.Planner.CompositeTaskPlanner>());
+        services.AddScoped<LuBan.AIAgent.Orchestration.IOrchestrator, LuBan.AIAgent.Orchestration.Orchestrator>();
+
         services.AddSingleton<ISessionManager, SessionManager>();
 
         // 注册工作区服务

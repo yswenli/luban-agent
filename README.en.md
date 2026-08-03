@@ -75,12 +75,12 @@ Supports custom Skills to easily extend your unique capabilities.
 - Standard JSON-RPC protocol, seamlessly integrated with the ecosystem
 
 ### 🧩 Multi-Agent Task Orchestration
-- **Composite Task Decomposition**: Main Agent decomposes natural language tasks into DAG task graphs
+- **Composite Task Decomposition**: Main Agent automatically identifies complex tasks and decomposes them into DAG task graphs
 - **Serial/Parallel Hybrid Orchestration**: Layer-based topological sort, parallel within same layer, serial across layers
 - **SubAgent Scheduling**: Each DAG node executed by independent SubAgent with tool group isolation
 - **Context Passing**: Nodes reference predecessor outputs via `{dep:xxx}` placeholders
 - **Error Handling**: Critical node failure skips successors, non-critical failure continues execution
-- **Dual-Mode Invocation**: Explicit orchestration via `/orchestrate` command, or auto-invoked by main Agent
+- **Seamless Integration**: Automatically triggered in `/agi` conversation, no manual command switching needed
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
@@ -240,7 +240,7 @@ luban-agent-cli /p -l
 - **Up/Down Arrows** - Browse command history
 - **Esc Key** - Clear current input
 - **Command Prefix** - All commands start with `/`
-- **Number Shortcuts** - Support numbers 1-13 for quick command selection
+- **Number Shortcuts** - Support numbers 1-12 for quick command selection
 
 ### Command List
 
@@ -252,13 +252,12 @@ luban-agent-cli /p -l
 | `/rule` | `/r` | `4` | View and Manage Rules (-list/-add/-update/-delete/-switch) |
 | `/mcp` | `/mp` | `5` | View MCP Clients (-list/-add/-update/-delete/-switch/-connect/-tools) |
 | `/session` | `/se` | `6` | Manage Chat Sessions (-list/-new/-clear/-switch) |
-| `/agi` | `/a` | `7` | General Agent Conversation |
+| `/agi` | `/a` | `7` | General Agent Conversation (with auto orchestration) |
 | `/browse` | `/b` | `8` | Website-specific Agent Operations |
 | `/stats` | `/st` | `9` | Session & Token Statistics (-days N, --all across workspaces) |
-| `/orchestrate` | `/o` | `10` | Composite Task Orchestration (DAG decomposition + SubAgent scheduling) |
-| `/work` | `/w` | `11` | Workspace Management (-list/-new/-switch/-delete/-info/-authorize) |
-| `/rag` | `/rg` | `12` | Knowledge Base Management (-new/-index/-search/-list/-delete) |
-| `/exit` | - | `13` | Exit Program |
+| `/work` | `/w` | `10` | Workspace Management (-list/-new/-switch/-delete/-info/-authorize) |
+| `/rag` | `/rg` | `11` | Knowledge Base Management (-new/-index/-search/-list/-delete) |
+| `/exit` | - | `12` | Exit Program |
 
 ### Sub-command Shorthand
 
@@ -353,7 +352,67 @@ You: Query the 10 most recent records from the users table
 ...
 ```
 
-### Use Case 5: Workspace Management
+### Use Case 5: Composite Task Auto-Orchestration
+
+In `/agi` conversation, AI automatically identifies composite tasks and triggers DAG orchestration:
+
+```
+> /agi
+
+👶 Research LuBan and LangChain frameworks, compare their pros and cons, and generate a comparison report
+
+💭 Thinking:
+This is a composite task that needs to be decomposed into parallel subtasks...
+
+🔄 Planning task graph...
+✓ Planning complete: Generated 4-node task graph
+
+▶ Starting node: research-luban
+  [SubAgent] Calling web_search for LuBan framework features...
+✓ Node completed: research-luban
+
+▶ Starting node: research-langchain
+  [SubAgent] Calling web_search for LangChain framework features...
+✓ Node completed: research-langchain
+── Layer 1 completed (parallel) ──
+
+▶ Starting node: compare
+  [SubAgent] Comparing based on predecessor results...
+✓ Node completed: compare
+── Layer 2 completed ──
+
+▶ Starting node: report
+  [SubAgent] Generating comparison report...
+✓ Node completed: report
+── Layer 3 completed ──
+
+🎯 Orchestration complete
+
+🤖 Comparison report generated:
+
+## LuBan vs LangChain Comparison
+
+### Architecture
+- **LuBan**: .NET ecosystem, deep integration with Microsoft.Extensions.AI...
+- **LangChain**: Python ecosystem, active community...
+
+### Tool Integration
+...
+
+### Recommended Scenarios
+...
+```
+
+**Orchestration Notes**:
+
+- AI automatically determines whether task decomposition is needed
+- Each node executed by independent SubAgent with tool group isolation
+- Same-layer nodes execute in parallel (e.g., researching two frameworks simultaneously), cross-layer nodes execute serially
+- Context passed between nodes via `{dep:xxx}` placeholders
+- Streaming progress output with real-time node status
+- No manual command switching needed, naturally triggered in `/agi` conversation
+
+### Use Case 6: Workspace Management
 
 ```
 # Create workspace
@@ -392,7 +451,7 @@ Authorize? (y/N): y
 - Switching workspaces automatically restores the most recent session for that workspace
 - After authorization, AI Agent can access the root directory and its subdirectories
 
-### Use Case 6: RAG Knowledge Base Q&A
+### Use Case 7: RAG Knowledge Base Q&A
 
 ```
 # 1. Create RAG knowledge base
@@ -446,10 +505,9 @@ LubanAgent/
 │   ├── RuleCommand.cs         # Rule management
 │   ├── MCPCommand.cs          # MCP client management
 │   ├── SessionCommand.cs      # Session management
-│   ├── AgiCommand.cs          # General Agent conversation
+│   ├── AgiCommand.cs          # General Agent conversation (with auto orchestration)
 │   ├── BrowseCommand.cs       # Browser Agent
 │   ├── StatsCommand.cs        # Statistics
-│   ├── OrchestrateCommand.cs  # Composite task orchestration
 │   ├── WorkCommand.cs         # Workspace management
 │   └── RagCommand.cs          # RAG knowledge base management
 ├── Services/              # Core services
@@ -522,6 +580,14 @@ LubanAgent/
         "MaxFileSizeKB": 5120,
         "DefaultTopK": 5
       }
+    },
+    "Orchestration": {
+      "Enabled": true,
+      "PlannerType": "Composite",
+      "ExposeAsTool": true,
+      "MaxParallelism": 3,
+      "MaxNodes": 20,
+      "DefaultNodeTimeoutSeconds": 120
     }
   }
 }
@@ -675,7 +741,7 @@ Available tools for github:
 - 🔌 **MCP Tool Integration** - external MCP server tools automatically exposed to Agent
 - 📦 Hot-load external tool plugin assemblies via `ExternalPlugins` configuration
 - 🔗 Integrate with RagFlow / Dify / Coze and other AI platforms via [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/)
-- 🧩 **Multi-Agent Orchestration**: `/orchestrate` command decomposes composite tasks into DAG, SubAgents execute in serial/parallel hybrid mode, with critical node failure skipping, timeout control, and context passing
+- 🧩 **Multi-Agent Orchestration**: In `/agi` conversation, AI automatically identifies composite tasks, decomposes them into DAG, and SubAgents execute in serial/parallel hybrid mode, with critical node failure skipping, timeout control, and context passing
 - 📂 **Workspace Isolation**: `/work` command manages workspaces, each with its own session history and config directory; switching workspaces auto-restores the most recent session
 - 🔍 **RAG Knowledge Base**: `/rag` command creates knowledge base workspaces; after indexing `.txt`/`.md` files, `/agi` auto-retrieves and augments Q&A; vector data is fully isolated across workspaces
 - 📁 **Workspace Config Directory**: Each workspace root automatically creates `.luban-agent/` for custom `skills`, `rules`, `mcps` configurations; RAG workspaces also generate a default `rag-config.json`

@@ -105,6 +105,7 @@ public class AgiCommand : CommandBase
         else
         {
             Console.WriteLine("可用工具: 文件系统、脚本执行、浏览器、数据库、Redis、Web请求");
+            Console.WriteLine("复合任务: AI 会自动拆解为 DAG 并调度 SubAgent 并行执行");
         }
         Console.WriteLine("提示: AI 会自动判断是否需要使用工具来回答你的问题");
         Console.WriteLine("      危险操作（写入、删除、执行脚本）需要用户确认");
