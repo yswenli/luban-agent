@@ -74,11 +74,34 @@ public abstract class AgentProfile
         await RegisterRulesAsync(ruleEngine, workspace);
         await RegisterMcpServersAsync(pluginRegistry, workspace);
 
+        // 将工作区上下文注入系统提示词，使 AI 能使用绝对路径调用工具
+        var fullPrompt = BuildFullPrompt(workspace);
+
         return await factory.CreateAsync(
             modelName: modelName,
-            systemPrompt: SystemPrompt,
+            systemPrompt: fullPrompt,
             toolGroups: ToolGroups,
             useSessionHistory: true);
+    }
+
+    /// <summary>
+    /// 构建包含工作区上下文的完整系统提示词。
+    /// </summary>
+    private string BuildFullPrompt(WorkspaceInfo workspace)
+    {
+        var sb = new System.Text.StringBuilder(SystemPrompt);
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("## 当前工作区");
+        sb.AppendLine($"- 名称: {workspace.Name}");
+        sb.AppendLine($"- 根目录: {workspace.RootPath}");
+        sb.AppendLine($"- 类型: {workspace.Type}");
+        sb.AppendLine();
+        sb.AppendLine("## 路径使用说明");
+        sb.AppendLine("- 搜索文件/内容时，rootPath 参数请使用工作区根目录的绝对路径，或使用 \".\" （已设置为根目录）");
+        sb.AppendLine($"- 示例: Grep(rootPath=\"{workspace.RootPath}\", pattern=\"关键字\")");
+        sb.AppendLine("- 示例: ListDirectory(path=\".\") 或 ListDirectory(path=\"" + workspace.RootPath + "\")");
+        return sb.ToString();
     }
 
     /// <summary>

@@ -163,6 +163,33 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
+    /// 判断路径是否在当前工作区根目录内。
+    /// 供 ToolConfirmationService 回调使用，判断文件操作是否需要确认。
+    /// </summary>
+    /// <param name="path">要检查的路径。</param>
+    /// <returns>若当前存在工作区且路径在其根目录子树内返回 true，否则返回 false。</returns>
+    public static bool IsWithinWorkspace(string path)
+    {
+        var ws = Current;
+        if (ws == null || string.IsNullOrEmpty(ws.RootPath) || string.IsNullOrEmpty(path))
+            return false;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var rootPath = Path.GetFullPath(ws.RootPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return fullPath.StartsWith(rootPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || fullPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 当前工作区
     /// </summary>
     public WorkspaceInfo? CurrentWorkspace => Current;
@@ -235,18 +262,38 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         if (newCurrent.IsAuthorized)
             AddWorkspaceRootToPathGuard(newCurrent.RootPath);
 
-        // 4. 恢复最近活跃会话
+        // 4. 设置进程当前工作目录为工作区根目录
+        //    使 PathGuard 的相对路径解析、脚本工具的默认 workingDirectory 都指向工作区
+        SetCurrentDirectory(newCurrent.RootPath);
+
+        // 5. 恢复最近活跃会话
         var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId);
         if (latest != null)
             await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
         else
             _sessionManager.ClearCurrentSession();
 
-        // 5. 确保配置目录存在
+        // 6. 确保配置目录存在
         await EnsureConfigDirectoryAsync(newCurrent);
 
-        // 6. 更新 LastActiveAt
+        // 7. 更新 LastActiveAt
         await _repo.UpdateLastActiveAtAsync(workspaceId);
+    }
+
+    /// <summary>
+    /// 设置进程当前工作目录（使相对路径和脚本默认工作目录指向工作区根目录）
+    /// </summary>
+    private static void SetCurrentDirectory(string rootPath)
+    {
+        try
+        {
+            if (Directory.Exists(rootPath))
+                Directory.SetCurrentDirectory(rootPath);
+        }
+        catch
+        {
+            // 工作目录设置失败不阻断工作区切换，仅影响相对路径解析
+        }
     }
 
     /// <summary>
@@ -295,6 +342,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         }
 
         AddWorkspaceRootToPathGuard(workspace.RootPath);
+        SetCurrentDirectory(workspace.RootPath);
         AnsiConsole.MarkupLine("[green]✓ 已授权工作区[/]");
         return true;
     }

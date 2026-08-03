@@ -384,22 +384,30 @@ public class ProviderCommand : CommandBase
         Console.WriteLine("已配置的 Provider:");
 
         var providers = ConfigManager.Providers;
-        if (providers.Count == 0)
+        Console.ForegroundColor = ConsoleColor.Green;
+        try
         {
-            Console.WriteLine("  (暂无)");
-        }
-        else
-        {
-            foreach (var p in providers)
+            if (providers.Count == 0)
             {
-                var displayName = GetProviderDisplayName(p.Name);
-                var maskedKey = MaskApiKey(p.ApiKey);
-                var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
-                Console.WriteLine($"  - {displayName}{isCurrent}");
-                Console.WriteLine($"      API Key: {maskedKey}");
-                if (!string.IsNullOrEmpty(p.BaseUrl))
-                    Console.WriteLine($"      Base URL: {p.BaseUrl}");
+                Console.WriteLine("  (暂无)");
             }
+            else
+            {
+                foreach (var p in providers)
+                {
+                    var displayName = GetProviderDisplayName(p.Name);
+                    var maskedKey = MaskApiKey(p.ApiKey);
+                    var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
+                    Console.WriteLine($"  - {displayName}{isCurrent}");
+                    Console.WriteLine($"      API Key: {maskedKey}");
+                    if (!string.IsNullOrEmpty(p.BaseUrl))
+                        Console.WriteLine($"      Base URL: {p.BaseUrl}");
+                }
+            }
+        }
+        finally
+        {
+            Console.ResetColor();
         }
 
         return Task.FromResult(true);

@@ -371,7 +371,7 @@ luban-agent-cli /p -l
 ```
 > /agi
 
-👶 调研 LuBan 和 LangChain 两个框架，对比它们的优缺点，生成一份对比报告
+👶 调研 LuBan-Framework 和 Luban-Agent 两个项目，对比它们的优缺点，生成一份对比报告
 
 💭 思考过程:
 这是一个复合任务，需要拆解为多个子任务并行执行...

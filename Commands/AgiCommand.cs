@@ -147,13 +147,17 @@ public class AgiCommand : CommandBase
                 return confirmed;
             };
 
+            // 注册工作区路径检查回调，用于判断文件操作是否在工作区内
+            ToolConfirmationService.WorkspacePathChecker = (path) =>
+                WorkspaceManager.IsWithinWorkspace(path);
+
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
             var ruleEngine = serviceProvider.GetRequiredService<RuleEngine>();
             var pluginRegistry = serviceProvider.GetRequiredService<ToolPluginRegistry>();
 
             // 创建 Agent（Profile 内部注册 Rules/McpServers 后调用工厂）
-            var agent = await profile.CreateAgentAsync(
-                agentFactory, ConfigManager.SelectedModel, workspace, ruleEngine, pluginRegistry);
+            var modelName = ConfigManager.SelectedModel ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
+            var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
 
             Console.WriteLine("✓ 工具插件已加载（根据 appsettings.json 配置启用）");
             Console.WriteLine();
@@ -170,6 +174,7 @@ public class AgiCommand : CommandBase
         {
             // 清理确认回调
             ToolConfirmationService.ConfirmationCallback = null;
+            ToolConfirmationService.WorkspacePathChecker = null;
         }
     }
 
@@ -272,6 +277,28 @@ public class AgiCommand : CommandBase
                                 Console.WriteLine($"  {toolInfo}");
                                 toolCalls.Add(toolInfo);
                             }
+                            else if (content is Microsoft.Extensions.AI.FunctionResultContent functionResult)
+                            {
+                                // 显示工具执行结果摘要，避免用户看不到工具输出
+                                var resultObj = functionResult.Result;
+                                string resultSummary;
+                                if (resultObj is Exception ex)
+                                {
+                                    resultSummary = $"异常: {ex.Message}";
+                                }
+                                else
+                                {
+                                    resultSummary = resultObj?.ToString() ?? "(空结果)";
+                                }
+                                // 替换换行符避免破坏控制台格式
+                                resultSummary = resultSummary.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
+                                if (resultSummary.Length > 200)
+                                {
+                                    resultSummary = resultSummary.Substring(0, 200) + "...";
+                                }
+                                Console.ForegroundColor = ConsoleColor.DarkGray;
+                                Console.WriteLine($"  → 结果: {resultSummary}");
+                            }
                             else if (content is TextContent text && !string.IsNullOrWhiteSpace(text.Text))
                             {
                                 if (!hasAnswerContent)
@@ -326,8 +353,17 @@ public class AgiCommand : CommandBase
 
                 if (!hasAnswerContent && string.IsNullOrEmpty(finalResponse))
                 {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine("（无响应）");
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    if (hasToolCalls)
+                    {
+                        Console.WriteLine($"⚠️  模型进行了 {toolCalls.Count} 次工具调用后未生成最终回复（可能已达 MaxToolLoopIterations 上限）。");
+                        Console.WriteLine("   可尝试：1) 提高 appsettings.json 中的 MaxToolLoopIterations；2) 简化任务或拆分为多轮对话。");
+                    }
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine("（无响应）");
+                    }
                     Console.ResetColor();
                 }
 
