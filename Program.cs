@@ -31,6 +31,10 @@ class Program
         var configuration = BuildConfiguration(args);
         // 先将全局配置设置到 ConfigUtil，确保 LuBanOrm 静态构造时能从程序目录加载 appsettings.json
         configuration.InitConfigUtil();
+        
+        // 初始化 ProviderHelper，从配置文件加载 Provider 配置
+        ProviderHelper.Initialize(configuration);
+        
         DatabaseInitializer.Initialize();
 
         var (embedder, modelManager) = await PrepareRetrievalAsync(configuration);

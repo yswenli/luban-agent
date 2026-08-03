@@ -96,126 +96,89 @@ public class ProviderCommand : CommandBase
     /// </summary>
     /// <param name="args">未使用的参数</param>
     /// <returns>是否已处理</returns>
+    private static readonly (string Name, string DisplayName, bool NeedCustomEndpoint, bool NeedCustomApiKey, string? Warning)[] BuiltinProviders =
+    {
+        ("openai", "OpenAI", false, false, null),
+        ("azure", "Azure OpenAI", true, false, null),
+        ("deepseek", "DeepSeek", false, false, null),
+        ("kimi", "Kimi (Moonshot)", false, false, null),
+        ("glm", "智谱 GLM", false, false, null),
+        ("qwen", "通义千问", false, false, null),
+        ("doubao", "豆包", false, false, null),
+        ("claude", "Claude", false, false, "注意: Claude 使用 Anthropic Messages API，与 OpenAI 格式不同。\n如需使用 Claude，请通过第三方代理（如 one-api）转换为 OpenAI 兼容格式。"),
+        ("gemini", "Google Gemini", false, false, null),
+        ("ollama", "Ollama (本地)", true, true, null),
+        ("minimax", "MiniMax", false, false, null),
+        ("ark", "字节方舟 (火山引擎)", false, false, null),
+        ("bailian", "阿里百炼", false, false, null),
+        ("hunyuan", "腾讯混元", false, false, null),
+        ("mimo", "小米 MiMo", false, false, null),
+    };
+
     private Task<bool> ExecuteAddAsync(string[] args)
     {
         Console.WriteLine();
         Console.WriteLine("选择 Provider 类型:");
-        Console.WriteLine("  1. OpenAI");
-        Console.WriteLine("  2. Azure OpenAI");
-        Console.WriteLine("  3. DeepSeek");
-        Console.WriteLine("  4. Kimi (Moonshot)");
-        Console.WriteLine("  5. 智谱 GLM");
-        Console.WriteLine("  6. 通义千问");
-        Console.WriteLine("  7. 豆包");
-        Console.WriteLine("  8. Claude");
-        Console.WriteLine("  9. Google Gemini");
-        Console.WriteLine("  10. Ollama (本地)");
-        Console.WriteLine("  11. 自定义 OpenAI 兼容 API");
-        Console.Write("请选择 (1-11): ");
+        for (int i = 0; i < BuiltinProviders.Length; i++)
+        {
+            var (_, displayName, _, _, _) = BuiltinProviders[i];
+            Console.WriteLine($"  {i + 1}. {displayName}");
+        }
+        Console.WriteLine($"  {BuiltinProviders.Length + 1}. 自定义 OpenAI 兼容 API");
+        Console.Write($"请选择 (1-{BuiltinProviders.Length + 1}): ");
 
         var choice = Console.ReadLine()?.Trim();
+        if (!int.TryParse(choice, out var choiceIndex) || choiceIndex < 1 || choiceIndex > BuiltinProviders.Length + 1)
+        {
+            WriteError("无效选择");
+            return Task.FromResult(false);
+        }
 
         string providerName;
         string apiKey;
         string? baseUrl = null;
 
-        // 根据选择的 Provider 类型设置默认 BaseUrl
-        // 注意: OpenAI SDK 的 Endpoint 属性是完整的基础 URL，SDK 会直接在其后拼接 /chat/completions
-        // 因此 BaseUrl 必须包含 API 版本路径（如 /v1）
-        switch (choice)
+        if (choiceIndex == BuiltinProviders.Length + 1)
         {
-            case "1":
-                providerName = "openai";
-                Console.Write("请输入 OpenAI API Key: ");
-                apiKey = ReadPassword();
-                break;
+            Console.WriteLine();
+            Console.Write("请输入 Provider 名称: ");
+            providerName = Console.ReadLine()?.Trim()?.ToLower() ?? "custom";
+            Console.Write("请输入 API Key: ");
+            apiKey = ReadPassword();
+            Console.Write("请输入 API Base URL: ");
+            baseUrl = Console.ReadLine()?.Trim();
+        }
+        else
+        {
+            var (name, displayName, needCustomEndpoint, needCustomApiKey, warning) = BuiltinProviders[choiceIndex - 1];
+            providerName = name;
 
-            case "2":
-                providerName = "azure";
-                Console.Write("请输入 Azure OpenAI API Key: ");
-                apiKey = ReadPassword();
-                Console.Write("请输入 Azure OpenAI Endpoint (如 https://your-resource.openai.azure.com): ");
-                baseUrl = Console.ReadLine()?.Trim();
-                break;
-
-            case "3":
-                providerName = "deepseek";
-                Console.Write("请输入 DeepSeek API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://api.deepseek.com/v1";
-                break;
-
-            case "4":
-                providerName = "kimi";
-                Console.Write("请输入 Kimi API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://api.moonshot.cn/v1";
-                break;
-
-            case "5":
-                providerName = "glm";
-                Console.Write("请输入智谱 API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://open.bigmodel.cn/api/paas/v4";
-                break;
-
-            case "6":
-                providerName = "qwen";
-                Console.Write("请输入通义千问 API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-                break;
-
-            case "7":
-                providerName = "doubao";
-                Console.Write("请输入豆包 API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://ark.cn-beijing.volces.com/api/v3";
-                break;
-
-            case "8":
-                providerName = "claude";
-                Console.Write("请输入 Claude API Key: ");
-                apiKey = ReadPassword();
+            if (!string.IsNullOrEmpty(warning))
+            {
                 Console.WriteLine();
-                Console.WriteLine("注意: Claude 使用 Anthropic Messages API，与 OpenAI 格式不同。");
-                Console.WriteLine("如需使用 Claude，请通过第三方代理（如 one-api）转换为 OpenAI 兼容格式。");
-                Console.WriteLine("或者选择 '自定义 OpenAI 兼容 API' 手动配置代理地址。");
-                Console.Write("请输入 Claude 代理地址 (留空则使用默认，可能无法工作): ");
+                Console.WriteLine(warning);
+            }
+
+            Console.Write($"请输入 {displayName} API Key: ");
+            apiKey = needCustomApiKey ? (Console.ReadLine()?.Trim() ?? "") : ReadPassword();
+
+            if (needCustomEndpoint)
+            {
+                var defaultUrl = name switch
+                {
+                    "azure" => "https://your-resource.openai.azure.com",
+                    "ollama" => "http://localhost:11434/v1",
+                    _ => ""
+                };
+                Console.Write($"请输入 API 地址 (默认 {defaultUrl}): ");
                 baseUrl = Console.ReadLine()?.Trim();
                 if (string.IsNullOrEmpty(baseUrl))
-                    baseUrl = "https://api.anthropic.com/v1";
-                break;
-
-            case "9":
-                providerName = "gemini";
-                Console.Write("请输入 Google AI API Key: ");
-                apiKey = ReadPassword();
-                baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
-                break;
-
-            case "10":
-                providerName = "ollama";
-                apiKey = "ollama";
-                Console.Write("请输入 Ollama 服务地址 (默认 http://localhost:11434/v1): ");
-                baseUrl = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(baseUrl))
-                    baseUrl = "http://localhost:11434/v1";
-                break;
-
-            case "11":
-                Console.WriteLine();
-                Console.Write("请输入 Provider 名称: ");
-                providerName = Console.ReadLine()?.Trim()?.ToLower() ?? "custom";
-                Console.Write("请输入 API Key: ");
-                apiKey = ReadPassword();
-                Console.Write("请输入 API Base URL: ");
-                baseUrl = Console.ReadLine()?.Trim();
-                break;
-
-            default:
-                WriteError("无效选择");
-                return Task.FromResult(false);
+                    baseUrl = defaultUrl;
+            }
+            else
+            {
+                baseUrl = SelectEndpoint(providerName);
+            }
         }
 
         if (string.IsNullOrEmpty(apiKey))
@@ -228,14 +191,18 @@ public class ProviderCommand : CommandBase
         {
             ConfigManager.AddProvider(providerName, apiKey, baseUrl);
 
-            var displayName = ProviderModels.GetDisplayName(providerName);
-            var models = ProviderModels.GetModels(providerName);
+            var displayName = GetProviderDisplayName(providerName);
+            var models = LubanAgent.Services.ProviderHelper.GetModels(providerName);
 
             WriteSuccess($"Provider '{displayName}' 已添加并保存");
 
             if (models.Count > 0)
             {
                 Console.WriteLine($"  支持的模型: {string.Join(", ", models.Take(5))}{(models.Count > 5 ? "..." : "")}");
+            }
+            else
+            {
+                Console.WriteLine("  提示: 该 Provider 没有预设模型，请使用 /model -add 添加自定义模型");
             }
         }
         catch (Exception ex)
@@ -245,6 +212,38 @@ public class ProviderCommand : CommandBase
         }
 
         return Task.FromResult(true);
+    }
+
+    private static string? SelectEndpoint(string providerName)
+    {
+        var endpoints = LubanAgent.Services.ProviderHelper.GetEndpoints(providerName);
+        if (endpoints.Count == 0)
+            return null;
+
+        if (endpoints.Count == 1)
+            return endpoints[0].Url;
+
+        Console.WriteLine();
+        Console.WriteLine($"{ProviderHelper.GetDisplayName(providerName)} API 地址选择:");
+        for (int i = 0; i < endpoints.Count; i++)
+        {
+            Console.WriteLine($"  {i + 1}. {endpoints[i].Description} ({endpoints[i].Url})");
+        }
+        Console.Write($"请选择 (1-{endpoints.Count}): ");
+        var epChoice = Console.ReadLine()?.Trim();
+        if (int.TryParse(epChoice, out var epIndex) && epIndex >= 1 && epIndex <= endpoints.Count)
+        {
+            return endpoints[epIndex - 1].Url;
+        }
+        return endpoints[0].Url;
+    }
+
+    /// <summary>
+    /// 获取 Provider 显示名称，优先使用库中的定义，否则使用自定义名称
+    /// </summary>
+    private static string GetProviderDisplayName(string providerName)
+    {
+        return LubanAgent.Services.ProviderHelper.GetDisplayName(providerName);
     }
 
     /// <summary>
@@ -267,7 +266,7 @@ public class ProviderCommand : CommandBase
         for (int i = 0; i < providers.Count; i++)
         {
             var p = providers[i];
-            Console.WriteLine($"  {i + 1}. {ProviderModels.GetDisplayName(p.Name)}");
+            Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}");
         }
 
         Console.Write("请选择 (1-{0}): ", providers.Count);
@@ -281,7 +280,7 @@ public class ProviderCommand : CommandBase
 
         var provider = providers[index - 1];
         Console.WriteLine();
-        Console.WriteLine($"更新 {ProviderModels.GetDisplayName(provider.Name)}:");
+        Console.WriteLine($"更新 {GetProviderDisplayName(provider.Name)}:");
         Console.WriteLine($"  当前 API Key: {MaskApiKey(provider.ApiKey)}");
         Console.WriteLine($"  当前 Base URL: {provider.BaseUrl ?? "(默认)"}");
         Console.WriteLine();
@@ -299,7 +298,7 @@ public class ProviderCommand : CommandBase
         try
         {
             ConfigManager.AddProvider(provider.Name, newApiKey, newBaseUrl);
-            WriteSuccess($"Provider '{ProviderModels.GetDisplayName(provider.Name)}' 已更新");
+            WriteSuccess($"Provider '{GetProviderDisplayName(provider.Name)}' 已更新");
         }
         catch (Exception ex)
         {
@@ -330,7 +329,7 @@ public class ProviderCommand : CommandBase
         for (int i = 0; i < providers.Count; i++)
         {
             var p = providers[i];
-            Console.WriteLine($"  {i + 1}. {ProviderModels.GetDisplayName(p.Name)}");
+            Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}");
         }
 
         Console.Write("请选择 (1-{0}): ", providers.Count);
@@ -344,7 +343,7 @@ public class ProviderCommand : CommandBase
 
         var provider = providers[index - 1];
         
-        Console.Write($"确定要删除 {ProviderModels.GetDisplayName(provider.Name)} 吗？(y/N): ");
+        Console.Write($"确定要删除 {GetProviderDisplayName(provider.Name)} 吗？(y/N): ");
         var confirm = Console.ReadLine()?.Trim().ToLower();
         if (confirm != "y" && confirm != "yes")
         {
@@ -364,7 +363,7 @@ public class ProviderCommand : CommandBase
                 Console.WriteLine("  注意: 已清除当前选择的模型（因为该模型属于被删除的 Provider）");
             }
             
-            WriteSuccess($"Provider '{ProviderModels.GetDisplayName(provider.Name)}' 已删除");
+            WriteSuccess($"Provider '{GetProviderDisplayName(provider.Name)}' 已删除");
         }
         catch (Exception ex)
         {
@@ -393,7 +392,7 @@ public class ProviderCommand : CommandBase
         {
             foreach (var p in providers)
             {
-                var displayName = ProviderModels.GetDisplayName(p.Name);
+                var displayName = GetProviderDisplayName(p.Name);
                 var maskedKey = MaskApiKey(p.ApiKey);
                 var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
                 Console.WriteLine($"  - {displayName}{isCurrent}");
@@ -440,7 +439,7 @@ public class ProviderCommand : CommandBase
             {
                 var p = providers[i];
                 var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
-                Console.WriteLine($"  {i + 1}. {ProviderModels.GetDisplayName(p.Name)}{isCurrent}");
+                Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}{isCurrent}");
             }
 
             Console.Write("请选择 (1-{0}): ", providers.Count);
@@ -455,7 +454,8 @@ public class ProviderCommand : CommandBase
             providerName = providers[index - 1].Name;
         }
 
-        var allModels = ConfigManager.GetAllModels(providerName);
+        var provider = ConfigManager.GetProvider(providerName);
+        var allModels = LubanAgent.Services.ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
         
         // 如果 Provider 没有预定义模型，让用户手动输入模型名称
         if (allModels.Count == 0)
@@ -470,12 +470,12 @@ public class ProviderCommand : CommandBase
             }
 
             ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
-            WriteSuccess($"已切换到 {ProviderModels.GetDisplayName(providerName)}，模型: {modelName}");
+            WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {modelName}");
             return Task.FromResult(true);
         }
 
         Console.WriteLine();
-        Console.WriteLine($"{ProviderModels.GetDisplayName(providerName)} 可用模型:");
+        Console.WriteLine($"{GetProviderDisplayName(providerName)} 可用模型:");
         for (int i = 0; i < allModels.Count; i++)
         {
             var isSelected = ConfigManager.SelectedModel == $"{providerName}:{allModels[i]}" ? " (已选)" : "";
@@ -493,7 +493,7 @@ public class ProviderCommand : CommandBase
 
         var selectedModel = allModels[modelIndex - 1];
         ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
-        WriteSuccess($"已切换到 {ProviderModels.GetDisplayName(providerName)}，模型: {selectedModel}");
+        WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {selectedModel}");
 
         return Task.FromResult(true);
     }

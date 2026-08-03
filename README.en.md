@@ -36,7 +36,8 @@ This isn't science fiction—this is **LuBan Agent**.
 ## ✨ Core Features
 
 ### 🤖 Multi-Model Routing
-- **11 AI Provider Support**: OpenAI, Azure, DeepSeek, Kimi, GLM, Qwen, Doubao, Claude, Gemini, Ollama, plus custom OpenAI-compatible API
+- **16 AI Provider Support**: OpenAI, Azure, DeepSeek, Kimi, GLM, Qwen, Doubao, Claude, Gemini, Ollama, MiniMax, Volcengine Ark, Alibaba Bailian, Tencent Hunyuan, Xiaomi MiMo, plus custom OpenAI-compatible API
+- **Multiple Endpoints**: Some providers offer multiple API endpoints (e.g., Kimi has domestic, overseas, and coding-specific addresses), selectable during setup
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
@@ -146,11 +147,22 @@ Select Provider type:
   8. Claude
   9. Google Gemini
   10. Ollama (Local)
-  11. Custom OpenAI-Compatible API
-Select (1-11): 1
-Enter OpenAI API Key: ********
-✓ Provider 'OpenAI' added and saved
-  Supported models: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o...
+  11. MiniMax
+  12. Volcengine Ark
+  13. Alibaba Bailian
+  14. Tencent Hunyuan
+  15. Xiaomi MiMo
+  16. Custom OpenAI-Compatible API
+Select (1-16): 4
+Enter Kimi API Key: ********
+
+Kimi API endpoint selection:
+  1. Domestic (https://api.moonshot.cn/v1) - Recommended
+  2. Overseas (https://api.moonshot.ai/v1)
+  3. Coding-specific (https://api.kimi.com/coding/v1)
+Select (1-3): 1
+✓ Provider 'Kimi' added and saved
+  Supported models: k3, k3-256k, kimi-for-coding, kimi-for-coding-highspeed
 ```
 
 > **Security Note**: API Key input is hidden (password input mode)
@@ -731,6 +743,7 @@ Available tools for github:
 ## 💡 Tips
 
 - 💬 Model routing uses `provider:model` format; add new providers via `/provider -add`
+- 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
 - 📌 **Direct command-line execution supported**: `luban-agent-cli /se -s "New Session"` runs a single command from any directory and exits, no interactive menu needed (see [Command Reference](#-command-reference))
 - 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, database, Redis, web requests, and semantic retrieval
 - ⚠️ **ToolConfirmationService** automatically requests user confirmation for dangerous operations (write, delete, execute)
