@@ -37,7 +37,7 @@
 	<ItemGroup>
 		<Content Include="favicon.ico" />
 		<Content Include="Model\bge-small-zh-v1.5.zip">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
 
