@@ -185,7 +185,9 @@ public class AgiCommand : CommandBase
     {
         while (true)
         {
+            Console.ForegroundColor = ConsoleColor.Blue;
             Console.Write("👶 ");
+            Console.ResetColor();
             var input = Console.ReadLine()?.Trim();
 
             if (string.IsNullOrEmpty(input))
@@ -246,11 +248,11 @@ public class AgiCommand : CommandBase
                                 {
                                     if (!hasThinkingContent)
                                     {
-                                        Console.ForegroundColor = ConsoleColor.Gray;
+                                        Console.ForegroundColor = ConsoleColor.DarkGray;
                                         Console.WriteLine("💭 思考过程:");
                                         hasThinkingContent = true;
                                     }
-                                    Console.ForegroundColor = ConsoleColor.Gray;
+                                    Console.ForegroundColor = ConsoleColor.DarkGray;
                                     Console.Write(reasoning.Text);
                                 }
                             }
@@ -262,7 +264,7 @@ public class AgiCommand : CommandBase
                                     {
                                         Console.WriteLine();
                                     }
-                                    Console.ForegroundColor = ConsoleColor.Gray;
+                                    Console.ForegroundColor = ConsoleColor.DarkGray;
                                     Console.WriteLine("工具调用过程:");
                                     hasToolCalls = true;
                                 }
@@ -273,7 +275,7 @@ public class AgiCommand : CommandBase
                                     if (functionCall.Arguments.Count > 3) args += ", ...";
                                     toolInfo += $"({args})";
                                 }
-                                Console.ForegroundColor = ConsoleColor.Gray;
+                                Console.ForegroundColor = ConsoleColor.DarkGray;
                                 Console.WriteLine($"  {toolInfo}");
                                 toolCalls.Add(toolInfo);
                             }
@@ -308,11 +310,11 @@ public class AgiCommand : CommandBase
                                         Console.WriteLine();
                                         Console.ResetColor();
                                     }
-                                    Console.ForegroundColor = ConsoleColor.Blue;
+                                    Console.ForegroundColor = ConsoleColor.Green;
                                     Console.Write("🤖 ");
                                     hasAnswerContent = true;
                                 }
-                                Console.ForegroundColor = ConsoleColor.Blue;
+                                Console.ForegroundColor = ConsoleColor.Green;
                                 Console.Write(text.Text);
                                 finalResponseBuilder.Append(text.Text);
                             }
