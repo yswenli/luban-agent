@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins;
+using LuBan.AIAgent.Skills;
 
 namespace LubanAgent.Commands;
 
@@ -26,6 +27,7 @@ public class AgiCommand : CommandBase
     private readonly ISessionManager _sessionManager;
     private readonly IServiceProvider _serviceProvider;
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly SkillRegistry _skillRegistry;
     private readonly Func<string, Task<bool>>? _executeCommandAsync;
 
     /// <summary>
@@ -41,12 +43,13 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, IWorkspaceManager workspaceManager, Func<string, Task<bool>>? executeCommandAsync = null)
+    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, IWorkspaceManager workspaceManager, SkillRegistry skillRegistry, Func<string, Task<bool>>? executeCommandAsync = null)
         : base(configManager, configuration)
     {
         _sessionManager = sessionManager;
         _serviceProvider = serviceProvider;
         _workspaceManager = workspaceManager;
+        _skillRegistry = skillRegistry;
         _executeCommandAsync = executeCommandAsync;
     }
 
@@ -95,6 +98,12 @@ public class AgiCommand : CommandBase
 
         // 5. 确保工作区配置目录存在（配置由 AgentProfile 按需加载）
         await _workspaceManager.EnsureConfigDirectoryAsync(workspace);
+
+        // 6. 加载文件级 Skill（项目级 + 用户级）
+        var workspaceSkillsDir = workspace.ConfigPath != null
+            ? Path.Combine(workspace.RootPath, workspace.ConfigPath, "skills")
+            : null;
+        _skillRegistry.LoadFileSkills(workspaceSkillsDir);
 
         Console.WriteLine();
         Console.WriteLine($"工作区: {workspace.Name} ({workspace.RootPath})");
@@ -159,11 +168,13 @@ public class AgiCommand : CommandBase
             var modelName = ConfigManager.SelectedModel ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
             var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
 
+            Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("✓ 工具插件已加载（根据 appsettings.json 配置启用）");
+            Console.ResetColor();
             Console.WriteLine();
 
             // 运行聊天循环（RAG 工作区带自动检索注入）
-            await RunChatLoop(agent, profile, workspace, serviceProvider);
+            await RunChatLoop(agent, profile, workspace, serviceProvider, agentFactory, ruleEngine, pluginRegistry, modelName);
         }
         catch (Exception ex)
         {
@@ -181,10 +192,18 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 运行对话循环，支持工具调用显示、ESC 取消和 / 命令
     /// </summary>
-    private async Task RunChatLoop(LuBanAgent agent, AgentProfile profile, WorkspaceInfo workspace, IServiceProvider serviceProvider)
+    private async Task RunChatLoop(LuBanAgent agent, AgentProfile profile, WorkspaceInfo workspace, IServiceProvider serviceProvider, ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry, string modelName)
     {
+        bool autoActivationAttempted = false;
         while (true)
         {
+            // 显示当前激活的 Skill
+            if (profile.ActiveSkill != null)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkCyan;
+                Console.Write($"[{profile.ActiveSkill.Name}] ");
+                Console.ResetColor();
+            }
             Console.ForegroundColor = ConsoleColor.Blue;
             Console.Write("👶 ");
             Console.ResetColor();
@@ -196,12 +215,60 @@ public class AgiCommand : CommandBase
             if (input.ToLower() == "exit")
                 break;
 
-            // 处理 / 命令
+            // 拦截 /skill -switch 和 /skill -off 命令（对话内切换 Skill）
+            if (input.StartsWith("/skill ", StringComparison.OrdinalIgnoreCase) || input.Equals("/skill", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    var subCmd = parts[1].ToLower();
+                    if (subCmd == "-switch" || subCmd == "-s")
+                    {
+                        agent = await HandleSkillSwitchAsync(agent, profile, workspace, agentFactory, ruleEngine, pluginRegistry, modelName);
+                        continue;
+                    }
+                    else if (subCmd == "-off")
+                    {
+                        if (profile.ActiveSkill != null)
+                        {
+                            profile.ActiveSkill = null;
+                            agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("✓ 已取消 Skill");
+                            Console.ResetColor();
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.DarkGray;
+                            Console.WriteLine("当前没有激活的 Skill");
+                            Console.ResetColor();
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // 处理其他 / 命令
             if (input.StartsWith('/') && _executeCommandAsync != null)
             {
                 var handled = await _executeCommandAsync(input);
                 if (handled)
                     continue;
+            }
+
+            // 首次实际输入自动检测并激活 Skill
+            if (!autoActivationAttempted && profile.ActiveSkill == null)
+            {
+                autoActivationAttempted = true;
+                var detected = _skillRegistry.DetectSkills(input, 1).FirstOrDefault();
+                if (detected != null)
+                {
+                    profile.ActiveSkill = detected;
+                    agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"✓ 已自动激活 Skill: {detected.Name} (输入 /skill -off 可取消)");
+                    Console.ResetColor();
+                }
             }
 
             // RAG 自动检索注入：将检索结果拼接到用户输入前
@@ -276,7 +343,7 @@ public class AgiCommand : CommandBase
                                     toolInfo += $"({args})";
                                 }
                                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                                Console.WriteLine($"  {toolInfo}");
+                                Console.WriteLine($"{DateTime.Now:HH:mm:ss}  {toolInfo}");
                                 toolCalls.Add(toolInfo);
                             }
                             else if (content is Microsoft.Extensions.AI.FunctionResultContent functionResult)
@@ -299,7 +366,7 @@ public class AgiCommand : CommandBase
                                     resultSummary = resultSummary.Substring(0, 200) + "...";
                                 }
                                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                                Console.WriteLine($"  → 结果: {resultSummary}");
+                                Console.WriteLine($"{DateTime.Now:HH:mm:ss}  → 结果: {resultSummary}");
                             }
                             else if (content is TextContent text && !string.IsNullOrWhiteSpace(text.Text))
                             {
@@ -311,7 +378,7 @@ public class AgiCommand : CommandBase
                                         Console.ResetColor();
                                     }
                                     Console.ForegroundColor = ConsoleColor.Green;
-                                    Console.Write("🤖 ");
+                                    Console.Write($"{DateTime.Now:HH:mm:ss} 🤖 ");
                                     hasAnswerContent = true;
                                 }
                                 Console.ForegroundColor = ConsoleColor.Green;
@@ -387,6 +454,90 @@ public class AgiCommand : CommandBase
                 WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
             }
         }
+    }
+
+    /// <summary>
+    /// 处理 /skill -switch 命令：列出可用 Skill 并让用户选择，切换后重建 Agent。
+    /// </summary>
+    private async Task<LuBanAgent> HandleSkillSwitchAsync(
+        LuBanAgent currentAgent, AgentProfile profile, WorkspaceInfo workspace,
+        ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry, string modelName)
+    {
+        var skills = _skillRegistry.GetAll();
+        if (skills.Count == 0)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("暂无可用 Skill");
+            Console.ResetColor();
+            return currentAgent;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("可用 Skills:");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine($"{"#",-4} {"类别",-12} {"名称",-20} {"描述",-40} {"来源"}");
+        Console.ResetColor();
+
+        for (int i = 0; i < skills.Count; i++)
+        {
+            var s = skills[i];
+            var source = s is FileSkill ? "文件" : (s is CustomSkill ? "自定义" : "内置");
+            var active = profile.ActiveSkill?.Id == s.Id ? " ✓" : "";
+            Console.WriteLine($"{i + 1,-4} {s.Category,-12} {s.Name,-20} {Truncate(s.Description, 38),-40} {source}{active}");
+        }
+
+        Console.WriteLine();
+        Console.Write("请选择编号 (1-{0}), 或 0 取消: ", skills.Count);
+        var choice = Console.ReadLine()?.Trim();
+
+        if (!int.TryParse(choice, out var index) || index < 0 || index > skills.Count)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("无效选择，已取消");
+            Console.ResetColor();
+            return currentAgent;
+        }
+
+        if (index == 0)
+        {
+            if (profile.ActiveSkill != null)
+            {
+                profile.ActiveSkill = null;
+                var newAgent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("✓ 已取消 Skill");
+                Console.ResetColor();
+                return newAgent;
+            }
+            Console.WriteLine("当前没有激活的 Skill");
+            return currentAgent;
+        }
+
+        var selected = skills[index - 1];
+        profile.ActiveSkill = selected;
+        var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"✓ 已激活 Skill: {selected.Name}");
+        Console.ResetColor();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("💡 后续输入将自动携带 Skill 指令，输入 /skill -off 取消");
+        if (!string.IsNullOrEmpty(selected.PromptTemplate))
+        {
+            var preview = selected.PromptTemplate.Length > 100
+                ? selected.PromptTemplate.Substring(0, 100) + "..."
+                : selected.PromptTemplate;
+            Console.WriteLine($"📄 指令预览: {preview.Replace("\n", " ")}");
+        }
+        Console.ResetColor();
+
+        return agent;
+    }
+
+    private static string Truncate(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
     }
 
     /// <summary>

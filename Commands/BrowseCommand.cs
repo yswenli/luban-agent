@@ -14,6 +14,8 @@
 *描述：浏览网站命令
 *
 *****************************************************************************/
+using LuBan.AIAgent.Skills;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -23,6 +25,7 @@ public class BrowseCommand : CommandBase
 {
     private readonly Func<string, Task<bool>>? _executeCommandAsync;
     private readonly IWorkspaceManager? _workspaceManager;
+    private readonly SkillRegistry _skillRegistry;
 
     /// <summary>
     /// 命令名称
@@ -37,11 +40,12 @@ public class BrowseCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public BrowseCommand(ConfigManager configManager, IConfiguration configuration, Func<string, Task<bool>>? executeCommandAsync = null, IWorkspaceManager? workspaceManager = null)
+    public BrowseCommand(ConfigManager configManager, IConfiguration configuration, Func<string, Task<bool>>? executeCommandAsync = null, IWorkspaceManager? workspaceManager = null, SkillRegistry? skillRegistry = null)
         : base(configManager, configuration)
     {
         _executeCommandAsync = executeCommandAsync;
         _workspaceManager = workspaceManager;
+        _skillRegistry = skillRegistry!;
     }
 
     /// <summary>
@@ -103,9 +107,17 @@ public class BrowseCommand : CommandBase
         Console.WriteLine("输入自然语言指令来操作网站 (输入 'done' 结束):");
         Console.WriteLine("例如: '导航到登录页面', '点击提交按钮', '在搜索框输入关键词'");
         Console.WriteLine("按 ESC 可暂停当前操作，输入 'c' 继续，输入 'q' 终止");
+        Console.WriteLine("输入 /skill -switch 选择 Skill，/skill -off 取消 Skill");
         Console.WriteLine();
 
-        var systemPrompt = BuildSystemPrompt(url);
+        // 加载文件级 Skill
+        var workspaceSkillsDir = workspace.ConfigPath != null
+            ? Path.Combine(workspace.RootPath, workspace.ConfigPath, "skills")
+            : null;
+        _skillRegistry.LoadFileSkills(workspaceSkillsDir);
+
+        var baseSystemPrompt = BuildSystemPrompt(url);
+        ISkill? activeSkill = null;
         using var serviceProvider = BuildServiceProvider();
 
         try
@@ -113,11 +125,13 @@ public class BrowseCommand : CommandBase
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
             var agent = await agentFactory.CreateAsync(
                 modelName: ConfigManager.SelectedModel,
-                systemPrompt: systemPrompt,
+                systemPrompt: baseSystemPrompt,
                 toolGroups: new[] { "browser" });
 
             Console.WriteLine($"正在连接 {url}...");
-            await RunInteractionLoop(agent);
+            var result = await RunInteractionLoop(agent, agentFactory, url, activeSkill);
+            agent = result.agent;
+            activeSkill = result.activeSkill;
         }
         catch (Exception ex)
         {
@@ -129,9 +143,10 @@ public class BrowseCommand : CommandBase
     /// <summary>
     /// 构建系统提示词
     /// </summary>
-    private static string BuildSystemPrompt(string url)
+    private static string BuildSystemPrompt(string url, ISkill? activeSkill = null)
     {
-        return $@"你是一个浏览器自动化助手。用户会用自然语言描述他们想要在网站上执行的操作。
+        var sb = new System.Text.StringBuilder();
+        sb.Append($@"你是一个浏览器自动化助手。用户会用自然语言描述他们想要在网站上执行的操作。
             当前目标网站: {url}
 
             你可以使用以下工具来操作浏览器:
@@ -157,29 +172,107 @@ public class BrowseCommand : CommandBase
                - 成功时：汇报任务完成情况与关键结果
                - 失败时：说明失败原因、已尝试的方法，并给出下一步建议
 
-            绝不允许在工具失败后直接结束对话而不给出任何说明。";
+            绝不允许在工具失败后直接结束对话而不给出任何说明。");
+
+        if (activeSkill != null && !string.IsNullOrEmpty(activeSkill.PromptTemplate))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine($"## 当前激活的 Skill: {activeSkill.Name}");
+            sb.AppendLine(activeSkill.PromptTemplate);
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
     /// 运行交互循环，支持 ESC 取消、实时状态显示和 / 命令
     /// </summary>
-    private async Task RunInteractionLoop(LuBanAgent agent)
+    private async Task<(LuBanAgent agent, ISkill? activeSkill)> RunInteractionLoop(LuBanAgent agent, ILuBanAgentFactory agentFactory, string url, ISkill? activeSkill)
     {
+        bool autoActivationAttempted = false;
         while (true)
         {
+            // 显示当前激活的 Skill
+            if (activeSkill != null)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkCyan;
+                Console.Write($"[{activeSkill.Name}] ");
+                Console.ResetColor();
+            }
             Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Blue;
             Console.Write("指令 (或输入 'done' 结束，/ 命令可用): ");
+            Console.ResetColor();
             var input = Console.ReadLine()?.Trim();
 
             if (string.IsNullOrEmpty(input) || input.ToLower() == "done")
-                break;
+                return (agent, activeSkill);
 
-            // 处理 / 命令
+            // 拦截 /skill -switch 和 /skill -off 命令
+            if (input.StartsWith("/skill ", StringComparison.OrdinalIgnoreCase) || input.Equals("/skill", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    var subCmd = parts[1].ToLower();
+                    if (subCmd == "-switch" || subCmd == "-s")
+                    {
+                        var result = await HandleSkillSwitchAsync(agent, agentFactory, url, activeSkill);
+                        agent = result.agent;
+                        activeSkill = result.activeSkill;
+                        continue;
+                    }
+                    else if (subCmd == "-off")
+                    {
+                        if (activeSkill != null)
+                        {
+                            activeSkill = null;
+                            var newPrompt = BuildSystemPrompt(url, null);
+                            agent = await agentFactory.CreateAsync(
+                                modelName: ConfigManager.SelectedModel!,
+                                systemPrompt: newPrompt,
+                                toolGroups: new[] { "browser" });
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("✓ 已取消 Skill");
+                            Console.ResetColor();
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.DarkGray;
+                            Console.WriteLine("当前没有激活的 Skill");
+                            Console.ResetColor();
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // 处理其他 / 命令
             if (input.StartsWith('/') && _executeCommandAsync != null)
             {
                 var handled = await _executeCommandAsync(input);
                 if (handled)
                     continue;
+            }
+
+            // 首次实际输入自动检测并激活 Skill
+            if (!autoActivationAttempted && activeSkill == null)
+            {
+                autoActivationAttempted = true;
+                var detected = _skillRegistry.DetectSkills(input, 1).FirstOrDefault();
+                if (detected != null)
+                {
+                    activeSkill = detected;
+                    var newPrompt = BuildSystemPrompt(url, activeSkill);
+                    agent = await agentFactory.CreateAsync(
+                        modelName: ConfigManager.SelectedModel!,
+                        systemPrompt: newPrompt,
+                        toolGroups: new[] { "browser" });
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"✓ 已自动激活 Skill: {detected.Name} (输入 /skill -off 可取消)");
+                    Console.ResetColor();
+                }
             }
 
             Console.WriteLine();
@@ -219,7 +312,7 @@ public class BrowseCommand : CommandBase
                                 if (!hasContent)
                                 {
                                     Console.ForegroundColor = ConsoleColor.Green;
-                                    Console.Write("🤖 ");
+                                    Console.Write($"{DateTime.Now:HH:mm:ss} 🤖 ");
                                     Console.ResetColor();
                                     hasContent = true;
                                 }
@@ -279,5 +372,88 @@ public class BrowseCommand : CommandBase
                 WriteError(GetFriendlyApiErrorMessage(ex));
             }
         }
+    }
+
+    /// <summary>
+    /// 处理 /skill -switch 命令：列出可用 Skill 并让用户选择，切换后重建 Agent。
+    /// </summary>
+    private async Task<(LuBanAgent agent, ISkill? activeSkill)> HandleSkillSwitchAsync(
+        LuBanAgent currentAgent, ILuBanAgentFactory agentFactory, string url, ISkill? currentSkill)
+    {
+        var skills = _skillRegistry.GetAll();
+        if (skills.Count == 0)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("暂无可用 Skill");
+            Console.ResetColor();
+            return (currentAgent, currentSkill);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("可用 Skills:");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine($"{"#",-4} {"类别",-12} {"名称",-20} {"描述",-40} {"来源"}");
+        Console.ResetColor();
+
+        for (int i = 0; i < skills.Count; i++)
+        {
+            var s = skills[i];
+            var source = s is FileSkill ? "文件" : (s is CustomSkill ? "自定义" : "内置");
+            var active = currentSkill?.Id == s.Id ? " ✓" : "";
+            Console.WriteLine($"{i + 1,-4} {s.Category,-12} {s.Name,-20} {Truncate(s.Description, 38),-40} {source}{active}");
+        }
+
+        Console.WriteLine();
+        Console.Write("请选择编号 (1-{0}), 或 0 取消: ", skills.Count);
+        var choice = Console.ReadLine()?.Trim();
+
+        if (!int.TryParse(choice, out var index) || index < 0 || index > skills.Count)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("无效选择，已取消");
+            Console.ResetColor();
+            return (currentAgent, currentSkill);
+        }
+
+        if (index == 0)
+        {
+            if (currentSkill != null)
+            {
+                currentSkill = null;
+                var newPrompt = BuildSystemPrompt(url, null);
+                var newAgent = await agentFactory.CreateAsync(
+                    modelName: ConfigManager.SelectedModel!,
+                    systemPrompt: newPrompt,
+                    toolGroups: new[] { "browser" });
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("✓ 已取消 Skill");
+                Console.ResetColor();
+                return (newAgent, null);
+            }
+            Console.WriteLine("当前没有激活的 Skill");
+            return (currentAgent, currentSkill);
+        }
+
+        var selected = skills[index - 1];
+        var prompt = BuildSystemPrompt(url, selected);
+        var agent = await agentFactory.CreateAsync(
+            modelName: ConfigManager.SelectedModel!,
+            systemPrompt: prompt,
+            toolGroups: new[] { "browser" });
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"✓ 已激活 Skill: {selected.Name}");
+        Console.ResetColor();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("💡 后续输入将自动携带 Skill 指令，输入 /skill -off 取消");
+        Console.ResetColor();
+
+        return (agent, selected);
+    }
+
+    private static string Truncate(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
     }
 }

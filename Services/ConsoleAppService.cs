@@ -134,8 +134,8 @@ public class ConsoleAppService
         RegisterCommand(new RuleCommand(_configManager, _configuration, _ruleEngine));
         RegisterCommand(new MCPCommand(_configManager, _configuration, _mcpRegistry));
         RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
-        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, TryExecuteCommandAsync));
-        RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager));
+        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, _skillRegistry, TryExecuteCommandAsync));
+        RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager, _skillRegistry));
         RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
         RegisterCommand(new WorkCommand(_configManager, _configuration, _workspaceManager, _workspaceRepo, _sessionRepo));
 

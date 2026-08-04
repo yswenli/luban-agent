@@ -42,7 +42,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="LuBan.AIAgent" Version="2026.8.3.1" />
+		<ProjectReference Include="..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 		<PackageReference Include="LuBan.Logging" Version="2026.8.3.1" />
 		<PackageReference Include="LuBan.Orm" Version="2026.8.3.1" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />

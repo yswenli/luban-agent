@@ -53,12 +53,20 @@ This isn't science fiction—this is **LuBan Agent**.
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |
 
 ### 🎯 Skill System
-Three core built-in skills, plug and play:
+Nine core built-in skills, plug and play:
 - **Brainstorming**: Explore requirements and design before implementing features
 - **Code Review**: Review code, identify issues, and provide improvement suggestions
 - **Documentation**: Generate code comments, README files, API documentation
+- **Code Refactoring**: Refactor code to improve quality
+- **Test Generation**: Automatically generate unit tests
+- **Code Explanation**: Explain complex code logic
+- **Debug Assistant**: Assist with debugging issues
+- **Git Commit**: Generate standardized Git commit messages
+- **Skill Discovery**: Automatically discover and recommend suitable skills
 
-Supports custom Skills to easily extend your unique capabilities.
+**Activate Skill in Conversation**: Type `/skill -switch` in `/agi` or `/browse` conversation, select a Skill, and subsequent inputs will automatically carry Skill instructions. Type `/skill -off` to cancel.
+
+**File-based Skills**: Support defining custom Skills via SKILL.md files, compatible with OpenCode format. Place them in project-level or user-level directories for automatic loading.
 
 ### 🛡️ Security & Rule Engine
 - **Path Access Rules**: Restrict filesystem access scope, prevent unauthorized operations
@@ -667,6 +675,63 @@ Execute this operation? (y/N): y
 
 ### Custom Skills
 
+LuBan Agent supports two ways to create custom Skills:
+
+#### Method 1: File-based Skills (Recommended)
+
+Create `SKILL.md` files in project-level or user-level directories, compatible with OpenCode format:
+
+```
+Storage locations (by priority):
+  Project-level: <workspace>/.luban-agent/skills/<skill-id>/SKILL.md
+  User-level: %LocalAppData%/LuBan/AIAgent/skills/<skill-id>/SKILL.md
+```
+
+**SKILL.md Format**:
+
+```markdown
+---
+name: my-translator
+description: "Translate text to English"
+category: custom
+---
+
+# Translation Assistant
+
+Please translate the user's content to English.
+
+## Requirements
+- Maintain the tone and style of the original text
+- Use idiomatic English expressions
+- For technical terms, keep the original and add annotations in parentheses
+```
+
+**Usage**:
+
+```bash
+# Activate Skill in /agi conversation
+> /skill -switch
+Available Skills:
+#    Category     Name                 Description                            Source
+1    custom       Translation Asst     Translate text to English              File
+
+Select number (1-1), or 0 to cancel: 1
+✓ Skill activated: Translation Assistant
+💡 Subsequent inputs will carry Skill instructions, type /skill -off to cancel
+
+# Subsequent inputs use Skill mode
+👶 Hello, World
+🤖 Hello, World
+
+# Cancel activation
+> /skill -off
+✓ Skill cancelled
+```
+
+**Priority**: Project-level > User-level > Built-in > config.json
+
+#### Method 2: Command Line (Legacy)
+
 ```bash
 # Add custom Skill
 > /skill -add
@@ -750,6 +815,8 @@ Available tools for github:
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
 - 💾 **Session History Auto-Persistence** with long conversation compression (SummarizingChatReducer) ensures context is never lost
 - 🎨 **Custom Skill/Rule/MCP Persistence** - configurations saved to local files and auto-loaded on restart
+- 🎯 **In-Conversation Skill Switching**: `/skill -switch` to select a Skill, subsequent inputs carry Skill instructions; `/skill -off` to cancel
+- 📄 **File-based Skills**: Define Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project/user-level directories
 - 🛡️ **Rule Interception** automatically checks before tool execution, supporting deny/allow/modify
 - 🔌 **MCP Tool Integration** - external MCP server tools automatically exposed to Agent
 - 📦 Hot-load external tool plugin assemblies via `ExternalPlugins` configuration

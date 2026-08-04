@@ -53,12 +53,20 @@
 | 🔍 **语义检索工具** | 索引本地代码/文档，按语义搜索相关片段 |
 
 ### 🎯 Skill 系统
-内置三大核心技能，即插即用：
+内置九大核心技能，即插即用：
 - **头脑风暴**：实现功能前探索需求和设计
 - **代码审查**：审查代码、发现问题、提供改进建议
 - **文档生成**：生成代码注释、README、API 文档
+- **代码重构**：重构代码，提升代码质量
+- **测试生成**：自动生成单元测试
+- **代码解释**：解释复杂代码逻辑
+- **调试助手**：辅助调试问题
+- **Git 提交**：生成规范的 Git 提交信息
+- **技能发现**：自动发现和推荐合适的技能
 
-支持自定义 Skill，轻松扩展你的专属能力。
+**对话内激活 Skill**：在 `/agi` 或 `/browse` 对话中输入 `/skill -switch`，选择 Skill 后，后续输入自动携带 Skill 指令，输入 `/skill -off` 取消。
+
+**文件化 Skill**：支持通过 SKILL.md 文件定义自定义 Skill，兼容 OpenCode 格式，放置于项目级或用户级目录即可自动加载。
 
 ### 🛡️ 安全与规则引擎
 - **路径访问规则**：限制文件系统访问范围，防止越权操作
@@ -667,6 +675,63 @@ LubanAgent/
 
 ### 自定义 Skill
 
+LuBan Agent 支持两种自定义 Skill 方式：
+
+#### 方式一：文件化 Skill（推荐）
+
+在项目级或用户级目录创建 `SKILL.md` 文件，兼容 OpenCode 格式：
+
+```
+存储位置（按优先级）：
+  项目级: <workspace>/.luban-agent/skills/<skill-id>/SKILL.md
+  用户级: %LocalAppData%/LuBan/AIAgent/skills/<skill-id>/SKILL.md
+```
+
+**SKILL.md 格式**：
+
+```markdown
+---
+name: my-translator
+description: "将文本翻译成英文"
+category: custom
+---
+
+# 翻译助手
+
+请将用户提供的内容翻译成英文。
+
+## 要求
+- 保持原文的语气和风格
+- 使用地道的英文表达
+- 如有专业术语，保留原文并括号注释
+```
+
+**使用方式**：
+
+```bash
+# 在 /agi 对话中激活 Skill
+> /skill -switch
+可用 Skills:
+#    类别         名称                 描述                                     来源
+1    custom       翻译助手             将文本翻译成英文                          文件
+
+请选择编号 (1-1), 或 0 取消: 1
+✓ 已激活 Skill: 翻译助手
+💡 后续输入将自动携带 Skill 指令，输入 /skill -off 取消
+
+# 后续输入自动走 Skill 模式
+👶 你好，世界
+🤖 Hello, World
+
+# 取消激活
+> /skill -off
+✓ 已取消 Skill
+```
+
+**优先级**：项目级 > 用户级 > 内置 > config.json
+
+#### 方式二：命令行添加（兼容旧版）
+
 ```bash
 # 添加自定义 Skill
 > /skill -add
@@ -750,6 +815,8 @@ github 可用的工具：
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
 - 💾 **会话历史自动持久化**，支持长对话压缩（SummarizingChatReducer），上下文永不丢失
 - 🎨 **自定义 Skill/Rule/MCP 持久化**，配置保存到本地文件，重启后自动加载
+- 🎯 **对话内 Skill 切换**：`/skill -switch` 选择 Skill 后，后续输入自动携带 Skill 指令，`/skill -off` 取消
+- 📄 **文件化 Skill**：支持 SKILL.md 文件定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
 - 🛡️ **规则拦截**在工具执行前自动检查，支持 deny/allow/modify
 - 🔌 **MCP 工具集成**，外部 MCP 服务器工具自动暴露给 Agent
 - 📦 通过 `ExternalPlugins` 配置可热加载外部工具插件程序集

@@ -22,6 +22,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins;
+using LuBan.AIAgent.Skills;
 
 namespace LubanAgent.Services;
 
@@ -51,6 +52,11 @@ public abstract class AgentProfile
     public abstract string? RetrievalMode { get; }
 
     /// <summary>
+    /// 当前激活的 Skill（对话内通过 /skill -switch 切换）。
+    /// </summary>
+    public ISkill? ActiveSkill { get; set; }
+
+    /// <summary>
     /// 创建 Agent 实例。先注册工作区相关的规则与 MCP 服务器，再通过工厂创建 Agent。
     /// </summary>
     /// <remarks>
@@ -74,8 +80,8 @@ public abstract class AgentProfile
         await RegisterRulesAsync(ruleEngine, workspace);
         await RegisterMcpServersAsync(pluginRegistry, workspace);
 
-        // 将工作区上下文注入系统提示词，使 AI 能使用绝对路径调用工具
-        var fullPrompt = BuildFullPrompt(workspace);
+        // 将工作区上下文和激活的 Skill 注入系统提示词
+        var fullPrompt = BuildFullPrompt(workspace, ActiveSkill);
 
         return await factory.CreateAsync(
             modelName: modelName,
@@ -85,9 +91,9 @@ public abstract class AgentProfile
     }
 
     /// <summary>
-    /// 构建包含工作区上下文的完整系统提示词。
+    /// 构建包含工作区上下文和激活 Skill 的完整系统提示词。
     /// </summary>
-    private string BuildFullPrompt(WorkspaceInfo workspace)
+    private string BuildFullPrompt(WorkspaceInfo workspace, ISkill? activeSkill)
     {
         var sb = new System.Text.StringBuilder(SystemPrompt);
         sb.AppendLine();
@@ -101,6 +107,15 @@ public abstract class AgentProfile
         sb.AppendLine("- 搜索文件/内容时，rootPath 参数请使用工作区根目录的绝对路径，或使用 \".\" （已设置为根目录）");
         sb.AppendLine($"- 示例: Grep(rootPath=\"{workspace.RootPath}\", pattern=\"关键字\")");
         sb.AppendLine("- 示例: ListDirectory(path=\".\") 或 ListDirectory(path=\"" + workspace.RootPath + "\")");
+
+        if (activeSkill != null && !string.IsNullOrEmpty(activeSkill.PromptTemplate))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine($"## 当前激活的 Skill: {activeSkill.Name}");
+            sb.AppendLine(activeSkill.PromptTemplate);
+        }
+
         return sb.ToString();
     }
 

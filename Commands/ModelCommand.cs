@@ -61,13 +61,31 @@ public class ModelCommand : CommandBase
         };
     }
 
-    private Task<bool> ExecuteListAsync()
+    private async Task<bool> ExecuteListAsync()
     {
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
             WriteInfo("暂无配置的 Provider，请先使用 provider add 添加");
-            return Task.FromResult(true);
+            return true;
+        }
+
+        // 先异步刷新所有 Provider 的模型列表（容错、不阻塞）
+        foreach (var p in providers)
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await ProviderModels.RefreshModelsAsync(p.Name, p.ApiKey, p.BaseUrl, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                WriteInfo($"刷新 {p.Name} 模型列表超时，将使用本地预定义模型。");
+            }
+            catch (Exception ex)
+            {
+                WriteInfo($"刷新 {p.Name} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+            }
         }
 
         try
@@ -115,7 +133,7 @@ public class ModelCommand : CommandBase
             WriteInfo("当前未选择模型，请使用 model switch 选择");
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
     private Task<bool> ExecuteAddAsync(string[] args)
