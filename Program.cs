@@ -118,12 +118,12 @@ class Program
         if (mm.IsModelReady()) return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
         var ok = await ConsoleUtil.RunWithStatusAsync<bool>(
             async (update, ct) => await mm.EnsureModelAsync(update, ct),
-            "准备嵌入模型…");
+            "准备本地的嵌入模型…");
         if (!ok || !mm.IsModelReady())
         {
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用（不影响其他功能）");
+            Console.WriteLine($"本地嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用");
             Console.WriteLine($"请将模型包放到: {mm.LocalZipPath}");
             Console.ResetColor();
             Console.WriteLine();
