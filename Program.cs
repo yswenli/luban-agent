@@ -171,6 +171,8 @@ class Program
         services.AddSingleton<SessionRepository>();
         services.AddSingleton<WorkspaceRepository>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
+        services.AddSingleton<LuBan.AIAgent.LocalMemory.IWorkspaceContextProvider>(
+            new DelegateWorkspaceContextProvider(() => WorkspaceManager.Current?.WorkspaceId));
 
         if (embedder != null)
         {
@@ -192,5 +194,11 @@ class Program
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
 
         return sp;
+    }
+
+    private sealed class DelegateWorkspaceContextProvider(Func<string?> getWorkspaceId)
+        : LuBan.AIAgent.LocalMemory.IWorkspaceContextProvider
+    {
+        public string? CurrentWorkspaceId => getWorkspaceId();
     }
 }

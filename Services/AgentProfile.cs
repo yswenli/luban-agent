@@ -87,7 +87,7 @@ public abstract class AgentProfile
         ruleEngine.LoadFromWorkspace(workspace.RootPath);
 
         // 将工作区上下文和激活的 Skill 注入系统提示词
-        var fullPrompt = BuildFullPrompt(workspace, ActiveSkill);
+        var fullPrompt = BuildFullPrompt(workspace, ActiveSkill, ruleEngine);
 
         return await factory.CreateAsync(
             modelName: modelName,
@@ -99,7 +99,7 @@ public abstract class AgentProfile
     /// <summary>
     /// 构建包含工作区上下文和激活 Skill 的完整系统提示词。
     /// </summary>
-    private string BuildFullPrompt(WorkspaceInfo workspace, ISkill? activeSkill)
+    private string BuildFullPrompt(WorkspaceInfo workspace, ISkill? activeSkill, LuBan.AIAgent.Rules.RuleEngine ruleEngine)
     {
         var sb = new System.Text.StringBuilder(SystemPrompt);
         sb.AppendLine();
@@ -120,6 +120,15 @@ public abstract class AgentProfile
             sb.AppendLine();
             sb.AppendLine($"## 当前激活的 Skill: {activeSkill.Name}");
             sb.AppendLine(activeSkill.PromptTemplate);
+        }
+
+        if (ruleEngine.GetRule("base-behavior") is LuBan.AIAgent.Rules.IContentRule contentRule
+            && !string.IsNullOrWhiteSpace(contentRule.Content))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("## 基础行为规则");
+            sb.AppendLine(contentRule.Content);
         }
 
         return sb.ToString();
