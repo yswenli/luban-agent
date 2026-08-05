@@ -265,53 +265,6 @@ public class AgiCommand : CommandBase
                 finalInput = await InjectRetrievalContextAsync(input, workspace, serviceProvider);
             }
 
-            // 执行型 Skill：直接调用 ExecuteAsync
-            if (profile.ActiveSkill != null && string.IsNullOrEmpty(profile.ActiveSkill.PromptTemplate))
-            {
-                var skillContext = new LuBan.AIAgent.Skills.SkillContext
-                {
-                    Agent = agent,
-                    ServiceProvider = serviceProvider,
-                    Log = msg => Console.WriteLine($"  {msg}"),
-                    UpdateStatus = status => Console.Title = $"LuBan Agent - {status}"
-                };
-
-                try
-                {
-                    var skillResult = await profile.ActiveSkill.ExecuteAsync(skillContext, finalInput);
-
-                    if (skillResult.Success)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine(skillResult.Text);
-                        Console.ResetColor();
-                    }
-                    else
-                    {
-                        WriteError(skillResult.Error ?? "Skill 执行失败");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("Skill 执行异常", ex, profile.ActiveSkill.Name);
-                    WriteError($"Skill 执行失败: {ex.Message}");
-                }
-                finally
-                {
-                    // 执行型 Skill 也是一次性生效
-                    if (profile.ActiveSkill != null)
-                    {
-                        var skillName = profile.ActiveSkill.Name;
-                        profile.ActiveSkill = null;
-                        agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
-                        Console.ForegroundColor = ConsoleColor.DarkGray;
-                        Console.WriteLine($"✓ Skill '{skillName}' 已自动取消（一次性生效）");
-                        Console.ResetColor();
-                    }
-                }
-                continue;
-            }
-
             var hasToolCalls = false;
 
             // ESC 键监听器：任务执行期间按 ESC 暂停
