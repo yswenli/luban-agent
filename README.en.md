@@ -112,7 +112,7 @@ npx playwright@1.61.0 install chromium
 
 > **Note**: Browser version must match the Microsoft.Playwright package version. This project currently uses 1.61.0.
 
-### 2. Clone and Run
+### Option 1: Clone and Run from Source
 
 ```bash
 # Clone the repository
@@ -123,22 +123,72 @@ cd luban-framework/luban-agent
 dotnet run
 ```
 
-### Global Installation (Optional)
+### Option 2: Install as dotnet tool (Recommended)
 
-To invoke `luban-agent-cli` from any directory, install it as a .NET global tool:
+Once installed as a .NET global tool, you can invoke `luban-agent-cli` from any directory without cloning the source code.
+
+#### Install from NuGet (after publishing)
 
 ```bash
-# Pack
+dotnet tool install -g LuBan.Agent.CLI
+```
+
+#### Install from Local Source
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/yswenli/luban-framework.git
+cd luban-framework/luban-agent
+
+# 2. Pack
 dotnet pack -c Release -o ./artifacts
 
-# Install globally
+# 3. Install globally
 dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 ```
 
-Once installed, the `luban-agent-cli` command is available from any directory. Configuration (`appsettings.json`) is always loaded first from the application directory; an `appsettings.json` in the current working directory can override it.
+#### Usage After Installation
 
-> **Update**: re-run `dotnet pack`, then `dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts`
-> **Uninstall**: `dotnet tool uninstall -g LuBan.Agent.CLI`
+```bash
+# Launch interactive menu from any directory
+luban-agent-cli
+
+# Or execute a single command directly (exits after completion)
+luban-agent-cli /agi
+luban-agent-cli /se -l
+```
+
+#### Configuration Files
+
+- **Application config** (`appsettings.json`): Always loaded first from the tool installation directory; an `appsettings.json` in the current working directory can override it
+- **User config** (Providers, Skills, rules, etc.): Automatically saved to `%LocalAppData%\LuBan\AIAgent\config.json`
+- **Session data**: Saved to `%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+
+#### Update & Uninstall
+
+```bash
+# Update (from NuGet)
+dotnet tool update -g LuBan.Agent.CLI
+
+# Update (from local source)
+dotnet pack -c Release -o ./artifacts
+dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts
+
+# Uninstall
+dotnet tool uninstall -g LuBan.Agent.CLI
+```
+
+#### Verify Installation
+
+```bash
+# List installed tools
+dotnet tool list -g
+
+# You should see output similar to:
+# Package Id         Version   Commands
+# -----------------------------------------
+# LuBan.Agent.CLI    1.0.0     luban-agent-cli
+```
 
 ### 3. Configure Your First AI Provider
 

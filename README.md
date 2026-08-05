@@ -112,7 +112,7 @@ npx playwright@1.61.0 install chromium
 
 > **注意**：浏览器版本必须与 Microsoft.Playwright 包版本匹配，当前项目使用的是 1.61.0。
 
-### 2. 克隆并运行
+### 方式一：克隆源码运行
 
 ```bash
 # 克隆仓库
@@ -123,22 +123,72 @@ cd luban-framework/luban-agent
 dotnet run
 ```
 
-### 全局安装（可选）
+### 方式二：作为 dotnet tool 安装（推荐）
 
-如果想从任意目录直接调用 `luban-agent-cli` 命令，可将其安装为 .NET 全局工具：
+安装为 .NET 全局工具后，可从任意目录直接调用 `luban-agent-cli` 命令，无需克隆源码。
+
+#### 从 NuGet 安装（发布后）
 
 ```bash
-# 打包
+dotnet tool install -g LuBan.Agent.CLI
+```
+
+#### 从本地源码安装
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/yswenli/luban-framework.git
+cd luban-framework/luban-agent
+
+# 2. 打包
 dotnet pack -c Release -o ./artifacts
 
-# 全局安装
+# 3. 全局安装
 dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 ```
 
-安装完成后，即可在任意目录通过 `luban-agent-cli` 命令启动。配置文件（`appsettings.json`）始终优先从程序所在目录加载，当前工作目录下的 `appsettings.json` 可作为覆盖项。
+#### 安装后使用
 
-> **更新**：重新 `dotnet pack` 后执行 `dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts`
-> **卸载**：`dotnet tool uninstall -g LuBan.Agent.CLI`
+```bash
+# 在任意目录启动交互式菜单
+luban-agent-cli
+
+# 或直接执行单次命令（执行后自动退出）
+luban-agent-cli /agi
+luban-agent-cli /se -l
+```
+
+#### 配置文件说明
+
+- **应用配置**（`appsettings.json`）：始终优先从工具安装目录加载；当前工作目录下的 `appsettings.json` 可作为覆盖项
+- **用户配置**（Provider、Skill、规则等）：自动保存在 `%LocalAppData%\LuBan\AIAgent\config.json`
+- **会话数据**：保存在 `%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+
+#### 更新与卸载
+
+```bash
+# 更新（从 NuGet）
+dotnet tool update -g LuBan.Agent.CLI
+
+# 更新（从本地源码）
+dotnet pack -c Release -o ./artifacts
+dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts
+
+# 卸载
+dotnet tool uninstall -g LuBan.Agent.CLI
+```
+
+#### 验证安装
+
+```bash
+# 查看已安装的工具
+dotnet tool list -g
+
+# 应看到类似输出：
+# Package Id         Version   Commands
+# -----------------------------------------
+# LuBan.Agent.CLI    1.0.0     luban-agent-cli
+```
 
 ### 3. 配置你的第一个 AI Provider
 
