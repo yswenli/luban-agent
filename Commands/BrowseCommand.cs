@@ -114,7 +114,10 @@ public class BrowseCommand : CommandBase
         var workspaceSkillsDir = workspace.ConfigPath != null
             ? Path.Combine(workspace.RootPath, workspace.ConfigPath, "skills")
             : null;
-        _skillRegistry.LoadFileSkills(workspaceSkillsDir);
+        if (workspaceSkillsDir != null)
+        {
+            _skillRegistry.LoadFromWorkspace(workspace.RootPath);
+        }
 
         var baseSystemPrompt = BuildSystemPrompt(url);
         ISkill? activeSkill = null;

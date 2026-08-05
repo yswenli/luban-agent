@@ -21,7 +21,6 @@
 *描述：RAG 工作区的 Agent 配置，启用检索与文件系统工具组，使用 auto 检索模式
 *
 *****************************************************************************/
-using LuBan.AIAgent.Plugins;
 
 namespace LubanAgent.Services;
 
@@ -94,33 +93,5 @@ public class RagAgentProfile : AgentProfile
         {
             // 忽略 rag-config.json 解析失败，沿用默认配置
         }
-    }
-
-    /// <summary>
-    /// 注册工作区相关的自定义规则。
-    /// </summary>
-    /// <remarks>
-    /// 框架 <see cref="RuleEngine"/> 通过 <c>ConfigManager.CustomRules</c> 惰性合并自定义规则，
-    /// 不支持运行时直接注册。RAG 的多版本去重逻辑在 <c>AgiCommand.InjectRetrievalContextAsync</c> 中实现，
-    /// 不依赖规则引擎。工作区 rules 目录下的规则文件由 <see cref="LoadCustomRules"/> 加载。
-    /// </remarks>
-    protected override Task RegisterRulesAsync(RuleEngine engine, WorkspaceInfo workspace)
-    {
-        // 触发规则文件加载与校验（实际合并由 ConfigManager 完成）
-        LoadCustomRules(workspace);
-        return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// 注册工作区相关的 MCP 服务器。
-    /// </summary>
-    /// <remarks>
-    /// 框架 <see cref="ToolPluginRegistry"/> 通过 DI 加载插件，不支持运行时注册 MCP 服务器。
-    /// 工作区 mcps 目录下的配置文件需通过 <c>ConfigManager.AddMcpServer</c> 持久化注册，
-    /// 当前版本暂未实现该桥接逻辑。
-    /// </remarks>
-    protected override Task RegisterMcpServersAsync(ToolPluginRegistry registry, WorkspaceInfo workspace)
-    {
-        return Task.CompletedTask;
     }
 }

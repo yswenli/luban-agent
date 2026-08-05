@@ -103,7 +103,10 @@ public class AgiCommand : CommandBase
         var workspaceSkillsDir = workspace.ConfigPath != null
             ? Path.Combine(workspace.RootPath, workspace.ConfigPath, "skills")
             : null;
-        _skillRegistry.LoadFileSkills(workspaceSkillsDir);
+        if (workspaceSkillsDir != null)
+        {
+            _skillRegistry.LoadFromWorkspace(workspace.RootPath);
+        }
 
         Console.WriteLine();
         Console.WriteLine($"工作区: {workspace.Name} ({workspace.RootPath})");
@@ -163,10 +166,12 @@ public class AgiCommand : CommandBase
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
             var ruleEngine = serviceProvider.GetRequiredService<RuleEngine>();
             var pluginRegistry = serviceProvider.GetRequiredService<ToolPluginRegistry>();
+            var skillRegistry = serviceProvider.GetRequiredService<SkillRegistry>();
+            var mcpRegistry = serviceProvider.GetRequiredService<MCPRegistry>();
 
-            // 创建 Agent（Profile 内部注册 Rules/McpServers 后调用工厂）
+            // 创建 Agent（Profile 内部加载工作区组件后调用工厂）
             var modelName = ConfigManager.SelectedModel ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
-            var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+            var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
 
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("✓ 工具插件已加载（根据 appsettings.json 配置启用）");
@@ -174,7 +179,7 @@ public class AgiCommand : CommandBase
             Console.WriteLine();
 
             // 运行聊天循环（RAG 工作区带自动检索注入）
-            await RunChatLoop(agent, profile, workspace, serviceProvider, agentFactory, ruleEngine, pluginRegistry, modelName);
+            await RunChatLoop(agent, profile, workspace, serviceProvider, agentFactory, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry, modelName);
         }
         catch (Exception ex)
         {
@@ -192,7 +197,7 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 运行对话循环，支持工具调用显示、ESC 取消和 / 命令
     /// </summary>
-    private async Task RunChatLoop(LuBanAgent agent, AgentProfile profile, WorkspaceInfo workspace, IServiceProvider serviceProvider, ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry, string modelName)
+    private async Task RunChatLoop(LuBanAgent agent, AgentProfile profile, WorkspaceInfo workspace, IServiceProvider serviceProvider, ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry, SkillRegistry skillRegistry, MCPRegistry mcpRegistry, string modelName)
     {
         bool autoActivationAttempted = false;
         while (true)
@@ -224,7 +229,7 @@ public class AgiCommand : CommandBase
                     var subCmd = parts[1].ToLower();
                     if (subCmd == "-switch" || subCmd == "-s")
                     {
-                        agent = await HandleSkillSwitchAsync(agent, profile, workspace, agentFactory, ruleEngine, pluginRegistry, modelName);
+                        agent = await HandleSkillSwitchAsync(agent, profile, workspace, agentFactory, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry, modelName);
                         continue;
                     }
                     else if (subCmd == "-off")
@@ -232,7 +237,7 @@ public class AgiCommand : CommandBase
                         if (profile.ActiveSkill != null)
                         {
                             profile.ActiveSkill = null;
-                            agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                            agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
                             Console.ForegroundColor = ConsoleColor.Green;
                             Console.WriteLine("✓ 已取消 Skill");
                             Console.ResetColor();
@@ -264,7 +269,7 @@ public class AgiCommand : CommandBase
                 if (detected != null)
                 {
                     profile.ActiveSkill = detected;
-                    agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                    agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"✓ 已自动激活 Skill: {detected.Name} (输入 /skill -off 可取消)");
                     Console.ResetColor();
@@ -461,7 +466,8 @@ public class AgiCommand : CommandBase
     /// </summary>
     private async Task<LuBanAgent> HandleSkillSwitchAsync(
         LuBanAgent currentAgent, AgentProfile profile, WorkspaceInfo workspace,
-        ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry, string modelName)
+        ILuBanAgentFactory agentFactory, RuleEngine ruleEngine, ToolPluginRegistry pluginRegistry,
+        SkillRegistry skillRegistry, MCPRegistry mcpRegistry, string modelName)
     {
         var skills = _skillRegistry.GetAll();
         if (skills.Count == 0)
@@ -503,7 +509,7 @@ public class AgiCommand : CommandBase
             if (profile.ActiveSkill != null)
             {
                 profile.ActiveSkill = null;
-                var newAgent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+                var newAgent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("✓ 已取消 Skill");
                 Console.ResetColor();
@@ -515,7 +521,7 @@ public class AgiCommand : CommandBase
 
         var selected = skills[index - 1];
         profile.ActiveSkill = selected;
-        var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry);
+        var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"✓ 已激活 Skill: {selected.Name}");
