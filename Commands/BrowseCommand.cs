@@ -258,6 +258,56 @@ public class BrowseCommand : CommandBase
 
             Console.WriteLine();
 
+            // 执行型 Skill：直接调用 ExecuteAsync
+            if (activeSkill != null && string.IsNullOrEmpty(activeSkill.PromptTemplate))
+            {
+                var skillContext = new LuBan.AIAgent.Skills.SkillContext
+                {
+                    Agent = agent,
+                    Log = msg => Console.WriteLine($"  {msg}"),
+                    UpdateStatus = status => Console.Title = $"LuBan Browser - {status}"
+                };
+
+                try
+                {
+                    var skillResult = await activeSkill.ExecuteAsync(skillContext, input);
+
+                    if (skillResult.Success)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine(skillResult.Text);
+                        Console.ResetColor();
+                    }
+                    else
+                    {
+                        WriteError(skillResult.Error ?? "Skill 执行失败");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Skill 执行异常", ex, activeSkill.Name);
+                    WriteError($"Skill 执行失败: {ex.Message}");
+                }
+                finally
+                {
+                    // 执行型 Skill 也是一次性生效
+                    if (activeSkill != null)
+                    {
+                        var skillName = activeSkill.Name;
+                        activeSkill = null;
+                        var newPrompt = BuildSystemPrompt(url, null);
+                        agent = await agentFactory.CreateAsync(
+                            modelName: ConfigManager.SelectedModel!,
+                            systemPrompt: newPrompt,
+                            toolGroups: new[] { "browser" });
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine($"✓ Skill '{skillName}' 已自动取消（一次性生效）");
+                        Console.ResetColor();
+                    }
+                }
+                continue;
+            }
+
             // ESC 键监听器：任务执行期间按 ESC 暂停
             using var escListener = new EscKeyListener();
             // 即时反馈：回车后立即显示 spinner
