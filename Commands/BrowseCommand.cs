@@ -226,28 +226,6 @@ public class BrowseCommand : CommandBase
                         activeSkill = result.activeSkill;
                         continue;
                     }
-                    else if (subCmd == "-off")
-                    {
-                        if (activeSkill != null)
-                        {
-                            activeSkill = null;
-                            var newPrompt = BuildSystemPrompt(url, null);
-                            agent = await agentFactory.CreateAsync(
-                                modelName: ConfigManager.SelectedModel!,
-                                systemPrompt: newPrompt,
-                                toolGroups: new[] { "browser" });
-                            Console.ForegroundColor = ConsoleColor.Green;
-                            Console.WriteLine("✓ 已取消 Skill");
-                            Console.ResetColor();
-                        }
-                        else
-                        {
-                            Console.ForegroundColor = ConsoleColor.DarkGray;
-                            Console.WriteLine("当前没有激活的 Skill");
-                            Console.ResetColor();
-                        }
-                        continue;
-                    }
                 }
             }
 
@@ -273,7 +251,7 @@ public class BrowseCommand : CommandBase
                         systemPrompt: newPrompt,
                         toolGroups: new[] { "browser" });
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"✓ 已自动激活 Skill: {detected.Name} (输入 /skill -off 可取消)");
+                    Console.WriteLine($"✓ 已自动激活 Skill: {detected.Name}（仅本次生效）");
                     Console.ResetColor();
                 }
             }
@@ -357,6 +335,20 @@ public class BrowseCommand : CommandBase
                 {
                     Console.ForegroundColor = ConsoleColor.DarkGray;
                     Console.WriteLine("（无响应）");
+                    Console.ResetColor();
+                }
+
+                if (activeSkill != null)
+                {
+                    var skillName = activeSkill.Name;
+                    activeSkill = null;
+                    var newPrompt = BuildSystemPrompt(url, null);
+                    agent = await agentFactory.CreateAsync(
+                        modelName: ConfigManager.SelectedModel!,
+                        systemPrompt: newPrompt,
+                        toolGroups: new[] { "browser" });
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"✓ Skill '{skillName}' 已自动取消（一次性生效）");
                     Console.ResetColor();
                 }
             }
@@ -445,10 +437,7 @@ public class BrowseCommand : CommandBase
             toolGroups: new[] { "browser" });
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"✓ 已激活 Skill: {selected.Name}");
-        Console.ResetColor();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("💡 后续输入将自动携带 Skill 指令，输入 /skill -off 取消");
+        Console.WriteLine($"✓ 已激活 Skill: {selected.Name}（仅本次生效）");
         Console.ResetColor();
 
         return (agent, selected);
