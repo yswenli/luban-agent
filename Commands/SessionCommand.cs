@@ -132,8 +132,9 @@ public class SessionCommand : CommandBase
                 var session = sessions[i];
                 var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
                 var marker = isCurrent ? " (当前)" : "";
+                var title = session.Title ?? "未命名";
                 
-                Console.WriteLine($"  {i + 1}. {session.Title ?? "未命名"}{marker}");
+                Console.WriteLine($"  {i + 1}. {session.SessionId}   {title}{marker}");
                 Console.WriteLine($"     更新: {session.UpdateTime:yyyy-MM-dd HH:mm} | 消息: {session.MessageCount} | Token: {session.TotalTokens}");
                 
                 if (previews.TryGetValue(session.SessionId, out var preview))
