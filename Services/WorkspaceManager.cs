@@ -185,12 +185,36 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             var rootPath = Path.GetFullPath(ws.RootPath)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
+            // 解析符号链接/junction 到真实目标，防止工作区内的链接逃逸到根目录外
+            fullPath = ResolveLinkTarget(fullPath) ?? fullPath;
+            rootPath = ResolveLinkTarget(rootPath) ?? rootPath;
+
             return fullPath.StartsWith(rootPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
                 || fullPath.Equals(rootPath, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// 若路径存在且为符号链接/junction，返回其最终真实目标路径；否则返回 null。
+    /// </summary>
+    private static string? ResolveLinkTarget(string fullPath)
+    {
+        try
+        {
+            FileSystemInfo? info = File.Exists(fullPath)
+                ? new FileInfo(fullPath)
+                : Directory.Exists(fullPath) ? new DirectoryInfo(fullPath) : null;
+            if (info?.LinkTarget == null) return null;
+            var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+            return resolved?.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -356,31 +380,29 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         return true;
     }
 
-/// <summary>
-/// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
-/// </summary>
-public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
-{
-    if (workspace.ConfigPath != null)
+    /// <summary>
+    /// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
+    /// </summary>
+    public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
     {
-        var configDir = Path.Combine(workspace.RootPath, workspace.ConfigPath);
-        
-        // 无论目录是否存在，都调用 EnsureConfigDirectory 确保内置内容已初始化
-        try 
-        { 
-            EnsureConfigDirectory(workspace.RootPath, workspace.Type); 
-        }
-        catch (Exception ex)
+        if (workspace.ConfigPath != null)
         {
-            AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
+            // 无论目录是否存在，都调用 EnsureConfigDirectory 确保内置内容已初始化
+            try
+            {
+                EnsureConfigDirectory(workspace.RootPath, workspace.Type);
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
+            }
+
+            // 清理超过 24 小时的工作区临时文件
+            try { TempDirectory.Cleanup(TimeSpan.FromDays(1)); }
+            catch { }
         }
-        
-        // 清理超过 24 小时的工作区临时文件
-        try { TempDirectory.Cleanup(TimeSpan.FromDays(1)); }
-        catch { }
+        return Task.CompletedTask;
     }
-    return Task.CompletedTask;
-}
 
     /// <summary>
     /// 获取用户的所有工作区（userId 为 null 时获取全部）
@@ -541,7 +563,9 @@ public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
     }
 
     /// <summary>
-    /// 将内置 Rules 写入目录（JSON 格式）
+    /// 将内置 Rules 写入目录（JSON 格式）。
+    /// 内置规则含硬编码逻辑无法完整序列化，写出的 JSON 仅作参考文档（Enabled=false 不生效），
+    /// 避免用户禁用内置规则后工作区副本以通配 allow 语义顶替进 merged。
     /// </summary>
     private void WriteBuiltinRules(string rulesDir)
     {
@@ -556,12 +580,12 @@ public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
                     Name = rule.Name,
                     Description = rule.Description,
                     Priority = rule.Priority,
-                    Enabled = rule.IsEnabled,
+                    Enabled = false,
                     ActionTypePattern = "*",
                     TargetPattern = "*",
                     Action = "allow"
                 };
-                
+
                 var json = config.ToJson(hasIndentation: true);
                 File.WriteAllText(ruleFile, json);
             }

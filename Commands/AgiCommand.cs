@@ -133,9 +133,11 @@ public class AgiCommand : CommandBase
             var confirmContext = serviceProvider.GetRequiredService<ToolConfirmationContext>();
             var confirmService = serviceProvider.GetRequiredService<IToolConfirmationService>();
 
-            // 设置工具确认回调
+            // 设置工具确认回调（加锁串行化，防止并发子代理同时读写控制台导致输出交错）
             confirmContext.Callback = (toolName, args) =>
             {
+                lock (EscKeyListener.ConsoleReadLock)
+                {
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine($"[yellow]⚠️  [bold]危险操作请求: {Markup.Escape(toolName)}[/][/]");
                 AnsiConsole.MarkupLine("[yellow]参数:[/]");
@@ -169,6 +171,7 @@ public class AgiCommand : CommandBase
                 }
 
                 return confirmed;
+                }
             };
 
             // 注册工作区路径检查回调，用于判断文件操作是否在工作区内

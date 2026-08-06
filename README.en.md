@@ -47,7 +47,7 @@ This isn't science fiction—this is **LuBan Agent**.
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
 | 📁 **FileSystem Tools** | Read, write, list directories with secure path restrictions |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
-| 🗄️ **Database Tools** | Execute SQL statements via sqlcmd |
+| 🗄️ **Database Tools** | Execute SQL via ADO.NET direct connections (MySQL/PostgreSQL/SQL Server/SQLite), with dynamic connection string support |
 | 🔴 **Redis Tools** | Execute Redis commands via redis-cli |
 | 🌍 **Web Tools** | Send HTTP requests to fetch web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |
@@ -64,7 +64,7 @@ Nine core built-in skills, plug and play:
 - **Git Commit**: Generate standardized Git commit messages
 - **Skill Discovery**: Automatically discover and recommend suitable skills
 
-**Activate Skill in Conversation**: Type `/skill -switch` in `/agi` or `/browse` conversation, select a Skill, and subsequent inputs will automatically carry Skill instructions. Type `/skill -off` to cancel.
+**Activate Skill in Conversation**: Type `/skill -switch` in `/agi` or `/browse` conversation and select a Skill; it applies only to the next input and is automatically cleared afterwards.
 
 **File-based Skills**: Support defining custom Skills via SKILL.md files, compatible with OpenCode format. Place them in project-level or user-level directories for automatic loading.
 
@@ -767,15 +767,11 @@ Available Skills:
 
 Select number (1-1), or 0 to cancel: 1
 ✓ Skill activated: Translation Assistant
-💡 Subsequent inputs will carry Skill instructions, type /skill -off to cancel
+💡 The Skill applies only to the next input and is cleared afterwards
 
-# Subsequent inputs use Skill mode
+# The next input carries the Skill instructions
 👶 Hello, World
 🤖 Hello, World
-
-# Cancel activation
-> /skill -off
-✓ Skill cancelled
 ```
 
 **Priority**: Project-level > User-level > Built-in > config.json
@@ -865,7 +861,7 @@ Available tools for github:
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
 - 💾 **Session History Auto-Persistence** with long conversation compression (SummarizingChatReducer) ensures context is never lost
 - 🎨 **Custom Skill/Rule/MCP Persistence** - configurations saved to local files and auto-loaded on restart
-- 🎯 **In-Conversation Skill Switching**: `/skill -switch` to select a Skill, subsequent inputs carry Skill instructions; `/skill -off` to cancel
+- 🎯 **In-Conversation Skill Switching**: `/skill -switch` to select a Skill; it applies only to the next input and is automatically cleared afterwards
 - 📄 **File-based Skills**: Define Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project/user-level directories
 - 🛡️ **Rule Interception** automatically checks before tool execution, supporting deny/allow/modify
 - 🔌 **MCP Tool Integration** - external MCP server tools automatically exposed to Agent

@@ -29,20 +29,27 @@ public sealed class EscKeyListener : IDisposable
     private volatile bool _stopped;
 
     /// <summary>
-    /// 全局标志：主线程正在进行控制台输入（如确认对话框、ReadLine）。
-    /// 为 true 时 ESC 监听线程不读取键盘，避免与主线程竞争输入缓冲。
+    /// 全局计数：正在进行控制台输入（如确认对话框、ReadLine）的线程数。
+    /// 大于 0 时 ESC 监听线程不读取键盘，避免与输入线程竞争输入缓冲。
     /// </summary>
-    private static volatile bool _mainThreadReadingConsole;
+    private static int _mainThreadReadingConsole;
 
     /// <summary>
-    /// 标记主线程开始读取控制台输入。读取完成后必须调用 <see cref="EndConsoleRead"/>。
+    /// 控制台读取锁：确认回调等控制台交互需持有此锁，防止多个线程并发读写控制台导致输出交错。
     /// </summary>
-    public static void BeginConsoleRead() => _mainThreadReadingConsole = true;
+    public static readonly object ConsoleReadLock = new();
+
+    private static bool _unsupportedPromptShown;
 
     /// <summary>
-    /// 标记主线程结束控制台输入。
+    /// 标记开始读取控制台输入。读取完成后必须调用 <see cref="EndConsoleRead"/>。
     /// </summary>
-    public static void EndConsoleRead() => _mainThreadReadingConsole = false;
+    public static void BeginConsoleRead() => Interlocked.Increment(ref _mainThreadReadingConsole);
+
+    /// <summary>
+    /// 标记结束读取控制台输入。
+    /// </summary>
+    public static void EndConsoleRead() => Interlocked.Decrement(ref _mainThreadReadingConsole);
 
     /// <summary>
     /// 获取取消令牌，ESC 触发时将被取消。
@@ -96,9 +103,13 @@ public sealed class EscKeyListener : IDisposable
 
         if (!IsSupported)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine("（当前环境不支持 ESC 键监听，如管道/重定向输入场景）");
-            Console.ResetColor();
+            if (!_unsupportedPromptShown)
+            {
+                _unsupportedPromptShown = true;
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("（当前环境不支持 ESC 键监听，如管道/重定向输入场景）");
+                Console.ResetColor();
+            }
             return;
         }
 
@@ -148,8 +159,8 @@ public sealed class EscKeyListener : IDisposable
         {
             while (!_disposed && !_stopped && !_cts.IsCancellationRequested)
             {
-                // 主线程正在读取控制台时不争抢键盘缓冲，避免输入被截获
-                if (_mainThreadReadingConsole)
+                // 有线程正在读取控制台时不争抢键盘缓冲，避免输入被截获
+                if (Volatile.Read(ref _mainThreadReadingConsole) > 0)
                 {
                     Thread.Sleep(50);
                     continue;

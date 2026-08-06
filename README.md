@@ -47,7 +47,7 @@
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
 | 📁 **文件系统工具** | 读取、写入、列出目录，支持安全路径限制 |
 | 🔧 **脚本执行工具** | 执行 Shell、Lua、Python 脚本 |
-| 🗄️ **数据库工具** | 通过 sqlcmd 执行 SQL 语句 |
+| 🗄️ **数据库工具** | ADO.NET 直连执行 SQL（MySQL/PostgreSQL/SQL Server/SQLite），支持动态连接字符串 |
 | 🔴 **Redis 工具** | 通过 redis-cli 执行 Redis 命令 |
 | 🌍 **Web 工具** | 发送 HTTP 请求获取网页内容 |
 | 🔍 **语义检索工具** | 索引本地代码/文档，按语义搜索相关片段 |
@@ -64,7 +64,7 @@
 - **Git 提交**：生成规范的 Git 提交信息
 - **技能发现**：自动发现和推荐合适的技能
 
-**对话内激活 Skill**：在 `/agi` 或 `/browse` 对话中输入 `/skill -switch`，选择 Skill 后，后续输入自动携带 Skill 指令，输入 `/skill -off` 取消。
+**对话内激活 Skill**：在 `/agi` 或 `/browse` 对话中输入 `/skill -switch`，选择 Skill 后仅对下一条输入生效，执行后自动取消。
 
 **文件化 Skill**：支持通过 SKILL.md 文件定义自定义 Skill，兼容 OpenCode 格式，放置于项目级或用户级目录即可自动加载。
 
@@ -767,15 +767,11 @@ category: custom
 
 请选择编号 (1-1), 或 0 取消: 1
 ✓ 已激活 Skill: 翻译助手
-💡 后续输入将自动携带 Skill 指令，输入 /skill -off 取消
+💡 Skill 仅对下一条输入生效，执行后自动取消
 
-# 后续输入自动走 Skill 模式
+# 下一条输入自动携带 Skill 指令
 👶 你好，世界
 🤖 Hello, World
-
-# 取消激活
-> /skill -off
-✓ 已取消 Skill
 ```
 
 **优先级**：项目级 > 用户级 > 内置 > config.json
@@ -865,7 +861,7 @@ github 可用的工具：
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
 - 💾 **会话历史自动持久化**，支持长对话压缩（SummarizingChatReducer），上下文永不丢失
 - 🎨 **自定义 Skill/Rule/MCP 持久化**，配置保存到本地文件，重启后自动加载
-- 🎯 **对话内 Skill 切换**：`/skill -switch` 选择 Skill 后，后续输入自动携带 Skill 指令，`/skill -off` 取消
+- 🎯 **对话内 Skill 切换**：`/skill -switch` 选择 Skill 后，仅对下一条输入生效，执行后自动取消
 - 📄 **文件化 Skill**：支持 SKILL.md 文件定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
 - 🛡️ **规则拦截**在工具执行前自动检查，支持 deny/allow/modify
 - 🔌 **MCP 工具集成**，外部 MCP 服务器工具自动暴露给 Agent

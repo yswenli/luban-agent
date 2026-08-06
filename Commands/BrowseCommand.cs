@@ -107,7 +107,7 @@ public class BrowseCommand : CommandBase
         Console.WriteLine("输入自然语言指令来操作网站 (输入 'done' 结束):");
         Console.WriteLine("例如: '导航到登录页面', '点击提交按钮', '在搜索框输入关键词'");
         Console.WriteLine("按 ESC 可暂停当前操作，输入 'c' 继续，输入 'q' 终止");
-        Console.WriteLine("输入 /skill -switch 选择 Skill，/skill -off 取消 Skill");
+        Console.WriteLine("输入 /skill -switch 选择 Skill（仅对下一条指令生效）");
         Console.WriteLine();
 
         // 加载文件级 Skill
