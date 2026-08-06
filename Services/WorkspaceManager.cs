@@ -14,6 +14,9 @@
 *描述：工作区管理服务，管理工作区生命周期、授权、配置加载
 *
 *****************************************************************************/
+using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Rules;
+using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
 
@@ -125,6 +128,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly SessionRepository _sessionRepo;
     private readonly ISessionManager _sessionManager;
     private readonly IOptions<LuBanAgentOptions> _options;
+    private readonly IEnumerable<ISkill> _builtinSkills;
+    private readonly IEnumerable<IRule> _builtinRules;
 
     /// <summary>
     /// 工作区注入的 PathGuard roots（仅记录工作区注入部分，避免误删全局 roots）
@@ -201,12 +206,16 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         WorkspaceRepository repo,
         SessionRepository sessionRepo,
         ISessionManager sessionManager,
-        IOptions<LuBanAgentOptions> options)
+        IOptions<LuBanAgentOptions> options,
+        IEnumerable<ISkill> builtinSkills,
+        IEnumerable<IRule> builtinRules)
     {
         _repo = repo;
         _sessionRepo = sessionRepo;
         _sessionManager = sessionManager;
         _options = options;
+        _builtinSkills = builtinSkills;
+        _builtinRules = builtinRules;
     }
 
     /// <summary>
@@ -347,28 +356,31 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         return true;
     }
 
-    /// <summary>
-    /// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
-    /// </summary>
-    public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
+/// <summary>
+/// 确保工作区配置目录存在（不加载配置到内存，配置由 AgentProfile 按需加载）
+/// </summary>
+public Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace)
+{
+    if (workspace.ConfigPath != null)
     {
-        if (workspace.ConfigPath != null)
-        {
-            var configDir = Path.Combine(workspace.RootPath, workspace.ConfigPath);
-            if (!Directory.Exists(configDir))
-            {
-                try { EnsureConfigDirectory(workspace.RootPath, workspace.Type); }
-                catch (Exception ex)
-                {
-                    AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
-                }
-            }
-            // 清理超过 24 小时的工作区临时文件
-            try { TempDirectory.Cleanup(TimeSpan.FromDays(1)); }
-            catch { }
+        var configDir = Path.Combine(workspace.RootPath, workspace.ConfigPath);
+        
+        // 无论目录是否存在，都调用 EnsureConfigDirectory 确保内置内容已初始化
+        try 
+        { 
+            EnsureConfigDirectory(workspace.RootPath, workspace.Type); 
         }
-        return Task.CompletedTask;
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
+        }
+        
+        // 清理超过 24 小时的工作区临时文件
+        try { TempDirectory.Cleanup(TimeSpan.FromDays(1)); }
+        catch { }
     }
+    return Task.CompletedTask;
+}
 
     /// <summary>
     /// 获取用户的所有工作区（userId 为 null 时获取全部）
@@ -390,10 +402,28 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     {
         var configDir = Path.Combine(rootPath, ".luban-agent");
         Directory.CreateDirectory(configDir);
-        Directory.CreateDirectory(Path.Combine(configDir, "skills"));
-        Directory.CreateDirectory(Path.Combine(configDir, "rules"));
-        Directory.CreateDirectory(Path.Combine(configDir, "mcps"));
-        Directory.CreateDirectory(Path.Combine(configDir, "temp"));
+        
+        var skillsDir = Path.Combine(configDir, "skills");
+        var rulesDir = Path.Combine(configDir, "rules");
+        var mcpsDir = Path.Combine(configDir, "mcps");
+        var tempDir = Path.Combine(configDir, "temp");
+        
+        Directory.CreateDirectory(skillsDir);
+        Directory.CreateDirectory(rulesDir);
+        Directory.CreateDirectory(mcpsDir);
+        Directory.CreateDirectory(tempDir);
+
+        // 如果 skills 目录为空，写入内置 skills
+        if (!Directory.EnumerateFileSystemEntries(skillsDir).Any())
+        {
+            WriteBuiltinSkills(skillsDir);
+        }
+
+        // 如果 rules 目录为空，写入内置 rules
+        if (!Directory.EnumerateFileSystemEntries(rulesDir).Any())
+        {
+            WriteBuiltinRules(rulesDir);
+        }
 
         var configPath = Path.Combine(configDir, "config.json");
         if (!File.Exists(configPath))
@@ -485,5 +515,83 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             LastActiveAt = ws.LastActiveAt,
             IsAuthorized = ws.IsAuthorized
         };
+    }
+
+    /// <summary>
+    /// 将内置 Skills 写入目录（SKILL.md 格式）
+    /// </summary>
+    private void WriteBuiltinSkills(string skillsDir)
+    {
+        foreach (var skill in _builtinSkills)
+        {
+            try
+            {
+                var skillDir = Path.Combine(skillsDir, skill.Id);
+                Directory.CreateDirectory(skillDir);
+                
+                var skillFile = Path.Combine(skillDir, "SKILL.md");
+                var content = FormatSkillMd(skill);
+                File.WriteAllText(skillFile, content);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"写入内置 Skill 失败: {skill.Id}", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 将内置 Rules 写入目录（JSON 格式）
+    /// </summary>
+    private void WriteBuiltinRules(string rulesDir)
+    {
+        foreach (var rule in _builtinRules)
+        {
+            try
+            {
+                var ruleFile = Path.Combine(rulesDir, $"{rule.Id}.json");
+                var config = new CustomRuleConfig
+                {
+                    Id = rule.Id,
+                    Name = rule.Name,
+                    Description = rule.Description,
+                    Priority = rule.Priority,
+                    Enabled = rule.IsEnabled,
+                    ActionTypePattern = "*",
+                    TargetPattern = "*",
+                    Action = "allow"
+                };
+                
+                var json = config.ToJson(hasIndentation: true);
+                File.WriteAllText(ruleFile, json);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"写入内置 Rule 失败: {rule.Id}", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 格式化 Skill 为 SKILL.md 格式
+    /// </summary>
+    private static string FormatSkillMd(ISkill skill)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("---");
+        sb.AppendLine($"name: {skill.Name}");
+        sb.AppendLine($"description: {skill.Description}");
+        sb.AppendLine($"category: {skill.Category}");
+        
+        if (skill.TriggerKeywords.Any())
+        {
+            sb.AppendLine($"triggers: {string.Join(", ", skill.TriggerKeywords)}");
+        }
+        
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.AppendLine(skill.PromptTemplate);
+        
+        return sb.ToString();
     }
 }
