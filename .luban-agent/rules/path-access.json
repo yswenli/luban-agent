@@ -1,0 +1,11 @@
+{
+  "Id": "path-access",
+  "Name": "路径访问规则",
+  "Description": "限制文件系统访问，防止访问敏感路径",
+  "ActionTypePattern": "*",
+  "TargetPattern": "*",
+  "Action": "allow",
+  "Priority": 100,
+  "Enabled": true,
+  "Content": null
+}
