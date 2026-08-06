@@ -113,6 +113,13 @@ public abstract class AgentProfile
         sb.AppendLine("- 搜索文件/内容时，rootPath 参数请使用工作区根目录的绝对路径，或使用 \".\" （已设置为根目录）");
         sb.AppendLine($"- 示例: Grep(rootPath=\"{workspace.RootPath}\", pattern=\"关键字\")");
         sb.AppendLine("- 示例: ListDirectory(path=\".\") 或 ListDirectory(path=\"" + workspace.RootPath + "\")");
+        sb.AppendLine();
+        sb.AppendLine("## 临时文件管理");
+        sb.AppendLine("- 临时文件（脚本、截图、中间产物）统一存放于工作区的 `.luban-agent/temp/` 目录");
+        sb.AppendLine($"- 示例: WriteFileAsync(path=\".luban-agent/temp/script.py\", content=\"...\")");
+        sb.AppendLine($"- 示例: ScreenshotAsync(path=\".luban-agent/temp/screenshot.png\")");
+        sb.AppendLine("- 临时目录会自动创建，无需手动创建");
+        sb.AppendLine("- 使用相对路径 `.luban-agent/temp/` 或绝对路径结合工作区根目录");
 
         if (activeSkill != null && !string.IsNullOrEmpty(activeSkill.PromptTemplate))
         {
