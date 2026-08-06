@@ -104,6 +104,10 @@ public class SessionRepository : BaseRepository<DbSession>
     /// </summary>
     public async Task<List<DbSession>> GetByWorkspaceAsync(string workspaceId)
     {
+        // 如果工作区ID为空，返回空列表，避免查询所有工作区的会话
+        if (string.IsNullOrEmpty(workspaceId))
+            return new List<DbSession>();
+
         return await AsQueryable()
             .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
             .OrderByDescending(s => s.UpdateTime)
