@@ -31,6 +31,7 @@ public class ConsoleAppService
     private readonly IWorkspaceManager _workspaceManager;
     private readonly WorkspaceRepository _workspaceRepo;
     private readonly SessionRepository _sessionRepo;
+    private readonly SessionMessageRepository _messageRepo;
     private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<string, ICommand> _commands;
     private readonly List<string> _commandHistory;
@@ -105,6 +106,7 @@ public class ConsoleAppService
         IWorkspaceManager workspaceManager,
         WorkspaceRepository workspaceRepo,
         SessionRepository sessionRepo,
+        SessionMessageRepository messageRepo,
         IServiceProvider serviceProvider)
     {
         _configManager = configManager;
@@ -116,6 +118,7 @@ public class ConsoleAppService
         _workspaceManager = workspaceManager;
         _workspaceRepo = workspaceRepo;
         _sessionRepo = sessionRepo;
+        _messageRepo = messageRepo;
         _serviceProvider = serviceProvider;
         _commands = new Dictionary<string, ICommand>();
         _commandHistory = new List<string>();
@@ -133,7 +136,7 @@ public class ConsoleAppService
         RegisterCommand(new SkillCommand(_configManager, _configuration, _skillRegistry));
         RegisterCommand(new RuleCommand(_configManager, _configuration, _ruleEngine));
         RegisterCommand(new MCPCommand(_configManager, _configuration, _mcpRegistry));
-        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
+        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo, _messageRepo));
         RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, _skillRegistry, TryExecuteCommandAsync));
         RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager, _skillRegistry));
         RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo));

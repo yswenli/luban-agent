@@ -171,6 +171,35 @@ public class SessionMessageRepository : BaseRepository<DbSessionMessage>
     }
 
     /// <summary>
+    /// 获取会话的第一条用户消息预览（用于列表展示）
+    /// </summary>
+    public async Task<Dictionary<string, string>> GetFirstUserMessagePreviewAsync(IEnumerable<string> sessionIds, int maxLength = 60)
+    {
+        var ids = sessionIds.ToList();
+        if (ids.Count == 0) return new Dictionary<string, string>();
+
+        var messages = await Context.Queryable<DbSessionMessage>()
+            .Where(m => ids.Contains(m.SessionId) && m.Role == "user" && !m.IsDelete)
+            .OrderBy(m => m.CreateTime)
+            .Select(m => new { m.SessionId, m.Content })
+            .ToListAsync();
+
+        var result = new Dictionary<string, string>();
+        foreach (var msg in messages)
+        {
+            if (!result.ContainsKey(msg.SessionId))
+            {
+                var preview = msg.Content.Length > maxLength
+                    ? msg.Content.Substring(0, maxLength) + "..."
+                    : msg.Content;
+                preview = preview.Replace("\n", " ").Replace("\r", "");
+                result[msg.SessionId] = preview;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// 获取会话消息
     /// </summary>
     public async Task<List<DbSessionMessage>> GetSessionMessagesAsync(string sessionId, int? limit = null)

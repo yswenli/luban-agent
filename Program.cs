@@ -169,6 +169,7 @@ class Program
 
         // 注册工作区服务
         services.AddSingleton<SessionRepository>();
+        services.AddSingleton<SessionMessageRepository>();
         services.AddSingleton<WorkspaceRepository>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
         services.AddSingleton<LuBan.AIAgent.LocalMemory.IWorkspaceContextProvider>(

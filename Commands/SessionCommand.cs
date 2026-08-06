@@ -23,6 +23,7 @@ public class SessionCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
     private readonly SessionRepository _sessionRepo;
+    private readonly SessionMessageRepository _messageRepo;
 
     /// <summary>
     /// 命令名称
@@ -37,11 +38,12 @@ public class SessionCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo)
+    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo)
         : base(configManager, configuration)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;
+        _messageRepo = messageRepo;
     }
 
     /// <summary>
@@ -121,13 +123,25 @@ public class SessionCommand : CommandBase
                 return;
             }
 
+            // 获取每个会话的第一条用户消息预览
+            var sessionIds = sessions.Select(s => s.SessionId);
+            var previews = await _messageRepo.GetFirstUserMessagePreviewAsync(sessionIds);
+
             for (int i = 0; i < sessions.Count; i++)
             {
                 var session = sessions[i];
                 var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
                 var marker = isCurrent ? " (当前)" : "";
+                
                 Console.WriteLine($"  {i + 1}. {session.Title ?? "未命名"}{marker}");
-                Console.WriteLine($"     消息: {session.MessageCount} | Token: {session.TotalTokens}");
+                Console.WriteLine($"     更新: {session.UpdateTime:yyyy-MM-dd HH:mm} | 消息: {session.MessageCount} | Token: {session.TotalTokens}");
+                
+                if (previews.TryGetValue(session.SessionId, out var preview))
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"     💬 {preview}");
+                    Console.ForegroundColor = ConsoleColor.Green;
+                }
             }
             Console.WriteLine();
             Console.WriteLine("提示: 使用 /se -s <编号> 切换会话");
