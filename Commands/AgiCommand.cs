@@ -125,6 +125,10 @@ public class AgiCommand : CommandBase
         Console.WriteLine("      输入 / 命令可执行操作，如 /session switch 1");
         Console.WriteLine("示例: 帮我查一下D盘下面有哪些目录");
         Console.WriteLine($"当前会话: {currentSession.Title ?? "未命名"}");
+
+        // 显示会话历史摘要（最近 5 条消息）
+        await DisplaySessionHistoryAsync(currentSession.SessionId);
+
         Console.WriteLine("开始对话 (输入 'exit' 返回主菜单)");
         Console.WriteLine();
 
@@ -612,4 +616,44 @@ public class AgiCommand : CommandBase
         return str;
     }
 
+    /// <summary>
+    /// 显示会话历史摘要（最近 5 条消息）
+    /// </summary>
+    private async Task DisplaySessionHistoryAsync(string sessionId)
+    {
+        try
+        {
+            // 获取活跃消息（排除已压缩的），按时间倒序取最新 5 条
+            var messages = (await _sessionManager.GetActiveMessagesAsync(sessionId))
+                .Where(m => m.Role != "summary") // 排除摘要消息
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(5)
+                .ToList();
+
+            if (messages.Count == 0)
+                return;
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("━━━ 最近对话 ━━━");
+            foreach (var msg in messages)
+            {
+                var role = msg.Role switch
+                {
+                    "user" => "👶 用户",
+                    "assistant" => "🤖 助手",
+                    "system" => "⚙️ 系统",
+                    _ => "💬 消息"
+                };
+                var preview = msg.Content.Length > 100 
+                    ? msg.Content.Substring(0, 100) + "..." 
+                    : msg.Content;
+                Console.WriteLine($"{role}: {preview.Replace("\n", " ").Replace("\r", "")}");
+            }
+            Console.ResetColor();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("显示会话历史失败", ex, sessionId);
+        }
+    }
 }
