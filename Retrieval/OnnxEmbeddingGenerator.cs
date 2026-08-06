@@ -47,14 +47,30 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
                 var tokenizerPath = Path.Combine(_modelDir, "tokenizer.json");
                 if (!File.Exists(tokenizerPath))
                     throw new FileNotFoundException($"tokenizer.json 不存在于 {tokenizerPath}");
+                
+                // Microsoft.ML.Tokenizers 2.0+ 使用 Create 方法替代 Load
                 var bertTokenizerType = typeof(Tokenizer).Assembly.GetType("Microsoft.ML.Tokenizers.BertTokenizer");
                 if (bertTokenizerType == null)
                     throw new NotSupportedException("Microsoft.ML.Tokenizers 版本不支持 BertTokenizer");
-                var loadMethod = bertTokenizerType.GetMethod("Load", new[] { typeof(string) });
-                if (loadMethod == null)
-                    throw new NotSupportedException("BertTokenizer.Load 方法不存在，请检查 Microsoft.ML.Tokenizers 版本");
-                _tokenizer = loadMethod.Invoke(null, new object[] { tokenizerPath }) as Tokenizer
-                    ?? throw new InvalidOperationException("BertTokenizer.Load 返回 null");
+                
+                // 尝试新 API: BertTokenizer.Create(string, BertOptions)
+                var createMethod = bertTokenizerType.GetMethod("Create", new[] { typeof(string), typeof(BertOptions) });
+                if (createMethod != null)
+                {
+                    // BertOptions 为非空参数，使用默认实例
+                    var options = new BertOptions();
+                    _tokenizer = createMethod.Invoke(null, new object[] { tokenizerPath, options }) as Tokenizer
+                        ?? throw new InvalidOperationException("BertTokenizer.Create 返回 null");
+                }
+                else
+                {
+                    // 回退到旧 API: BertTokenizer.Load(string)
+                    var loadMethod = bertTokenizerType.GetMethod("Load", new[] { typeof(string) });
+                    if (loadMethod == null)
+                        throw new NotSupportedException("BertTokenizer 不支持 Create 或 Load 方法，请检查 Microsoft.ML.Tokenizers 版本");
+                    _tokenizer = loadMethod.Invoke(null, new object[] { tokenizerPath }) as Tokenizer
+                        ?? throw new InvalidOperationException("BertTokenizer.Load 返回 null");
+                }
             }
             _session ??= new InferenceSession(Path.Combine(_modelDir, "model.onnx"));
             return (_session, _tokenizer);
