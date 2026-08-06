@@ -8,8 +8,9 @@
 
 - 框架（LuBan.AIAgent）只保留纯抽象 + Agent 运行时 + 可插拔组件
 - CLI（LubanAgent）承载所有具体实现（配置持久化、Provider 路由、SQLite 存储）
-- 框架移除 SQLite 依赖，可在无数据库的宿主中使用
+- 框架移除应用级 SQLite 依赖（`SqliteLocalMemoryStore`），保留 `DatabaseToolPlugin` 的 SQLite 支持
 - 消除重复代码（`ProviderModels` vs `ProviderHelper`）
+- 清理死代码（`LuBanChatClient` 在框架中从未实例化）
 
 ## 移动清单
 
@@ -17,17 +18,16 @@
 
 | 文件/类 | 框架位置 | CLI 目标位置 | 说明 |
 |---------|---------|-------------|------|
-| `ConfigManager` | `Configuration/Storage/` | `Services/` | 应用级配置管理 |
+| `ConfigManager` | `Configuration/Storage/` | `Services/` | 应用级配置管理（含 OpenAI SDK 客户端工厂） |
 | `AppConfig` | `Configuration/Storage/` | `Configuration/` | 配置数据模型 |
 | `ProviderConfig` | `Configuration/Storage/` | `Configuration/` | Provider 配置模型 |
 | `CustomRuleConfig` | `Configuration/Storage/` | `Configuration/` | 自定义规则配置 |
 | `CustomSkillConfig` | `Configuration/Storage/` | `Configuration/` | 自定义技能配置 |
 | `McpServerConfig` | `Configuration/Storage/` | `Configuration/` | MCP 服务器配置 |
 | `ProviderModels` | `Configuration/Storage/` | `Services/` | 合并到 `ProviderHelper` |
-| `LuBanChatClient` | `Providers/` | `Services/` | 多 Provider 路由 |
+| `LuBanChatClient` | `Providers/` | `Services/` | 多 Provider 路由（框架中从未实例化，清理死代码） |
 | `SqliteLocalMemoryStore` | `LocalMemory/` | `Infrastructure/` | SQLite 记忆存储 |
 | `NGramExtractor` | `LocalMemory/` | `Infrastructure/` | 依赖 SQLite 记忆存储 |
-| `SessionChatHistoryProvider` | `Sessions/` | `Services/` | 依赖具体 ISessionManager |
 
 ### 框架保留
 
@@ -41,7 +41,7 @@
 - 基础设施（`PathGuard`、`ProcessRunner`、`PlaywrightSession`）
 - `SanitizingChatClient`
 - 本地记忆抽象（`ILocalMemoryStore`、`ILocalMemoryService`、`IWorkspaceContextProvider`）
-- 会话抽象（`ISessionManager` 接口 + 模型）
+- 会话抽象（`ISessionManager` 接口 + 模型）+ `SessionChatHistoryProvider`（依赖纯抽象，框架有单元测试）
 - `ToolConfirmationService`
 - `AIFunctionFactoryHelper`
 
@@ -62,25 +62,26 @@ public interface IProviderRouter
 public record ProviderInfo(string Name, string DisplayName, string[] Models);
 ```
 
-### IAppConfigStore
+### IAppConfigReader
 
 ```csharp
-// 框架中定义：LuBan.AIAgent/Configuration/Storage/IAppConfigStore.cs
-namespace LuBan.AIAgent.Configuration.Storage;
+// 框架中定义：LuBan.AIAgent/Configuration/IAppConfigReader.cs
+namespace LuBan.AIAgent.Configuration;
 
-public interface IAppConfigStore
+/// <summary>
+/// 应用配置只读接口，供框架组件读取用户配置。
+/// 框架组件不应直接依赖具体的 ConfigManager 实现。
+/// </summary>
+public interface IAppConfigReader
 {
-    Task<AppConfigData> LoadAsync();
-    Task SaveAsync(AppConfigData config);
-}
-
-public class AppConfigData
-{
-    public List<ProviderConfigData> Providers { get; set; } = new();
-    public List<CustomSkillConfigData> CustomSkills { get; set; } = new();
-    public List<CustomRuleConfigData> CustomRules { get; set; } = new();
-    public List<McpServerConfigData> McpServers { get; set; } = new();
-    public string? SelectedModel { get; set; }
+    List<ProviderConfigData> Providers { get; }
+    string? SelectedModel { get; }
+    List<CustomSkillConfigData> CustomSkills { get; }
+    List<CustomRuleConfigData> CustomRules { get; }
+    List<McpServerConfigData> McpServers { get; }
+    List<string> DisabledBuiltinSkills { get; }
+    List<string> DisabledBuiltinRules { get; }
+    List<string> DisabledBuiltinMcpClients { get; }
 }
 
 public class ProviderConfigData
@@ -129,30 +130,39 @@ public class McpServerConfigData
 
 ### NuGet 依赖
 
-移除：`System.Data.SQLite.Core`（仅被移入 CLI 的 `SqliteLocalMemoryStore` 使用）
+**保留：** `System.Data.SQLite.Core`（`DatabaseToolPlugin` 使用，与 MySqlConnector/Npgsql/SqlClient 并列）
+
+**不移除：** 框架继续支持 SQLite 作为数据库工具的目标之一。
 
 ### 依赖反转
 
 | 框架组件 | 原来依赖 | 改为依赖 |
 |---------|---------|---------|
 | `LuBanAgentFactory` | `ConfigManager` | `IProviderRouter` |
-| `SkillRegistry` | `ConfigManager` | `IAppConfigStore` |
-| `RuleEngine` | `ConfigManager` | `IAppConfigStore` |
-| `MCPRegistry` | `ConfigManager` | `IAppConfigStore` |
+| `SkillRegistry` | `ConfigManager`（可选参数） | `IAppConfigReader`（可选参数） |
+| `RuleEngine` | `ConfigManager`（可选参数） | `IAppConfigReader`（可选参数） |
+| `MCPRegistry` | `ConfigManager`（可选参数） | `IAppConfigReader`（可选参数） |
+
+### LocalMemoryService 静态耦合修复
+
+`LocalMemoryService` 第 198 行调用 `SqliteLocalMemoryStore.ComputeContentHash()`，需要将哈希逻辑提取到 `MemoryEntry` 或独立工具类，消除对具体实现的静态依赖。
 
 ### AddLuBanAgent() 变化
 
-移除 `ConfigManager` 和 `LuBanChatClient` 注册，要求宿主自行注册 `IProviderRouter` 和 `IAppConfigStore`。
+- 移除 `ConfigManager` 注册（框架从未注册，由宿主在 `Program.cs` 注册）
+- 移除 `SqliteLocalMemoryStore` 注册（第 100-103 行），要求宿主注册 `ILocalMemoryStore`
+- 移除 `LuBanChatClient` 相关注册（框架从未注册，仅文档提及）
+- 要求宿主注册 `IProviderRouter` 和 `IAppConfigReader`
 
 ## CLI 端实现
 
 ### ProviderHelper 合并
 
-将框架的 `ProviderModels`（10 个 Provider）与 CLI 的 `appsettings.json`（6 个 Provider）合并为统一的 16 个 Provider 目录。
+将框架的 `ProviderModels`（7 个 Provider：openai/deepseek/kimi/glm/qwen/doubao/ollama）与 CLI 的 `appsettings.json`（9 个 Provider：Kimi/MiniMax/Ark/Bailian/Hunyuan/MiMo/Azure/Claude/Gemini）合并为统一的 16 个 Provider 目录。
 
-### ConfigManager 实现 IAppConfigStore
+### ConfigManager 实现 IAppConfigReader
 
-保留原有 JSON 文件读写逻辑（`%LocalAppData%\LuBan\AIAgent\config.json`），新增 `LoadAsync()`/`SaveAsync()` 接口实现。
+保留原有 JSON 文件读写逻辑（`%LocalAppData%\LuBan\AIAgent\config.json`），将 8 个只读属性适配为接口实现。
 
 ### LuBanChatClient 实现 IProviderRouter
 
@@ -173,10 +183,9 @@ LubanAgent/
 │   ├── NGramExtractor.cs
 │   └── DatabaseInitializer.cs (已有)
 ├── Services/               # 从框架移入 + 已有
-│   ├── ConfigManager.cs
+│   ├── ConfigManager.cs    # 实现 IAppConfigReader
 │   ├── ProviderHelper.cs   # 合并 ProviderModels
-│   ├── LuBanChatClient.cs
-│   ├── SessionChatHistoryProvider.cs
+│   ├── LuBanChatClient.cs  # 实现 IProviderRouter
 │   └── ...
 ```
 
@@ -184,17 +193,17 @@ LubanAgent/
 
 - `config.json` 格式不变，现有用户升级后无缝衔接
 - SQLite 数据库位置、表结构不变
-- `LuBan.AIAgent` 升主版本号（破坏性变更）
+- `LuBan.AIAgent` 升主版本号（破坏性变更：移除 `ConfigManager`、`SqliteLocalMemoryStore`、`LuBanChatClient`）
 - `LuBan.Agent.CLI` 同步升级
 
 ## 实施步骤
 
-1. 框架新增 `IProviderRouter`、`IAppConfigStore` 接口
-2. 框架组件改为依赖接口（`LuBanAgentFactory`、`SkillRegistry`、`RuleEngine`、`MCPRegistry`）
-3. CLI 新增接口实现（`ConfigManager`、`LuBanChatClient`）
-4. 框架移除旧文件（`ConfigManager`、`LuBanChatClient`、`SqliteLocalMemoryStore` 等）
-5. 框架移除 `System.Data.SQLite.Core` 依赖
-6. CLI 新增 `System.Data.SQLite.Core` 依赖
-7. 更新 `AddLuBanAgent()` 扩展方法
-8. CLI `Program.cs` 新增接口注册
+1. 框架新增 `IProviderRouter`、`IAppConfigReader` 接口
+2. 框架 `LocalMemoryService` 提取 `ComputeContentHash` 到 `MemoryEntry`，消除静态耦合
+3. 框架组件改为依赖接口（`LuBanAgentFactory`、`SkillRegistry`、`RuleEngine`、`MCPRegistry`）
+4. CLI 新增接口实现（`ConfigManager` 实现 `IAppConfigReader`，`LuBanChatClient` 实现 `IProviderRouter`）
+5. 框架移除旧文件（`ConfigManager`、`LuBanChatClient`、`SqliteLocalMemoryStore`、`NGramExtractor`、配置模型）
+6. CLI 移入上述文件并调整命名空间
+7. 更新 `AddLuBanAgent()` 扩展方法，移除 `SqliteLocalMemoryStore` 注册
+8. CLI `Program.cs` 注册 `IProviderRouter`、`IAppConfigReader`、`ILocalMemoryStore`
 9. 编译验证 + 运行测试
