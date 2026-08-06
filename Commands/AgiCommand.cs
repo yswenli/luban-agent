@@ -269,6 +269,8 @@ public class AgiCommand : CommandBase
 
             // ESC 键监听器：任务执行期间按 ESC 暂停
             using var escListener = new EscKeyListener();
+            // 设置取消令牌，使工具确认流程能响应 ESC
+            LuBan.AIAgent.Services.ToolConfirmationService.CancellationToken = escListener.Token;
             // 即时反馈：回车后立即显示 spinner，首个 chunk 到达后停止
             using var spinner = new ResponseSpinner("正在思考...");
 
