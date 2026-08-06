@@ -141,6 +141,7 @@ class Program
         var configManager = new ConfigManager(configPath);
         configManager.Load();
         services.AddSingleton(configManager);
+        services.AddSingleton<IAppConfigReader>(configManager);
 
         // 注册 LuBan 文件日志
         services.AddLogging(builder => builder.AddLuBanFileLogger());
@@ -150,6 +151,41 @@ class Program
         {
             var cm = sp.GetRequiredService<ConfigManager>();
             return cm.CreateChatClient();
+        });
+
+        // 注册 IProviderRouter
+        services.AddSingleton<IProviderRouter>(sp =>
+        {
+            var cm = sp.GetRequiredService<ConfigManager>();
+            var providers = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in cm.Providers)
+            {
+                if (!string.IsNullOrEmpty(p.ApiKey))
+                {
+                    var clientOptions = new OpenAI.OpenAIClientOptions();
+                    if (p.NetworkTimeoutSeconds.HasValue)
+                        clientOptions.NetworkTimeout = TimeSpan.FromSeconds(p.NetworkTimeoutSeconds.Value);
+                    if (!string.IsNullOrEmpty(p.BaseUrl))
+                        clientOptions.Endpoint = new Uri(p.BaseUrl);
+                    var credential = new System.ClientModel.ApiKeyCredential(p.ApiKey);
+                    var openAIClient = new OpenAI.OpenAIClient(credential, clientOptions);
+                    providers[p.Name] = openAIClient.GetChatClient("default").AsIChatClient();
+                }
+            }
+            return new LuBanChatClient(providers);
+        });
+
+        // 注册 ILocalMemoryStore（由 CLI 提供 SQLite 实现）
+        services.AddSingleton<LuBan.AIAgent.LocalMemory.ILocalMemoryStore>(sp =>
+        {
+            var opts = sp.GetRequiredService<IOptions<LuBan.AIAgent.Configuration.LocalMemoryOptions>>().Value;
+            var dbPath = opts.DatabasePath;
+            if (string.IsNullOrWhiteSpace(dbPath))
+            {
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                dbPath = Path.Combine(appData, "LuBan", "AIAgent", "localmemory.db");
+            }
+            return new LubanAgent.Infrastructure.SqliteLocalMemoryStore(dbPath);
         });
 
         services.AddLuBanAgent(configuration);

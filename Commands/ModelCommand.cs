@@ -70,13 +70,14 @@ public class ModelCommand : CommandBase
             return true;
         }
 
-        // 先异步刷新所有 Provider 的模型列表（容错、不阻塞）
+        // 模型列表刷新已移除（ProviderModels 不再在框架中），使用本地配置模型
         foreach (var p in providers)
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderModels.RefreshModelsAsync(p.Name, p.ApiKey, p.BaseUrl, cts.Token);
+                // 远程模型刷新需要 Provider 配置中的 API Key 和 BaseUrl
+                // 此处保留容错结构，实际刷新逻辑由宿主实现
             }
             catch (OperationCanceledException)
             {

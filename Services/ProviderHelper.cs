@@ -30,7 +30,7 @@ public static class ProviderHelper
         {
             return config.DisplayName;
         }
-        return ProviderModels.GetDisplayName(providerName);
+        return providerName;
     }
 
     public static List<ProviderEndpointInfo> GetEndpoints(string providerName)
@@ -58,7 +58,7 @@ public static class ProviderHelper
         {
             return config.Models;
         }
-        return ProviderModels.GetModels(providerName);
+        return new List<string>();
     }
 
     public static List<string> GetAllModels(string providerName, List<string>? customModels = null)

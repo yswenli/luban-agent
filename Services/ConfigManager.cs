@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LubanAgent.Configuration;
 using LuBan.AIAgent.Configuration;
 using Microsoft.Extensions.AI;
@@ -294,7 +295,7 @@ public class ConfigManager : IAppConfigReader
         {
             provider.CustomModels[index] = newModelName.Trim();
             if (SelectedModel == $"{provider.Name}:{oldModelName}")
-                SelectedModel = $"{provider.Name}:{newModelName.Trim()}";
+                _config.SelectedModel = $"{provider.Name}:{newModelName.Trim()}";
             Save();
         }
     }
@@ -306,7 +307,7 @@ public class ConfigManager : IAppConfigReader
         if (provider.CustomModels.Remove(modelName))
         {
             if (SelectedModel == $"{provider.Name}:{modelName}")
-                SelectedModel = null;
+                _config.SelectedModel = null;
             Save();
         }
     }
