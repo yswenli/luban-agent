@@ -51,11 +51,11 @@ public class SessionCommand : CommandBase
     {
         Console.WriteLine();
         Console.WriteLine("会话管理用法：");
-        Console.WriteLine("  /session -list           - 列出全部会话（创建时间倒序）");
+        Console.WriteLine("  /session -list           - 列出全部会话（更新时间倒序）");
         Console.WriteLine("  /session -new <标题>     - 创建新会话并切换（标题必填）");
-        Console.WriteLine("  /session -switch <标题>  - 按标题切换到会话");
+        Console.WriteLine("  /session -switch <编号|标题|会话ID>  - 切换到指定会话");
         Console.WriteLine("  /session -clear          - 物理删除全部会话及消息（需确认）");
-        Console.WriteLine("  简写: /se -l, /se -n 标题, /se -s 标题, /se -c");
+        Console.WriteLine("  简写: /se -l, /se -n 标题, /se -s 编号/标题/ID, /se -c");
         return Task.CompletedTask;
     }
 
@@ -113,7 +113,7 @@ public class SessionCommand : CommandBase
             Console.ForegroundColor = ConsoleColor.Green;
 
             Console.WriteLine();
-            Console.WriteLine("历史会话（创建时间倒序）：");
+            Console.WriteLine("历史会话（更新时间倒序）：");
 
             if (sessions.Count == 0)
             {
@@ -121,13 +121,16 @@ public class SessionCommand : CommandBase
                 return;
             }
 
-            foreach (var session in sessions)
+            for (int i = 0; i < sessions.Count; i++)
             {
+                var session = sessions[i];
                 var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
                 var marker = isCurrent ? " (当前)" : "";
-                Console.WriteLine($"  {session.CreateTime:yyyy-MM-dd HH:mm}  {session.Title ?? "未命名"}{marker}");
+                Console.WriteLine($"  {i + 1}. {session.Title ?? "未命名"}{marker}");
                 Console.WriteLine($"     消息: {session.MessageCount} | Token: {session.TotalTokens}");
             }
+            Console.WriteLine();
+            Console.WriteLine("提示: 使用 /se -s <编号> 切换会话");
         }
         finally
         {
@@ -149,11 +152,11 @@ public class SessionCommand : CommandBase
         Console.ResetColor();
     }
 
-    private async Task SwitchSessionAsync(string? title)
+    private async Task SwitchSessionAsync(string? identifier)
     {
-        if (string.IsNullOrWhiteSpace(title))
+        if (string.IsNullOrWhiteSpace(identifier))
         {
-            WriteError("用法: /session switch <标题>");
+            WriteError("用法: /session switch <编号|标题|会话ID>");
             return;
         }
 
@@ -166,18 +169,41 @@ public class SessionCommand : CommandBase
         }
 
         var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
-        var matched = sessions
-            .Where(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(s => s.CreateTime)
-            .FirstOrDefault();
+        if (sessions.Count == 0)
+        {
+            WriteError("当前工作区没有会话");
+            return;
+        }
+
+        DbSession? matched = null;
+
+        // 1. 尝试按编号匹配（从1开始的序号）
+        if (int.TryParse(identifier, out var index) && index >= 1 && index <= sessions.Count)
+        {
+            matched = sessions[index - 1]; // sessions 已按 UpdateTime 降序排序
+        }
+        // 2. 尝试按 SessionId 匹配
+        else if (identifier.Length == 32 && Guid.TryParseExact(identifier, "N", out _))
+        {
+            matched = sessions.FirstOrDefault(s => s.SessionId == identifier);
+        }
+        // 3. 尝试按标题匹配
+        else
+        {
+            matched = sessions.FirstOrDefault(s => 
+                string.Equals(s.Title, identifier, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (matched == null)
         {
-            WriteError($"找不到标题为 \"{title}\" 的会话");
+            WriteError($"找不到会话: {identifier}");
             Console.WriteLine("可用会话：");
-            foreach (var s in sessions)
+            for (int i = 0; i < sessions.Count; i++)
             {
-                Console.WriteLine($"  - {s.Title ?? "未命名"}");
+                var s = sessions[i];
+                var isCurrent = _sessionManager.CurrentSession?.SessionId == s.SessionId;
+                var marker = isCurrent ? " (当前)" : "";
+                Console.WriteLine($"  {i + 1}. {s.Title ?? "未命名"}{marker}");
             }
             return;
         }
