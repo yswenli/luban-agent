@@ -859,7 +859,7 @@ github 可用的工具：
 - 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、数据库、Redis、Web 请求、语义检索
 - ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
-- 💾 **会话历史自动持久化**，支持长对话压缩（SummarizingChatReducer），上下文永不丢失
+- 💾 **会话历史自动持久化**，支持长对话压缩（SummarizingChatReducer），上下文永不丢失；启动 `/agi` 时显示最近对话历史，快速了解上下文
 - 🎨 **自定义 Skill/Rule/MCP 持久化**，配置保存到本地文件，重启后自动加载
 - 🎯 **对话内 Skill 切换**：`/skill -switch` 选择 Skill 后，仅对下一条输入生效，执行后自动取消
 - 📄 **文件化 Skill**：支持 SKILL.md 文件定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
