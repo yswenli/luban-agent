@@ -452,6 +452,11 @@ public class AgiCommand : CommandBase
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
                 WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
             }
+            finally
+            {
+                // 清理取消令牌，避免影响下一次对话
+                ToolConfirmationService.CancellationToken = null;
+            }
         }
     }
 

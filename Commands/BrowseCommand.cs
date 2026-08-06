@@ -368,6 +368,11 @@ public class BrowseCommand : CommandBase
                 Console.WriteLine();
                 WriteError(GetFriendlyApiErrorMessage(ex));
             }
+            finally
+            {
+                // 清理取消令牌，避免影响下一次对话
+                ToolConfirmationService.CancellationToken = null;
+            }
         }
     }
 
