@@ -115,7 +115,10 @@ public class SessionRepository : BaseRepository<DbSession>
     /// </summary>
     public async Task<DbSession?> GetLatestSessionAsync(string workspaceId)
     {
-        return await GetFirstAsync(s => s.WorkspaceId == workspaceId && !s.IsDelete);
+        return await AsQueryable()
+            .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
+            .OrderByDescending(s => s.UpdateTime)
+            .FirstAsync();
     }
 
     /// <summary>
