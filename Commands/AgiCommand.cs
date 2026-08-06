@@ -192,10 +192,7 @@ public class AgiCommand : CommandBase
             var modelName = ConfigManager.SelectedModel ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
             var agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
 
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine("✓ 工具插件已加载（根据 appsettings.json 配置启用）");
-            Console.ResetColor();
-            Console.WriteLine();
+        Console.WriteLine();
 
             // 运行聊天循环（RAG 工作区带自动检索注入）
             await RunChatLoop(agent, profile, workspace, serviceProvider, agentFactory, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry, modelName);
