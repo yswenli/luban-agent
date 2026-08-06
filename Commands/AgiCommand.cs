@@ -130,13 +130,16 @@ public class AgiCommand : CommandBase
 
         try
         {
+            var confirmContext = serviceProvider.GetRequiredService<ToolConfirmationContext>();
+            var confirmService = serviceProvider.GetRequiredService<IToolConfirmationService>();
+
             // 设置工具确认回调
-            ToolConfirmationService.ConfirmationCallback = (toolName, args) =>
+            confirmContext.Callback = (toolName, args) =>
             {
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine($"[yellow]⚠️  [bold]危险操作请求: {Markup.Escape(toolName)}[/][/]");
                 AnsiConsole.MarkupLine("[yellow]参数:[/]");
-                var formattedArgs = ToolConfirmationService.FormatArguments(args, 500);
+                var formattedArgs = confirmService.FormatArguments(args, 500);
                 foreach (var line in formattedArgs.Split('\n'))
                 {
                     AnsiConsole.WriteLine(line);
@@ -144,7 +147,16 @@ public class AgiCommand : CommandBase
                 AnsiConsole.WriteLine();
 
                 AnsiConsole.Markup("[yellow]是否执行此操作？(y/N): [/]");
-                var input = Console.ReadLine()?.Trim().ToLower();
+                string? input;
+                EscKeyListener.BeginConsoleRead();
+                try
+                {
+                    input = Console.ReadLine()?.Trim().ToLower();
+                }
+                finally
+                {
+                    EscKeyListener.EndConsoleRead();
+                }
                 var confirmed = input == "y" || input == "yes";
 
                 if (confirmed)
@@ -160,7 +172,7 @@ public class AgiCommand : CommandBase
             };
 
             // 注册工作区路径检查回调，用于判断文件操作是否在工作区内
-            ToolConfirmationService.WorkspacePathChecker = (path) =>
+            confirmContext.WorkspacePathChecker = (path) =>
                 WorkspaceManager.IsWithinWorkspace(path);
 
             var agentFactory = serviceProvider.GetRequiredService<ILuBanAgentFactory>();
@@ -188,9 +200,8 @@ public class AgiCommand : CommandBase
         }
         finally
         {
-            // 清理确认回调
-            ToolConfirmationService.ConfirmationCallback = null;
-            ToolConfirmationService.WorkspacePathChecker = null;
+            // 清理确认上下文
+            serviceProvider.GetService<ToolConfirmationContext>()?.Reset();
         }
     }
 
@@ -270,7 +281,8 @@ public class AgiCommand : CommandBase
             // ESC 键监听器：任务执行期间按 ESC 暂停
             using var escListener = new EscKeyListener();
             // 设置取消令牌，使工具确认流程能响应 ESC
-            LuBan.AIAgent.Services.ToolConfirmationService.CancellationToken = escListener.Token;
+            var confirmContext = serviceProvider.GetRequiredService<ToolConfirmationContext>();
+            confirmContext.CancellationToken = escListener.Token;
             // 即时反馈：回车后立即显示 spinner，首个 chunk 到达后停止
             using var spinner = new ResponseSpinner("正在思考...");
 
@@ -455,7 +467,7 @@ public class AgiCommand : CommandBase
             finally
             {
                 // 清理取消令牌，避免影响下一次对话
-                ToolConfirmationService.CancellationToken = null;
+                confirmContext.CancellationToken = default;
             }
         }
     }

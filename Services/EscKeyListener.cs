@@ -29,6 +29,22 @@ public sealed class EscKeyListener : IDisposable
     private volatile bool _stopped;
 
     /// <summary>
+    /// 全局标志：主线程正在进行控制台输入（如确认对话框、ReadLine）。
+    /// 为 true 时 ESC 监听线程不读取键盘，避免与主线程竞争输入缓冲。
+    /// </summary>
+    private static volatile bool _mainThreadReadingConsole;
+
+    /// <summary>
+    /// 标记主线程开始读取控制台输入。读取完成后必须调用 <see cref="EndConsoleRead"/>。
+    /// </summary>
+    public static void BeginConsoleRead() => _mainThreadReadingConsole = true;
+
+    /// <summary>
+    /// 标记主线程结束控制台输入。
+    /// </summary>
+    public static void EndConsoleRead() => _mainThreadReadingConsole = false;
+
+    /// <summary>
     /// 获取取消令牌，ESC 触发时将被取消。
     /// </summary>
     public CancellationToken Token => _cts.Token;
@@ -52,12 +68,40 @@ public sealed class EscKeyListener : IDisposable
     }
 
     /// <summary>
-    /// 启动 ESC 键监听。
+    /// 当前控制台是否支持 ESC 键监听（重定向输入时不支持）。
+    /// </summary>
+    public static bool IsSupported
+    {
+        get
+        {
+            try
+            {
+                // 重定向输入时 KeyAvailable 不可用
+                return !Console.IsInputRedirected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 启动 ESC 键监听。控制台不支持时向用户输出一次性提示。
     /// </summary>
     public void Start()
     {
         if (_disposed || _stopped) return;
         if (_listenerThread.IsAlive) return;
+
+        if (!IsSupported)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("（当前环境不支持 ESC 键监听，如管道/重定向输入场景）");
+            Console.ResetColor();
+            return;
+        }
+
         _listenerThread.Start();
     }
 
@@ -104,6 +148,13 @@ public sealed class EscKeyListener : IDisposable
         {
             while (!_disposed && !_stopped && !_cts.IsCancellationRequested)
             {
+                // 主线程正在读取控制台时不争抢键盘缓冲，避免输入被截获
+                if (_mainThreadReadingConsole)
+                {
+                    Thread.Sleep(50);
+                    continue;
+                }
+
                 if (Console.KeyAvailable)
                 {
                     var key = Console.ReadKey(intercept: true);
@@ -142,9 +193,9 @@ public sealed class EscKeyListener : IDisposable
                 _listenerThread.Interrupt();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 忽略线程清理异常
+            Logger.Error("EscKeyListener.Dispose: 线程中断异常", ex);
         }
 
         _cts.Dispose();

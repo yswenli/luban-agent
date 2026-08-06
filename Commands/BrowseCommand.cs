@@ -132,7 +132,7 @@ public class BrowseCommand : CommandBase
                 toolGroups: new[] { "browser" });
 
             Console.WriteLine($"正在连接 {url}...");
-            var result = await RunInteractionLoop(agent, agentFactory, url, activeSkill);
+            var result = await RunInteractionLoop(agent, agentFactory, url, activeSkill, serviceProvider);
             agent = result.agent;
             activeSkill = result.activeSkill;
         }
@@ -191,7 +191,7 @@ public class BrowseCommand : CommandBase
     /// <summary>
     /// 运行交互循环，支持 ESC 取消、实时状态显示和 / 命令
     /// </summary>
-    private async Task<(LuBanAgent agent, ISkill? activeSkill)> RunInteractionLoop(LuBanAgent agent, ILuBanAgentFactory agentFactory, string url, ISkill? activeSkill)
+    private async Task<(LuBanAgent agent, ISkill? activeSkill)> RunInteractionLoop(LuBanAgent agent, ILuBanAgentFactory agentFactory, string url, ISkill? activeSkill, IServiceProvider serviceProvider)
     {
         bool autoActivationAttempted = false;
         while (true)
@@ -261,7 +261,8 @@ public class BrowseCommand : CommandBase
             // ESC 键监听器：任务执行期间按 ESC 暂停
             using var escListener = new EscKeyListener();
             // 设置取消令牌，使工具确认流程能响应 ESC
-            LuBan.AIAgent.Services.ToolConfirmationService.CancellationToken = escListener.Token;
+            var confirmContext = serviceProvider.GetRequiredService<ToolConfirmationContext>();
+            confirmContext.CancellationToken = escListener.Token;
             // 即时反馈：回车后立即显示 spinner
             using var spinner = new ResponseSpinner("正在处理浏览器指令...");
 
@@ -371,7 +372,7 @@ public class BrowseCommand : CommandBase
             finally
             {
                 // 清理取消令牌，避免影响下一次对话
-                ToolConfirmationService.CancellationToken = null;
+                confirmContext.CancellationToken = default;
             }
         }
     }
