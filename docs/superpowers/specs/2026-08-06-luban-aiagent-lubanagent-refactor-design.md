@@ -196,7 +196,7 @@ public static class TextUtils
 ### WildcardMatcher（通配符匹配）
 
 ```csharp
-// LuBan.AIAgent/Utils/Text/WildcardMatcher.cs 或 LuBan.AIAgent/Rules/WildcardMatcher.cs
+// LuBan.AIAgent/Utils/Text/WildcardMatcher.cs
 namespace LuBan.AIAgent.Utils.Text;
 
 /// <summary>
@@ -227,11 +227,10 @@ public static class WildcardMatcher
 
             var idx = value.IndexOf(part, pos, StringComparison.Ordinal);
             if (idx < 0) return false;
-            if (i == 0 && idx != 0) return false; // 第一段必须从开头匹配
+            if (i == 0 && idx != 0) return false;
             pos = idx + part.Length;
         }
 
-        // 最后一段必须匹配到结尾
         var lastPart = parts[^1];
         if (lastPart.Length > 0 && !value.EndsWith(lastPart, StringComparison.Ordinal))
             return false;
