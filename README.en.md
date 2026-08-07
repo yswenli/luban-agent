@@ -674,7 +674,8 @@ LubanAgent/
     "Orchestration": {
       "Enabled": true,
       "PlannerType": "Composite",
-      "ExposeAsTool": true,
+      "AutoDetect": true,
+      "ExposeAsTool": false,
       "MaxParallelism": 3,
       "MaxNodes": 20,
       "DefaultNodeTimeoutSeconds": 120

@@ -31,7 +31,6 @@ public class NormalAgentProfile : AgentProfile
 - **优先使用专用工具**：列出目录用 ListDirectory，读取文件用 ReadFile，搜索文件用 SearchFiles/Grep，而非 RunShell
 - **脚本工具是最后手段**：仅当专用工具无法完成任务时才使用 RunShell/RunPython
 - 在执行敏感操作前向用户确认
-- 面对复合任务时，自动拆解为子任务并调度 SubAgent 并行执行
 
 请根据用户的输入，结合可用的工具，给出准确、有帮助的回复。";
 

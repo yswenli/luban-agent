@@ -280,13 +280,80 @@ public class AgiCommand : CommandBase
                 finalInput = await InjectRetrievalContextAsync(input, workspace, serviceProvider);
             }
 
-            var hasToolCalls = false;
+            // 自动编排判定（仅普通工作区且 AutoDetect 启用时）
+            var orchestrationOptions = serviceProvider.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Orchestration;
+            var autoDetectEnabled = orchestrationOptions?.AutoDetect ?? false;
+            var isRagWorkspace = workspace.Type == "Rag";
+            // 启发式预过滤：短输入且无复合关键词时跳过 planner，节省一次 LLM 调用
+            var skipByHeuristic = orchestrationOptions?.HeuristicFilter?.ShouldSkipPlanning(input) ?? false;
 
-            // ESC 键监听器：任务执行期间按 ESC 暂停
+            // ESC 键监听器：任务执行期间按 ESC 暂停（提前创建，覆盖 planner 和主对话）
             using var escListener = new EscKeyListener();
             // 设置取消令牌，使工具确认流程能响应 ESC
             var confirmContext = serviceProvider.GetRequiredService<ToolConfirmationContext>();
             confirmContext.CancellationToken = escListener.Token;
+
+            if (autoDetectEnabled && !isRagWorkspace && !skipByHeuristic)
+            {
+                try
+                {
+                    escListener.Start();
+                    using var plannerSpinner = new ResponseSpinner("正在分析任务...");
+
+                    var planner = serviceProvider.GetRequiredService<LuBan.AIAgent.Orchestration.Planner.ITaskPlanner>();
+                    var graph = await planner.PlanAsync(finalInput, escListener.Token);
+
+                    plannerSpinner.Stop();
+
+                    // 至少 2 个节点才视为复合任务，单节点直接由主 Agent 处理
+                    if (graph != null && graph.Nodes.Count >= 2)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine($"检测到复合任务，已拆解为 {graph.Nodes.Count} 个子任务...");
+                        Console.ResetColor();
+
+                        var orchestrator = serviceProvider.GetRequiredService<LuBan.AIAgent.Orchestration.IOrchestrator>();
+                        var orchestrationResult = await orchestrator.RunAsync(graph, escListener.Token);
+
+                        if (orchestrationResult.OverallStatus == "completed" || orchestrationResult.OverallStatus == "partial")
+                        {
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.Write($"{DateTime.Now:HH:mm:ss} 🤖 ");
+                            Console.ResetColor();
+                            Console.WriteLine(orchestrationResult.FinalOutput);
+                            escListener.Stop();
+                            continue;
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine($"编排失败（{orchestrationResult.OverallStatus}），回退到普通对话...");
+                            Console.ResetColor();
+                        }
+                    }
+
+                    escListener.Stop();
+                }
+                catch (OperationCanceledException)
+                {
+                    escListener.Stop();
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("任务规划已取消");
+                    Console.ResetColor();
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    escListener.Stop();
+                    Logger.Warn("Planner 决策失败，回退到普通对话", ex);
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("任务规划失败，使用普通模式处理...");
+                    Console.ResetColor();
+                }
+            }
+
+            var hasToolCalls = false;
+
             // 即时反馈：回车后立即显示 spinner，首个 chunk 到达后停止
             using var spinner = new ResponseSpinner("正在思考...");
 
