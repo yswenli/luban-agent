@@ -36,7 +36,7 @@
 ## ✨ 核心特性
 
 ### 🤖 多模型路由
-- **16 种 AI Provider 支持**：OpenAI、Azure、DeepSeek、Kimi、GLM、通义千问、豆包、Claude、Gemini、Ollama、MiniMax、字节方舟、阿里百炼、腾讯混元、小米 MiMo，以及自定义 OpenAI 兼容 API
+- **20+ 种 AI Provider 支持**：OpenAI、Azure、DeepSeek、Kimi、GLM、通义千问、豆包、Claude、Gemini、Ollama、MiniMax、字节方舟、阿里百炼、腾讯混元、小米 MiMo、百度文心一言(ERNIE)、xAI Grok、百度智能云千帆、腾讯云 TI 平台、华为云盘古、AWS Bedrock、OpenRouter，以及自定义 OpenAI 兼容 API
 - **多地址支持**：部分 Provider 提供多个 API 地址（如 Kimi 有国内通用、海外直连、编程专属三个地址），添加时可灵活选择
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
@@ -211,8 +211,15 @@ dotnet tool list -g
   13. 阿里百炼
   14. 腾讯混元
   15. 小米 MiMo
-  16. 自定义 OpenAI 兼容 API
-请选择 (1-16): 4
+  16. 百度文心一言 (ERNIE)
+  17. xAI Grok
+  18. 百度智能云千帆
+  19. 腾讯云 TI 平台
+  20. 华为云盘古
+  21. AWS Bedrock
+  22. OpenRouter
+  23. 自定义 OpenAI 兼容 API
+请选择 (1-23): 4
 请输入 Kimi API Key: ********
 
 Kimi API 地址选择:
@@ -581,8 +588,13 @@ LubanAgent/
 │   ├── StatsCommand.cs        # 统计信息
 │   ├── WorkCommand.cs         # 工作区管理
 │   └── RagCommand.cs          # RAG 知识库管理
+├── Configuration/         # 配置模型
+│   ├── AppConfig.cs           # 应用配置
+│   └── ProviderConfig.cs      # Provider 配置
 ├── Services/              # 核心服务
 │   ├── ConsoleAppService.cs   # 命令分发与交互
+│   ├── ConfigManager.cs       # 配置管理器（实现 IAppConfigReader）
+│   ├── LuBanChatClient.cs     # Provider 路由（实现 IProviderRouter）
 │   ├── SessionManager.cs      # 会话持久化
 │   ├── WorkspaceManager.cs    # 工作区管理与授权
 │   ├── AgentProfile.cs        # Agent 配置基类
@@ -597,7 +609,8 @@ LubanAgent/
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX 嵌入生成器
 │   └── SqliteVectorStore.cs   # SQLite 向量存储（工作区隔离）
 ├── Infrastructure/        # 基础设施
-│   └── DatabaseInitializer.cs # 数据库初始化
+│   ├── DatabaseInitializer.cs # 数据库初始化
+│   └── SqliteLocalMemoryStore.cs  # SQLite 记忆存储
 ├── Entities/              # 数据实体
 ├── Model/                 # AI 模型文件
 └── Program.cs             # 程序入口
@@ -854,7 +867,7 @@ github 可用的工具：
 
 ## 💡 小贴士
 
-- 💬 模型路由使用 `provider:model` 格式，新增 Provider 只需通过 `/provider -add` 添加
+- 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider，新增 Provider 只需通过 `/provider -add` 添加
 - 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择最适合的地址
 - 📌 **支持直接命令行执行**：`luban-agent-cli /se -s 新会话` 即可从任意目录执行单次命令并退出，无需进入交互菜单（详见[命令一览](#-命令一览)）
 - 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、数据库、Redis、Web 请求、语义检索

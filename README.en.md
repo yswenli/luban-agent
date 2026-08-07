@@ -36,7 +36,7 @@ This isn't science fiction—this is **LuBan Agent**.
 ## ✨ Core Features
 
 ### 🤖 Multi-Model Routing
-- **16 AI Provider Support**: OpenAI, Azure, DeepSeek, Kimi, GLM, Qwen, Doubao, Claude, Gemini, Ollama, MiniMax, Volcengine Ark, Alibaba Bailian, Tencent Hunyuan, Xiaomi MiMo, plus custom OpenAI-compatible API
+- **20+ AI Provider Support**: OpenAI, Azure, DeepSeek, Kimi, GLM, Qwen, Doubao, Claude, Gemini, Ollama, MiniMax, Volcengine Ark, Alibaba Bailian, Tencent Hunyuan, Xiaomi MiMo, Baidu ERNIE, xAI Grok, Baidu Qianfan, Tencent TI Platform, Huawei Pangu, AWS Bedrock, OpenRouter, plus custom OpenAI-compatible API
 - **Multiple Endpoints**: Some providers offer multiple API endpoints (e.g., Kimi has domestic, overseas, and coding-specific addresses), selectable during setup
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
@@ -210,8 +210,15 @@ Select Provider type:
   13. Alibaba Bailian
   14. Tencent Hunyuan
   15. Xiaomi MiMo
-  16. Custom OpenAI-Compatible API
-Select (1-16): 4
+  16. Baidu ERNIE
+  17. xAI Grok
+  18. Baidu Qianfan
+  19. Tencent TI Platform
+  20. Huawei Pangu
+  21. AWS Bedrock
+  22. OpenRouter
+  23. Custom OpenAI-Compatible API
+Select (1-23): 4
 Enter Kimi API Key: ********
 
 Kimi API endpoint selection:
@@ -580,8 +587,13 @@ LubanAgent/
 │   ├── StatsCommand.cs        # Statistics
 │   ├── WorkCommand.cs         # Workspace management
 │   └── RagCommand.cs          # RAG knowledge base management
+├── Configuration/         # Configuration models
+│   ├── AppConfig.cs           # Application config
+│   └── ProviderConfig.cs      # Provider config
 ├── Services/              # Core services
 │   ├── ConsoleAppService.cs   # Command dispatch & interaction
+│   ├── ConfigManager.cs       # Config manager (implements IAppConfigReader)
+│   ├── LuBanChatClient.cs     # Provider routing (implements IProviderRouter)
 │   ├── SessionManager.cs      # Session persistence
 │   ├── WorkspaceManager.cs    # Workspace management & authorization
 │   ├── AgentProfile.cs        # Agent profile base class
@@ -596,7 +608,8 @@ LubanAgent/
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX embedding generator
 │   └── SqliteVectorStore.cs   # SQLite vector store (workspace isolation)
 ├── Infrastructure/        # Infrastructure
-│   └── DatabaseInitializer.cs # Database initialization
+│   ├── DatabaseInitializer.cs # Database initialization
+│   └── SqliteLocalMemoryStore.cs  # SQLite memory store
 ├── Entities/              # Data entities
 ├── Model/                 # AI model files
 └── Program.cs             # Application entry point
@@ -853,7 +866,7 @@ Available tools for github:
 
 ## 💡 Tips
 
-- 💬 Model routing uses `provider:model` format; add new providers via `/provider -add`
+- 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
 - 📌 **Direct command-line execution supported**: `luban-agent-cli /se -s "New Session"` runs a single command from any directory and exits, no interactive menu needed (see [Command Reference](#-command-reference))
 - 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, database, Redis, web requests, and semantic retrieval
