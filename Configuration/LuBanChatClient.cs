@@ -15,140 +15,156 @@
 *****************************************************************************/
 using LuBan.AIAgent.Configuration;
 using Microsoft.Extensions.AI;
+using OpenAI;
 
 namespace LubanAgent.Configuration;
 
-/// <summary>
-/// 多 Provider 路由的聊天客户端，根据模型标识（providerName:modelName）将请求分发到对应的 Provider
-/// </summary>
 public class LuBanChatClient : IProviderRouter, IChatClient
 {
-    private readonly Dictionary<string, IChatClient> _providers;
+    private readonly Dictionary<string, (OpenAIClient Client, OpenAIClientOptions? Options)> _openAIClients;
+    private readonly Dictionary<string, IChatClient> _cachedClients;
     private readonly string _defaultProvider;
     private int _disposedInt;
 
-    /// <summary>
-    /// 创建 LuBanChatClient 实例
-    /// </summary>
-    /// <param name="providers">Provider 名称与聊天客户端的键值对集合</param>
-    /// <param name="defaultProvider">默认 Provider 名称，默认为 openai</param>
     public LuBanChatClient(
-        IEnumerable<KeyValuePair<string, IChatClient>> providers,
+        IEnumerable<KeyValuePair<string, (OpenAIClient Client, OpenAIClientOptions? Options)>> openAIClients,
         string defaultProvider = "openai")
     {
-        _providers = providers?.ToDictionary(p => p.Key.ToLowerInvariant(), p => p.Value)
-            ?? new Dictionary<string, IChatClient>();
+        _openAIClients = openAIClients?.ToDictionary(
+            p => p.Key.ToLowerInvariant(),
+            p => p.Value) ?? new Dictionary<string, (OpenAIClient, OpenAIClientOptions?)>();
+        _cachedClients = new Dictionary<string, IChatClient>();
         _defaultProvider = defaultProvider.ToLowerInvariant();
     }
 
-    /// <summary>
-    /// 根据模型标识创建或获取对应 Provider 的聊天客户端
-    /// </summary>
-    /// <param name="providerModel">模型标识（格式：providerName:modelName），为空时使用默认 Provider</param>
-    /// <returns>对应的聊天客户端</returns>
     public IChatClient CreateChatClient(string? providerModel = null)
     {
-        if (string.IsNullOrEmpty(providerModel))
-            return GetProvider(null);
-        return GetProvider(providerModel);
+        var (providerName, modelName) = ParseModelId(providerModel);
+        
+        if (!_openAIClients.TryGetValue(providerName, out var clientInfo))
+            throw new InvalidOperationException($"Provider '{providerName}' not found");
+
+        if (string.IsNullOrEmpty(modelName))
+            throw new InvalidOperationException($"Model name is required in '{providerModel}'");
+
+        var cacheKey = $"{providerName}:{modelName}";
+        if (_cachedClients.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var chatClient = clientInfo.Client.GetChatClient(modelName).AsIChatClient();
+        _cachedClients[cacheKey] = chatClient;
+        return chatClient;
     }
 
-    /// <summary>
-    /// 获取所有已注册的 Provider 信息
-    /// </summary>
-    /// <returns>Provider 信息列表</returns>
     public IReadOnlyList<ProviderInfo> GetAvailableProviders()
     {
-        return _providers.Select(p => new ProviderInfo(p.Key, p.Key, Array.Empty<string>())).ToList();
+        return _openAIClients.Select(p => new ProviderInfo(p.Key, p.Key, Array.Empty<string>())).ToList();
     }
 
-    /// <summary>
-    /// 发送聊天请求并获取完整响应，请求被路由到对应 Provider
-    /// </summary>
-    /// <param name="messages">聊天消息列表</param>
-    /// <param name="options">聊天选项</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>聊天响应</returns>
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var provider = GetProvider(options?.ModelId);
-        return provider.GetResponseAsync(messages, options, cancellationToken);
+        var chatClient = CreateChatClient(options?.ModelId);
+        var cleanOptions = RemoveProviderPrefix(options);
+        return chatClient.GetResponseAsync(messages, cleanOptions, cancellationToken);
     }
 
-    /// <summary>
-    /// 发送聊天请求并返回流式响应更新，请求被路由到对应 Provider
-    /// </summary>
-    /// <param name="messages">聊天消息列表</param>
-    /// <param name="options">聊天选项</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>聊天响应更新的可异步枚举</returns>
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var provider = GetProvider(options?.ModelId);
-        await foreach (var update in provider.GetStreamingResponseAsync(messages, options, cancellationToken))
+        var chatClient = CreateChatClient(options?.ModelId);
+        var cleanOptions = RemoveProviderPrefix(options);
+        await foreach (var update in chatClient.GetStreamingResponseAsync(messages, cleanOptions, cancellationToken))
         {
             yield return update;
         }
     }
 
-    /// <summary>
-    /// 在所有 Provider 中查找指定类型的服务
-    /// </summary>
-    /// <param name="serviceType">服务类型</param>
-    /// <param name="key">可选的服务键</param>
-    /// <returns>找到的服务实例；未找到时返回 null</returns>
     public object? GetService(Type serviceType, object? key = null)
     {
-        foreach (var provider in _providers.Values)
+        foreach (var client in _cachedClients.Values)
         {
-            var service = provider.GetService(serviceType, key);
+            var service = client.GetService(serviceType, key);
             if (service != null)
                 return service;
         }
         return null;
     }
 
-    /// <summary>
-    /// 释放所有 Provider 资源
-    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposedInt, 1) == 0)
         {
-            foreach (var provider in _providers.Values)
+            foreach (var client in _cachedClients.Values)
             {
-                try { provider.Dispose(); } catch { }
+                try { client.Dispose(); } catch { }
             }
-            _providers.Clear();
+            _cachedClients.Clear();
         }
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// 根据模型标识解析并获取对应的 Provider 聊天客户端
-    /// </summary>
-    /// <param name="modelId">模型标识，为空时使用默认 Provider</param>
-    /// <returns>对应 Provider 的聊天客户端</returns>
-    private IChatClient GetProvider(string? modelId)
+    private (string providerName, string modelName) ParseModelId(string? modelId)
     {
         var providerName = _defaultProvider;
+        var modelName = "";
 
         if (!string.IsNullOrEmpty(modelId))
         {
             var parts = modelId.Split(':', 2);
             if (parts.Length == 2)
+            {
                 providerName = parts[0].ToLowerInvariant();
+                modelName = parts[1];
+            }
         }
 
-        if (_providers.TryGetValue(providerName, out var provider))
-            return provider;
+        return (providerName, modelName);
+    }
 
-        throw new InvalidOperationException($"Provider '{providerName}' not found");
+    private ChatOptions? RemoveProviderPrefix(ChatOptions? options)
+    {
+        if (options == null || string.IsNullOrEmpty(options.ModelId))
+            return options;
+
+        var parts = options.ModelId.Split(':', 2);
+        if (parts.Length == 2)
+        {
+            var cleaned = new ChatOptions
+            {
+                ModelId = parts[1],
+                Instructions = options.Instructions,
+                Temperature = options.Temperature,
+                MaxOutputTokens = options.MaxOutputTokens,
+                TopP = options.TopP,
+                TopK = options.TopK,
+                FrequencyPenalty = options.FrequencyPenalty,
+                PresencePenalty = options.PresencePenalty,
+                Seed = options.Seed,
+                ResponseFormat = options.ResponseFormat,
+                AllowMultipleToolCalls = options.AllowMultipleToolCalls,
+                ToolMode = options.ToolMode
+            };
+            
+            if (options.Tools != null && cleaned.Tools != null)
+            {
+                foreach (var tool in options.Tools)
+                    cleaned.Tools.Add(tool);
+            }
+            
+            if (options.AdditionalProperties != null && cleaned.AdditionalProperties != null)
+            {
+                foreach (var kvp in options.AdditionalProperties)
+                    cleaned.AdditionalProperties[kvp.Key] = kvp.Value;
+            }
+
+            return cleaned;
+        }
+
+        return options;
     }
 }

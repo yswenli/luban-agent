@@ -363,12 +363,12 @@ public class ModelCommand : CommandBase
         return Task.FromResult(true);
     }
 
-    private Task<bool> ExecuteSwitchAsync(string[] args)
+    private async Task<bool> ExecuteSwitchAsync(string[] args)
     {
         if (ConfigManager.Providers.Count == 0)
         {
             WriteError("暂无配置的 Provider，请先使用 provider add 添加");
-            return Task.FromResult(true);
+            return true;
         }
 
         if (args.Length > 0)
@@ -377,14 +377,14 @@ public class ModelCommand : CommandBase
             if (!modelId.Contains(':'))
             {
                 WriteError("模型格式错误，应为 provider:model，例如 openai:gpt-4o");
-                return Task.FromResult(true);
+                return true;
             }
 
             var parts = modelId.Split(':', 2);
             if (!ConfigManager.HasProvider(parts[0]))
             {
                 WriteError($"Provider '{parts[0]}' 不存在");
-                return Task.FromResult(true);
+                return true;
             }
 
             try
@@ -398,7 +398,7 @@ public class ModelCommand : CommandBase
                 WriteError(ex.Message);
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
         Console.WriteLine();
@@ -419,10 +419,29 @@ public class ModelCommand : CommandBase
         if (!int.TryParse(providerChoice, out var providerIndex) || providerIndex < 1 || providerIndex > providerList.Count)
         {
             WriteError("无效选择");
-            return Task.FromResult(true);
+            return true;
         }
 
         var selectedProvider = providerList[providerIndex - 1];
+
+        // 先刷新该 Provider 的模型列表（容错、不阻塞）
+        if (!string.IsNullOrEmpty(selectedProvider.ApiKey))
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await ProviderHelper.RefreshModelsAsync(selectedProvider.Name, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                WriteInfo($"刷新 {ProviderHelper.GetDisplayName(selectedProvider.Name)} 模型列表超时，将使用本地预定义模型。");
+            }
+            catch (Exception ex)
+            {
+                WriteInfo($"刷新 {ProviderHelper.GetDisplayName(selectedProvider.Name)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+            }
+        }
+
         var allModels = ProviderHelper.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
 
         Console.WriteLine();
@@ -444,7 +463,7 @@ public class ModelCommand : CommandBase
             if (!int.TryParse(modelChoice, out var modelIndex) || modelIndex < 1 || modelIndex > allModels.Count + 1)
             {
                 WriteError("无效选择");
-                return Task.FromResult(true);
+                return true;
             }
 
             string modelName;
@@ -461,7 +480,7 @@ public class ModelCommand : CommandBase
             if (string.IsNullOrEmpty(modelName))
             {
                 WriteError("模型名称不能为空");
-                return Task.FromResult(true);
+                return true;
             }
 
             try
@@ -484,7 +503,7 @@ public class ModelCommand : CommandBase
             if (string.IsNullOrEmpty(modelName))
             {
                 WriteError("模型名称不能为空");
-                return Task.FromResult(true);
+                return true;
             }
 
             try
@@ -500,6 +519,6 @@ public class ModelCommand : CommandBase
             }
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 }

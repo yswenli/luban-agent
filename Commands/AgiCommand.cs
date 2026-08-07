@@ -247,6 +247,22 @@ public class AgiCommand : CommandBase
             if (string.IsNullOrEmpty(input))
                 continue;
 
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss} 👶 {input}");
+
+            // 检查模型是否切换
+            var currentModel = ConfigManager.SelectedModel;
+            if (currentModel != modelName)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"检测到模型切换: {modelName} -> {currentModel}，正在重新初始化...");
+                Console.ResetColor();
+                modelName = currentModel ?? throw new InvalidOperationException("未选择模型");
+                agent = await profile.CreateAgentAsync(agentFactory, modelName, workspace, ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"✓ 已切换到模型: {modelName}");
+                Console.ResetColor();
+            }
+
             if (input.ToLower() == "exit")
                 break;
 

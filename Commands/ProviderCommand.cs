@@ -418,13 +418,13 @@ public class ProviderCommand : CommandBase
     /// </summary>
     /// <param name="args">可选的 Provider 名称参数</param>
     /// <returns>是否已处理</returns>
-    private Task<bool> ExecuteSwitchAsync(string[] args)
+    private async Task<bool> ExecuteSwitchAsync(string[] args)
     {
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
             WriteError("暂无配置的 Provider，请先使用 provider add 添加");
-            return Task.FromResult(true);
+            return true;
         }
 
         string providerName;
@@ -436,7 +436,7 @@ public class ProviderCommand : CommandBase
             if (!ConfigManager.HasProvider(providerName))
             {
                 WriteError($"Provider '{providerName}' 不存在");
-                return Task.FromResult(true);
+                return true;
             }
         }
         else
@@ -456,13 +456,32 @@ public class ProviderCommand : CommandBase
             if (!int.TryParse(choice, out var index) || index < 1 || index > providers.Count)
             {
                 WriteError("无效选择");
-                return Task.FromResult(true);
+                return true;
             }
 
             providerName = providers[index - 1].Name;
         }
 
         var provider = ConfigManager.GetProvider(providerName);
+
+        // 先刷新该 Provider 的模型列表（容错、不阻塞）
+        if (provider != null && !string.IsNullOrEmpty(provider.ApiKey))
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await ProviderHelper.RefreshModelsAsync(providerName, provider.ApiKey, provider.BaseUrl, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表超时，将使用本地预定义模型。");
+            }
+            catch (Exception ex)
+            {
+                WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+            }
+        }
+
         var allModels = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
         
         // 如果 Provider 没有预定义模型，让用户手动输入模型名称
@@ -474,12 +493,12 @@ public class ProviderCommand : CommandBase
             if (string.IsNullOrEmpty(modelName))
             {
                 WriteError("模型名称不能为空");
-                return Task.FromResult(true);
+                return true;
             }
 
             ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
             WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {modelName}");
-            return Task.FromResult(true);
+            return true;
         }
 
         Console.WriteLine();
@@ -496,14 +515,14 @@ public class ProviderCommand : CommandBase
         if (!int.TryParse(modelChoice, out var modelIndex) || modelIndex < 1 || modelIndex > allModels.Count)
         {
             WriteError("无效选择");
-            return Task.FromResult(true);
+            return true;
         }
 
         var selectedModel = allModels[modelIndex - 1];
         ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
         WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {selectedModel}");
 
-        return Task.FromResult(true);
+        return true;
     }
 
     /// <summary>

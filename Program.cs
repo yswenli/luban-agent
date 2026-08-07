@@ -157,7 +157,7 @@ class Program
         services.AddSingleton<IProviderRouter>(sp =>
         {
             var cm = sp.GetRequiredService<ConfigManager>();
-            var providers = new Dictionary<string, IChatClient>(StringComparer.OrdinalIgnoreCase);
+            var providers = new Dictionary<string, (OpenAI.OpenAIClient, OpenAI.OpenAIClientOptions?)>();
             foreach (var p in cm.Providers)
             {
                 if (!string.IsNullOrEmpty(p.ApiKey))
@@ -169,7 +169,7 @@ class Program
                         clientOptions.Endpoint = new Uri(p.BaseUrl);
                     var credential = new System.ClientModel.ApiKeyCredential(p.ApiKey);
                     var openAIClient = new OpenAI.OpenAIClient(credential, clientOptions);
-                    providers[p.Name] = openAIClient.GetChatClient("default").AsIChatClient();
+                    providers[p.Name] = (openAIClient, clientOptions);
                 }
             }
             return new LuBanChatClient(providers);
@@ -231,3 +231,4 @@ class Program
         public string? CurrentWorkspaceId => getWorkspaceId();
     }
 }
+
