@@ -108,6 +108,21 @@ public class AgiCommand : CommandBase
             _skillRegistry.LoadFromWorkspace(workspace.RootPath);
         }
 
+        // 加载工作区编排配置：任务模板（.luban-agent/plans）与自定义角色（.luban-agent/roles）
+        try
+        {
+            var templatePlanner = serviceProvider.GetService<LuBan.AIAgent.Orchestration.Planner.TemplateTaskPlanner>();
+            var templatesLoaded = templatePlanner?.LoadFromWorkspace(workspace.RootPath) ?? 0;
+            var roleRegistry = serviceProvider.GetService<LuBan.AIAgent.Orchestration.SubAgentRoleRegistry>();
+            var rolesLoaded = roleRegistry?.LoadFromWorkspace(workspace.RootPath) ?? 0;
+            if (templatesLoaded > 0 || rolesLoaded > 0)
+                Console.WriteLine($"已加载工作区编排配置: {templatesLoaded} 个任务模板, {rolesLoaded} 个自定义角色");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("加载工作区编排配置失败", ex);
+        }
+
         Console.WriteLine();
         Console.WriteLine($"工作区: {workspace.Name} ({workspace.RootPath})");
         if (workspace.Type == "Rag")
