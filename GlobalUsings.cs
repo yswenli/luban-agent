@@ -4,14 +4,14 @@
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LubanAgent
-*文件名： GloabUsing
+*文件名： GlobalUsings
 *版本号： V1.0.0.0
 *唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/7/27
-*描述：GloabUsing
+*描述：GlobalUsings
 *
 *****************************************************************************/
 global using LuBan.AIAgent;
