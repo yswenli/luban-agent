@@ -587,23 +587,30 @@ LubanAgent/
 │   ├── StatsCommand.cs        # Statistics
 │   ├── WorkCommand.cs         # Workspace management
 │   └── RagCommand.cs          # RAG knowledge base management
-├── Configuration/         # Configuration models
-│   ├── AppConfig.cs           # Application config
-│   └── ProviderConfig.cs      # Provider config
-├── Services/              # Core services
-│   ├── ConsoleAppService.cs   # Command dispatch & interaction
+├── Configuration/         # Configuration management
+│   ├── AppConfig.cs           # Application config model
+│   ├── ProviderConfig.cs      # Provider config model
+│   ├── ProviderEndpointConfig.cs  # Provider endpoint config
 │   ├── ConfigManager.cs       # Config manager (implements IAppConfigReader)
-│   ├── LuBanChatClient.cs     # Provider routing (implements IProviderRouter)
-│   ├── SessionManager.cs      # Session persistence
-│   ├── WorkspaceManager.cs    # Workspace management & authorization
+│   ├── ProviderHelper.cs      # Provider metadata & model catalog
+│   └── LuBanChatClient.cs     # Provider routing (implements IProviderRouter)
+├── Profiles/              # Agent profiles
 │   ├── AgentProfile.cs        # Agent profile base class
 │   ├── NormalAgentProfile.cs  # Normal workspace profile
 │   └── RagAgentProfile.cs     # RAG workspace profile
+├── UI/                    # Console UI
+│   ├── EscKeyListener.cs      # ESC key listener
+│   └── ResponseSpinner.cs     # Loading spinner
+├── Services/              # Core services
+│   ├── ConsoleAppService.cs   # Command dispatch & interaction
+│   ├── SessionManager.cs      # Session persistence
+│   └── WorkspaceManager.cs    # Workspace management & authorization
 ├── Repositories/          # Data access layer
 │   ├── SessionRepository.cs   # Session storage
 │   ├── WorkspaceRepository.cs # Workspace storage
 │   └── RagRepository.cs       # RAG data storage
 ├── Retrieval/             # Semantic retrieval
+│   ├── EmbeddingModelCatalog.cs   # Embedding model catalog
 │   ├── ModelManager.cs        # Embedding model management
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX embedding generator
 │   └── SqliteVectorStore.cs   # SQLite vector store (workspace isolation)

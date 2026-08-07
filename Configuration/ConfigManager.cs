@@ -1,5 +1,4 @@
 using System.Text.Json;
-using LubanAgent.Configuration;
 using LuBan.AIAgent.Configuration;
 using Microsoft.Extensions.AI;
 

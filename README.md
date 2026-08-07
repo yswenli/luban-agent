@@ -588,23 +588,30 @@ LubanAgent/
 │   ├── StatsCommand.cs        # 统计信息
 │   ├── WorkCommand.cs         # 工作区管理
 │   └── RagCommand.cs          # RAG 知识库管理
-├── Configuration/         # 配置模型
-│   ├── AppConfig.cs           # 应用配置
-│   └── ProviderConfig.cs      # Provider 配置
-├── Services/              # 核心服务
-│   ├── ConsoleAppService.cs   # 命令分发与交互
+├── Configuration/         # 配置管理
+│   ├── AppConfig.cs           # 应用配置模型
+│   ├── ProviderConfig.cs      # Provider 配置模型
+│   ├── ProviderEndpointConfig.cs  # Provider 端点配置
 │   ├── ConfigManager.cs       # 配置管理器（实现 IAppConfigReader）
-│   ├── LuBanChatClient.cs     # Provider 路由（实现 IProviderRouter）
-│   ├── SessionManager.cs      # 会话持久化
-│   ├── WorkspaceManager.cs    # 工作区管理与授权
+│   ├── ProviderHelper.cs      # Provider 元数据与模型目录
+│   └── LuBanChatClient.cs     # Provider 路由（实现 IProviderRouter）
+├── Profiles/              # Agent 配置
 │   ├── AgentProfile.cs        # Agent 配置基类
 │   ├── NormalAgentProfile.cs  # 普通工作区配置
 │   └── RagAgentProfile.cs     # RAG 工作区配置
+├── UI/                    # 控制台 UI
+│   ├── EscKeyListener.cs      # ESC 键监听
+│   └── ResponseSpinner.cs     # 加载动画
+├── Services/              # 核心服务
+│   ├── ConsoleAppService.cs   # 命令分发与交互
+│   ├── SessionManager.cs      # 会话持久化
+│   └── WorkspaceManager.cs    # 工作区管理与授权
 ├── Repositories/          # 数据访问层
 │   ├── SessionRepository.cs   # 会话存储
 │   ├── WorkspaceRepository.cs # 工作区存储
 │   └── RagRepository.cs       # RAG 数据存储
 ├── Retrieval/             # 语义检索
+│   ├── EmbeddingModelCatalog.cs   # 嵌入模型目录
 │   ├── ModelManager.cs        # 嵌入模型管理
 │   ├── OnnxEmbeddingGenerator.cs  # ONNX 嵌入生成器
 │   └── SqliteVectorStore.cs   # SQLite 向量存储（工作区隔离）
