@@ -53,12 +53,31 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
                 if (bertTokenizerType == null)
                     throw new NotSupportedException("Microsoft.ML.Tokenizers 版本不支持 BertTokenizer");
                 
-                // 尝试新 API: BertTokenizer.Create(string, BertOptions)
                 var createMethod = bertTokenizerType.GetMethod("Create", new[] { typeof(string), typeof(BertOptions) });
                 if (createMethod != null)
                 {
-                    // BertOptions 为非空参数，使用默认实例
                     var options = new BertOptions();
+                    var configPath = Path.Combine(_modelDir, "tokenizer_config.json");
+                    if (File.Exists(configPath))
+                    {
+                        try
+                        {
+                            var configText = File.ReadAllText(configPath);
+                            var config = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(configText);
+                            if (config.TryGetProperty("do_lower_case", out var doLowerProp))
+                                options.LowerCaseBeforeTokenization = doLowerProp.GetBoolean();
+                            if (config.TryGetProperty("unk_token", out var unkProp))
+                                options.UnknownToken = unkProp.GetString() ?? "[UNK]";
+                            if (config.TryGetProperty("strip_accents", out var stripProp) && stripProp.ValueKind != System.Text.Json.JsonValueKind.Null)
+                                options.RemoveNonSpacingMarks = stripProp.GetBoolean();
+                            if (config.TryGetProperty("tokenize_chinese_chars", out var cjkProp))
+                                options.IndividuallyTokenizeCjk = cjkProp.GetBoolean();
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"读取 tokenizer_config.json 失败: {ex.Message}");
+                        }
+                    }
                     _tokenizer = createMethod.Invoke(null, new object[] { tokenizerPath, options }) as Tokenizer
                         ?? throw new InvalidOperationException("BertTokenizer.Create 返回 null");
                 }

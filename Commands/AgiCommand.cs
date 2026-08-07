@@ -330,6 +330,7 @@ public class AgiCommand : CommandBase
                 {
                     escListener.Start();
                     using var plannerSpinner = new ResponseSpinner("正在分析任务...");
+                    plannerSpinner.Start();
 
                     var planner = serviceProvider.GetRequiredService<LuBan.AIAgent.Orchestration.Planner.ITaskPlanner>();
                     var graph = await planner.PlanAsync(finalInput, escListener.Token);
