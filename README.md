@@ -90,6 +90,8 @@
 - **上下文传递**：节点间通过 `{dep:xxx}` 占位符引用前驱输出
 - **错误处理**：关键节点失败跳过后继，非关键节点失败继续执行
 - **无感集成**：在 `/agi` 对话中自动触发，无需手动切换命令
+- **编排扩展**: 工作区 `.luban-agent/plans/*.json` 定义任务模板、`.luban-agent/roles/*.json` 定义自定义 SubAgent 角色；`Orchestration:PlannerModel` 与节点 `ModelName` 支持 `provider:model` 多模型路由
+- **启发式预过滤**：短输入且无复合关键词时跳过任务拆解，节省 LLM 调用
 
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
@@ -679,7 +681,12 @@ LubanAgent/
       "ExposeAsTool": false,
       "MaxParallelism": 3,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 120
+      "DefaultNodeTimeoutSeconds": 120,
+      "HeuristicFilter": {
+        "Enabled": true,
+        "MaxLength": 20,
+        "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
+      }
     }
   }
 }

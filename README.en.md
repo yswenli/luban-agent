@@ -90,6 +90,8 @@ Nine core built-in skills, plug and play:
 - **Context Passing**: Nodes reference predecessor outputs via `{dep:xxx}` placeholders
 - **Error Handling**: Critical node failure skips successors, non-critical failure continues execution
 - **Seamless Integration**: Automatically triggered in `/agi` conversation, no manual command switching needed
+- **Orchestration Extensions**: workspace `.luban-agent/plans/*.json` for task templates and `.luban-agent/roles/*.json` for custom SubAgent roles; `Orchestration:PlannerModel` and node `ModelName` support `provider:model` multi-model routing
+- **Heuristic Pre-Filter**: short inputs without composite keywords skip task planning, saving LLM calls
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
@@ -678,7 +680,12 @@ LubanAgent/
       "ExposeAsTool": false,
       "MaxParallelism": 3,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 120
+      "DefaultNodeTimeoutSeconds": 120,
+      "HeuristicFilter": {
+        "Enabled": true,
+        "MaxLength": 20,
+        "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
+      }
     }
   }
 }
