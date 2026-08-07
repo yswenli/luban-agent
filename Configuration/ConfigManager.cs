@@ -1,9 +1,27 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net8.0
+*Author：yswenli
+*命名空间：LubanAgent.Configuration
+*文件名： ConfigManager
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人： yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/7
+*描述：应用配置管理器，负责配置的加载、保存及各类配置项的增删改查
+*
+*****************************************************************************/
 using System.Text.Json;
 using LuBan.AIAgent.Configuration;
 using Microsoft.Extensions.AI;
 
 namespace LubanAgent.Configuration;
 
+/// <summary>
+/// 应用配置管理器，负责配置文件的加载与保存，并提供 Provider、Skill、规则、MCP 服务器及模型等配置项的读写操作
+/// </summary>
 public class ConfigManager : IAppConfigReader
 {
     private readonly string _configPath;
@@ -26,21 +44,63 @@ public class ConfigManager : IAppConfigReader
     List<string> IAppConfigReader.DisabledBuiltinRules => _config.DisabledBuiltinRules;
     List<string> IAppConfigReader.DisabledBuiltinMcpClients => _config.DisabledBuiltinMcpClients;
 
+    /// <summary>
+    /// 已配置的 Provider 列表
+    /// </summary>
     public List<ProviderConfig> Providers => _config.Providers;
+
+    /// <summary>
+    /// 当前选中的模型（格式：providerName:modelName）
+    /// </summary>
     public string? SelectedModel => _config.SelectedModel;
+
+    /// <summary>
+    /// 自定义 Skill 配置列表
+    /// </summary>
     public List<CustomSkillConfig> CustomSkills => _config.CustomSkills;
+
+    /// <summary>
+    /// 自定义规则配置列表
+    /// </summary>
     public List<CustomRuleConfig> CustomRules => _config.CustomRules;
+
+    /// <summary>
+    /// MCP 服务器配置列表
+    /// </summary>
     public List<McpServerConfig> McpServers => _config.McpServers;
+
+    /// <summary>
+    /// 已禁用的内置 Skill 标识列表
+    /// </summary>
     public List<string> DisabledBuiltinSkills => _config.DisabledBuiltinSkills;
+
+    /// <summary>
+    /// 已禁用的内置规则标识列表
+    /// </summary>
     public List<string> DisabledBuiltinRules => _config.DisabledBuiltinRules;
+
+    /// <summary>
+    /// 已禁用的内置 MCP 客户端名称列表
+    /// </summary>
     public List<string> DisabledBuiltinMcpClients => _config.DisabledBuiltinMcpClients;
+
+    /// <summary>
+    /// 是否已选中模型
+    /// </summary>
     public bool HasSelectedModel => !string.IsNullOrEmpty(SelectedModel);
 
+    /// <summary>
+    /// 创建 ConfigManager 实例
+    /// </summary>
+    /// <param name="configPath">配置文件路径</param>
     public ConfigManager(string configPath)
     {
         _configPath = configPath ?? throw new ArgumentNullException(nameof(configPath));
     }
 
+    /// <summary>
+    /// 从磁盘加载配置，加载失败时使用空配置
+    /// </summary>
     public void Load()
     {
         try
@@ -73,6 +133,10 @@ public class ConfigManager : IAppConfigReader
         }
     }
 
+    /// <summary>
+    /// 将当前配置序列化并保存到磁盘，目录不存在时自动创建
+    /// </summary>
+    /// <exception cref="InvalidOperationException">保存失败时抛出</exception>
     public void Save()
     {
         try
@@ -90,6 +154,12 @@ public class ConfigManager : IAppConfigReader
         }
     }
 
+    /// <summary>
+    /// 添加或更新 Provider，已存在时更新其 API Key 与 Base URL
+    /// </summary>
+    /// <param name="name">Provider 名称</param>
+    /// <param name="apiKey">API 密钥</param>
+    /// <param name="baseUrl">API 基础地址，可省略</param>
     public void AddProvider(string name, string apiKey, string? baseUrl = null)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -111,6 +181,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 设置当前选中的模型
+    /// </summary>
+    /// <param name="model">模型标识（格式：providerName:modelName）</param>
     public void SetSelectedModel(string model)
     {
         if (string.IsNullOrWhiteSpace(model))
@@ -119,16 +193,33 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 清空全部配置并保存
+    /// </summary>
     public void Clear()
     {
         _config = new AppConfig();
         Save();
     }
 
+    /// <summary>
+    /// 判断指定名称的 Provider 是否已配置
+    /// </summary>
+    /// <param name="name">Provider 名称</param>
+    /// <returns>已配置时返回 true，否则返回 false</returns>
     public bool HasProvider(string name) => Providers.Any(p => p.Name == name.ToLowerInvariant());
 
+    /// <summary>
+    /// 按名称获取 Provider 配置
+    /// </summary>
+    /// <param name="name">Provider 名称</param>
+    /// <returns>Provider 配置；不存在时返回 null</returns>
     public ProviderConfig? GetProvider(string name) => Providers.FirstOrDefault(p => p.Name == name.ToLowerInvariant());
 
+    /// <summary>
+    /// 添加自定义 Skill，已存在时抛出异常
+    /// </summary>
+    /// <param name="skill">Skill 配置</param>
     public void AddCustomSkill(CustomSkillConfig skill)
     {
         ArgumentNullException.ThrowIfNull(skill);
@@ -141,6 +232,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 更新自定义 Skill 的可编辑字段
+    /// </summary>
+    /// <param name="skill">包含更新后数据的 Skill 配置</param>
     public void UpdateCustomSkill(CustomSkillConfig skill)
     {
         ArgumentNullException.ThrowIfNull(skill);
@@ -155,12 +250,21 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 删除指定标识的自定义 Skill
+    /// </summary>
+    /// <param name="id">Skill 标识</param>
     public void RemoveCustomSkill(string id)
     {
         var removed = CustomSkills.RemoveAll(s => s.Id == id.ToLowerInvariant());
         if (removed > 0) Save();
     }
 
+    /// <summary>
+    /// 设置自定义 Skill 的启用状态
+    /// </summary>
+    /// <param name="id">Skill 标识</param>
+    /// <param name="enabled">是否启用</param>
     public void SetCustomSkillEnabled(string id, bool enabled)
     {
         var skill = CustomSkills.FirstOrDefault(s => s.Id == id.ToLowerInvariant());
@@ -169,6 +273,11 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 设置内置 Skill 的启用状态
+    /// </summary>
+    /// <param name="id">内置 Skill 标识</param>
+    /// <param name="enabled">是否启用</param>
     public void SetBuiltinSkillEnabled(string id, bool enabled)
     {
         id = id.ToLowerInvariant();
@@ -177,6 +286,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 添加自定义规则，已存在时抛出异常
+    /// </summary>
+    /// <param name="rule">规则配置</param>
     public void AddCustomRule(CustomRuleConfig rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
@@ -189,6 +302,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 更新自定义规则的可编辑字段
+    /// </summary>
+    /// <param name="rule">包含更新后数据的规则配置</param>
     public void UpdateCustomRule(CustomRuleConfig rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
@@ -203,12 +320,21 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 删除指定标识的自定义规则
+    /// </summary>
+    /// <param name="id">规则标识</param>
     public void RemoveCustomRule(string id)
     {
         var removed = CustomRules.RemoveAll(r => r.Id == id.ToLowerInvariant());
         if (removed > 0) Save();
     }
 
+    /// <summary>
+    /// 设置自定义规则的启用状态
+    /// </summary>
+    /// <param name="id">规则标识</param>
+    /// <param name="enabled">是否启用</param>
     public void SetCustomRuleEnabled(string id, bool enabled)
     {
         var rule = CustomRules.FirstOrDefault(r => r.Id == id.ToLowerInvariant());
@@ -217,6 +343,11 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 设置内置规则的启用状态
+    /// </summary>
+    /// <param name="id">内置规则标识</param>
+    /// <param name="enabled">是否启用</param>
     public void SetBuiltinRuleEnabled(string id, bool enabled)
     {
         id = id.ToLowerInvariant();
@@ -225,6 +356,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 添加 MCP 服务器配置，已存在时抛出异常
+    /// </summary>
+    /// <param name="server">MCP 服务器配置</param>
     public void AddMcpServer(McpServerConfig server)
     {
         ArgumentNullException.ThrowIfNull(server);
@@ -237,6 +372,10 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 更新 MCP 服务器的可编辑字段
+    /// </summary>
+    /// <param name="server">包含更新后数据的 MCP 服务器配置</param>
     public void UpdateMcpServer(McpServerConfig server)
     {
         ArgumentNullException.ThrowIfNull(server);
@@ -249,12 +388,21 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 删除指定名称的 MCP 服务器配置
+    /// </summary>
+    /// <param name="name">MCP 服务器名称</param>
     public void RemoveMcpServer(string name)
     {
         var removed = McpServers.RemoveAll(s => s.Name == name.ToLowerInvariant());
         if (removed > 0) Save();
     }
 
+    /// <summary>
+    /// 设置 MCP 服务器的启用状态
+    /// </summary>
+    /// <param name="name">MCP 服务器名称</param>
+    /// <param name="enabled">是否启用</param>
     public void SetMcpServerEnabled(string name, bool enabled)
     {
         var server = McpServers.FirstOrDefault(s => s.Name == name.ToLowerInvariant());
@@ -263,6 +411,11 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 设置内置 MCP 客户端的启用状态
+    /// </summary>
+    /// <param name="name">内置 MCP 客户端名称</param>
+    /// <param name="enabled">是否启用</param>
     public void SetBuiltinMcpClientEnabled(string name, bool enabled)
     {
         name = name.ToLowerInvariant();
@@ -271,6 +424,11 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>
+    /// 为指定 Provider 添加自定义模型
+    /// </summary>
+    /// <param name="providerName">Provider 名称</param>
+    /// <param name="modelName">模型名称</param>
     public void AddCustomModel(string providerName, string modelName)
     {
         var provider = GetProvider(providerName);
@@ -285,6 +443,12 @@ public class ConfigManager : IAppConfigReader
         }
     }
 
+    /// <summary>
+    /// 重命名指定 Provider 的自定义模型，同步更新当前选中模型
+    /// </summary>
+    /// <param name="providerName">Provider 名称</param>
+    /// <param name="oldModelName">原模型名称</param>
+    /// <param name="newModelName">新模型名称</param>
     public void UpdateCustomModel(string providerName, string oldModelName, string newModelName)
     {
         var provider = GetProvider(providerName);
@@ -299,6 +463,11 @@ public class ConfigManager : IAppConfigReader
         }
     }
 
+    /// <summary>
+    /// 删除指定 Provider 的自定义模型，若其被选中则同时清除选中模型
+    /// </summary>
+    /// <param name="providerName">Provider 名称</param>
+    /// <param name="modelName">模型名称</param>
     public void RemoveCustomModel(string providerName, string modelName)
     {
         var provider = GetProvider(providerName);
@@ -311,6 +480,11 @@ public class ConfigManager : IAppConfigReader
         }
     }
 
+    /// <summary>
+    /// 获取指定 Provider 的全部模型（内置预设与用户自定义模型合并）
+    /// </summary>
+    /// <param name="providerName">Provider 名称</param>
+    /// <returns>完整模型列表；Provider 不存在时返回空列表</returns>
     public List<string> GetAllModels(string providerName)
     {
         var provider = GetProvider(providerName);
@@ -325,6 +499,11 @@ public class ConfigManager : IAppConfigReader
         return allModels;
     }
 
+    /// <summary>
+    /// 根据当前选中的模型创建聊天客户端
+    /// </summary>
+    /// <returns>配置好的 IChatClient 实例</returns>
+    /// <exception cref="InvalidOperationException">未选中模型、模型格式错误或 Provider 不存在时抛出</exception>
     public IChatClient CreateChatClient()
     {
         if (string.IsNullOrEmpty(SelectedModel))
@@ -354,6 +533,10 @@ public class ConfigManager : IAppConfigReader
         return openAIClient.GetChatClient(modelName).AsIChatClient();
     }
 
+    /// <summary>
+    /// 获取默认配置文件路径
+    /// </summary>
+    /// <returns>本地应用数据目录下的默认配置文件路径</returns>
     public static string GetDefaultConfigPath()
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

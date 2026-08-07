@@ -1,3 +1,18 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net8.0
+*Author：yswenli
+*命名空间：LubanAgent.Infrastructure
+*文件名： SqliteLocalMemoryStore
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人： yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/7
+*描述：基于 SQLite 的本地记忆存储实现
+*
+*****************************************************************************/
 using System.Data;
 using System.Data.SQLite;
 using LuBan.AIAgent.LocalMemory;
@@ -5,12 +20,19 @@ using LuBan.AIAgent.Utils.Text;
 
 namespace LubanAgent.Infrastructure;
 
+/// <summary>
+/// 基于 SQLite 的本地记忆存储实现，支持记忆条目的增删改查、过期清理及向量存储
+/// </summary>
 public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
 {
     private readonly string _connectionString;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
+    /// <summary>
+    /// 创建 SqliteLocalMemoryStore 实例，自动创建数据库目录并初始化表结构
+    /// </summary>
+    /// <param name="dbPath">SQLite 数据库文件路径</param>
     public SqliteLocalMemoryStore(string dbPath)
     {
         var dir = Path.GetDirectoryName(dbPath);
@@ -21,8 +43,15 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         EnsureSchemaAsync().GetAwaiter().GetResult();
     }
 
+    /// <summary>
+    /// 创建新的数据库连接
+    /// </summary>
+    /// <returns>SQLite 连接实例</returns>
     private SQLiteConnection CreateConnection() => new(_connectionString);
 
+    /// <summary>
+    /// 初始化表结构，补充缺失的列并回填 ContentHash
+    /// </summary>
     private async Task EnsureSchemaAsync()
     {
         using var conn = CreateConnection();
@@ -97,6 +126,13 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         }
     }
 
+    /// <summary>
+    /// 新增或更新一条记忆记录（按 WorkspaceId 与 ContentHash 判断是否已存在），并保存其向量数据
+    /// </summary>
+    /// <param name="entry">记忆条目</param>
+    /// <param name="vectorBytes">向量字节数据</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>已持久化的记忆条目（更新时返回合并后的条目）</returns>
     public async Task<MemoryEntry> UpsertAsync(MemoryEntry entry, byte[] vectorBytes, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -178,6 +214,12 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         }
     }
 
+    /// <summary>
+    /// 按主键删除记忆记录
+    /// </summary>
+    /// <param name="id">记忆主键</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>删除成功时返回 true，记录不存在时返回 false</returns>
     public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -198,6 +240,11 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         }
     }
 
+    /// <summary>
+    /// 删除所有已过期的记忆记录
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>被删除的记录数</returns>
     public async Task<int> DeleteExpiredAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -217,6 +264,14 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         }
     }
 
+    /// <summary>
+    /// 按分类与工作空间查询未过期的记忆记录，按更新时间倒序返回
+    /// </summary>
+    /// <param name="category">分类，为空时不过滤</param>
+    /// <param name="workspaceId">工作空间标识</param>
+    /// <param name="limit">返回的最大条数，默认 100</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>记忆条目列表</returns>
     public async Task<IReadOnlyList<MemoryEntry>> ListAsync(string? category = null, string? workspaceId = null, int limit = 100, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -234,6 +289,14 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return results;
     }
 
+    /// <summary>
+    /// 加载全部未过期的记忆记录及其向量数据
+    /// </summary>
+    /// <param name="category">分类，为空时不过滤</param>
+    /// <param name="workspaceId">工作空间标识</param>
+    /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>记忆条目与其向量数据的元组列表</returns>
     public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadAllAsync(string? category = null, string? workspaceId = null, bool includeAllWorkspaces = false, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -254,6 +317,13 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return results;
     }
 
+    /// <summary>
+    /// 按主键列表批量加载记忆记录及其向量数据
+    /// </summary>
+    /// <param name="ids">记忆主键集合</param>
+    /// <param name="workspaceId">工作空间标识</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>记忆条目与其向量数据的元组列表</returns>
     public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadByIdsAsync(IEnumerable<string> ids, string? workspaceId, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -281,6 +351,15 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return results;
     }
 
+    /// <summary>
+    /// 构建 SELECT 查询语句，附加过滤条件与排序分页
+    /// </summary>
+    /// <param name="columns">查询的列</param>
+    /// <param name="category">分类过滤条件</param>
+    /// <param name="workspaceId">工作空间过滤条件</param>
+    /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
+    /// <param name="orderLimit">是否追加按更新时间倒序并限制条数</param>
+    /// <returns>构建完成的 SELECT 语句</returns>
     private static string BuildSelect(string columns, string? category, string? workspaceId, bool includeAllWorkspaces, bool orderLimit)
     {
         var where = BuildWhere(category, workspaceId, includeAllWorkspaces);
@@ -288,6 +367,13 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return $"{columns} WHERE 1=1{where}{suffix}";
     }
 
+    /// <summary>
+    /// 构建 WHERE 过滤条件（分类、工作空间、过期时间）
+    /// </summary>
+    /// <param name="category">分类过滤条件</param>
+    /// <param name="workspaceId">工作空间过滤条件</param>
+    /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
+    /// <returns>WHERE 条件子句</returns>
     private static string BuildWhere(string? category, string? workspaceId, bool includeAllWorkspaces)
     {
         var sb = new System.Text.StringBuilder();
@@ -304,6 +390,12 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return sb.ToString();
     }
 
+    /// <summary>
+    /// 为过滤条件绑定 SQL 参数
+    /// </summary>
+    /// <param name="cmd">SQLite 命令</param>
+    /// <param name="category">分类过滤条件</param>
+    /// <param name="workspaceId">工作空间过滤条件</param>
     private static void AddFilterParams(SQLiteCommand cmd, string? category, string? workspaceId)
     {
         if (category != null)
@@ -313,6 +405,11 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
     }
 
+    /// <summary>
+    /// 从数据读取器中读取一条记忆记录
+    /// </summary>
+    /// <param name="reader">数据读取器</param>
+    /// <returns>记忆条目</returns>
     private static MemoryEntry ReadEntry(IDataRecord reader)
     {
         var entry = new MemoryEntry
@@ -331,6 +428,9 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         return entry;
     }
 
+    /// <summary>
+    /// 释放资源，释放信号量并清空 SQLite 连接池
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
