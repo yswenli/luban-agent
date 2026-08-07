@@ -273,7 +273,7 @@ public class ConsoleAppService
             Console.WriteLine("  已配置的 Provider:");
             foreach (var p in _configManager.Providers)
             {
-                Console.WriteLine($"    - {LubanAgent.Services.ProviderHelper.GetDisplayName(p.Name)}");
+                Console.WriteLine($"    - {ProviderHelper.GetDisplayName(p.Name)}");
             }
         }
 

@@ -15,13 +15,12 @@
 *
 *****************************************************************************/
 global using LuBan.AIAgent;
+global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Configuration;
 global using LuBan.AIAgent.Infrastructure;
 global using LuBan.AIAgent.MCP;
-global using LuBan.AIAgent.Providers;
 global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Rules;
-global using LuBan.AIAgent.Services;
 global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.AIAgent.Utils.Text;
@@ -34,9 +33,11 @@ global using LubanAgent.Commands;
 global using LubanAgent.Configuration;
 global using LubanAgent.Entities;
 global using LubanAgent.Infrastructure;
+global using LubanAgent.Profiles;
 global using LubanAgent.Repositories;
 global using LubanAgent.Retrieval;
 global using LubanAgent.Services;
+global using LubanAgent.UI;
 
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;

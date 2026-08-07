@@ -192,7 +192,7 @@ public class ProviderCommand : CommandBase
             ConfigManager.AddProvider(providerName, apiKey, baseUrl);
 
             var displayName = GetProviderDisplayName(providerName);
-            var models = LubanAgent.Services.ProviderHelper.GetModels(providerName);
+            var models = ProviderHelper.GetModels(providerName);
 
             WriteSuccess($"Provider '{displayName}' 已添加并保存");
 
@@ -216,7 +216,7 @@ public class ProviderCommand : CommandBase
 
     private static string? SelectEndpoint(string providerName)
     {
-        var endpoints = LubanAgent.Services.ProviderHelper.GetEndpoints(providerName);
+        var endpoints = ProviderHelper.GetEndpoints(providerName);
         if (endpoints.Count == 0)
             return null;
 
@@ -243,7 +243,7 @@ public class ProviderCommand : CommandBase
     /// </summary>
     private static string GetProviderDisplayName(string providerName)
     {
-        return LubanAgent.Services.ProviderHelper.GetDisplayName(providerName);
+        return ProviderHelper.GetDisplayName(providerName);
     }
 
     /// <summary>
@@ -463,7 +463,7 @@ public class ProviderCommand : CommandBase
         }
 
         var provider = ConfigManager.GetProvider(providerName);
-        var allModels = LubanAgent.Services.ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
+        var allModels = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
         
         // 如果 Provider 没有预定义模型，让用户手动输入模型名称
         if (allModels.Count == 0)

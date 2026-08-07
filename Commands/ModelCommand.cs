@@ -97,10 +97,10 @@ public class ModelCommand : CommandBase
             Console.WriteLine("所有可用模型:");
             foreach (var p in providers)
             {
-                var displayName = LubanAgent.Services.ProviderHelper.GetDisplayName(p.Name);
+                var displayName = ProviderHelper.GetDisplayName(p.Name);
                 Console.WriteLine($"  {displayName}:");
 
-                var allModels = LubanAgent.Services.ProviderHelper.GetAllModels(p.Name, p.CustomModels);
+                var allModels = ProviderHelper.GetAllModels(p.Name, p.CustomModels);
                 if (allModels.Count == 0)
                 {
                     Console.WriteLine("    (无可用模型)");
@@ -166,7 +166,7 @@ public class ModelCommand : CommandBase
             Console.WriteLine("选择 Provider:");
             for (int i = 0; i < providers.Count; i++)
             {
-                Console.WriteLine($"  {i + 1}. {LubanAgent.Services.ProviderHelper.GetDisplayName(providers[i].Name)}");
+                Console.WriteLine($"  {i + 1}. {ProviderHelper.GetDisplayName(providers[i].Name)}");
             }
 
             Console.Write("请选择 (1-{0}): ", providers.Count);
@@ -193,15 +193,15 @@ public class ModelCommand : CommandBase
         try
         {
             var provider = ConfigManager.GetProvider(providerName);
-            var existing = LubanAgent.Services.ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
+            var existing = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
             if (existing.Contains(modelName))
             {
-                WriteInfo($"模型 '{modelName}' 已存在于 {LubanAgent.Services.ProviderHelper.GetDisplayName(providerName)}");
+                WriteInfo($"模型 '{modelName}' 已存在于 {ProviderHelper.GetDisplayName(providerName)}");
                 return Task.FromResult(true);
             }
 
             ConfigManager.AddCustomModel(providerName, modelName);
-            WriteSuccess($"已为 {LubanAgent.Services.ProviderHelper.GetDisplayName(providerName)} 添加模型: {modelName}");
+            WriteSuccess($"已为 {ProviderHelper.GetDisplayName(providerName)} 添加模型: {modelName}");
         }
         catch (Exception ex)
         {
@@ -233,7 +233,7 @@ public class ModelCommand : CommandBase
         Console.WriteLine("选择包含自定义模型的 Provider:");
         for (int i = 0; i < providersWithCustom.Count; i++)
         {
-            Console.WriteLine($"  {i + 1}. {LubanAgent.Services.ProviderHelper.GetDisplayName(providersWithCustom[i].Name)}");
+            Console.WriteLine($"  {i + 1}. {ProviderHelper.GetDisplayName(providersWithCustom[i].Name)}");
         }
 
         Console.Write("请选择 (1-{0}): ", providersWithCustom.Count);
@@ -248,7 +248,7 @@ public class ModelCommand : CommandBase
         var provider = providersWithCustom[index - 1];
 
         Console.WriteLine();
-        Console.WriteLine($"{LubanAgent.Services.ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型:");
+        Console.WriteLine($"{ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型:");
         for (int i = 0; i < provider.CustomModels.Count; i++)
         {
             Console.WriteLine($"  {i + 1}. {provider.CustomModels[i]}");
@@ -309,7 +309,7 @@ public class ModelCommand : CommandBase
         Console.WriteLine("选择包含自定义模型的 Provider:");
         for (int i = 0; i < providersWithCustom.Count; i++)
         {
-            Console.WriteLine($"  {i + 1}. {LubanAgent.Services.ProviderHelper.GetDisplayName(providersWithCustom[i].Name)}");
+            Console.WriteLine($"  {i + 1}. {ProviderHelper.GetDisplayName(providersWithCustom[i].Name)}");
         }
 
         Console.Write("请选择 (1-{0}): ", providersWithCustom.Count);
@@ -324,7 +324,7 @@ public class ModelCommand : CommandBase
         var provider = providersWithCustom[index - 1];
 
         Console.WriteLine();
-        Console.WriteLine($"{LubanAgent.Services.ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型:");
+        Console.WriteLine($"{ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型:");
         for (int i = 0; i < provider.CustomModels.Count; i++)
         {
             Console.WriteLine($"  {i + 1}. {provider.CustomModels[i]}");
@@ -408,7 +408,7 @@ public class ModelCommand : CommandBase
         for (int i = 0; i < providerList.Count; i++)
         {
             var p = providerList[i];
-            var displayName = LubanAgent.Services.ProviderHelper.GetDisplayName(p.Name);
+            var displayName = ProviderHelper.GetDisplayName(p.Name);
             var selected = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
             Console.WriteLine($"  {i + 1}. {displayName}{selected}");
         }
@@ -423,10 +423,10 @@ public class ModelCommand : CommandBase
         }
 
         var selectedProvider = providerList[providerIndex - 1];
-        var allModels = LubanAgent.Services.ProviderHelper.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
+        var allModels = ProviderHelper.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
 
         Console.WriteLine();
-        Console.WriteLine($"{LubanAgent.Services.ProviderHelper.GetDisplayName(selectedProvider.Name)} 可用模型:");
+        Console.WriteLine($"{ProviderHelper.GetDisplayName(selectedProvider.Name)} 可用模型:");
 
         if (allModels.Count > 0)
         {
