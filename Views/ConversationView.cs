@@ -152,7 +152,6 @@ internal sealed class ConversationView : View
             _dirty = false;
 
             _doc.GetVisibleLines(_renderBuffer, viewport.Width);
-            _cachedWidth = viewport.Width;
         }
 
         // 逐行逐 Segment 渲染（使用缓存的 _renderBuffer）
@@ -189,8 +188,6 @@ internal sealed class ConversationView : View
 
         return true;
     }
-
-    private int _cachedWidth;
 
     // ────────────── 鼠标事件 ──────────────
 
