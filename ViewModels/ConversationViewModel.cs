@@ -15,6 +15,7 @@
 *编组跨线程操作到 UI 线程
 *
 *****************************************************************************/
+using System.Diagnostics;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Skills;
 using LubanAgent.App;
@@ -300,6 +301,8 @@ internal sealed class ConversationViewModel
         var hasThinking = false;
         ThinkingBlock? thinkingBlock = null;
         var hasAnswerContent = false;
+        var tokenCount = 0;
+        Logger.Error($"[🌊Perf] RunStreamingAsync START at {Stopwatch.GetTimestamp()}");
 
         await foreach (var update in _agent.RunStreamingAsync(input, ct))
         {
@@ -375,6 +378,12 @@ internal sealed class ConversationViewModel
                     }
 
                     var token = text.Text;
+                    tokenCount++;
+                    // 每 20 个 token 打一条日志，观察回调频率和主循环负载
+                    if (tokenCount % 20 == 0)
+                    {
+                        Logger.Error($"[🌊Perf] Token#{tokenCount} dispatched");
+                    }
                     _dispatcher.Invoke(() =>
                     {
                         _doc.AppendToAnswerBlock(token);
@@ -385,6 +394,7 @@ internal sealed class ConversationViewModel
         }
 
         // 流式结束——标记最后一个 Block 完成
+        Logger.Error($"[🌊Perf] RunStreamingAsync END totalTokens={tokenCount}");
         _dispatcher.Invoke(() =>
         {
             // 折叠思考块

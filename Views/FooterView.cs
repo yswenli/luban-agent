@@ -14,6 +14,7 @@
 *描述：页脚视图，显示权限模式、工作目录、git 分支、token 与后台任务
 *
 *****************************************************************************/
+using System.Diagnostics;
 using LubanAgent.App;
 
 using Terminal.Gui.Drawing;
@@ -63,6 +64,7 @@ internal sealed class FooterView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
+        var sw = Stopwatch.StartNew();
         var viewport = Viewport;
         if (viewport.Width <= 0 || viewport.Height <= 0)
         {
@@ -103,6 +105,12 @@ internal sealed class FooterView : View
         }
 
         Write(col, "tasks 待接入", TuiTheme.SystemMessage, viewport.Width);
+
+        var totalMs = sw.ElapsedMilliseconds;
+        if (totalMs > 5)
+        {
+            Logger.Error($"[⚡Perf] FooterView.OnDrawingContent: {totalMs}ms");
+        }
         return true;
     }
 

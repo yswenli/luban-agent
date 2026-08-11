@@ -15,6 +15,7 @@
 *划分三区域布局并承载全局快捷键与输入提交
 *
 *****************************************************************************/
+using System.Diagnostics;
 using LuBan.AIAgent.Abstractions;
 using LubanAgent.App;
 using LubanAgent.Models;
@@ -33,6 +34,10 @@ namespace LubanAgent.Views;
 /// </summary>
 internal sealed class RootView : Runnable
 {
+    // DIAGNOSTIC: 全局性能计时器，排查 3s/字符输入延迟用，排查完成后移除
+    public static readonly Stopwatch PerfWatch = Stopwatch.StartNew();
+    private static long _lastKeyMs;
+
     private readonly IUiDispatcher _dispatcher;
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel _vm;
@@ -138,6 +143,12 @@ internal sealed class RootView : Runnable
 
     protected override bool OnKeyDown(Key key)
     {
+        // DIAGNOSTIC: 记录每次按键的时间戳和与前一次的间隔
+        var now = PerfWatch.ElapsedMilliseconds;
+        var gap = _lastKeyMs > 0 ? now - _lastKeyMs : 0;
+        _lastKeyMs = now;
+        Logger.Error($"[⌨️Perf] {now}ms KeyDown:{key} gap={gap}ms");
+
         if (key == Key.Q.WithCtrl)
         {
             RequestStop();
