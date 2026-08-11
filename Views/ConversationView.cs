@@ -131,6 +131,8 @@ internal sealed class ConversationView : View
 
     // ────────────── 自绘 ──────────────
 
+    private static int _drawCounter;
+
     /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
@@ -147,6 +149,8 @@ internal sealed class ConversationView : View
 
         if (_dirty || viewportChanged || scrollChanged)
         {
+            Console.Error.WriteLine($"[Perf] ConvDraw DIRTY at {RootView.PerfWatch.ElapsedMilliseconds}ms");
+
             _doc.LayoutWidth = viewport.Width;
             _doc.ViewportHeight = viewport.Height;
             _lastRenderedViewportHeight = viewport.Height;
@@ -156,7 +160,6 @@ internal sealed class ConversationView : View
             var beforeLines = sw.ElapsedMilliseconds;
             _doc.GetVisibleLines(_renderBuffer, viewport.Width);
             var getLinesMs = sw.ElapsedMilliseconds - beforeLines;
-            // 诊断：耗时 > 10ms 时记录，同时记录总 Block 数与可见行数
             if (getLinesMs > 10)
             {
                 Logger.Error($"[⚡Perf] GetVisibleLines: {getLinesMs}ms blocks={_doc.BlockCount} visible={_renderBuffer.Count}");

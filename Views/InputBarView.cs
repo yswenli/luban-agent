@@ -14,6 +14,7 @@
 *描述：输入区视图，原生 TextView 做编辑内核，外层仅负责按键转发
 *
 *****************************************************************************/
+using System.Diagnostics;
 using LubanAgent.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -99,6 +100,10 @@ internal sealed class InputBarView : View
     /// <param name="key">按键事件。</param>
     private void OnTextViewKeyDown(object? sender, Key key)
     {
+        // DIAGNOSTIC: 每次按键都记录，用 stderr 直接输出避免日志库开销
+        Console.Error.WriteLine($"[Perf] {Stopwatch.GetTimestamp()} KeyDown:{key} text.len={(_textView.Text ?? "").Length}");
+        Logger.Error($"[Perf] KeyDown:{key}");
+
         if (key != Key.Enter || key.IsShift)
         {
             return;
