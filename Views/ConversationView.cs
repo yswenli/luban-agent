@@ -37,6 +37,9 @@ internal sealed class ConversationView : View
     private readonly ConversationDocument _doc;
     private readonly FlushThrottle _throttle;
     private readonly List<RenderLine> _renderBuffer = new(256);
+    private bool _dirty = true;
+    private int _lastRenderedScrollOffset = -1;
+    private int _lastRenderedViewportHeight;
 
     /// <summary>
     /// 初始化会话区视图并关联文档模型。
@@ -46,6 +49,7 @@ internal sealed class ConversationView : View
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         CanFocus = false;
+        MousePositionTracking = true; // 允许终端原生鼠标选择
 
         _throttle = new FlushThrottle(() =>
         {
@@ -105,9 +109,13 @@ internal sealed class ConversationView : View
     }
 
     /// <summary>
-    /// 文档变更时刷新视图。
+    /// 文档变更时标记脏，下次 OnDrawingContent 重新计算。
     /// </summary>
-    private void OnDocChanged() => SetNeedsDraw();
+    private void OnDocChanged()
+    {
+        _dirty = true;
+        SetNeedsDraw();
+    }
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)
@@ -131,12 +139,23 @@ internal sealed class ConversationView : View
             return true;
         }
 
-        _doc.LayoutWidth = viewport.Width;
-        _doc.ViewportHeight = viewport.Height;
+        // 仅当文档变更、滚动偏移变化或视口尺寸变化时才重新计算可见行
+        var viewportChanged = _lastRenderedViewportHeight != viewport.Height;
+        var scrollChanged = _doc.ScrollOffset != _lastRenderedScrollOffset;
 
-        _doc.GetVisibleLines(_renderBuffer, viewport.Width);
+        if (_dirty || viewportChanged || scrollChanged)
+        {
+            _doc.LayoutWidth = viewport.Width;
+            _doc.ViewportHeight = viewport.Height;
+            _lastRenderedViewportHeight = viewport.Height;
+            _lastRenderedScrollOffset = _doc.ScrollOffset;
+            _dirty = false;
 
-        // 逐行逐 Segment 渲染
+            _doc.GetVisibleLines(_renderBuffer, viewport.Width);
+            _cachedWidth = viewport.Width;
+        }
+
+        // 逐行逐 Segment 渲染（使用缓存的 _renderBuffer）
         for (var row = 0; row < _renderBuffer.Count && row < viewport.Height; row++)
         {
             var line = _renderBuffer[row];
@@ -171,6 +190,8 @@ internal sealed class ConversationView : View
         return true;
     }
 
+    private int _cachedWidth;
+
     // ────────────── 鼠标事件 ──────────────
 
     /// <inheritdoc/>
@@ -179,6 +200,7 @@ internal sealed class ConversationView : View
         if (mouse.Flags.HasFlag(MouseFlags.WheeledDown))
         {
             _doc.ScrollDown(3);
+            _dirty = true;
             SetNeedsDraw();
             return true;
         }
@@ -186,6 +208,7 @@ internal sealed class ConversationView : View
         if (mouse.Flags.HasFlag(MouseFlags.WheeledUp))
         {
             _doc.ScrollUp(3);
+            _dirty = true;
             SetNeedsDraw();
             return true;
         }
@@ -205,6 +228,7 @@ internal sealed class ConversationView : View
                 {
                     block.IsCollapsed = !block.IsCollapsed;
                     _doc.LayoutWidth = Viewport.Width; // 触发重新布局
+                    _dirty = true;
                     SetNeedsDraw();
                     return true;
                 }
@@ -212,6 +236,7 @@ internal sealed class ConversationView : View
                 if (action?.Type == HitActionType.SelectOption && block is InlineChoiceBlock choice)
                 {
                     choice.Select((int)(action.Data ?? 0));
+                    _dirty = true;
                     SetNeedsDraw();
                     return true;
                 }
@@ -233,11 +258,12 @@ internal sealed class ConversationView : View
             var (lastBlock, _) = _doc.BlockAtLine(Math.Max(0, _doc.TotalLines - 1));
             if (lastBlock is InlineChoiceBlock choice && choice.Selected is null)
             {
-                if (choice.HandleKey(key))
-                {
-                    SetNeedsDraw();
-                    return true;
-                }
+            if (choice.HandleKey(key))
+            {
+                _dirty = true;
+                SetNeedsDraw();
+                return true;
+            }
             }
         }
 
