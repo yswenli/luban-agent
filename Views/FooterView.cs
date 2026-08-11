@@ -15,7 +15,7 @@
 *
 *****************************************************************************/
 using LubanAgent.App;
-using LubanAgent.Services;
+
 using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 
@@ -28,11 +28,17 @@ internal sealed class FooterView : View
 {
     private FooterDataProvider? _provider;
     private string _modeText = "default";
+    private bool _spinnerSubscribed;
 
     public FooterView()
     {
         CanFocus = false;
+        // 订阅全局 SpinnerService，TUI 模式下显示状态
+        SpinnerService.Changed += OnSpinnerChanged;
+        _spinnerSubscribed = true;
     }
+
+    private void OnSpinnerChanged() => SetNeedsDraw();
 
     public void SetProvider(FooterDataProvider provider)
     {
@@ -46,6 +52,15 @@ internal sealed class FooterView : View
         SetNeedsDraw();
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && _spinnerSubscribed)
+        {
+            try { SpinnerService.Changed -= OnSpinnerChanged; } catch { }
+        }
+        base.Dispose(disposing);
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var viewport = Viewport;
@@ -56,6 +71,15 @@ internal sealed class FooterView : View
 
         var col = 0;
         var p = _provider;
+
+        // 若 SpinnerService 在运行，先渲染短状态
+        if (SpinnerService.IsRunning)
+        {
+            var frame = SpinnerService.CurrentFrame;
+            var status = SpinnerService.Status;
+            var text = string.IsNullOrEmpty(status) ? frame : $"{frame} {status}";
+            col += Write(col, text + "  ", TuiTheme.SystemMessage, viewport.Width);
+        }
 
         col += Write(col, $"[{_modeText}]", TuiTheme.Accent, viewport.Width, TextStyle.Bold);
         col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);

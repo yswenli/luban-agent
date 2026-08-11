@@ -13,8 +13,6 @@
 *描述：多 Provider 路由的聊天客户端，按模型标识分发到对应 Provider
 *
 *****************************************************************************/
-using LuBan.AIAgent.Configuration;
-using Microsoft.Extensions.AI;
 using OpenAI;
 
 namespace LubanAgent.Configuration;

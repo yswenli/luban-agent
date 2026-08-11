@@ -1,24 +1,22 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
-*机器名称：WALLE
-*Author：yswenli
-*命名空间：LubanAgent.UI
+*CLR版本： .net10.0
+*Author：GitHub Copilot
 *文件名： ResponseSpinner
-*版本号： V1.0.0.0
-*唯一标识：新建
-*当前的用户域：WALLE
-*创建人：yswenli
-*电子邮箱：yswenli@outlook.com
-*创建时间：2026/7/31
-*描述：响应状态指示器，在用户回车后立即显示动画反馈
-*
+*描述：兼容 TUI 的响应状态指示器；在 TUI 模式下委托给 SpinnerService 渲染，
+*在非 TUI（传统控制台）模式保持原有行为。
 *****************************************************************************/
+
+using System;
+using System.Threading;
+using LubanAgent.App;
+using LubanAgent.Services;
+
 namespace LubanAgent.UI;
 
 /// <summary>
-/// 响应状态指示器，在用户回车后立即显示动画反馈。
-/// 使用后台线程渲染旋转动画与状态文本，首个流式 chunk 到达后停止并清理。
+/// 响应状态指示器。在 TUI 模式下通过 SpinnerService 渲染（由 Terminal.Gui 负责绘制），
+/// 在非 TUI 模式仍使用后台线程直接写控制台动画。
 /// </summary>
 public sealed class ResponseSpinner : IDisposable
 {
@@ -26,13 +24,10 @@ public sealed class ResponseSpinner : IDisposable
     private volatile bool _disposed;
     private volatile bool _stopped;
     private string _status;
+    private bool _usingTui;
 
     private static readonly string[] SpinnerFrames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
-    /// <summary>
-    /// 创建响应指示器实例。
-    /// </summary>
-    /// <param name="initialStatus">初始状态文本。</param>
     public ResponseSpinner(string initialStatus = "正在思考...")
     {
         _status = initialStatus;
@@ -41,34 +36,43 @@ public sealed class ResponseSpinner : IDisposable
             IsBackground = true,
             Name = "ResponseSpinner"
         };
+        _usingTui = TerminalGuiApp.CanRunInteractive();
     }
 
-    /// <summary>
-    /// 启动指示器，立即在控制台显示动画。
-    /// </summary>
     public void Start()
     {
         if (_disposed || _stopped) return;
+
+        if (_usingTui)
+        {
+            // 在 TUI 下使用全局 SpinnerService
+            SpinnerService.Start(_status);
+            return;
+        }
+
         if (_renderThread.IsAlive) return;
         _renderThread.Start();
     }
 
-    /// <summary>
-    /// 更新状态文本（线程安全）。
-    /// </summary>
-    /// <param name="status">新的状态文本。</param>
     public void UpdateStatus(string status)
     {
         Interlocked.Exchange(ref _status, status);
+        if (_usingTui)
+        {
+            SpinnerService.UpdateStatus(status);
+        }
     }
 
-    /// <summary>
-    /// 停止指示器并清理控制台上的动画行。
-    /// </summary>
     public void Stop()
     {
         if (_stopped) return;
         _stopped = true;
+
+        if (_usingTui)
+        {
+            SpinnerService.Stop();
+            return;
+        }
 
         try
         {
@@ -82,7 +86,6 @@ public sealed class ResponseSpinner : IDisposable
             // 忽略线程清理异常
         }
 
-        // 清理动画行：用空格覆盖后回退光标
         ClearAnimationLine();
     }
 
@@ -90,9 +93,8 @@ public sealed class ResponseSpinner : IDisposable
     {
         try
         {
-            // 回退到行首并覆盖空白
             Console.Write("\r");
-            Console.Write(new string(' ', Console.WindowWidth - 1));
+            Console.Write(new string(' ', Math.Max(1, Console.WindowWidth - 1)));
             Console.Write("\r");
         }
         catch
@@ -129,9 +131,6 @@ public sealed class ResponseSpinner : IDisposable
         }
     }
 
-    /// <summary>
-    /// 释放资源。
-    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
