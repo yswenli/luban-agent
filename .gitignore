@@ -9,3 +9,5 @@
 /Properties/PublishProfiles
 /LubanAgent.csproj.user
 /LubanAgentCli.csproj.user
+/bin/Debug/net10.0/.luban-agent
+/bin/Debug/net10.0
