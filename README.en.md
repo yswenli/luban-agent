@@ -153,16 +153,15 @@ dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 #### Usage After Installation
 
 ```bash
-# Launch full-screen TUI interface from any directory (requires an interactive terminal; does not support input/output redirection)
+# Launch full-screen TUI interface from any directory (requires an interactive terminal; no redirects)
 luban-agent-cli
 ```
 
-> **TUI Refactoring In Progress**: The interface layer is being migrated from Console/Spectre hybrid rendering to Terminal.Gui v2 full-screen TUI (Claude Code style).
-> The current skeleton phase (Step 1/8) has completed the three-region layout (conversation / footer / input) with 24-bit TrueColor theming.
-> Agent conversation loop (Step 4), 13 inline commands (Step 6), permission modes (Step 5), footer metadata (Step 7),
-> and Agent View multi-session (Step 8) will be progressively integrated in subsequent steps.
->
-> Direct command-line execution (e.g., `luban-agent-cli /se -l`) will be restored as a TUI inline command after Step 4.
+> **TUI Migration Complete**: The interface has been fully migrated from Console/Spectre hybrid to Terminal.Gui v2 full-screen TUI (Claude Code style).
+> Three-region layout (conversation / footer / input), Agent streaming conversation loop, four-mode permission system,
+> inline command panel, footer metadata, and Agent View multi-session are all in place.
+> Agent auto-initializes on first input; `Esc` cancels running task, `Shift+Tab` cycles permission modes,
+> `Tab` toggles conversation / task views.
 
 #### Configuration Files
 
@@ -293,66 +292,40 @@ LuBan Agent provides a simple yet powerful command system:
 
 ### Direct Command-Line Execution
 
-> **In Migration**: During the TUI refactoring (Steps 1-4), direct command-line execution of single commands (e.g., `luban-agent-cli /se -l`) is temporarily unavailable.
-> After Step 4, it will be restored as a TUI inline command palette — launching will auto-dispatch the first `/` command and enter the full-screen interactive interface.
+After the TUI migration, all commands are invoked interactively within the TUI full-screen interface using the `/` prefix. Direct command-line argument execution (e.g., `luban-agent-cli /se -l`) is planned as a future enhancement.
 
 ### Command Input (TUI Full-Screen Interface)
 
-On launch, enters a Terminal.Gui full-screen alt-screen interface with a top-to-bottom layout: conversation area (scrollable), footer (mode/directory/status), and input area (bottom):
+On launch, enters a Terminal.Gui full-screen alt-screen interface with a top-to-bottom layout: conversation area (scrollable), footer (mode/directory/git/token), and input area (bottom):
 
-- **Enter** - Submit current input
-- **Shift+Enter** - Multi-line input (Step 2)
-- **Ctrl+Q** - Force quit TUI
-- **Ctrl+L** - Redraw screen
-- **`/exit` or `/quit`** - Exit program
-- **Tab Auto-completion** - Type partial command and press Tab (Step 2)
-- **Up/Down Arrows** - Browse command history (Step 2)
-- **Ctrl+R** - Search history (Step 2)
-- **Command Prefix** - All commands start with `/`
-- **Mouse** - Click, scroll, Shift-drag for native terminal selection (escape hatch)
+- **Enter** — Submit input (plain text → Agent; `/` prefix → command panel)
+- **Ctrl+Q** — Force quit TUI
+- **Ctrl+L** — Redraw screen
+- **Esc** — Cancel running Agent task
+- **Shift+Tab** — Cycle permission modes (Default → Plan → AcceptEdits → BypassPermissions)
+- **Tab** — Toggle conversation / Agent task view
+- **Mouse** — Click blocks to collapse/expand; scroll wheel; Shift+drag for native terminal selection
 
 ### Command List
 
-| Command | Shorthand | Number | Description |
-|---------|-----------|--------|-------------|
-| `/provider` | `/p` | `1` | Manage AI Providers (-list/-add/-update/-delete/-switch) |
-| `/model` | `/m` | `2` | Manage Models (-list/-add/-update/-delete/-switch) |
-| `/skill` | `/sk` | `3` | View and Execute Skills (-list/-add/-update/-delete/-switch) |
-| `/rule` | `/r` | `4` | View and Manage Rules (-list/-add/-update/-delete/-switch) |
-| `/mcp` | `/mp` | `5` | View MCP Clients (-list/-add/-update/-delete/-switch/-connect/-tools) |
-| `/session` | `/se` | `6` | Manage Chat Sessions (-list/-new/-clear/-switch) |
-| `/agi` | `/a` | `7` | General Agent Conversation (with auto orchestration) |
-| `/browse` | `/b` | `8` | Website-specific Agent Operations |
-| `/stats` | `/st` | `9` | Session & Token Statistics (-days N, --all across workspaces) |
-| `/work` | `/w` | `10` | Workspace Management (-list/-new/-switch/-delete/-info/-authorize) |
-| `/rag` | `/rg` | `11` | Knowledge Base Management (-new/-index/-search/-list/-delete) |
-| `/exit` | - | `12` | Exit Program |
-
-### Sub-command Shorthand
-
-| Shorthand | Full Command | Applicable Commands |
-|-----------|--------------|---------------------|
-| `-l` | `-list` | All management commands |
-| `-a` | `-add` | All management commands (Note: in `/work`, `-add` is an alias for `-authorize`) |
-| `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
-| `-d` | `-days` | Stats (statistics days) |
-| `-s` | `-switch` | All management commands |
-| `-n` | `-new` | Session/Work/Rag |
-| `-c` | `-clear` | Session |
-| `-c` | `-connect` | MCP |
-| `-t` | `-tools` | MCP |
-| `-i` | `-index` | Rag (index files) |
-| `-info` | `-info` | Work (workspace info) |
-| `-add` | `-authorize` | Work (authorize workspace) |
-
-**Examples**:
-- `/p -l` = `/provider -list`
-- `/st -d 7` = `/stats -days 7`
-- `/st --all` = Statistics across all workspaces
-- `/mp -c filesystem` = `/mcp -connect filesystem`
-- `/work -n D:\MyProject` = Create workspace
-- `/rag -i *.md` = Index Markdown files in current RAG workspace
+| Command | Shorthand | Description |
+|---------|-----------|-------------|
+| `/help` | — | Show help (TUI-ready) |
+| `/clear` | — | Clear conversation history (TUI-ready) |
+| `/mode [name]` | — | View or switch permission mode (default/plan/accept-edits/bypass) (TUI-ready) |
+| `/exit` / `/quit` | — | Exit program |
+| `/provider` | `/p` | Manage AI Providers (backend ready, inline UI planned) |
+| `/model` | `/m` | Manage Models (backend ready, inline UI planned) |
+| `/skill` | `/sk` | View and Execute Skills |
+| `/rule` | `/r` | View and Manage Rules |
+| `/mcp` | `/mp` | View MCP Clients |
+| `/session` | `/se` | Manage Chat Sessions |
+| `/agi` | `/a` | General Agent Conversation (auto-enabled, just type) |
+| `/browse` | `/b` | Website-specific Agent Operations |
+| `/stats` | `/st` | Session & Token Statistics |
+| `/work` | `/w` | Workspace Management |
+| `/rag` | `/rg` | Knowledge Base Management |
+| `/rag` | `/rg` | Knowledge Base Management |
 
 ---
 
@@ -570,66 +543,53 @@ LubanAgent/
 ├── App/                    # TUI application layer (Terminal.Gui bootstrap + DI + theming)
 │   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run bootstrap
 │   ├── TuiTheme.cs             # 24-bit TrueColor theme
-│   ├── IUiDispatcher.cs        # UI thread dispatch abstraction (ViewModel marshaling)
+│   ├── IUiDispatcher.cs        # UI thread dispatch abstraction
 │   └── TerminalGuiDispatcher.cs
 ├── Views/                  # TUI view layer (pure rendering · no business logic)
-│   ├── RootView.cs             # Top-level container (Runnable) + global key bindings
+│   ├── RootView.cs             # Top-level container (Runnable) + global key bindings + view coordination
 │   ├── ConversationView.cs     # Conversation area (self-drawn, Block document model)
 │   ├── InputBarView.cs         # Input area (wraps native TextView)
 │   └── FooterView.cs           # Footer (mode/directory/git/token/tasks)
-├── Commands/              # Command implementations (in migration, Step 6 → inline palette)
-│   ├── ProviderCommand.cs     # Provider management
-│   ├── ModelCommand.cs        # Model management
-│   ├── SkillCommand.cs        # Skill management
-│   ├── RuleCommand.cs         # Rule management
-│   ├── MCPCommand.cs          # MCP client management
-│   ├── SessionCommand.cs      # Session management
-│   ├── AgiCommand.cs          # General Agent conversation (with auto orchestration)
-│   ├── BrowseCommand.cs       # Browser Agent
-│   ├── StatsCommand.cs        # Statistics
-│   ├── WorkCommand.cs         # Workspace management
-│   └── RagCommand.cs          # RAG knowledge base management
-├── Configuration/         # Configuration management
-│   ├── AppConfig.cs           # Application config model
-│   ├── ProviderConfig.cs      # Provider config model
-│   ├── ProviderEndpointConfig.cs  # Provider endpoint config
-│   ├── ConfigManager.cs       # Config manager (implements IAppConfigReader)
-│   ├── ProviderHelper.cs      # Provider metadata & model catalog
-│   └── LuBanChatClient.cs     # Provider routing (implements IProviderRouter)
-├── Profiles/              # Agent profiles
-│   ├── AgentProfile.cs        # Agent profile base class
-│   ├── NormalAgentProfile.cs  # Normal workspace profile
-│   └── RagAgentProfile.cs     # RAG workspace profile
-├── UI/                    # Legacy console UI (in migration, removed after Steps 4/6)
-│   ├── EscKeyListener.cs      # ESC key listener → root-level Key.Esc binding
-│   └── ResponseSpinner.cs     # Loading spinner → footer orange * animation
-├── Services/              # Core services
-│   ├── ConsoleAppService.cs   # Command dispatch (Step 6 → coordinate MainViewModel)
-│   ├── SessionManager.cs      # Session persistence
-│   └── WorkspaceManager.cs    # Workspace management & authorization
-├── Repositories/          # Data access layer
-│   ├── SessionRepository.cs   # Session storage
-│   ├── WorkspaceRepository.cs # Workspace storage
-│   └── RagRepository.cs       # RAG data storage
-├── Retrieval/             # Semantic retrieval
-│   ├── EmbeddingModelCatalog.cs   # Embedding model catalog
-│   ├── ModelManager.cs        # Embedding model management
-│   ├── OnnxEmbeddingGenerator.cs  # ONNX embedding generator
-│   └── SqliteVectorStore.cs   # SQLite vector store (workspace isolation)
+├── ViewModels/             # MVVM ViewModel layer
+│   ├── ConversationViewModel.cs  # Agent lifecycle + streaming loop + permission confirmation
+│   ├── CommandViewModel.cs       # / command routing and execution
+│   └── AgentViewViewModel.cs     # Multi-session task view
+├── Models/                 # Pure data models (no UI deps · unit-testable)
+│   ├── ConversationDocument.cs   # Conversation document model
+│   ├── AgentTask.cs / TaskRegistry.cs  # Task model and registry
+│   ├── ChoiceOption.cs / ConfirmResult.cs / PlannedAction.cs  # Choice component types
+│   └── Blocks/                  # Block class hierarchy
+│       ├── Block.cs             # Abstract base (Layout/Render/HitTest)
+│       ├── RenderLine.cs        # RenderLine + TextSegment
+│       ├── BlockColors.cs       # 24-bit TrueColor constants
+│       ├── UserMessageBlock / AssistantMessageBlock
+│       ├── ThinkingBlock / ToolCallBlock / ToolResultBlock
+│       ├── InlineChoiceBlock / SystemBlock
+│       └── ChoiceBlocks.cs      # Factory methods
 ├── Infrastructure/        # Infrastructure
-│   ├── DatabaseInitializer.cs # Database initialization
-│   └── SqliteLocalMemoryStore.cs  # SQLite memory store
+│   ├── FlushThrottle.cs         # Streaming refresh throttle (16ms window)
+│   ├── DatabaseInitializer.cs
+│   └── SqliteLocalMemoryStore.cs
+├── Services/              # Core services
+│   ├── FooterDataProvider.cs    # Footer metadata (git branch/token usage)
+│   ├── ConsoleAppService.cs     # Command dispatch
+│   ├── SessionManager.cs        # Session persistence
+│   └── WorkspaceManager.cs      # Workspace management & authorization
+├── Commands/              # Command implementations
+├── Configuration/         # Configuration management
+├── Profiles/              # Agent profiles
+├── Repositories/          # Data access layer
+├── Retrieval/             # Semantic retrieval
 ├── Entities/              # Data entities
 ├── Model/                 # AI model files
-└── Program.cs             # Application entry point (TUI bootstrap)
+└── Program.cs             # TUI bootstrap entry point
 ```
 
-> **MVVM Three-Layer Plan** (TUI refactoring target structure, progressively filled in Steps 2-8):
-> - `Models/` — Block document model, ConversationDocument, PermissionMode, TaskRegistry (pure data · no UI deps · unit-testable)
-> - `ViewModels/` — Main/Conversation/InputBar/Footer/AgentView/Command VMs (agent lifecycle · thread marshaling)
-> - `Views/Renderers/` — BlockRenderer + MarkdownLightRenderer (Block → RenderLine dispatch)
-> - `Services/Providers/` — GitInfo/TokenUsage/TaskRegistry/PrLink IFooterDataProvider implementations
-> - `Infrastructure/` — Throttle (FlushThrottle 16ms), ChannelBridge (sync confirmation cross-thread bridge)
+**Self-drawn rendering architecture**:
+- `Models/Blocks/` — 7 Block subclasses with distinct colors; `Layout(width)` computes line count, `Render()` produces `List<RenderLine>` color segments
+- `ConversationDocument` — manages Block collection, scroll offset, auto-scroll follow; `GetVisibleLines()` returns visible rows with clipping
+- `ConversationView.OnDrawingContent()` — iterates `RenderLine` → `TextSegment`, calls `Driver.SetAttribute()` + `AddRune()` for per-glyph drawing
+- `FlushThrottle` — 16ms window merges high-frequency streaming tokens into single redraw (~60fps)
 
 ---
 
@@ -884,31 +844,24 @@ Available tools for github:
 | **LuBan.Common** | Base interfaces & tool definitions |
 | **Microsoft.ML.OnnxRuntime** | ONNX model inference (semantic retrieval) |
 | **SQLite** | Session & vector data storage |
-
-> **TFM Note**: The CLI layer targets `net10.0` (required by Terminal.Gui 2.4.17); the framework layer (`luban-framework/*`) remains on `net8.0` unchanged.
+| **MVVM + Block Document Model** | Self-drawn rendering (Block → RenderLine → ConversationView) |
 
 ---
 
 ## 💡 Tips
 
+- 🖥️ **Full-Screen TUI**: Launch directly into Terminal.Gui full-screen; plain text input talks to Agent
+- ⌨️ **Keyboard Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+L` redraw
+- 🛡️ **Four Permission Modes**: `Shift+Tab` cycles Default / Plan / AcceptEdits / BypassPermissions; footer shows current mode
+- 🎨 **Collapse/Expand**: Thinking and tool calls default to collapsed; click `▸` to expand
+- 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines new" prompt
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
-- 📌 **Direct command-line execution supported**: `luban-agent-cli /se -s "New Session"` runs a single command from any directory and exits, no interactive menu needed (see [Command Reference](#-command-reference))
 - 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, database, Redis, web requests, and semantic retrieval
-- ⚠️ **ToolConfirmationService** automatically requests user confirmation for dangerous operations (write, delete, execute)
+- ⚠️ **ToolConfirmationService** uses inline InlineChoiceBlock for tool confirmation (allow/deny/allow all this turn)
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
-- 💾 **Session History Auto-Persistence** with long conversation compression (SummarizingChatReducer) ensures context is never lost
-- 🎨 **Custom Skill/Rule/MCP Persistence** - configurations saved to local files and auto-loaded on restart
-- 🎯 **In-Conversation Skill Switching**: `/skill -switch` to select a Skill; it applies only to the next input and is automatically cleared afterwards
-- 📄 **File-based Skills**: Define Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project/user-level directories
-- 🛡️ **Rule Interception** automatically checks before tool execution, supporting deny/allow/modify
-- 🔌 **MCP Tool Integration** - external MCP server tools automatically exposed to Agent
-- 📦 Hot-load external tool plugin assemblies via `ExternalPlugins` configuration
-- 🔗 Integrate with RagFlow / Dify / Coze and other AI platforms via [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/)
-- 🧩 **Multi-Agent Orchestration**: In `/agi` conversation, AI automatically identifies composite tasks, decomposes them into DAG, and SubAgents execute in serial/parallel hybrid mode, with critical node failure skipping, timeout control, and context passing
-- 📂 **Workspace Isolation**: `/work` command manages workspaces, each with its own session history and config directory; switching workspaces auto-restores the most recent session
-- 🔍 **RAG Knowledge Base**: `/rag` command creates knowledge base workspaces; after indexing `.txt`/`.md` files, `/agi` auto-retrieves and augments Q&A; vector data is fully isolated across workspaces
-- 📁 **Workspace Config Directory**: Each workspace root automatically creates `.luban-agent/` for custom `skills`, `rules`, `mcps` configurations; RAG workspaces also generate a default `rag-config.json`
+- 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution
+- 📂 **Workspace Isolation**: each workspace has individual session history and config directory
 
 ---
 

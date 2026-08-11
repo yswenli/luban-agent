@@ -20,8 +20,10 @@ namespace LubanAgent.Models;
 /// Agent View（三期）中单个任务的运行状态。
 /// 由 TaskRegistry 统一管理生命周期，每个任务绑定一个 CancellationTokenSource。
 /// </summary>
-public sealed class AgentTask
+public sealed class AgentTask : IDisposable
 {
+    private bool _disposed;
+
     /// <summary>任务唯一标识。</summary>
     public Guid Id { get; } = Guid.NewGuid();
 
@@ -55,6 +57,15 @@ public sealed class AgentTask
     {
         Description = description ?? throw new ArgumentNullException(nameof(description));
         WorkspaceName = workspaceName;
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            Cts.Dispose();
+        }
     }
 }
 

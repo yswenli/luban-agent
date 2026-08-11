@@ -85,7 +85,8 @@ public sealed class FlushThrottle : IDisposable
 
     private void ExecuteCallback()
     {
-        try { _callback(); } catch { /* 回调异常由上层 errorHandler 处理 */ }
+        try { _callback(); }
+        catch (Exception ex) { Logger.Error("FlushThrottle 回调异常", ex); }
     }
 
     private bool _disposed;

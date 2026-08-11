@@ -84,7 +84,8 @@ public sealed class TaskRegistry
             }
         }
 
-        TasksChanged?.Invoke();
+        var handler = TasksChanged;
+        handler?.Invoke();
         return task;
     }
 
@@ -102,6 +103,7 @@ public sealed class TaskRegistry
         {
             task.Status = success ? AgentTaskStatus.Completed : AgentTaskStatus.Failed;
             task.CompletedAt = DateTime.Now;
+            task.Dispose();
 
             // 找到下一个候补任务并启动
             next = _tasks.FirstOrDefault(t => t.Status == AgentTaskStatus.Pending);
@@ -112,13 +114,10 @@ public sealed class TaskRegistry
             }
         }
 
-        TasksChanged?.Invoke();
+        var handler2 = TasksChanged;
+        handler2?.Invoke();
     }
 
-    /// <summary>
-    /// 取消指定任务。
-    /// </summary>
-    /// <param name="task">要取消的任务。</param>
     public void Cancel(AgentTask task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -132,9 +131,12 @@ public sealed class TaskRegistry
                 task.Status = AgentTaskStatus.Cancelled;
                 task.CompletedAt = DateTime.Now;
             }
+
+            task.Dispose();
         }
 
-        TasksChanged?.Invoke();
+        var handler = TasksChanged;
+        handler?.Invoke();
     }
 
     /// <summary>

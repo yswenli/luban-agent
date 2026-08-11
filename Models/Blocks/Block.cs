@@ -78,6 +78,7 @@ public abstract class Block
     /// </summary>
     public virtual void MarkComplete()
     {
+        if (IsComplete) return;
         IsComplete = true;
         Duration = DateTime.Now - StartedAt;
     }

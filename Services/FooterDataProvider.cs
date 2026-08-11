@@ -1,0 +1,86 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*Author：yswenli
+*命名空间：LubanAgent.Services
+*文件名： FooterDataProvider
+*版本号： V1.0.0.0
+*唯一标识：页脚数据提供者
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/11
+*描述：聚合 git 分支、token 用量、模式名称等页脚元数据
+*
+*****************************************************************************/
+using System.Diagnostics;
+using LuBan.AIAgent.Abstractions;
+
+namespace LubanAgent.Services;
+
+/// <summary>
+/// 页脚数据提供者。聚合 git 分支、token 用量、当前权限模式等页脚元数据。
+/// 步骤 7 简化版——直接读取系统状态，未使用 IFooterDataProvider 扩展架构。
+/// </summary>
+internal sealed class FooterDataProvider
+{
+    private string? _cachedBranch;
+    private DateTime _branchCacheTime;
+    private static readonly TimeSpan BranchCacheTtl = TimeSpan.FromSeconds(30);
+
+    /// <summary>当前权限模式可读名称。</summary>
+    public string ModeDisplay { get; set; } = "default";
+
+    /// <summary>累计 token 用量（调用方通过 RecordUsage 更新）。</summary>
+    public int TotalTokens { get; set; }
+
+    /// <summary>当前工作目录的 git 分支名。</summary>
+    public string GitBranch
+    {
+        get
+        {
+            var now = DateTime.Now;
+            if (_cachedBranch is not null && now - _branchCacheTime < BranchCacheTtl)
+            {
+                return _cachedBranch;
+            }
+
+            _cachedBranch = TryGetGitBranch();
+            _branchCacheTime = now;
+            return _cachedBranch;
+        }
+    }
+
+    /// <summary>后台任务数（暂返回 0，Agent View 三期接入）。</summary>
+    public int BackgroundTasks => 0;
+
+    private static string TryGetGitBranch()
+    {
+        try
+        {
+            using var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "rev-parse --abbrev-ref HEAD",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            proc.Start();
+            var output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit(1000);
+
+            return proc.ExitCode == 0 && !string.IsNullOrEmpty(output) ? output : "—";
+        }
+        catch
+        {
+            return "—";
+        }
+    }
+}

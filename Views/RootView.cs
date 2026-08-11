@@ -33,12 +33,17 @@ namespace LubanAgent.Views;
 /// </summary>
 internal sealed class RootView : Runnable
 {
+    private readonly IUiDispatcher _dispatcher;
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel _vm;
+    private readonly CommandViewModel _commandVm;
+    private readonly AgentViewViewModel _agentVm;
     private readonly ConversationView _conversation;
     private readonly FooterView _footer;
     private readonly InputBarView _inputBar;
     private bool _vmInitialized;
+    private readonly Action<ToolPermissionMode> _onPermissionModeChanged;
+    private readonly Action _onExitRequested;
 
     /// <summary>
     /// 初始化顶层容器、文档模型、ViewModel 与三区域布局。
@@ -58,8 +63,13 @@ internal sealed class RootView : Runnable
         CanFocus = true;
         SetScheme(TuiTheme.BuildScheme());
 
+        _dispatcher = dispatcher;
         _doc = new ConversationDocument();
         _vm = new ConversationViewModel(services, dispatcher, _doc);
+        _commandVm = new CommandViewModel(_doc, _vm, services);
+        _onExitRequested = () => RequestStop();
+        _commandVm.ExitRequested += _onExitRequested;
+        _agentVm = new AgentViewViewModel(new TaskRegistry(), _doc);
 
         // 启动横幅
         _doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
@@ -86,13 +96,17 @@ internal sealed class RootView : Runnable
         {
             X = 0, Y = Pos.AnchorEnd(2), Width = Dim.Fill(), Height = 1
         };
+        var footerProvider = new LubanAgent.Services.FooterDataProvider();
+        _footer.SetProvider(footerProvider);
+        _footer.SetMode(_vm.PermissionModeDisplay);
 
         _inputBar = new InputBarView
         {
             X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), Height = 1
         };
         _inputBar.Submitted += OnInputSubmitted;
-        _vm.PermissionModeChanged += mode => _footer.SetMode(_vm.PermissionModeDisplay);
+        _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
+        _vm.PermissionModeChanged += _onPermissionModeChanged;
 
         Add(_conversation, _footer, _inputBar);
     }
@@ -114,6 +128,8 @@ internal sealed class RootView : Runnable
         if (disposing)
         {
             _inputBar.Submitted -= OnInputSubmitted;
+            _commandVm.ExitRequested -= _onExitRequested;
+            _vm.PermissionModeChanged -= _onPermissionModeChanged;
         }
         base.Dispose(disposing);
     }
@@ -131,6 +147,14 @@ internal sealed class RootView : Runnable
         if (key == Key.L.WithCtrl)
         {
             GetApp()?.LayoutAndDraw(true);
+            return true;
+        }
+
+        if (key == Key.Tab && !key.IsShift)
+        {
+            _agentVm.ToggleView();
+            var label = _agentVm.IsTaskViewActive ? "Agent View · 任务表" : "Conversation View";
+            _doc.AppendBlock(new SystemBlock(label, foreground: BlockColors.Accent, isBold: true));
             return true;
         }
 
@@ -190,9 +214,18 @@ internal sealed class RootView : Runnable
             return;
         }
 
+        // `/` 命令路由给 CommandViewModel
+        if (text.StartsWith('/'))
+        {
+            if (_commandVm.TryExecute(text))
+            {
+                return;
+            }
+        }
+
         if (_vm.IsRunning)
         {
-            _doc.AppendBlock(new SystemBlock("Agent 正在运行中，请等待完成或按 Ctrl+C 取消"));
+            _doc.AppendBlock(new SystemBlock("Agent 正在运行中，请等待完成或按 Esc 取消"));
             return;
         }
 
@@ -203,9 +236,10 @@ internal sealed class RootView : Runnable
             {
                 if (task.IsFaulted)
                 {
-                    _doc.AppendBlock(new SystemBlock(
-                        $"Agent 异常: {task.Exception?.InnerException?.Message ?? "未知错误"}",
-                        foreground: BlockColors.Failure));
+                    var msg = task.Exception?.InnerException?.Message ?? "未知错误";
+                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                        $"Agent 异常: {msg}",
+                        foreground: BlockColors.Failure)));
                 }
             }, TaskContinuationOptions.OnlyOnFaulted);
         }
@@ -215,7 +249,10 @@ internal sealed class RootView : Runnable
             {
                 if (task.IsFaulted)
                 {
-                    Logger.Error("ProcessInputAsync faulted", task.Exception);
+                    var msg = task.Exception?.InnerException?.Message ?? "未知错误";
+                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                        $"Agent 异常: {msg}",
+                        foreground: BlockColors.Failure)));
                 }
             }, TaskContinuationOptions.OnlyOnFaulted);
         }

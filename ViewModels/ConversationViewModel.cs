@@ -244,6 +244,14 @@ internal sealed class ConversationViewModel
             using var done = new ManualResetEventSlim(false);
             var result = false;
 
+            // 注册取消令牌回调：ESC 时 Set 信号以提前解除阻塞
+            var ct = _currentCts?.Token ?? default;
+            CancellationTokenRegistration ctr = default;
+            if (ct.CanBeCanceled)
+            {
+                ctr = ct.Register(() => done.Set());
+            }
+
             _dispatcher.Invoke(() =>
             {
                 var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
@@ -258,8 +266,9 @@ internal sealed class ConversationViewModel
                 _doc.AppendBlock(confirmBlock);
             });
 
-            // 等待用户选择（最长 2 分钟，超时视为拒绝）
+            // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
             done.Wait(TimeSpan.FromMinutes(2));
+            ctr.Dispose();
             return result;
         };
     }
@@ -311,13 +320,15 @@ internal sealed class ConversationViewModel
                         }
 
                         var token = reasoning.Text;
-                        thinkingBlock?.AppendContent(token);
+                        // 将 AppendContent 也编组到 UI 线程，避免与 Layout 产生数据竞争
+                        var tb = thinkingBlock;
                         _dispatcher.Invoke(() =>
                         {
-                            if (thinkingBlock is not null)
+                            tb?.AppendContent(token);
+                            if (tb is not null)
                             {
-                                thinkingBlock.Layout(_doc.LayoutWidth > 0 ? _doc.LayoutWidth : 80);
-                                _doc.RelayoutLastBlock();
+                                tb.Layout(_doc.LayoutWidth > 0 ? _doc.LayoutWidth : 80);
+                                // 思考过程的首次追加用 AppendBlock 已完成，后续用 RelayoutLastBlock
                             }
                         });
                     }

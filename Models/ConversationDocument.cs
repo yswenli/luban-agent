@@ -121,7 +121,8 @@ public sealed class ConversationDocument
             SnapToBottom();
         }
 
-        BlocksChanged?.Invoke();
+        var handler = BlocksChanged;
+        handler?.Invoke();
     }
 
     /// <summary>
@@ -181,7 +182,8 @@ public sealed class ConversationDocument
             SnapToBottom();
         }
 
-        BlocksChanged?.Invoke();
+        var handler = BlocksChanged;
+        handler?.Invoke();
     }
 
     /// <summary>
@@ -197,7 +199,8 @@ public sealed class ConversationDocument
             }
         }
 
-        BlocksChanged?.Invoke();
+        var handler = BlocksChanged;
+        handler?.Invoke();
     }
 
     /// <summary>
@@ -252,7 +255,7 @@ public sealed class ConversationDocument
 
             // 根据偏移裁切
             var blockLocalOffset = Math.Max(0, scrollOffset - blockStart);
-            var blockVisibleEnd = Math.Min(lines.Count, scrollOffset + viewportHeight - blockStart + blockLocalOffset);
+            var blockVisibleEnd = Math.Min(lines.Count, blockLocalOffset + viewportHeight);
 
             for (var i = blockLocalOffset; i < blockVisibleEnd && i < lines.Count; i++)
             {
@@ -348,7 +351,8 @@ public sealed class ConversationDocument
         }
 
         ClampScroll();
-        BlocksChanged?.Invoke();
+        var handler = BlocksChanged;
+        handler?.Invoke();
     }
 
     /// <summary>

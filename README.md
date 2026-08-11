@@ -158,12 +158,9 @@ dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 luban-agent-cli
 ```
 
-> **TUI 重构进行中**：界面层正在从 Console/Spectre 混合渲染迁移到 Terminal.Gui v2 全屏 TUI（参照 Claude Code 风格）。
-> 当前骨架阶段（步骤 1/8）已完成三区域布局（会话区/页脚/输入区）与 24-bit TrueColor 配色；
-> Agent 对话循环（步骤 4）、13 个内联命令（步骤 6）、权限模式（步骤 5）、页脚元数据（步骤 7）、
-> Agent View 多会话（步骤 8）将在后续步骤逐步接入。
->
-> 直接命令行执行单次命令（如 `luban-agent-cli /se -l`）将在步骤 4 后以 TUI 内联命令形式恢复。
+> **TUI 已完成迁移**：界面层已从 Console/Spectre 混合渲染全面迁移到 Terminal.Gui v2 全屏 TUI（参照 Claude Code 风格）。
+> 三区域布局（会话区/页脚/输入区）、Agent 流式对话循环、四模式权限确认、内联命令面板、页脚元数据和 Agent View 多会话均已就位。
+> 首次输入时自动初始化 Agent 并进入流式对话；`Esc` 取消当前任务，`Shift+Tab` 循环切换权限模式，`Tab` 切换对话/任务视图。
 
 #### 配置文件说明
 
@@ -294,40 +291,39 @@ LuBan Agent 提供了简洁而强大的命令系统：
 
 ### 直接命令行执行
 
-> **迁移中**：TUI 重构期间（步骤 1-4），直接命令行执行单次命令（如 `luban-agent-cli /se -l`）暂时不可用。
-> 步骤 4 完成后，将以 TUI 内联命令面板形式恢复——启动后自动派发首个 `/` 命令并进入全屏交互界面。
+TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互式调用。直接命令行参数执行（如 `luban-agent-cli /se -l`）将作为后续增强功能计划。
 
 ### 命令输入方式（TUI 全屏界面）
 
-启动后进入 Terminal.Gui 全屏 alt-screen 界面，布局自上而下为会话区（可滚动）、页脚（模式/目录/状态）、输入区（贴底）：
+启动后进入 Terminal.Gui 全屏 alt-screen 界面，布局自上而下为会话区（可滚动）、页脚（模式/目录/git/token）、输入区（贴底）：
 
-- **Enter** - 提交当前输入
-- **Shift+Enter** - 多行输入（步骤 2 接入）
-- **Ctrl+Q** - 强制退出 TUI
-- **Ctrl+L** - 重绘屏幕
-- **`/exit` 或 `/quit`** - 退出程序
-- **Tab 自动完成** - 输入部分命令后按 Tab 自动补全（步骤 2 接入）
-- **上/下箭头** - 浏览历史命令（步骤 2 接入）
-- **Ctrl+R** - 搜索历史（步骤 2 接入）
-- **命令前缀** - 所有命令以 `/` 开头
-- **鼠标** - 点击、滚动、Shift 拖选（终端原生选区逃生舱）
+- **Enter** — 提交当前输入（普通文本发送给 Agent，`/` 开头路由到命令面板）
+- **Ctrl+Q** — 强制退出 TUI
+- **Ctrl+L** — 重绘屏幕
+- **Esc** — 取消当前运行的 Agent 任务
+- **Shift+Tab** — 循环切换权限模式（Default → Plan → AcceptEdits → BypassPermissions）
+- **Tab** — 切换对话视图 / Agent 任务视图
+- **鼠标** — 点击 Block 折叠/展开；滚轮滚动；Shift 拖选终端原生复制
 
 ### 命令列表
 
-| 命令 | 简写 | 数字键 | 说明 |
-|------|------|--------|------|
-| `/provider` | `/p` | `1` | 管理 AI Provider (-list/-add/-update/-delete/-switch) |
-| `/model` | `/m` | `2` | 管理模型 (-list/-add/-update/-delete/-switch) |
-| `/skill` | `/sk` | `3` | 查看和执行 Skill (-list/-add/-update/-delete/-switch) |
-| `/rule` | `/r` | `4` | 查看和管理规则 (-list/-add/-update/-delete/-switch) |
-| `/mcp` | `/mp` | `5` | 查看 MCP 客户端 (-list/-add/-update/-delete/-switch/-connect/-tools) |
-| `/session` | `/se` | `6` | 管理对话会话 (-list/-new/-clear/-switch) |
-| `/agi` | `/a` | `7` | 通用 Agent 对话（支持自动编排复合任务） |
-| `/browse` | `/b` | `8` | 针对网站操作特异化 Agent |
-| `/stats` | `/st` | `9` | 会话与 Token 统计 (-days N, --all 跨工作区) |
-| `/work` | `/w` | `10` | 工作区管理 (-list/-new/-switch/-delete/-info/-authorize) |
-| `/rag` | `/rg` | `11` | 知识库管理 (-new/-index/-search/-list/-delete) |
-| `/exit` | - | `12` | 退出程序 |
+| 命令 | 简写 | 说明 |
+|------|------|------|
+| `/help` | — | 显示帮助信息（已接入 TUI） |
+| `/clear` | — | 清空会话历史（已接入 TUI） |
+| `/mode [name]` | — | 查看或切换权限模式（default/plan/accept-edits/bypass）（已接入 TUI） |
+| `/exit` / `/quit` | — | 退出程序 |
+| `/provider` | `/p` | 管理 AI Provider（后端已就绪，TUI 内联界面计划中） |
+| `/model` | `/m` | 管理模型（后端已就绪，TUI 内联界面计划中） |
+| `/skill` | `/sk` | 查看和执行 Skill |
+| `/rule` | `/r` | 查看和管理规则 |
+| `/mcp` | `/mp` | 查看 MCP 客户端 |
+| `/session` | `/se` | 管理对话会话 |
+| `/agi` | `/a` | 通用 Agent 对话（已自动启用，直接输入即可） |
+| `/browse` | `/b` | 针对网站操作特异化 Agent |
+| `/stats` | `/st` | 会话与 Token 统计 |
+| `/work` | `/w` | 工作区管理 |
+| `/rag` | `/rg` | 知识库管理 |
 
 ### 子命令简写
 
@@ -571,66 +567,47 @@ LubanAgent/
 ├── App/                    # TUI 应用层（Terminal.Gui 启动 + DI + 主题）
 │   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run 启动引导
 │   ├── TuiTheme.cs             # 24-bit TrueColor 配色方案
-│   ├── IUiDispatcher.cs        # UI 线程调度抽象（ViewModel 跨线程编组）
+│   ├── IUiDispatcher.cs        # UI 线程调度抽象
 │   └── TerminalGuiDispatcher.cs
 ├── Views/                  # TUI 视图层（纯渲染 · 无业务逻辑）
-│   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键
+│   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键 + 视图协调
 │   ├── ConversationView.cs     # 会话区自绘（Block 文档模型驱动）
 │   ├── InputBarView.cs         # 输入区（原生 TextView 封装）
 │   └── FooterView.cs           # 页脚自绘（模式/目录/git/token/tasks）
-├── Commands/              # 命令实现（迁移中，步骤 6 改为内联命令面板）
-│   ├── ProviderCommand.cs     # Provider 管理
-│   ├── ModelCommand.cs        # 模型管理
-│   ├── SkillCommand.cs        # Skill 管理
-│   ├── RuleCommand.cs         # 规则管理
-│   ├── MCPCommand.cs          # MCP 客户端管理
-│   ├── SessionCommand.cs      # 会话管理
-│   ├── AgiCommand.cs          # 通用 Agent 对话（支持自动编排）
-│   ├── BrowseCommand.cs       # 浏览器 Agent
-│   ├── StatsCommand.cs        # 统计信息
-│   ├── WorkCommand.cs         # 工作区管理
-│   └── RagCommand.cs          # RAG 知识库管理
-├── Configuration/         # 配置管理
-│   ├── AppConfig.cs           # 应用配置模型
-│   ├── ProviderConfig.cs      # Provider 配置模型
-│   ├── ProviderEndpointConfig.cs  # Provider 端点配置
-│   ├── ConfigManager.cs       # 配置管理器（实现 IAppConfigReader）
-│   ├── ProviderHelper.cs      # Provider 元数据与模型目录
-│   └── LuBanChatClient.cs     # Provider 路由（实现 IProviderRouter）
-├── Profiles/              # Agent 配置
-│   ├── AgentProfile.cs        # Agent 配置基类
-│   ├── NormalAgentProfile.cs  # 普通工作区配置
-│   └── RagAgentProfile.cs     # RAG 工作区配置
-├── UI/                    # 旧版控制台 UI（迁移中，步骤 4/6 后删除）
-│   ├── EscKeyListener.cs      # ESC 键监听 → root 层 Key.Esc 全局绑定
-│   └── ResponseSpinner.cs     # 加载动画 → 页脚橙色 * 动画
-├── Services/              # 核心服务
-│   ├── ConsoleAppService.cs   # 命令分发（步骤 6 改为协调 MainViewModel）
-│   ├── SessionManager.cs      # 会话持久化
-│   └── WorkspaceManager.cs    # 工作区管理与授权
-├── Repositories/          # 数据访问层
-│   ├── SessionRepository.cs   # 会话存储
-│   ├── WorkspaceRepository.cs # 工作区存储
-│   └── RagRepository.cs       # RAG 数据存储
-├── Retrieval/             # 语义检索
-│   ├── EmbeddingModelCatalog.cs   # 嵌入模型目录
-│   ├── ModelManager.cs        # 嵌入模型管理
-│   ├── OnnxEmbeddingGenerator.cs  # ONNX 嵌入生成器
-│   └── SqliteVectorStore.cs   # SQLite 向量存储（工作区隔离）
+├── ViewModels/             # MVVM ViewModel 层
+│   ├── ConversationViewModel.cs  # Agent 生命周期 + 流式对话循环 + 权限确认
+│   ├── CommandViewModel.cs       # / 命令路由与执行
+│   └── AgentViewViewModel.cs     # 多会话任务视图
+├── Models/                 # 纯数据模型（无 UI 依赖 · 可单测）
+│   ├── ConversationDocument.cs   # 会话文档模型
+│   ├── AgentTask.cs / TaskRegistry.cs  # 任务模型与注册表
+│   ├── ChoiceOption.cs / ConfirmResult.cs / PlannedAction.cs  # 选择组件类型
+│   └── Blocks/                  # Block 类层级
+│       ├── Block.cs             # 抽象基类（Layout/Render/HitTest）
+│       ├── RenderLine.cs        # RenderLine + TextSegment
+│       ├── BlockColors.cs       # 24-bit TrueColor 配色常量
+│       ├── UserMessageBlock / AssistantMessageBlock
+│       ├── ThinkingBlock / ToolCallBlock / ToolResultBlock
+│       ├── InlineChoiceBlock / SystemBlock
+│       └── ChoiceBlocks.cs      # 工厂方法
 ├── Infrastructure/        # 基础设施
-│   ├── DatabaseInitializer.cs # 数据库初始化
-│   └── SqliteLocalMemoryStore.cs  # SQLite 记忆存储
+│   ├── FlushThrottle.cs         # 流式刷新节流器（16ms 窗口）
+│   ├── DatabaseInitializer.cs
+│   └── SqliteLocalMemoryStore.cs
+├── Services/              # 核心服务
+│   ├── FooterDataProvider.cs    # 页脚元数据（git 分支/token 用量）
+│   ├── ConsoleAppService.cs     # 命令分发
+│   ├── SessionManager.cs        # 会话持久化
+│   └── WorkspaceManager.cs      # 工作区管理与授权
+├── Commands/              # 命令实现
+├── Configuration/         # 配置管理
+├── Profiles/              # Agent 配置
+├── Repositories/          # 数据访问层
+├── Retrieval/             # 语义检索
 ├── Entities/              # 数据实体
 ├── Model/                 # AI 模型文件
 └── Program.cs             # 程序入口（TUI bootstrap）
 ```
-
-> **MVVM 三层规划**（TUI 重构目标结构，随步骤 2-8 逐步填充）：
-> - `Models/` — Block 文档模型、ConversationDocument、PermissionMode、TaskRegistry（纯数据 · 无 UI 依赖 · 可单测）
-> - `ViewModels/` — Main/Conversation/InputBar/Footer/AgentView/Command 六大 VM（agent 生命周期 · 线程 marshaling）
-> - `Views/Renderers/` — BlockRenderer + MarkdownLightRenderer（Block → RenderLine 渲染分发）
-> - `Services/Providers/` — GitInfo/TokenUsage/TaskRegistry/PrLink 等 IFooterDataProvider 实现
-> - `Infrastructure/` — Throttle（FlushThrottle 16ms）、ChannelBridge（同步确认跨线程桥接）
 
 ---
 
@@ -885,31 +862,24 @@ github 可用的工具：
 | **LuBan.Common** | 基础接口与工具定义 |
 | **Microsoft.ML.OnnxRuntime** | ONNX 模型推理（语义检索） |
 | **SQLite** | 会话与向量数据存储 |
-
-> **TFM 说明**：CLI 层目标框架为 `net10.0`（Terminal.Gui 2.4.17 要求）；框架层（`luban-framework/*`）全部保持 `net8.0` 不变。
+| **MVVM + Block Document Model** | 自绘渲染架构（Block → RenderLine → ConversationView） |
 
 ---
 
 ## 💡 小贴士
 
-- 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider，新增 Provider 只需通过 `/provider -add` 添加
-- 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择最适合的地址
-- 📌 **支持直接命令行执行**：`luban-agent-cli /se -s 新会话` 即可从任意目录执行单次命令并退出，无需进入交互菜单（详见[命令一览](#-命令一览)）
+- 🖥️ **全屏 TUI**：启动即进入 Terminal.Gui 全屏界面，输入普通文本直接与 Agent 对话
+- ⌨️ **快捷键**：`Esc` 取消任务、`Shift+Tab` 切换权限模式、`Tab` 切换任务视图、`Ctrl+Q` 退出、`Ctrl+L` 重绘
+- 🛡️ **四模式权限**：`Shift+Tab` 循环切换 Default / Plan / AcceptEdits / BypassPermissions，页脚实时显示
+- 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击 `▸` 展开查看详情
+- 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ 行提示"
+- 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择
 - 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、数据库、Redis、Web 请求、语义检索
-- ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认
+- ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认（InlineChoiceBlock 内联确认）
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
-- 💾 **会话历史自动持久化**，支持长对话压缩（SummarizingChatReducer），上下文永不丢失；启动 `/agi` 时显示最近对话历史，快速了解上下文
-- 🎨 **自定义 Skill/Rule/MCP 持久化**，配置保存到本地文件，重启后自动加载
-- 🎯 **对话内 Skill 切换**：`/skill -switch` 选择 Skill 后，仅对下一条输入生效，执行后自动取消
-- 📄 **文件化 Skill**：支持 SKILL.md 文件定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
-- 🛡️ **规则拦截**在工具执行前自动检查，支持 deny/allow/modify
-- 🔌 **MCP 工具集成**，外部 MCP 服务器工具自动暴露给 Agent
-- 📦 通过 `ExternalPlugins` 配置可热加载外部工具插件程序集
-- 🔗 结合 [LuBan.AIFlow](https://www.nuget.org/packages/LuBan.AIFlow/) 可对接 RagFlow / Dify / Coze 等 AI 平台
-- 🧩 **多 Agent 编排**：`/agi` 对话中 AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行，支持关键节点失败跳过、超时控制、上下文传递
-- 📂 **工作区隔离**：`/work` 命令管理工作区，每个工作区有独立的会话历史与配置目录，切换工作区自动恢复最近会话
-- 🔍 **RAG 知识库**：`/rag` 命令创建知识库工作区，索引 `.txt`/`.md` 文件后通过 `/agi` 自动检索增强问答，不同工作区向量数据完全隔离
-- 📁 **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置，RAG 工作区还会生成默认 `rag-config.json`
+- 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider
+- 🧩 **多 Agent 编排**：`/agi` 对话中 AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行
+- 📂 **工作区隔离**：`/work` 命令管理工作区，每个工作区有独立的会话历史与配置目录
 
 ---
 

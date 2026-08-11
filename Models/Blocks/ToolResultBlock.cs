@@ -64,8 +64,9 @@ public sealed class ToolResultBlock : Block
 
         var w = Math.Max(1, width - 2);
         var text = Content;
-        var lines = Math.Max(1, (text.Length + w - 1) / w);
-        LineCount = Math.Min(lines + 1, MaxExpandedLines + 1);
+        var contentLines = Math.Max(1, (text.Length + w - 1) / w);
+        var truncated = contentLines > MaxExpandedLines;
+        LineCount = Math.Min(contentLines + 1, MaxExpandedLines + 1) + (truncated ? 1 : 0);
     }
 
     /// <inheritdoc/>

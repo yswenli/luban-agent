@@ -29,7 +29,7 @@ public sealed class InlineChoiceBlock : Block
     private readonly List<ChoiceOption> _options;
     private int _focusedIndex;
     private ChoiceOption? _selected;
-    private readonly Action<ChoiceOption>? _onResolve;
+    private Action<ChoiceOption>? _onResolve;
 
     /// <summary>不可折叠（确认块必须始终可见）。</summary>
     public override bool IsFoldable => false;
@@ -49,7 +49,8 @@ public sealed class InlineChoiceBlock : Block
             if (_focusedIndex != value)
             {
                 _focusedIndex = value;
-                FocusedIndexChanged?.Invoke();
+                var handler = FocusedIndexChanged;
+                handler?.Invoke();
             }
         }
     }
@@ -201,8 +202,9 @@ public sealed class InlineChoiceBlock : Block
             return false; // 已确认，不再响应
         }
 
-        // 快捷键：不区分大小写匹配
-        var c = (char)key.KeyCode;
+        // 快捷键：不区分大小写匹配。KeyCode 在 Terminal.Gui v2 中为 Key 枚举值，
+        // 字母键 (Key.A..Key.Z) 的 KeyCode 可直接映射为字符。
+        var c = (char)key;
         if (char.IsLetter(c))
         {
             foreach (var opt in _options)
@@ -251,7 +253,9 @@ public sealed class InlineChoiceBlock : Block
         FocusedIndex = index;
         _selected = _options[index];
         _onResolve?.Invoke(_selected);
-        Resolved?.Invoke();
+        _onResolve = null; // 释放闭包引用
+        var handler = Resolved;
+        handler?.Invoke();
     }
 
     /// <summary>
