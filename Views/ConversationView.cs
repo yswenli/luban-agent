@@ -14,7 +14,6 @@
 *描述：会话区自绘视图，消费 Block 文档模型，支持流式刷新节流、自动滚动跟随与鼠标交互
 *
 *****************************************************************************/
-using System.Diagnostics;
 using LubanAgent.App;
 using LubanAgent.Infrastructure;
 using LubanAgent.Models;
@@ -131,12 +130,9 @@ internal sealed class ConversationView : View
 
     // ────────────── 自绘 ──────────────
 
-    private static int _drawCounter;
-
     /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        var sw = Stopwatch.StartNew();
         var viewport = Viewport;
         if (viewport.Width <= 0 || viewport.Height <= 0)
         {
@@ -149,21 +145,13 @@ internal sealed class ConversationView : View
 
         if (_dirty || viewportChanged || scrollChanged)
         {
-            Console.Error.WriteLine($"[Perf] ConvDraw DIRTY at {RootView.PerfWatch.ElapsedMilliseconds}ms");
-
             _doc.LayoutWidth = viewport.Width;
             _doc.ViewportHeight = viewport.Height;
             _lastRenderedViewportHeight = viewport.Height;
             _lastRenderedScrollOffset = _doc.ScrollOffset;
             _dirty = false;
 
-            var beforeLines = sw.ElapsedMilliseconds;
             _doc.GetVisibleLines(_renderBuffer, viewport.Width);
-            var getLinesMs = sw.ElapsedMilliseconds - beforeLines;
-            if (getLinesMs > 10)
-            {
-                Logger.Error($"[⚡Perf] GetVisibleLines: {getLinesMs}ms blocks={_doc.BlockCount} visible={_renderBuffer.Count}");
-            }
         }
 
         // 逐行逐 Segment 渲染（使用缓存的 _renderBuffer）
@@ -196,13 +184,6 @@ internal sealed class ConversationView : View
             SetAttribute(TuiTheme.Attr(TuiTheme.Accent, TextStyle.Bold));
             var row = Math.Min(_renderBuffer.Count, viewport.Height - 1);
             AddStr(0, row, Truncate(hint, viewport.Width));
-        }
-
-        // 诊断：总耗时 > 10ms 时记录
-        var totalMs = sw.ElapsedMilliseconds;
-        if (totalMs > 10)
-        {
-            Logger.Error($"[⚡Perf] OnDrawingContent total:{totalMs}ms dirty={_dirty} blocks={_doc.BlockCount} renderLines={_renderBuffer.Count}");
         }
 
         return true;
