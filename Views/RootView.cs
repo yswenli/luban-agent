@@ -147,7 +147,9 @@ internal sealed class RootView : Runnable
         var now = PerfWatch.ElapsedMilliseconds;
         var gap = _lastKeyMs > 0 ? now - _lastKeyMs : 0;
         _lastKeyMs = now;
-        Logger.Error($"[⌨️Perf] {now}ms KeyDown:{key} gap={gap}ms");
+        var msg = $"[Perf] {now}ms KeyDown:{key} gap={gap}ms";
+        Console.Error.WriteLine(msg);
+        Logger.Error(msg);
 
         if (key == Key.Q.WithCtrl)
         {

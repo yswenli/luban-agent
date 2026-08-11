@@ -14,9 +14,6 @@
 *描述：通用 Agent 对话命令，支持工具调用和 thinking 显示
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Skills;
-
 namespace LubanAgent.Commands;
 
 /// <summary>
