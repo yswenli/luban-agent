@@ -309,12 +309,12 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 | 命令 | 简写 | 说明 |
 |------|------|------|
-| `/help` | — | 显示帮助信息（已接入 TUI） |
-| `/clear` | — | 清空会话历史（已接入 TUI） |
-| `/mode [name]` | — | 查看或切换权限模式（default/plan/accept-edits/bypass）（已接入 TUI） |
+| `/help` | — | 显示帮助信息 |
+| `/clear` | — | 清空会话历史 |
+| `/mode [name]` | — | 查看或切换权限模式（default/plan/accept-edits/bypass） |
 | `/exit` / `/quit` | — | 退出程序 |
-| `/provider` | `/p` | 管理 AI Provider（后端已就绪，TUI 内联界面计划中） |
-| `/model` | `/m` | 管理模型（后端已就绪，TUI 内联界面计划中） |
+| `/provider` | `/p` | 管理 AI Provider |
+| `/model` | `/m` | 管理模型 |
 | `/skill` | `/sk` | 查看和执行 Skill |
 | `/rule` | `/r` | 查看和管理规则 |
 | `/mcp` | `/mp` | 查看 MCP 客户端 |

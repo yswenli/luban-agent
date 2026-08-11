@@ -11,29 +11,33 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：内联命令路由，将 `/` 输入解析为命令并执行，结果以 SystemBlock 形式追加到会话文档
+*描述：内联命令路由，解析 / 输入为命令执行，结果通过 TuiOutputWriter 输出到会话文档。
+*统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
+using System.Diagnostics;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using LuBan.AIAgent.Abstractions;
 using LubanAgent.App;
+using LubanAgent.Configuration;
 using LubanAgent.Models;
 using LubanAgent.Models.Blocks;
 
 namespace LubanAgent.ViewModels;
 
 /// <summary>
-/// 命令 ViewModel。解析 `/` 输入、匹配命令、执行并将结果以 SystemBlock 追加到文档。
-/// 输出型命令（如 /help、/clear）结果即系统消息；操作型命令（如 /exit）直接执行。
+/// 命令 ViewModel。解析 / 输入、匹配命令、执行并将结果以 SystemBlock 追加到文档。
+/// 统一 /help /clear /mode /provider /model /session /stats /work /rag 等所有命令。
 /// </summary>
 internal sealed class CommandViewModel
 {
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel? _conversationVm;
     private readonly IServiceProvider _services;
+    private readonly TuiOutputWriter _writer;
 
-    /// <summary>
-    /// 请求退出应用时触发。
-    /// </summary>
     public event Action? ExitRequested;
 
     public CommandViewModel(
@@ -44,124 +48,103 @@ internal sealed class CommandViewModel
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _conversationVm = conversationVm;
         _services = services;
+        _writer = new TuiOutputWriter(_doc);
     }
 
     /// <summary>
-    /// 处理以 `/` 开头的命令行输入。返回 true 表示已处理，false 表示非命令输入（应由 agent 处理）。
+    /// 处理以 / 开头的命令行输入。返回 true 表示已处理。
     /// </summary>
-    /// <param name="input">用户输入。</param>
-    /// <returns>已作为命令处理返回 true。</returns>
     public bool TryExecute(string input)
     {
         if (string.IsNullOrWhiteSpace(input) || !input.StartsWith('/'))
-        {
             return false;
-        }
 
         var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var cmd = parts[0].ToLowerInvariant();
 
         switch (cmd)
         {
-            case "/exit":
-            case "/quit":
+            case "/exit": case "/quit":
                 ExitRequested?.Invoke();
                 return true;
 
-            case "/help":
-                ExecuteHelp();
-                return true;
+            // ── 已统一迁移的命令 ──
+            case "/help":     ExecuteHelp(); return true;
+            case "/clear":    ExecuteClear(); return true;
+            case "/mode":     ExecuteMode(parts.Length > 1 ? parts[1] : null); return true;
 
-            case "/clear":
-                ExecuteClear();
-                return true;
+            // ── 管理型命令（Console.SetOut 桥接捕获）──
+            case "/provider": case "/p":         ExecuteManagementCommand<ProviderCommand>(parts); return true;
+            case "/model":    case "/m":         ExecuteManagementCommand<ModelCommand>(parts); return true;
+            case "/skill":    case "/sk":        ExecuteManagementCommand<SkillCommand>(parts); return true;
+            case "/rule":     case "/r":         ExecuteManagementCommand<RuleCommand>(parts); return true;
+            case "/mcp":      case "/mp":        ExecuteManagementCommand<MCPCommand>(parts); return true;
+            case "/session":  case "/se":        ExecuteManagementCommand<SessionCommand>(parts); return true;
+            case "/stats":    case "/st":        ExecuteManagementCommand<StatsCommand>(parts); return true;
+            case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
+            case "/rag":      case "/rg":        ExecuteManagementCommand<RagCommand>(parts); return true;
 
-            case "/mode":
-                ExecuteMode(parts.Length > 1 ? parts[1] : null);
-                return true;
-
-            // ── Agent 对话命令（已自动启用，直接输入即可）──
-            case "/agi":
-            case "/a":
-            case "/browse":
-            case "/b":
-                _doc.AppendBlock(new SystemBlock("Agent 已就绪，直接输入内容即可开始对话。（或输入 /help 查看帮助）",
-                    foreground: BlockColors.Success));
-                return true;
-
-            // ── 以下命令尚未迁移（步骤 6 后续）──
-            case "/model":
-            case "/m":
-            case "/provider":
-            case "/p":
-            case "/skill":
-            case "/sk":
-            case "/rule":
-            case "/r":
-            case "/mcp":
-            case "/mp":
-            case "/session":
-            case "/se":
-            case "/stats":
-            case "/st":
-            case "/work":
-            case "/w":
-            case "/rag":
-            case "/rg":
-                _doc.AppendBlock(new SystemBlock($"命令 {cmd} 正在迁移中（步骤 6 后续批次）", foreground: BlockColors.Accent));
+            // ── Agent 对话（默认激活）──
+            case "/agi": case "/a": case "/browse": case "/b":
+                _writer.WriteSuccess("Agent 已就绪，直接输入内容即可开始对话。（或输入 /help 查看帮助）");
                 return true;
 
             default:
-                _doc.AppendBlock(new SystemBlock($"未知命令: {cmd}，输入 /help 查看可用命令", foreground: BlockColors.Failure));
+                _writer.WriteError($"未知命令: {cmd}，输入 /help 查看可用命令");
                 return true;
         }
     }
 
+    // ═══ Agent 对话命令 ═══
+
     private void ExecuteHelp()
     {
-        _doc.AppendBlock(new SystemBlock("╭─ LuBan Agent CLI 帮助", foreground: BlockColors.Accent, isBold: true));
-        _doc.AppendBlock(new SystemBlock("│"));
-        _doc.AppendBlock(new SystemBlock("│  可用命令:"));
-        _doc.AppendBlock(new SystemBlock("│    /help          显示此帮助"));
-        _doc.AppendBlock(new SystemBlock("│    /clear         清空会话历史"));
-        _doc.AppendBlock(new SystemBlock("│    /mode [name]   查看或切换权限模式 (default/plan/accept-edits/bypass)"));
-        _doc.AppendBlock(new SystemBlock("│    /exit, /quit   退出程序"));
-        _doc.AppendBlock(new SystemBlock("│"));
-        _doc.AppendBlock(new SystemBlock("│  快捷键:"));
-        _doc.AppendBlock(new SystemBlock("│    Enter          提交输入"));
-        _doc.AppendBlock(new SystemBlock("│    Ctrl+Q         强制退出"));
-        _doc.AppendBlock(new SystemBlock("│    Esc            取消当前 Agent 任务"));
-        _doc.AppendBlock(new SystemBlock("│    Ctrl+L         重绘屏幕"));
-        _doc.AppendBlock(new SystemBlock("│    Shift+Tab      循环切换权限模式"));
-        _doc.AppendBlock(new SystemBlock("│"));
-        _doc.AppendBlock(new SystemBlock("│  更多命令（/model, /session, /stats, /work, ...）将在后续批次迁移。"));
-        _doc.AppendBlock(new SystemBlock("│  直接输入文本即可与 Agent 对话，无需 /agi 前缀。"));
-        _doc.AppendBlock(new SystemBlock("╰──────────────────────────────", foreground: BlockColors.Accent));
+        _writer.WriteHeader("LuBan Agent CLI 帮助");
+        _writer.WriteLine();
+        _writer.WriteLine("直接输入文本即可与 Agent 对话（无需 /agi 前缀）。");
+        _writer.WriteLine();
+        _writer.WriteLine("可用命令:");
+        _writer.WriteLine("  /help               显示此帮助");
+        _writer.WriteLine("  /clear              清空会话历史");
+        _writer.WriteLine("  /mode [name]        查看或切换权限模式");
+        _writer.WriteLine("  /provider, /p       管理 AI Provider");
+        _writer.WriteLine("  /model, /m          管理模型");
+        _writer.WriteLine("  /skill, /sk         查看和執行 Skill");
+        _writer.WriteLine("  /rule, /r           管理规则");
+        _writer.WriteLine("  /mcp, /mp           管理 MCP 客户端");
+        _writer.WriteLine("  /session, /se       管理对话会话");
+        _writer.WriteLine("  /stats, /st         会话与 Token 统计");
+        _writer.WriteLine("  /work, /w           工作区管理");
+        _writer.WriteLine("  /rag, /rg           知识库管理");
+        _writer.WriteLine("  /exit, /quit        退出程序");
+        _writer.WriteLine();
+        _writer.WriteLine("快捷键:");
+        _writer.WriteLine("  Enter               提交输入");
+        _writer.WriteLine("  Ctrl+Q              强制退出");
+        _writer.WriteLine("  Esc                 取消当前 Agent 任务");
+        _writer.WriteLine("  Ctrl+L              重绘屏幕");
+        _writer.WriteLine("  Shift+Tab           循环切换权限模式");
+        _writer.WriteLine("  Tab                 切换对话/任务视图");
     }
 
     private void ExecuteClear()
     {
         _doc.Clear();
-        _doc.AppendBlock(new SystemBlock("会话历史已清空", foreground: BlockColors.Success));
+        _writer.WriteSuccess("会话历史已清空");
     }
 
     private void ExecuteMode(string? arg)
     {
         if (_conversationVm is null)
         {
-            _doc.AppendBlock(new SystemBlock("Agent 尚未初始化，请先输入内容启动 Agent", foreground: BlockColors.System));
+            _writer.WriteInfo("Agent 尚未初始化，请先输入内容启动 Agent");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(arg))
         {
-            // 显示当前模式
-            _doc.AppendBlock(new SystemBlock(
-                $"当前权限模式: {_conversationVm.PermissionModeDisplay}",
-                foreground: BlockColors.Accent));
-            _doc.AppendBlock(new SystemBlock(
-                "可用模式: default / plan / accept-edits / bypass  （使用 Shift+Tab 切换）",
-                foreground: BlockColors.System));
+            _writer.WriteInfo($"当前权限模式: {_conversationVm.PermissionModeDisplay}");
+            _writer.WriteInfo("可用模式: default / plan / accept-edits / bypass（使用 Shift+Tab 切换）");
             return;
         }
 
@@ -176,15 +159,151 @@ internal sealed class CommandViewModel
 
         if (mode is null)
         {
-            _doc.AppendBlock(new SystemBlock(
-                $"无效模式: {arg}. 可用: default, plan, accept-edits, bypass",
-                foreground: BlockColors.Failure));
+            _writer.WriteError($"无效模式: {arg}. 可用: default, plan, accept-edits, bypass");
             return;
         }
 
         _conversationVm.SetPermissionMode(mode.Value);
-        _doc.AppendBlock(new SystemBlock(
-            $"权限模式已切换: {_conversationVm.PermissionModeDisplay}",
-            foreground: BlockColors.Accent));
+        _writer.WriteInfo($"权限模式已切换: {_conversationVm.PermissionModeDisplay}");
+    }
+
+    // ═══ 管理型命令桥接 ═══
+
+    /// <summary>
+    /// 通用管理命令执行器。通过 Console.SetOut 捕获命令输出文本，
+    /// 经 ANSI 清理后逐行追加为 SystemBlock。零改动现有 Command 类。
+    /// </summary>
+    private void ExecuteManagementCommand<TCommand>(string[] parts) where TCommand : CommandBase
+    {
+        try
+        {
+            var command = ResolveCommand<TCommand>();
+            if (command is null)
+            {
+                _writer.WriteError($"命令 {typeof(TCommand).Name} 初始化失败");
+                return;
+            }
+
+            // 桥接：捕获 Console 输出 → SystemBlock
+            var originalOut = Console.Out;
+            using var capture = new StringWriter();
+            Console.SetOut(capture);
+
+            try
+            {
+                // 模拟 ConsoleAppService 的命令执行流程
+                var expandedArgs = ExpandSubCommandAliases(parts);
+                if (expandedArgs.Length > 1)
+                {
+                    var handled = command.ExecuteAsync(expandedArgs.Skip(1).ToArray()).GetAwaiter().GetResult();
+                    if (!handled)
+                    {
+                        command.ExecuteAsync().GetAwaiter().GetResult();
+                    }
+                }
+                else
+                {
+                    command.ExecuteAsync().GetAwaiter().GetResult();
+                }
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+            }
+
+            // 处理捕获的输出
+            var raw = capture.ToString();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                var clean = StripAnsi(raw);
+                foreach (var line in clean.Split('\n'))
+                {
+                    var trimmed = line.TrimEnd('\r');
+                    _writer.WriteLine(trimmed);
+                }
+            }
+            else
+            {
+                _writer.WriteLine("(无输出)");
+            }
+        }
+        catch (Exception ex)
+        {
+            _writer.WriteError($"命令执行异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 从 DI 容器解析命令实例。复用 ConsoleAppService 中的构造参数。
+    /// </summary>
+    private TCommand? ResolveCommand<TCommand>() where TCommand : CommandBase
+    {
+        var configManager = _services.GetRequiredService<ConfigManager>();
+        var configuration = _services.GetRequiredService<IConfiguration>();
+
+        return typeof(TCommand).Name switch
+        {
+            nameof(ProviderCommand) => new ProviderCommand(configManager, configuration) as TCommand,
+            nameof(ModelCommand) => new ModelCommand(configManager, configuration) as TCommand,
+            nameof(SkillCommand) => (TCommand)(object)new SkillCommand(configManager, configuration,
+                _services.GetRequiredService<SkillRegistry>()),
+            nameof(RuleCommand) => (TCommand)(object)new RuleCommand(configManager, configuration,
+                _services.GetRequiredService<RuleEngine>()),
+            nameof(MCPCommand) => (TCommand)(object)new MCPCommand(configManager, configuration,
+                _services.GetRequiredService<MCPRegistry>()),
+            nameof(SessionCommand) => (TCommand)(object)new SessionCommand(configManager, configuration,
+                _services.GetRequiredService<ISessionManager>(),
+                _services.GetRequiredService<SessionRepository>(),
+                _services.GetRequiredService<SessionMessageRepository>()),
+            nameof(StatsCommand) => (TCommand)(object)new StatsCommand(configManager, configuration,
+                _services.GetRequiredService<ISessionManager>(),
+                _services.GetRequiredService<SessionRepository>()),
+            nameof(WorkCommand) => (TCommand)(object)new WorkCommand(configManager, configuration,
+                _services.GetRequiredService<IWorkspaceManager>(),
+                _services.GetRequiredService<WorkspaceRepository>(),
+                _services.GetRequiredService<SessionRepository>()),
+            nameof(RagCommand) => (TCommand)(object)new RagCommand(configManager, configuration,
+                _services.GetRequiredService<IWorkspaceManager>(),
+                _services.GetRequiredService<WorkspaceRepository>(),
+                _services.GetRequiredService<IRetrievalService>(),
+                _services.GetRequiredService<RagFileRepository>(),
+                _services.GetRequiredService<RagChunkRepository>(),
+                _services.GetRequiredService<SessionRepository>()),
+            _ => null
+        };
+    }
+
+    /// <summary>子命令缩写展开（与 ConsoleAppService 一致）。</summary>
+    private static string[] ExpandSubCommandAliases(string[] parts)
+    {
+        if (parts.Length < 2) return parts;
+
+        var result = new string[parts.Length];
+        result[0] = parts[0];
+
+        for (var i = 1; i < parts.Length; i++)
+        {
+            result[i] = parts[i] switch
+            {
+                "-l" => "-list", "-a" => "-add", "-u" => "-update", "-d" => "-delete",
+                "-s" => "-switch", "-n" => "-new", "-c" => "-clear", "-t" => "-tools",
+                _ => parts[i]
+            };
+        }
+
+        return result;
+    }
+
+    /// <summary>剥离 ANSI/Spectre.Console 转义序列，保留纯文本。</summary>
+    private static string StripAnsi(string input)
+    {
+        if (string.IsNullOrEmpty(input) || !input.Contains('\x1b'))
+            return input;
+
+        // 移除 ANSI escape sequences (\x1b[...m)
+        var result = Regex.Replace(input, @"\x1b\[[0-9;]*[a-zA-Z]", string.Empty);
+        // 移除 Spectre.Console 残留转义
+        result = Regex.Replace(result, @"\x1b\]8;;[^\x1b]*\x1b\\", string.Empty);
+        return result;
     }
 }
