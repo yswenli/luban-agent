@@ -80,6 +80,15 @@ internal sealed class CommandViewModel
                 ExecuteMode(parts.Length > 1 ? parts[1] : null);
                 return true;
 
+            // ── Agent 对话命令（已自动启用，直接输入即可）──
+            case "/agi":
+            case "/a":
+            case "/browse":
+            case "/b":
+                _doc.AppendBlock(new SystemBlock("Agent 已就绪，直接输入内容即可开始对话。（或输入 /help 查看帮助）",
+                    foreground: BlockColors.Success));
+                return true;
+
             // ── 以下命令尚未迁移（步骤 6 后续）──
             case "/model":
             case "/m":
@@ -93,10 +102,6 @@ internal sealed class CommandViewModel
             case "/mp":
             case "/session":
             case "/se":
-            case "/agi":
-            case "/a":
-            case "/browse":
-            case "/b":
             case "/stats":
             case "/st":
             case "/work":
@@ -129,7 +134,8 @@ internal sealed class CommandViewModel
         _doc.AppendBlock(new SystemBlock("│    Ctrl+L         重绘屏幕"));
         _doc.AppendBlock(new SystemBlock("│    Shift+Tab      循环切换权限模式"));
         _doc.AppendBlock(new SystemBlock("│"));
-        _doc.AppendBlock(new SystemBlock("│  更多命令（/model, /session, /agi, ...）将在步骤 6 后续批次迁移。"));
+        _doc.AppendBlock(new SystemBlock("│  更多命令（/model, /session, /stats, /work, ...）将在后续批次迁移。"));
+        _doc.AppendBlock(new SystemBlock("│  直接输入文本即可与 Agent 对话，无需 /agi 前缀。"));
         _doc.AppendBlock(new SystemBlock("╰──────────────────────────────", foreground: BlockColors.Accent));
     }
 
