@@ -17,13 +17,21 @@
 namespace LubanAgent.Retrieval;
 
 /// <summary>
-/// 模型文件规格
+/// 模型文件规格，描述单个模型文件的远程路径、本地名称和最小文件大小。
 /// </summary>
+/// <param name="RemotePath">远程下载路径（相对于 RemoteBase/MirrorBase）</param>
+/// <param name="LocalName">保存到本地后的相对文件名</param>
+/// <param name="MinSizeBytes">文件最小字节数，用于校验下载完整性</param>
 public record ModelFileSpec(string RemotePath, string LocalName, long MinSizeBytes);
 
 /// <summary>
-/// 嵌入模型规格
+/// 嵌入模型规格，定义模型的标识、向量维度、下载地址及所需文件列表。
 /// </summary>
+/// <param name="ModelId">模型唯一标识</param>
+/// <param name="Dimension">向量维度</param>
+/// <param name="RemoteBase">HuggingFace 远程基础路径</param>
+/// <param name="MirrorBase">国内镜像基础路径</param>
+/// <param name="Files">模型所需的文件列表</param>
 public record EmbeddingModelSpec(string ModelId, int Dimension, string RemoteBase, string MirrorBase, IReadOnlyList<ModelFileSpec> Files);
 
 /// <summary>

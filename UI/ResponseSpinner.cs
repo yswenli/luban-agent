@@ -1,10 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*Author：GitHub Copilot
+*机器名称：WALLE
+*Author：yswenli
+*命名空间：LubanAgent.UI
 *文件名： ResponseSpinner
-*描述：兼容 TUI 的响应状态指示器；在 TUI 模式下委托给 SpinnerService 渲染，
-*在非 TUI（传统控制台）模式保持原有行为。
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人： yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/11
+*描述：兼容 TUI 的响应状态指示器，TUI 模式下委托 SpinnerService 渲染，非 TUI 模式保持控制台动画
+*
 *****************************************************************************/
 
 using System;
@@ -26,8 +34,15 @@ public sealed class ResponseSpinner : IDisposable
     private string _status;
     private bool _usingTui;
 
+    /// <summary>
+    /// Spinner 动画帧序列（Braille 字符循环）
+    /// </summary>
     private static readonly string[] SpinnerFrames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
+    /// <summary>
+    /// 创建响应状态指示器实例，初始化渲染线程并检测是否处于 TUI 模式
+    /// </summary>
+    /// <param name="initialStatus">初始状态文本，默认"正在思考..."</param>
     public ResponseSpinner(string initialStatus = "正在思考...")
     {
         _status = initialStatus;
@@ -39,6 +54,9 @@ public sealed class ResponseSpinner : IDisposable
         _usingTui = TerminalGuiApp.CanRunInteractive();
     }
 
+    /// <summary>
+    /// 启动 spinner 动画。TUI 模式下委托给全局 SpinnerService，非 TUI 模式启动后台渲染线程。
+    /// </summary>
     public void Start()
     {
         if (_disposed || _stopped) return;
@@ -54,8 +72,13 @@ public sealed class ResponseSpinner : IDisposable
         _renderThread.Start();
     }
 
+    /// <summary>
+    /// 更新状态文本（线程安全），TUI 模式下同步通知 SpinnerService
+    /// </summary>
+    /// <param name="status">新的状态文本</param>
     public void UpdateStatus(string status)
     {
+        // 使用 Interlocked 保证多线程下状态文本的原子更新
         Interlocked.Exchange(ref _status, status);
         if (_usingTui)
         {
@@ -63,6 +86,9 @@ public sealed class ResponseSpinner : IDisposable
         }
     }
 
+    /// <summary>
+    /// 停止 spinner 动画并清理渲染线程
+    /// </summary>
     public void Stop()
     {
         if (_stopped) return;
@@ -76,6 +102,7 @@ public sealed class ResponseSpinner : IDisposable
 
         try
         {
+            // 等待渲染线程退出，超时 150ms 则强制中断
             if (_renderThread.IsAlive && !_renderThread.Join(150))
             {
                 _renderThread.Interrupt();
@@ -89,6 +116,9 @@ public sealed class ResponseSpinner : IDisposable
         ClearAnimationLine();
     }
 
+    /// <summary>
+    /// 清除控制台当前行的动画内容（用空格覆盖）
+    /// </summary>
     private void ClearAnimationLine()
     {
         try
@@ -103,6 +133,9 @@ public sealed class ResponseSpinner : IDisposable
         }
     }
 
+    /// <summary>
+    /// 后台渲染循环：循环输出 spinner 帧和状态文本，直到停止或释放
+    /// </summary>
     private void RenderLoop()
     {
         try
@@ -131,6 +164,9 @@ public sealed class ResponseSpinner : IDisposable
         }
     }
 
+    /// <summary>
+    /// 释放资源：停止动画并标记为已释放
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

@@ -25,12 +25,18 @@ using Color = Terminal.Gui.Drawing.Color;
 
 namespace LubanAgent.Views;
 
+/// <summary>
+/// 页脚视图。显示权限模式、工作目录、git 分支、token 统计与后台任务状态。
+/// </summary>
 internal sealed class FooterView : View
 {
     private FooterDataProvider? _provider;
     private string _modeText = "default";
     private bool _spinnerSubscribed;
 
+    /// <summary>
+    /// 初始化页脚视图并订阅全局 Spinner 服务。
+    /// </summary>
     public FooterView()
     {
         CanFocus = false;
@@ -41,11 +47,19 @@ internal sealed class FooterView : View
 
     private void OnSpinnerChanged() => SetNeedsDraw();
 
+    /// <summary>
+    /// 设置页脚数据提供者。
+    /// </summary>
+    /// <param name="provider">页脚数据提供者。</param>
     public void SetProvider(FooterDataProvider provider)
     {
         _provider = provider;
     }
 
+    /// <summary>
+    /// 设置当前权限模式显示文本。
+    /// </summary>
+    /// <param name="mode">权限模式名称。</param>
     public void SetMode(string mode)
     {
         _modeText = mode;
@@ -53,6 +67,7 @@ internal sealed class FooterView : View
         SetNeedsDraw();
     }
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing && _spinnerSubscribed)
@@ -62,6 +77,7 @@ internal sealed class FooterView : View
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var sw = Stopwatch.StartNew();
@@ -114,6 +130,15 @@ internal sealed class FooterView : View
         return true;
     }
 
+    /// <summary>
+    /// 在指定列位置写入带颜色与样式的文本，超出宽度时截断。
+    /// </summary>
+    /// <param name="col">起始列。</param>
+    /// <param name="text">待写入文本。</param>
+    /// <param name="color">前景色。</param>
+    /// <param name="maxWidth">视口最大宽度。</param>
+    /// <param name="style">文本样式。</param>
+    /// <returns>实际写入的字符数。</returns>
     private int Write(int col, string text, Color color, int maxWidth, TextStyle style = TextStyle.None)
     {
         if (col >= maxWidth) return 0;
@@ -124,6 +149,11 @@ internal sealed class FooterView : View
         return output.Length;
     }
 
+    /// <summary>
+    /// 截取路径末尾两段目录作为简短显示。
+    /// </summary>
+    /// <param name="path">完整路径。</param>
+    /// <returns>简短路径字符串。</returns>
     private static string ShortenPath(string path)
     {
         var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -131,6 +161,11 @@ internal sealed class FooterView : View
         return tail.Length == 0 ? path : "…/" + string.Join('/', tail);
     }
 
+    /// <summary>
+    /// 格式化 token 数量（超过 1000 时显示为 x.xk）。
+    /// </summary>
+    /// <param name="tokens">token 数量。</param>
+    /// <returns>格式化后的字符串。</returns>
     private static string FormatTokens(int tokens)
     {
         if (tokens >= 1000) return $"{tokens / 1000.0:F1}k";

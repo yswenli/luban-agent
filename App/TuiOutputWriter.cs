@@ -28,17 +28,58 @@ namespace LubanAgent.App;
 /// TUI 输出写入器接口。命令（/help /mode /provider 等）通过此接口输出到会话文档，
 /// 统一替换各类 Console.Write* 调用，确保所有命令输出格式一致。
 /// </summary>
+/// <summary>
+/// TUI 输出写入器接口。命令（/help /mode /provider 等）通过此接口输出到会话文档，
+/// 统一替换各类 Console.Write* 调用，确保所有命令输出格式一致。
+/// </summary>
 public interface ITuiOutputWriter
 {
+    /// <summary>
+    /// 写入一行带样式的文本。
+    /// </summary>
+    /// <param name="text">文本内容，为 null 时写入空行。</param>
+    /// <param name="style">输出样式。</param>
     void WriteLine(string? text = null, TuiOutputStyle style = TuiOutputStyle.Default);
+
+    /// <summary>
+    /// 写入一个空行。
+    /// </summary>
     void WriteLine();
+
+    /// <summary>
+    /// 写入标题样式的文本（加粗 + 强调色）。
+    /// </summary>
+    /// <param name="text">标题文本。</param>
     void WriteHeader(string text);
+
+    /// <summary>
+    /// 写入成功样式的文本（绿色）。
+    /// </summary>
+    /// <param name="text">文本内容。</param>
     void WriteSuccess(string text);
+
+    /// <summary>
+    /// 写入错误样式的文本（红色）。
+    /// </summary>
+    /// <param name="text">文本内容。</param>
     void WriteError(string text);
+
+    /// <summary>
+    /// 写入信息样式的文本（系统灰色）。
+    /// </summary>
+    /// <param name="text">文本内容。</param>
     void WriteInfo(string text);
+
+    /// <summary>
+    /// 写入警告样式的文本（强调色）。
+    /// </summary>
+    /// <param name="text">文本内容。</param>
     void WriteWarning(string text);
 }
 
+/// <summary>
+/// TUI 输出文本样式枚举，用于 <see cref="ITuiOutputWriter.WriteLine"/> 的样式参数。
+/// </summary>
 public enum TuiOutputStyle { Default = 0, Accent = 1, Success = 2, Failure = 3, Warning = 4 }
 
 /// <summary>
@@ -85,6 +126,11 @@ public sealed class TuiOutputWriter : ITuiOutputWriter
     /// <inheritdoc/>
     public void WriteLine() => WriteLine(string.Empty);
 
+    /// <summary>
+    /// 将输出样式枚举映射为 Terminal.Gui 颜色。
+    /// </summary>
+    /// <param name="style">输出样式。</param>
+    /// <returns>对应的 Terminal.Gui 颜色。</returns>
     private static Color ToColor(TuiOutputStyle style) => style switch
     {
         TuiOutputStyle.Default => BlockColors.System,

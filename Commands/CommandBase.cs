@@ -123,6 +123,10 @@ public abstract class CommandBase : ICommand
         Console.ResetColor();
     }
 
+    /// <summary>
+    /// 构建服务提供者，注册核心服务并初始化 LubanAgent
+    /// </summary>
+    /// <returns>配置完成的服务提供者</returns>
     protected ServiceProvider BuildServiceProvider()
     {
         var services = new ServiceCollection();

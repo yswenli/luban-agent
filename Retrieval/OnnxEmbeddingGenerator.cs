@@ -37,6 +37,7 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
         _spec = spec;
     }
 
+    // 延迟加载 ONNX 推理会话和分词器，使用双重检查锁定确保线程安全
     private (InferenceSession session, Tokenizer tokenizer) EnsureLoaded()
     {
         if (_session != null && _tokenizer != null) return (_session, _tokenizer);
@@ -104,59 +105,65 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
         var texts = values.ToList();
         var result = new GeneratedEmbeddings<Embedding<float>>();
 
-        foreach (var batch in texts.Chunk(32))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var encoded = batch.Select(t =>
+            // 按批次处理，每批最多 32 条文本
+            foreach (var batch in texts.Chunk(32))
             {
-                var ids = tokenizer.EncodeToIds(t);
-                if (ids.Count == 0)
-                    return (IReadOnlyList<int>)new List<int> { 0 };
-                if (ids.Count > MaxTokens)
-                    ids = ids.Take(MaxTokens - 1).Append(ids[^1]).ToList();
-                return (IReadOnlyList<int>)ids;
-            }).ToList();
-
-            int maxLen = encoded.Max(e => e.Count);
-            var inputIds = new long[batch.Length * maxLen];
-            var attention = new long[batch.Length * maxLen];
-            var tokenTypes = new long[batch.Length * maxLen];
-            for (int i = 0; i < batch.Length; i++)
-                for (int j = 0; j < encoded[i].Count; j++)
+                cancellationToken.ThrowIfCancellationRequested();
+                // 分词并截断到最大 token 长度
+                var encoded = batch.Select(t =>
                 {
-                    inputIds[i * maxLen + j] = encoded[i][j];
-                    attention[i * maxLen + j] = 1;
-                }
-            var dims = new[] { batch.Length, maxLen };
-            var inputs = new List<NamedOnnxValue>
-            {
-                NamedOnnxValue.CreateFromTensor("input_ids", new DenseTensor<long>(inputIds, dims)),
-                NamedOnnxValue.CreateFromTensor("attention_mask", new DenseTensor<long>(attention, dims)),
-            };
-            if (session.InputMetadata.ContainsKey("token_type_ids"))
-                inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", new DenseTensor<long>(tokenTypes, dims)));
+                    var ids = tokenizer.EncodeToIds(t);
+                    if (ids.Count == 0)
+                        return (IReadOnlyList<int>)new List<int> { 0 };
+                    if (ids.Count > MaxTokens)
+                        ids = ids.Take(MaxTokens - 1).Append(ids[^1]).ToList();
+                    return (IReadOnlyList<int>)ids;
+                }).ToList();
 
-            using var outputs = session.Run(inputs);
-            var outputName = session.OutputNames.Count > 0 ? session.OutputNames[0] : null;
-            var hidden = outputs.FirstOrDefault(o => o.Name == outputName)?.AsTensor<float>();
-            if (hidden == null)
-                throw new InvalidOperationException($"模型输出 '{outputName}' 不存在或类型不匹配");
-            int hiddenDim = hidden.Dimensions[2];
-            for (int i = 0; i < batch.Length; i++)
-            {
-                int len = encoded[i].Count;
-                var vec = new float[hiddenDim];
-                for (int j = 0; j < len; j++)
-                    for (int d = 0; d < hiddenDim; d++)
-                        vec[d] += hidden[i, j, d];
-                for (int d = 0; d < hiddenDim; d++) vec[d] /= len;
-                Normalize(vec);
-                result.Add(new Embedding<float>(vec));
+                // 构建 padded 输入张量
+                int maxLen = encoded.Max(e => e.Count);
+                var inputIds = new long[batch.Length * maxLen];
+                var attention = new long[batch.Length * maxLen];
+                var tokenTypes = new long[batch.Length * maxLen];
+                for (int i = 0; i < batch.Length; i++)
+                    for (int j = 0; j < encoded[i].Count; j++)
+                    {
+                        inputIds[i * maxLen + j] = encoded[i][j];
+                        attention[i * maxLen + j] = 1;
+                    }
+                var dims = new[] { batch.Length, maxLen };
+                var inputs = new List<NamedOnnxValue>
+                {
+                    NamedOnnxValue.CreateFromTensor("input_ids", new DenseTensor<long>(inputIds, dims)),
+                    NamedOnnxValue.CreateFromTensor("attention_mask", new DenseTensor<long>(attention, dims)),
+                };
+                if (session.InputMetadata.ContainsKey("token_type_ids"))
+                    inputs.Add(NamedOnnxValue.CreateFromTensor("token_type_ids", new DenseTensor<long>(tokenTypes, dims)));
+
+                // 执行 ONNX 推理
+                using var outputs = session.Run(inputs);
+                var outputName = session.OutputNames.Count > 0 ? session.OutputNames[0] : null;
+                var hidden = outputs.FirstOrDefault(o => o.Name == outputName)?.AsTensor<float>();
+                if (hidden == null)
+                    throw new InvalidOperationException($"模型输出 '{outputName}' 不存在或类型不匹配");
+                int hiddenDim = hidden.Dimensions[2];
+                // 对每个 token 的 hidden states 做 mean pooling，然后 L2 归一化
+                for (int i = 0; i < batch.Length; i++)
+                {
+                    int len = encoded[i].Count;
+                    var vec = new float[hiddenDim];
+                    for (int j = 0; j < len; j++)
+                        for (int d = 0; d < hiddenDim; d++)
+                            vec[d] += hidden[i, j, d];
+                    for (int d = 0; d < hiddenDim; d++) vec[d] /= len;
+                    Normalize(vec);
+                    result.Add(new Embedding<float>(vec));
+                }
             }
-        }
         return Task.FromResult(result);
     }
 
+    // L2 归一化，使向量成为单位向量
     private static void Normalize(float[] v)
     {
         double norm = 0;

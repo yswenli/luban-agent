@@ -98,6 +98,9 @@ public class SessionCommand : CommandBase
         return true;
     }
 
+    /// <summary>
+    /// 列出当前工作区的全部会话
+    /// </summary>
     private async Task ListSessionsAsync()
     {
         // 按当前工作区过滤会话
@@ -153,6 +156,10 @@ public class SessionCommand : CommandBase
         }
     }
 
+    /// <summary>
+    /// 创建新会话并切换
+    /// </summary>
+    /// <param name="title">会话标题</param>
     private async Task CreateNewSessionAsync(string? title)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -167,6 +174,10 @@ public class SessionCommand : CommandBase
         Console.ResetColor();
     }
 
+    /// <summary>
+    /// 切换到指定会话（支持编号、SessionId、标题匹配）
+    /// </summary>
+    /// <param name="identifier">会话标识</param>
     private async Task SwitchSessionAsync(string? identifier)
     {
         if (string.IsNullOrWhiteSpace(identifier))
@@ -229,6 +240,9 @@ public class SessionCommand : CommandBase
         Console.ResetColor();
     }
 
+    /// <summary>
+    /// 物理删除全部会话及消息
+    /// </summary>
     private async Task ClearAllSessionsAsync()
     {
         Console.Write("确认物理删除全部会话及消息数据？此操作不可恢复 (y/N): ");

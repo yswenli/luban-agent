@@ -55,6 +55,9 @@ internal sealed class FooterDataProvider
     /// <summary>后台任务数（暂返回 0，Agent View 三期接入）。</summary>
     public int BackgroundTasks => 0;
 
+    /// <summary>
+    /// 尝试通过 git 命令获取当前分支名，失败时返回"—"
+    /// </summary>
     private static string TryGetGitBranch()
     {
         try

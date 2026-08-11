@@ -23,16 +23,28 @@ public class RuleCommand : CommandBase
 {
     private readonly RuleEngine _ruleEngine;
 
+    /// <summary>
+    /// 命令名称
+    /// </summary>
     public override string Name => "rule";
 
+    /// <summary>
+    /// 命令描述
+    /// </summary>
     public override string Description => "查看和管理规则（-list/-add/-update/-delete/-switch）";
 
+    /// <summary>
+    /// 创建命令实例
+    /// </summary>
     public RuleCommand(ConfigManager configManager, IConfiguration configuration, RuleEngine ruleEngine)
         : base(configManager, configuration)
     {
         _ruleEngine = ruleEngine;
     }
 
+    /// <summary>
+    /// 执行命令（无参数时显示帮助）
+    /// </summary>
     public override Task ExecuteAsync()
     {
         Console.WriteLine();
@@ -46,6 +58,9 @@ public class RuleCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行带子命令的命令
+    /// </summary>
     public override async Task<bool> ExecuteAsync(string[] args)
     {
         if (args.Length == 0)
@@ -74,6 +89,9 @@ public class RuleCommand : CommandBase
         }
     }
 
+    /// <summary>
+    /// 列出所有规则（内置 + 自定义）
+    /// </summary>
     private Task ListRulesAsync()
     {
         var rules = _ruleEngine.GetAllRules();
@@ -121,6 +139,9 @@ public class RuleCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 添加自定义规则
+    /// </summary>
     private Task AddRuleAsync()
     {
         Console.WriteLine();
@@ -212,6 +233,9 @@ public class RuleCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 更新自定义规则
+    /// </summary>
     private Task UpdateRuleAsync()
     {
         Console.WriteLine();
@@ -317,6 +341,9 @@ public class RuleCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 删除自定义规则
+    /// </summary>
     private Task DeleteRuleAsync()
     {
         Console.WriteLine();
@@ -390,6 +417,9 @@ public class RuleCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 启用/禁用规则
+    /// </summary>
     private Task SwitchRuleAsync()
     {
         Console.WriteLine();

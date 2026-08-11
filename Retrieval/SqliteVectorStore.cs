@@ -23,6 +23,7 @@ public class SqliteVectorStore : IVectorStore
 {
     private readonly RagFileRepository _files = new();
     private readonly RagChunkRepository _chunks = new();
+    // 写操作信号量，确保并发写入时的数据一致性
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     /// <summary>
@@ -97,6 +98,7 @@ public class SqliteVectorStore : IVectorStore
         try
         {
             var wsId = CurrentWorkspaceId;
+            // 使用事务保证删除旧切块和插入新切块的原子性
             using var scope = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeAsyncFlowOption.Enabled);
             await _chunks.DeleteAsync(c => c.FileId == fileId);
             foreach (var p in chunks)

@@ -90,6 +90,11 @@ class Program
         }
     }
 
+    /// <summary>
+    /// 构建配置：按优先级合并 appsettings.json（程序目录 + 当前目录）、环境变量、命令行参数。
+    /// </summary>
+    /// <param name="args">命令行参数。</param>
+    /// <returns>合并后的配置根对象。</returns>
     private static IConfiguration BuildConfiguration(string[] args)
     {
         // 优先使用程序所在目录的 appsettings.json，确保在其他目录启动时也能正确加载配置
@@ -103,6 +108,11 @@ class Program
         return builder.Build();
     }
 
+    /// <summary>
+    /// 准备本地检索功能：加载配置、查找嵌入模型、按需下载并初始化 ONNX 推理器。
+    /// </summary>
+    /// <param name="configuration">配置根对象。</param>
+    /// <returns>嵌入生成器与模型管理器元组；检索未启用或模型未就绪时返回 (null, null)。</returns>
     private static async Task<(OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)> PrepareRetrievalAsync(IConfiguration configuration)
     {
         var retrieval = configuration.GetSection("LuBanAgent:Tools:Retrieval").Get<RetrievalToolOptions>() ?? new RetrievalToolOptions();
@@ -131,6 +141,13 @@ class Program
         return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
     }
 
+    /// <summary>
+    /// 构建依赖注入容器，注册配置、日志、聊天客户端、Provider 路由、工作区、检索等全部服务。
+    /// </summary>
+    /// <param name="configuration">配置根对象。</param>
+    /// <param name="embedder">本地嵌入生成器，为 null 时跳过检索服务注册。</param>
+    /// <param name="modelManager">模型管理器，为 null 时跳过注册。</param>
+    /// <returns>构建完成的 ServiceProvider。</returns>
     private static ServiceProvider BuildServiceProvider(IConfiguration configuration, OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)
     {
         var services = new ServiceCollection();
@@ -224,9 +241,15 @@ class Program
         return sp;
     }
 
+    /// <summary>
+    /// 基于委托的工作区上下文提供者，将 <see cref="WorkspaceManager.Current"/> 桥接到 Agent SDK。
+    /// </summary>
     private sealed class DelegateWorkspaceContextProvider(Func<string?> getWorkspaceId)
         : LuBan.AIAgent.LocalMemory.IWorkspaceContextProvider
     {
+        /// <summary>
+        /// 当前工作区标识，由委托动态获取。
+        /// </summary>
         public string? CurrentWorkspaceId => getWorkspaceId();
     }
 }

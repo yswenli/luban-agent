@@ -23,16 +23,28 @@ public class MCPCommand : CommandBase
 {
     private readonly MCPRegistry _mcpRegistry;
 
+    /// <summary>
+    /// 命令名称
+    /// </summary>
     public override string Name => "mcp";
 
+    /// <summary>
+    /// 命令描述
+    /// </summary>
     public override string Description => "查看 MCP 客户端（-list/-add/-update/-delete/-switch/-connect/-tools）";
 
+    /// <summary>
+    /// 创建命令实例
+    /// </summary>
     public MCPCommand(ConfigManager configManager, IConfiguration configuration, MCPRegistry mcpRegistry)
         : base(configManager, configuration)
     {
         _mcpRegistry = mcpRegistry;
     }
 
+    /// <summary>
+    /// 执行命令（无参数时显示帮助）
+    /// </summary>
     public override Task ExecuteAsync()
     {
         Console.WriteLine();
@@ -48,6 +60,9 @@ public class MCPCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行带子命令的命令
+    /// </summary>
     public override async Task<bool> ExecuteAsync(string[] args)
     {
         if (args.Length == 0)
@@ -85,6 +100,9 @@ public class MCPCommand : CommandBase
         return true;
     }
 
+    /// <summary>
+    /// 列出所有 MCP 客户端（已连接、已禁用）
+    /// </summary>
     private Task ListClientsAsync()
     {
         var clients = _mcpRegistry.GetAll();
@@ -144,6 +162,9 @@ public class MCPCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 添加外部 MCP 服务器
+    /// </summary>
     private Task AddServerAsync()
     {
         Console.WriteLine();
@@ -213,6 +234,9 @@ public class MCPCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 更新外部 MCP 服务器配置
+    /// </summary>
     private Task UpdateServerAsync()
     {
         Console.WriteLine();
@@ -289,6 +313,9 @@ public class MCPCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 删除外部 MCP 服务器
+    /// </summary>
     private async Task DeleteServerAsync()
     {
         Console.WriteLine();
@@ -365,6 +392,9 @@ public class MCPCommand : CommandBase
         }
     }
 
+    /// <summary>
+    /// 启用/禁用 MCP 客户端
+    /// </summary>
     private async Task SwitchServerAsync()
     {
         Console.WriteLine();
@@ -450,6 +480,10 @@ public class MCPCommand : CommandBase
         }
     }
 
+    /// <summary>
+    /// 连接指定的 MCP 客户端
+    /// </summary>
+    /// <param name="clientName">客户端名称</param>
     private async Task ConnectAsync(string clientName)
     {
         if (string.IsNullOrEmpty(clientName))
@@ -473,6 +507,10 @@ public class MCPCommand : CommandBase
             WriteError("连接失败");
     }
 
+    /// <summary>
+    /// 列出指定客户端的可用工具
+    /// </summary>
+    /// <param name="clientName">客户端名称</param>
     private async Task ListToolsAsync(string clientName)
     {
         if (string.IsNullOrEmpty(clientName))

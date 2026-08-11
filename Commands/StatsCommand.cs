@@ -81,6 +81,11 @@ public class StatsCommand : CommandBase
         return true;
     }
 
+    /// <summary>
+    /// 显示统计信息
+    /// </summary>
+    /// <param name="days">统计天数，null 表示全部</param>
+    /// <param name="allWorkspaces">是否跨工作区统计</param>
     private async Task ShowStatsAsync(int? days, bool allWorkspaces)
     {
         var wsId = WorkspaceManager.Current?.WorkspaceId;

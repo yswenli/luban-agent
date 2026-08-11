@@ -11,13 +11,13 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/7/27
-*描述：GlobalUsings
+*描述：全局 using 引用，统一引入项目各层及第三方库的命名空间
 *
 *****************************************************************************/
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Configuration;
-global using LuBan.AIAgent.Infrastructure;
+global using LuBan.AIAgent.LocalMemory;
 global using LuBan.AIAgent.MCP;
 global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Rules;
@@ -39,6 +39,7 @@ global using LubanAgent.Retrieval;
 global using LubanAgent.Services;
 global using LubanAgent.UI;
 
+global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.DependencyInjection;
@@ -52,6 +53,7 @@ global using Spectre.Console;
 
 global using SqlSugar;
 
+global using System.Data;
 global using System.IO.Compression;
 global using System.Security.Cryptography;
 global using System.Text;

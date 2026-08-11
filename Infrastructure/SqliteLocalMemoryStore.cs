@@ -13,11 +13,6 @@
 *描述：基于 SQLite 的本地记忆存储实现
 *
 *****************************************************************************/
-using System.Data;
-using System.Data.SQLite;
-using LuBan.AIAgent.LocalMemory;
-using LuBan.AIAgent.Utils.Text;
-
 namespace LubanAgent.Infrastructure;
 
 /// <summary>
@@ -47,7 +42,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// 创建新的数据库连接
     /// </summary>
     /// <returns>SQLite 连接实例</returns>
-    private SQLiteConnection CreateConnection() => new(_connectionString);
+    private SqliteConnection CreateConnection() => new(_connectionString);
 
     /// <summary>
     /// 初始化表结构，补充缺失的列并回填 ContentHash
@@ -396,7 +391,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// <param name="cmd">SQLite 命令</param>
     /// <param name="category">分类过滤条件</param>
     /// <param name="workspaceId">工作空间过滤条件</param>
-    private static void AddFilterParams(SQLiteCommand cmd, string? category, string? workspaceId)
+    private static void AddFilterParams(SqliteCommand cmd, string? category, string? workspaceId)
     {
         if (category != null)
             cmd.Parameters.AddWithValue("@category", category);
@@ -436,6 +431,6 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         if (_disposed) return;
         _disposed = true;
         _gate.Dispose();
-        SQLiteConnection.ClearAllPools();
+        SqliteConnection.ClearAllPools();
     }
 }

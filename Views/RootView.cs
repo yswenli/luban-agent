@@ -116,18 +116,29 @@ internal sealed class RootView : Runnable
         Add(_conversation, _footer, _inputBar);
     }
 
+    /// <inheritdoc/>
     public override void EndInit()
     {
         base.EndInit();
         _inputBar.FocusInput();
     }
 
+    /// <summary>会话文档模型。</summary>
     public ConversationDocument Document => _doc;
+
+    /// <summary>会话 ViewModel。</summary>
     public ConversationViewModel ViewModel => _vm;
+
+    /// <summary>会话区视图。</summary>
     public ConversationView Conversation => _conversation;
+
+    /// <summary>页脚视图。</summary>
     public FooterView Footer => _footer;
+
+    /// <summary>输入区视图。</summary>
     public InputBarView InputBar => _inputBar;
 
+    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -141,6 +152,7 @@ internal sealed class RootView : Runnable
 
     // ── 全局快捷键 ──
 
+    /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         // DIAGNOSTIC: 记录每次按键的时间戳和与前一次的间隔
@@ -218,6 +230,10 @@ internal sealed class RootView : Runnable
 
     // ── 输入提交 ──
 
+    /// <summary>
+    /// 处理用户提交输入：路由命令、初始化 Agent 或执行流式对话。
+    /// </summary>
+    /// <param name="text">用户输入文本。</param>
     private void OnInputSubmitted(string text)
     {
         if (string.Equals(text, "/exit", StringComparison.OrdinalIgnoreCase)
@@ -271,6 +287,10 @@ internal sealed class RootView : Runnable
         }
     }
 
+    /// <summary>
+    /// 首次输入时初始化 Agent 并处理文本。
+    /// </summary>
+    /// <param name="text">用户输入文本。</param>
     private async Task InitializeAndProcessAsync(string text)
     {
         try

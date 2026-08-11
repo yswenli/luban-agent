@@ -20,15 +20,27 @@ namespace LubanAgent.Commands;
 /// </summary>
 public class ModelCommand : CommandBase
 {
+    /// <summary>
+    /// 命令名称
+    /// </summary>
     public override string Name => "model";
 
+    /// <summary>
+    /// 命令描述
+    /// </summary>
     public override string Description => "管理模型（-list/-add/-update/-delete/-switch）";
 
+    /// <summary>
+    /// 创建命令实例
+    /// </summary>
     public ModelCommand(ConfigManager configManager, IConfiguration configuration)
         : base(configManager, configuration)
     {
     }
 
+    /// <summary>
+    /// 执行命令（无参数时显示帮助）
+    /// </summary>
     public override Task ExecuteAsync()
     {
         Console.WriteLine();
@@ -42,6 +54,9 @@ public class ModelCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行带子命令的命令
+    /// </summary>
     public override Task<bool> ExecuteAsync(string[] args)
     {
         if (args.Length == 0)
@@ -61,6 +76,9 @@ public class ModelCommand : CommandBase
         };
     }
 
+    /// <summary>
+    /// 列出所有可用模型
+    /// </summary>
     private async Task<bool> ExecuteListAsync()
     {
         var providers = ConfigManager.Providers;
@@ -136,6 +154,10 @@ public class ModelCommand : CommandBase
         return true;
     }
 
+    /// <summary>
+    /// 为 Provider 添加自定义模型
+    /// </summary>
+    /// <param name="args">可选的 provider 和 model 参数</param>
     private Task<bool> ExecuteAddAsync(string[] args)
     {
         Console.WriteLine();
@@ -212,6 +234,10 @@ public class ModelCommand : CommandBase
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 更新自定义模型名称
+    /// </summary>
+    /// <param name="args">未使用的参数</param>
     private Task<bool> ExecuteUpdateAsync(string[] args)
     {
         Console.WriteLine();
@@ -288,6 +314,10 @@ public class ModelCommand : CommandBase
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 删除自定义模型
+    /// </summary>
+    /// <param name="args">未使用的参数</param>
     private Task<bool> ExecuteDeleteAsync(string[] args)
     {
         Console.WriteLine();
@@ -363,6 +393,10 @@ public class ModelCommand : CommandBase
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// 切换当前使用的模型
+    /// </summary>
+    /// <param name="args">可选的 provider:model 参数</param>
     private async Task<bool> ExecuteSwitchAsync(string[] args)
     {
         if (ConfigManager.Providers.Count == 0)

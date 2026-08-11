@@ -21,6 +21,10 @@ namespace LubanAgent.Repositories;
 /// </summary>
 public class RagFileRepository : BaseRepository<DbRagFile>
 {
+    /// <summary>
+    /// 创建 RAG 文件仓储实例。
+    /// </summary>
+    /// <param name="tenantId">租户ID，默认使用系统默认租户</param>
     public RagFileRepository(long tenantId = LuBanOrmConst.DefaultTenantId) : base(tenantId) { }
 
     /// <summary>
@@ -56,6 +60,10 @@ public class RagFileRepository : BaseRepository<DbRagFile>
 /// </summary>
 public class RagChunkRepository : BaseRepository<DbRagChunk>
 {
+    /// <summary>
+    /// 创建 RAG 切块仓储实例。
+    /// </summary>
+    /// <param name="tenantId">租户ID，默认使用系统默认租户</param>
     public RagChunkRepository(long tenantId = LuBanOrmConst.DefaultTenantId) : base(tenantId) { }
 
     /// <summary>

@@ -38,8 +38,17 @@ internal sealed class CommandViewModel
     private readonly IServiceProvider _services;
     private readonly TuiOutputWriter _writer;
 
+    /// <summary>
+    /// 请求退出应用时触发。
+    /// </summary>
     public event Action? ExitRequested;
 
+    /// <summary>
+    /// 初始化命令 ViewModel。
+    /// </summary>
+    /// <param name="doc">会话文档模型。</param>
+    /// <param name="conversationVm">会话 ViewModel（可为 null）。</param>
+    /// <param name="services">根级 DI 容器。</param>
     public CommandViewModel(
         ConversationDocument doc,
         ConversationViewModel? conversationVm,

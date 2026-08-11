@@ -72,6 +72,9 @@ public sealed class FlushThrottle : IDisposable
         ExecuteCallback();
     }
 
+    /// <summary>
+    /// 定时器回调：窗口到期后触发实际刷新
+    /// </summary>
     private void Tick()
     {
         lock (_lock)
@@ -83,6 +86,9 @@ public sealed class FlushThrottle : IDisposable
         ExecuteCallback();
     }
 
+    /// <summary>
+    /// 安全执行刷新回调，捕获并记录异常
+    /// </summary>
     private void ExecuteCallback()
     {
         try { _callback(); }
@@ -90,6 +96,10 @@ public sealed class FlushThrottle : IDisposable
     }
 
     private bool _disposed;
+
+    /// <summary>
+    /// 释放定时器资源
+    /// </summary>
     public void Dispose()
     {
         lock (_lock)

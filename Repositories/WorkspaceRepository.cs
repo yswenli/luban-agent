@@ -24,6 +24,10 @@ namespace LubanAgent.Repositories;
 /// </summary>
 public class WorkspaceRepository : BaseRepository<DbWorkspace>
 {
+    /// <summary>
+    /// 创建工作区仓储实例。
+    /// </summary>
+    /// <param name="tenantId">租户ID，默认使用系统默认租户</param>
     public WorkspaceRepository(long tenantId = LuBanOrmConst.DefaultTenantId)
         : base(tenantId)
     {

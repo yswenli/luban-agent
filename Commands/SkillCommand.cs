@@ -20,16 +20,28 @@ public class SkillCommand : CommandBase
 {
     private readonly SkillRegistry _skillRegistry;
 
+    /// <summary>
+    /// 命令名称
+    /// </summary>
     public override string Name => "skill";
 
+    /// <summary>
+    /// 命令描述
+    /// </summary>
     public override string Description => "查看和执行 Skill（-list/-add/-update/-delete/-switch）";
 
+    /// <summary>
+    /// 创建命令实例
+    /// </summary>
     public SkillCommand(ConfigManager configManager, IConfiguration configuration, SkillRegistry skillRegistry)
         : base(configManager, configuration)
     {
         _skillRegistry = skillRegistry;
     }
 
+    /// <summary>
+    /// 执行命令（无参数时显示帮助）
+    /// </summary>
     public override Task ExecuteAsync()
     {
         Console.WriteLine();
@@ -44,6 +56,9 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行带子命令的命令
+    /// </summary>
     public override async Task<bool> ExecuteAsync(string[] args)
     {
         if (args.Length == 0)
@@ -72,6 +87,9 @@ public class SkillCommand : CommandBase
         }
     }
 
+    /// <summary>
+    /// 列出所有 Skill（按分类分组）
+    /// </summary>
     private Task ListSkillsAsync()
     {
         var skills = _skillRegistry.GetAll();
@@ -147,6 +165,9 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 添加自定义 Skill
+    /// </summary>
     private Task AddSkillAsync()
     {
         Console.WriteLine();
@@ -239,6 +260,9 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 更新自定义 Skill
+    /// </summary>
     private Task UpdateSkillAsync()
     {
         Console.WriteLine();
@@ -335,6 +359,9 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 删除自定义 Skill
+    /// </summary>
     private Task DeleteSkillAsync()
     {
         Console.WriteLine();
@@ -408,6 +435,9 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 启用/禁用 Skill
+    /// </summary>
     private Task SwitchSkillAsync()
     {
         Console.WriteLine();
@@ -487,6 +517,11 @@ public class SkillCommand : CommandBase
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 执行指定的 Skill
+    /// </summary>
+    /// <param name="skillId">Skill ID</param>
+    /// <param name="input">用户输入</param>
     private async Task ExecuteSkillAsync(string skillId, string? input)
     {
         var skill = _skillRegistry.Get(skillId);

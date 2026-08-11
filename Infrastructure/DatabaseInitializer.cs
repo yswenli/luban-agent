@@ -22,6 +22,9 @@ namespace LubanAgent.Infrastructure;
 /// </summary>
 public static class DatabaseInitializer
 {
+    /// <summary>
+    /// 初始化标志位，0=未初始化，1=已初始化
+    /// </summary>
     private static int _initialized;
 
     /// <summary>
@@ -206,6 +209,9 @@ public static class DatabaseInitializer
         return Path.GetFullPath(dbPath);
     }
 
+    /// <summary>
+    /// 将旧版数据库文件 ai_sessions.db 重命名为 luban-ai-agent.db（仅当旧文件存在且新文件不存在时）
+    /// </summary>
     private static void MigrateLegacyDatabase()
     {
         var legacy = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ai_sessions.db");

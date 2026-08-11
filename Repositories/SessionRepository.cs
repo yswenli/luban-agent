@@ -26,6 +26,10 @@ namespace LubanAgent.Repositories;
 /// </summary>
 public class SessionRepository : BaseRepository<DbSession>
 {
+    /// <summary>
+    /// 创建 Session 仓储实例。
+    /// </summary>
+    /// <param name="tenantId">租户ID，默认使用系统默认租户</param>
     public SessionRepository(long tenantId = LuBanOrmConst.DefaultTenantId)
         : base(tenantId)
     {
@@ -165,6 +169,10 @@ public class SessionRepository : BaseRepository<DbSession>
 /// </summary>
 public class SessionMessageRepository : BaseRepository<DbSessionMessage>
 {
+    /// <summary>
+    /// 创建 Session 消息仓储实例。
+    /// </summary>
+    /// <param name="tenantId">租户ID，默认使用系统默认租户</param>
     public SessionMessageRepository(long tenantId = LuBanOrmConst.DefaultTenantId)
         : base(tenantId)
     {
