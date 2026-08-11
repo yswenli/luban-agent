@@ -141,7 +141,7 @@ internal sealed class CommandViewModel
 
     private void ExecuteClear()
     {
-        // 清空文档中所有 Block，保留初始横幅由 RootView 重建
+        _doc.Clear();
         _doc.AppendBlock(new SystemBlock("会话历史已清空", foreground: BlockColors.Success));
     }
 

@@ -100,6 +100,22 @@ public sealed class ConversationDocument
     public event Action? BlocksChanged;
 
     /// <summary>
+    /// 清空所有 Block 并重置滚动状态。
+    /// </summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _blocks.Clear();
+            TotalLines = 0;
+        }
+        _scrollOffset = 0;
+        AutoScroll = true;
+        var handler = BlocksChanged;
+        handler?.Invoke();
+    }
+
+    /// <summary>
     /// 追加一个 Block 到文档末尾。对新 Block 执行 Layout(width)，更新总行数，
     /// 若 AutoScroll 为 true 则自动滚动到底部。
     /// </summary>
