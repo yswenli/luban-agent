@@ -8,7 +8,8 @@
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
 [English](README.en.md) | 中文
 
@@ -153,13 +154,16 @@ dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 #### 安装后使用
 
 ```bash
-# 在任意目录启动交互式菜单
+# 在任意目录启动全屏 TUI 交互界面（需要可交互终端，不支持输入/输出重定向）
 luban-agent-cli
-
-# 或直接执行单次命令（执行后自动退出）
-luban-agent-cli /agi
-luban-agent-cli /se -l
 ```
+
+> **TUI 重构进行中**：界面层正在从 Console/Spectre 混合渲染迁移到 Terminal.Gui v2 全屏 TUI（参照 Claude Code 风格）。
+> 当前骨架阶段（步骤 1/8）已完成三区域布局（会话区/页脚/输入区）与 24-bit TrueColor 配色；
+> Agent 对话循环（步骤 4）、13 个内联命令（步骤 6）、权限模式（步骤 5）、页脚元数据（步骤 7）、
+> Agent View 多会话（步骤 8）将在后续步骤逐步接入。
+>
+> 直接命令行执行单次命令（如 `luban-agent-cli /se -l`）将在步骤 4 后以 TUI 内联命令形式恢复。
 
 #### 配置文件说明
 
@@ -290,37 +294,23 @@ LuBan Agent 提供了简洁而强大的命令系统：
 
 ### 直接命令行执行
 
-除交互式菜单外，还支持通过命令行参数直接执行命令，执行完毕后自动退出，不进入交互菜单。**这在脚本化调用、从任意目录快速执行单次任务时非常实用。**
+> **迁移中**：TUI 重构期间（步骤 1-4），直接命令行执行单次命令（如 `luban-agent-cli /se -l`）暂时不可用。
+> 步骤 4 完成后，将以 TUI 内联命令面板形式恢复——启动后自动派发首个 `/` 命令并进入全屏交互界面。
 
-```bash
-# 语法：luban-agent-cli /<命令> [子命令参数...]
-# 首个参数为命令（以 / 开头），其余为子命令参数
+### 命令输入方式（TUI 全屏界面）
 
-# 从任意目录创建新会话
-luban-agent-cli /se -n 新会话
+启动后进入 Terminal.Gui 全屏 alt-screen 界面，布局自上而下为会话区（可滚动）、页脚（模式/目录/状态）、输入区（贴底）：
 
-# 从任意目录切换会话
-luban-agent-cli /se -s 新会话
-
-# 列出所有会话
-luban-agent-cli /se -l
-
-# 列出已配置的 Provider
-luban-agent-cli /p -l
-```
-
-> **说明**：
-> - 首个参数必须以 `/` 开头（如 `/se`、`/p`），否则进入交互式菜单
-> - 子命令支持简写（`-l`=`-list`、`-s`=`-switch`、`-n`=`-new` 等），与交互模式完全一致
-> - 数据库与会话配置始终保存在程序所在目录，不会污染当前工作目录
-
-### 命令输入方式
-
-- **Tab 自动完成** - 输入部分命令后按 Tab 自动补全
-- **上/下箭头** - 浏览历史命令
-- **Esc 键** - 清除当前输入
+- **Enter** - 提交当前输入
+- **Shift+Enter** - 多行输入（步骤 2 接入）
+- **Ctrl+Q** - 强制退出 TUI
+- **Ctrl+L** - 重绘屏幕
+- **`/exit` 或 `/quit`** - 退出程序
+- **Tab 自动完成** - 输入部分命令后按 Tab 自动补全（步骤 2 接入）
+- **上/下箭头** - 浏览历史命令（步骤 2 接入）
+- **Ctrl+R** - 搜索历史（步骤 2 接入）
 - **命令前缀** - 所有命令以 `/` 开头
-- **数字快捷键** - 支持数字 1-12 快速选择命令
+- **鼠标** - 点击、滚动、Shift 拖选（终端原生选区逃生舱）
 
 ### 命令列表
 
@@ -578,7 +568,17 @@ luban-agent-cli /p -l
 
 ```
 LubanAgent/
-├── Commands/              # 命令实现
+├── App/                    # TUI 应用层（Terminal.Gui 启动 + DI + 主题）
+│   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run 启动引导
+│   ├── TuiTheme.cs             # 24-bit TrueColor 配色方案
+│   ├── IUiDispatcher.cs        # UI 线程调度抽象（ViewModel 跨线程编组）
+│   └── TerminalGuiDispatcher.cs
+├── Views/                  # TUI 视图层（纯渲染 · 无业务逻辑）
+│   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键
+│   ├── ConversationView.cs     # 会话区自绘（Block 文档模型驱动）
+│   ├── InputBarView.cs         # 输入区（原生 TextView 封装）
+│   └── FooterView.cs           # 页脚自绘（模式/目录/git/token/tasks）
+├── Commands/              # 命令实现（迁移中，步骤 6 改为内联命令面板）
 │   ├── ProviderCommand.cs     # Provider 管理
 │   ├── ModelCommand.cs        # 模型管理
 │   ├── SkillCommand.cs        # Skill 管理
@@ -601,11 +601,11 @@ LubanAgent/
 │   ├── AgentProfile.cs        # Agent 配置基类
 │   ├── NormalAgentProfile.cs  # 普通工作区配置
 │   └── RagAgentProfile.cs     # RAG 工作区配置
-├── UI/                    # 控制台 UI
-│   ├── EscKeyListener.cs      # ESC 键监听
-│   └── ResponseSpinner.cs     # 加载动画
+├── UI/                    # 旧版控制台 UI（迁移中，步骤 4/6 后删除）
+│   ├── EscKeyListener.cs      # ESC 键监听 → root 层 Key.Esc 全局绑定
+│   └── ResponseSpinner.cs     # 加载动画 → 页脚橙色 * 动画
 ├── Services/              # 核心服务
-│   ├── ConsoleAppService.cs   # 命令分发与交互
+│   ├── ConsoleAppService.cs   # 命令分发（步骤 6 改为协调 MainViewModel）
 │   ├── SessionManager.cs      # 会话持久化
 │   └── WorkspaceManager.cs    # 工作区管理与授权
 ├── Repositories/          # 数据访问层
@@ -622,8 +622,15 @@ LubanAgent/
 │   └── SqliteLocalMemoryStore.cs  # SQLite 记忆存储
 ├── Entities/              # 数据实体
 ├── Model/                 # AI 模型文件
-└── Program.cs             # 程序入口
+└── Program.cs             # 程序入口（TUI bootstrap）
 ```
+
+> **MVVM 三层规划**（TUI 重构目标结构，随步骤 2-8 逐步填充）：
+> - `Models/` — Block 文档模型、ConversationDocument、PermissionMode、TaskRegistry（纯数据 · 无 UI 依赖 · 可单测）
+> - `ViewModels/` — Main/Conversation/InputBar/Footer/AgentView/Command 六大 VM（agent 生命周期 · 线程 marshaling）
+> - `Views/Renderers/` — BlockRenderer + MarkdownLightRenderer（Block → RenderLine 渲染分发）
+> - `Services/Providers/` — GitInfo/TokenUsage/TaskRegistry/PrLink 等 IFooterDataProvider 实现
+> - `Infrastructure/` — Throttle（FlushThrottle 16ms）、ChannelBridge（同步确认跨线程桥接）
 
 ---
 
@@ -870,6 +877,7 @@ github 可用的工具：
 
 | 组件 | 说明 |
 |------|------|
+| **Terminal.Gui 2.4.17** | 全屏 TUI 框架（net10.0，24-bit TrueColor，alt-screen） |
 | **Microsoft.Agents.AI.Foundry** | Agent 运行时框架 |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |
@@ -877,6 +885,8 @@ github 可用的工具：
 | **LuBan.Common** | 基础接口与工具定义 |
 | **Microsoft.ML.OnnxRuntime** | ONNX 模型推理（语义检索） |
 | **SQLite** | 会话与向量数据存储 |
+
+> **TFM 说明**：CLI 层目标框架为 `net10.0`（Terminal.Gui 2.4.17 要求）；框架层（`luban-framework/*`）全部保持 `net8.0` 不变。
 
 ---
 

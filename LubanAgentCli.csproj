@@ -2,7 +2,7 @@
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PublishAot>False</PublishAot>
@@ -34,6 +34,11 @@
 		<None Remove="Model\bge-small-zh-v1.5.zip" />
 	</ItemGroup>
 
+	<!-- 无头渲染快照工具，用于在无 TTY 环境下回归验证 TUI 布局 -->
+	<ItemGroup>
+		<InternalsVisibleTo Include="TuiSnapshot" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<Content Include="favicon.ico" />
 		<Content Include="Model\bge-small-zh-v1.5.zip">
@@ -45,6 +50,7 @@
 		<ProjectReference Include="..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 		<ProjectReference Include="..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
 		<ProjectReference Include="..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
+		<PackageReference Include="Terminal.Gui" Version="2.4.17" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />

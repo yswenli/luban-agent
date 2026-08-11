@@ -8,7 +8,8 @@
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
 English | [中文](README.md)
 
@@ -152,13 +153,16 @@ dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
 #### Usage After Installation
 
 ```bash
-# Launch interactive menu from any directory
+# Launch full-screen TUI interface from any directory (requires an interactive terminal; does not support input/output redirection)
 luban-agent-cli
-
-# Or execute a single command directly (exits after completion)
-luban-agent-cli /agi
-luban-agent-cli /se -l
 ```
+
+> **TUI Refactoring In Progress**: The interface layer is being migrated from Console/Spectre hybrid rendering to Terminal.Gui v2 full-screen TUI (Claude Code style).
+> The current skeleton phase (Step 1/8) has completed the three-region layout (conversation / footer / input) with 24-bit TrueColor theming.
+> Agent conversation loop (Step 4), 13 inline commands (Step 6), permission modes (Step 5), footer metadata (Step 7),
+> and Agent View multi-session (Step 8) will be progressively integrated in subsequent steps.
+>
+> Direct command-line execution (e.g., `luban-agent-cli /se -l`) will be restored as a TUI inline command after Step 4.
 
 #### Configuration Files
 
@@ -289,37 +293,23 @@ LuBan Agent provides a simple yet powerful command system:
 
 ### Direct Command-Line Execution
 
-In addition to the interactive menu, commands can be executed directly via command-line arguments. Execution completes and exits automatically without entering the interactive menu. **This is especially useful for scripted invocation and running one-off tasks from any directory.**
+> **In Migration**: During the TUI refactoring (Steps 1-4), direct command-line execution of single commands (e.g., `luban-agent-cli /se -l`) is temporarily unavailable.
+> After Step 4, it will be restored as a TUI inline command palette — launching will auto-dispatch the first `/` command and enter the full-screen interactive interface.
 
-```bash
-# Syntax: luban-agent-cli /<command> [sub-command args...]
-# First argument is the command (starts with /), rest are sub-command args
+### Command Input (TUI Full-Screen Interface)
 
-# Create a new session from any directory
-luban-agent-cli /se -n "New Session"
+On launch, enters a Terminal.Gui full-screen alt-screen interface with a top-to-bottom layout: conversation area (scrollable), footer (mode/directory/status), and input area (bottom):
 
-# Switch session from any directory
-luban-agent-cli /se -s "New Session"
-
-# List all sessions
-luban-agent-cli /se -l
-
-# List configured providers
-luban-agent-cli /p -l
-```
-
-> **Notes**:
-> - The first argument must start with `/` (e.g., `/se`, `/p`); otherwise the interactive menu is launched
-> - Sub-command shorthands are supported (`-l`=`-list`, `-s`=`-switch`, `-n`=`-new`, etc.), identical to interactive mode
-> - Database and session data are always stored in the application directory, never polluting the current working directory
-
-### Command Input Methods
-
-- **Tab Auto-completion** - Type partial command and press Tab to auto-complete
-- **Up/Down Arrows** - Browse command history
-- **Esc Key** - Clear current input
+- **Enter** - Submit current input
+- **Shift+Enter** - Multi-line input (Step 2)
+- **Ctrl+Q** - Force quit TUI
+- **Ctrl+L** - Redraw screen
+- **`/exit` or `/quit`** - Exit program
+- **Tab Auto-completion** - Type partial command and press Tab (Step 2)
+- **Up/Down Arrows** - Browse command history (Step 2)
+- **Ctrl+R** - Search history (Step 2)
 - **Command Prefix** - All commands start with `/`
-- **Number Shortcuts** - Support numbers 1-12 for quick command selection
+- **Mouse** - Click, scroll, Shift-drag for native terminal selection (escape hatch)
 
 ### Command List
 
@@ -577,7 +567,17 @@ Mode: Knowledge Base Q&A (auto-retrieval augmented)
 
 ```
 LubanAgent/
-├── Commands/              # Command implementations
+├── App/                    # TUI application layer (Terminal.Gui bootstrap + DI + theming)
+│   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run bootstrap
+│   ├── TuiTheme.cs             # 24-bit TrueColor theme
+│   ├── IUiDispatcher.cs        # UI thread dispatch abstraction (ViewModel marshaling)
+│   └── TerminalGuiDispatcher.cs
+├── Views/                  # TUI view layer (pure rendering · no business logic)
+│   ├── RootView.cs             # Top-level container (Runnable) + global key bindings
+│   ├── ConversationView.cs     # Conversation area (self-drawn, Block document model)
+│   ├── InputBarView.cs         # Input area (wraps native TextView)
+│   └── FooterView.cs           # Footer (mode/directory/git/token/tasks)
+├── Commands/              # Command implementations (in migration, Step 6 → inline palette)
 │   ├── ProviderCommand.cs     # Provider management
 │   ├── ModelCommand.cs        # Model management
 │   ├── SkillCommand.cs        # Skill management
@@ -600,11 +600,11 @@ LubanAgent/
 │   ├── AgentProfile.cs        # Agent profile base class
 │   ├── NormalAgentProfile.cs  # Normal workspace profile
 │   └── RagAgentProfile.cs     # RAG workspace profile
-├── UI/                    # Console UI
-│   ├── EscKeyListener.cs      # ESC key listener
-│   └── ResponseSpinner.cs     # Loading spinner
+├── UI/                    # Legacy console UI (in migration, removed after Steps 4/6)
+│   ├── EscKeyListener.cs      # ESC key listener → root-level Key.Esc binding
+│   └── ResponseSpinner.cs     # Loading spinner → footer orange * animation
 ├── Services/              # Core services
-│   ├── ConsoleAppService.cs   # Command dispatch & interaction
+│   ├── ConsoleAppService.cs   # Command dispatch (Step 6 → coordinate MainViewModel)
 │   ├── SessionManager.cs      # Session persistence
 │   └── WorkspaceManager.cs    # Workspace management & authorization
 ├── Repositories/          # Data access layer
@@ -621,8 +621,15 @@ LubanAgent/
 │   └── SqliteLocalMemoryStore.cs  # SQLite memory store
 ├── Entities/              # Data entities
 ├── Model/                 # AI model files
-└── Program.cs             # Application entry point
+└── Program.cs             # Application entry point (TUI bootstrap)
 ```
+
+> **MVVM Three-Layer Plan** (TUI refactoring target structure, progressively filled in Steps 2-8):
+> - `Models/` — Block document model, ConversationDocument, PermissionMode, TaskRegistry (pure data · no UI deps · unit-testable)
+> - `ViewModels/` — Main/Conversation/InputBar/Footer/AgentView/Command VMs (agent lifecycle · thread marshaling)
+> - `Views/Renderers/` — BlockRenderer + MarkdownLightRenderer (Block → RenderLine dispatch)
+> - `Services/Providers/` — GitInfo/TokenUsage/TaskRegistry/PrLink IFooterDataProvider implementations
+> - `Infrastructure/` — Throttle (FlushThrottle 16ms), ChannelBridge (sync confirmation cross-thread bridge)
 
 ---
 
@@ -869,6 +876,7 @@ Available tools for github:
 
 | Component | Description |
 |-----------|-------------|
+| **Terminal.Gui 2.4.17** | Full-screen TUI framework (net10.0, 24-bit TrueColor, alt-screen) |
 | **Microsoft.Agents.AI.Foundry** | Agent runtime framework |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
 | **Microsoft.Playwright** | Browser automation engine |
@@ -876,6 +884,8 @@ Available tools for github:
 | **LuBan.Common** | Base interfaces & tool definitions |
 | **Microsoft.ML.OnnxRuntime** | ONNX model inference (semantic retrieval) |
 | **SQLite** | Session & vector data storage |
+
+> **TFM Note**: The CLI layer targets `net10.0` (required by Terminal.Gui 2.4.17); the framework layer (`luban-framework/*`) remains on `net8.0` unchanged.
 
 ---
 

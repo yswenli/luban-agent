@@ -1,6 +1,6 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
+*CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LubanAgent
@@ -11,9 +11,11 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/7/27
-*描述：程序主入口
+*描述：程序主入口，完成基础设施初始化后进入 Terminal.Gui 全屏 TUI
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent;
 
 /// <summary>
@@ -24,23 +26,44 @@ class Program
     /// <summary>
     /// 程序主入口
     /// </summary>
-    static async Task Main(string[] args)
+    static async Task<int> Main(string[] args)
     {
-        ConsoleUtil.PrintName();
+        if (!TerminalGuiApp.CanRunInteractive())
+        {
+            Console.Error.WriteLine("luban-agent-cli 需要可交互终端运行，检测到输入/输出被重定向或无终端窗口。");
+            return 1;
+        }
 
         var configuration = BuildConfiguration(args);
         // 先将全局配置设置到 ConfigUtil，确保 LuBanOrm 静态构造时能从程序目录加载 appsettings.json
         configuration.InitConfigUtil();
-        
+
         // 初始化 ProviderHelper，从配置文件加载 Provider 配置
         ProviderHelper.Initialize(configuration);
-        
+
         DatabaseInitializer.Initialize();
 
         var (embedder, modelManager) = await PrepareRetrievalAsync(configuration);
         using var serviceProvider = BuildServiceProvider(configuration, embedder, modelManager);
 
-        // 隐式创建/恢复工作区
+        var startupNotices = new List<string>();
+        await InitializeWorkspaceAsync(serviceProvider, startupNotices);
+
+        // TODO(迁移步骤4)：命令行直传的 / 命令（如 luban-agent-cli /se -s 新会话）
+        // 改为进入 TUI 后由 CommandViewModel 自动派发首个命令。
+
+        var app = new TerminalGuiApp(serviceProvider);
+        app.Run(startupNotices);
+        return 0;
+    }
+
+    /// <summary>
+    /// 隐式创建或恢复当前目录对应的工作区，结果以启动提示形式收集。
+    /// </summary>
+    /// <param name="serviceProvider">依赖注入容器。</param>
+    /// <param name="notices">启动提示收集器，进入 TUI 后渲染到会话区。</param>
+    private static async Task InitializeWorkspaceAsync(IServiceProvider serviceProvider, List<string> notices)
+    {
         try
         {
             // 使用绝对路径，避免 GetByRootPathAsync 查询与 CreateWorkspaceAsync 存储路径不一致
@@ -52,43 +75,19 @@ class Program
             {
                 var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: "Normal");
                 await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
-                Console.WriteLine($"已创建工作区: {ws.Name} ({ws.RootPath})");
+                notices.Add($"已创建工作区: {ws.Name} ({ws.RootPath})");
             }
             else
             {
                 await workspaceManager.SetCurrentAsync(existing.WorkspaceId);
-                Console.WriteLine($"当前工作区: {existing.Name} ({existing.RootPath})");
+                notices.Add($"当前工作区: {existing.Name} ({existing.RootPath})");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"工作区初始化失败: {ex.Message}");
+            Logger.Error("工作区初始化失败", ex);
+            notices.Add($"工作区初始化失败: {ex.Message}");
         }
-
-        var appService = serviceProvider.GetRequiredService<ConsoleAppService>();
-
-        // 支持命令行参数直接执行命令，例如：LuBanAgent /se -s 新会话
-        if (args.Length > 0 && IsDirectCommand(args[0]))
-        {
-            await appService.RunDirectAsync(args);
-        }
-        else
-        {
-            await appService.RunAsync();
-        }
-    }
-
-    /// <summary>
-    /// 判断参数是否为直接执行命令（以 / 开头且非配置参数）。
-    /// </summary>
-    /// <param name="arg">首个命令行参数。</param>
-    /// <returns>是直接命令返回 true，否则 false。</returns>
-    private static bool IsDirectCommand(string arg)
-    {
-        if (string.IsNullOrEmpty(arg)) return false;
-        // 以 / 开头且长度大于 1（排除单纯的 /）
-        // 排除配置参数（如 --key=value 形式）
-        return arg.StartsWith('/') && arg.Length > 1 && !arg.StartsWith("--");
     }
 
     private static IConfiguration BuildConfiguration(string[] args)
