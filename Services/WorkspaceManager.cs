@@ -19,7 +19,6 @@ using LuBan.AIAgent.Rules;
 using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
-using LubanAgent.App;
 
 namespace LubanAgent.Services;
 
@@ -131,7 +130,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly IOptions<LuBanAgentOptions> _options;
     private readonly IEnumerable<ISkill> _builtinSkills;
     private readonly IEnumerable<IRule> _builtinRules;
-    private readonly ITuiOutputWriter Writer;
 
     /// <summary>
     /// 工作区注入的 PathGuard roots（仅记录工作区注入部分，避免误删全局 roots）
@@ -223,6 +221,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// <summary>
     /// 授权确认委托。由 UI 层设置（启动向导或命令执行时）。
     /// 如果未设置，默认拒绝授权。
+    /// 在启动期间设置一次，之后在任何工作区操作之前完成。
     /// </summary>
     public Func<WorkspaceInfo, Task<bool>>? AuthorizationPrompt { get; set; }
 
@@ -240,8 +239,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         ISessionManager sessionManager,
         IOptions<LuBanAgentOptions> options,
         IEnumerable<ISkill> builtinSkills,
-        IEnumerable<IRule> builtinRules,
-        ITuiOutputWriter writer)
+        IEnumerable<IRule> builtinRules)
     {
         _repo = repo;
         _sessionRepo = sessionRepo;
@@ -249,7 +247,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         _options = options;
         _builtinSkills = builtinSkills;
         _builtinRules = builtinRules;
-        Writer = writer;
     }
 
     /// <summary>
@@ -366,7 +363,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         if (!confirmed)
         {
-            Writer.WriteInfo("已取消授权");
             return false;
         }
 
@@ -383,7 +379,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         AddWorkspaceRootToPathGuard(workspace.RootPath);
         SetCurrentDirectory(workspace.RootPath);
-        Writer.WriteInfo("已授权工作区");
         return true;
     }
 
@@ -401,7 +396,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             }
             catch (Exception ex)
             {
-                Logger.Error($"无法在工作区目录创建配置文件夹: {ex.Message}");
+                Logger.Error($"无法在工作区目录创建配置文件夹", ex);
             }
 
             // 清理超过 24 小时的工作区临时文件
