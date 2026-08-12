@@ -152,9 +152,148 @@ internal sealed class TuiUiService : ITuiUiService
 
     /// <inheritdoc/>
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
-        => throw new NotImplementedException("ShowForm 将在 Task 3 实现");
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        if (fields.Count == 0) return Array.Empty<string>();
+
+        return RunModal(() =>
+        {
+            // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 3 行给按钮
+            var contentHeight = fields.Sum(f => f.Multiline ? 8 : 3);
+            using var dialog = new Dialog
+            {
+                Title = title,
+                X = Pos.Center(),
+                Y = Pos.Center(),
+                Width = 72,
+                Height = Math.Min(contentHeight + 3, 32)
+            };
+
+            var inputs = new List<View>(fields.Count);
+            var y = 0;
+            foreach (var f in fields)
+            {
+                dialog.Add(new Label { X = 0, Y = y, Text = f.Required ? $"{f.Label} *" : f.Label });
+                y++;
+
+                if (f.Multiline)
+                {
+                    var tv = new TextView
+                    {
+                        X = 0,
+                        Y = y,
+                        Width = Dim.Fill(),
+                        Height = 6,
+                        Text = f.InitialValue ?? string.Empty
+                    };
+                    dialog.Add(tv);
+                    inputs.Add(tv);
+                    y += 6;
+                }
+                else
+                {
+                    var tf = new TextField
+                    {
+                        X = 0,
+                        Y = y,
+                        Width = Dim.Fill(),
+                        Text = f.InitialValue ?? string.Empty
+                    };
+                    if (f.IsPassword) tf.Secret = true;
+                    dialog.Add(tf);
+                    inputs.Add(tf);
+                    y++;
+                }
+                y++;
+            }
+
+            static string GetValue(View v) => v switch
+            {
+                TextField tf => tf.Text ?? string.Empty,
+                TextView tv => tv.Text ?? string.Empty,
+                _ => string.Empty
+            };
+
+            List<string>? values = null;
+
+            var ok = new Button { Text = "确定" };
+            ok.Accepting += (_, _) =>
+            {
+                // 必填校验：失败不关闭对话框
+                for (var i = 0; i < fields.Count; i++)
+                {
+                    if (fields[i].Required && string.IsNullOrWhiteSpace(GetValue(inputs[i])))
+                    {
+                        MessageBox.ErrorQuery(_app, title, $"{fields[i].Label} 不能为空", "确定");
+                        return;
+                    }
+                }
+                values = inputs.Select(GetValue).ToList();
+                dialog.RequestStop();
+            };
+            var cancel = new Button { Text = "取消" };
+            cancel.Accepting += (_, _) =>
+            {
+                values = null;
+                dialog.RequestStop();
+            };
+            // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
+            dialog.AddButton(cancel);
+            dialog.AddButton(ok);
+
+            // 初始焦点放到第一个输入框
+            if (inputs.Count > 0) inputs[0].SetFocus();
+
+            _app.Run(dialog);
+            return values;
+        });
+    }
 
     /// <inheritdoc/>
     public void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows)
-        => throw new NotImplementedException("ShowTable 将在 Task 3 实现");
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(rows);
+
+        RunModal<object?>(() =>
+        {
+            var dt = new System.Data.DataTable();
+            foreach (var c in columns)
+            {
+                dt.Columns.Add(c);
+            }
+            foreach (var r in rows)
+            {
+                // 列数不足补空串，超出截断，保证 DataTable 不抛异常
+                var cells = columns.Select((_, i) => i < r.Count ? (object)(r[i] ?? string.Empty) : string.Empty).ToArray();
+                dt.Rows.Add(cells);
+            }
+
+            using var dialog = new Dialog
+            {
+                Title = title,
+                X = Pos.Center(),
+                Y = Pos.Center(),
+                Width = 100,
+                Height = 26
+            };
+
+            var table = new TableView
+            {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(2),
+                Table = new DataTableSource(dt)
+            };
+            dialog.Add(table);
+
+            var close = new Button { Text = "关闭" };
+            close.Accepting += (_, _) => dialog.RequestStop();
+            dialog.AddButton(close);
+
+            _app.Run(dialog);
+            return null;
+        });
+    }
 }
