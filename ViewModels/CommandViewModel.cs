@@ -182,17 +182,17 @@ internal sealed class CommandViewModel
 
     private void ExecuteManagementCommand<TCommand>(string[] parts) where TCommand : CommandBase
     {
-        var command = ResolveCommand<TCommand>();
-        if (command is null)
-        {
-            _writer.WriteError($"命令 {typeof(TCommand).Name} 初始化失败");
-            return;
-        }
-
         _ = Task.Run(async () =>
         {
             try
             {
+                var command = ResolveCommand<TCommand>();
+                if (command is null)
+                {
+                    _writer.WriteError($"命令 {typeof(TCommand).Name} 初始化失败");
+                    return;
+                }
+
                 var expandedArgs = ExpandSubCommandAliases(parts);
                 if (expandedArgs.Length > 1)
                 {
@@ -209,8 +209,8 @@ internal sealed class CommandViewModel
             }
             catch (Exception ex)
             {
-                Logger.Error("Command execution failed", ex);
-                _writer.WriteError($"命令执行失败: {ex.Message}");
+                Logger.Error("管理命令执行异常", ex);
+                _writer.WriteError($"命令执行异常: {ex.Message}");
             }
         });
     }
