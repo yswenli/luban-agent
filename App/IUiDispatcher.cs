@@ -20,7 +20,7 @@ namespace LubanAgent.App;
 /// UI 线程调度抽象。ViewModel 层从后台线程更新视图状态时必须经由本接口编组到 UI 线程，
 /// 抽象化后 ViewModel 可脱离 Terminal.Gui 主循环进行单元测试。
 /// </summary>
-internal interface IUiDispatcher
+public interface IUiDispatcher
 {
     /// <summary>
     /// 将委托编组到 UI 线程异步执行。

@@ -28,10 +28,6 @@ namespace LubanAgent.App;
 /// TUI 输出写入器接口。命令（/help /mode /provider 等）通过此接口输出到会话文档，
 /// 统一替换各类 Console.Write* 调用，确保所有命令输出格式一致。
 /// </summary>
-/// <summary>
-/// TUI 输出写入器接口。命令（/help /mode /provider 等）通过此接口输出到会话文档，
-/// 统一替换各类 Console.Write* 调用，确保所有命令输出格式一致。
-/// </summary>
 public interface ITuiOutputWriter
 {
     /// <summary>
@@ -85,43 +81,60 @@ public enum TuiOutputStyle { Default = 0, Accent = 1, Success = 2, Failure = 3, 
 /// <summary>
 /// TUI 输出写入器。统一命令文本输出 → ConversationDocument SystemBlock。
 /// 用于 /help /mode /provider /model /session 等所有管理命令。
+/// 提供 dispatcher 时所有写入编组到 UI 线程，后台线程可安全调用。
 /// </summary>
 public sealed class TuiOutputWriter : ITuiOutputWriter
 {
     private readonly ConversationDocument _doc;
+    private readonly IUiDispatcher? _dispatcher;
 
     /// <summary>
     /// 初始化 TUI 输出写入器。
     /// </summary>
     /// <param name="doc">会话文档模型。</param>
-    public TuiOutputWriter(ConversationDocument doc)
+    /// <param name="dispatcher">UI 线程调度器；提供时所有写入编组到 UI 线程（后台线程可安全调用）。</param>
+    public TuiOutputWriter(ConversationDocument doc, IUiDispatcher? dispatcher = null)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _dispatcher = dispatcher;
+    }
+
+    /// <summary>
+    /// 追加 Block；有 dispatcher 时编组到 UI 线程。
+    /// </summary>
+    private void Append(SystemBlock block)
+    {
+        if (_dispatcher is null)
+        {
+            _doc.AppendBlock(block);
+            return;
+        }
+        _dispatcher.Invoke(() => _doc.AppendBlock(block));
     }
 
     /// <inheritdoc/>
     public void WriteLine(string? text = null, TuiOutputStyle style = TuiOutputStyle.Default)
-        => _doc.AppendBlock(new SystemBlock(text ?? string.Empty, foreground: ToColor(style)));
+        => Append(new SystemBlock(text ?? string.Empty, foreground: ToColor(style)));
 
     /// <inheritdoc/>
     public void WriteHeader(string text)
-        => _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.Accent, isBold: true));
+        => Append(new SystemBlock(text, foreground: BlockColors.Accent, isBold: true));
 
     /// <inheritdoc/>
     public void WriteSuccess(string text)
-        => _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.Success));
+        => Append(new SystemBlock(text, foreground: BlockColors.Success));
 
     /// <inheritdoc/>
     public void WriteError(string text)
-        => _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.Failure));
+        => Append(new SystemBlock(text, foreground: BlockColors.Failure));
 
     /// <inheritdoc/>
     public void WriteInfo(string text)
-        => _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.System));
+        => Append(new SystemBlock(text, foreground: BlockColors.System));
 
     /// <inheritdoc/>
     public void WriteWarning(string text)
-        => _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.Accent));
+        => Append(new SystemBlock(text, foreground: BlockColors.Accent));
 
     /// <inheritdoc/>
     public void WriteLine() => WriteLine(string.Empty);
