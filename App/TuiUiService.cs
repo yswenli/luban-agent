@@ -66,11 +66,12 @@ internal sealed class TuiUiService : ITuiUiService
             finally { done.Set(); }
         });
 
+        // 等待不设超时——若 app 已 Dispose 且回调未执行，后台调用方会一直等待（进程退出场景无碍）。
         done.Wait();
         if (error is not null)
         {
             Logger.Error("TuiUiService 模态操作异常", error);
-            throw error;
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
         }
         return result!;
     }
@@ -80,10 +81,11 @@ internal sealed class TuiUiService : ITuiUiService
     {
         return RunModal(() =>
         {
-            // defaultValue=false 时"否"在前（默认按钮），危险操作防误触
-            var buttons = defaultValue ? new[] { "是", "否" } : new[] { "否", "是" };
+            // AddButton 使最后一个按钮成为默认按钮（DefaultAcceptView）：
+            // defaultValue=false 时"否"在末位（默认），危险操作防误触
+            var buttons = defaultValue ? new[] { "否", "是" } : new[] { "是", "否" };
             var r = MessageBox.Query(_app, title, message, buttons);
-            return defaultValue ? r == 0 : r == 1;
+            return defaultValue ? r == 1 : r == 0;
         });
     }
 
@@ -127,7 +129,7 @@ internal sealed class TuiUiService : ITuiUiService
 
             var result = -1;
 
-            var ok = new Button { Text = "确定", IsDefault = true };
+            var ok = new Button { Text = "确定" };
             ok.Accepting += (_, _) =>
             {
                 result = list.SelectedItem ?? -1;
@@ -139,8 +141,9 @@ internal sealed class TuiUiService : ITuiUiService
                 result = -1;
                 dialog.RequestStop();
             };
-            dialog.AddButton(ok);
+            // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
             dialog.AddButton(cancel);
+            dialog.AddButton(ok);
 
             _app.Run(dialog);
             return result >= 0 ? result : (int?)null;
