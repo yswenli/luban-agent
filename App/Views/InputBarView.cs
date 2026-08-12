@@ -19,6 +19,7 @@ using Terminal.Gui.Drawing;
 using Terminal.Gui.Editor;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
@@ -40,9 +41,14 @@ internal sealed class InputBarView : View
     public event Action<string>? Submitted;
 
     /// <summary>
-    /// 输入框背景色（比主背景稍浅）。
+    /// 输入框高度变化时触发，参数为新的内容高度（不含边框）。
     /// </summary>
-    private static readonly Color InputBackground = new(0x2A, 0x2A, 0x2A, 0xFF);
+    public event Action<int>? ContentHeightChanged;
+
+    /// <summary>
+    /// 输入框背景色（亮蓝色，调试阶段便于定位）。
+    /// </summary>
+    private static readonly Color InputBackground = new(0x1E, 0x3A, 0x5F, 0xFF);
 
     /// <summary>
     /// 初始化输入区视图。
@@ -50,32 +56,34 @@ internal sealed class InputBarView : View
     public InputBarView()
     {
         CanFocus = true;
+        // 调试阶段加边框，便于定位输入框位置
+        BorderStyle = LineStyle.Single;
 
         _editor = new Editor
         {
             X = 2,
             Y = 0,
             Width = Dim.Fill(),
-            Height = 1,
+            Height = Dim.Fill(),
             CanFocus = true,
             Multiline = true,
             WordWrap = true,
             GutterOptions = GutterOptions.None,
         };
 
-        // 设置输入框配色：白色文字，稍浅的深灰背景
+        // 设置输入框配色：白色文字，亮蓝色背景（调试用）
         var inputScheme = new Scheme(
             new Attribute(TuiTheme.AssistantText, InputBackground))
         {
             Normal = new Attribute(TuiTheme.AssistantText, InputBackground),
-            Focus = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Focus = new Attribute(Color.White, InputBackground),
             HotNormal = new Attribute(TuiTheme.AssistantText, InputBackground),
-            HotFocus = new Attribute(TuiTheme.AssistantText, InputBackground),
+            HotFocus = new Attribute(Color.White, InputBackground),
             Disabled = new Attribute(TuiTheme.SystemMessage, InputBackground),
             Active = new Attribute(TuiTheme.AssistantText, InputBackground),
             HotActive = new Attribute(TuiTheme.AssistantText, InputBackground),
             Highlight = new Attribute(TuiTheme.Background, TuiTheme.Accent),
-            Editable = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Editable = new Attribute(Color.White, InputBackground),
             ReadOnly = new Attribute(TuiTheme.SystemMessage, InputBackground)
         };
         _editor.SetScheme(inputScheme);
@@ -118,21 +126,35 @@ internal sealed class InputBarView : View
             return true;
         }
 
-        SetAttribute(TuiTheme.Attr(TuiTheme.Prompt, TextStyle.Bold));
+        // 填充背景色（亮蓝色），确保整个输入区域可见
+        var bgAttr = new Attribute(TuiTheme.AssistantText, InputBackground);
+        SetAttribute(bgAttr);
+        for (var row = 0; row < Viewport.Height; row++)
+        {
+            for (var col = 0; col < Viewport.Width; col++)
+            {
+                AddRune(col, row, (Rune)' ');
+            }
+        }
+
+        SetAttribute(TuiTheme.Attr(TuiTheme.Prompt, TextStyle.Bold, InputBackground));
         AddStr(0, 0, ">");
         return true;
     }
 
     /// <summary>
-    /// 内容变化时自动调整高度（1~MaxHeight 行）。
+    /// 内容变化时自动调整高度（1~MaxHeight 行）并通知父视图。
     /// </summary>
     private void OnTextChanged(object? sender, EventArgs e)
     {
         var lineCount = Math.Max(1, _editor.Document?.LineCount ?? 1);
-        var newHeight = Math.Min(lineCount, MaxHeight);
+        var newContentHeight = Math.Min(lineCount, MaxHeight);
+        // 总高度 = 内容高度 + 边框(上下各1)
+        var newHeight = newContentHeight + 2;
         if (Height != newHeight)
         {
             Height = newHeight;
+            ContentHeightChanged?.Invoke(newHeight);
             SetNeedsLayout();
             SetNeedsDraw();
         }
@@ -151,7 +173,8 @@ internal sealed class InputBarView : View
         }
 
         _editor.Text = string.Empty;
-        Height = 1;
+        Height = 3; // 1行内容 + 边框2
+        ContentHeightChanged?.Invoke(3);
         e.Handled = true;
         Submitted?.Invoke(text);
     }

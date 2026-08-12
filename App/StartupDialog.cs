@@ -31,6 +31,7 @@ internal class StartupDialog : Dialog
     private readonly string[] _args;
     private readonly IUiDispatcher _dispatcher;
     private readonly ITuiUiService _ui;
+    private readonly Label _bannerLabel;
     private readonly Label _statusLabel;
     private readonly Button _cancelButton;
     private CancellationTokenSource? _retrievalCts;
@@ -63,7 +64,7 @@ internal class StartupDialog : Dialog
         X = Pos.Center();
         Y = Pos.Center();
         Width = 64;
-        Height = 16;
+        Height = 18;
 
         // 设置对话框配色：标题橙色，文字白色，背景深灰
         var scheme = new Scheme(
@@ -85,10 +86,29 @@ internal class StartupDialog : Dialog
         // 设置边框样式
         BorderStyle = LineStyle.Single;
 
+        // 加粗显示标题
+        _bannerLabel = new Label
+        {
+            X = Pos.Center(),
+            Y = 0,
+            Width = 20,
+            Height = 1,
+            Text = "luban-agent-cli"
+        };
+        _bannerLabel.SetScheme(new Scheme(
+            new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold))
+        {
+            Normal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            Focus = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            HotNormal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            HotFocus = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+        });
+        Add(_bannerLabel);
+
         _statusLabel = new Label
         {
             X = 1,
-            Y = 0,
+            Y = Pos.Bottom(_bannerLabel) + 1,
             Width = Dim.Fill(2),
             Height = Dim.Fill(3),
             Text = ""

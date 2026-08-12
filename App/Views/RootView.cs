@@ -87,38 +87,32 @@ internal sealed class RootView : Runnable
 
         _doc.AppendBlock(new SystemBlock(string.Empty));
 
+        // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 初始 3 = 4）
         _conversation = new ConversationView(_doc)
         {
-            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(6)
-        };
-
-        // 底部区域容器：页脚 + 输入栏，输入栏高度动态变化（1~5 行）
-        var bottomArea = new View
-        {
-            X = 0,
-            Y = Pos.Bottom(_conversation),
-            Width = Dim.Fill(),
-            Height = 6 // footer(1) + inputBar max(5)
+            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(4)
         };
 
         _footer = new FooterView
         {
-            X = 0, Y = 0, Width = Dim.Fill(), Height = 1
+            X = 0, Y = Pos.Bottom(_conversation), Width = Dim.Fill(), Height = 1
         };
         var footerProvider = new FooterDataProvider();
         _footer.SetProvider(footerProvider);
         _footer.SetMode(_vm.PermissionModeDisplay);
 
+        // 输入栏初始高度=3（1行内容 + 边框上下各1）
         _inputBar = new InputBarView
         {
-            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 5
+            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 3
         };
         _inputBar.Submitted += OnInputSubmitted;
+        // 输入栏高度变化时，动态调整会话区高度
+        _inputBar.ContentHeightChanged += OnInputBarHeightChanged;
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
         _vm.PermissionModeChanged += _onPermissionModeChanged;
 
-        bottomArea.Add(_footer, _inputBar);
-        Add(_conversation, bottomArea);
+        Add(_conversation, _footer, _inputBar);
     }
 
     /// <inheritdoc/>
@@ -165,10 +159,23 @@ internal sealed class RootView : Runnable
         if (disposing)
         {
             _inputBar.Submitted -= OnInputSubmitted;
+            _inputBar.ContentHeightChanged -= OnInputBarHeightChanged;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
         }
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// 输入栏高度变化时，重新计算会话区高度并触发布局更新。
+    /// </summary>
+    /// <param name="inputBarHeight">输入栏新的总高度（含边框）。</param>
+    private void OnInputBarHeightChanged(int inputBarHeight)
+    {
+        // 会话区底部预留 = footer(1) + inputBar(参数)
+        _conversation.Height = Dim.Fill(1 + inputBarHeight);
+        SetNeedsLayout();
+        SetNeedsDraw();
     }
 
     // ── 全局快捷键 ──
