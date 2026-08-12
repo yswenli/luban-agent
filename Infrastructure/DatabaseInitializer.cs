@@ -35,19 +35,22 @@ public static class DatabaseInitializer
     /// <summary>
     /// 初始化数据库
     /// </summary>
-    public static void Initialize()
+    public static IReadOnlyList<string> Initialize()
     {
-        if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0) return;
-        FixRelativeConnectionString();
-        MigrateLegacyDatabase();
+        var messages = new List<string>();
 
-        // 检查主数据库文件：已存在且大小超过 100KB 视为已有有效数据，跳过建库/建表/播种子/建视图
-        TrySkipInitIfDbExistsAndLarge();
+        if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0) return messages;
+        FixRelativeConnectionString();
+        MigrateLegacyDatabase(messages);
+
+        TrySkipInitIfDbExistsAndLarge(messages);
         LuBanOrm.Init();
 
         EnsureIsCompactedColumn();
         EnsureWorkspaceIdColumns();
         var dbPath = GetDatabasePath();
+
+        return messages;
     }
 
     /// <summary>
@@ -56,7 +59,7 @@ public static class DatabaseInitializer
     /// 使 LuBanOrm.Init() → InitDatabase() 入口直接 return，跳过建库、建表、播种子、建视图。
     /// 仅当检测到满足条件并已设置标志时返回 true。
     /// </summary>
-    private static bool TrySkipInitIfDbExistsAndLarge()
+    private static bool TrySkipInitIfDbExistsAndLarge(List<string> messages)
     {
         var options = LuBanOrm.DbConnectionOptions;
         if (options?.ConnectionConfigs == null) return false;
@@ -75,15 +78,13 @@ public static class DatabaseInitializer
 
                 if (fi.Length > SkipInitThresholdBytes)
                 {
-                    Console.WriteLine($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），跳过初始化库、表、种子、视图。");
-                    // InitDatabase() 开头判断：if (IsInitTableAndDataComplete == true) return;
-                    // 置为 true 后，所有初始化（库/表/视图/种子）都会被跳过
+                    messages.Add($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），跳过初始化库、表、种子、视图。");
                     LuBanOrm.IsInitTableAndDataComplete = true;
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），小于阈值 100KB，将执行初始化。");
+                    messages.Add($"检测到现有数据库 {Path.GetFileName(dbPath)}（{fi.Length / 1024.0:F1}KB），小于阈值 100KB，将执行初始化。");
                 }
             }
             catch (Exception ex)
@@ -212,7 +213,7 @@ public static class DatabaseInitializer
     /// <summary>
     /// 将旧版数据库文件 ai_sessions.db 重命名为 luban-ai-agent.db（仅当旧文件存在且新文件不存在时）
     /// </summary>
-    private static void MigrateLegacyDatabase()
+    private static void MigrateLegacyDatabase(List<string> messages)
     {
         var legacy = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ai_sessions.db");
         var current = GetDatabasePath();
@@ -221,12 +222,12 @@ public static class DatabaseInitializer
             try
             {
                 File.Move(legacy, current);
-                Console.WriteLine($"数据库已从 {Path.GetFileName(legacy)} 更名为 {Path.GetFileName(current)}");
+                messages.Add($"数据库已从 {Path.GetFileName(legacy)} 更名为 {Path.GetFileName(current)}");
             }
             catch (Exception ex)
             {
                 Logger.Error("数据库初始化异常", ex);
-                Console.WriteLine($"数据库更名失败: {ex.Message}");
+                messages.Add($"数据库更名失败: {ex.Message}");
             }
         }
     }

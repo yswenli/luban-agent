@@ -41,7 +41,7 @@ class Program
         // 初始化 ProviderHelper，从配置文件加载 Provider 配置
         ProviderHelper.Initialize(configuration);
 
-        DatabaseInitializer.Initialize();
+        _ = DatabaseInitializer.Initialize();
 
         var (embedder, modelManager) = await PrepareRetrievalAsync(configuration);
         using var serviceProvider = BuildServiceProvider(configuration, embedder, modelManager);
