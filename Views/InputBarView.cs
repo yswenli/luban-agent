@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：输入区视图，原生 TextView 做编辑内核，外层仅负责按键转发
+*描述：输入区视图，使用 TextField 作为单行编辑内核
 *
 *****************************************************************************/
 using LubanAgent.App;
@@ -23,18 +23,15 @@ using Terminal.Gui.Views;
 namespace LubanAgent.Views;
 
 /// <summary>
-/// 输入区视图。编辑语义（光标移动、选区、多行）由原生 <see cref="TextView"/> 承担，
-/// 本视图只负责提示符绘制与按键转发，历史/搜索/补全等业务逻辑位于 InputBarViewModel。
+/// 输入区视图。使用 <see cref="TextField"/> 作为单行编辑内核，
+/// 本视图负责提示符绘制与 Enter 键拦截提交。
 /// </summary>
 internal sealed class InputBarView : View
 {
-    // Terminal.Gui 2.4 起标记 TextView 为过时，建议迁移到 tui-cs/Editor 的 EditorView。
-    // 当前 TextView 功能完备且无需额外依赖，暂沿用；是否引入 Editor 包待评估。
-#pragma warning disable CS0618
-    private readonly TextView _textView;
+    private readonly TextField _textField;
 
     /// <summary>
-    /// 用户提交一行输入时触发（Enter，非 Shift+Enter）。
+    /// 用户提交一行输入时触发（Enter）。
     /// </summary>
     public event Action<string>? Submitted;
 
@@ -45,20 +42,17 @@ internal sealed class InputBarView : View
     {
         CanFocus = true;
 
-        _textView = new TextView
+        _textField = new TextField
         {
             X = 2,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            Multiline = false,
-            WordWrap = false,
+            Height = 1,
             CanFocus = true
         };
-        _textView.KeyDown += OnTextViewKeyDown;
-#pragma warning restore CS0618
+        _textField.KeyDown += OnTextFieldKeyDown;
 
-        Add(_textView);
+        Add(_textField);
     }
 
     /// <summary>
@@ -66,17 +60,17 @@ internal sealed class InputBarView : View
     /// </summary>
     public string InputText
     {
-        get => _textView.Text ?? string.Empty;
-        set => _textView.Text = value ?? string.Empty;
+        get => _textField.Text ?? string.Empty;
+        set => _textField.Text = value ?? string.Empty;
     }
 
     /// <summary>
     /// 将焦点交给内部编辑器。
     /// </summary>
-    public void FocusInput() => _textView.SetFocus();
+    public void FocusInput() => _textField.SetFocus();
 
     /// <summary>
-    /// 绘制提示符。输入内容由子视图 TextView 自行渲染。
+    /// 绘制提示符。输入内容由子视图 TextField 自行渲染。
     /// </summary>
     /// <param name="context">绘制上下文。</param>
     /// <returns>始终返回 true（提示符自绘）。</returns>
@@ -93,26 +87,26 @@ internal sealed class InputBarView : View
     }
 
     /// <summary>
-    /// 拦截编辑器按键：Enter 提交，其余透传给 TextView。
+    /// 拦截编辑器按键：Enter 提交，其余透传给 TextField。
     /// </summary>
     /// <param name="sender">事件源。</param>
     /// <param name="key">按键事件。</param>
-    private void OnTextViewKeyDown(object? sender, Key key)
+    private void OnTextFieldKeyDown(object? sender, Key key)
     {
-        if (key != Key.Enter || key.IsShift)
+        if (key != Key.Enter)
         {
             return;
         }
 
         key.Handled = true;
 
-        var text = (_textView.Text ?? string.Empty).Trim();
+        var text = (_textField.Text ?? string.Empty).Trim();
         if (text.Length == 0)
         {
             return;
         }
 
-        _textView.Text = string.Empty;
+        _textField.Text = string.Empty;
         Submitted?.Invoke(text);
     }
 }

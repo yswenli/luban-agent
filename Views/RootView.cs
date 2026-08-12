@@ -283,11 +283,12 @@ internal sealed class RootView : Runnable
         try
         {
             await _vm.InitializeAsync();
-            _vmInitialized = true; // 成功后才标记
+            _vmInitialized = true;
             await _vm.ProcessInputAsync(text);
         }
         catch (Exception ex)
         {
+            Logger.Error("InitializeAndProcessAsync 异常", ex);
             _doc.AppendBlock(new SystemBlock(
                 $"Agent 初始化失败: {ex.Message}", foreground: BlockColors.Failure));
         }

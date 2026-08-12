@@ -49,7 +49,7 @@ internal sealed class ConversationView : View
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         CanFocus = false;
-        MousePositionTracking = true; // 允许终端原生鼠标选择
+        MousePositionTracking = false;
 
         _throttle = new FlushThrottle(() =>
         {

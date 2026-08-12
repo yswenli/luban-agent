@@ -76,7 +76,7 @@ internal sealed class TerminalGuiApp
     /// <summary>
     /// 启动 TUI 主循环，阻塞直至用户退出。
     /// </summary>
-    /// <param name="startupNotices">进入 TUI 前产生的启动提示，渲染在会话区顶部。</param>
+    /// <param name="startupNotices">进入 TUI 前 产生的启动提示，渲染在会话区顶部。</param>
     public void Run(IReadOnlyList<string>? startupNotices = null)
     {
         // Create 必须早于任何静态 Application 访问，否则会因"legacy static model already used"抛异常。
