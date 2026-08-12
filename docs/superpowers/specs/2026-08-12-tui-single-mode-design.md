@@ -46,9 +46,11 @@ Main:
     全部成功 → 关闭对话框 → 用所得 ServiceProvider 创建 RootView → application.Run(root)
 ```
 
-- 配置/DB/DI 本无控制台 I/O，按"TUI 先启动"原则全部收进向导后台线程执行。
+- 配置/DB/DI 按"TUI 先启动"原则全部收进向导后台线程执行。
 - 启动提示（工作区名称等）作为 notices 传入 RootView，渲染在会话区顶部（沿用现有机制）。
 - 嵌入模型下载进度替换 `ConsoleUtil.RunWithStatusAsync`（含其后台 `Console.ReadKey` 线程）为对话框进度显示 + 取消按钮（取消经 CancellationToken 传递）。
+- `DatabaseInitializer` 的 4 处 `Console.WriteLine`（数据库检测/更名提示，:78/:86/:224/:229）改为返回消息列表，由向导状态行显示或并入 notices。
+- `Program.cs` 的"未知嵌入模型 / 模型未就绪，请将模型包放到…"提示（:123/:133-138）改为向导状态行 + notices，不再写 Console。
 
 ## 2. ITuiUiService 抽象（App 层，纯 BCL 类型）
 
@@ -90,7 +92,8 @@ public interface ITuiProgress : IDisposable
   - `AnsiConsole.Write(table)` / `ConsoleUtil.WriteTable` → `ShowTable`
   - `AnsiConsole.MarkupLine` → `ITuiOutputWriter`
   - `ReadPassword` → `ShowForm`（`IsPassword = true`）
-- **删除**：ConsoleAppService、AgiCommand、BrowseCommand、EscKeyListener、ResponseSpinner。
+- **删除**：ConsoleAppService、AgiCommand、BrowseCommand、EscKeyListener、ResponseSpinner；同步移除 `Program.cs` 中 `services.AddSingleton<ConsoleAppService>()` 的 DI 注册。
+- **`/agi`、`/browse` 命令别名**：AgiCommand/BrowseCommand 删除后，保留 `CommandViewModel.TryExecute` 中输出"Agent 已就绪，直接输入内容即可开始对话"的引导分支（该分支不依赖被删类）。
 - **保留**：SpinnerService（TUI 页脚 spinner 使用）。
 
 ## 4. WorkspaceManager 授权解耦
@@ -121,3 +124,4 @@ public interface ITuiProgress : IDisposable
 - 不实现 TuiSnapshot 无头快照测试。
 - 不做每个命令的完整 TUI 导航屏幕（方案 C）。
 - 不改动 luban-framework 内部实现（WorkspaceManager 委托注入除外）。
+- 不处理 `Program.cs:52` 的 TODO（命令行直传 `/` 命令进入 TUI 后自动派发），保持现状注释即可。
