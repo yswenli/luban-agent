@@ -81,7 +81,7 @@ public class StatsCommand : CommandBase
             }
             else if (args.Length > 0)
             {
-                WriteError("用法: /stats [-days N] [--all]\n      简写: /st -d N, /st --all");
+                Writer.WriteError("用法: /stats [-days N] [--all]\n      简写: /st -d N, /st --all");
                 return true;
             }
         }
@@ -104,13 +104,13 @@ public class StatsCommand : CommandBase
         {
             var stats = await _sessionManager.GetGlobalStatsAsync(days);
             var scope = allWorkspaces ? "全部工作区" : "全部";
-            Console.WriteLine();
-            Console.WriteLine(days.HasValue ? $"{scope} 最近 {days} 天统计：" : $"{scope}统计：");
-            Console.WriteLine($"  总会话数: {stats.TotalSessions}");
-            Console.WriteLine($"  总消息数: {stats.TotalMessages}");
-            Console.WriteLine($"  总 Token: {stats.TotalTokens:N0}");
-            Console.WriteLine($"  统计天数: {stats.Days}");
-            Console.WriteLine($"  日均 Token: {stats.AverageDailyTokens:F0}");
+            Writer.WriteLine();
+            Writer.WriteHeader(days.HasValue ? $"{scope} 最近 {days} 天统计：" : $"{scope}统计：");
+            Writer.WriteLine($"  总会话数: {stats.TotalSessions}");
+            Writer.WriteLine($"  总消息数: {stats.TotalMessages}");
+            Writer.WriteLine($"  总 Token: {stats.TotalTokens:N0}");
+            Writer.WriteLine($"  统计天数: {stats.Days}");
+            Writer.WriteLine($"  日均 Token: {stats.AverageDailyTokens:F0}");
         }
         else
         {
@@ -127,15 +127,15 @@ public class StatsCommand : CommandBase
                 ? Math.Max(1, (int)(DateTime.Now - filtered.Min(s => s.CreateTime)).TotalDays + 1)
                 : 1);
 
-            Console.WriteLine();
-            Console.WriteLine(days.HasValue
+            Writer.WriteLine();
+            Writer.WriteHeader(days.HasValue
                 ? $"当前工作区 最近 {days} 天统计："
                 : $"当前工作区统计：");
-            Console.WriteLine($"  总会话数: {filtered.Count}");
-            Console.WriteLine($"  总消息数: {totalMessages}");
-            Console.WriteLine($"  总 Token: {totalTokens:N0}");
-            Console.WriteLine($"  统计天数: {spanDays}");
-            Console.WriteLine($"  日均 Token: {(spanDays > 0 ? totalTokens / (double)spanDays : 0):F0}");
+            Writer.WriteLine($"  总会话数: {filtered.Count}");
+            Writer.WriteLine($"  总消息数: {totalMessages}");
+            Writer.WriteLine($"  总 Token: {totalTokens:N0}");
+            Writer.WriteLine($"  统计天数: {spanDays}");
+            Writer.WriteLine($"  日均 Token: {(spanDays > 0 ? totalTokens / (double)spanDays : 0):F0}");
         }
     }
 }
