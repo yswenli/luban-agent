@@ -13,7 +13,7 @@
 *创建时间：2026/7/31
 *描述：RAG 知识库管理命令（new/index/search/list/delete）
 *
-*****************************************************************************/
+ *****************************************************************************/
 using LuBan.AIAgent.Retrieval;
 using LubanAgent.App;
 
@@ -123,7 +123,7 @@ public class RagCommand : CommandBase
                 ShowHelp();
                 break;
             default:
-                Console.WriteLine($"未知子命令: {subCommand}");
+                Writer.WriteLine($"未知子命令: {subCommand}");
                 ShowHelp();
                 break;
         }
@@ -135,14 +135,14 @@ public class RagCommand : CommandBase
     /// </summary>
     private void ShowHelp()
     {
-        Console.WriteLine();
-        Console.WriteLine("RAG 知识库管理命令用法：");
-        Console.WriteLine("  /rag -new <路径> [名称]     - 创建 RAG 知识库工作区");
-        Console.WriteLine("  /rag -index [glob]          - 索引当前 RAG 工作区的文件（glob 如 *.md）");
-        Console.WriteLine("  /rag -search <查询>         - 在当前 RAG 工作区中检索");
-        Console.WriteLine("  /rag -list                  - 列出当前 RAG 工作区已索引的文件");
-        Console.WriteLine("  /rag -delete <名称或路径>   - 删除 RAG 知识库工作区及其索引");
-        Console.WriteLine("  简写: /rag -n, /rag -i, /rag -s, /rag -l, /rag -d");
+        Writer.WriteLine();
+        Writer.WriteLine("RAG 知识库管理命令用法：");
+        Writer.WriteLine("  /rag -new <路径> [名称]     - 创建 RAG 知识库工作区");
+        Writer.WriteLine("  /rag -index [glob]          - 索引当前 RAG 工作区的文件（glob 如 *.md）");
+        Writer.WriteLine("  /rag -search <查询>         - 在当前 RAG 工作区中检索");
+        Writer.WriteLine("  /rag -list                  - 列出当前 RAG 工作区已索引的文件");
+        Writer.WriteLine("  /rag -delete <名称或路径>   - 删除 RAG 知识库工作区及其索引");
+        Writer.WriteLine("  简写: /rag -n, /rag -i, /rag -s, /rag -l, /rag -d");
     }
 
     /// <summary>
@@ -152,14 +152,14 @@ public class RagCommand : CommandBase
     {
         if (args.Length < 2)
         {
-            WriteError("用法: /rag -new <路径> [名称]");
+            Writer.WriteError("用法: /rag -new <路径> [名称]");
             return;
         }
 
         var path = args[1];
         if (!Directory.Exists(path))
         {
-            WriteError($"目录不存在: {path}");
+            Writer.WriteError($"目录不存在: {path}");
             return;
         }
 
@@ -168,13 +168,13 @@ public class RagCommand : CommandBase
         try
         {
             var ws = await _workspaceManager.CreateWorkspaceAsync(path, name, type: "Rag");
-            AnsiConsole.MarkupLine($"[green]✓ 已创建 RAG 知识库: {Markup.Escape(ws.Name)} - {Markup.Escape(ws.RootPath)}[/]");
-            AnsiConsole.MarkupLine($"[grey]使用 /work -switch {Markup.Escape(ws.Name)} 切换到此知识库[/]");
-            AnsiConsole.MarkupLine("[grey]切换后使用 /rag -index 索引文件，然后 /agi 进行问答[/]");
+            Writer.WriteSuccess($"已创建 RAG 知识库: {ws.Name} - {ws.RootPath}");
+            Writer.WriteInfo($"使用 /work -switch {ws.Name} 切换到此知识库");
+            Writer.WriteInfo("切换后使用 /rag -index 索引文件，然后 /agi 进行问答");
         }
         catch (InvalidOperationException ex)
         {
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
     }
 
@@ -186,13 +186,13 @@ public class RagCommand : CommandBase
         var workspace = _workspaceManager.CurrentWorkspace;
         if (workspace == null)
         {
-            WriteError("请先使用 /work -switch 切换到 RAG 工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到 RAG 工作区");
             return;
         }
 
         if (workspace.Type != "Rag")
         {
-            WriteError($"当前工作区 {Markup.Escape(workspace.Name)} 不是 RAG 知识库，请切换到 RAG 工作区");
+            Writer.WriteError($"当前工作区 {workspace.Name} 不是 RAG 知识库，请切换到 RAG 工作区");
             return;
         }
 
@@ -203,30 +203,30 @@ public class RagCommand : CommandBase
         }
 
         var glob = args.Length > 1 ? args[1] : null;
-        AnsiConsole.MarkupLine($"[cyan]开始索引工作区: {Markup.Escape(workspace.Name)}[/]");
+        Writer.WriteInfo($"开始索引工作区: {workspace.Name}");
         if (!string.IsNullOrEmpty(glob))
-            AnsiConsole.MarkupLine($"[grey]文件匹配模式: {Markup.Escape(glob)}[/]");
+            Writer.WriteInfo($"文件匹配模式: {glob}");
 
         try
         {
             var report = await _retrievalService.IndexDirectoryAsync(workspace.RootPath, glob, force: false);
-            AnsiConsole.MarkupLine($"[green]✓ 索引完成[/]");
-            AnsiConsole.MarkupLine($"[grey]  扫描文件: {report.ScannedFiles}[/]");
-            AnsiConsole.MarkupLine($"[grey]  新增文件: {report.NewFiles}[/]");
-            AnsiConsole.MarkupLine($"[grey]  更新文件: {report.UpdatedFiles}[/]");
-            AnsiConsole.MarkupLine($"[grey]  跳过文件: {report.SkippedFiles}[/]");
-            AnsiConsole.MarkupLine($"[grey]  总切块数: {report.TotalChunks}[/]");
+            Writer.WriteSuccess("索引完成");
+            Writer.WriteInfo($"  扫描文件: {report.ScannedFiles}");
+            Writer.WriteInfo($"  新增文件: {report.NewFiles}");
+            Writer.WriteInfo($"  更新文件: {report.UpdatedFiles}");
+            Writer.WriteInfo($"  跳过文件: {report.SkippedFiles}");
+            Writer.WriteInfo($"  总切块数: {report.TotalChunks}");
             if (report.Errors.Count > 0)
             {
-                AnsiConsole.MarkupLine("[yellow]  错误信息：[/]");
+                Writer.WriteWarning("  错误信息：");
                 foreach (var err in report.Errors.Take(5))
-                    AnsiConsole.MarkupLine($"  [red]- {Markup.Escape(err)}[/]");
+                    Writer.WriteError($"  - {err}");
             }
         }
         catch (Exception ex)
         {
             Logger.Error("RAG 索引失败", ex);
-            WriteError($"索引失败: {ex.Message}");
+            Writer.WriteError($"索引失败: {ex.Message}");
         }
     }
 
@@ -238,19 +238,19 @@ public class RagCommand : CommandBase
         var workspace = _workspaceManager.CurrentWorkspace;
         if (workspace == null)
         {
-            WriteError("请先使用 /work -switch 切换到 RAG 工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到 RAG 工作区");
             return;
         }
 
         if (workspace.Type != "Rag")
         {
-            WriteError($"当前工作区 {Markup.Escape(workspace.Name)} 不是 RAG 知识库");
+            Writer.WriteError($"当前工作区 {workspace.Name} 不是 RAG 知识库");
             return;
         }
 
         if (args.Length < 2)
         {
-            WriteError("用法: /rag -search <查询内容>");
+            Writer.WriteError("用法: /rag -search <查询内容>");
             return;
         }
 
@@ -261,26 +261,26 @@ public class RagCommand : CommandBase
             var results = await _retrievalService.SearchAsync(query, topK: 5);
             if (results.Count == 0)
             {
-                AnsiConsole.MarkupLine("[yellow]未找到相关文档[/]");
+                Writer.WriteWarning("未找到相关文档");
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[green]找到 {results.Count} 条相关结果：[/]");
-            AnsiConsole.WriteLine();
+            Writer.WriteSuccess($"找到 {results.Count} 条相关结果：");
+            Writer.WriteLine();
             foreach (var r in results)
             {
-                AnsiConsole.MarkupLine($"[cyan]文件: {Markup.Escape(r.FilePath)}[/]");
+                Writer.WriteInfo($"文件: {r.FilePath}");
                 if (!string.IsNullOrEmpty(r.SymbolName))
-                    AnsiConsole.MarkupLine($"[grey]符号: {Markup.Escape(r.SymbolName)} (L{r.StartLine}-{r.EndLine})[/]");
-                AnsiConsole.MarkupLine($"[grey]内容:[/]");
-                Console.WriteLine(r.Content);
-                AnsiConsole.WriteLine("---");
+                    Writer.WriteInfo($"符号: {r.SymbolName} (L{r.StartLine}-{r.EndLine})");
+                Writer.WriteInfo("内容:");
+                Writer.WriteLine(r.Content);
+                Writer.WriteLine("---");
             }
         }
         catch (Exception ex)
         {
             Logger.Error("RAG 检索失败", ex);
-            WriteError($"检索失败: {ex.Message}");
+            Writer.WriteError($"检索失败: {ex.Message}");
         }
     }
 
@@ -292,55 +292,36 @@ public class RagCommand : CommandBase
         var workspace = _workspaceManager.CurrentWorkspace;
         if (workspace == null)
         {
-            WriteError("请先使用 /work -switch 切换到 RAG 工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到 RAG 工作区");
             return;
         }
 
         if (workspace.Type != "Rag")
         {
-            WriteError($"当前工作区 {Markup.Escape(workspace.Name)} 不是 RAG 知识库");
+            Writer.WriteError($"当前工作区 {workspace.Name} 不是 RAG 知识库");
             return;
         }
 
         var files = await _ragFileRepo.GetByWorkspaceAsync(workspace.WorkspaceId);
         if (files.Count == 0)
         {
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Green;
-                AnsiConsole.MarkupLine("[grey]当前知识库尚未索引任何文件，请使用 /rag -index 索引文件[/]");
-            }
-            finally
-            {
-                Console.ResetColor();
-            }
+            Writer.WriteInfo("当前知识库尚未索引任何文件，请使用 /rag -index 索引文件");
             return;
         }
 
-        var table = new Table();
-        table.AddColumn("文件路径");
-        table.AddColumn("语言");
-        table.AddColumn("切块数");
-        table.AddColumn("索引时间");
-
+        var rows = new List<IReadOnlyList<string>>();
         foreach (var f in files)
         {
-            table.AddRow(
-                Markup.Escape(f.FilePath),
+            rows.Add(new[]
+            {
+                f.FilePath,
                 f.Language ?? "-",
                 f.ChunkCount.ToString(),
-                f.IndexedTime.ToString("yyyy-MM-dd HH:mm"));
+                f.IndexedTime.ToString("yyyy-MM-dd HH:mm")
+            });
         }
 
-        try
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            AnsiConsole.Write(table);
-        }
-        finally
-        {
-            Console.ResetColor();
-        }
+        Ui.ShowTable("已索引文件", new[] { "文件路径", "语言", "切块数", "索引时间" }, rows);
     }
 
     /// <summary>
@@ -350,7 +331,7 @@ public class RagCommand : CommandBase
     {
         if (args.Length < 2)
         {
-            WriteError("用法: /rag -delete <名称或路径>");
+            Writer.WriteError("用法: /rag -delete <名称或路径>");
             return;
         }
 
@@ -378,11 +359,11 @@ public class RagCommand : CommandBase
 
         if (target == null)
         {
-            WriteError($"找不到 RAG 知识库: {keyword}");
+            Writer.WriteError($"找不到 RAG 知识库: {keyword}");
             return;
         }
 
-        var confirm = AnsiConsole.Confirm($"[yellow]删除 RAG 知识库将同时删除其下所有会话和索引，确认删除 '{Markup.Escape(target.Name)}'？[/]", defaultValue: false);
+        var confirm = Ui.Confirm("删除 RAG 知识库", $"删除 RAG 知识库将同时删除其下所有会话和索引，确认删除 '{target.Name}'？", defaultValue: false);
         if (!confirm) return;
 
         // 级联删除（与 WorkCommand 保持一致，使用 DI 注入的仓储）
@@ -391,6 +372,6 @@ public class RagCommand : CommandBase
         await _ragChunkRepo.DeleteByWorkspaceAsync(target.WorkspaceId);
         await _workspaceRepo.LogicDeleteAsync(w => w.WorkspaceId == target.WorkspaceId);
 
-        AnsiConsole.MarkupLine($"[green]✓ 已删除 RAG 知识库: {Markup.Escape(target.Name)}[/]");
+        Writer.WriteSuccess($"已删除 RAG 知识库: {target.Name}");
     }
 }

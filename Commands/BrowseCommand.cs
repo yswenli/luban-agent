@@ -65,7 +65,7 @@ public class BrowseCommand : CommandBase
     {
         if (!ConfigManager.HasSelectedModel)
         {
-            WriteError("请先使用 model switch 命令选择模型");
+            Writer.WriteError("请先使用 model switch 命令选择模型");
             return;
         }
 
@@ -73,14 +73,14 @@ public class BrowseCommand : CommandBase
         var workspace = _workspaceManager?.CurrentWorkspace;
         if (workspace == null)
         {
-            WriteError("请先使用 /work -switch 切换到工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
         // 2. RAG 工作区禁用 /browse（仅支持知识库问答，不支持浏览器操作）
         if (workspace.Type == "Rag")
         {
-            WriteError("RAG 知识库工作区不支持浏览器操作，请使用 /work -switch 切换到普通工作区");
+            Writer.WriteError("RAG 知识库工作区不支持浏览器操作，请使用 /work -switch 切换到普通工作区");
             return;
         }
 
@@ -97,7 +97,7 @@ public class BrowseCommand : CommandBase
 
         if (string.IsNullOrEmpty(url))
         {
-            WriteError("URL 不能为空");
+            Writer.WriteError("URL 不能为空");
             return;
         }
 
@@ -109,7 +109,7 @@ public class BrowseCommand : CommandBase
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            WriteError("无效的 URL，仅支持 http:// 和 https://");
+            Writer.WriteError("无效的 URL，仅支持 http:// 和 https://");
             return;
         }
 
@@ -149,7 +149,7 @@ public class BrowseCommand : CommandBase
         catch (Exception ex)
         {
             Logger.Error("BrowseCommand 初始化失败", ex);
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
     }
 
@@ -377,7 +377,7 @@ public class BrowseCommand : CommandBase
                 spinner.Stop();
                 Logger.Error("BrowseCommand 对话循环异常", ex);
                 Console.WriteLine();
-                WriteError(GetFriendlyApiErrorMessage(ex));
+                Writer.WriteError(GetFriendlyApiErrorMessage(ex));
             }
             finally
             {

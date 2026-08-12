@@ -78,68 +78,6 @@ public abstract class CommandBase : ICommand
     }
 
     /// <summary>
-    /// 读取密码输入（隐藏显示）
-    /// </summary>
-    /// <returns>输入的密码</returns>
-    [Obsolete("已迁移 TUI，使用 Ui.ShowForm(IsPassword) 替代")]
-    protected static string ReadPassword()
-    {
-        var password = new System.Text.StringBuilder();
-        while (true)
-        {
-            var key = Console.ReadKey(true);
-            if (key.Key == ConsoleKey.Enter)
-                break;
-            if (key.Key == ConsoleKey.Backspace && password.Length > 0)
-            {
-                password.Remove(password.Length - 1, 1);
-                Console.Write("\b \b");
-            }
-            else if (key.KeyChar != '\0')
-            {
-                password.Append(key.KeyChar);
-                Console.Write("*");
-            }
-        }
-        Console.WriteLine();
-        return password.ToString();
-    }
-
-    /// <summary>
-    /// 输出信息
-    /// </summary>
-    /// <param name="message">消息</param>
-    [Obsolete("已迁移 TUI，使用 Writer.WriteInfo 替代")]
-    protected static void WriteInfo(string message)
-    {
-        Console.WriteLine(message);
-    }
-
-    /// <summary>
-    /// 输出错误
-    /// </summary>
-    /// <param name="message">错误消息</param>
-    [Obsolete("已迁移 TUI，使用 Writer.WriteError 替代")]
-    protected static void WriteError(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"错误: {message}");
-        Console.ResetColor();
-    }
-
-    /// <summary>
-    /// 输出成功信息
-    /// </summary>
-    /// <param name="message">消息</param>
-    [Obsolete("已迁移 TUI，使用 Writer.WriteSuccess 替代")]
-    protected static void WriteSuccess(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    /// <summary>
     /// 构建服务提供者，注册核心服务并初始化 LubanAgent
     /// </summary>
     /// <returns>配置完成的服务提供者</returns>

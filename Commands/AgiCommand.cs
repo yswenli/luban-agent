@@ -69,7 +69,7 @@ public class AgiCommand : CommandBase
     {
         if (!ConfigManager.HasSelectedModel)
         {
-            WriteError("请先使用 model switch 命令选择模型");
+            Writer.WriteError("请先使用 model switch 命令选择模型");
             return;
         }
 
@@ -77,7 +77,7 @@ public class AgiCommand : CommandBase
         var workspace = _workspaceManager.CurrentWorkspace;
         if (workspace == null)
         {
-            WriteError("请先使用 /work -switch 切换到工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
@@ -224,7 +224,7 @@ public class AgiCommand : CommandBase
         catch (Exception ex)
         {
             Logger.Error("AgiCommand 初始化失败", ex);
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
         finally
         {
@@ -574,7 +574,7 @@ public class AgiCommand : CommandBase
                 spinner.Stop();
                 Logger.Error("AgiCommand 对话循环异常", ex, input);
                 var errorType = hasToolCalls ? "工具执行后模型处理" : "模型调用";
-                WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
+                Writer.WriteError($"[{errorType}失败] {GetFriendlyApiErrorMessage(ex)}");
             }
             finally
             {
