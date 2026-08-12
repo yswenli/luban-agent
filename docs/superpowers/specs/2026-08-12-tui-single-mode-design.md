@@ -58,24 +58,20 @@ Main:
 public interface ITuiUiService
 {
     bool Confirm(string title, string message, bool defaultValue = false);
+    void Notify(string title, string message);
+    int? Choose(string title, IReadOnlyList<string> options); // 编号菜单模式，null = 取消
     IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields); // null = 取消
     void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows);
-    ITuiProgress ShowProgress(string title, string initialStatus);
-    void Notify(string title, string message);
 }
 
-public sealed record FormField(string Label, bool IsPassword = false, string? InitialValue = null, bool Required = true);
-
-public interface ITuiProgress : IDisposable
-{
-    void Update(string status);
-    bool Cancelled { get; }
-}
+public sealed record FormField(string Label, bool IsPassword = false, string? InitialValue = null, bool Required = true, bool Multiline = false);
 ```
 
-- 实现 `TuiUiService`：Terminal.Gui `Dialog` + `TextField`（密码用 `Secret = true`）+ `TableView` + `Button`。
-- 命令在后台线程执行（见 §3），service 方法内部经 `IUiDispatcher.Invoke` 弹模态框 + `ManualResetEventSlim` 同步等待结果。
-- 进度框为非模态 Dialog，后台线程经 dispatcher 更新状态文本；取消按钮设置 Cancelled。
+> 计划阶段修订：移除 `ShowProgress`（YAGNI——启动向导内部自呈现进度，命令长操作原本只有开始/结束消息，无其他消费方）；新增 `Choose`（对应命令中大量"编号菜单 + ReadLine"交互）；`FormField` 增加 `Multiline`（Skill 提示词模板多行输入）。
+
+- 实现 `TuiUiService`：Terminal.Gui `Dialog` + `TextField`（密码用 `Secret = true`）+ `TableView` + `Button` + `MessageBox`。
+- 命令在后台线程执行（见 §3），service 方法内部经 `IUiDispatcher.Invoke` 弹模态框 + `ManualResetEventSlim` 同步等待结果；UI 线程调用时直接嵌套 modal Run（按线程 ID 判定）。
+- 嵌入模型下载进度由启动向导对话框内部呈现（状态行 + 取消按钮），不经 ITuiUiService。
 - 命令层只依赖 `ITuiUiService` + `ITuiOutputWriter`，编译期保证无 Console/AnsiConsole 残留。
 
 ## 3. 命令层重写（去 SetOut 桥接 + 异步执行）
