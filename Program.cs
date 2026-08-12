@@ -32,7 +32,7 @@ class Program
             return 1;
         }
 
-        var app = new TerminalGuiApp();
+        using var app = new TerminalGuiApp();
         app.Run(args);
         return 0;
     }

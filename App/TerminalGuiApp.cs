@@ -24,12 +24,23 @@ namespace LubanAgent.App;
 /// （<c>Application.Create().Init()</c>，而非已过时的静态 Application），
 /// 保证任何异常路径下终端都能恢复正常状态（退出备用屏幕、恢复光标与回显）。
 /// </summary>
-internal sealed class TerminalGuiApp
+internal sealed class TerminalGuiApp : IDisposable
 {
     /// <summary>
     /// 依赖注入容器。由启动向导初始化完成后设置。
     /// </summary>
     public IServiceProvider? Services { get; private set; }
+
+    /// <summary>
+    /// 释放资源。
+    /// </summary>
+    public void Dispose()
+    {
+        if (Services is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
 
     /// <summary>
     /// UI 线程调度器。仅在主循环运行期间有效，供 ViewModel 从后台线程编组视图更新。
