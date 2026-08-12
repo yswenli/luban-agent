@@ -60,7 +60,6 @@ internal sealed class InputBarView : View
             CanFocus = true,
             Multiline = true,
             WordWrap = true,
-            ReadOnly = false,
             GutterOptions = GutterOptions.None,
         };
 
@@ -81,11 +80,15 @@ internal sealed class InputBarView : View
         };
         _editor.SetScheme(inputScheme);
 
-        // 移除 Enter 的默认换行绑定，改为提交；Shift+Enter 绑定换行
+        // 使用 Command 机制处理 Enter 键：
+        // - Enter → Command.Accept（提交输入），移除默认的 Command.NewLine
+        // - Shift+Enter → Command.NewLine（插入换行）
         _editor.KeyBindings.Remove(Key.Enter);
+        _editor.KeyBindings.Add(Key.Enter, Command.Accept);
         _editor.KeyBindings.Add(Key.Enter.WithShift, Command.NewLine);
 
-        _editor.KeyDown += OnEditorKeyDown;
+        // 通过 Accepting 事件处理提交，而非 KeyDown
+        _editor.Accepting += OnEditorAccepting;
         _editor.TextChanged += OnTextChanged;
 
         Add(_editor);
@@ -136,25 +139,20 @@ internal sealed class InputBarView : View
     }
 
     /// <summary>
-    /// 拦截编辑器按键：Enter 提交，Shift+Enter 由 KeyBindings 处理换行，其余透传给 Editor。
+    /// 处理 Enter 提交：通过 Command.Accept 触发，设置 Handled 阻止冒泡。
     /// </summary>
-    private void OnEditorKeyDown(object? sender, Key key)
+    private void OnEditorAccepting(object? sender, CommandEventArgs e)
     {
-        // 纯 Enter（无 Shift）：提交输入
-        if (key == Key.Enter)
+        var text = (_editor.Text ?? string.Empty).Trim();
+        if (text.Length == 0)
         {
-            key.Handled = true;
-
-            var text = (_editor.Text ?? string.Empty).Trim();
-            if (text.Length == 0)
-            {
-                return;
-            }
-
-            _editor.Text = string.Empty;
-            Height = 1;
-            Submitted?.Invoke(text);
+            e.Handled = true;
+            return;
         }
-        // Shift+Enter 不在此处理，由 KeyBindings 的 Command.NewLine 执行换行
+
+        _editor.Text = string.Empty;
+        Height = 1;
+        e.Handled = true;
+        Submitted?.Invoke(text);
     }
 }

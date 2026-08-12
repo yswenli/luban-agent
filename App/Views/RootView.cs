@@ -89,14 +89,14 @@ internal sealed class RootView : Runnable
 
         _conversation = new ConversationView(_doc)
         {
-            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
+            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(6)
         };
 
         // 底部区域容器：页脚 + 输入栏，输入栏高度动态变化（1~5 行）
         var bottomArea = new View
         {
             X = 0,
-            Y = Pos.AnchorEnd(0),
+            Y = Pos.AnchorEnd(6),
             Width = Dim.Fill(),
             Height = 6 // footer(1) + inputBar max(5)
         };
@@ -125,7 +125,21 @@ internal sealed class RootView : Runnable
     public override void EndInit()
     {
         base.EndInit();
-        _inputBar.FocusInput();
+        // 延迟设置焦点：EndInit 阶段 Application 主循环尚未开始，
+        // SetFocus 不会立即生效。在 IsRunningChanged 时设置焦点。
+        IsRunningChanged += OnIsRunningChanged;
+    }
+
+    /// <summary>
+    /// Application 主循环开始运行后，将焦点设置到输入栏。
+    /// </summary>
+    private void OnIsRunningChanged(object? sender, EventArgs e)
+    {
+        if (IsRunning)
+        {
+            _inputBar.FocusInput();
+            IsRunningChanged -= OnIsRunningChanged;
+        }
     }
 
     /// <summary>会话文档模型。</summary>
