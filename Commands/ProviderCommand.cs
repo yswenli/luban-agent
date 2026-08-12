@@ -13,6 +13,8 @@
 *描述：Provider 管理命令（支持 add/update/delete 子命令）
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -46,8 +48,11 @@ public class ProviderCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    public ProviderCommand(ConfigManager configManager, IConfiguration configuration)
-        : base(configManager, configuration)
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public ProviderCommand(ConfigManager configManager, IConfiguration configuration,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
     }
 

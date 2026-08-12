@@ -14,6 +14,8 @@
 *描述：Rule 命令 - 查看和管理规则 (list/add/update/delete/switch)
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -36,8 +38,14 @@ public class RuleCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public RuleCommand(ConfigManager configManager, IConfiguration configuration, RuleEngine ruleEngine)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="ruleEngine">规则引擎</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public RuleCommand(ConfigManager configManager, IConfiguration configuration, RuleEngine ruleEngine,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _ruleEngine = ruleEngine;
     }

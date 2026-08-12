@@ -50,10 +50,12 @@ internal sealed class RootView : Runnable
     /// </summary>
     /// <param name="services">根级 DI 容器。</param>
     /// <param name="dispatcher">UI 线程调度器。</param>
+    /// <param name="ui">TUI 模态交互服务。</param>
     /// <param name="startupNotices">启动提示。</param>
     public RootView(
         IServiceProvider services,
         IUiDispatcher dispatcher,
+        ITuiUiService ui,
         IReadOnlyList<string>? startupNotices = null)
     {
         X = 0;
@@ -66,7 +68,7 @@ internal sealed class RootView : Runnable
         _dispatcher = dispatcher;
         _doc = new ConversationDocument();
         _vm = new ConversationViewModel(services, dispatcher, _doc);
-        _commandVm = new CommandViewModel(_doc, _vm, services);
+        _commandVm = new CommandViewModel(_doc, _vm, services, dispatcher, ui);
         _onExitRequested = () => RequestStop();
         _commandVm.ExitRequested += _onExitRequested;
         _agentVm = new AgentViewViewModel(new TaskRegistry(), _doc);

@@ -14,6 +14,8 @@
 *描述：MCP 命令 - 查看 MCP 客户端 (list/add/update/delete/switch/connect/tools)
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -36,8 +38,14 @@ public class MCPCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public MCPCommand(ConfigManager configManager, IConfiguration configuration, MCPRegistry mcpRegistry)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="mcpRegistry">MCP 注册表</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public MCPCommand(ConfigManager configManager, IConfiguration configuration, MCPRegistry mcpRegistry,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _mcpRegistry = mcpRegistry;
     }

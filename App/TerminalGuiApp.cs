@@ -89,8 +89,9 @@ internal sealed class TerminalGuiApp
 
             ConfigureDriver(application);
             Dispatcher = new TerminalGuiDispatcher(application);
+            var ui = new TuiUiService(application);
 
-            using var root = new RootView(_services, Dispatcher, startupNotices);
+            using var root = new RootView(_services, Dispatcher, ui, startupNotices);
             application.Run(root, OnUnhandledException);
         }
         finally

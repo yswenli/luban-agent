@@ -14,6 +14,8 @@
 *描述：统计命令 - 会话与 Token 统计（支持 --all 跨工作区统计）
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -37,8 +39,15 @@ public class StatsCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public StatsCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="sessionManager">会话管理器</param>
+    /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public StatsCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;

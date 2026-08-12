@@ -14,6 +14,8 @@
 *描述：工作区管理命令（list/new/switch/delete/info/authorize）
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -38,13 +40,22 @@ public class WorkCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="workspaceManager">工作区管理器</param>
+    /// <param name="workspaceRepo">工作区仓储</param>
+    /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
     public WorkCommand(
         ConfigManager configManager,
         IConfiguration configuration,
         IWorkspaceManager workspaceManager,
         WorkspaceRepository workspaceRepo,
-        SessionRepository sessionRepo)
-        : base(configManager, configuration)
+        SessionRepository sessionRepo,
+        ITuiOutputWriter writer,
+        ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _workspaceManager = workspaceManager;
         _workspaceRepo = workspaceRepo;

@@ -14,6 +14,8 @@
 *描述：通用 Agent 对话命令，支持工具调用和 thinking 显示
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -40,8 +42,18 @@ public class AgiCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, IWorkspaceManager workspaceManager, SkillRegistry skillRegistry, Func<string, Task<bool>>? executeCommandAsync = null)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="sessionManager">会话管理器</param>
+    /// <param name="serviceProvider">服务提供者</param>
+    /// <param name="workspaceManager">工作区管理器</param>
+    /// <param name="skillRegistry">Skill 注册表</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    /// <param name="executeCommandAsync">命令执行回调</param>
+    public AgiCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, IServiceProvider serviceProvider, IWorkspaceManager workspaceManager, SkillRegistry skillRegistry,
+        ITuiOutputWriter writer, ITuiUiService ui, Func<string, Task<bool>>? executeCommandAsync = null)
+        : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _serviceProvider = serviceProvider;

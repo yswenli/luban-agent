@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Retrieval;
+using LubanAgent.App;
 
 namespace LubanAgent.Commands;
 
@@ -43,6 +44,16 @@ public class RagCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="workspaceManager">工作区管理器</param>
+    /// <param name="workspaceRepo">工作区仓储</param>
+    /// <param name="retrievalService">检索服务</param>
+    /// <param name="ragFileRepo">RAG 文件仓储</param>
+    /// <param name="ragChunkRepo">RAG 分块仓储</param>
+    /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
     public RagCommand(
         ConfigManager configManager,
         IConfiguration configuration,
@@ -51,8 +62,10 @@ public class RagCommand : CommandBase
         IRetrievalService retrievalService,
         RagFileRepository ragFileRepo,
         RagChunkRepository ragChunkRepo,
-        SessionRepository sessionRepo)
-        : base(configManager, configuration)
+        SessionRepository sessionRepo,
+        ITuiOutputWriter writer,
+        ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _workspaceManager = workspaceManager;
         _workspaceRepo = workspaceRepo;

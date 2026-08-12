@@ -11,6 +11,8 @@
 *描述：Skill 命令 - 查看和执行 Skill (list/add/update/delete/switch)
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -33,8 +35,14 @@ public class SkillCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public SkillCommand(ConfigManager configManager, IConfiguration configuration, SkillRegistry skillRegistry)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="skillRegistry">Skill 注册表</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public SkillCommand(ConfigManager configManager, IConfiguration configuration, SkillRegistry skillRegistry,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _skillRegistry = skillRegistry;
     }

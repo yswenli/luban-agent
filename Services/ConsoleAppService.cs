@@ -15,6 +15,9 @@
 *
 *****************************************************************************/
 
+using LubanAgent.App;
+using LubanAgent.Models;
+
 namespace LubanAgent.Services;
 
 /// <summary>
@@ -131,16 +134,21 @@ public class ConsoleAppService
     /// </summary>
     private void RegisterCommands()
     {
-        RegisterCommand(new ProviderCommand(_configManager, _configuration));
-        RegisterCommand(new ModelCommand(_configManager, _configuration));
-        RegisterCommand(new SkillCommand(_configManager, _configuration, _skillRegistry));
-        RegisterCommand(new RuleCommand(_configManager, _configuration, _ruleEngine));
-        RegisterCommand(new MCPCommand(_configManager, _configuration, _mcpRegistry));
-        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo, _messageRepo));
-        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, _skillRegistry, TryExecuteCommandAsync));
-        RegisterCommand(new BrowseCommand(_configManager, _configuration, TryExecuteCommandAsync, _workspaceManager, _skillRegistry));
-        RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo));
-        RegisterCommand(new WorkCommand(_configManager, _configuration, _workspaceManager, _workspaceRepo, _sessionRepo));
+        // 过渡态（本类已不可达，Task 18 删除）：命令新构造函数需要 ITuiOutputWriter/ITuiUiService，
+        // 旧 Console 模式下命令仍走方法体内的 Console.* 交互，writer/ui 不会被实际使用。
+        ITuiOutputWriter writer = new TuiOutputWriter(new ConversationDocument());
+        ITuiUiService ui = UnreachableTuiUiService.Instance;
+
+        RegisterCommand(new ProviderCommand(_configManager, _configuration, writer, ui));
+        RegisterCommand(new ModelCommand(_configManager, _configuration, writer, ui));
+        RegisterCommand(new SkillCommand(_configManager, _configuration, _skillRegistry, writer, ui));
+        RegisterCommand(new RuleCommand(_configManager, _configuration, _ruleEngine, writer, ui));
+        RegisterCommand(new MCPCommand(_configManager, _configuration, _mcpRegistry, writer, ui));
+        RegisterCommand(new SessionCommand(_configManager, _configuration, _sessionManager, _sessionRepo, _messageRepo, writer, ui));
+        RegisterCommand(new AgiCommand(_configManager, _configuration, _sessionManager, _serviceProvider, _workspaceManager, _skillRegistry, writer, ui, TryExecuteCommandAsync));
+        RegisterCommand(new BrowseCommand(_configManager, _configuration, writer, ui, TryExecuteCommandAsync, _workspaceManager, _skillRegistry));
+        RegisterCommand(new StatsCommand(_configManager, _configuration, _sessionManager, _sessionRepo, writer, ui));
+        RegisterCommand(new WorkCommand(_configManager, _configuration, _workspaceManager, _workspaceRepo, _sessionRepo, writer, ui));
 
         // RagCommand 依赖 IRetrievalService（懒加载：仅当 RAG 启用时可用）
         _retrievalService = _serviceProvider.GetService<LuBan.AIAgent.Retrieval.IRetrievalService>();
@@ -154,8 +162,31 @@ public class ConsoleAppService
                 _retrievalService,
                 new RagFileRepository(),
                 new RagChunkRepository(),
-                _sessionRepo));
+                _sessionRepo,
+                writer,
+                ui));
         }
+    }
+
+    /// <summary>
+    /// 过渡态存根（Task 18 随本类一并删除）：仅为满足命令新构造函数签名，
+    /// 旧 Console 模式不可达 TUI 模态交互，任何调用直接抛出。
+    /// </summary>
+    private sealed class UnreachableTuiUiService : ITuiUiService
+    {
+        /// <summary>单例实例。</summary>
+        public static readonly UnreachableTuiUiService Instance = new();
+
+        /// <inheritdoc/>
+        public bool Confirm(string title, string message, bool defaultValue = false) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void Notify(string title, string message) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public int? Choose(string title, IReadOnlyList<string> options) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows) => throw new NotSupportedException();
     }
 
     /// <summary>

@@ -36,6 +36,7 @@ internal sealed class CommandViewModel
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel? _conversationVm;
     private readonly IServiceProvider _services;
+    private readonly ITuiUiService _ui;
     private readonly TuiOutputWriter _writer;
 
     /// <summary>
@@ -49,15 +50,20 @@ internal sealed class CommandViewModel
     /// <param name="doc">会话文档模型。</param>
     /// <param name="conversationVm">会话 ViewModel（可为 null）。</param>
     /// <param name="services">根级 DI 容器。</param>
+    /// <param name="dispatcher">UI 线程调度器。</param>
+    /// <param name="ui">TUI 模态交互服务。</param>
     public CommandViewModel(
         ConversationDocument doc,
         ConversationViewModel? conversationVm,
-        IServiceProvider services)
+        IServiceProvider services,
+        IUiDispatcher dispatcher,
+        ITuiUiService ui)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _conversationVm = conversationVm;
         _services = services;
-        _writer = new TuiOutputWriter(_doc);
+        _ui = ui ?? throw new ArgumentNullException(nameof(ui));
+        _writer = new TuiOutputWriter(_doc, dispatcher);
     }
 
     /// <summary>
@@ -252,32 +258,32 @@ internal sealed class CommandViewModel
 
         return typeof(TCommand).Name switch
         {
-            nameof(ProviderCommand) => new ProviderCommand(configManager, configuration) as TCommand,
-            nameof(ModelCommand) => new ModelCommand(configManager, configuration) as TCommand,
+            nameof(ProviderCommand) => new ProviderCommand(configManager, configuration, _writer, _ui) as TCommand,
+            nameof(ModelCommand) => new ModelCommand(configManager, configuration, _writer, _ui) as TCommand,
             nameof(SkillCommand) => (TCommand)(object)new SkillCommand(configManager, configuration,
-                _services.GetRequiredService<SkillRegistry>()),
+                _services.GetRequiredService<SkillRegistry>(), _writer, _ui),
             nameof(RuleCommand) => (TCommand)(object)new RuleCommand(configManager, configuration,
-                _services.GetRequiredService<RuleEngine>()),
+                _services.GetRequiredService<RuleEngine>(), _writer, _ui),
             nameof(MCPCommand) => (TCommand)(object)new MCPCommand(configManager, configuration,
-                _services.GetRequiredService<MCPRegistry>()),
+                _services.GetRequiredService<MCPRegistry>(), _writer, _ui),
             nameof(SessionCommand) => (TCommand)(object)new SessionCommand(configManager, configuration,
                 _services.GetRequiredService<ISessionManager>(),
                 _services.GetRequiredService<SessionRepository>(),
-                _services.GetRequiredService<SessionMessageRepository>()),
+                _services.GetRequiredService<SessionMessageRepository>(), _writer, _ui),
             nameof(StatsCommand) => (TCommand)(object)new StatsCommand(configManager, configuration,
                 _services.GetRequiredService<ISessionManager>(),
-                _services.GetRequiredService<SessionRepository>()),
+                _services.GetRequiredService<SessionRepository>(), _writer, _ui),
             nameof(WorkCommand) => (TCommand)(object)new WorkCommand(configManager, configuration,
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<WorkspaceRepository>(),
-                _services.GetRequiredService<SessionRepository>()),
+                _services.GetRequiredService<SessionRepository>(), _writer, _ui),
             nameof(RagCommand) => (TCommand)(object)new RagCommand(configManager, configuration,
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<WorkspaceRepository>(),
                 _services.GetRequiredService<IRetrievalService>(),
                 _services.GetRequiredService<RagFileRepository>(),
                 _services.GetRequiredService<RagChunkRepository>(),
-                _services.GetRequiredService<SessionRepository>()),
+                _services.GetRequiredService<SessionRepository>(), _writer, _ui),
             _ => null
         };
     }

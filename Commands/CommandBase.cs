@@ -14,6 +14,8 @@
 *描述：命令基类
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -31,15 +33,25 @@ public abstract class CommandBase : ICommand
     /// </summary>
     protected readonly IConfiguration Configuration;
 
+    /// <summary>TUI 输出写入器（输出到会话文档）</summary>
+    protected readonly ITuiOutputWriter Writer;
+    /// <summary>TUI 模态交互服务</summary>
+    protected readonly ITuiUiService Ui;
+
     /// <summary>
     /// 创建命令实例
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    protected CommandBase(ConfigManager configManager, IConfiguration configuration)
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    protected CommandBase(ConfigManager configManager, IConfiguration configuration,
+        ITuiOutputWriter writer, ITuiUiService ui)
     {
         ConfigManager = configManager;
         Configuration = configuration;
+        Writer = writer ?? throw new ArgumentNullException(nameof(writer));
+        Ui = ui ?? throw new ArgumentNullException(nameof(ui));
     }
 
     /// <summary>
@@ -69,6 +81,7 @@ public abstract class CommandBase : ICommand
     /// 读取密码输入（隐藏显示）
     /// </summary>
     /// <returns>输入的密码</returns>
+    [Obsolete("已迁移 TUI，使用 Ui.ShowForm(IsPassword) 替代")]
     protected static string ReadPassword()
     {
         var password = new System.Text.StringBuilder();
@@ -96,6 +109,7 @@ public abstract class CommandBase : ICommand
     /// 输出信息
     /// </summary>
     /// <param name="message">消息</param>
+    [Obsolete("已迁移 TUI，使用 Writer.WriteInfo 替代")]
     protected static void WriteInfo(string message)
     {
         Console.WriteLine(message);
@@ -105,6 +119,7 @@ public abstract class CommandBase : ICommand
     /// 输出错误
     /// </summary>
     /// <param name="message">错误消息</param>
+    [Obsolete("已迁移 TUI，使用 Writer.WriteError 替代")]
     protected static void WriteError(string message)
     {
         Console.ForegroundColor = ConsoleColor.Red;
@@ -116,6 +131,7 @@ public abstract class CommandBase : ICommand
     /// 输出成功信息
     /// </summary>
     /// <param name="message">消息</param>
+    [Obsolete("已迁移 TUI，使用 Writer.WriteSuccess 替代")]
     protected static void WriteSuccess(string message)
     {
         Console.ForegroundColor = ConsoleColor.Green;

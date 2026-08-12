@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Skills;
+using LubanAgent.App;
 
 namespace LubanAgent.Commands;
 
@@ -40,8 +41,17 @@ public class BrowseCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public BrowseCommand(ConfigManager configManager, IConfiguration configuration, Func<string, Task<bool>>? executeCommandAsync = null, IWorkspaceManager? workspaceManager = null, SkillRegistry? skillRegistry = null)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    /// <param name="executeCommandAsync">命令执行回调</param>
+    /// <param name="workspaceManager">工作区管理器</param>
+    /// <param name="skillRegistry">Skill 注册表</param>
+    public BrowseCommand(ConfigManager configManager, IConfiguration configuration,
+        ITuiOutputWriter writer, ITuiUiService ui,
+        Func<string, Task<bool>>? executeCommandAsync = null, IWorkspaceManager? workspaceManager = null, SkillRegistry? skillRegistry = null)
+        : base(configManager, configuration, writer, ui)
     {
         _executeCommandAsync = executeCommandAsync;
         _workspaceManager = workspaceManager;

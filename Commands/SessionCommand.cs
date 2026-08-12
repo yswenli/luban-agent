@@ -14,6 +14,8 @@
 *描述：Session 命令 - 管理会话
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -38,8 +40,16 @@ public class SessionCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="sessionManager">会话管理器</param>
+    /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="messageRepo">会话消息仓储</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;

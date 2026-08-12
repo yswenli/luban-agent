@@ -13,6 +13,8 @@
 *描述：模型管理命令（支持 list/add/update/delete/switch 子命令）
 *
 *****************************************************************************/
+using LubanAgent.App;
+
 namespace LubanAgent.Commands;
 
 /// <summary>
@@ -33,8 +35,13 @@ public class ModelCommand : CommandBase
     /// <summary>
     /// 创建命令实例
     /// </summary>
-    public ModelCommand(ConfigManager configManager, IConfiguration configuration)
-        : base(configManager, configuration)
+    /// <param name="configManager">配置管理器</param>
+    /// <param name="configuration">应用配置</param>
+    /// <param name="writer">TUI 输出写入器</param>
+    /// <param name="ui">TUI 模态交互服务</param>
+    public ModelCommand(ConfigManager configManager, IConfiguration configuration,
+        ITuiOutputWriter writer, ITuiUiService ui)
+        : base(configManager, configuration, writer, ui)
     {
     }
 
