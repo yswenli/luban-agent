@@ -26,21 +26,10 @@ namespace LubanAgent.App;
 /// </summary>
 internal sealed class TerminalGuiApp
 {
-    private readonly IServiceProvider _services;
-
     /// <summary>
-    /// 初始化启动引导。
+    /// 依赖注入容器。由启动向导初始化完成后设置。
     /// </summary>
-    /// <param name="services">根级依赖注入容器，供后续 ViewModel 解析服务使用。</param>
-    public TerminalGuiApp(IServiceProvider services)
-    {
-        _services = services ?? throw new ArgumentNullException(nameof(services));
-    }
-
-    /// <summary>
-    /// 依赖注入容器。骨架阶段暂未使用，迁移步骤 4 起由 ViewModel 层消费。
-    /// </summary>
-    public IServiceProvider Services => _services;
+    public IServiceProvider? Services { get; private set; }
 
     /// <summary>
     /// UI 线程调度器。仅在主循环运行期间有效，供 ViewModel 从后台线程编组视图更新。
@@ -60,7 +49,6 @@ internal sealed class TerminalGuiApp
 
         try
         {
-            // 无真实终端时读取窗口尺寸会抛异常或返回 0
             return Console.WindowWidth > 0 && Console.WindowHeight > 0;
         }
         catch (IOException)
@@ -76,11 +64,9 @@ internal sealed class TerminalGuiApp
     /// <summary>
     /// 启动 TUI 主循环，阻塞直至用户退出。
     /// </summary>
-    /// <param name="startupNotices">进入 TUI 前 产生的启动提示，渲染在会话区顶部。</param>
-    public void Run(IReadOnlyList<string>? startupNotices = null)
+    /// <param name="args">命令行参数。</param>
+    public void Run(string[] args)
     {
-        // Create 必须早于任何静态 Application 访问，否则会因"legacy static model already used"抛异常。
-        // 用显式 try-finally 而非 using，保证 Create 成功后任何后续步骤异常都能 Dispose 还原终端。
         IApplication? application = null;
         try
         {
@@ -91,13 +77,21 @@ internal sealed class TerminalGuiApp
             Dispatcher = new TerminalGuiDispatcher(application);
             var ui = new TuiUiService(application);
 
-            using var root = new RootView(_services, Dispatcher, ui, startupNotices);
+            var startup = new StartupDialog(args, Dispatcher, ui);
+            application.Run(startup);
+
+            if (!startup.Success || startup.Services == null)
+            {
+                return;
+            }
+
+            Services = startup.Services;
+            using var root = new RootView(Services, Dispatcher, ui, startup.Notices);
             application.Run(root, OnUnhandledException);
         }
         finally
         {
             Dispatcher = null;
-            // Dispose 完成 Shutdown 与终端状态还原（退出 alt-screen、恢复光标与回显）
             application?.Dispose();
         }
     }
@@ -119,7 +113,6 @@ internal sealed class TerminalGuiApp
             return;
         }
 
-        // 终端支持真彩时强制关闭 16 色降级；不支持则保持驱动默认行为
         if (driver.SupportsTrueColor)
         {
             driver.Force16Colors = false;
@@ -134,7 +127,6 @@ internal sealed class TerminalGuiApp
     /// <returns>true 表示已处理（resume），false 表示未处理（传播）。</returns>
     private static bool OnUnhandledException(Exception ex)
     {
-        // 致命异常不吞，传播出去让进程崩溃，避免状态损坏后无限重绘
         if (ex is OutOfMemoryException or StackOverflowException or ThreadAbortException)
         {
             return false;

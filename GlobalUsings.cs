@@ -29,6 +29,7 @@ global using LuBan.Logging;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
+global using LubanAgent.App;
 global using LubanAgent.Commands;
 global using LubanAgent.Configuration;
 global using LubanAgent.Entities;
