@@ -15,10 +15,6 @@
 *统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
-using System.Diagnostics;
-using System.Reflection;
-using System.Text;
-using System.Text.RegularExpressions;
 using LuBan.AIAgent.Abstractions;
 using LubanAgent.App;
 using LubanAgent.Configuration;
@@ -88,7 +84,7 @@ internal sealed class CommandViewModel
             case "/clear":    ExecuteClear(); return true;
             case "/mode":     ExecuteMode(parts.Length > 1 ? parts[1] : null); return true;
 
-            // ── 管理型命令（Console.SetOut 桥接捕获）──
+            // ── 管理型命令（后台异步执行）──
             case "/provider": case "/p":         ExecuteManagementCommand<ProviderCommand>(parts); return true;
             case "/model":    case "/m":         ExecuteManagementCommand<ModelCommand>(parts); return true;
             case "/skill":    case "/sk":        ExecuteManagementCommand<SkillCommand>(parts); return true;
@@ -182,70 +178,41 @@ internal sealed class CommandViewModel
         _writer.WriteInfo($"权限模式已切换: {_conversationVm.PermissionModeDisplay}");
     }
 
-    // ═══ 管理型命令桥接 ═══
+    // ═══ 管理型命令（后台异步执行）═══
 
-    /// <summary>
-    /// 通用管理命令执行器。通过 Console.SetOut 捕获命令输出文本，
-    /// 经 ANSI 清理后逐行追加为 SystemBlock。零改动现有 Command 类。
-    /// </summary>
     private void ExecuteManagementCommand<TCommand>(string[] parts) where TCommand : CommandBase
     {
-        try
+        var command = ResolveCommand<TCommand>();
+        if (command is null)
         {
-            var command = ResolveCommand<TCommand>();
-            if (command is null)
-            {
-                _writer.WriteError($"命令 {typeof(TCommand).Name} 初始化失败");
-                return;
-            }
+            _writer.WriteError($"命令 {typeof(TCommand).Name} 初始化失败");
+            return;
+        }
 
-            // 桥接：捕获 Console 输出 → SystemBlock
-            var originalOut = Console.Out;
-            using var capture = new StringWriter();
-            Console.SetOut(capture);
-
+        _ = Task.Run(async () =>
+        {
             try
             {
-                // 模拟 ConsoleAppService 的命令执行流程
                 var expandedArgs = ExpandSubCommandAliases(parts);
                 if (expandedArgs.Length > 1)
                 {
-                    var handled = command.ExecuteAsync(expandedArgs.Skip(1).ToArray()).GetAwaiter().GetResult();
+                    var handled = await command.ExecuteAsync(expandedArgs.Skip(1).ToArray());
                     if (!handled)
                     {
-                        command.ExecuteAsync().GetAwaiter().GetResult();
+                        await command.ExecuteAsync();
                     }
                 }
                 else
                 {
-                    command.ExecuteAsync().GetAwaiter().GetResult();
+                    await command.ExecuteAsync();
                 }
             }
-            finally
+            catch (Exception ex)
             {
-                Console.SetOut(originalOut);
+                Logger.Error("Command execution failed", ex);
+                _writer.WriteError($"命令执行失败: {ex.Message}");
             }
-
-            // 处理捕获的输出
-            var raw = capture.ToString();
-            if (!string.IsNullOrWhiteSpace(raw))
-            {
-                var clean = StripAnsi(raw);
-                foreach (var line in clean.Split('\n'))
-                {
-                    var trimmed = line.TrimEnd('\r');
-                    _writer.WriteLine(trimmed);
-                }
-            }
-            else
-            {
-                _writer.WriteLine("(无输出)");
-            }
-        }
-        catch (Exception ex)
-        {
-            _writer.WriteError($"命令执行异常: {ex.Message}");
-        }
+        });
     }
 
     /// <summary>
@@ -309,16 +276,4 @@ internal sealed class CommandViewModel
         return result;
     }
 
-    /// <summary>剥离 ANSI/Spectre.Console 转义序列，保留纯文本。</summary>
-    private static string StripAnsi(string input)
-    {
-        if (string.IsNullOrEmpty(input) || !input.Contains('\x1b'))
-            return input;
-
-        // 移除 ANSI escape sequences (\x1b[...m)
-        var result = Regex.Replace(input, @"\x1b\[[0-9;]*[a-zA-Z]", string.Empty);
-        // 移除 Spectre.Console 残留转义
-        result = Regex.Replace(result, @"\x1b\]8;;[^\x1b]*\x1b\\", string.Empty);
-        return result;
-    }
 }
