@@ -61,13 +61,13 @@ public class SessionCommand : CommandBase
     /// </summary>
     public override Task ExecuteAsync()
     {
-        Console.WriteLine();
-        Console.WriteLine("会话管理用法：");
-        Console.WriteLine("  /session -list           - 列出全部会话（更新时间倒序）");
-        Console.WriteLine("  /session -new <标题>     - 创建新会话并切换（标题必填）");
-        Console.WriteLine("  /session -switch <编号|标题|会话ID>  - 切换到指定会话");
-        Console.WriteLine("  /session -clear          - 物理删除全部会话及消息（需确认）");
-        Console.WriteLine("  简写: /se -l, /se -n 标题, /se -s 编号/标题/ID, /se -c");
+        Writer.WriteLine();
+        Writer.WriteHeader("会话管理用法：");
+        Writer.WriteLine("  /session -list           - 列出全部会话（更新时间倒序）");
+        Writer.WriteLine("  /session -new <标题>     - 创建新会话并切换（标题必填）");
+        Writer.WriteLine("  /session -switch <编号|标题|会话ID>  - 切换到指定会话");
+        Writer.WriteLine("  /session -clear          - 物理删除全部会话及消息（需确认）");
+        Writer.WriteLine("  简写: /se -l, /se -n 标题, /se -s 编号/标题/ID, /se -c");
         return Task.CompletedTask;
     }
 
@@ -101,7 +101,7 @@ public class SessionCommand : CommandBase
                 await ClearAllSessionsAsync();
                 break;
             default:
-                Console.WriteLine($"未知子命令: {subCommand}");
+                Writer.WriteLine($"未知子命令: {subCommand}");
                 await ExecuteAsync();
                 break;
         }
@@ -113,57 +113,44 @@ public class SessionCommand : CommandBase
     /// </summary>
     private async Task ListSessionsAsync()
     {
-        // 按当前工作区过滤会话
         var wsId = WorkspaceManager.Current?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
-            WriteError("请先使用 /work -switch 切换到工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
         var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
 
-        try
+        if (sessions.Count == 0)
         {
-            Console.ForegroundColor = ConsoleColor.Green;
-
-            Console.WriteLine();
-            Console.WriteLine("历史会话（更新时间倒序）：");
-
-            if (sessions.Count == 0)
-            {
-                Console.WriteLine("  （无历史会话）");
-                return;
-            }
-
-            // 获取每个会话的第一条用户消息预览
-            var sessionIds = sessions.Select(s => s.SessionId);
-            var previews = await _messageRepo.GetFirstUserMessagePreviewAsync(sessionIds);
-
-            for (int i = 0; i < sessions.Count; i++)
-            {
-                var session = sessions[i];
-                var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
-                var marker = isCurrent ? " (当前)" : "";
-                var title = session.Title ?? "未命名";
-                
-                Console.WriteLine($"  {i + 1}. {session.SessionId}   {title}{marker}");
-                Console.WriteLine($"     更新: {session.UpdateTime:yyyy-MM-dd HH:mm} | 消息: {session.MessageCount} | Token: {session.TotalTokens}");
-                
-                if (previews.TryGetValue(session.SessionId, out var preview))
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"     💬 {preview}");
-                    Console.ForegroundColor = ConsoleColor.Green;
-                }
-            }
-            Console.WriteLine();
-            Console.WriteLine("提示: 使用 /se -s <编号> 切换会话");
+            Writer.WriteInfo("暂无历史会话");
+            return;
         }
-        finally
+
+        var sessionIds = sessions.Select(s => s.SessionId);
+        var previews = await _messageRepo.GetFirstUserMessagePreviewAsync(sessionIds);
+
+        var rows = new List<IReadOnlyList<string>>();
+
+        for (int i = 0; i < sessions.Count; i++)
         {
-            Console.ResetColor();
+            var session = sessions[i];
+            var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
+            var marker = isCurrent ? " (当前)" : "";
+            var title = (session.Title ?? "未命名") + marker;
+            var updateTime = session.UpdateTime.ToString("yyyy-MM-dd HH:mm");
+            var messageCount = session.MessageCount.ToString();
+            var tokens = session.TotalTokens.ToString();
+            var preview = previews.TryGetValue(session.SessionId, out var p) ? p : "";
+
+            rows.Add(new[] { $"{i + 1}. {session.SessionId}", title, updateTime, messageCount, tokens, preview });
         }
+
+        Ui.ShowTable("历史会话（更新时间倒序）", new[] { "会话 ID", "名称", "更新时间", "消息数", "Token", "预览" }, rows);
+
+        Writer.WriteLine();
+        Writer.WriteInfo("提示: 使用 /se -s <编号> 切换会话");
     }
 
     /// <summary>
@@ -174,14 +161,12 @@ public class SessionCommand : CommandBase
     {
         if (string.IsNullOrWhiteSpace(title))
         {
-            WriteError("用法: /session new <标题>");
+            Writer.WriteError("用法: /session new <标题>");
             return;
         }
 
         var session = await _sessionManager.CreateSessionAsync(userId: "default", title: title);
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"✓ 已创建并切换到新会话: {session.Title}");
-        Console.ResetColor();
+        Writer.WriteSuccess($"已创建并切换到新会话: {session.Title}");
     }
 
     /// <summary>
@@ -192,38 +177,34 @@ public class SessionCommand : CommandBase
     {
         if (string.IsNullOrWhiteSpace(identifier))
         {
-            WriteError("用法: /session switch <编号|标题|会话ID>");
+            Writer.WriteError("用法: /session switch <编号|标题|会话ID>");
             return;
         }
 
-        // 按当前工作区过滤会话
         var wsId = WorkspaceManager.Current?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
-            WriteError("请先使用 /work -switch 切换到工作区");
+            Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
         var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
         if (sessions.Count == 0)
         {
-            WriteError("当前工作区没有会话");
+            Writer.WriteError("当前工作区没有会话");
             return;
         }
 
         DbSession? matched = null;
 
-        // 1. 尝试按编号匹配（从1开始的序号）
         if (int.TryParse(identifier, out var index) && index >= 1 && index <= sessions.Count)
         {
-            matched = sessions[index - 1]; // sessions 已按 UpdateTime 降序排序
+            matched = sessions[index - 1];
         }
-        // 2. 尝试按 SessionId 匹配
         else if (identifier.Length == 32 && Guid.TryParseExact(identifier, "N", out _))
         {
             matched = sessions.FirstOrDefault(s => s.SessionId == identifier);
         }
-        // 3. 尝试按标题匹配
         else
         {
             matched = sessions.FirstOrDefault(s => 
@@ -232,22 +213,20 @@ public class SessionCommand : CommandBase
 
         if (matched == null)
         {
-            WriteError($"找不到会话: {identifier}");
-            Console.WriteLine("可用会话：");
+            Writer.WriteError($"找不到会话: {identifier}");
+            Writer.WriteLine("可用会话：");
             for (int i = 0; i < sessions.Count; i++)
             {
                 var s = sessions[i];
                 var isCurrent = _sessionManager.CurrentSession?.SessionId == s.SessionId;
                 var marker = isCurrent ? " (当前)" : "";
-                Console.WriteLine($"  {i + 1}. {s.Title ?? "未命名"}{marker}");
+                Writer.WriteLine($"  {i + 1}. {s.Title ?? "未命名"}{marker}");
             }
             return;
         }
 
         await _sessionManager.SetCurrentSessionAsync(matched.SessionId);
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"✓ 已切换到会话: {matched.Title}（下一轮对话自动加载该会话历史）");
-        Console.ResetColor();
+        Writer.WriteSuccess($"已切换到会话: {matched.Title}（下一轮对话自动加载该会话历史）");
     }
 
     /// <summary>
@@ -255,19 +234,13 @@ public class SessionCommand : CommandBase
     /// </summary>
     private async Task ClearAllSessionsAsync()
     {
-        Console.Write("确认物理删除全部会话及消息数据？此操作不可恢复 (y/N): ");
-        var confirm = Console.ReadLine()?.Trim().ToLower();
+        if (!Ui.Confirm("删除全部会话", "确认物理删除全部会话及消息数据？此操作不可恢复", defaultValue: false))
+        {
+            Writer.WriteInfo("已取消");
+            return;
+        }
 
-        if (confirm == "y" || confirm == "yes")
-        {
-            await _sessionManager.ClearAllSessionsAsync();
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("✓ 已删除全部会话数据");
-            Console.ResetColor();
-        }
-        else
-        {
-            Console.WriteLine("已取消");
-        }
+        await _sessionManager.ClearAllSessionsAsync();
+        Writer.WriteSuccess("已删除全部会话数据");
     }
 }
