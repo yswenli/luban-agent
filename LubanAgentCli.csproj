@@ -31,7 +31,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<None Remove="Model\bge-small-zh-v1.5.zip" />
+		<None Remove="EmbeddingModels\bge-small-zh-v1.5.zip" />
 	</ItemGroup>
 
 	<!-- 无头渲染快照工具，用于在无 TTY 环境下回归验证 TUI 布局 -->
@@ -41,7 +41,7 @@
 
 	<ItemGroup>
 		<Content Include="favicon.ico" />
-		<Content Include="Model\bge-small-zh-v1.5.zip">
+		<Content Include="EmbeddingModels\bge-small-zh-v1.5.zip">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>

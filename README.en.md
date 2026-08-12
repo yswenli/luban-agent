@@ -581,7 +581,7 @@ LubanAgent/
 ├── Repositories/          # Data access layer
 ├── Retrieval/             # Semantic retrieval
 ├── Entities/              # Data entities
-├── Model/                 # AI model files
+├── EmbeddingModels/       # AI embedding model files
 └── Program.cs             # TUI bootstrap entry point
 ```
 

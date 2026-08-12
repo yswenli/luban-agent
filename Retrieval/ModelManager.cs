@@ -41,9 +41,9 @@ public class ModelManager
         "LuBan", "AIAgent", "models", _spec.ModelId);
 
     /// <summary>
-    /// 本地 zip 路径（运行目录下 Model/{modelId}.zip）
+    /// 本地 zip 路径（运行目录下 EmbeddingModels/{modelId}.zip）
     /// </summary>
-    public string LocalZipPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Model", $"{_spec.ModelId}.zip");
+    public string LocalZipPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EmbeddingModels", $"{_spec.ModelId}.zip");
 
     /// <summary>
     /// 检查模型是否就绪

@@ -605,7 +605,7 @@ LubanAgent/
 ├── Repositories/          # 数据访问层
 ├── Retrieval/             # 语义检索
 ├── Entities/              # 数据实体
-├── Model/                 # AI 模型文件
+├── EmbeddingModels/       # AI 嵌入模型文件
 └── Program.cs             # 程序入口（TUI bootstrap）
 ```
 
