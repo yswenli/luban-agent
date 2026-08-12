@@ -37,7 +37,6 @@ global using LubanAgent.Profiles;
 global using LubanAgent.Repositories;
 global using LubanAgent.Retrieval;
 global using LubanAgent.Services;
-global using LubanAgent.UI;
 
 global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.AI;

@@ -230,8 +230,6 @@ class Program
             if (modelManager != null) services.AddSingleton(modelManager);
         }
 
-        services.AddSingleton<ConsoleAppService>();
-
         var sp = services.BuildServiceProvider();
 
         // 注入 ILoggerFactory 和 STJ 序列化器给 static Logger
