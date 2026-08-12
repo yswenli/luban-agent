@@ -17,6 +17,7 @@
 *****************************************************************************/
 using System.Collections.ObjectModel;
 using Terminal.Gui.App;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -150,6 +151,49 @@ internal sealed class TuiUiService : ITuiUiService
         });
     }
 
+    /// <summary>
+    /// 表单对话框。Terminal.Gui 的 Dialog 在任何未处理 Accept 时都会无条件 RequestStop
+    /// （且先于按钮事件），因此必填校验否决必须在 OnAccepting 层实现。
+    /// </summary>
+    private sealed class FormDialog : Dialog
+    {
+        private readonly Func<bool> _validate;
+        private readonly Action _onValid;
+        private readonly View _cancelButton;
+
+        /// <param name="validate">必填校验，返回 true 表示通过。</param>
+        /// <param name="onValid">校验通过后采集表单值。</param>
+        /// <param name="cancelButton">取消按钮（其 Accept 直接放行关闭）。</param>
+        public FormDialog(Func<bool> validate, Action onValid, View cancelButton)
+        {
+            _validate = validate;
+            _onValid = onValid;
+            _cancelButton = cancelButton;
+        }
+
+        /// <inheritdoc/>
+        protected override bool OnAccepting(CommandEventArgs args)
+        {
+            // 取消按钮放行（values 保持 null）
+            if (args.Context?.Source is { } weak
+                && weak.TryGetTarget(out var src)
+                && ReferenceEquals(src, _cancelButton))
+            {
+                return base.OnAccepting(args);
+            }
+
+            // 校验失败：否决 Accept，对话框保持打开
+            if (!_validate())
+            {
+                return true;
+            }
+
+            _onValid();
+            return base.OnAccepting(args);
+        }
+    }
+
+#pragma warning disable CS0618 // TextView 已过时：多行表单字段仍使用（不引入 tui-cs/Editor 新依赖）
     /// <inheritdoc/>
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
     {
@@ -160,7 +204,37 @@ internal sealed class TuiUiService : ITuiUiService
         {
             // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 3 行给按钮
             var contentHeight = fields.Sum(f => f.Multiline ? 8 : 3);
-            using var dialog = new Dialog
+
+            List<string>? values = null;
+            var inputs = new List<View>(fields.Count);
+
+            static string GetValue(View v) => v switch
+            {
+                TextField tf => tf.Text ?? string.Empty,
+                TextView tv => tv.Text ?? string.Empty,
+                _ => string.Empty
+            };
+
+            bool Validate()
+            {
+                for (var i = 0; i < fields.Count; i++)
+                {
+                    if (fields[i].Required && string.IsNullOrWhiteSpace(GetValue(inputs[i])))
+                    {
+                        MessageBox.ErrorQuery(_app, title, $"{fields[i].Label} 不能为空", "确定");
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            void CaptureValues() => values = inputs.Select(GetValue).ToList();
+
+            // 按钮无需 Accepting 处理器：激活会冒泡 Accept 至对话框，由 FormDialog.OnAccepting 统一处理
+            var ok = new Button { Text = "确定" };
+            var cancel = new Button { Text = "取消" };
+
+            using var dialog = new FormDialog(Validate, CaptureValues, cancel)
             {
                 Title = title,
                 X = Pos.Center(),
@@ -169,7 +243,6 @@ internal sealed class TuiUiService : ITuiUiService
                 Height = Math.Min(contentHeight + 3, 32)
             };
 
-            var inputs = new List<View>(fields.Count);
             var y = 0;
             foreach (var f in fields)
             {
@@ -207,36 +280,6 @@ internal sealed class TuiUiService : ITuiUiService
                 y++;
             }
 
-            static string GetValue(View v) => v switch
-            {
-                TextField tf => tf.Text ?? string.Empty,
-                TextView tv => tv.Text ?? string.Empty,
-                _ => string.Empty
-            };
-
-            List<string>? values = null;
-
-            var ok = new Button { Text = "确定" };
-            ok.Accepting += (_, _) =>
-            {
-                // 必填校验：失败不关闭对话框
-                for (var i = 0; i < fields.Count; i++)
-                {
-                    if (fields[i].Required && string.IsNullOrWhiteSpace(GetValue(inputs[i])))
-                    {
-                        MessageBox.ErrorQuery(_app, title, $"{fields[i].Label} 不能为空", "确定");
-                        return;
-                    }
-                }
-                values = inputs.Select(GetValue).ToList();
-                dialog.RequestStop();
-            };
-            var cancel = new Button { Text = "取消" };
-            cancel.Accepting += (_, _) =>
-            {
-                values = null;
-                dialog.RequestStop();
-            };
             // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
             dialog.AddButton(cancel);
             dialog.AddButton(ok);
@@ -248,6 +291,7 @@ internal sealed class TuiUiService : ITuiUiService
             return values;
         });
     }
+#pragma warning restore CS0618
 
     /// <inheritdoc/>
     public void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows)
