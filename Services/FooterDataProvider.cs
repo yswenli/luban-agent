@@ -25,9 +25,10 @@ namespace LubanAgent.Services;
 /// </summary>
 internal sealed class FooterDataProvider
 {
-    private string? _cachedBranch;
-    private DateTime _branchCacheTime;
-    private static readonly TimeSpan BranchCacheTtl = TimeSpan.FromSeconds(30);
+    private string _gitBranch = "—";
+    private DateTime _lastGitFetch = DateTime.MinValue;
+    private bool _gitFetchInProgress;
+    private static readonly TimeSpan GitBranchCacheDuration = TimeSpan.FromSeconds(30);
 
     /// <summary>当前权限模式可读名称。</summary>
     public string ModeDisplay { get; set; } = "default";
@@ -40,15 +41,31 @@ internal sealed class FooterDataProvider
     {
         get
         {
-            var now = DateTime.Now;
-            if (_cachedBranch is not null && now - _branchCacheTime < BranchCacheTtl)
+            if (DateTime.Now - _lastGitFetch <= GitBranchCacheDuration)
             {
-                return _cachedBranch;
+                return _gitBranch;
             }
 
-            _cachedBranch = TryGetGitBranch();
-            _branchCacheTime = now;
-            return _cachedBranch;
+            if (!_gitFetchInProgress)
+            {
+                _gitFetchInProgress = true;
+                _lastGitFetch = DateTime.Now;
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var branch = TryGetGitBranch();
+                        _gitBranch = branch;
+                    }
+                    finally
+                    {
+                        _gitFetchInProgress = false;
+                    }
+                });
+            }
+
+            return _gitBranch;
         }
     }
 
