@@ -278,9 +278,46 @@ git commit -m "feat: TuiUiService 实现（Confirm/Notify/Choose + RunModal 跨�
 **Files:**
 - Modify: `App/TuiUiService.cs`（在 `Choose` 方法后追加两个方法）
 
-- [ ] **Step 1: 追加 ShowForm**
+- [ ] **Step 1: 实现 ShowForm（替换现有 ShowForm stub）**
+
+注意（Task 3 实施时经源码验证修正）：Terminal.Gui 2.4.17 的 `Dialog.OnAccepting` 在任何未处理 Accept 时**无条件 RequestStop 且先于按钮事件**，因此必填校验否决必须在 Dialog 子类的 `OnAccepting` 层实现，按钮不挂 `Accepting` 处理。最终结构：
 
 ```csharp
+    // TuiUiService 内嵌私有类
+    private sealed class FormDialog : Dialog
+    {
+        private readonly Func<bool> _validate;
+        private readonly Action _onValid;
+        private readonly View _cancelButton;
+
+        public FormDialog(Func<bool> validate, Action onValid, View cancelButton)
+        {
+            _validate = validate;
+            _onValid = onValid;
+            _cancelButton = cancelButton;
+        }
+
+        protected override bool OnAccepting(CommandEventArgs args)
+        {
+            // 取消按钮放行（values 保持 null）
+            if (args.Context?.Source is { } weak
+                && weak.TryGetTarget(out var src)
+                && ReferenceEquals(src, _cancelButton))
+            {
+                return base.OnAccepting(args);
+            }
+
+            // 校验失败：否决 Accept，对话框保持打开
+            if (!_validate())
+            {
+                return true;
+            }
+
+            _onValid();
+            return base.OnAccepting(args);
+        }
+    }
+
     /// <inheritdoc/>
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
     {
@@ -291,7 +328,30 @@ git commit -m "feat: TuiUiService 实现（Confirm/Notify/Choose + RunModal 跨�
         {
             // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 3 行给按钮
             var contentHeight = fields.Sum(f => f.Multiline ? 8 : 3);
-            using var dialog = new Dialog
+
+            var inputs = new List<View>(fields.Count);
+            List<string>? values = null;
+
+            bool Validate()
+            {
+                for (var i = 0; i < fields.Count; i++)
+                {
+                    if (fields[i].Required && string.IsNullOrWhiteSpace(GetValue(inputs[i])))
+                    {
+                        MessageBox.ErrorQuery(_app, title, $"{fields[i].Label} 不能为空", "确定");
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            void CaptureValues() => values = inputs.Select(GetValue).ToList();
+
+            // 先创建按钮（FormDialog 构造需要取消按钮引用），按钮不挂 Accepting 处理
+            var cancel = new Button { Text = "取消" };
+            var ok = new Button { Text = "确定" };
+
+            using var dialog = new FormDialog(Validate, CaptureValues, cancel)
             {
                 Title = title,
                 X = Pos.Center(),
@@ -300,7 +360,6 @@ git commit -m "feat: TuiUiService 实现（Confirm/Notify/Choose + RunModal 跨�
                 Height = Math.Min(contentHeight + 3, 32)
             };
 
-            var inputs = new List<View>(fields.Count);
             var y = 0;
             foreach (var f in fields)
             {
@@ -345,31 +404,9 @@ git commit -m "feat: TuiUiService 实现（Confirm/Notify/Choose + RunModal 跨�
                 _ => string.Empty
             };
 
-            List<string>? values = null;
-
-            var ok = new Button { Text = "确定", IsDefault = true };
-            ok.Accepting += (_, _) =>
-            {
-                // 必填校验：失败不关闭对话框
-                for (var i = 0; i < fields.Count; i++)
-                {
-                    if (fields[i].Required && string.IsNullOrWhiteSpace(GetValue(inputs[i])))
-                    {
-                        MessageBox.ErrorQuery(_app, title, $"{fields[i].Label} 不能为空", "确定");
-                        return;
-                    }
-                }
-                values = inputs.Select(GetValue).ToList();
-                dialog.RequestStop();
-            };
-            var cancel = new Button { Text = "取消" };
-            cancel.Accepting += (_, _) =>
-            {
-                values = null;
-                dialog.RequestStop();
-            };
-            dialog.AddButton(ok);
+            // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
             dialog.AddButton(cancel);
+            dialog.AddButton(ok);
 
             // 初始焦点放到第一个输入框
             if (inputs.Count > 0) inputs[0].SetFocus();
@@ -379,6 +416,8 @@ git commit -m "feat: TuiUiService 实现（Confirm/Notify/Choose + RunModal 跨�
         });
     }
 ```
+
+（CS0618 处理：`#pragma warning disable CS0618` / `restore` 仅包裹 ShowForm 方法；`CommandEventArgs` 需 `using Terminal.Gui.Input;`。）
 
 - [ ] **Step 2: 追加 ShowTable**
 
