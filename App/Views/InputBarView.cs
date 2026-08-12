@@ -11,24 +11,27 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：输入区视图，使用 TextView 作为多行编辑内核，
+*描述：输入区视图，使用 Editor 作为多行编辑内核，
 *Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）
 *
 *****************************************************************************/
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Editor;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
+
+using Attribute = Terminal.Gui.Drawing.Attribute;
+using Color = Terminal.Gui.Drawing.Color;
 
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
-/// 输入区视图。使用 <see cref="TextView"/> 作为多行编辑内核，
+/// 输入区视图。使用 <see cref="Editor"/> 作为多行编辑内核，
 /// Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）。
 /// </summary>
 internal sealed class InputBarView : View
 {
-    private readonly TextView _textView;
+    private readonly Editor _editor;
     private const int MaxHeight = 5;
 
     /// <summary>
@@ -37,27 +40,55 @@ internal sealed class InputBarView : View
     public event Action<string>? Submitted;
 
     /// <summary>
+    /// 输入框背景色（比主背景稍浅）。
+    /// </summary>
+    private static readonly Color InputBackground = new(0x2A, 0x2A, 0x2A, 0xFF);
+
+    /// <summary>
     /// 初始化输入区视图。
     /// </summary>
     public InputBarView()
     {
         CanFocus = true;
 
-        _textView = new TextView
+        _editor = new Editor
         {
             X = 2,
             Y = 0,
             Width = Dim.Fill(),
-            Height = 1,
+            Height = Dim.Fill(),
             CanFocus = true,
+            Multiline = true,
             WordWrap = true,
-            TabKeyAddsTab = false,
-            EnterKeyAddsLine = false,
+            ReadOnly = false,
+            GutterOptions = GutterOptions.None,
         };
-        _textView.KeyDown += OnTextViewKeyDown;
-        _textView.ContentsChanged += OnContentsChanged;
 
-        Add(_textView);
+        // 设置输入框配色：白色文字，稍浅的深灰背景
+        var inputScheme = new Scheme(
+            new Attribute(TuiTheme.AssistantText, InputBackground))
+        {
+            Normal = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Focus = new Attribute(TuiTheme.AssistantText, InputBackground),
+            HotNormal = new Attribute(TuiTheme.AssistantText, InputBackground),
+            HotFocus = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Disabled = new Attribute(TuiTheme.SystemMessage, InputBackground),
+            Active = new Attribute(TuiTheme.AssistantText, InputBackground),
+            HotActive = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Highlight = new Attribute(TuiTheme.Background, TuiTheme.Accent),
+            Editable = new Attribute(TuiTheme.AssistantText, InputBackground),
+            ReadOnly = new Attribute(TuiTheme.SystemMessage, InputBackground)
+        };
+        _editor.SetScheme(inputScheme);
+
+        // 移除 Enter 的默认换行绑定，改为提交；Shift+Enter 绑定换行
+        _editor.KeyBindings.Remove(Key.Enter);
+        _editor.KeyBindings.Add(Key.Enter.WithShift, Command.NewLine);
+
+        _editor.KeyDown += OnEditorKeyDown;
+        _editor.TextChanged += OnTextChanged;
+
+        Add(_editor);
     }
 
     /// <summary>
@@ -65,17 +96,17 @@ internal sealed class InputBarView : View
     /// </summary>
     public string InputText
     {
-        get => _textView.Text ?? string.Empty;
-        set => _textView.Text = value ?? string.Empty;
+        get => _editor.Text ?? string.Empty;
+        set => _editor.Text = value ?? string.Empty;
     }
 
     /// <summary>
     /// 将焦点交给内部编辑器。
     /// </summary>
-    public void FocusInput() => _textView.SetFocus();
+    public void FocusInput() => _editor.SetFocus();
 
     /// <summary>
-    /// 绘制提示符。输入内容由子视图 TextView 自行渲染。
+    /// 绘制提示符。输入内容由子视图 Editor 自行渲染。
     /// </summary>
     protected override bool OnDrawingContent(DrawContext? context)
     {
@@ -92,42 +123,38 @@ internal sealed class InputBarView : View
     /// <summary>
     /// 内容变化时自动调整高度（1~MaxHeight 行）。
     /// </summary>
-    private void OnContentsChanged(object? sender, EventArgs e)
+    private void OnTextChanged(object? sender, EventArgs e)
     {
-        var lineCount = Math.Max(1, _textView.Lines);
+        var lineCount = Math.Max(1, _editor.Document?.LineCount ?? 1);
         var newHeight = Math.Min(lineCount, MaxHeight);
-        Height = newHeight;
-        SetNeedsLayout();
-        SetNeedsDraw();
+        if (Height != newHeight)
+        {
+            Height = newHeight;
+            SetNeedsLayout();
+            SetNeedsDraw();
+        }
     }
 
     /// <summary>
-    /// 拦截编辑器按键：Enter 提交，Shift+Enter 插入换行，其余透传给 TextView。
+    /// 拦截编辑器按键：Enter 提交，Shift+Enter 由 KeyBindings 处理换行，其余透传给 Editor。
     /// </summary>
-    private void OnTextViewKeyDown(object? sender, Key key)
+    private void OnEditorKeyDown(object? sender, Key key)
     {
-        if (key != Key.Enter)
+        // 纯 Enter（无 Shift）：提交输入
+        if (key == Key.Enter)
         {
-            return;
+            key.Handled = true;
+
+            var text = (_editor.Text ?? string.Empty).Trim();
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            _editor.Text = string.Empty;
+            Height = 1;
+            Submitted?.Invoke(text);
         }
-
-        key.Handled = true;
-
-        // Shift+Enter：插入换行
-        if (key.IsShift)
-        {
-            _textView.InsertText("\n");
-            return;
-        }
-
-        var text = (_textView.Text ?? string.Empty).Trim();
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        _textView.Text = string.Empty;
-        Height = 1;
-        Submitted?.Invoke(text);
+        // Shift+Enter 不在此处理，由 KeyBindings 的 Command.NewLine 执行换行
     }
 }
