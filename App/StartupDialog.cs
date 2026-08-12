@@ -15,8 +15,11 @@
 *
 *****************************************************************************/
 using Terminal.Gui.App;
+using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
+
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace LubanAgent.App;
 
@@ -61,6 +64,23 @@ internal class StartupDialog : Dialog
         Y = Pos.Center();
         Width = 64;
         Height = 16;
+
+        // 设置对话框配色：标题橙色，文字白色，背景深灰
+        var scheme = new Scheme(
+            new Attribute(TuiTheme.AssistantText, TuiTheme.Background))
+        {
+            Normal = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
+            Focus = new Attribute(TuiTheme.Accent, TuiTheme.Background),
+            HotNormal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            HotFocus = new Attribute(TuiTheme.Background, TuiTheme.Accent, TextStyle.Bold),
+            Disabled = new Attribute(TuiTheme.SystemMessage, TuiTheme.Background),
+            Active = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
+            HotActive = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            Highlight = new Attribute(TuiTheme.Background, TuiTheme.Accent),
+            Editable = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
+            ReadOnly = new Attribute(TuiTheme.SystemMessage, TuiTheme.Background)
+        };
+        SetScheme(scheme);
 
         _statusLabel = new Label
         {
