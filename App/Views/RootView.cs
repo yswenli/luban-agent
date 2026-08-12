@@ -96,7 +96,7 @@ internal sealed class RootView : Runnable
         var bottomArea = new View
         {
             X = 0,
-            Y = Pos.AnchorEnd(6),
+            Y = Pos.Bottom(_conversation),
             Width = Dim.Fill(),
             Height = 6 // footer(1) + inputBar max(5)
         };
@@ -111,7 +111,7 @@ internal sealed class RootView : Runnable
 
         _inputBar = new InputBarView
         {
-            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 1
+            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 5
         };
         _inputBar.Submitted += OnInputSubmitted;
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
@@ -125,6 +125,8 @@ internal sealed class RootView : Runnable
     public override void EndInit()
     {
         base.EndInit();
+        // 强制布局更新以确保全屏显示
+        SetNeedsLayout();
         // 延迟设置焦点：EndInit 阶段 Application 主循环尚未开始，
         // SetFocus 不会立即生效。在 IsRunningChanged 时设置焦点。
         IsRunningChanged += OnIsRunningChanged;

@@ -56,7 +56,7 @@ internal sealed class InputBarView : View
             X = 2,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(),
+            Height = 1,
             CanFocus = true,
             Multiline = true,
             WordWrap = true,

@@ -41,6 +41,7 @@ internal sealed class ConversationView : View
     private bool _isDragging;
     private bool _justDragged;
     private string? _selectedText;
+    private (int Row, int Col)? _dragStartPos; // 记录拖拽起始位置，用于判断是否为有效拖拽
 
     /// <summary>
     /// 初始化会话区视图并关联文档模型。
@@ -240,24 +241,37 @@ internal sealed class ConversationView : View
         var pos = mouse.Position;
         if (pos is null) return false;
 
-        // 鼠标左键按下：开始拖拽选择
+        // 鼠标左键按下：记录起始位置，暂不开始选择
         if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
         {
-            _isDragging = true;
-            _selectionStart = (pos.Value.Y, pos.Value.X);
-            _selectionEnd = (pos.Value.Y, pos.Value.X);
-            _selectedText = null;
-            _dirty = true;
-            SetNeedsDraw();
+            _dragStartPos = (pos.Value.Y, pos.Value.X);
+            _isDragging = false;
             return true;
         }
 
-        // 鼠标拖拽中：更新选择终点
-        if (_isDragging && mouse.Flags.HasFlag(MouseFlags.PositionReport))
+        // 鼠标移动：如果距离起始位置超过阈值，开始拖拽选择
+        if (_dragStartPos.HasValue && mouse.Flags.HasFlag(MouseFlags.PositionReport))
         {
-            _selectionEnd = (pos.Value.Y, pos.Value.X);
-            _dirty = true;
-            SetNeedsDraw();
+            var (startRow, startCol) = _dragStartPos.Value;
+            var rowDiff = Math.Abs(pos.Value.Y - startRow);
+            var colDiff = Math.Abs(pos.Value.X - startCol);
+
+            // 拖拽阈值：移动超过 2 个字符或 1 行才认为是拖拽
+            if (!_isDragging && (rowDiff > 1 || colDiff > 2))
+            {
+                _isDragging = true;
+                _selectionStart = _dragStartPos;
+                _selectionEnd = (pos.Value.Y, pos.Value.X);
+                _selectedText = null;
+                _dirty = true;
+                SetNeedsDraw();
+            }
+            else if (_isDragging)
+            {
+                _selectionEnd = (pos.Value.Y, pos.Value.X);
+                _dirty = true;
+                SetNeedsDraw();
+            }
             return true;
         }
 
@@ -268,6 +282,7 @@ internal sealed class ConversationView : View
             _justDragged = true;
             _selectionEnd = (pos.Value.Y, pos.Value.X);
             _selectedText = ExtractSelectedText();
+            _dragStartPos = null; // 清除拖拽起始位置
             _dirty = true;
             SetNeedsDraw();
             return true;
@@ -280,6 +295,7 @@ internal sealed class ConversationView : View
             if (_justDragged)
             {
                 _justDragged = false;
+                _dragStartPos = null; // 清除拖拽起始位置
                 return true;
             }
 
@@ -292,6 +308,8 @@ internal sealed class ConversationView : View
                 _dirty = true;
                 SetNeedsDraw();
             }
+
+            _dragStartPos = null; // 清除拖拽起始位置
 
             var globalLine = _doc.ScrollOffset + pos.Value.Y;
             var (block, localLine) = _doc.BlockAtLine(globalLine);
