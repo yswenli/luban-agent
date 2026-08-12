@@ -61,14 +61,14 @@ public class ProviderCommand : CommandBase
     /// </summary>
     public override Task ExecuteAsync()
     {
-        Console.WriteLine();
-        Console.WriteLine("Provider 管理命令:");
-        Console.WriteLine("  provider -list    - 列出所有 Provider");
-        Console.WriteLine("  provider -add     - 添加 Provider");
-        Console.WriteLine("  provider -update  - 更新 Provider");
-        Console.WriteLine("  provider -delete  - 删除 Provider");
-        Console.WriteLine("  provider -switch  - 切换当前 Provider");
-        Console.WriteLine("  简写: /p -l, /p -a, /p -u, /p -d, /p -s");
+        Writer.WriteLine();
+        Writer.WriteHeader("Provider 管理命令");
+        Writer.WriteLine("  provider -list    - 列出所有 Provider");
+        Writer.WriteLine("  provider -add     - 添加 Provider");
+        Writer.WriteLine("  provider -update  - 更新 Provider");
+        Writer.WriteLine("  provider -delete  - 删除 Provider");
+        Writer.WriteLine("  provider -switch  - 切换当前 Provider");
+        Writer.WriteLine("  简写: /p -l, /p -a, /p -u, /p -d, /p -s");
         return Task.CompletedTask;
     }
 
@@ -122,22 +122,15 @@ public class ProviderCommand : CommandBase
 
     private Task<bool> ExecuteAddAsync(string[] args)
     {
-        Console.WriteLine();
-        Console.WriteLine("选择 Provider 类型:");
-        for (int i = 0; i < BuiltinProviders.Length; i++)
-        {
-            var (_, displayName, _, _, _) = BuiltinProviders[i];
-            Console.WriteLine($"  {i + 1}. {displayName}");
-        }
-        Console.WriteLine($"  {BuiltinProviders.Length + 1}. 自定义 OpenAI 兼容 API");
-        Console.Write($"请选择 (1-{BuiltinProviders.Length + 1}): ");
+        // 选择 Provider 类型（编号菜单 → Choose 对话框）
+        var options = BuiltinProviders
+            .Select(p => p.DisplayName)
+            .Append("自定义 OpenAI 兼容 API")
+            .ToList();
+        var chosen = Ui.Choose("添加 Provider", options);
+        if (chosen is null) return Task.FromResult(true); // 用户取消
 
-        var choice = Console.ReadLine()?.Trim();
-        if (!int.TryParse(choice, out var choiceIndex) || choiceIndex < 1 || choiceIndex > BuiltinProviders.Length + 1)
-        {
-            WriteError("无效选择");
-            return Task.FromResult(false);
-        }
+        var choiceIndex = chosen.Value + 1; // 保持与原 1 起始编号一致的后续逻辑
 
         string providerName;
         string apiKey;
@@ -145,13 +138,17 @@ public class ProviderCommand : CommandBase
 
         if (choiceIndex == BuiltinProviders.Length + 1)
         {
-            Console.WriteLine();
-            Console.Write("请输入 Provider 名称: ");
-            providerName = Console.ReadLine()?.Trim()?.ToLower() ?? "custom";
-            Console.Write("请输入 API Key: ");
-            apiKey = ReadPassword();
-            Console.Write("请输入 API Base URL: ");
-            baseUrl = Console.ReadLine()?.Trim();
+            var values = Ui.ShowForm("自定义 Provider", new[]
+            {
+                new FormField("Provider 名称", InitialValue: "custom"),
+                new FormField("API Key", IsPassword: true),
+                new FormField("API Base URL", Required: false)
+            });
+            if (values is null) return Task.FromResult(true);
+
+            providerName = string.IsNullOrWhiteSpace(values[0]) ? "custom" : values[0].Trim().ToLower();
+            apiKey = values[1];
+            baseUrl = string.IsNullOrWhiteSpace(values[2]) ? null : values[2].Trim();
         }
         else
         {
@@ -160,25 +157,33 @@ public class ProviderCommand : CommandBase
 
             if (!string.IsNullOrEmpty(warning))
             {
-                Console.WriteLine();
-                Console.WriteLine(warning);
+                Ui.Notify(displayName, warning);
             }
 
-            Console.Write($"请输入 {displayName} API Key: ");
-            apiKey = needCustomApiKey ? (Console.ReadLine()?.Trim() ?? "") : ReadPassword();
+            var defaultUrl = name switch
+            {
+                "azure" => "https://your-resource.openai.azure.com",
+                "ollama" => "http://localhost:11434/v1",
+                _ => ""
+            };
+
+            var fields = new List<FormField>
+            {
+                new FormField($"{displayName} API Key", IsPassword: !needCustomApiKey)
+            };
+            if (needCustomEndpoint)
+            {
+                fields.Add(new FormField("API 地址", Required: false, InitialValue: defaultUrl));
+            }
+
+            var values = Ui.ShowForm($"添加 {displayName}", fields);
+            if (values is null) return Task.FromResult(true);
+
+            apiKey = needCustomApiKey ? values[0].Trim() : values[0];
 
             if (needCustomEndpoint)
             {
-                var defaultUrl = name switch
-                {
-                    "azure" => "https://your-resource.openai.azure.com",
-                    "ollama" => "http://localhost:11434/v1",
-                    _ => ""
-                };
-                Console.Write($"请输入 API 地址 (默认 {defaultUrl}): ");
-                baseUrl = Console.ReadLine()?.Trim();
-                if (string.IsNullOrEmpty(baseUrl))
-                    baseUrl = defaultUrl;
+                baseUrl = string.IsNullOrWhiteSpace(values[1]) ? defaultUrl : values[1].Trim();
             }
             else
             {
@@ -188,7 +193,7 @@ public class ProviderCommand : CommandBase
 
         if (string.IsNullOrEmpty(apiKey))
         {
-            WriteError("API Key 不能为空");
+            Writer.WriteError("API Key 不能为空");
             return Task.FromResult(false);
         }
 
@@ -199,48 +204,42 @@ public class ProviderCommand : CommandBase
             var displayName = GetProviderDisplayName(providerName);
             var models = ProviderHelper.GetModels(providerName);
 
-            WriteSuccess($"Provider '{displayName}' 已添加并保存");
+            Writer.WriteSuccess($"Provider '{displayName}' 已添加并保存");
 
             if (models.Count > 0)
             {
-                Console.WriteLine($"  支持的模型: {string.Join(", ", models.Take(5))}{(models.Count > 5 ? "..." : "")}");
+                Writer.WriteInfo($"  支持的模型: {string.Join(", ", models.Take(5))}{(models.Count > 5 ? "..." : "")}");
             }
             else
             {
-                Console.WriteLine("  提示: 该 Provider 没有预设模型，请使用 /model -add 添加自定义模型");
+                Writer.WriteInfo("  提示: 该 Provider 没有预设模型，请使用 /model -add 添加自定义模型");
             }
         }
         catch (Exception ex)
         {
             Logger.Error("ProviderCommand 添加 Provider 异常", ex, providerName);
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
     }
 
-    private static string? SelectEndpoint(string providerName)
+    /// <summary>
+    /// 选择 API 地址（多 endpoint 时弹选择框；取消/无效回落到第一个，保持原行为）
+    /// </summary>
+    private string? SelectEndpoint(string providerName)
     {
         var endpoints = ProviderHelper.GetEndpoints(providerName);
-        if (endpoints.Count == 0)
-            return null;
+        if (endpoints.Count == 0) return null;
+        if (endpoints.Count == 1) return endpoints[0].Url;
 
-        if (endpoints.Count == 1)
-            return endpoints[0].Url;
+        var chosen = Ui.Choose(
+            $"{ProviderHelper.GetDisplayName(providerName)} API 地址选择",
+            endpoints.Select(e => $"{e.Description} ({e.Url})").ToList());
 
-        Console.WriteLine();
-        Console.WriteLine($"{ProviderHelper.GetDisplayName(providerName)} API 地址选择:");
-        for (int i = 0; i < endpoints.Count; i++)
-        {
-            Console.WriteLine($"  {i + 1}. {endpoints[i].Description} ({endpoints[i].Url})");
-        }
-        Console.Write($"请选择 (1-{endpoints.Count}): ");
-        var epChoice = Console.ReadLine()?.Trim();
-        if (int.TryParse(epChoice, out var epIndex) && epIndex >= 1 && epIndex <= endpoints.Count)
-        {
-            return endpoints[epIndex - 1].Url;
-        }
-        return endpoints[0].Url;
+        return chosen is { } i && i >= 0 && i < endpoints.Count
+            ? endpoints[i].Url
+            : endpoints[0].Url; // 取消/无效保持原行为：回落到第一个
     }
 
     /// <summary>
@@ -258,57 +257,51 @@ public class ProviderCommand : CommandBase
     /// <returns>是否已处理</returns>
     private Task<bool> ExecuteUpdateAsync(string[] args)
     {
-        Console.WriteLine();
-        Console.WriteLine("选择要更新的 Provider:");
-        
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
-            WriteError("暂无配置的 Provider，请先使用 provider add 添加");
+            Writer.WriteError("暂无配置的 Provider，请先使用 provider add 添加");
             return Task.FromResult(true);
         }
 
-        for (int i = 0; i < providers.Count; i++)
+        // 编号菜单 → Choose 对话框
+        var chosen = Ui.Choose("选择要更新的 Provider",
+            providers.Select(p => GetProviderDisplayName(p.Name)).ToList());
+        if (chosen is null) return Task.FromResult(true); // 用户取消
+
+        var provider = providers[chosen.Value];
+        var displayName = GetProviderDisplayName(provider.Name);
+
+        Writer.WriteLine();
+        Writer.WriteLine($"更新 {displayName}:");
+        Writer.WriteLine($"  当前 API Key: {MaskApiKey(provider.ApiKey)}");
+        Writer.WriteLine($"  当前 Base URL: {provider.BaseUrl ?? "(默认)"}");
+
+        // 留空保持原值：字段非必填，初始值为现值；清空则回落到现值
+        var values = Ui.ShowForm($"更新 {displayName}", new[]
         {
-            var p = providers[i];
-            Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}");
-        }
+            new FormField("新的 API Key (留空保持不变)", IsPassword: true, InitialValue: provider.ApiKey, Required: false),
+            new FormField("新的 Base URL (留空保持不变)", InitialValue: provider.BaseUrl, Required: false)
+        });
+        if (values is null) return Task.FromResult(true); // 用户取消
 
-        Console.Write("请选择 (1-{0}): ", providers.Count);
-        var choice = Console.ReadLine()?.Trim();
-
-        if (!int.TryParse(choice, out var index) || index < 1 || index > providers.Count)
-        {
-            WriteError("无效选择");
-            return Task.FromResult(true);
-        }
-
-        var provider = providers[index - 1];
-        Console.WriteLine();
-        Console.WriteLine($"更新 {GetProviderDisplayName(provider.Name)}:");
-        Console.WriteLine($"  当前 API Key: {MaskApiKey(provider.ApiKey)}");
-        Console.WriteLine($"  当前 Base URL: {provider.BaseUrl ?? "(默认)"}");
-        Console.WriteLine();
-
-        Console.Write("请输入新的 API Key (留空保持不变): ");
-        var newApiKey = Console.ReadLine()?.Trim();
+        var newApiKey = values[0].Trim();
         if (string.IsNullOrEmpty(newApiKey))
             newApiKey = provider.ApiKey;
 
-        Console.Write("请输入新的 Base URL (留空保持不变): ");
-        var newBaseUrl = Console.ReadLine()?.Trim();
+        var newBaseUrl = values[1].Trim();
         if (string.IsNullOrEmpty(newBaseUrl))
             newBaseUrl = provider.BaseUrl;
 
         try
         {
             ConfigManager.AddProvider(provider.Name, newApiKey, newBaseUrl);
-            WriteSuccess($"Provider '{GetProviderDisplayName(provider.Name)}' 已更新");
+            Writer.WriteSuccess($"Provider '{displayName}' 已更新");
         }
         catch (Exception ex)
         {
             Logger.Error("ProviderCommand 更新 Provider 异常", ex, provider.Name);
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
@@ -321,59 +314,46 @@ public class ProviderCommand : CommandBase
     /// <returns>是否已处理</returns>
     private Task<bool> ExecuteDeleteAsync(string[] args)
     {
-        Console.WriteLine();
-        Console.WriteLine("选择要删除的 Provider:");
-        
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
-            WriteError("暂无配置的 Provider");
+            Writer.WriteError("暂无配置的 Provider");
             return Task.FromResult(true);
         }
 
-        for (int i = 0; i < providers.Count; i++)
-        {
-            var p = providers[i];
-            Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}");
-        }
+        // 编号菜单 → Choose 对话框
+        var chosen = Ui.Choose("选择要删除的 Provider",
+            providers.Select(p => GetProviderDisplayName(p.Name)).ToList());
+        if (chosen is null) return Task.FromResult(true); // 用户取消
 
-        Console.Write("请选择 (1-{0}): ", providers.Count);
-        var choice = Console.ReadLine()?.Trim();
+        var provider = providers[chosen.Value];
+        var displayName = GetProviderDisplayName(provider.Name);
 
-        if (!int.TryParse(choice, out var index) || index < 1 || index > providers.Count)
+        // 危险操作：默认"否"
+        if (!Ui.Confirm("删除 Provider", $"确定要删除 {displayName} 吗？", defaultValue: false))
         {
-            WriteError("无效选择");
-            return Task.FromResult(true);
-        }
-
-        var provider = providers[index - 1];
-        
-        Console.Write($"确定要删除 {GetProviderDisplayName(provider.Name)} 吗？(y/N): ");
-        var confirm = Console.ReadLine()?.Trim().ToLower();
-        if (confirm != "y" && confirm != "yes")
-        {
-            Console.WriteLine("已取消");
+            Writer.WriteInfo("已取消");
             return Task.FromResult(true);
         }
 
         try
         {
-            providers.RemoveAt(index - 1);
+            providers.RemoveAt(chosen.Value);
             ConfigManager.Save();
-            
+
             // 如果当前选择的模型属于被删除的 Provider，清除选择
             if (ConfigManager.SelectedModel?.StartsWith($"{provider.Name}:") == true)
             {
                 ConfigManager.SetSelectedModel("");
-                Console.WriteLine("  注意: 已清除当前选择的模型（因为该模型属于被删除的 Provider）");
+                Writer.WriteInfo("  注意: 已清除当前选择的模型（因为该模型属于被删除的 Provider）");
             }
-            
-            WriteSuccess($"Provider '{GetProviderDisplayName(provider.Name)}' 已删除");
+
+            Writer.WriteSuccess($"Provider '{displayName}' 已删除");
         }
         catch (Exception ex)
         {
             Logger.Error("ProviderCommand 删除 Provider 异常", ex, provider.Name);
-            WriteError(ex.Message);
+            Writer.WriteError(ex.Message);
         }
 
         return Task.FromResult(true);
@@ -385,35 +365,28 @@ public class ProviderCommand : CommandBase
     /// <returns>是否已处理</returns>
     private Task<bool> ExecuteListAsync()
     {
-        Console.WriteLine();
-        Console.WriteLine("已配置的 Provider:");
-
         var providers = ConfigManager.Providers;
-        Console.ForegroundColor = ConsoleColor.Green;
-        try
+        if (providers.Count == 0)
         {
-            if (providers.Count == 0)
+            Writer.WriteInfo("已配置的 Provider: (暂无)");
+            return Task.FromResult(true);
+        }
+
+        var rows = providers
+            .Select(p =>
             {
-                Console.WriteLine("  (暂无)");
-            }
-            else
-            {
-                foreach (var p in providers)
+                var displayName = GetProviderDisplayName(p.Name);
+                var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
+                return (IReadOnlyList<string>)new[]
                 {
-                    var displayName = GetProviderDisplayName(p.Name);
-                    var maskedKey = MaskApiKey(p.ApiKey);
-                    var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
-                    Console.WriteLine($"  - {displayName}{isCurrent}");
-                    Console.WriteLine($"      API Key: {maskedKey}");
-                    if (!string.IsNullOrEmpty(p.BaseUrl))
-                        Console.WriteLine($"      Base URL: {p.BaseUrl}");
-                }
-            }
-        }
-        finally
-        {
-            Console.ResetColor();
-        }
+                    $"{displayName}{isCurrent}",
+                    MaskApiKey(p.ApiKey),
+                    string.IsNullOrEmpty(p.BaseUrl) ? "(默认)" : p.BaseUrl!
+                };
+            })
+            .ToList();
+
+        Ui.ShowTable("已配置的 Provider", new[] { "Provider", "API Key", "Base URL" }, rows);
 
         return Task.FromResult(true);
     }
@@ -428,7 +401,7 @@ public class ProviderCommand : CommandBase
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
-            WriteError("暂无配置的 Provider，请先使用 provider add 添加");
+            Writer.WriteError("暂无配置的 Provider，请先使用 provider add 添加");
             return true;
         }
 
@@ -440,31 +413,22 @@ public class ProviderCommand : CommandBase
             providerName = args[0].ToLower();
             if (!ConfigManager.HasProvider(providerName))
             {
-                WriteError($"Provider '{providerName}' 不存在");
+                Writer.WriteError($"Provider '{providerName}' 不存在");
                 return true;
             }
         }
         else
         {
-            Console.WriteLine();
-            Console.WriteLine("选择要切换到的 Provider:");
-            for (int i = 0; i < providers.Count; i++)
-            {
-                var p = providers[i];
-                var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
-                Console.WriteLine($"  {i + 1}. {GetProviderDisplayName(p.Name)}{isCurrent}");
-            }
+            // 编号菜单 → Choose 对话框
+            var chosen = Ui.Choose("选择要切换到的 Provider",
+                providers.Select(p =>
+                {
+                    var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
+                    return $"{GetProviderDisplayName(p.Name)}{isCurrent}";
+                }).ToList());
+            if (chosen is null) return true; // 用户取消
 
-            Console.Write("请选择 (1-{0}): ", providers.Count);
-            var choice = Console.ReadLine()?.Trim();
-
-            if (!int.TryParse(choice, out var index) || index < 1 || index > providers.Count)
-            {
-                WriteError("无效选择");
-                return true;
-            }
-
-            providerName = providers[index - 1].Name;
+            providerName = providers[chosen.Value].Name;
         }
 
         var provider = ConfigManager.GetProvider(providerName);
@@ -479,53 +443,49 @@ public class ProviderCommand : CommandBase
             }
             catch (OperationCanceledException)
             {
-                WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表超时，将使用本地预定义模型。");
+                Writer.WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表超时，将使用本地预定义模型。");
             }
             catch (Exception ex)
             {
-                WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+                Writer.WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
             }
         }
 
         var allModels = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
-        
+
         // 如果 Provider 没有预定义模型，让用户手动输入模型名称
         if (allModels.Count == 0)
         {
-            Console.WriteLine();
-            Console.Write($"该 Provider 没有可用模型，请输入模型名称: ");
-            var modelName = Console.ReadLine()?.Trim();
+            var values = Ui.ShowForm($"{GetProviderDisplayName(providerName)} 没有可用模型", new[]
+            {
+                new FormField("请输入模型名称")
+            });
+            if (values is null) return true; // 用户取消
+
+            var modelName = values[0].Trim();
             if (string.IsNullOrEmpty(modelName))
             {
-                WriteError("模型名称不能为空");
+                Writer.WriteError("模型名称不能为空");
                 return true;
             }
 
             ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
-            WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {modelName}");
+            Writer.WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {modelName}");
             return true;
         }
 
-        Console.WriteLine();
-        Console.WriteLine($"{GetProviderDisplayName(providerName)} 可用模型:");
-        for (int i = 0; i < allModels.Count; i++)
-        {
-            var isSelected = ConfigManager.SelectedModel == $"{providerName}:{allModels[i]}" ? " (已选)" : "";
-            Console.WriteLine($"  {i + 1}. {allModels[i]}{isSelected}");
-        }
+        // 编号菜单 → Choose 对话框
+        var modelChosen = Ui.Choose($"{GetProviderDisplayName(providerName)} 可用模型",
+            allModels.Select(m =>
+            {
+                var isSelected = ConfigManager.SelectedModel == $"{providerName}:{m}" ? " (已选)" : "";
+                return $"{m}{isSelected}";
+            }).ToList());
+        if (modelChosen is null) return true; // 用户取消
 
-        Console.Write("请选择模型 (1-{0}): ", allModels.Count);
-        var modelChoice = Console.ReadLine()?.Trim();
-
-        if (!int.TryParse(modelChoice, out var modelIndex) || modelIndex < 1 || modelIndex > allModels.Count)
-        {
-            WriteError("无效选择");
-            return true;
-        }
-
-        var selectedModel = allModels[modelIndex - 1];
+        var selectedModel = allModels[modelChosen.Value];
         ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
-        WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {selectedModel}");
+        Writer.WriteSuccess($"已切换到 {GetProviderDisplayName(providerName)}，模型: {selectedModel}");
 
         return true;
     }
