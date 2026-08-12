@@ -14,7 +14,7 @@
 *描述：Agent View 三期多会话中单个任务的运行状态
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// Agent View（三期）中单个任务的运行状态。

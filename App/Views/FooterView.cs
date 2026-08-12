@@ -14,15 +14,11 @@
 *描述：页脚视图，显示权限模式、工作目录、git 分支、token 与后台任务
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-using Terminal.Gui.Drawing;
-using Terminal.Gui.ViewBase;
 
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除）
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Views;
+namespace LubanAgentCli.App.Views;
 
 /// <summary>
 /// 页脚视图。显示权限模式、工作目录、git 分支、token 统计与后台任务状态。

@@ -19,7 +19,7 @@ using Terminal.Gui.Drawing;
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除）
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// Block 子类共享的配色常量。值与 <c>App/TuiTheme.cs</c> 中的 24-bit TrueColor 定义一致。

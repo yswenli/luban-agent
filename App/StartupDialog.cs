@@ -82,6 +82,9 @@ internal class StartupDialog : Dialog
         };
         SetScheme(scheme);
 
+        // 设置边框样式
+        BorderStyle = LineStyle.Single;
+
         _statusLabel = new Label
         {
             X = 1,

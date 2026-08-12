@@ -34,10 +34,13 @@ global using LubanAgent.Commands;
 global using LubanAgent.Configuration;
 global using LubanAgent.Entities;
 global using LubanAgent.Infrastructure;
+global using LubanAgent.Models.Blocks;
 global using LubanAgent.Profiles;
 global using LubanAgent.Repositories;
 global using LubanAgent.Retrieval;
 global using LubanAgent.Services;
+
+global using LubanAgentCli.App.Views;
 
 global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.AI;
@@ -57,3 +60,10 @@ global using System.Data;
 global using System.IO.Compression;
 global using System.Security.Cryptography;
 global using System.Text;
+global using System.Text.RegularExpressions;
+
+global using Terminal.Gui.App;
+global using Terminal.Gui.Drawing;
+global using Terminal.Gui.Input;
+global using Terminal.Gui.ViewBase;
+global using Terminal.Gui.Views;

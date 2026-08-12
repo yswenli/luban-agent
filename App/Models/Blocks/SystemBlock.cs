@@ -19,7 +19,7 @@ using Terminal.Gui.Drawing;
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 系统消息 Block。默认灰色着色，不可折叠。用于显示 `/` 命令输出、启动提示、

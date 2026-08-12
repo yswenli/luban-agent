@@ -14,7 +14,7 @@
 *描述：InlineChoiceBlock 中每个选项的数据模型
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// 内联选择块的单个选项。键盘快捷键与鼠标点击均可选中。

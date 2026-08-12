@@ -15,8 +15,9 @@
 *统一 /help /clear /mode 等已迁移命令与后续命令的输出格式
 *
 *****************************************************************************/
-using LubanAgent.Models;
-using LubanAgent.Models.Blocks;
+using LubanAgentCli.App.Models;
+using LubanAgentCli.App.Models.Blocks;
+
 using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console

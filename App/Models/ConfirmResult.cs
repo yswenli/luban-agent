@@ -14,7 +14,7 @@
 *描述：确认块用户选择的结果
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// 工具确认块中用户的选择结果。

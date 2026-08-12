@@ -15,7 +15,7 @@
 *构成自绘契约。
 *
 *****************************************************************************/
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 会话区文档模型的最小渲染单元。子类通过覆写 <see cref="Layout(int)"/>、

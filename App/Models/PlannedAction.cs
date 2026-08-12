@@ -14,7 +14,7 @@
 *描述：Plan 模式下 Agent 规划的单个执行步骤
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// Plan 模式下 Agent 规划的单个执行步骤。Plan 模式退出时用户逐项确认。

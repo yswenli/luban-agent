@@ -14,11 +14,9 @@
 *描述：内联确认/选择公共组件。珊瑚红标题 + 选项行，双通道（键盘+鼠标）焦点同步
 *
 *****************************************************************************/
-using System.Text;
-using Terminal.Gui.Drawing;
-using Terminal.Gui.Input;
+using LubanAgentCli.App.Models;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 内联选择 Block。公共确认/选择组件，用于工具确认、权限模式二次确认、

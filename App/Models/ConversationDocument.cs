@@ -14,9 +14,9 @@
 *描述：会话区文档模型，管理 Block 集合、滚动偏移、自动跟随与可见行查询
 *
 *****************************************************************************/
-using LubanAgent.Models.Blocks;
+using LubanAgentCli.App.Models.Blocks;
 
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// 会话区文档模型。持有 Block 集合，管理布局、滚动状态、自动跟随与可见行查询。

@@ -14,7 +14,7 @@
 *描述：Agent View 三期多会话的任务注册表，管理并发任务生命周期
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// Agent View（三期）任务注册表。管理多会话的 AgentTask 创建、状态跟踪与并发控制，

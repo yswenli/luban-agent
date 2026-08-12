@@ -15,12 +15,13 @@
 *
 *****************************************************************************/
 using System.Text;
+
 using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 工具结果 Block。淡青色着色，默认折叠显示摘要，

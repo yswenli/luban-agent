@@ -15,15 +15,10 @@
 *编组跨线程操作到 UI 线程
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Skills;
-using LubanAgent.App;
-using LubanAgent.Models;
-using LubanAgent.Models.Blocks;
-using LubanAgent.Profiles;
-using Microsoft.Extensions.AI;
+using LubanAgentCli.App.Models;
+using LubanAgentCli.App.Models.Blocks;
 
-namespace LubanAgent.ViewModels;
+namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// 会话 ViewModel。负责创建 Agent、运行流式对话循环、将 AI 更新编排为 Block 追加。

@@ -14,10 +14,10 @@
 *描述：Agent View 三期多会话管理，持有 TaskRegistry 并协调任务视图渲染
 *
 *****************************************************************************/
-using LubanAgent.Models;
-using LubanAgent.Models.Blocks;
+using LubanAgentCli.App.Models;
+using LubanAgentCli.App.Models.Blocks;
 
-namespace LubanAgent.ViewModels;
+namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// Agent View 视图模型。持有 <see cref="TaskRegistry"/>，管理多会话任务，

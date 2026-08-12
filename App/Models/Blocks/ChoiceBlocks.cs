@@ -14,7 +14,9 @@
 *描述：预设场景的内联选择块工厂方法（确认/二次确认/Plan退出）
 *
 *****************************************************************************/
-namespace LubanAgent.Models.Blocks;
+using LubanAgentCli.App.Models;
+
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 内联选择块工厂。为常见的确认、二次确认、Plan 模式退出等场景提供预设方法。

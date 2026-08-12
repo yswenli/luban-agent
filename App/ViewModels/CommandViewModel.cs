@@ -15,13 +15,9 @@
 *统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
-using LubanAgent.App;
-using LubanAgent.Configuration;
-using LubanAgent.Models;
-using LubanAgent.Models.Blocks;
+using LubanAgentCli.App.Models;
 
-namespace LubanAgent.ViewModels;
+namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// 命令 ViewModel。解析 / 输入、匹配命令、执行并将结果以 SystemBlock 追加到文档。

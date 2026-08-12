@@ -14,7 +14,7 @@
 *描述：Plan 模式退出时用户的选择
 *
 *****************************************************************************/
-namespace LubanAgent.Models;
+namespace LubanAgentCli.App.Models;
 
 /// <summary>
 /// Plan 模式退出时用户的选择动作。

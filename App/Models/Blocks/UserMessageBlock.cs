@@ -19,7 +19,7 @@ using Terminal.Gui.Drawing;
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除），此处显式指向 Terminal.Gui 类型
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 用户消息 Block。不可折叠，以 `>` 前缀 + 用户输入文本渲染。

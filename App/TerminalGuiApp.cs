@@ -14,9 +14,6 @@
 *描述：Terminal.Gui 应用启动引导，负责初始化驱动、运行顶层视图与优雅关闭
 *
 *****************************************************************************/
-using LubanAgent.Views;
-using Terminal.Gui.App;
-
 namespace LubanAgent.App;
 
 /// <summary>

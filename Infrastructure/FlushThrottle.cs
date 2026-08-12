@@ -14,6 +14,8 @@
 *描述：合并高频 SetNeedsDisplay() 调用，窗口内只触发一次回调
 *
 *****************************************************************************/
+using Timeout = System.Threading.Timeout;
+
 namespace LubanAgent.Infrastructure;
 
 /// <summary>
