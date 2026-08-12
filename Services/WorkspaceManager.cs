@@ -19,6 +19,7 @@ using LuBan.AIAgent.Rules;
 using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
+using LubanAgent.App;
 
 namespace LubanAgent.Services;
 
@@ -130,6 +131,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly IOptions<LuBanAgentOptions> _options;
     private readonly IEnumerable<ISkill> _builtinSkills;
     private readonly IEnumerable<IRule> _builtinRules;
+    private readonly ITuiOutputWriter Writer;
 
     /// <summary>
     /// 工作区注入的 PathGuard roots（仅记录工作区注入部分，避免误删全局 roots）
@@ -219,6 +221,12 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
+    /// 授权确认委托。由 UI 层设置（启动向导或命令执行时）。
+    /// 如果未设置，默认拒绝授权。
+    /// </summary>
+    public Func<WorkspaceInfo, Task<bool>>? AuthorizationPrompt { get; set; }
+
+    /// <summary>
     /// 当前工作区
     /// </summary>
     public WorkspaceInfo? CurrentWorkspace => Current;
@@ -232,7 +240,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         ISessionManager sessionManager,
         IOptions<LuBanAgentOptions> options,
         IEnumerable<ISkill> builtinSkills,
-        IEnumerable<IRule> builtinRules)
+        IEnumerable<IRule> builtinRules,
+        ITuiOutputWriter writer)
     {
         _repo = repo;
         _sessionRepo = sessionRepo;
@@ -240,6 +249,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         _options = options;
         _builtinSkills = builtinSkills;
         _builtinRules = builtinRules;
+        Writer = writer;
     }
 
     /// <summary>
@@ -343,29 +353,26 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     public async Task<bool> EnsureAuthorizedAsync(WorkspaceInfo workspace)
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[cyan]═══ 工作区授权确认 ═══[/]");
-        AnsiConsole.MarkupLine($"[grey]工作区: {Markup.Escape(workspace.Name)}[/]");
-        AnsiConsole.MarkupLine($"[grey]根目录: {Markup.Escape(workspace.RootPath)}[/]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[yellow]⚠️  AI Agent 将被授权访问此目录及其子目录：[/]");
-        AnsiConsole.MarkupLine("[yellow]  - 读取文件[/]");
-        AnsiConsole.MarkupLine("[yellow]  - 写入/修改文件（需二次确认）[/]");
-        AnsiConsole.MarkupLine("[yellow]  - 执行脚本（需二次确认）[/]");
-        AnsiConsole.WriteLine();
-
-        // 授权为敏感操作，默认值 false（需用户明确输入 y）
-        var confirm = AnsiConsole.Confirm("[yellow]是否授权？[/]", defaultValue: false);
-        if (!confirm)
+        bool confirmed;
+        if (AuthorizationPrompt is not null)
         {
-            AnsiConsole.MarkupLine("[red]✗ 工作区未授权，操作失败[/]");
+            confirmed = await AuthorizationPrompt(workspace);
+        }
+        else
+        {
+            Logger.Warn("AuthorizationPrompt delegate not set, defaulting to denied");
+            confirmed = false;
+        }
+
+        if (!confirmed)
+        {
+            Writer.WriteInfo("已取消授权");
             return false;
         }
 
         await _repo.UpdateAuthorizationAsync(workspace.WorkspaceId, true);
         workspace.IsAuthorized = true;
 
-        // 同步更新 _current（避免传入对象为副本时状态不一致）
         lock (_currentLock)
         {
             if (_current != null && _current.WorkspaceId == workspace.WorkspaceId)
@@ -376,7 +383,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         AddWorkspaceRootToPathGuard(workspace.RootPath);
         SetCurrentDirectory(workspace.RootPath);
-        AnsiConsole.MarkupLine("[green]✓ 已授权工作区[/]");
+        Writer.WriteInfo("已授权工作区");
         return true;
     }
 
@@ -394,7 +401,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]⚠️  无法在工作区目录创建配置文件夹: {Markup.Escape(ex.Message)}[/]");
+                Logger.Error($"无法在工作区目录创建配置文件夹: {ex.Message}");
             }
 
             // 清理超过 24 小时的工作区临时文件
