@@ -19,12 +19,14 @@
 using LubanAgentCli.App.Models;
 using LubanAgentCli.App.Models.Blocks;
 
+using Terminal.Gui.Text;
+
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
 /// 会话区自绘视图。消费 <see cref="ConversationDocument"/>，逐 Segment 渲染 Block 输出，
 /// 通过 <see cref="FlushThrottle"/> 合并流式追加的重绘，支持尾部自动跟随、手动上滚断开、
-/// 鼠标滚轮滚动、鼠标点击折叠/展开 Block。
+/// 鼠标滚轮滚动、鼠标点击折叠/展开 Block、左键拖拽选择文本（右键复制到剪贴板并弹出 2 秒提示）。
 /// </summary>
 internal sealed class ConversationView : View
 {
@@ -42,6 +44,10 @@ internal sealed class ConversationView : View
     private bool _justDragged;
     private string? _selectedText;
     private (int Row, int Col)? _dragStartPos; // 记录拖拽起始位置，用于判断是否为有效拖拽
+
+    // Toast 提示状态（右下角短提示，到期自动消失）
+    private string? _toastText;
+    private Timer? _toastTimer;
 
     /// <summary>
     /// 初始化会话区视图并关联文档模型。
@@ -127,6 +133,7 @@ internal sealed class ConversationView : View
         {
             _doc.BlocksChanged -= OnDocChanged;
             _throttle.Dispose();
+            _toastTimer?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -203,7 +210,8 @@ internal sealed class ConversationView : View
                 if (text.Length > 0)
                 {
                     AddStr(col, row, text);
-                    col += text.Length;
+                    // 按显示单元格宽度前进（CJK 宽字符占 2 列），保证后续 Segment 与选区列对齐
+                    col += text.GetColumns();
                 }
             }
         }
@@ -217,6 +225,16 @@ internal sealed class ConversationView : View
             AddStr(0, row, Truncate(hint, viewport.Width));
         }
 
+        // Toast 短提示：右下角叠加显示（复制成功等），到期由定时器清除
+        if (_toastText is not null)
+        {
+            var toast = $" {_toastText} ";
+            var toastCol = Math.Max(0, viewport.Width - toast.GetColumns() - 1);
+            var toastRow = Math.Max(0, viewport.Height - 1);
+            SetAttribute(TuiTheme.Attr(TuiTheme.Background, TextStyle.Bold, TuiTheme.Accent));
+            AddStr(toastCol, toastRow, toast);
+        }
+
         return true;
     }
 
@@ -225,6 +243,11 @@ internal sealed class ConversationView : View
     /// <inheritdoc/>
     protected override bool OnMouseEvent(Mouse mouse)
     {
+        if (TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag] mouse: flags={mouse.Flags} pos={mouse.Position} view={mouse.View?.GetType().Name}");
+        }
+
         if (mouse.Flags.HasFlag(MouseFlags.WheeledDown))
         {
             _doc.ScrollDown(3);
@@ -244,16 +267,9 @@ internal sealed class ConversationView : View
         var pos = mouse.Position;
         if (pos is null) return false;
 
-        // 鼠标左键按下：记录起始位置，暂不开始选择；启用位置跟踪以接收拖拽移动事件
-        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
-        {
-            _dragStartPos = (pos.Value.Y, pos.Value.X);
-            _isDragging = false;
-            MousePositionTracking = true;
-            return true;
-        }
-
-        // 鼠标移动：如果距离起始位置超过阈值，开始拖拽选择
+        // 拖拽移动：按住左键时的位置上报。注意驱动上送的移动事件 flags 是
+        // LeftButtonPressed|PositionReport 组合值，本分支必须先于"按下"分支判断，
+        // 否则移动事件会被误判为新按下、不断重置拖拽起点，导致永远形不成选区。
         if (_dragStartPos.HasValue && mouse.Flags.HasFlag(MouseFlags.PositionReport))
         {
             var (startRow, startCol) = _dragStartPos.Value;
@@ -279,7 +295,16 @@ internal sealed class ConversationView : View
             return true;
         }
 
-        // 鼠标左键释放：结束选择，提取选中文本，关闭位置跟踪
+        // 鼠标左键按下：记录起始位置，暂不开始选择；启用位置跟踪以接收拖拽移动事件
+        if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
+        {
+            _dragStartPos = (pos.Value.Y, pos.Value.X);
+            _isDragging = false;
+            MousePositionTracking = true;
+            return true;
+        }
+
+        // 鼠标左键释放：结束选择，提取选中文本并保留高亮，等待右键复制；关闭位置跟踪
         if (mouse.Flags.HasFlag(MouseFlags.LeftButtonReleased) && _isDragging)
         {
             _isDragging = false;
@@ -288,6 +313,33 @@ internal sealed class ConversationView : View
             _selectedText = ExtractSelectedText();
             _dragStartPos = null; // 清除拖拽起始位置
             MousePositionTracking = false;
+            _dirty = true;
+            SetNeedsDraw();
+            return true;
+        }
+
+        // 鼠标右键：有选中内容时复制到剪贴板，随后清除选区并弹出 2 秒提示
+        if (mouse.Flags.HasFlag(MouseFlags.RightButtonClicked))
+        {
+            if (_selectedText is null) return false;
+
+            try
+            {
+                GetApp()?.Clipboard?.SetClipboardData(_selectedText);
+            }
+            catch
+            {
+                // 剪贴板访问失败时静默忽略
+            }
+
+            var copiedLength = _selectedText.Length;
+
+            // 复制后选区恢复正常显示
+            _selectionStart = null;
+            _selectionEnd = null;
+            _selectedText = null;
+
+            ShowToast($"已复制 {copiedLength} 字符");
             _dirty = true;
             SetNeedsDraw();
             return true;
@@ -377,21 +429,21 @@ internal sealed class ConversationView : View
             if (row == startRow && row == endRow)
             {
                 // 同一行
-                var start = Math.Min(startCol, lineText.Length);
-                var end = Math.Min(endCol, lineText.Length);
+                var start = CellToCharIndex(lineText, startCol);
+                var end = CellToCharIndex(lineText, endCol);
                 if (start < end) sb.Append(lineText[start..end]);
             }
             else if (row == startRow)
             {
                 // 起始行
-                var start = Math.Min(startCol, lineText.Length);
+                var start = CellToCharIndex(lineText, startCol);
                 if (start < lineText.Length) sb.Append(lineText[start..]);
                 sb.AppendLine();
             }
             else if (row == endRow)
             {
                 // 结束行
-                var end = Math.Min(endCol, lineText.Length);
+                var end = CellToCharIndex(lineText, endCol);
                 if (end > 0) sb.Append(lineText[..end]);
             }
             else
@@ -441,7 +493,43 @@ internal sealed class ConversationView : View
         return base.OnKeyDown(key);
     }
 
+    /// <summary>
+    /// 显示右下角 Toast 短提示，2 秒后自动消失（定时器回调经 Invoke 编组到 UI 线程）。
+    /// </summary>
+    private void ShowToast(string text)
+    {
+        _toastText = text;
+
+        _toastTimer?.Dispose();
+        _toastTimer = new Timer(_ =>
+        {
+            GetApp()?.Invoke(() =>
+            {
+                _toastText = null;
+                SetNeedsDraw();
+            });
+        }, null, TimeSpan.FromSeconds(2), System.Threading.Timeout.InfiniteTimeSpan);
+    }
+
     // ────────────── 文本截断 ──────────────
+
+    /// <summary>
+    /// 将鼠标单元格列转换为字符串字符索引（CJK 宽字符占 2 个单元格，落在字符中间时归并到整个字符）。
+    /// </summary>
+    private static int CellToCharIndex(string text, int cell)
+    {
+        if (cell <= 0) return 0;
+
+        var cells = 0;
+        var index = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (cells >= cell) break;
+            cells += rune.GetColumns();
+            index += rune.Utf16SequenceLength;
+        }
+        return index;
+    }
 
     /// <summary>
     /// 按字符数直接截断（非 CJK 精确宽度）。Segment 文本通常已被 Markdown 拆分为较短片段。

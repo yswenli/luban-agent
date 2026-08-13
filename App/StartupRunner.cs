@@ -72,6 +72,9 @@ internal static class StartupRunner
         OnnxEmbeddingGenerator? embedder,
         ModelManager? modelManager)
     {
+        // 调试模式：启用 TUI 诊断埋点（慢迭代统计、流式内容类型取证等）
+        TuiDiag.Enabled = configuration.GetValue<bool>("LuBanAgent:DebugMode");
+
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
 

@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/13
-*描述：主循环迭代与各渲染环节的耗时诊断，LUBAN_TUI_DIAG=1 时生效
+*描述：主循环迭代与各渲染环节的耗时诊断，LuBanAgent:DebugMode=true 时生效
 *
 *****************************************************************************/
 using System.Collections.Concurrent;
@@ -20,15 +20,14 @@ using System.Diagnostics;
 namespace LubanAgentCli.Infrastructure;
 
 /// <summary>
-/// TUI 性能诊断埋点。设置环境变量 <c>LUBAN_TUI_DIAG=1</c> 后生效：
+/// TUI 性能诊断埋点。在 appsettings.json 中设置 <c>LuBanAgent:DebugMode=true</c> 后生效：
 /// 主循环每次迭代检查周期（&gt;150ms 视为慢迭代），并聚合输出各埋点的
 /// 次数/总耗时/最大耗时到 <c>Logger.Warn</c>。未启用时所有调用为零分配空操作。
 /// </summary>
 internal static class TuiDiag
 {
-    /// <summary>诊断是否启用。</summary>
-    public static readonly bool Enabled =
-        string.Equals(Environment.GetEnvironmentVariable("LUBAN_TUI_DIAG"), "1", StringComparison.Ordinal);
+    /// <summary>诊断是否启用。由启动流程从配置 <c>LuBanAgent:DebugMode</c> 赋值。</summary>
+    public static bool Enabled { get; set; }
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static long _lastTickMs = -1;

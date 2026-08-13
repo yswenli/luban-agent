@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：Agent 思考过程（CoT），紫色，默认折叠
+*描述：Agent 思考过程（CoT），紫色，默认展开
 *
 *****************************************************************************/
 using System.Text;
@@ -24,7 +24,7 @@ using Color = Terminal.Gui.Drawing.Color;
 namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
-/// 思考过程 Block。紫色着色，默认折叠，展开时显示完整 CoT 内容。
+/// 思考过程 Block。紫色着色，默认展开显示完整 CoT 内容，点击标题行可折叠。
 /// </summary>
 public sealed class ThinkingBlock : Block
 {
@@ -34,14 +34,6 @@ public sealed class ThinkingBlock : Block
     /// 思考文本内容（流式追加后为累积结果）。
     /// </summary>
     public string Content => _content.ToString();
-
-    /// <summary>
-    /// 初始化思考过程 Block，默认折叠。
-    /// </summary>
-    public ThinkingBlock()
-    {
-        IsCollapsed = true;
-    }
 
     /// <summary>
     /// 追加流式 token。

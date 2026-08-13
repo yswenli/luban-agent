@@ -31,6 +31,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<None Remove="appsettings.json" />
 		<None Remove="EmbeddingModels\bge-small-zh-v1.5.zip" />
 	</ItemGroup>
 
@@ -40,6 +41,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Content Include="appsettings.json">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		  <Pack>true</Pack>
+		  <PackagePath>tools/</PackagePath>
+		</Content>
 		<Content Include="favicon.ico" />
 		<Content Include="EmbeddingModels\bge-small-zh-v1.5.zip">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -57,15 +63,8 @@
 		<PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
 		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
 		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-		<PackageReference Include="OpenAI" Version="2.13.0" />
-	</ItemGroup>
-
-
-	<ItemGroup>
-		<None Update="appsettings.json">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<Pack>true</Pack>
-			<PackagePath>tools/</PackagePath>
-		</None>
+		<!-- OpenAI 版本必须满足 M.E.AI.OpenAI 10.9.0 的约束 (>=2.12.0 && <2.13.0)；
+		     2.13.0 的流式工具调用表示有破坏性变更，会导致工具调用 chunk 解析为空 update、轮次静默结束 -->
+		<PackageReference Include="OpenAI" Version="2.12.0" />
 	</ItemGroup>
 </Project>

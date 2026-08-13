@@ -127,8 +127,8 @@ internal sealed class CommandViewModel
         _writer.WriteLine();
         _writer.WriteLine("快捷键:");
         _writer.WriteLine("  Enter               提交输入");
-        _writer.WriteLine("  Ctrl+Q              强制退出");
-        _writer.WriteLine("  Esc                 取消当前 Agent 任务");
+        _writer.WriteLine("  Ctrl+Q              退出（需确认）");
+        _writer.WriteLine("  Esc                 取消当前 Agent 任务；空闲时退出（需确认）");
         _writer.WriteLine("  Ctrl+L              重绘屏幕");
         _writer.WriteLine("  Shift+Tab           循环切换权限模式");
         _writer.WriteLine("  Tab                 切换对话/任务视图");

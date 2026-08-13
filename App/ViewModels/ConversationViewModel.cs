@@ -49,6 +49,11 @@ internal sealed class ConversationViewModel
     private readonly StringBuilder _pendingAnswer = new();
     private FlushThrottle? _streamThrottle;
 
+    // 当前会话的流式状态（每次 RunStreamingAsync 开始重置；
+    // 必须是字段而非闭包局部变量——节流器跨会话复用，闭包会把上一会话的状态泄漏到下一会话）
+    private ThinkingBlock? _thinkingBlock;
+    private bool _thinkingCompleted;
+
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
 
@@ -171,6 +176,9 @@ internal sealed class ConversationViewModel
         TuiDiag.AgentRunning = true;
         _currentCts = new CancellationTokenSource();
 
+        // 忙碌指示：页脚 spinner 动画（参考 Claude Code 的 waiting 提示），流式结束时停止
+        SpinnerService.Start("AI 正在思考… (Esc 取消)");
+
         try
         {
             // 设置权限模式与确认回调
@@ -196,6 +204,7 @@ internal sealed class ConversationViewModel
         {
             IsRunning = false;
             TuiDiag.AgentRunning = false;
+            SpinnerService.Stop();
             _currentCts?.Dispose();
             _currentCts = null;
             ResetConfirmationContext();
@@ -244,6 +253,8 @@ internal sealed class ConversationViewModel
         // Default / AcceptEdits：设置确认回调
         context.Callback = (toolName, args) =>
         {
+            if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm enter: {toolName}");
+
             // 同步确认：用 ManualResetEventSlim 阻塞 agent 线程，
             // 同时在 UI 线程显示 InlineChoiceBlock
             using var done = new ManualResetEventSlim(false);
@@ -274,6 +285,8 @@ internal sealed class ConversationViewModel
             // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
             done.Wait(TimeSpan.FromMinutes(2));
             ctr.Dispose();
+
+            if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm exit: {toolName} -> {result}");
             return result;
         };
     }
@@ -304,8 +317,9 @@ internal sealed class ConversationViewModel
     {
         if (_agent is null) return;
 
-        ThinkingBlock? thinkingBlock = null;
-        var thinkingCompleted = false;
+        // 重置当前会话的流式状态（字段级，供跨会话复用的节流回调使用）
+        _thinkingBlock = null;
+        _thinkingCompleted = false;
 
         _streamThrottle ??= new FlushThrottle(FlushPendingTokens, TimeSpan.FromMilliseconds(50));
 
@@ -314,6 +328,12 @@ internal sealed class ConversationViewModel
             await foreach (var update in _agent.RunStreamingAsync(input, ct))
             {
                 if (update.Contents is null) continue;
+
+                // 边界取证：记录框架每次 yield 的内容类型（定位"只产出 reasoning 就结束"类问题）
+                if (TuiDiag.Enabled)
+                {
+                    Logger.Warn($"[TuiDiag] update: {string.Join(",", update.Contents.Select(c => c.GetType().Name))}");
+                }
 
                 foreach (var content in update.Contents)
                 {
@@ -329,26 +349,22 @@ internal sealed class ConversationViewModel
                     if (content is FunctionCallContent functionCall)
                     {
                         FlushPendingTokens();
-                        var toolBlock = new ToolCallBlock(
-                            functionCall.Name,
-                            functionCall.Arguments?.ToString(),
-                            functionCall.CallId);
+                        var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId);
 
                         _dispatcher.Invoke(() => _doc.AppendBlock(toolBlock));
                         continue;
                     }
 
-                    // ─── 工具结果 ───
+                    // ─── 工具结果：不显示返回内容（参考 Claude Code），仅失败时提示一行 ───
                     if (content is FunctionResultContent functionResult)
                     {
-                        FlushPendingTokens();
-                        var resultText = functionResult.Result?.ToString() ?? "(无输出)";
-                        var resultBlock = new ToolResultBlock(resultText, functionResult.CallId)
+                        if (functionResult.Exception is not null)
                         {
-                            IsError = functionResult.Exception is not null
-                        };
-
-                        _dispatcher.Invoke(() => _doc.AppendBlock(resultBlock));
+                            FlushPendingTokens();
+                            _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                                $"❌ 工具执行失败: {functionResult.Exception.Message}",
+                                foreground: BlockColors.Failure)));
+                        }
                         continue;
                     }
 
@@ -357,8 +373,30 @@ internal sealed class ConversationViewModel
                     {
                         lock (_streamLock) _pendingAnswer.Append(text.Text);
                         _streamThrottle.Schedule();
+                        continue;
+                    }
+
+                    // ─── 流内错误（provider 返回的错误内容，不能静默丢弃）───
+                    if (content is ErrorContent error)
+                    {
+                        FlushPendingTokens();
+                        Logger.Warn($"[TuiDiag] ErrorContent: {error.Message}");
+                        _dispatcher.Invoke(() => _doc.AppendBlock(
+                            new SystemBlock($"错误: {error.Message}", foreground: BlockColors.Failure)));
+                        continue;
+                    }
+
+                    // ─── 其余内容类型（UsageContent 等）：仅诊断模式下记录 ───
+                    if (TuiDiag.Enabled)
+                    {
+                        Logger.Warn($"[TuiDiag] unhandled content: {content.GetType().Name}");
                     }
                 }
+            }
+
+            if (TuiDiag.Enabled)
+            {
+                Logger.Warn("[TuiDiag] stream completed normally");
             }
         }
         finally
@@ -367,65 +405,63 @@ internal sealed class ConversationViewModel
             FlushPendingTokens();
         }
 
-        // 流式结束——折叠思考块、对最后一个 Block 做最终布局并标记完成。
+        // 流式结束——对最后一个 Block 做最终布局并标记完成。
         // 收尾 Invoke 排在冲刷 Invoke 之后（TimedEvents FIFO），顺序安全。
         _dispatcher.Invoke(() =>
         {
-            if (thinkingBlock is not null)
-            {
-                thinkingBlock.IsCollapsed = true;
-                _doc.NotifyBlockChanged(thinkingBlock);
-            }
             // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
             _doc.RelayoutLastBlock();
             _doc.MarkLastComplete();
         });
+    }
 
-        // 将缓冲的思考/正文 token 一次性编组到 UI 线程追加
-        void FlushPendingTokens()
+    /// <summary>
+    /// 将缓冲的思考/正文 token 一次性编组到 UI 线程追加。
+    /// 实例方法（非闭包）：节流器跨会话复用，会话状态通过字段访问，避免上一会话的状态泄漏。
+    /// </summary>
+    private void FlushPendingTokens()
+    {
+        string thinking;
+        string answer;
+
+        lock (_streamLock)
         {
-            string thinking;
-            string answer;
+            thinking = _pendingThinking.ToString();
+            _pendingThinking.Clear();
+            answer = _pendingAnswer.ToString();
+            _pendingAnswer.Clear();
+        }
 
-            lock (_streamLock)
+        if (thinking.Length == 0 && answer.Length == 0) return;
+
+        TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
+
+        _dispatcher.Invoke(() =>
+        {
+            if (thinking.Length > 0)
             {
-                thinking = _pendingThinking.ToString();
-                _pendingThinking.Clear();
-                answer = _pendingAnswer.ToString();
-                _pendingAnswer.Clear();
+                if (_thinkingBlock is null)
+                {
+                    _thinkingBlock = new ThinkingBlock();
+                    _doc.AppendBlock(_thinkingBlock);
+                }
+
+                _thinkingBlock.AppendContent(thinking);
+                _doc.NotifyBlockChanged(_thinkingBlock);
             }
 
-            if (thinking.Length == 0 && answer.Length == 0) return;
-
-            TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
-
-            _dispatcher.Invoke(() =>
+            if (answer.Length > 0)
             {
-                if (thinking.Length > 0)
+                // 正文开始时标记思考过程完成
+                if (_thinkingBlock is not null && !_thinkingCompleted)
                 {
-                    if (thinkingBlock is null)
-                    {
-                        thinkingBlock = new ThinkingBlock();
-                        _doc.AppendBlock(thinkingBlock);
-                    }
-
-                    thinkingBlock.AppendContent(thinking);
-                    _doc.NotifyBlockChanged(thinkingBlock);
+                    _thinkingCompleted = true;
+                    _thinkingBlock.MarkComplete();
                 }
 
-                if (answer.Length > 0)
-                {
-                    // 正文开始时标记思考过程完成
-                    if (thinkingBlock is not null && !thinkingCompleted)
-                    {
-                        thinkingCompleted = true;
-                        thinkingBlock.MarkComplete();
-                    }
-
-                    _doc.AppendToAnswerBlock(answer);
-                    _doc.RelayoutLastBlock();
-                }
-            });
-        }
+                _doc.AppendToAnswerBlock(answer);
+                _doc.RelayoutLastBlock();
+            }
+        });
     }
 }

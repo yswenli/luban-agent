@@ -32,6 +32,7 @@ namespace LubanAgentCli.App.Views;
 internal sealed class RootView : Runnable
 {
     private readonly IUiDispatcher _dispatcher;
+    private readonly ITuiUiService _ui;
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel _vm;
     private readonly CommandViewModel _commandVm;
@@ -65,17 +66,18 @@ internal sealed class RootView : Runnable
         SetScheme(TuiTheme.BuildScheme());
 
         _dispatcher = dispatcher;
+        _ui = ui;
         _doc = new ConversationDocument();
         _vm = new ConversationViewModel(services, dispatcher, _doc);
         _commandVm = new CommandViewModel(_doc, _vm, services, dispatcher, ui);
-        _onExitRequested = () => RequestStop();
+        _onExitRequested = ConfirmExit;
         _commandVm.ExitRequested += _onExitRequested;
         _agentVm = new AgentViewViewModel(new TaskRegistry(), _doc);
 
         // 启动横幅
         _doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
         _doc.AppendBlock(new SystemBlock(
-            "  Enter 发送，Shift+Enter 换行，/exit 退出，Ctrl+Q 强退，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
+            "  Enter 发送，Shift+Enter 换行，/exit 退出，Ctrl+Q 退出，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
         _doc.AppendBlock(new SystemBlock("  首次输入前将自动初始化 Agent..."));
 
         if (startupNotices is not null)
@@ -88,10 +90,10 @@ internal sealed class RootView : Runnable
 
         _doc.AppendBlock(new SystemBlock(string.Empty));
 
-        // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 3 = 4）
+        // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 4 = 5）
         _conversation = new ConversationView(_doc)
         {
-            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(4)
+            X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(5)
         };
 
         _footer = new FooterView
@@ -102,10 +104,10 @@ internal sealed class RootView : Runnable
         _footer.SetProvider(footerProvider);
         _footer.SetMode(_vm.PermissionModeDisplay);
 
-        // 输入栏初始高度=3（1行内容 + 边框上下各1），随内容动态扩展
+        // 输入栏初始高度=4（2行内容 + 边框上下各1），随内容视觉折行动态扩展
         _inputBar = new InputBarView
         {
-            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 3
+            X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 4
         };
         _inputBar.Submitted += OnInputSubmitted;
         _inputBar.ContentHeightChanged += OnInputBarHeightChanged;
@@ -184,7 +186,7 @@ internal sealed class RootView : Runnable
     {
         if (key == Key.Q.WithCtrl)
         {
-            RequestStop();
+            ConfirmExit();
             return true;
         }
 
@@ -240,11 +242,31 @@ internal sealed class RootView : Runnable
             {
                 _vm.Cancel();
                 _doc.AppendBlock(new SystemBlock("⌛ 正在取消当前任务...", foreground: BlockColors.Accent));
-                return true;
             }
+            else
+            {
+                // 空闲时 Esc 会触发 Runnable 默认退出：统一走确认对话框防误触
+                ConfirmExit();
+            }
+            return true;
         }
 
         return base.OnKeyDown(key);
+    }
+
+    /// <summary>
+    /// 所有退出路径的统一入口：弹出模态确认对话框，确认后才退出，避免误操作。
+    /// </summary>
+    private void ConfirmExit()
+    {
+        var message = _vm.IsRunning
+            ? "Agent 正在运行中，退出将中断当前任务。\n确定要退出吗？"
+            : "确定要退出 LuBan Agent CLI 吗？";
+
+        if (_ui.Confirm("退出确认", message))
+        {
+            RequestStop();
+        }
     }
 
     // ── 输入提交 ──
@@ -258,7 +280,7 @@ internal sealed class RootView : Runnable
         if (string.Equals(text, "/exit", StringComparison.OrdinalIgnoreCase)
             || string.Equals(text, "/quit", StringComparison.OrdinalIgnoreCase))
         {
-            RequestStop();
+            ConfirmExit();
             return;
         }
 
