@@ -40,7 +40,21 @@ internal sealed class FooterView : View
         _spinnerSubscribed = true;
     }
 
-    private void OnSpinnerChanged() => SetNeedsDraw();
+    /// <summary>
+    /// Spinner 状态变更（由 Timer 线程触发）：编组到 UI 线程后再标记重绘，
+    /// 避免跨线程访问视图状态。
+    /// </summary>
+    private void OnSpinnerChanged()
+    {
+        try
+        {
+            GetApp()?.Invoke(() => SetNeedsDraw());
+        }
+        catch
+        {
+            // 应用未运行或已关闭时丢弃本次重绘
+        }
+    }
 
     /// <summary>
     /// 设置页脚数据提供者。

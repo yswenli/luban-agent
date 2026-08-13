@@ -29,6 +29,9 @@ internal sealed class InputBarView : View
     private readonly TextView _textView;
     private const int MaxHeight = 5;
 
+    /// <summary>默认内容行数（终端行数为整数，取 2 行内容 + 上下边框 = 总高 4）。</summary>
+    private const int MinContentLines = 2;
+
     /// <summary>
     /// 用户提交输入时触发（Enter）。
     /// </summary>
@@ -135,13 +138,23 @@ internal sealed class InputBarView : View
     }
 
     /// <summary>
-    /// 内容变化时自动调整高度（1~MaxHeight 行）并通知父视图。
+    /// 内容变化时按视觉折行数自动调整高度（MinContentLines~MaxHeight 行）并通知父视图。
+    /// WordWrap 的视觉换行不产生 \n，必须按可用宽度估算折行，否则长输入始终单行显示。
     /// </summary>
     private void OnTextViewContentsChanged(object? sender, EventArgs e)
     {
         var text = _textView.Text ?? string.Empty;
-        var lineCount = Math.Max(1, text.Split('\n').Length);
-        var newContentHeight = Math.Min(lineCount, MaxHeight);
+        // 可用内容宽度：视口宽 - 提示符缩进(X=2) - 右边距(1)
+        var contentWidth = Math.Max(1, Viewport.Width - 3);
+
+        var visualLines = 0;
+        foreach (var logicalLine in text.Split('\n'))
+        {
+            var w = EstimateDisplayWidth(logicalLine);
+            visualLines += Math.Max(1, (w + contentWidth - 1) / contentWidth);
+        }
+
+        var newContentHeight = Math.Clamp(visualLines, MinContentLines, MaxHeight);
         // 总高度 = 内容高度 + 边框(上下各1)
         var newHeight = newContentHeight + 2;
         if (Height != newHeight)
@@ -150,6 +163,17 @@ internal sealed class InputBarView : View
             ContentHeightChanged?.Invoke(newHeight);
             SetNeedsLayout();
         }
+    }
+
+    /// <summary>估算显示宽度（CJK 等宽字符计 2 列）。</summary>
+    private static int EstimateDisplayWidth(string s)
+    {
+        var w = 0;
+        foreach (var c in s)
+        {
+            w += c > 0xFF ? 2 : 1;
+        }
+        return w;
     }
 
     /// <summary>
@@ -165,8 +189,8 @@ internal sealed class InputBarView : View
         }
 
         _textView.Text = string.Empty;
-        Height = 3;
-        ContentHeightChanged?.Invoke(3);
+        Height = MinContentLines + 2;
+        ContentHeightChanged?.Invoke(MinContentLines + 2);
         e.Handled = true;
         Submitted?.Invoke(text);
     }
