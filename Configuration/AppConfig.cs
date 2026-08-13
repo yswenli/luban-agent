@@ -15,7 +15,7 @@
 *****************************************************************************/
 using LuBan.AIAgent.Configuration;
 
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// 应用配置模型，包含 Provider、选中的模型、自定义 Skill/规则、MCP 服务器及内置功能的禁用状态

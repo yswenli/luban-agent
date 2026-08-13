@@ -22,7 +22,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgent.Profiles;
+namespace LubanAgentCli.Profiles;
 
 /// <summary>
 /// RAG 工作区的 Agent 配置，启用检索与文件系统工具组，使用 auto 检索模式。

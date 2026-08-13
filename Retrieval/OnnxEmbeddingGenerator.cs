@@ -14,7 +14,7 @@
 *描述：ONNX 嵌入生成器（本地推理）
 *
 *****************************************************************************/
-namespace LubanAgent.Retrieval;
+namespace LubanAgentCli.Retrieval;
 
 /// <summary>
 /// ONNX 嵌入生成器（本地推理）

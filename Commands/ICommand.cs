@@ -14,7 +14,7 @@
 *描述：命令接口
 *
 *****************************************************************************/
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// 命令接口

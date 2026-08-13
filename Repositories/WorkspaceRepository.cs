@@ -14,10 +14,7 @@
 *描述：工作区仓储
 *
 *****************************************************************************/
-using LubanAgent.Entities;
-using LuBan.Orm;
-
-namespace LubanAgent.Repositories;
+namespace LubanAgentCli.Repositories;
 
 /// <summary>
 /// 工作区仓储

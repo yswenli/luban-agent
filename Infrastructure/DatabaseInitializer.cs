@@ -15,7 +15,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgent.Infrastructure;
+namespace LubanAgentCli.Infrastructure;
 
 /// <summary>
 /// 数据库初始化器

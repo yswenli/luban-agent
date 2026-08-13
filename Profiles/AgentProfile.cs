@@ -25,7 +25,7 @@ using LuBan.AIAgent.MCP;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Skills;
 
-namespace LubanAgent.Profiles;
+namespace LubanAgentCli.Profiles;
 
 /// <summary>
 /// Agent 配置抽象基类，定义不同类型 Agent 的系统提示词、工具组、检索模式及创建流程。

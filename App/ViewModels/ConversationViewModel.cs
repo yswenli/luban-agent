@@ -15,8 +15,7 @@
 *编组跨线程操作到 UI 线程
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models;
-using LubanAgentCli.App.Models.Blocks;
+using System.Text;
 
 namespace LubanAgentCli.App.ViewModels;
 
@@ -43,6 +42,12 @@ internal sealed class ConversationViewModel
     private string? _modelName;
 
     private CancellationTokenSource? _currentCts;
+
+    // 流式 token 合批缓冲：agent 线程追加、节流冲刷时取出，替代逐 token Invoke 洪峰
+    private readonly object _streamLock = new();
+    private readonly StringBuilder _pendingThinking = new();
+    private readonly StringBuilder _pendingAnswer = new();
+    private FlushThrottle? _streamThrottle;
 
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
@@ -163,6 +168,7 @@ internal sealed class ConversationViewModel
         if (_agent is null) throw new InvalidOperationException("Agent 未初始化");
 
         IsRunning = true;
+        TuiDiag.AgentRunning = true;
         _currentCts = new CancellationTokenSource();
 
         try
@@ -189,6 +195,7 @@ internal sealed class ConversationViewModel
         finally
         {
             IsRunning = false;
+            TuiDiag.AgentRunning = false;
             _currentCts?.Dispose();
             _currentCts = null;
             ResetConfirmationContext();
@@ -211,6 +218,9 @@ internal sealed class ConversationViewModel
         var context = _services.GetRequiredService<ToolConfirmationContext>();
         context.Mode = PermissionMode;
         context.CancellationToken = _currentCts?.Token ?? default;
+
+        // 设置工作区路径检查器：路径在当前工作区内时，非删除类工具免确认
+        context.WorkspacePathChecker = path => WorkspaceManager.IsWithinWorkspace(path);
 
         // BypassPermissions 模式：跳过所有确认，不设置 Callback
         if (PermissionMode == ToolPermissionMode.BypassPermissions)
@@ -287,114 +297,135 @@ internal sealed class ConversationViewModel
 
     /// <summary>
     /// 运行流式对话循环——将 agent 输出内容转换为 Block 追加。
+    /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程，
+    /// 避免逐 token Invoke 洪峰压垮主循环；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
     /// </summary>
     private async Task RunStreamingAsync(string input, CancellationToken ct)
     {
         if (_agent is null) return;
 
-        var hasThinking = false;
         ThinkingBlock? thinkingBlock = null;
-        var hasAnswerContent = false;
-        var tokenCount = 0;
+        var thinkingCompleted = false;
 
-        await foreach (var update in _agent.RunStreamingAsync(input, ct))
+        _streamThrottle ??= new FlushThrottle(FlushPendingTokens, TimeSpan.FromMilliseconds(50));
+
+        try
         {
-            if (update.Contents is null) continue;
-
-            foreach (var content in update.Contents)
+            await foreach (var update in _agent.RunStreamingAsync(input, ct))
             {
-                // ─── 思考过程 ───
-                if (content is TextReasoningContent reasoning)
+                if (update.Contents is null) continue;
+
+                foreach (var content in update.Contents)
                 {
-                    if (!string.IsNullOrWhiteSpace(reasoning.Text))
+                    // ─── 思考过程（仅过滤 null/空串，保留换行等空白 token）───
+                    if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {
-                        if (!hasThinking)
-                        {
-                            hasThinking = true;
-                            thinkingBlock = new ThinkingBlock();
-                            _dispatcher.Invoke(() => _doc.AppendBlock(thinkingBlock));
-                        }
-
-                        var token = reasoning.Text;
-                        // 将 AppendContent 也编组到 UI 线程，避免与 Layout 产生数据竞争
-                        var tb = thinkingBlock;
-                        _dispatcher.Invoke(() =>
-                        {
-                            tb?.AppendContent(token);
-                            if (tb is not null)
-                            {
-                                tb.Layout(_doc.LayoutWidth > 0 ? _doc.LayoutWidth : 80);
-                                // 思考过程的首次追加用 AppendBlock 已完成，后续用 RelayoutLastBlock
-                            }
-                        });
-                    }
-                    continue;
-                }
-
-                // ─── 工具调用 ───
-                if (content is FunctionCallContent functionCall)
-                {
-                    var toolBlock = new ToolCallBlock(
-                        functionCall.Name,
-                        functionCall.Arguments?.ToString(),
-                        functionCall.CallId);
-
-                    _dispatcher.Invoke(() => _doc.AppendBlock(toolBlock));
-                    continue;
-                }
-
-                // ─── 工具结果 ───
-                if (content is FunctionResultContent functionResult)
-                {
-                    var resultText = functionResult.Result?.ToString() ?? "(无输出)";
-                    var resultBlock = new ToolResultBlock(resultText, functionResult.CallId)
-                    {
-                        IsError = functionResult.Exception is not null
-                    };
-
-                    _dispatcher.Invoke(() => _doc.AppendBlock(resultBlock));
-                    continue;
-                }
-
-                // ─── 正文回复（流式 token）───
-                if (content is TextContent text && !string.IsNullOrWhiteSpace(text.Text))
-                {
-                    if (!hasAnswerContent)
-                    {
-                        hasAnswerContent = true;
-                        // 思考过程结束时标记完成
-                        if (thinkingBlock is not null)
-                        {
-                            var tb = thinkingBlock;
-                            _dispatcher.Invoke(() => tb.MarkComplete());
-                        }
+                        lock (_streamLock) _pendingThinking.Append(reasoning.Text);
+                        _streamThrottle.Schedule();
+                        continue;
                     }
 
-                    var token = text.Text;
-                    tokenCount++;
-                    _dispatcher.Invoke(() =>
+                    // ─── 工具调用 ───
+                    if (content is FunctionCallContent functionCall)
                     {
-                        _doc.AppendToAnswerBlock(token);
-                        // 批量布局：每 5 个 token 才 Relayout 一次，避免 O(n²) 开销
-                        if (tokenCount % 5 == 0)
+                        FlushPendingTokens();
+                        var toolBlock = new ToolCallBlock(
+                            functionCall.Name,
+                            functionCall.Arguments?.ToString(),
+                            functionCall.CallId);
+
+                        _dispatcher.Invoke(() => _doc.AppendBlock(toolBlock));
+                        continue;
+                    }
+
+                    // ─── 工具结果 ───
+                    if (content is FunctionResultContent functionResult)
+                    {
+                        FlushPendingTokens();
+                        var resultText = functionResult.Result?.ToString() ?? "(无输出)";
+                        var resultBlock = new ToolResultBlock(resultText, functionResult.CallId)
                         {
-                            _doc.RelayoutLastBlock();
-                        }
-                    });
+                            IsError = functionResult.Exception is not null
+                        };
+
+                        _dispatcher.Invoke(() => _doc.AppendBlock(resultBlock));
+                        continue;
+                    }
+
+                    // ─── 正文回复（仅过滤 null/空串，保留换行等空白 token）───
+                    if (content is TextContent text && !string.IsNullOrEmpty(text.Text))
+                    {
+                        lock (_streamLock) _pendingAnswer.Append(text.Text);
+                        _streamThrottle.Schedule();
+                    }
                 }
             }
         }
+        finally
+        {
+            // 取消/异常路径也冲刷剩余 token，保证已产出内容不丢失
+            FlushPendingTokens();
+        }
 
-        // 流式结束——标记最后一个 Block 完成
+        // 流式结束——折叠思考块、对最后一个 Block 做最终布局并标记完成。
+        // 收尾 Invoke 排在冲刷 Invoke 之后（TimedEvents FIFO），顺序安全。
         _dispatcher.Invoke(() =>
         {
-            // 折叠思考块
-            if (thinkingBlock is not null && !thinkingBlock.IsCollapsed)
+            if (thinkingBlock is not null)
             {
                 thinkingBlock.IsCollapsed = true;
-                thinkingBlock.Layout(_doc.LayoutWidth > 0 ? _doc.LayoutWidth : 80);
+                _doc.NotifyBlockChanged(thinkingBlock);
             }
+            // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
+            _doc.RelayoutLastBlock();
             _doc.MarkLastComplete();
         });
+
+        // 将缓冲的思考/正文 token 一次性编组到 UI 线程追加
+        void FlushPendingTokens()
+        {
+            string thinking;
+            string answer;
+
+            lock (_streamLock)
+            {
+                thinking = _pendingThinking.ToString();
+                _pendingThinking.Clear();
+                answer = _pendingAnswer.ToString();
+                _pendingAnswer.Clear();
+            }
+
+            if (thinking.Length == 0 && answer.Length == 0) return;
+
+            TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
+
+            _dispatcher.Invoke(() =>
+            {
+                if (thinking.Length > 0)
+                {
+                    if (thinkingBlock is null)
+                    {
+                        thinkingBlock = new ThinkingBlock();
+                        _doc.AppendBlock(thinkingBlock);
+                    }
+
+                    thinkingBlock.AppendContent(thinking);
+                    _doc.NotifyBlockChanged(thinkingBlock);
+                }
+
+                if (answer.Length > 0)
+                {
+                    // 正文开始时标记思考过程完成
+                    if (thinkingBlock is not null && !thinkingCompleted)
+                    {
+                        thinkingCompleted = true;
+                        thinkingBlock.MarkComplete();
+                    }
+
+                    _doc.AppendToAnswerBlock(answer);
+                    _doc.RelayoutLastBlock();
+                }
+            });
+        }
     }
 }

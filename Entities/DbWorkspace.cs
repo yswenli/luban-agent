@@ -17,7 +17,7 @@
 using LuBan.Orm.Models;
 using SqlSugar;
 
-namespace LubanAgent.Entities;
+namespace LubanAgentCli.Entities;
 
 /// <summary>
 /// 工作区实体

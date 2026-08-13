@@ -15,7 +15,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgent.Profiles;
+namespace LubanAgentCli.Profiles;
 
 /// <summary>
 /// 普通工作区的 Agent 配置，启用全部工具，不使用检索模式。

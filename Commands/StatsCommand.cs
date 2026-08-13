@@ -14,9 +14,7 @@
 *描述：统计命令 - 会话与 Token 统计（支持 --all 跨工作区统计）
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// 统计命令 - 会话与 Token 统计

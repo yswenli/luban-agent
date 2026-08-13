@@ -16,7 +16,7 @@
 *****************************************************************************/
 using Timeout = System.Threading.Timeout;
 
-namespace LubanAgent.Infrastructure;
+namespace LubanAgentCli.Infrastructure;
 
 /// <summary>
 /// 流式刷新节流器。将高频回调合并为固定窗口（默认 16ms ~60fps）内的一次触发，

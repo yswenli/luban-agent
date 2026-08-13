@@ -23,7 +23,7 @@ using Terminal.Gui.Drawing;
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// TUI 输出写入器接口。命令（/help /mode /provider 等）通过此接口输出到会话文档，

@@ -62,9 +62,16 @@ public sealed class ThinkingBlock : Block
         }
         else
         {
+            // 与 Render 保持一致：标题行 + 内容行（空内容时为"（无内容）"提示行）
             var text = _content.ToString();
+            if (string.IsNullOrEmpty(text))
+            {
+                LineCount = 2;
+                return;
+            }
+
             var w = Math.Max(1, width - 1); // 缩进 1 列
-            LineCount = Math.Max(1, (text.Length + w - 1) / w);
+            LineCount = 1 + Math.Max(1, (text.Length + w - 1) / w);
         }
     }
 

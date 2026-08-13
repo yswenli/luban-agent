@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： TerminalGuiApp
 *版本号： V1.0.0.0
 *唯一标识：TUI 应用启动引导
@@ -14,7 +14,7 @@
 *描述：Terminal.Gui 应用启动引导，负责初始化驱动、运行顶层视图与优雅关闭
 *
 *****************************************************************************/
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// Terminal.Gui 应用启动引导。采用官方推荐的实例式模型
@@ -78,13 +78,24 @@ internal sealed class TerminalGuiApp : IDisposable
         IApplication? application = null;
         try
         {
+            // 诊断：LUBAN_TUI_DRIVER=ansi|windows|dotnet 可强制指定驱动做 A/B 对比
+            var driverName = Environment.GetEnvironmentVariable("LUBAN_TUI_DRIVER");
+
             application = Application.Create();
-            application.Init();
+            application.Init(driverName);
 
             ConfigureDriver(application);
+            if (TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag] driver={(string.IsNullOrEmpty(driverName) ? "(default)" : driverName)} actual={application.Driver}");
+                application.Iteration += (_, _) => TuiDiag.IterationTick();
+                application.Keyboard.KeyDown += (_, _) => TuiDiag.KeyArrival();
+            }
             Dispatcher = new TerminalGuiDispatcher(application);
             var ui = new TuiUiService(application);
 
+            // 阶段一：运行启动向导（模态对话框），执行配置加载、数据库初始化、嵌入模型准备等。
+            // 初始化完成或用户取消后，StartupDialog 内部调用 RequestStop() 关闭此对话框。
             var startup = new StartupDialog(args, Dispatcher, ui);
             application.Run(startup);
 
@@ -94,6 +105,7 @@ internal sealed class TerminalGuiApp : IDisposable
             }
 
             Services = startup.Services;
+            // 阶段二：启动成功后进入主界面，传入 OnUnhandledException 保持主循环在普通异常下存活。
             using var root = new RootView(Services, Dispatcher, ui, startup.Notices);
             application.Run(root, OnUnhandledException);
         }

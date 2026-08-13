@@ -29,18 +29,18 @@ global using LuBan.Logging;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
-global using LubanAgent.App;
-global using LubanAgent.Commands;
-global using LubanAgent.Configuration;
-global using LubanAgent.Entities;
-global using LubanAgent.Infrastructure;
-global using LubanAgent.Models.Blocks;
-global using LubanAgent.Profiles;
-global using LubanAgent.Repositories;
-global using LubanAgent.Retrieval;
-global using LubanAgent.Services;
-
+global using LubanAgentCli.App;
+global using LubanAgentCli.App.Models;
+global using LubanAgentCli.App.Models.Blocks;
 global using LubanAgentCli.App.Views;
+global using LubanAgentCli.Commands;
+global using LubanAgentCli.Configuration;
+global using LubanAgentCli.Entities;
+global using LubanAgentCli.Infrastructure;
+global using LubanAgentCli.Profiles;
+global using LubanAgentCli.Repositories;
+global using LubanAgentCli.Retrieval;
+global using LubanAgentCli.Services;
 
 global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.AI;

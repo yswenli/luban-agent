@@ -830,7 +830,7 @@ New-Item -ItemType Directory -Path "D:\WorkBench\Walle\luban\luban-agent\Configu
 
 ```csharp
 // LubanAgent/Configuration/AppConfig.cs
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// 应用配置（config.json 的完整结构）
@@ -854,7 +854,7 @@ public class AppConfig
 
 ```csharp
 // LubanAgent/Configuration/ProviderConfig.cs
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// Provider 配置
@@ -890,7 +890,7 @@ git -C "D:\WorkBench\Walle\luban\luban-agent" add -A && git -C "D:\WorkBench\Wal
 using LuBan.AIAgent.Configuration;
 using LubanAgent.Configuration;
 
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// 应用配置管理器，实现 IAppConfigReader 接口。
@@ -1012,7 +1012,7 @@ using System.Data.SQLite;
 using LuBan.AIAgent.LocalMemory;
 using LuBan.AIAgent.Utils.Text;
 
-namespace LubanAgent.Infrastructure;
+namespace LubanAgentCli.Infrastructure;
 
 /// <summary>
 /// 基于 SQLite 的本地记忆存储实现
@@ -1053,7 +1053,7 @@ git -C "D:\WorkBench\Walle\luban\luban-agent" add -A && git -C "D:\WorkBench\Wal
 using LuBan.AIAgent.Providers;
 using Microsoft.Extensions.AI;
 
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// 多 Provider 路由客户端，实现 IProviderRouter 和 IChatClient。

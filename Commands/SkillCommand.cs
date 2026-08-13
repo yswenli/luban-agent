@@ -11,9 +11,7 @@
 *描述：Skill 命令 - 查看和执行 Skill (list/add/update/delete/switch)
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// Skill 命令 - 查看和执行 Skill (list/add/update/delete/switch)

@@ -13,7 +13,7 @@
 *描述：Provider 配置模型
 *
 *****************************************************************************/
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// AI Provider 配置模型，描述一个可用的模型服务提供商及其连接信息

@@ -17,7 +17,7 @@ using System.Text.Json;
 using LuBan.AIAgent.Configuration;
 using Microsoft.Extensions.AI;
 
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// 应用配置管理器，负责配置文件的加载与保存，并提供 Provider、Skill、规则、MCP 服务器及模型等配置项的读写操作

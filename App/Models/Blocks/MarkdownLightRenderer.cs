@@ -11,20 +11,19 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/12
-*描述：轻量 Markdown 渲染器，支持 headers/bold/italic/code/lists/links，
+*描述：轻量 Markdown 渲染器，支持 headers/bold/italic/strikethrough/code/lists/tasklists/links，
 *输出带色 TextSegment 列表，供 AssistantMessageBlock 自绘使用
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models.Blocks;
-
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.Models.Blocks;
+namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 轻量 Markdown 渲染器。将 Markdown 文本解析为带色 <see cref="TextSegment"/> 列表，
-/// 支持 # headers、**bold**、*italic*、`inline code`、```code blocks```、
-/// - 列表项、[links](url)。不依赖外部 Markdown 库。
+/// 支持 # headers、**bold**、*italic*、~~strikethrough~~、`inline code`、```code blocks```、
+/// - 列表项、- [ ] 任务列表、[links](url)、自动 URL 链接、HTML 标签过滤。
+/// 不依赖外部 Markdown 库。
 /// </summary>
 internal static partial class MarkdownLightRenderer
 {
@@ -49,10 +48,19 @@ internal static partial class MarkdownLightRenderer
     /// <summary>引用块前景色 #5C6370。</summary>
     private static readonly Color QuoteFg = new(0x5C, 0x63, 0x70, 0xFF);
 
+    /// <summary>任务列表已完成前景色 #98C379。</summary>
+    private static readonly Color TaskDoneFg = new(0x98, 0xC3, 0x79, 0xFF);
+
+    /// <summary>任务列表未完成前景色 #E5C07B。</summary>
+    private static readonly Color TaskTodoFg = new(0xE5, 0xC0, 0x7B, 0xFF);
+
+    /// <summary>删除线颜色。</summary>
+    private static readonly Color StrikethroughFg = new(0x5C, 0x63, 0x70, 0xFF);
+
     [GeneratedRegex(@"^ {0,3}(#{1,6})\s+(.*)$")]
     private static partial Regex HeaderRegex();
 
-    [GeneratedRegex(@"^ {0,3}[-*+]\s+(.*)$")]
+    [GeneratedRegex(@"^ {0,3}[-*+]\s+(\[([ xX])\]\s+)?(.*)$")]
     private static partial Regex ListRegex();
 
     [GeneratedRegex(@"^ {0,3}>\s?(.*)$")]
@@ -60,6 +68,47 @@ internal static partial class MarkdownLightRenderer
 
     [GeneratedRegex(@"```(\w*)")]
     private static partial Regex CodeBlockStartRegex();
+
+    [GeneratedRegex(@"<[^>]+>")]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"(https?://[^\s<>\[\]""']+)")]
+    private static partial Regex AutoUrlRegex();
+
+    /// <summary>
+    /// 预处理 Markdown 文本：移除/简化 HTML 标签。
+    /// </summary>
+    private static string PreprocessMarkdown(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return markdown;
+
+        // 处理常见的 HTML 标签和自定义组件标签
+        // 自闭合标签如 <Badge type="tip" text="待修改" /> → 提取 text 属性或移除
+        var result = HtmlTagRegex().Replace(markdown, match =>
+        {
+            var tag = match.Value;
+
+            // 尝试提取常见的文本属性（如 text、label、title）
+            var textMatch = Regex.Match(tag, @"(?:text|label|title|content)\s*=\s*[""']([^""']+)[""']", RegexOptions.IgnoreCase);
+            if (textMatch.Success)
+            {
+                return $"[{textMatch.Groups[1].Value}]";
+            }
+
+            // 换行标签
+            if (tag.Equals("<br>", StringComparison.OrdinalIgnoreCase) ||
+                tag.Equals("<br/>", StringComparison.OrdinalIgnoreCase) ||
+                tag.Equals("<br />", StringComparison.OrdinalIgnoreCase))
+            {
+                return "\n";
+            }
+
+            // 其他 HTML 标签直接移除
+            return string.Empty;
+        });
+
+        return result;
+    }
 
     /// <summary>
     /// 将 Markdown 文本解析为带样式的文本片段列表（未换行）。
@@ -76,12 +125,16 @@ internal static partial class MarkdownLightRenderer
             return segments;
         }
 
+        // 预处理：移除 HTML 标签
+        markdown = PreprocessMarkdown(markdown);
+
         var sb = new StringBuilder();
         TextStyle currentStyle = TextStyle.None;
         Color currentFg = defaultFg;
         bool inCode = false;
         bool inBold = false;
         bool inItalic = false;
+        bool inStrikethrough = false;
         int i = 0;
 
         void Flush()
@@ -100,13 +153,14 @@ internal static partial class MarkdownLightRenderer
             // 转义字符
             if (c == '\\' && i + 1 < markdown.Length && IsMarkdownSpecial(markdown[i + 1]))
             {
-                sb.Append(markdown[i + 1]);
+                Flush();
+                segments.Add(new TextSegment(markdown[i + 1].ToString(), defaultFg));
                 i += 2;
                 continue;
             }
 
             // 行内代码 `code`
-            if (c == '`' && !inBold && !inItalic)
+            if (c == '`' && !inBold && !inItalic && !inStrikethrough)
             {
                 if (!inCode)
                 {
@@ -129,47 +183,97 @@ internal static partial class MarkdownLightRenderer
             }
 
             // 粗体 **text**
-            if (c == '*' && i + 1 < markdown.Length && markdown[i + 1] == '*' && !inCode)
+            if (c == '*' && i + 1 < markdown.Length && markdown[i + 1] == '*' && !inCode && !inStrikethrough)
             {
+                // 检查是否是 ***bold+italic***
+                if (inBold && i + 2 < markdown.Length && markdown[i + 2] == '*')
+                {
+                    // 暂时不处理这种复杂情况，按粗体处理
+                }
+
                 if (inBold)
                 {
                     Flush();
                     inBold = false;
                     currentStyle = inItalic ? TextStyle.Italic : TextStyle.None;
+                    if (inStrikethrough) currentStyle |= TextStyle.Strikethrough;
+                    currentFg = inStrikethrough ? StrikethroughFg : defaultFg;
                 }
                 else
                 {
                     Flush();
                     inBold = true;
-                    currentStyle = inItalic
-                        ? (TextStyle.Bold | TextStyle.Italic)
-                        : TextStyle.Bold;
+                    currentStyle = TextStyle.Bold;
+                    if (inItalic) currentStyle |= TextStyle.Italic;
+                    if (inStrikethrough) currentStyle |= TextStyle.Strikethrough;
                 }
                 i += 2;
                 continue;
             }
 
             // 斜体 *text*（单星号，且不在粗体内）
-            if (c == '*' && !inBold && !inCode)
+            if (c == '*' && !inBold && !inCode && !inStrikethrough)
             {
+                // 避免与列表项的 * 混淆（行首的 * 后面跟空格是列表项）
+                if (i == 0 || (i > 0 && markdown[i - 1] == ' ') || (i > 0 && markdown[i - 1] == '\n'))
+                {
+                    // 可能是列表项，继续检查后面是否有空格
+                    if (i + 1 < markdown.Length && markdown[i + 1] == ' ')
+                    {
+                        sb.Append(c);
+                        i++;
+                        continue;
+                    }
+                }
+
                 if (inItalic)
                 {
                     Flush();
                     inItalic = false;
                     currentStyle = TextStyle.None;
+                    if (inBold) currentStyle |= TextStyle.Bold;
+                    if (inStrikethrough) currentStyle |= TextStyle.Strikethrough;
+                    currentFg = inStrikethrough ? StrikethroughFg : defaultFg;
                 }
                 else
                 {
                     Flush();
                     inItalic = true;
                     currentStyle = TextStyle.Italic;
+                    if (inBold) currentStyle |= TextStyle.Bold;
+                    if (inStrikethrough) currentStyle |= TextStyle.Strikethrough;
                 }
                 i++;
                 continue;
             }
 
+            // 删除线 ~~text~~
+            if (c == '~' && i + 1 < markdown.Length && markdown[i + 1] == '~' && !inCode)
+            {
+                if (inStrikethrough)
+                {
+                    Flush();
+                    inStrikethrough = false;
+                    currentStyle = TextStyle.None;
+                    if (inBold) currentStyle |= TextStyle.Bold;
+                    if (inItalic) currentStyle |= TextStyle.Italic;
+                    currentFg = defaultFg;
+                }
+                else
+                {
+                    Flush();
+                    inStrikethrough = true;
+                    currentStyle = TextStyle.Strikethrough;
+                    if (inBold) currentStyle |= TextStyle.Bold;
+                    if (inItalic) currentStyle |= TextStyle.Italic;
+                    currentFg = StrikethroughFg;
+                }
+                i += 2;
+                continue;
+            }
+
             // 链接 [text](url)
-            if (c == '[' && !inCode && !inBold && !inItalic)
+            if (c == '[' && !inCode && !inBold && !inItalic && !inStrikethrough)
             {
                 var closeBracket = markdown.IndexOf(']', i + 1);
                 if (closeBracket > i + 1 && closeBracket + 1 < markdown.Length && markdown[closeBracket + 1] == '(')
@@ -179,10 +283,30 @@ internal static partial class MarkdownLightRenderer
                     {
                         Flush();
                         var linkText = markdown[(i + 1)..closeBracket];
-                        segments.Add(new TextSegment(linkText, LinkFg, Bg: null, Style: TextStyle.Underline));
+                        // 递归解析链接文本中的样式
+                        var linkSegments = ParseInline(linkText, LinkFg);
+                        foreach (var seg in linkSegments)
+                        {
+                            segments.Add(new TextSegment(seg.Text, LinkFg, seg.Bg, seg.Style | TextStyle.Underline));
+                        }
                         i = closeParen + 1;
                         continue;
                     }
+                }
+            }
+
+            // 自动 URL 链接检测
+            if (c == 'h' && i + 7 < markdown.Length && markdown[i..(i + 7)] == "http://" ||
+                c == 'h' && i + 8 < markdown.Length && markdown[i..(i + 8)] == "https://")
+            {
+                var urlMatch = AutoUrlRegex().Match(markdown, i);
+                if (urlMatch.Success && urlMatch.Index == i)
+                {
+                    Flush();
+                    var url = urlMatch.Value;
+                    segments.Add(new TextSegment(url, LinkFg, Bg: null, Style: TextStyle.Underline));
+                    i += url.Length;
+                    continue;
                 }
             }
 
@@ -208,6 +332,9 @@ internal static partial class MarkdownLightRenderer
         {
             return result;
         }
+
+        // 预处理
+        markdown = PreprocessMarkdown(markdown);
 
         var lines = markdown.Split('\n');
         bool inCodeBlock = false;
@@ -253,6 +380,21 @@ internal static partial class MarkdownLightRenderer
                 continue;
             }
 
+            // 表格分隔符行 |---|---| 跳过（简化处理，不做表格渲染）
+            if (Regex.IsMatch(line.Trim(), @"^\|?[\s:|-]+\|?$"))
+            {
+                continue;
+            }
+
+            // 表格行 | cell1 | cell2 | → 简化为普通文本，用空格分隔
+            if (line.TrimStart().StartsWith("|") && line.TrimEnd().EndsWith("|"))
+            {
+                var cells = line.Trim().Trim('|').Split('|');
+                var simplified = "  " + string.Join(" | ", cells.Select(c => c.Trim()));
+                result.Add(ParseInline(simplified, defaultFg));
+                continue;
+            }
+
             // Header: # text
             var headerMatch = HeaderRegex().Match(line);
             if (headerMatch.Success)
@@ -268,13 +410,42 @@ internal static partial class MarkdownLightRenderer
                 continue;
             }
 
-            // List: - text / * text / + text
+            // List: - text / * text / + text / - [ ] task / - [x] task
             var listMatch = ListRegex().Match(line);
             if (listMatch.Success)
             {
-                var text = listMatch.Groups[1].Value;
-                var bulletSegments = new List<TextSegment> { new("  • ", ListBulletFg) };
-                bulletSegments.AddRange(ParseInline(text, defaultFg));
+                var checkbox = listMatch.Groups[2].Value;
+                var text = listMatch.Groups[3].Value;
+                var bulletSegments = new List<TextSegment>();
+
+                if (!string.IsNullOrEmpty(checkbox))
+                {
+                    // 任务列表
+                    var isChecked = checkbox.ToLower() == "x";
+                    var checkText = isChecked ? "  ✓ " : "  ○ ";
+                    var checkFg = isChecked ? TaskDoneFg : TaskTodoFg;
+                    var checkStyle = isChecked ? TextStyle.Strikethrough : TextStyle.None;
+                    bulletSegments.Add(new TextSegment(checkText, checkFg, Bg: null, checkStyle));
+                    var textSegments = ParseInline(text, isChecked ? StrikethroughFg : defaultFg);
+                    if (isChecked)
+                    {
+                        // 已完成任务的文本添加删除线
+                        foreach (var seg in textSegments)
+                        {
+                            bulletSegments.Add(new TextSegment(seg.Text, StrikethroughFg, seg.Bg, seg.Style | TextStyle.Strikethrough));
+                        }
+                    }
+                    else
+                    {
+                        bulletSegments.AddRange(textSegments);
+                    }
+                }
+                else
+                {
+                    // 普通列表
+                    bulletSegments.Add(new TextSegment("  • ", ListBulletFg));
+                    bulletSegments.AddRange(ParseInline(text, defaultFg));
+                }
                 result.Add(bulletSegments);
                 continue;
             }
@@ -395,11 +566,23 @@ internal static partial class MarkdownLightRenderer
             return;
         }
 
-        // 按宽度逐行拆分
+        // 按宽度逐行拆分，尽量在空格处换行
         int offset = 0;
         while (offset < fullText.Length)
         {
-            var take = Math.Min(width, fullText.Length - offset);
+            var remaining = fullText.Length - offset;
+            var take = Math.Min(width, remaining);
+
+            // 如果不是最后一行，尝试在空格处换行
+            if (take < remaining)
+            {
+                var wrapPos = fullText.LastIndexOf(' ', offset + take - 1, take);
+                if (wrapPos > offset)
+                {
+                    take = wrapPos - offset + 1;
+                }
+            }
+
             var lineText = fullText[offset..(offset + take)];
 
             var lineSegments = new List<TextSegment>();
@@ -420,5 +603,5 @@ internal static partial class MarkdownLightRenderer
     }
 
     private static bool IsMarkdownSpecial(char c) =>
-        c is '*' or '`' or '[' or ']' or '(' or ')' or '#' or '_' or '\\' or '-';
+        c is '*' or '`' or '[' or ']' or '(' or ')' or '#' or '_' or '\\' or '-' or '~';
 }

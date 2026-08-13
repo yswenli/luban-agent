@@ -13,7 +13,7 @@
 *描述：基于 SQLite 的本地记忆存储实现
 *
 *****************************************************************************/
-namespace LubanAgent.Infrastructure;
+namespace LubanAgentCli.Infrastructure;
 
 /// <summary>
 /// 基于 SQLite 的本地记忆存储实现，支持记忆条目的增删改查、过期清理及向量存储

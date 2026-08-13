@@ -31,6 +31,12 @@ public sealed class AssistantMessageBlock : Block
 {
     private readonly StringBuilder _content = new();
 
+    // Markdown 解析缓存：内容与宽度均未变化时直接复用上次结果，
+    // 避免每次 Layout/Render 对全文重新 ParseLines + WrapLines（O(n)）。
+    private string? _cachedText;
+    private int _cachedWidth = -1;
+    private List<RenderLine>? _cachedLines;
+
     /// <summary>不可折叠。</summary>
     public override bool IsFoldable => false;
 
@@ -52,30 +58,42 @@ public sealed class AssistantMessageBlock : Block
     public override void Layout(int width)
     {
         base.Layout(width);
-        var text = _content.ToString();
-        if (string.IsNullOrEmpty(text))
-        {
-            LineCount = 1;
-            return;
-        }
-
-        var parsed = MarkdownLightRenderer.ParseLines(text, BlockColors.AssistantText);
-        var wrapped = MarkdownLightRenderer.WrapLines(parsed, Math.Max(1, width));
-        LineCount = Math.Max(1, wrapped.Count);
+        var lines = GetLines(width);
+        LineCount = Math.Max(1, lines.Count);
     }
 
     /// <inheritdoc/>
     public override void Render(List<RenderLine> lines, int width)
     {
+        lines.AddRange(GetLines(width));
+    }
+
+    /// <summary>
+    /// 获取当前内容按指定宽度解析换行后的渲染行，命中缓存时零解析开销。
+    /// </summary>
+    private List<RenderLine> GetLines(int width)
+    {
+        var w = Math.Max(1, width);
         var text = _content.ToString();
+
         if (string.IsNullOrEmpty(text))
         {
-            lines.Add(RenderLine.Single(string.Empty, BlockColors.AssistantText));
-            return;
+            return [RenderLine.Single(string.Empty, BlockColors.AssistantText)];
+        }
+
+        if (_cachedLines is not null && _cachedWidth == w
+            && string.Equals(_cachedText, text, StringComparison.Ordinal))
+        {
+            return _cachedLines;
         }
 
         var parsed = MarkdownLightRenderer.ParseLines(text, BlockColors.AssistantText);
-        var wrapped = MarkdownLightRenderer.WrapLines(parsed, Math.Max(1, width));
-        lines.AddRange(wrapped);
+        var wrapped = MarkdownLightRenderer.WrapLines(parsed, w);
+
+        _cachedText = text;
+        _cachedWidth = w;
+        _cachedLines = wrapped;
+
+        return wrapped;
     }
 }

@@ -14,7 +14,7 @@
 *描述：Session 数据库实体
 *
 *****************************************************************************/
-namespace LubanAgent.Entities;
+namespace LubanAgentCli.Entities;
 
 /// <summary>
 /// 会话实体

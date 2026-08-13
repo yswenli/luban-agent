@@ -14,9 +14,7 @@
 *描述：封装应用初始化逻辑，供启动向导调用
 *
 *****************************************************************************/
-using LubanAgent.Retrieval;
-
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 启动运行器。封装应用初始化逻辑，供启动向导调用。
@@ -121,7 +119,7 @@ internal static class StartupRunner
                 var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 dbPath = Path.Combine(appData, "LuBan", "AIAgent", "localmemory.db");
             }
-            return new LubanAgent.Infrastructure.SqliteLocalMemoryStore(dbPath);
+            return new SqliteLocalMemoryStore(dbPath);
         });
 
         services.AddLuBanAgent(configuration);
@@ -168,16 +166,35 @@ internal static class StartupRunner
             var workspaceRepo = sp.GetRequiredService<WorkspaceRepository>();
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
             var existing = await workspaceRepo.GetByRootPathAsync(cwd);
+            string workspaceId;
             if (existing == null)
             {
                 var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: "Normal");
-                await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+                workspaceId = ws.WorkspaceId;
                 notices.Add($"已创建工作区: {ws.Name} ({ws.RootPath})");
             }
             else
             {
-                await workspaceManager.SetCurrentAsync(existing.WorkspaceId);
+                workspaceId = existing.WorkspaceId;
                 notices.Add($"当前工作区: {existing.Name} ({existing.RootPath})");
+            }
+
+            // 设置为当前工作区
+            await workspaceManager.SetCurrentAsync(workspaceId);
+
+            // 如果工作区未授权，触发授权确认弹窗
+            var current = workspaceManager.CurrentWorkspace;
+            if (current != null && !current.IsAuthorized)
+            {
+                var authorized = await workspaceManager.EnsureAuthorizedAsync(current);
+                if (authorized)
+                {
+                    notices.Add("工作区已授权");
+                }
+                else
+                {
+                    notices.Add("工作区未授权，文件操作将受限");
+                }
             }
         }
         catch (Exception ex)

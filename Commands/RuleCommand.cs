@@ -14,9 +14,7 @@
 *描述：Rule 命令 - 查看和管理规则 (list/add/update/delete/switch)
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// Rule 命令 - 查看和管理规则 (list/add/update/delete/switch)

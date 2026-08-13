@@ -13,9 +13,7 @@
 *描述：Provider 管理命令（支持 add/update/delete 子命令）
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// Provider 管理命令，支持添加、更新、删除、列表和切换 Provider

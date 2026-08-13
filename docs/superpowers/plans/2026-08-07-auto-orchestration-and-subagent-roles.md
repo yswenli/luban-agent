@@ -1077,7 +1077,7 @@ using LuBan.AIAgent.Orchestration.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace LubanAgent.Tests.Integration;
+namespace LubanAgentCli.Tests.Integration;
 
 public class AutoOrchestrationTests
 {

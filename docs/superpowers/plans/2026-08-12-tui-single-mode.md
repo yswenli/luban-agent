@@ -44,7 +44,7 @@
 *描述：TUI 模态交互原语抽象（确认/提示/选择/表单/表格），命令层仅依赖此接口
 *
 *****************************************************************************/
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 表单字段定义。
@@ -128,7 +128,7 @@ using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// <see cref="ITuiUiService"/> 的 Terminal.Gui 实现。
@@ -1256,7 +1256,7 @@ git commit -m "refactor: 删除旧 Console 模式代码（ConsoleAppService/AgiC
 - [ ] **Step 1: 创建 StartupResult**
 
 ```csharp
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 启动向导结果。
@@ -1289,7 +1289,7 @@ using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 启动向导对话框。作为首个 Runnable 运行：后台线程逐步执行初始化

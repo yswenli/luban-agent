@@ -15,7 +15,7 @@
 *****************************************************************************/
 using OpenAI;
 
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// 多 Provider 路由的聊天客户端，按模型标识（providerName:modelName）分发请求到对应的 OpenAI Provider，

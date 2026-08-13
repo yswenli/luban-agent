@@ -14,7 +14,7 @@
 *描述：Session 管理服务实现
 *
 *****************************************************************************/
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// Session 管理服务实现 - 使用 SQLite 数据库

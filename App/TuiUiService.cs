@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： TuiUiService
 *版本号： V1.0.0.0
 *唯一标识：TuiUiService 实现
@@ -16,12 +16,8 @@
 *
 *****************************************************************************/
 using System.Collections.ObjectModel;
-using Terminal.Gui.App;
-using Terminal.Gui.Input;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// <see cref="ITuiUiService"/> 的 Terminal.Gui 实现。

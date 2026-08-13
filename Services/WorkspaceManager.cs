@@ -20,7 +20,7 @@ using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
 
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// 工作区信息

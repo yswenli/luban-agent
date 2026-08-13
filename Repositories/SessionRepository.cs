@@ -14,12 +14,7 @@
 *描述：Session 仓储
 *
 *****************************************************************************/
-using LubanAgent.Entities;
-using LuBan.Orm;
-
-using SqlSugar;
-
-namespace LubanAgent.Repositories;
+namespace LubanAgentCli.Repositories;
 
 /// <summary>
 /// Session 仓储

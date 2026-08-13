@@ -14,7 +14,7 @@
 *描述：嵌入模型目录
 *
 *****************************************************************************/
-namespace LubanAgent.Retrieval;
+namespace LubanAgentCli.Retrieval;
 
 /// <summary>
 /// 模型文件规格，描述单个模型文件的远程路径、本地名称和最小文件大小。

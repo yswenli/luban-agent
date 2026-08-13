@@ -14,7 +14,7 @@
 *描述：RAG 索引文件
 *
 *****************************************************************************/
-namespace LubanAgent.Entities;
+namespace LubanAgentCli.Entities;
 
 /// <summary>
 /// RAG 索引文件实体

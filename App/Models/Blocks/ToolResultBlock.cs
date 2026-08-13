@@ -63,11 +63,17 @@ public sealed class ToolResultBlock : Block
             return;
         }
 
-        var w = Math.Max(1, width - 2);
-        var text = Content;
-        var contentLines = Math.Max(1, (text.Length + w - 1) / w);
+        // 与 Render 完全一致：标题行 + 内容行（每行前缀 " " 占 1 字符）
+        if (string.IsNullOrEmpty(Content))
+        {
+            LineCount = 2; // 标题行 + "（无输出）"
+            return;
+        }
+
+        var w = Math.Max(1, width - 1); // Render 中每行前缀 " "，实际可用 width-1
+        var contentLines = (Content.Length + w - 1) / w;
         var truncated = contentLines > MaxExpandedLines;
-        LineCount = Math.Min(contentLines + 1, MaxExpandedLines + 1) + (truncated ? 1 : 0);
+        LineCount = 1 + Math.Min(contentLines, MaxExpandedLines) + (truncated ? 1 : 0);
     }
 
     /// <inheritdoc/>

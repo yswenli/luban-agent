@@ -17,7 +17,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// Provider 辅助工具，提供 Provider 显示名称、端点、模型列表等查询及模型列表刷新能力

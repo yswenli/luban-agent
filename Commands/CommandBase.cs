@@ -14,9 +14,7 @@
 *描述：命令基类
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// 命令基类，提供通用功能

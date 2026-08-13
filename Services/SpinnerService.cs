@@ -15,9 +15,7 @@
 *
 *****************************************************************************/
 
-using LubanAgent.App;
-
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// 加载指示器服务

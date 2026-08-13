@@ -14,9 +14,7 @@
 *描述：工作区管理命令（list/new/switch/delete/info/authorize）
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// 工作区管理命令

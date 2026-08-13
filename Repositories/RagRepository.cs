@@ -14,7 +14,7 @@
 *描述：RAG 文件仓储
 *
 *****************************************************************************/
-namespace LubanAgent.Repositories;
+namespace LubanAgentCli.Repositories;
 
 /// <summary>
 /// RAG 文件仓储

@@ -14,7 +14,7 @@
 *描述：UI 线程调度抽象，隔离 ViewModel 与 Terminal.Gui 主循环
 *
 *****************************************************************************/
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// UI 线程调度抽象。ViewModel 层从后台线程更新视图状态时必须经由本接口编组到 UI 线程，

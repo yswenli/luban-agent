@@ -14,10 +14,7 @@
 *描述：RAG 知识库管理命令（new/index/search/list/delete）
 *
  *****************************************************************************/
-using LuBan.AIAgent.Retrieval;
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// RAG 知识库管理命令（new/index/search/list/delete）

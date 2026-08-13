@@ -14,9 +14,7 @@
 *描述：Session 命令 - 管理会话
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// Session 命令 - 管理会话（按当前工作区过滤）

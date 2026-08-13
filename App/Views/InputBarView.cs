@@ -11,37 +11,31 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：输入区视图，使用 Editor 作为多行编辑内核，
+*描述：输入区视图，使用 TextView 作为轻量级多行输入内核，
 *Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）
 *
 *****************************************************************************/
-using Terminal.Gui.Drawing;
-using Terminal.Gui.Editor;
-using Terminal.Gui.Input;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
-
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
 
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
-/// 输入区视图。使用 <see cref="Editor"/> 作为多行编辑内核，
+/// 输入区视图。使用 <see cref="TextView"/> 作为轻量级多行输入内核，
 /// Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）。
 /// </summary>
 internal sealed class InputBarView : View
 {
-    private readonly Editor _editor;
+    private readonly TextView _textView;
     private const int MaxHeight = 5;
 
     /// <summary>
-    /// 用户提交输入时触发（Enter，非 Shift+Enter）。
+    /// 用户提交输入时触发（Enter）。
     /// </summary>
     public event Action<string>? Submitted;
 
     /// <summary>
-    /// 输入框高度变化时触发，参数为新的内容高度（不含边框）。
+    /// 输入框高度变化时触发，参数为新的总高度（含边框）。
     /// </summary>
     public event Action<int>? ContentHeightChanged;
 
@@ -56,26 +50,14 @@ internal sealed class InputBarView : View
     public InputBarView()
     {
         CanFocus = true;
-        // 调试阶段加边框，便于定位输入框位置
-        BorderStyle = LineStyle.Single;
+        // 加边框，便于定位输入框位置
+        BorderStyle = LineStyle.RoundedDashed;
 
-        _editor = new Editor
+        // 通过 Scheme 设置背景色
+        var bgScheme = new Scheme(
+            new Attribute(Color.White, InputBackground))
         {
-            X = 2,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill(),
-            CanFocus = true,
-            Multiline = true,
-            WordWrap = true,
-            GutterOptions = GutterOptions.None,
-        };
-
-        // 设置输入框配色：白色文字，亮蓝色背景（调试用）
-        var inputScheme = new Scheme(
-            new Attribute(TuiTheme.AssistantText, InputBackground))
-        {
-            Normal = new Attribute(TuiTheme.AssistantText, InputBackground),
+            Normal = new Attribute(Color.White, InputBackground),
             Focus = new Attribute(Color.White, InputBackground),
             HotNormal = new Attribute(TuiTheme.AssistantText, InputBackground),
             HotFocus = new Attribute(Color.White, InputBackground),
@@ -86,20 +68,27 @@ internal sealed class InputBarView : View
             Editable = new Attribute(Color.White, InputBackground),
             ReadOnly = new Attribute(TuiTheme.SystemMessage, InputBackground)
         };
-        _editor.SetScheme(inputScheme);
+        SetScheme(bgScheme);
 
-        // 使用 Command 机制处理 Enter 键：
-        // - Enter → Command.Accept（提交输入），移除默认的 Command.NewLine
-        // - Shift+Enter → Command.NewLine（插入换行）
-        _editor.KeyBindings.Remove(Key.Enter);
-        _editor.KeyBindings.Add(Key.Enter, Command.Accept);
-        _editor.KeyBindings.Add(Key.Enter.WithShift, Command.NewLine);
+        _textView = new TextView
+        {
+            X = 2,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            CanFocus = true,
+            Multiline = true,
+            WordWrap = true,
+            // Enter 触发 Accepting 事件（提交），而非插入换行
+            EnterKeyAddsLine = false,
+            // Tab 不插入制表符，让焦点切走
+            TabKeyAddsTab = false,
+        };
+        _textView.SetScheme(bgScheme);
+        _textView.Accepting += OnTextViewAccepting;
+        _textView.ContentsChanged += OnTextViewContentsChanged;
 
-        // 通过 Accepting 事件处理提交，而非 KeyDown
-        _editor.Accepting += OnEditorAccepting;
-        _editor.TextChanged += OnTextChanged;
-
-        Add(_editor);
+        Add(_textView);
     }
 
     /// <summary>
@@ -107,17 +96,30 @@ internal sealed class InputBarView : View
     /// </summary>
     public string InputText
     {
-        get => _editor.Text ?? string.Empty;
-        set => _editor.Text = value ?? string.Empty;
+        get => _textView.Text ?? string.Empty;
+        set => _textView.Text = value ?? string.Empty;
     }
 
     /// <summary>
-    /// 将焦点交给内部编辑器。
+    /// 将焦点交给内部文本视图。
     /// </summary>
-    public void FocusInput() => _editor.SetFocus();
+    public void FocusInput() => _textView.SetFocus();
+
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        // Shift+Enter：插入换行（EnterKeyAddsLine=false 时 Enter 不会换行，需手动处理）
+        if (key == Key.Enter.WithShift)
+        {
+            _textView.InsertText("\n");
+            return true;
+        }
+
+        return base.OnKeyDown(key);
+    }
 
     /// <summary>
-    /// 绘制提示符。输入内容由子视图 Editor 自行渲染。
+    /// 绘制提示符。输入内容由子视图 TextView 自行渲染。
     /// </summary>
     protected override bool OnDrawingContent(DrawContext? context)
     {
@@ -126,17 +128,7 @@ internal sealed class InputBarView : View
             return true;
         }
 
-        // 填充背景色（亮蓝色），确保整个输入区域可见
-        var bgAttr = new Attribute(TuiTheme.AssistantText, InputBackground);
-        SetAttribute(bgAttr);
-        for (var row = 0; row < Viewport.Height; row++)
-        {
-            for (var col = 0; col < Viewport.Width; col++)
-            {
-                AddRune(col, row, (Rune)' ');
-            }
-        }
-
+        // 只绘制提示符，背景色由 Scheme 控制
         SetAttribute(TuiTheme.Attr(TuiTheme.Prompt, TextStyle.Bold, InputBackground));
         AddStr(0, 0, ">");
         return true;
@@ -145,9 +137,10 @@ internal sealed class InputBarView : View
     /// <summary>
     /// 内容变化时自动调整高度（1~MaxHeight 行）并通知父视图。
     /// </summary>
-    private void OnTextChanged(object? sender, EventArgs e)
+    private void OnTextViewContentsChanged(object? sender, EventArgs e)
     {
-        var lineCount = Math.Max(1, _editor.Document?.LineCount ?? 1);
+        var text = _textView.Text ?? string.Empty;
+        var lineCount = Math.Max(1, text.Split('\n').Length);
         var newContentHeight = Math.Min(lineCount, MaxHeight);
         // 总高度 = 内容高度 + 边框(上下各1)
         var newHeight = newContentHeight + 2;
@@ -156,24 +149,23 @@ internal sealed class InputBarView : View
             Height = newHeight;
             ContentHeightChanged?.Invoke(newHeight);
             SetNeedsLayout();
-            SetNeedsDraw();
         }
     }
 
     /// <summary>
-    /// 处理 Enter 提交：通过 Command.Accept 触发，设置 Handled 阻止冒泡。
+    /// 处理 Enter 提交：TextView 的 Accepting 事件触发。
     /// </summary>
-    private void OnEditorAccepting(object? sender, CommandEventArgs e)
+    private void OnTextViewAccepting(object? sender, CommandEventArgs e)
     {
-        var text = (_editor.Text ?? string.Empty).Trim();
+        var text = (_textView.Text ?? string.Empty).Trim();
         if (text.Length == 0)
         {
             e.Handled = true;
             return;
         }
 
-        _editor.Text = string.Empty;
-        Height = 3; // 1行内容 + 边框2
+        _textView.Text = string.Empty;
+        Height = 3;
         ContentHeightChanged?.Invoke(3);
         e.Handled = true;
         Submitted?.Invoke(text);

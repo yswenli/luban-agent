@@ -51,7 +51,8 @@ internal sealed class ConversationView : View
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         CanFocus = false;
-        MousePositionTracking = true;
+        // 鼠标位置跟踪（DECSET 1003）会使终端在每次鼠标移动时上送事件、加重主循环负担，
+        // 因此平时关闭，仅在左键按下后的拖拽选择期间启用（见 OnMouseEvent）。
 
         _throttle = new FlushThrottle(() =>
         {
@@ -135,6 +136,8 @@ internal sealed class ConversationView : View
     /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
+        using var _diagScope = TuiDiag.Measure("ConvView.Draw");
+
         var viewport = Viewport;
         if (viewport.Width <= 0 || viewport.Height <= 0)
         {
@@ -241,11 +244,12 @@ internal sealed class ConversationView : View
         var pos = mouse.Position;
         if (pos is null) return false;
 
-        // 鼠标左键按下：记录起始位置，暂不开始选择
+        // 鼠标左键按下：记录起始位置，暂不开始选择；启用位置跟踪以接收拖拽移动事件
         if (mouse.Flags.HasFlag(MouseFlags.LeftButtonPressed))
         {
             _dragStartPos = (pos.Value.Y, pos.Value.X);
             _isDragging = false;
+            MousePositionTracking = true;
             return true;
         }
 
@@ -275,7 +279,7 @@ internal sealed class ConversationView : View
             return true;
         }
 
-        // 鼠标左键释放：结束选择，提取选中文本
+        // 鼠标左键释放：结束选择，提取选中文本，关闭位置跟踪
         if (mouse.Flags.HasFlag(MouseFlags.LeftButtonReleased) && _isDragging)
         {
             _isDragging = false;
@@ -283,6 +287,7 @@ internal sealed class ConversationView : View
             _selectionEnd = (pos.Value.Y, pos.Value.X);
             _selectedText = ExtractSelectedText();
             _dragStartPos = null; // 清除拖拽起始位置
+            MousePositionTracking = false;
             _dirty = true;
             SetNeedsDraw();
             return true;
@@ -291,6 +296,12 @@ internal sealed class ConversationView : View
         // 单击（非拖拽）：折叠/展开 Block 或选择选项
         if (mouse.Flags.HasFlag(MouseFlags.LeftButtonClicked) && !mouse.Flags.HasFlag(MouseFlags.Shift))
         {
+            // 未形成拖拽的点击：关闭位置跟踪
+            if (!_isDragging)
+            {
+                MousePositionTracking = false;
+            }
+
             // 拖拽刚结束时的 LeftButtonClicked 事件：保留选择，仅清除标志
             if (_justDragged)
             {
@@ -320,9 +331,9 @@ internal sealed class ConversationView : View
                 if (action?.Type == HitActionType.ToggleCollapse)
                 {
                     block.IsCollapsed = !block.IsCollapsed;
-                    _doc.LayoutWidth = Viewport.Width;
-                    _dirty = true;
-                    SetNeedsDraw();
+                    // 统一走文档记账：重布局该 Block、重算 TotalLines 并通知重绘。
+                    // （原写法仅在宽度变化时触发重布局，同宽时展开内容的行数账本不更新）
+                    _doc.NotifyBlockChanged(block);
                     return true;
                 }
 

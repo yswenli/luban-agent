@@ -13,7 +13,7 @@
 *描述：Provider 端点与扩展信息配置模型
 *
 *****************************************************************************/
-namespace LubanAgent.Configuration;
+namespace LubanAgentCli.Configuration;
 
 /// <summary>
 /// Provider 端点信息，包含 API 地址及其描述

@@ -40,6 +40,7 @@ internal sealed class RootView : Runnable
     private readonly FooterView _footer;
     private readonly InputBarView _inputBar;
     private bool _vmInitialized;
+    private volatile bool _initializing;
     private readonly Action<ToolPermissionMode> _onPermissionModeChanged;
     private readonly Action _onExitRequested;
 
@@ -87,7 +88,7 @@ internal sealed class RootView : Runnable
 
         _doc.AppendBlock(new SystemBlock(string.Empty));
 
-        // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 初始 3 = 4）
+        // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 3 = 4）
         _conversation = new ConversationView(_doc)
         {
             X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(4)
@@ -101,13 +102,12 @@ internal sealed class RootView : Runnable
         _footer.SetProvider(footerProvider);
         _footer.SetMode(_vm.PermissionModeDisplay);
 
-        // 输入栏初始高度=3（1行内容 + 边框上下各1）
+        // 输入栏初始高度=3（1行内容 + 边框上下各1），随内容动态扩展
         _inputBar = new InputBarView
         {
             X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 3
         };
         _inputBar.Submitted += OnInputSubmitted;
-        // 输入栏高度变化时，动态调整会话区高度
         _inputBar.ContentHeightChanged += OnInputBarHeightChanged;
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
         _vm.PermissionModeChanged += _onPermissionModeChanged;
@@ -175,7 +175,6 @@ internal sealed class RootView : Runnable
         // 会话区底部预留 = footer(1) + inputBar(参数)
         _conversation.Height = Dim.Fill(1 + inputBarHeight);
         SetNeedsLayout();
-        SetNeedsDraw();
     }
 
     // ── 全局快捷键 ──
@@ -278,11 +277,18 @@ internal sealed class RootView : Runnable
             return;
         }
 
-        // 首次输入时初始化 Agent
+        // 首次输入时初始化 Agent（用 _initializing 标志防止重复触发）
         if (!_vmInitialized)
         {
+            if (_initializing)
+            {
+                _doc.AppendBlock(new SystemBlock("Agent 正在初始化中，请稍候..."));
+                return;
+            }
+            _initializing = true;
             _ = InitializeAndProcessAsync(text).ContinueWith(task =>
             {
+                _initializing = false;
                 if (task.IsFaulted)
                 {
                     var msg = task.Exception?.InnerException?.Message ?? "未知错误";

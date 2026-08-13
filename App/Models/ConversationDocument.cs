@@ -163,7 +163,10 @@ public sealed class ConversationDocument
             {
                 ab = new AssistantMessageBlock();
                 _blocks.Add(ab);
-                // 暂不 Layout，等 RelayoutLastBlock 时一起做
+                // 暂不 Layout，等 RelayoutLastBlock 时一起做；
+                // 但初始 LineCount（默认 1）必须先记账，否则 RelayoutLastBlock
+                // 的 TotalLines - oldLineCount 会使账本永久少 1 行
+                TotalLines += ab.LineCount;
             }
         }
 
@@ -177,6 +180,8 @@ public sealed class ConversationDocument
     /// </summary>
     public void RelayoutLastBlock()
     {
+        using var _diagScope = TuiDiag.Measure("Doc.RelayoutLastBlock");
+
         Block? last;
         int oldLineCount;
 
@@ -191,6 +196,37 @@ public sealed class ConversationDocument
             oldLineCount = last.LineCount;
             last.Layout(_layoutWidth);
             TotalLines = TotalLines - oldLineCount + last.LineCount;
+        }
+
+        if (AutoScroll)
+        {
+            SnapToBottom();
+        }
+
+        var handler = BlocksChanged;
+        handler?.Invoke();
+    }
+
+    /// <summary>
+    /// 通知文档某个已存在的 Block 内容发生变化：重新布局该 Block、重算总行数并触发
+    /// <see cref="BlocksChanged"/>。供流式追加 ThinkingBlock 等不走 <see cref="AppendBlock"/>/
+    /// <see cref="RelayoutLastBlock"/> 路径的更新使用，避免 TotalLines 账本脱节。
+    /// </summary>
+    /// <param name="block">内容已变化的 Block（必须已在文档中）。</param>
+    public void NotifyBlockChanged(Block block)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+
+        lock (_lock)
+        {
+            block.Layout(_layoutWidth);
+
+            var total = 0;
+            foreach (var b in _blocks)
+            {
+                total += b.LineCount;
+            }
+            TotalLines = total;
         }
 
         if (AutoScroll)
@@ -221,23 +257,23 @@ public sealed class ConversationDocument
 
     /// <summary>
     /// 获取当前视口内可见的渲染行列表。
-    /// 先对所有 Block 执行 Render，然后从 ScrollOffset 开始取 ViewportHeight 行。
+    /// 遍历所有 Block，按全局行号裁切出 [ScrollOffset, ScrollOffset+ViewportHeight) 范围内的行。
     /// </summary>
     /// <param name="output">接收渲染行的列表（由调用方提供以避免分配）。</param>
     /// <param name="width">当前布局宽度。</param>
     public void GetVisibleLines(List<RenderLine> output, int width)
     {
+        using var _diagScope = TuiDiag.Measure("Doc.GetVisibleLines", $"blocks={BlockCount}");
+
         output.Clear();
 
         List<Block> blocks;
-        int totalLines;
         int scrollOffset;
         int viewportHeight;
 
         lock (_lock)
         {
             blocks = _blocks.ToList(); // 快照
-            totalLines = _totalLines;
             scrollOffset = _scrollOffset;
             viewportHeight = _viewportHeight;
         }
@@ -247,42 +283,45 @@ public sealed class ConversationDocument
             return;
         }
 
-        var lines = new List<RenderLine>();
-        var consumed = 0;
+        // 视口的全局行范围 [viewStart, viewEnd)
+        var viewStart = scrollOffset;
+        var viewEnd = scrollOffset + viewportHeight;
+
+        var globalLine = 0; // 当前 Block 起始的全局行号
 
         foreach (var block in blocks)
         {
-            var blockStart = consumed;
-            consumed += block.LineCount;
+            var blockStart = globalLine;
+            var blockEnd = blockStart + block.LineCount;
+            globalLine = blockEnd;
 
             // 跳过完全在视口上方的 Block
-            if (blockStart + block.LineCount <= scrollOffset)
+            if (blockEnd <= viewStart)
             {
                 continue;
             }
 
             // 跳过完全在视口下方的 Block
-            if (blockStart >= scrollOffset + viewportHeight)
+            if (blockStart >= viewEnd)
             {
                 break;
             }
 
-            block.Render(lines, width);
+            // 渲染当前 Block 的所有行
+            var blockLines = new List<RenderLine>();
+            block.Render(blockLines, width);
 
-            // 根据偏移裁切
-            var blockLocalOffset = Math.Max(0, scrollOffset - blockStart);
-            var blockVisibleEnd = Math.Min(lines.Count, blockLocalOffset + viewportHeight);
+            // 计算该 Block 在视口内的局部行范围
+            var localStart = Math.Max(0, viewStart - blockStart);
+            var localEnd = Math.Min(blockLines.Count, viewEnd - blockStart);
 
-            for (var i = blockLocalOffset; i < blockVisibleEnd && i < lines.Count; i++)
+            for (var i = localStart; i < localEnd; i++)
             {
-                output.Add(lines[i]);
-            }
-
-            lines.Clear();
-
-            if (output.Count >= viewportHeight)
-            {
-                break;
+                output.Add(blockLines[i]);
+                if (output.Count >= viewportHeight)
+                {
+                    return;
+                }
             }
         }
     }

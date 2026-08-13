@@ -62,10 +62,15 @@ public sealed class ToolCallBlock : Block
             return;
         }
 
-        var w = Math.Max(1, width - 2); // 缩进
-        var args = Arguments ?? string.Empty;
-        var totalChars = ToolName.Length + args.Length + 8; // 额外标记字符
-        LineCount = Math.Max(2, 1 + (totalChars + w - 1) / w);
+        // 与 Render 完全一致的计算：标题行 + 调用ID行 + 参数行
+        var lineCount = 2; // 标题行 + 调用ID行
+        if (!string.IsNullOrEmpty(Arguments))
+        {
+            var w = Math.Max(1, width - 3); // 与 Render 一致：缩进 3
+            var argText = "  参数: " + Arguments;
+            lineCount += (argText.Length + w - 1) / w;
+        }
+        LineCount = lineCount;
     }
 
     /// <inheritdoc/>

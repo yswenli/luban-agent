@@ -14,7 +14,7 @@
 *描述：模型管理器
 *
 *****************************************************************************/
-namespace LubanAgent.Retrieval;
+namespace LubanAgentCli.Retrieval;
 
 /// <summary>
 /// 嵌入模型管理器（从本地 zip 解压）

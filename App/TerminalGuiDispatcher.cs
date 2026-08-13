@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： TerminalGuiDispatcher
 *版本号： V1.0.0.0
 *唯一标识：UI 线程调度实现
@@ -14,9 +14,7 @@
 *描述：基于 IApplication 的 UI 线程调度实现
 *
 *****************************************************************************/
-using Terminal.Gui.App;
-
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 基于 <see cref="IApplication"/> 的 UI 线程调度实现。

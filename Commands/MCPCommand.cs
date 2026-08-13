@@ -14,9 +14,7 @@
 *描述：MCP 命令 - 查看 MCP 客户端 (list/add/update/delete/switch/connect/tools)
 *
  *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// MCP 命令 - 查看和管理 MCP 客户端 (list/add/update/delete/switch/connect/tools)

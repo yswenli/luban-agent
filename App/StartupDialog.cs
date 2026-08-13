@@ -21,7 +21,7 @@ using Terminal.Gui.Views;
 
 using Attribute = Terminal.Gui.Drawing.Attribute;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// 启动向导对话框。显示初始化进度，支持取消和错误处理。

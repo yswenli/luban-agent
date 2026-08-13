@@ -20,7 +20,7 @@ using Terminal.Gui.Drawing;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
 
-namespace LubanAgent.App;
+namespace LubanAgentCli.App;
 
 /// <summary>
 /// TUI 主题配色。所有颜色为 24-bit TrueColor，对应设计文档 3.3 节配色方案表。

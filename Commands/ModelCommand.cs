@@ -13,9 +13,7 @@
 *描述：模型管理命令（支持 list/add/update/delete/switch 子命令）
 *
 *****************************************************************************/
-using LubanAgent.App;
-
-namespace LubanAgent.Commands;
+namespace LubanAgentCli.Commands;
 
 /// <summary>
 /// 模型管理命令

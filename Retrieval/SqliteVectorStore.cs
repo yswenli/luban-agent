@@ -14,7 +14,7 @@
 *描述：SQLite 向量存储实现，通过 WorkspaceManager.Current 实现工作区隔离
 *
 *****************************************************************************/
-namespace LubanAgent.Retrieval;
+namespace LubanAgentCli.Retrieval;
 
 /// <summary>
 /// SQLite 向量存储实现，通过 WorkspaceManager.Current 实现工作区隔离

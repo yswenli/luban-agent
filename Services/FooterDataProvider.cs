@@ -17,7 +17,7 @@
 using System.Diagnostics;
 using LuBan.AIAgent.Abstractions;
 
-namespace LubanAgent.Services;
+namespace LubanAgentCli.Services;
 
 /// <summary>
 /// 页脚数据提供者。聚合 git 分支、token 用量、当前权限模式等页脚元数据。
