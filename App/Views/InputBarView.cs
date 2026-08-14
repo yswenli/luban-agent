@@ -11,8 +11,8 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：输入区视图，使用 TextView 作为轻量级多行输入内核，
-*Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）
+*描述：输入区视图，使用 Editor 作为高性能文本输入控件，
+*Enter 提交，Shift+Enter 换行。
 *
 *****************************************************************************/
 using Attribute = Terminal.Gui.Drawing.Attribute;
@@ -21,21 +21,35 @@ using Color = Terminal.Gui.Drawing.Color;
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
-/// 自定义 TextView，支持 Shift+Enter 插入换行。
+/// 自定义 Editor，处理 Enter 提交和 Shift+Enter 换行。
 /// </summary>
-internal sealed class MultilineInputTextView : TextView
+internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 {
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
+    public event Action<string>? SubmitRequested;
+
+protected override bool OnKeyDown(Key key)
     {
-        // Shift+Enter：插入换行，不触发 Accepting
+        Infrastructure.TuiDiag.KeyArrival();
+
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag] Editor.OnKeyDown: key={key}");
+        }
+
         if (key == Key.Enter.WithShift)
         {
-            if (Infrastructure.TuiDiag.Enabled)
+            ReplaceSelection("\n");
+            return true;
+        }
+
+        if (key == Key.Enter)
+        {
+            var text = (Text ?? string.Empty).Trim();
+            if (text.Length > 0)
             {
-                Logger.Warn($"[MultilineInputTextView] Shift+Enter detected, inserting newline");
+                Text = string.Empty;
+                SubmitRequested?.Invoke(text);
             }
-            InsertText("\n");
             return true;
         }
 
@@ -44,26 +58,17 @@ internal sealed class MultilineInputTextView : TextView
 }
 
 /// <summary>
-/// 输入区视图。使用 <see cref="TextView"/> 作为轻量级多行输入内核，
-/// Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）。
+/// 输入区视图。使用 Editor 作为高性能文本输入控件，
+/// Enter 提交，Shift+Enter 换行。
 /// </summary>
 internal sealed class InputBarView : View
 {
-    private readonly MultilineInputTextView _textView;
-    private const int MaxHeight = 5;
-
-    /// <summary>默认内容行数（终端行数为整数，取 2 行内容 + 上下边框 = 总高 4）。</summary>
-    private const int MinContentLines = 2;
+    private readonly MultilineEditor _editor;
 
     /// <summary>
     /// 用户提交输入时触发（Enter）。
     /// </summary>
     public event Action<string>? Submitted;
-
-    /// <summary>
-    /// 输入框高度变化时触发，参数为新的总高度（含边框）。
-    /// </summary>
-    public event Action<int>? ContentHeightChanged;
 
     /// <summary>
     /// 输入框背景色（亮蓝色，调试阶段便于定位）。
@@ -76,10 +81,8 @@ internal sealed class InputBarView : View
     public InputBarView()
     {
         CanFocus = true;
-        // 加边框，便于定位输入框位置
         BorderStyle = LineStyle.RoundedDashed;
 
-        // 通过 Scheme 设置背景色
         var bgScheme = new Scheme(
             new Attribute(Color.White, InputBackground))
         {
@@ -96,7 +99,7 @@ internal sealed class InputBarView : View
         };
         SetScheme(bgScheme);
 
-        _textView = new MultilineInputTextView
+_editor = new MultilineEditor
         {
             X = 2,
             Y = 0,
@@ -104,17 +107,12 @@ internal sealed class InputBarView : View
             Height = Dim.Fill(),
             CanFocus = true,
             Multiline = true,
-            WordWrap = true,
-            // Enter 触发 Accepting 事件（提交），而非插入换行
-            EnterKeyAddsLine = false,
-            // Tab 不插入制表符，让焦点切走
-            TabKeyAddsTab = false,
+            WordWrap = false,
         };
-        _textView.SetScheme(bgScheme);
-        _textView.Accepting += OnTextViewAccepting;
-        _textView.ContentsChanged += OnTextViewContentsChanged;
+        _editor.SetScheme(bgScheme);
+        _editor.SubmitRequested += text => Submitted?.Invoke(text);
 
-        Add(_textView);
+        Add(_editor);
     }
 
     /// <summary>
@@ -122,29 +120,17 @@ internal sealed class InputBarView : View
     /// </summary>
     public string InputText
     {
-        get => _textView.Text ?? string.Empty;
-        set => _textView.Text = value ?? string.Empty;
+        get => _editor.Text ?? string.Empty;
+        set => _editor.Text = value ?? string.Empty;
     }
 
     /// <summary>
-    /// 将焦点交给内部文本视图。
+    /// 将焦点交给内部编辑器。
     /// </summary>
-    public void FocusInput() => _textView.SetFocus();
-
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        // 诊断：记录所有到达此视图的按键事件
-        if (Infrastructure.TuiDiag.Enabled)
-        {
-            Logger.Warn($"[InputBarView] OnKeyDown: key={key}, keyCode={key.KeyCode}, isShift={key.IsShift}, isCtrl={key.IsCtrl}");
-        }
-
-        return base.OnKeyDown(key);
-    }
+    public void FocusInput() => _editor.SetFocus();
 
     /// <summary>
-    /// 绘制提示符。输入内容由子视图 TextView 自行渲染。
+    /// 绘制提示符。输入内容由子视图 Editor 自行渲染。
     /// </summary>
     protected override bool OnDrawingContent(DrawContext? context)
     {
@@ -153,67 +139,8 @@ internal sealed class InputBarView : View
             return true;
         }
 
-        // 只绘制提示符，背景色由 Scheme 控制
         SetAttribute(TuiTheme.Attr(TuiTheme.Prompt, TextStyle.Bold, InputBackground));
         AddStr(0, 0, ">");
         return true;
-    }
-
-    /// <summary>
-    /// 内容变化时按视觉折行数自动调整高度（MinContentLines~MaxHeight 行）并通知父视图。
-    /// WordWrap 的视觉换行不产生 \n，必须按可用宽度估算折行，否则长输入始终单行显示。
-    /// </summary>
-    private void OnTextViewContentsChanged(object? sender, EventArgs e)
-    {
-        var text = _textView.Text ?? string.Empty;
-        // 可用内容宽度：视口宽 - 提示符缩进(X=2) - 右边距(1)
-        var contentWidth = Math.Max(1, Viewport.Width - 3);
-
-        var visualLines = 0;
-        foreach (var logicalLine in text.Split('\n'))
-        {
-            var w = EstimateDisplayWidth(logicalLine);
-            visualLines += Math.Max(1, (w + contentWidth - 1) / contentWidth);
-        }
-
-        var newContentHeight = Math.Clamp(visualLines, MinContentLines, MaxHeight);
-        // 总高度 = 内容高度 + 边框(上下各1)
-        var newHeight = newContentHeight + 2;
-        if (Height != newHeight)
-        {
-            Height = newHeight;
-            ContentHeightChanged?.Invoke(newHeight);
-            SetNeedsLayout();
-        }
-    }
-
-    /// <summary>估算显示宽度（CJK 等宽字符计 2 列）。</summary>
-    private static int EstimateDisplayWidth(string s)
-    {
-        var w = 0;
-        foreach (var c in s)
-        {
-            w += c > 0xFF ? 2 : 1;
-        }
-        return w;
-    }
-
-    /// <summary>
-    /// 处理 Enter 提交：TextView 的 Accepting 事件触发。
-    /// </summary>
-    private void OnTextViewAccepting(object? sender, CommandEventArgs e)
-    {
-        var text = (_textView.Text ?? string.Empty).Trim();
-        if (text.Length == 0)
-        {
-            e.Handled = true;
-            return;
-        }
-
-        _textView.Text = string.Empty;
-        Height = MinContentLines + 2;
-        ContentHeightChanged?.Invoke(MinContentLines + 2);
-        e.Handled = true;
-        Submitted?.Invoke(text);
     }
 }

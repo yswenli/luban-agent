@@ -442,11 +442,11 @@ internal sealed class ConversationViewModel
 
         TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
 
-        var flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var flushScope = TuiDiag.Measure("StreamFlush.total", thresholdMs: 0);
 
         _dispatcher.Invoke(() =>
         {
-            var invokeStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            using var invokeScope = TuiDiag.Measure("StreamFlush.Invoke", thresholdMs: 0);
             
             if (thinking.Length > 0)
             {
@@ -471,12 +471,6 @@ internal sealed class ConversationViewModel
                 _doc.AppendToAnswerBlock(answer);
                 _doc.RelayoutLastBlock();
             }
-            
-            var invokeMs = (long)((System.Diagnostics.Stopwatch.GetTimestamp() - invokeStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
-            TuiDiag.Record("StreamFlush.Invoke", invokeMs, thresholdMs: 0);
         });
-        
-        var flushMs = (long)((System.Diagnostics.Stopwatch.GetTimestamp() - flushStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
-        TuiDiag.Record("StreamFlush.total", flushMs, thresholdMs: 0);
     }
 }

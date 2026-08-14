@@ -18,12 +18,13 @@
 namespace LubanAgentCli.Services;
 
 /// <summary>
-/// 加载指示器服务
+/// 加载指示器服务。使用 PeriodicTimer 实现高精度定时。
 /// </summary>
 internal static class SpinnerService
 {
     private static readonly string[] Frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
-    private static Timer? _timer;
+    private static PeriodicTimer? _timer;
+    private static CancellationTokenSource? _cts;
     private static int _frameIndex;
     private static string _status = string.Empty;
     private static readonly object _lock = new();
@@ -62,10 +63,28 @@ internal static class SpinnerService
             if (_running) return;
             _running = true;
             if (initialStatus is not null) _status = initialStatus;
-            _timer = new Timer(_ => Tick(), null, 0, 80);
+
+            _cts = new CancellationTokenSource();
+            _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(15));
+            _ = RunAsync(_cts.Token);
         }
 
         Changed?.Invoke();
+    }
+
+    private static async Task RunAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(ct))
+            {
+                Tick();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常取消
+        }
     }
 
     /// <summary>停止并清理。</summary>
@@ -75,8 +94,11 @@ internal static class SpinnerService
         {
             if (!_running) return;
             _running = false;
+            _cts?.Cancel();
             _timer?.Dispose();
             _timer = null;
+            _cts?.Dispose();
+            _cts = null;
             _frameIndex = 0;
             _status = string.Empty;
         }

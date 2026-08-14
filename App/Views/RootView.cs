@@ -110,7 +110,6 @@ internal sealed class RootView : Runnable
             X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 4
         };
         _inputBar.Submitted += OnInputSubmitted;
-        _inputBar.ContentHeightChanged += OnInputBarHeightChanged;
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
         _vm.PermissionModeChanged += _onPermissionModeChanged;
 
@@ -161,22 +160,10 @@ internal sealed class RootView : Runnable
         if (disposing)
         {
             _inputBar.Submitted -= OnInputSubmitted;
-            _inputBar.ContentHeightChanged -= OnInputBarHeightChanged;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
         }
         base.Dispose(disposing);
-    }
-
-    /// <summary>
-    /// 输入栏高度变化时，重新计算会话区高度并触发布局更新。
-    /// </summary>
-    /// <param name="inputBarHeight">输入栏新的总高度（含边框）。</param>
-    private void OnInputBarHeightChanged(int inputBarHeight)
-    {
-        // 会话区底部预留 = footer(1) + inputBar(参数)
-        _conversation.Height = Dim.Fill(1 + inputBarHeight);
-        SetNeedsLayout();
     }
 
     // ── 全局快捷键 ──

@@ -37,7 +37,6 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
         _spec = spec;
     }
 
-    // 延迟加载 ONNX 推理会话和分词器，使用双重检查锁定确保线程安全
     private (InferenceSession session, Tokenizer tokenizer) EnsureLoaded()
     {
         if (_session != null && _tokenizer != null) return (_session, _tokenizer);
@@ -45,85 +44,84 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
         {
             if (_tokenizer == null)
             {
-                var tokenizerPath = Path.Combine(_modelDir, "tokenizer.json");
-                if (!File.Exists(tokenizerPath))
-                    throw new FileNotFoundException($"tokenizer.json 不存在于 {tokenizerPath}");
-                
-                // Microsoft.ML.Tokenizers 2.0+ 使用 Create 方法替代 Load
+                var tokenizerJsonPath = Path.Combine(_modelDir, "tokenizer.json");
+                if (!File.Exists(tokenizerJsonPath))
+                    throw new FileNotFoundException($"tokenizer.json 不存在于 {tokenizerJsonPath}");
+
+                var vocabTxtPath = EnsureVocabTxt(tokenizerJsonPath);
+                var options = BuildBertOptions();
+
                 var bertTokenizerType = typeof(Tokenizer).Assembly.GetType("Microsoft.ML.Tokenizers.BertTokenizer");
                 if (bertTokenizerType == null)
                     throw new NotSupportedException("Microsoft.ML.Tokenizers 版本不支持 BertTokenizer");
-                
+
                 var createMethod = bertTokenizerType.GetMethod("Create", new[] { typeof(string), typeof(BertOptions) });
-                if (createMethod != null)
-                {
-                    var options = new BertOptions();
-                    var configPath = Path.Combine(_modelDir, "tokenizer_config.json");
-                    if (File.Exists(configPath))
-                    {
-                        try
-                        {
-                            var configText = File.ReadAllText(configPath);
-                            var config = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(configText);
-                            if (config.TryGetProperty("do_lower_case", out var doLowerProp))
-                                options.LowerCaseBeforeTokenization = doLowerProp.GetBoolean();
-                            
-                            // 读取 unk_token 并验证是否存在于词汇表中
-                            if (config.TryGetProperty("unk_token", out var unkProp))
-                            {
-                                var unkToken = unkProp.GetString();
-                                if (!string.IsNullOrEmpty(unkToken) && IsTokenInVocabulary(tokenizerPath, unkToken))
-                                {
-                                    options.UnknownToken = unkToken;
-                                }
-                            }
-                            
-                            if (config.TryGetProperty("strip_accents", out var stripProp) && stripProp.ValueKind != System.Text.Json.JsonValueKind.Null)
-                                options.RemoveNonSpacingMarks = stripProp.GetBoolean();
-                            if (config.TryGetProperty("tokenize_chinese_chars", out var cjkProp))
-                                options.IndividuallyTokenizeCjk = cjkProp.GetBoolean();
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"读取 tokenizer_config.json 失败: {ex.Message}");
-                        }
-                    }
-                    _tokenizer = createMethod.Invoke(null, new object[] { tokenizerPath, options }) as Tokenizer
-                        ?? throw new InvalidOperationException("BertTokenizer.Create 返回 null");
-                }
-                else
-                {
-                    // 回退到旧 API: BertTokenizer.Load(string)
-                    var loadMethod = bertTokenizerType.GetMethod("Load", new[] { typeof(string) });
-                    if (loadMethod == null)
-                        throw new NotSupportedException("BertTokenizer 不支持 Create 或 Load 方法，请检查 Microsoft.ML.Tokenizers 版本");
-                    _tokenizer = loadMethod.Invoke(null, new object[] { tokenizerPath }) as Tokenizer
-                        ?? throw new InvalidOperationException("BertTokenizer.Load 返回 null");
-                }
+                if (createMethod == null)
+                    throw new NotSupportedException("BertTokenizer.Create(string, BertOptions) 方法不存在");
+
+                _tokenizer = createMethod.Invoke(null, new object[] { vocabTxtPath, options }) as Tokenizer
+                    ?? throw new InvalidOperationException("BertTokenizer.Create 返回 null");
             }
-            _session ??= new InferenceSession(Path.Combine(_modelDir, "model.onnx"));
+            _session ??= new InferenceSession(Path.Combine(_modelDir, "onnx", "model.onnx"));
             return (_session, _tokenizer);
         }
     }
 
-    // 检查 token 是否存在于词汇表中
-    private static bool IsTokenInVocabulary(string tokenizerPath, string token)
+    private string EnsureVocabTxt(string tokenizerJsonPath)
     {
-        try
+        var vocabTxtPath = Path.Combine(_modelDir, "vocab.txt");
+        if (File.Exists(vocabTxtPath))
+            return vocabTxtPath;
+
+        var json = File.ReadAllText(tokenizerJsonPath);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var vocab = doc.RootElement
+            .GetProperty("model")
+            .GetProperty("vocab");
+
+        var tokens = new SortedDictionary<int, string>();
+        foreach (var prop in vocab.EnumerateObject())
         {
-            var tokenizerJson = File.ReadAllText(tokenizerPath);
-            using var doc = System.Text.Json.JsonDocument.Parse(tokenizerJson);
-            if (doc.RootElement.TryGetProperty("model", out var model) &&
-                model.TryGetProperty("vocab", out var vocab))
-            {
-                return vocab.TryGetProperty(token, out _);
-            }
+            tokens[prop.Value.GetInt32()] = prop.Name;
         }
-        catch
+
+        using var writer = new StreamWriter(vocabTxtPath, false, System.Text.Encoding.UTF8);
+        foreach (var kv in tokens)
         {
-            // 解析失败时返回 false
+            writer.WriteLine(kv.Value);
         }
-        return false;
+
+        return vocabTxtPath;
+    }
+
+    private BertOptions BuildBertOptions()
+    {
+        var options = new BertOptions();
+        var configPath = Path.Combine(_modelDir, "tokenizer_config.json");
+        if (!File.Exists(configPath))
+            return options;
+
+        var configText = File.ReadAllText(configPath);
+        var config = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(configText);
+
+        if (config.TryGetProperty("do_lower_case", out var doLower))
+            options.LowerCaseBeforeTokenization = doLower.GetBoolean();
+        if (config.TryGetProperty("unk_token", out var unk))
+            options.UnknownToken = unk.GetString() ?? "[UNK]";
+        if (config.TryGetProperty("cls_token", out var cls))
+            options.ClassificationToken = cls.GetString() ?? "[CLS]";
+        if (config.TryGetProperty("sep_token", out var sep))
+            options.SeparatorToken = sep.GetString() ?? "[SEP]";
+        if (config.TryGetProperty("pad_token", out var pad))
+            options.PaddingToken = pad.GetString() ?? "[PAD]";
+        if (config.TryGetProperty("mask_token", out var mask))
+            options.MaskingToken = mask.GetString() ?? "[MASK]";
+        if (config.TryGetProperty("strip_accents", out var strip) && strip.ValueKind != System.Text.Json.JsonValueKind.Null)
+            options.RemoveNonSpacingMarks = strip.GetBoolean();
+        if (config.TryGetProperty("tokenize_chinese_chars", out var cjk))
+            options.IndividuallyTokenizeCjk = cjk.GetBoolean();
+
+        return options;
     }
 
     /// <inheritdoc />
