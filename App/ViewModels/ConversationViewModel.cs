@@ -386,7 +386,13 @@ internal sealed class ConversationViewModel
                         continue;
                     }
 
-                    // ─── 其余内容类型（UsageContent 等）：仅诊断模式下记录 ───
+                    // ─── UsageContent：token 使用统计，无需渲染，静默跳过 ───
+                    if (content is UsageContent)
+                    {
+                        continue;
+                    }
+
+                    // ─── 其余内容类型：诊断模式下记录 ───
                     if (TuiDiag.Enabled)
                     {
                         Logger.Warn($"[TuiDiag] unhandled content: {content.GetType().Name}");
@@ -436,8 +442,12 @@ internal sealed class ConversationViewModel
 
         TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
 
+        var flushStart = System.Diagnostics.Stopwatch.GetTimestamp();
+
         _dispatcher.Invoke(() =>
         {
+            var invokeStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            
             if (thinking.Length > 0)
             {
                 if (_thinkingBlock is null)
@@ -452,7 +462,6 @@ internal sealed class ConversationViewModel
 
             if (answer.Length > 0)
             {
-                // 正文开始时标记思考过程完成
                 if (_thinkingBlock is not null && !_thinkingCompleted)
                 {
                     _thinkingCompleted = true;
@@ -462,6 +471,12 @@ internal sealed class ConversationViewModel
                 _doc.AppendToAnswerBlock(answer);
                 _doc.RelayoutLastBlock();
             }
+            
+            var invokeMs = (long)((System.Diagnostics.Stopwatch.GetTimestamp() - invokeStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+            TuiDiag.Record("StreamFlush.Invoke", invokeMs, thresholdMs: 0);
         });
+        
+        var flushMs = (long)((System.Diagnostics.Stopwatch.GetTimestamp() - flushStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+        TuiDiag.Record("StreamFlush.total", flushMs, thresholdMs: 0);
     }
 }

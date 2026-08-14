@@ -306,12 +306,22 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         //    使 PathGuard 的相对路径解析、脚本工具的默认 workingDirectory 都指向工作区
         SetCurrentDirectory(newCurrent.RootPath);
 
-        // 5. 恢复最近活跃会话
-        var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId);
-        if (latest != null)
-            await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
-        else
+        // 5. 恢复最近活跃会话；无会话时自动创建默认会话。
+        //    SessionChatHistoryProvider 依赖 CurrentSession 持久化对话与恢复历史，置空会导致每轮对话孤立。
+        //    失败兜底：宁可无会话（可见、可恢复），也不能保留上一工作区会话（静默串写数据）。
+        try
+        {
+            var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId);
+            if (latest != null)
+                await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
+            else
+                await _sessionManager.CreateSessionAsync(userId: "default", title: "默认会话");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("恢复/创建工作区会话失败", ex, workspaceId);
             _sessionManager.ClearCurrentSession();
+        }
 
         // 6. 确保配置目录存在
         await EnsureConfigDirectoryAsync(newCurrent);

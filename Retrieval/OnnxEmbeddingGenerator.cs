@@ -67,8 +67,17 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
                             var config = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(configText);
                             if (config.TryGetProperty("do_lower_case", out var doLowerProp))
                                 options.LowerCaseBeforeTokenization = doLowerProp.GetBoolean();
+                            
+                            // 读取 unk_token 并验证是否存在于词汇表中
                             if (config.TryGetProperty("unk_token", out var unkProp))
-                                options.UnknownToken = unkProp.GetString() ?? "[UNK]";
+                            {
+                                var unkToken = unkProp.GetString();
+                                if (!string.IsNullOrEmpty(unkToken) && IsTokenInVocabulary(tokenizerPath, unkToken))
+                                {
+                                    options.UnknownToken = unkToken;
+                                }
+                            }
+                            
                             if (config.TryGetProperty("strip_accents", out var stripProp) && stripProp.ValueKind != System.Text.Json.JsonValueKind.Null)
                                 options.RemoveNonSpacingMarks = stripProp.GetBoolean();
                             if (config.TryGetProperty("tokenize_chinese_chars", out var cjkProp))
@@ -95,6 +104,26 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
             _session ??= new InferenceSession(Path.Combine(_modelDir, "model.onnx"));
             return (_session, _tokenizer);
         }
+    }
+
+    // 检查 token 是否存在于词汇表中
+    private static bool IsTokenInVocabulary(string tokenizerPath, string token)
+    {
+        try
+        {
+            var tokenizerJson = File.ReadAllText(tokenizerPath);
+            using var doc = System.Text.Json.JsonDocument.Parse(tokenizerJson);
+            if (doc.RootElement.TryGetProperty("model", out var model) &&
+                model.TryGetProperty("vocab", out var vocab))
+            {
+                return vocab.TryGetProperty(token, out _);
+            }
+        }
+        catch
+        {
+            // 解析失败时返回 false
+        }
+        return false;
     }
 
     /// <inheritdoc />

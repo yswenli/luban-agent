@@ -56,6 +56,7 @@
 		<ProjectReference Include="..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 		<ProjectReference Include="..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
 		<ProjectReference Include="..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
+		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
 		<PackageReference Include="Terminal.Gui" Version="2.4.17" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />

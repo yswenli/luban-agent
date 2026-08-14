@@ -120,6 +120,12 @@ public abstract class AgentProfile
         sb.AppendLine($"- 示例: ScreenshotAsync(path=\".luban-agent/temp/screenshot.png\")");
         sb.AppendLine("- 临时目录会自动创建，无需手动创建");
         sb.AppendLine("- 使用相对路径 `.luban-agent/temp/` 或绝对路径结合工作区根目录");
+        sb.AppendLine();
+        sb.AppendLine("## 长期记忆");
+        sb.AppendLine("- 使用保存记忆工具（SaveAsync）把值得长期记住的信息写入记忆库，后续对话会自动召回");
+        sb.AppendLine("- 适合保存：用户偏好与习惯、明确的项目决策与约束、用户显式要求“记住”的内容");
+        sb.AppendLine("- 不要保存：闲聊客套、一次性上下文、可从代码或文档直接获得的事实");
+        sb.AppendLine("- category 用简短英文小写（如 fact、preference、todo、project）；跨工作区通用的用 global");
 
         if (activeSkill != null && !string.IsNullOrEmpty(activeSkill.PromptTemplate))
         {

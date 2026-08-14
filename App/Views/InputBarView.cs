@@ -21,12 +21,35 @@ using Color = Terminal.Gui.Drawing.Color;
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
+/// 自定义 TextView，支持 Shift+Enter 插入换行。
+/// </summary>
+internal sealed class MultilineInputTextView : TextView
+{
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        // Shift+Enter：插入换行，不触发 Accepting
+        if (key == Key.Enter.WithShift)
+        {
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[MultilineInputTextView] Shift+Enter detected, inserting newline");
+            }
+            InsertText("\n");
+            return true;
+        }
+
+        return base.OnKeyDown(key);
+    }
+}
+
+/// <summary>
 /// 输入区视图。使用 <see cref="TextView"/> 作为轻量级多行输入内核，
 /// Enter 提交，Shift+Enter 换行，自动扩展高度（最多 5 行）。
 /// </summary>
 internal sealed class InputBarView : View
 {
-    private readonly TextView _textView;
+    private readonly MultilineInputTextView _textView;
     private const int MaxHeight = 5;
 
     /// <summary>默认内容行数（终端行数为整数，取 2 行内容 + 上下边框 = 总高 4）。</summary>
@@ -73,7 +96,7 @@ internal sealed class InputBarView : View
         };
         SetScheme(bgScheme);
 
-        _textView = new TextView
+        _textView = new MultilineInputTextView
         {
             X = 2,
             Y = 0,
@@ -111,11 +134,10 @@ internal sealed class InputBarView : View
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
-        // Shift+Enter：插入换行（EnterKeyAddsLine=false 时 Enter 不会换行，需手动处理）
-        if (key == Key.Enter.WithShift)
+        // 诊断：记录所有到达此视图的按键事件
+        if (Infrastructure.TuiDiag.Enabled)
         {
-            _textView.InsertText("\n");
-            return true;
+            Logger.Warn($"[InputBarView] OnKeyDown: key={key}, keyCode={key.KeyCode}, isShift={key.IsShift}, isCtrl={key.IsCtrl}");
         }
 
         return base.OnKeyDown(key);

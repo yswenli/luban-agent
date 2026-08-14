@@ -59,6 +59,8 @@ public class SessionManager : ISessionManager
             UserId = userId,
             Title = title ?? "新对话",
             CreateTime = DateTime.Now,
+            // 同步 UpdateTime，避免 GetLatestSessionAsync 排序时多个 NULL 并列的不确定性
+            UpdateTime = DateTime.Now,
             IsDelete = false,
             // 绑定当前工作区（通过 WorkspaceManager 静态访问器，避免循环依赖）
             WorkspaceId = WorkspaceManager.Current?.WorkspaceId
@@ -222,6 +224,13 @@ public class SessionManager : ISessionManager
         await _messageRepo.DeleteAllAsync();
         await _sessionRepo.DeleteAllAsync();
         _currentSession = null;
+
+        // 保持"有当前工作区必有当前会话"不变量：清空后立即重建默认会话，
+        // 否则对话持久化前提（CurrentSession 非空）被破坏，每轮对话再次孤立
+        if (WorkspaceManager.Current is not null)
+        {
+            await CreateSessionAsync(userId: "default", title: "默认会话");
+        }
     }
 
     /// <summary>

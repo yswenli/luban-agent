@@ -219,14 +219,9 @@ public sealed class ConversationDocument
 
         lock (_lock)
         {
+            var oldLineCount = block.LineCount;
             block.Layout(_layoutWidth);
-
-            var total = 0;
-            foreach (var b in _blocks)
-            {
-                total += b.LineCount;
-            }
-            TotalLines = total;
+            TotalLines = TotalLines - oldLineCount + block.LineCount;
         }
 
         if (AutoScroll)
