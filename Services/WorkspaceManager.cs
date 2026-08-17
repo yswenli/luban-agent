@@ -459,10 +459,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             WriteBuiltinRules(rulesDir);
         }
 
-        var configPath = Path.Combine(configDir, "config.json");
-        if (!File.Exists(configPath))
-            File.WriteAllText(configPath, "{}");
-
         if (type == "Rag")
         {
             var ragConfigPath = Path.Combine(configDir, "rag-config.json");

@@ -77,7 +77,7 @@ internal sealed class RootView : Runnable
         // 启动横幅
         _doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
         _doc.AppendBlock(new SystemBlock(
-            "  Enter 发送，Shift+Enter 换行，/exit 退出，Ctrl+Q 退出，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
+            "  Enter 发送，Shift+Enter 或 Ctrl+Enter 换行，/exit 退出，Ctrl+Q 退出，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
         _doc.AppendBlock(new SystemBlock("  首次输入前将自动初始化 Agent..."));
 
         if (startupNotices is not null)

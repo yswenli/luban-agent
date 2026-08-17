@@ -36,7 +36,8 @@ protected override bool OnKeyDown(Key key)
             Logger.Warn($"[TuiDiag] Editor.OnKeyDown: key={key}");
         }
 
-        if (key == Key.Enter.WithShift)
+        // Shift+Enter 或 Ctrl+Enter 换行
+        if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
         {
             ReplaceSelection("\n");
             return true;
