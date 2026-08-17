@@ -21,39 +21,19 @@ using Color = Terminal.Gui.Drawing.Color;
 namespace LubanAgentCli.App.Views;
 
 /// <summary>
-/// 页脚视图。显示权限模式、工作目录、git 分支、token 统计与后台任务状态。
+/// 页脚视图。显示权限模式、工作目录、git 分支、token 统计。
 /// </summary>
 internal sealed class FooterView : View
 {
     private FooterDataProvider? _provider;
     private string _modeText = "default";
-    private bool _spinnerSubscribed;
 
     /// <summary>
-    /// 初始化页脚视图并订阅全局 Spinner 服务。
+    /// 初始化页脚视图。
     /// </summary>
     public FooterView()
     {
         CanFocus = false;
-        // 订阅全局 SpinnerService，TUI 模式下显示状态
-        SpinnerService.Changed += OnSpinnerChanged;
-        _spinnerSubscribed = true;
-    }
-
-    /// <summary>
-    /// Spinner 状态变更（由 Timer 线程触发）：编组到 UI 线程后再标记重绘，
-    /// 避免跨线程访问视图状态。
-    /// </summary>
-    private void OnSpinnerChanged()
-    {
-        try
-        {
-            GetApp()?.Invoke(() => SetNeedsDraw());
-        }
-        catch
-        {
-            // 应用未运行或已关闭时丢弃本次重绘
-        }
     }
 
     /// <summary>
@@ -77,16 +57,6 @@ internal sealed class FooterView : View
     }
 
     /// <inheritdoc/>
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing && _spinnerSubscribed)
-        {
-            try { SpinnerService.Changed -= OnSpinnerChanged; } catch { }
-        }
-        base.Dispose(disposing);
-    }
-
-    /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var viewport = Viewport;
@@ -97,15 +67,6 @@ internal sealed class FooterView : View
 
         var col = 0;
         var p = _provider;
-
-        // 若 SpinnerService 在运行，先渲染短状态
-        if (SpinnerService.IsRunning)
-        {
-            var frame = SpinnerService.CurrentFrame;
-            var status = SpinnerService.Status;
-            var text = string.IsNullOrEmpty(status) ? frame : $"{frame} {status}";
-            col += Write(col, text + "  ", TuiTheme.SystemMessage, viewport.Width);
-        }
 
         col += Write(col, $"[{_modeText}]", TuiTheme.Accent, viewport.Width, TextStyle.Bold);
         col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
@@ -124,11 +85,9 @@ internal sealed class FooterView : View
             if (p.TotalTokens > 0)
             {
                 col += Write(col, $"{FormatTokens(p.TotalTokens)} tok", TuiTheme.SystemMessage, viewport.Width);
-                col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
             }
         }
 
-        Write(col, "tasks 待接入", TuiTheme.SystemMessage, viewport.Width);
         return true;
     }
 

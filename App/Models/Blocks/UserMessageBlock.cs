@@ -46,9 +46,9 @@ public sealed class UserMessageBlock : Block
     public override void Layout(int width)
     {
         base.Layout(width);
-        // 简单估算：每行最多 width 字符（含 "> " 前缀）
-        var contentWidth = Math.Max(1, width - 2);
-        LineCount = Math.Max(1, (Text.Length + contentWidth - 1) / contentWidth);
+        var contentWidth = Math.Max(1, width - 2); // "> " 前缀占 2 列
+        var colWidth = TextMeasure.MeasureColumns(Text);
+        LineCount = Math.Max(1, (colWidth + contentWidth - 1) / contentWidth);
     }
 
     /// <inheritdoc/>
@@ -59,14 +59,15 @@ public sealed class UserMessageBlock : Block
 
         while (offset < Text.Length)
         {
-            var seg = Text.AsSpan(offset, Math.Min(contentWidth, Text.Length - offset));
-            var line = RenderLine.Single(
-                $"> {seg.ToString()}",
-                BlockColors.UserMessage,
-                TextStyle.Bold);
-            lines.Add(line);
+            var remaining = Text[offset..];
+            var take = TextMeasure.TruncateByColumns(remaining, contentWidth);
 
-            offset += contentWidth;
+            lines.Add(RenderLine.Single(
+                $"> {take}",
+                BlockColors.UserMessage,
+                TextStyle.Bold));
+
+            offset += take.Length;
         }
 
         if (LineCount == 0)

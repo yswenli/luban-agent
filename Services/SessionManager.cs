@@ -47,6 +47,9 @@ public class SessionManager : ISessionManager
     /// </summary>
     public SessionInfo? CurrentSession => _currentSession;
 
+    /// <summary>当前活动会话变更时触发。</summary>
+    public event Action<string>? CurrentSessionChanged;
+
     /// <summary>
     /// 创建新会话（自动绑定当前工作区，若存在）
     /// </summary>
@@ -170,6 +173,15 @@ public class SessionManager : ISessionManager
     }
 
     /// <summary>
+    /// 获取会话最近 N 条消息。
+    /// </summary>
+    public async Task<IEnumerable<SessionMessage>> GetLatestMessagesAsync(string sessionId, int count)
+    {
+        var messages = await _messageRepo.GetLatestMessagesAsync(sessionId, count);
+        return messages.Select(ToSessionMessage);
+    }
+
+    /// <summary>
     /// 清除会话消息
     /// </summary>
     public async Task ClearMessagesAsync(string sessionId)
@@ -206,6 +218,7 @@ public class SessionManager : ISessionManager
     public async Task SetCurrentSessionAsync(string sessionId)
     {
         _currentSession = await GetSessionAsync(sessionId);
+        CurrentSessionChanged?.Invoke(sessionId);
     }
 
     /// <summary>

@@ -162,6 +162,7 @@ internal sealed class RootView : Runnable
             _inputBar.Submitted -= OnInputSubmitted;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
+            _vm.Dispose();
         }
         base.Dispose(disposing);
     }

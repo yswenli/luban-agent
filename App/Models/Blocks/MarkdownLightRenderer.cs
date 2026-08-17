@@ -515,21 +515,24 @@ internal static partial class MarkdownLightRenderer
 
             if (isCodeBlock)
             {
-                // Code block 行不自动换行，直接截断
+                // Code block 行不自动换行，按显示列宽截断
                 var col = 0;
                 var wrapped = new List<TextSegment>();
                 foreach (var seg in lineSegments)
                 {
                     if (col >= width) break;
                     var available = width - col;
-                    if (seg.Text.Length <= available)
+                    var segColumns = TextMeasure.MeasureColumns(seg.Text);
+
+                    if (segColumns <= available)
                     {
                         wrapped.Add(seg);
-                        col += seg.Text.Length;
+                        col += segColumns;
                     }
                     else
                     {
-                        wrapped.Add(new TextSegment(seg.Text[..available], seg.Fg, seg.Bg, seg.Style));
+                        var truncated = TextMeasure.TruncateByColumns(seg.Text, available);
+                        wrapped.Add(new TextSegment(truncated, seg.Fg, seg.Bg, seg.Style));
                         col = width;
                     }
                 }
@@ -537,69 +540,13 @@ internal static partial class MarkdownLightRenderer
             }
             else
             {
-                // 普通行：按词/字符换行
-                WrapAndAdd(lineSegments, width, result);
+                // 普通行：按显示列宽换行
+                var wrappedLines = TextMeasure.WrapByColumns(lineSegments, width);
+                result.AddRange(wrappedLines);
             }
         }
 
         return result;
-    }
-
-    private static void WrapAndAdd(List<TextSegment> segments, int width, List<RenderLine> result)
-    {
-        // 将所有片段拼接后按宽度拆分
-        var totalText = new StringBuilder();
-        var styleMap = new List<(int Start, int End, TextSegment Segment)>();
-        int pos = 0;
-
-        foreach (var seg in segments)
-        {
-            styleMap.Add((pos, pos + seg.Text.Length, seg));
-            totalText.Append(seg.Text);
-            pos += seg.Text.Length;
-        }
-
-        var fullText = totalText.ToString();
-        if (fullText.Length == 0)
-        {
-            result.Add(RenderLine.Blank);
-            return;
-        }
-
-        // 按宽度逐行拆分，尽量在空格处换行
-        int offset = 0;
-        while (offset < fullText.Length)
-        {
-            var remaining = fullText.Length - offset;
-            var take = Math.Min(width, remaining);
-
-            // 如果不是最后一行，尝试在空格处换行
-            if (take < remaining)
-            {
-                var wrapPos = fullText.LastIndexOf(' ', offset + take - 1, take);
-                if (wrapPos > offset)
-                {
-                    take = wrapPos - offset + 1;
-                }
-            }
-
-            var lineText = fullText[offset..(offset + take)];
-
-            var lineSegments = new List<TextSegment>();
-            foreach (var (start, end, seg) in styleMap)
-            {
-                var segStart = Math.Max(start, offset);
-                var segEnd = Math.Min(end, offset + take);
-                if (segStart < segEnd)
-                {
-                    var slice = seg.Text[(segStart - start)..(segEnd - start)];
-                    lineSegments.Add(new TextSegment(slice, seg.Fg, seg.Bg, seg.Style));
-                }
-            }
-
-            result.Add(new RenderLine(lineSegments));
-            offset += take;
-        }
     }
 
     private static bool IsMarkdownSpecial(char c) =>

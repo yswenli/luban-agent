@@ -56,4 +56,7 @@ internal static class BlockColors
 
     /// <summary>失败 红色 #F09595。</summary>
     public static readonly Color Failure = new(0xF0, 0x95, 0x95, 0xFF);
+
+    /// <summary>Spinner 动画 琥珀色 #EF9F27。</summary>
+    public static readonly Color Spinner = new(0xEF, 0x9F, 0x27, 0xFF);
 }

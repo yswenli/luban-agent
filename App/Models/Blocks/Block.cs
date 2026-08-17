@@ -41,6 +41,9 @@ public abstract class Block
     /// <summary>Block 创建时间。</summary>
     public DateTime StartedAt { get; } = DateTime.Now;
 
+    /// <summary>Block 创建时间（UTC）。</summary>
+    public DateTime StartedAtUtc { get; } = DateTime.UtcNow;
+
     /// <summary>Block 内容是否已全部到达（不再有后续 token）。</summary>
     public bool IsComplete { get; protected set; }
 
@@ -80,7 +83,7 @@ public abstract class Block
     {
         if (IsComplete) return;
         IsComplete = true;
-        Duration = DateTime.Now - StartedAt;
+        Duration = DateTime.UtcNow - StartedAtUtc;
     }
 }
 

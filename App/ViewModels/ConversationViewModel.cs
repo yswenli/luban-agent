@@ -16,6 +16,7 @@
 *
 *****************************************************************************/
 using System.Text;
+using LubanAgentCli.App.Services;
 
 namespace LubanAgentCli.App.ViewModels;
 
@@ -24,12 +25,15 @@ namespace LubanAgentCli.App.ViewModels;
 /// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，
 /// 本类不直接持有 View 引用。
 /// </summary>
-internal sealed class ConversationViewModel
+internal sealed class ConversationViewModel : IDisposable
 {
     private readonly IServiceProvider _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly ConversationDocument _doc;
     private readonly ConfigManager _configManager;
+    private readonly TitleService _titleService;
+    private readonly SessionManager? _sessionManager;
+    private readonly ISessionManager _iSessionManager;
 
     private LuBanAgent? _agent;
     private ILuBanAgentFactory? _agentFactory;
@@ -53,6 +57,7 @@ internal sealed class ConversationViewModel
     // 必须是字段而非闭包局部变量——节流器跨会话复用，闭包会把上一会话的状态泄漏到下一会话）
     private ThinkingBlock? _thinkingBlock;
     private bool _thinkingCompleted;
+    private ActionSpinnerBlock? _currentSpinner;
 
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
@@ -104,6 +109,9 @@ internal sealed class ConversationViewModel
     /// <summary>当前是否正在运行 agent 对话。</summary>
     public bool IsRunning { get; private set; }
 
+    /// <summary>历史回放的消息条数限制。</summary>
+    private const int HistoryLoadLimit = 20;
+
     /// <summary>
     /// 初始化会话 ViewModel。
     /// </summary>
@@ -119,6 +127,33 @@ internal sealed class ConversationViewModel
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _configManager = services.GetRequiredService<ConfigManager>();
+        _titleService = services.GetRequiredService<TitleService>();
+
+        _iSessionManager = services.GetRequiredService<ISessionManager>();
+        if (_iSessionManager is SessionManager sm)
+        {
+            _sessionManager = sm;
+            sm.CurrentSessionChanged += OnCurrentSessionChanged;
+        }
+    }
+
+    private void OnCurrentSessionChanged(string sessionId)
+    {
+        Task.Run(async () =>
+        {
+            try
+            {
+                await LoadHistoryAsync(sessionId);
+                if (_iSessionManager.CurrentSession is not null)
+                {
+                    _titleService.SetSessionTitle(_iSessionManager.CurrentSession.Title ?? "新会话");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"加载会话历史失败: {sessionId}", ex);
+            }
+        });
     }
 
     /// <summary>
@@ -144,6 +179,9 @@ internal sealed class ConversationViewModel
         _modelName = _configManager.SelectedModel
             ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
 
+        _titleService.SetWorkspace(_workspace.Name);
+        _titleService.SetModel(_modelName);
+
         // 加载文件级 Skill（项目级 + 用户级）
         var configPath = _workspace.ConfigPath;
         if (configPath != null)
@@ -160,6 +198,54 @@ internal sealed class ConversationViewModel
             _doc.AppendBlock(new SystemBlock(
                 $"模型: {_modelName}  |  工作区: {_workspace.Name}",
                 foreground: BlockColors.Success)));
+
+        // 加载当前会话历史
+        if (_iSessionManager.CurrentSession is not null)
+        {
+            await LoadHistoryAsync(_iSessionManager.CurrentSession.SessionId);
+        }
+    }
+
+    /// <summary>
+    /// 加载会话历史到显示区（最近 N 条 user/assistant 消息）。
+    /// </summary>
+    public async Task LoadHistoryAsync(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return;
+
+        var messages = await _iSessionManager.GetLatestMessagesAsync(sessionId, HistoryLoadLimit + 1);
+
+        var list = messages.ToList();
+        var hasMore = list.Count > HistoryLoadLimit;
+        if (hasMore)
+        {
+            list = list.Take(HistoryLoadLimit).ToList();
+        }
+
+        _dispatcher.Invoke(() =>
+        {
+            if (hasMore)
+            {
+                _doc.AppendBlock(new SystemBlock(
+                    $"…更早消息未显示（已加载最近 {HistoryLoadLimit} 条）",
+                    foreground: BlockColors.System));
+            }
+
+            foreach (var msg in list)
+            {
+                if (msg.Role == "user")
+                {
+                    _doc.AppendBlock(new UserMessageBlock(msg.Content));
+                }
+                else if (msg.Role == "assistant")
+                {
+                    var block = new AssistantMessageBlock();
+                    block.AppendContent(msg.Content);
+                    block.MarkComplete();
+                    _doc.AppendBlock(block);
+                }
+            }
+        });
     }
 
     /// <summary>
@@ -320,6 +406,7 @@ internal sealed class ConversationViewModel
         // 重置当前会话的流式状态（字段级，供跨会话复用的节流回调使用）
         _thinkingBlock = null;
         _thinkingCompleted = false;
+        _currentSpinner = null;
 
         _streamThrottle ??= new FlushThrottle(FlushPendingTokens, TimeSpan.FromMilliseconds(50));
 
@@ -340,6 +427,16 @@ internal sealed class ConversationViewModel
                     // ─── 思考过程（仅过滤 null/空串，保留换行等空白 token）───
                     if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {
+                        // 首次思考 → 插入 spinner
+                        _dispatcher.Invoke(() =>
+                        {
+                            if (_currentSpinner is null)
+                            {
+                                _currentSpinner = new ActionSpinnerBlock("AI 正在思考…", _doc, _dispatcher);
+                                _doc.AppendBlock(_currentSpinner);
+                            }
+                        });
+
                         lock (_streamLock) _pendingThinking.Append(reasoning.Text);
                         _streamThrottle.Schedule();
                         continue;
@@ -349,6 +446,20 @@ internal sealed class ConversationViewModel
                     if (content is FunctionCallContent functionCall)
                     {
                         FlushPendingTokens();
+
+                        // 完成上一个 spinner 并插入新 spinner（全部在 UI 线程）
+                        _dispatcher.Invoke(() =>
+                        {
+                            if (_currentSpinner is not null)
+                            {
+                                _currentSpinner.MarkComplete();
+                                _currentSpinner = null;
+                            }
+
+                            _currentSpinner = new ActionSpinnerBlock($"正在调用工具 {functionCall.Name}…", _doc, _dispatcher);
+                            _doc.AppendBlock(_currentSpinner);
+                        });
+
                         var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId);
 
                         _dispatcher.Invoke(() => _doc.AppendBlock(toolBlock));
@@ -371,6 +482,16 @@ internal sealed class ConversationViewModel
                     // ─── 正文回复（仅过滤 null/空串，保留换行等空白 token）───
                     if (content is TextContent text && !string.IsNullOrEmpty(text.Text))
                     {
+                        // 首次正文 → 插入 spinner
+                        _dispatcher.Invoke(() =>
+                        {
+                            if (_currentSpinner is null)
+                            {
+                                _currentSpinner = new ActionSpinnerBlock("正在生成回复…", _doc, _dispatcher);
+                                _doc.AppendBlock(_currentSpinner);
+                            }
+                        });
+
                         lock (_streamLock) _pendingAnswer.Append(text.Text);
                         _streamThrottle.Schedule();
                         continue;
@@ -409,16 +530,21 @@ internal sealed class ConversationViewModel
         {
             // 取消/异常路径也冲刷剩余 token，保证已产出内容不丢失
             FlushPendingTokens();
-        }
 
-        // 流式结束——对最后一个 Block 做最终布局并标记完成。
-        // 收尾 Invoke 排在冲刷 Invoke 之后（TimedEvents FIFO），顺序安全。
-        _dispatcher.Invoke(() =>
-        {
-            // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
-            _doc.RelayoutLastBlock();
-            _doc.MarkLastComplete();
-        });
+            // 完成最后一个 spinner（无论正常完成还是异常/取消）
+            _dispatcher.Invoke(() =>
+            {
+                if (_currentSpinner is not null)
+                {
+                    _currentSpinner.MarkComplete();
+                    _currentSpinner = null;
+                }
+
+                // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
+                _doc.RelayoutLastBlock();
+                _doc.MarkLastComplete();
+            });
+        }
     }
 
     /// <summary>
@@ -472,5 +598,16 @@ internal sealed class ConversationViewModel
                 _doc.RelayoutLastBlock();
             }
         });
+    }
+
+    /// <summary>
+    /// 取消事件订阅，释放资源。
+    /// </summary>
+    public void Dispose()
+    {
+        if (_sessionManager is not null)
+        {
+            _sessionManager.CurrentSessionChanged -= OnCurrentSessionChanged;
+        }
     }
 }

@@ -14,6 +14,9 @@
 *描述：Terminal.Gui 应用启动引导，负责初始化驱动、运行顶层视图与优雅关闭
 *
 *****************************************************************************/
+using LubanAgentCli.App.Services;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace LubanAgentCli.App;
 
 /// <summary>
@@ -23,6 +26,9 @@ namespace LubanAgentCli.App;
 /// </summary>
 internal sealed class TerminalGuiApp : IDisposable
 {
+    private TitleService? _titleService;
+    private Action<string>? _titleChangedHandler;
+
     /// <summary>
     /// Terminal.Gui 应用
     /// </summary>
@@ -41,6 +47,11 @@ internal sealed class TerminalGuiApp : IDisposable
     /// </summary>
     public void Dispose()
     {
+        if (_titleService is not null && _titleChangedHandler is not null)
+        {
+            _titleService.TitleChanged -= _titleChangedHandler;
+        }
+
         if (Services is IDisposable disposable)
         {
             disposable.Dispose();
@@ -86,23 +97,8 @@ internal sealed class TerminalGuiApp : IDisposable
         IApplication? application = null;
         try
         {
-            // 检测 Windows Terminal：GPU 加速渲染管线可能导致输入事件延迟
-            // 通过检测父进程而非环境变量，更可靠
-            var isWindowsTerminal = IsRunningInWindowsTerminal();
-            if (isWindowsTerminal)
-            {
-                Console.WriteLine("⚠️ 检测到 Windows Terminal 环境");
-                Console.WriteLine("   Windows Terminal 的 GPU 加速渲染可能导致输入延迟。");
-                Console.WriteLine("   建议使用 cmd 或 PowerShell 启动以获得最佳体验。");
-                Console.WriteLine();
-                Console.Write("按任意键继续，或按 Ctrl+C 退出...");
-                Console.ReadKey(true);
-                Console.WriteLine();
-                Console.WriteLine();
-            }
-
             // 诊断：LUBAN_TUI_DRIVER=ansi|windows|dotnet 可强制指定驱动做 A/B 对比
-            var driverName = Environment.GetEnvironmentVariable("LUBAN_TUI_DRIVER");
+            var driverName = "dotnet"; //Environment.GetEnvironmentVariable("LUBAN_TUI_DRIVER");
 
             application = Application.Create();
             application.Init(driverName);
@@ -110,7 +106,6 @@ internal sealed class TerminalGuiApp : IDisposable
             ConfigureDriver(application);
             if (TuiDiag.Enabled)
             {
-                Logger.Warn($"[TuiDiag] driver={(string.IsNullOrEmpty(driverName) ? "(default)" : driverName)} actual={application.Driver}");
                 application.Iteration += (_, _) => TuiDiag.IterationTick();
                 application.Keyboard.KeyDown += (_, _) => TuiDiag.KeyArrival();
             }
@@ -128,6 +123,21 @@ internal sealed class TerminalGuiApp : IDisposable
             }
 
             Services = startup.Services;
+
+            _titleService = Services.GetRequiredService<TitleService>();
+            _titleChangedHandler = title =>
+            {
+                try
+                {
+                    Console.Title = title;
+                }
+                catch
+                {
+                    // 忽略标题设置失败（如不支持终端）
+                }
+            };
+            _titleService.TitleChanged += _titleChangedHandler;
+
             // 阶段二：启动成功后进入主界面，传入 OnUnhandledException 保持主循环在普通异常下存活。
             using var root = new RootView(Services, Dispatcher, ui, startup.Notices);
             application.Run(root, OnUnhandledException);
@@ -179,59 +189,4 @@ internal sealed class TerminalGuiApp : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// 检测当前进程是否运行在 Windows Terminal 中。
-    /// 通过父进程检测而非环境变量，更可靠。
-    /// </summary>
-    /// <returns>在 Windows Terminal 中返回 true。</returns>
-    private static bool IsRunningInWindowsTerminal()
-    {
-        try
-        {
-            var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
-            var parent = GetParentProcess(currentProcess);
-
-            // Windows Terminal 进程名：WindowsTerminal.exe 或 wt.exe
-            while (parent is not null)
-            {
-                var name = parent.ProcessName.ToLowerInvariant();
-                if (name is "windowsterminal" or "wt")
-                {
-                    return true;
-                }
-                parent = GetParentProcess(parent);
-            }
-            return false;
-        }
-        catch
-        {
-            // 检测失败时默认不是 Windows Terminal
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// 获取父进程（Windows 平台使用 WMI 查询）。
-    /// </summary>
-    private static System.Diagnostics.Process? GetParentProcess(System.Diagnostics.Process process)
-    {
-        try
-        {
-            using var query = new System.Management.ManagementObjectSearcher(
-                $"SELECT ParentProcessId FROM Win32_Process WHERE ProcessId = {process.Id}");
-            foreach (var item in query.Get())
-            {
-                var parentId = Convert.ToInt32(item["ParentProcessId"]);
-                if (parentId > 0)
-                {
-                    return System.Diagnostics.Process.GetProcessById(parentId);
-                }
-            }
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }

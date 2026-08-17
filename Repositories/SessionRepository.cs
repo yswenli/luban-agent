@@ -220,6 +220,21 @@ public class SessionMessageRepository : BaseRepository<DbSessionMessage>
     }
 
     /// <summary>
+    /// 获取会话最近 N 条消息（时间倒序取 N 条后反转为正序）。
+    /// </summary>
+    public async Task<List<DbSessionMessage>> GetLatestMessagesAsync(string sessionId, int count)
+    {
+        var messages = await AsQueryable()
+            .Where(m => m.SessionId == sessionId)
+            .OrderBy(m => m.CreateTime, OrderByType.Desc)
+            .Take(count)
+            .ToListAsync();
+
+        messages.Reverse();
+        return messages;
+    }
+
+    /// <summary>
     /// 清除会话消息
     /// </summary>
     public async Task ClearMessagesAsync(string sessionId)

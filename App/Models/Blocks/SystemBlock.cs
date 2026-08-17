@@ -16,6 +16,8 @@
 *****************************************************************************/
 using Terminal.Gui.Drawing;
 
+using LubanAgentCli.App.Models.Blocks;
+
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;
 
@@ -57,7 +59,9 @@ public sealed class SystemBlock : Block
     public override void Layout(int width)
     {
         base.Layout(width);
-        LineCount = Math.Max(1, (Text.Length + Math.Max(1, width) - 1) / Math.Max(1, width));
+        var w = Math.Max(1, width);
+        var colWidth = TextMeasure.MeasureColumns(Text);
+        LineCount = Math.Max(1, (colWidth + w - 1) / w);
     }
 
     /// <inheritdoc/>
@@ -67,16 +71,16 @@ public sealed class SystemBlock : Block
 
         if (string.IsNullOrEmpty(Text))
         {
-            lines.Add(RenderLine.Single(string.Empty, Foreground));
+            lines.Add(RenderLine.Single(string.Empty, Foreground, style: style));
             return;
         }
 
-        var remaining = Text.AsSpan();
+        var remaining = Text;
         while (remaining.Length > 0)
         {
-            var take = Math.Min(width, remaining.Length);
-            lines.Add(RenderLine.Single(remaining[..take].ToString(), Foreground, style));
-            remaining = remaining[take..];
+            var take = TextMeasure.TruncateByColumns(remaining, width);
+            lines.Add(RenderLine.Single(take, Foreground, style: style));
+            remaining = remaining[take.Length..];
         }
     }
 }

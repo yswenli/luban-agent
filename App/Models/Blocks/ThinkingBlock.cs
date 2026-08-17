@@ -44,7 +44,7 @@ public sealed class ThinkingBlock : Block
         _content.Append(token);
     }
 
-    /// <inheritdoc/>
+/// <inheritdoc/>
     public override void Layout(int width)
     {
         base.Layout(width);
@@ -54,7 +54,6 @@ public sealed class ThinkingBlock : Block
         }
         else
         {
-            // 与 Render 保持一致：标题行 + 内容行（空内容时为"（无内容）"提示行）
             var text = _content.ToString();
             if (string.IsNullOrEmpty(text))
             {
@@ -63,7 +62,8 @@ public sealed class ThinkingBlock : Block
             }
 
             var w = Math.Max(1, width - 1); // 缩进 1 列
-            LineCount = 1 + Math.Max(1, (text.Length + w - 1) / w);
+            var colWidth = TextMeasure.MeasureColumns(text);
+            LineCount = 1 + Math.Max(1, (colWidth + w - 1) / w);
         }
     }
 
@@ -87,13 +87,14 @@ public sealed class ThinkingBlock : Block
                 return;
             }
 
-            var w = Math.Max(1, width - 1);
-            var remaining = text.AsSpan();
-            while (remaining.Length > 0)
+            var contentWidth = Math.Max(1, width - 1);
+            var offset = 0;
+            while (offset < text.Length)
             {
-                var take = Math.Min(w, remaining.Length);
-                lines.Add(RenderLine.Single($" {remaining[..take].ToString()}", BlockColors.Thinking));
-                remaining = remaining[take..];
+                var remaining = text[offset..];
+                var take = TextMeasure.TruncateByColumns(remaining, contentWidth);
+                lines.Add(RenderLine.Single($" {take}", BlockColors.Thinking));
+                offset += take.Length;
             }
         }
     }

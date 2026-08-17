@@ -532,11 +532,10 @@ internal sealed class ConversationView : View
     }
 
     /// <summary>
-    /// 按字符数直接截断（非 CJK 精确宽度）。Segment 文本通常已被 Markdown 拆分为较短片段。
+    /// 按显示列宽截断（替代原按字符数截断）。
     /// </summary>
     private static string Truncate(string text, int maxWidth)
     {
-        if (maxWidth <= 0) return string.Empty;
-        return text.Length <= maxWidth ? text : text[..maxWidth];
+        return TextMeasure.TruncateByColumns(text, maxWidth);
     }
 }

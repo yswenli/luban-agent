@@ -14,6 +14,8 @@
 *描述：封装应用初始化逻辑，供启动向导调用
 *
 *****************************************************************************/
+using LubanAgentCli.App.Services;
+
 namespace LubanAgentCli.App;
 
 /// <summary>
@@ -136,6 +138,7 @@ internal static class StartupRunner
         services.AddSingleton<SessionMessageRepository>();
         services.AddSingleton<WorkspaceRepository>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
+        services.AddSingleton<TitleService>();
         services.AddSingleton<LuBan.AIAgent.LocalMemory.IWorkspaceContextProvider>(
             new DelegateWorkspaceContextProvider(() => WorkspaceManager.Current?.WorkspaceId));
 
