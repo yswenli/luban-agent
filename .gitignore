@@ -3,12 +3,3 @@
 ################################################################################
 
 /.vs
-/bin/Debug/net8.0
-/obj
-/bin/Release/net8.0
-/Properties/PublishProfiles
-/LubanAgent.csproj.user
-/LubanAgentCli.csproj.user
-/bin/Debug/net10.0/.luban-agent
-/bin/Debug/net10.0
-/bin/Release/net10.0
