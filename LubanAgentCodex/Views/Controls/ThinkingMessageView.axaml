@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             x:Class="LubanAgentCodex.Views.Controls.ThinkingMessageView"
+             x:DataType="vm:ThinkingMessageItem">
+
+    <Border Margin="0,4"
+            Padding="12"
+            Background="{DynamicResource BackgroundBrush}"
+            CornerRadius="6"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            HorizontalAlignment="Left">
+        <StackPanel>
+            <TextBlock Text=" 思考中..."
+                       Foreground="{DynamicResource TextTertiaryBrush}"
+                       FontSize="12"
+                       Margin="0,0,0,8" />
+            <TextBox Text="{Binding Content}"
+                     IsReadOnly="True"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Foreground="{DynamicResource TextTertiaryBrush}"
+                     TextWrapping="Wrap"
+                     FontSize="13"
+                     FontStyle="Italic" />
+            <TextBlock IsVisible="{Binding IsStreaming}"
+                       Text="▌"
+                       Foreground="{DynamicResource TextTertiaryBrush}"
+                       FontSize="13"
+                       Margin="0,4,0,0" />
+        </StackPanel>
+    </Border>
+
+</UserControl>

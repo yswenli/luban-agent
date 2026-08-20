@@ -137,6 +137,7 @@ public partial class MessageStream : UserControl
         {
             UserMessageItem => new UserMessageView { DataContext = message },
             AssistantMessageItem => new AssistantMessageView { DataContext = message },
+            ThinkingMessageItem => new ThinkingMessageView { DataContext = message },
             ToolCallItem tool => new ToolCallCard { DataContext = tool },
             ToolConfirmItem confirm => new ConfirmCard { DataContext = confirm },
             SystemMessageItem => new SystemMessageView { DataContext = message },

@@ -37,6 +37,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly StringBuilder _pendingThinking = new();
     private FlushThrottle? _throttle;
     private AssistantMessageItem? _currentAssistant;
+    private ThinkingMessageItem? _currentThinking;
 
     /// <summary>
     /// 服务提供者
@@ -570,12 +571,12 @@ public partial class MainWindowViewModel : ObservableObject
                     break;
 
                 case ThinkingDeltaEvent t:
-                    // 如果当前没有 AssistantMessageItem 或已完成，创建新的
-                    if (_currentAssistant == null || _currentAssistant.IsComplete)
+                    // 思考内容作为独立消息项显示
+                    if (_currentThinking == null || _currentThinking.IsComplete)
                     {
                         FlushPending();
-                        _currentAssistant = new AssistantMessageItem();
-                        Dispatcher.UIThread.Post(() => Messages.Add(_currentAssistant));
+                        _currentThinking = new ThinkingMessageItem();
+                        Dispatcher.UIThread.Post(() => Messages.Add(_currentThinking));
                     }
                     _pendingThinking.Append(t.Delta);
                     _throttle?.Schedule();
@@ -583,7 +584,12 @@ public partial class MainWindowViewModel : ObservableObject
 
                 case ToolCallStartedEvent tc:
                     FlushPending();
-                    // 结束当前 AssistantMessageItem，确保工具调用卡片显示在正确位置
+                    // 结束当前思考和助手消息
+                    if (_currentThinking != null)
+                    {
+                        _currentThinking.IsComplete = true;
+                        _currentThinking = null;
+                    }
                     if (_currentAssistant != null)
                     {
                         _currentAssistant.IsComplete = true;
@@ -638,23 +644,25 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void FlushPending()
     {
-        if (_currentAssistant == null) return;
-
         var text = _pendingText.ToString();
         var thinking = _pendingThinking.ToString();
 
-        if (text.Length > 0 || thinking.Length > 0)
+        if (text.Length > 0)
         {
             _pendingText.Clear();
-            _pendingThinking.Clear();
-
-            Dispatcher.UIThread.Post(() =>
+            if (_currentAssistant != null)
             {
-                if (text.Length > 0)
-                    _currentAssistant.AppendDelta(text);
-                if (thinking.Length > 0)
-                    _currentAssistant.AppendThinking(thinking);
-            });
+                Dispatcher.UIThread.Post(() => _currentAssistant.AppendDelta(text));
+            }
+        }
+
+        if (thinking.Length > 0)
+        {
+            _pendingThinking.Clear();
+            if (_currentThinking != null)
+            {
+                Dispatcher.UIThread.Post(() => _currentThinking.AppendDelta(thinking));
+            }
         }
     }
 
