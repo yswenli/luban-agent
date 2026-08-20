@@ -17,7 +17,7 @@
                 <TextBlock Text=" 思考中..."
                            Foreground="{DynamicResource TextTertiaryBrush}"
                            FontSize="12"
-                           Margin="0,0,0,8" />
+                   Margin="0,0,0,8" />
                 <TextBlock Text="{Binding ThinkingContent}"
                            Foreground="{DynamicResource TextTertiaryBrush}"
                            TextWrapping="Wrap"
@@ -26,15 +26,12 @@
             </StackPanel>
         </Border>
 
-        <!-- 主要内容 -->
-        <TextBox Text="{Binding Content}"
-                 IsReadOnly="True"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Foreground="{DynamicResource TextPrimaryBrush}"
-                 TextWrapping="Wrap"
-                 FontSize="14"
-                 FontFamily="Consolas, Menlo, Monaco, Courier New, monospace" />
+        <!-- 主要内容（Markdown 渲染） -->
+        <TextBlock Name="ContentText"
+                   TextWrapping="Wrap"
+                   FontSize="14"
+                   FontFamily="Consolas, Menlo, Monaco, Courier New, monospace"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
 
         <!-- 流式指示器 -->
         <TextBlock IsVisible="{Binding IsStreaming}"
