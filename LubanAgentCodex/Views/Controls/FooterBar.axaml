@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.FooterBar">
+
+    <Border Background="{DynamicResource CardBrush}"
+            BorderBrush="{DynamicResource DividerBrush}"
+            BorderThickness="0,1,0,0"
+            Padding="12,6">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*">
+            <!-- 权限模式 -->
+            <TextBlock Grid.Column="0" 
+                       Name="PermissionModeText"
+                       FontWeight="Bold"
+                       FontSize="12"
+                       Margin="0,0,16,0" />
+            
+            <!-- 分隔符 -->
+            <TextBlock Grid.Column="1" 
+                       Text="│"
+                       Foreground="{DynamicResource DividerBrush}"
+                       Margin="0,0,16,0" />
+            
+            <!-- 工作目录 -->
+            <TextBlock Grid.Column="2" 
+                       Name="WorkingDirectoryText"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,0,16,0" />
+            
+            <!-- Git 分支 -->
+            <TextBlock Grid.Column="3" 
+                       Name="GitBranchText"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="12"
+                       Margin="0,0,16,0" />
+            
+            <!-- Token 用量 -->
+            <TextBlock Grid.Column="4" 
+                       Name="TokenUsageText"
+                       HorizontalAlignment="Right"
+                       Foreground="{DynamicResource TextTertiaryBrush}"
+                       FontSize="12" />
+        </Grid>
+    </Border>
+</UserControl>
