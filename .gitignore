@@ -3,3 +3,7 @@
 ################################################################################
 
 /.vs
+/LubanAgentCodex/bin/Debug/net10.0
+/LubanAgentCodex/obj
+/LubanAgentCore/bin/Debug/net10.0
+/LubanAgentCore/obj
