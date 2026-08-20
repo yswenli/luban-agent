@@ -150,45 +150,83 @@ public partial class Sidebar : UserControl
 
             renameItem.Click += async (s, e) =>
             {
-                var dialog = new RenameDialog(ws.Name);
-                var result = await dialog.ShowDialog<string?>(this.VisualRoot as Window);
-                if (!string.IsNullOrWhiteSpace(result) && result != ws.Name)
+                try
                 {
-                    var repo = _services!.GetRequiredService<WorkspaceRepository>();
-                    var dbWs = await repo.GetByIdAsync(ws.WorkspaceId);
-                    if (dbWs != null)
+                    var parentWindow = TopLevel.GetTopLevel(this) as Window;
+                    if (parentWindow == null) return;
+
+                    var dialog = new RenameDialog(ws.Name);
+                    var result = await dialog.ShowDialog<string?>(parentWindow);
+                    if (!string.IsNullOrWhiteSpace(result) && result != ws.Name)
                     {
-                        dbWs.Name = result;
-                        await repo.UpdateAsync(dbWs);
-                        ws.Name = result;
-                        LoadWorkspaces();
+                        var repo = _services!.GetRequiredService<WorkspaceRepository>();
+                        var dbWs = await repo.GetByIdAsync(ws.WorkspaceId);
+                        if (dbWs != null)
+                        {
+                            dbWs.Name = result;
+                            await repo.UpdateAsync(dbWs);
+                            ws.Name = result;
+                            LoadWorkspaces();
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"重命名工作区失败: {ex.Message}");
                 }
             };
 
             skillItem.Click += (s, e) =>
             {
-                var win = new SkillManageWindow(_services!, ws);
-                win.Show();
+                try
+                {
+                    var win = new SkillManageWindow(_services!, ws);
+                    win.Show();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"打开技能管理失败: {ex.Message}");
+                }
             };
 
             ruleItem.Click += (s, e) =>
             {
-                var win = new RuleManageWindow(_services!, ws);
-                win.Show();
+                try
+                {
+                    var win = new RuleManageWindow(_services!, ws);
+                    win.Show();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"打开规则管理失败: {ex.Message}");
+                }
             };
 
             mcpItem.Click += (s, e) =>
             {
-                var win = new MCPManageWindow(_services!, ws);
-                win.Show();
+                try
+                {
+                    var win = new MCPManageWindow(_services!, ws);
+                    win.Show();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"打开MCP服务管理失败: {ex.Message}");
+                }
             };
 
             deleteItem.Click += async (s, e) =>
             {
-                var repo = _services!.GetRequiredService<WorkspaceRepository>();
-                await repo.DeleteAsync(w => w.WorkspaceId == ws.WorkspaceId);
-                LoadWorkspaces();
+                try
+                {
+                    var repo = _services!.GetRequiredService<WorkspaceRepository>();
+                    await repo.DeleteAsync(w => w.WorkspaceId == ws.WorkspaceId);
+                    LoadWorkspaces();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"删除工作区失败: {ex.Message}");
+                }
             };
 
             flyout.Items.Add(renameItem);

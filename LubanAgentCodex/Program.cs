@@ -27,11 +27,23 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // 初始化数据库（LuBanOrm.Init、表结构迁移等）
-        DatabaseInitializer.Initialize();
+        // 注册全局异常处理
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-        BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+        try
+        {
+            // 初始化数据库（LuBanOrm.Init、表结构迁移等）
+            DatabaseInitializer.Initialize();
+
+            BuildAvaloniaApp()
+                .StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("应用程序启动失败", ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -42,4 +54,30 @@ class Program
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
+
+    /// <summary>
+    /// 未处理的后台线程异常
+    /// </summary>
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception ex)
+        {
+            Logger.Error("UnhandledException", ex);
+
+            // 如果是致命异常，记录后退出
+            if (e.IsTerminating)
+            {
+                Logger.Error("应用程序即将终止", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 未观察的 Task 异常
+    /// </summary>
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Logger.Error("UnobservedTaskException", e.Exception);
+        e.SetObserved(); // 防止进程崩溃
+    }
 }

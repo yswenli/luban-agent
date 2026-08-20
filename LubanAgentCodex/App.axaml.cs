@@ -17,6 +17,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using LubanAgentCodex.Views;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Services;
@@ -37,6 +38,21 @@ public class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+
+        // 注册 Avalonia UI 线程异常处理
+        Dispatcher.UIThread.UnhandledException += OnUIThreadUnhandledException;
+    }
+
+    /// <summary>
+    /// UI 线程未处理异常处理
+    /// </summary>
+    private void OnUIThreadUnhandledException(object? sender, Avalonia.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        // 记录日志
+        Logger.Error("UIThread", e.Exception);
+
+        // 标记为已处理，防止应用崩溃
+        e.Handled = true;
     }
 
     /// <summary>
