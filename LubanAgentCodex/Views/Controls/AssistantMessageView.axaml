@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             xmlns:ae="https://github.com/avaloniaui/avaloniaedit"
              x:Class="LubanAgentCodex.Views.Controls.AssistantMessageView"
              x:DataType="vm:AssistantMessageItem">
 
@@ -26,15 +27,18 @@
             </StackPanel>
         </Border>
 
-        <!-- 主要内容（支持鼠标选取） -->
-        <TextBox Text="{Binding Content}"
-                 IsReadOnly="True"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Foreground="{DynamicResource TextPrimaryBrush}"
-                 TextWrapping="Wrap"
-                 FontSize="14"
-                 FontFamily="Consolas, Menlo, Monaco, Courier New, monospace" />
+        <!-- 主要内容（AvaloniaEdit，支持语法高亮和鼠标选取） -->
+        <ae:TextEditor Name="Editor"
+                       IsReadOnly="True"
+                       ShowLineNumbers="False"
+                       Background="Transparent"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontFamily="Consolas, Menlo, Monaco, Courier New, monospace"
+                       FontSize="14"
+                       MaxHeight="400"
+                       HorizontalScrollBarVisibility="Auto"
+                       VerticalScrollBarVisibility="Auto"
+                       BorderThickness="0" />
 
         <!-- 流式指示器 -->
         <TextBlock IsVisible="{Binding IsStreaming}"
