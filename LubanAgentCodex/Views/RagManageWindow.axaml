@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LubanAgentCodex.Views.RagManageWindow"
+        Title="RAG 知识库管理"
+        Width="600"
+        Height="400"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- 工具栏 -->
+        <StackPanel Grid.Row="0" 
+                    Orientation="Horizontal" 
+                    Spacing="8" 
+                    Margin="16,16,16,8">
+            <Button Name="CreateButton" Content="+ 创建知识库" />
+            <Button Name="IndexButton" Content="索引" IsEnabled="False" />
+            <Button Name="SearchButton" Content="搜索" IsEnabled="False" />
+            <Button Name="DeleteButton" Content="删除" IsEnabled="False" />
+        </StackPanel>
+
+        <!-- RAG 工作区列表 -->
+        <ListBox Grid.Row="1"
+                 Name="RagListBox"
+                 Margin="16,0,16,16">
+        </ListBox>
+    </Grid>
+</Window>

@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LubanAgentCodex.Views.WorkManageWindow"
+        Title="工作区管理"
+        Width="700"
+        Height="400"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- 工具栏 -->
+        <StackPanel Grid.Row="0" 
+                    Orientation="Horizontal" 
+                    Spacing="8" 
+                    Margin="16,16,16,8">
+            <Button Name="AddButton" Content="+ 新建工作区" />
+            <Button Name="SwitchButton" Content="切换" IsEnabled="False" />
+            <Button Name="DeleteButton" Content="删除" IsEnabled="False" />
+            <Button Name="AuthorizeButton" Content="授权" IsEnabled="False" />
+        </StackPanel>
+
+        <!-- 工作区列表 -->
+        <ListBox Grid.Row="1"
+                 Name="WorkspaceListBox"
+                 Margin="16,0,16,16">
+        </ListBox>
+    </Grid>
+</Window>

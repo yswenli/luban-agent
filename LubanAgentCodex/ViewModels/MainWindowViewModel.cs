@@ -306,10 +306,10 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 Provider 管理窗口
     /// </summary>
-    private async Task ShowProviderManagerAsync(string[] args)
+    private void ShowProviderManagerAsync(string[] args)
     {
-        // TODO: 创建 ProviderManageWindow
-        Messages.Add(new SystemMessageItem { Content = "Provider 管理窗口即将实现" });
+        var window = new ProviderManageWindow(Services);
+        window.Show();
     }
 
     /// <summary>
@@ -363,19 +363,19 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示工作区管理窗口
     /// </summary>
-    private async Task ShowWorkManagerAsync(string[] args)
+    private void ShowWorkManagerAsync(string[] args)
     {
-        // TODO: 创建 WorkManageWindow
-        Messages.Add(new SystemMessageItem { Content = "工作区管理窗口即将实现" });
+        var window = new WorkManageWindow(Services);
+        window.Show();
     }
 
     /// <summary>
     /// 显示 RAG 知识库管理窗口
     /// </summary>
-    private async Task ShowRagManagerAsync(string[] args)
+    private void ShowRagManagerAsync(string[] args)
     {
-        // TODO: 创建 RagManageWindow
-        Messages.Add(new SystemMessageItem { Content = "RAG 知识库管理窗口即将实现" });
+        var window = new RagManageWindow(Services);
+        window.Show();
     }
 
     private void ShowHelp()
@@ -385,12 +385,19 @@ public partial class MainWindowViewModel : ObservableObject
   /clear              清空会话历史
   /mode [name]        查看或切换权限模式
   /model, /m          管理模型
+  /provider, /p       管理 AI Provider
+  /skill, /sk         管理技能
+  /rule, /r           管理规则
+  /mcp, /mp           管理 MCP 服务
   /session, /se       管理对话会话
-  /stats, /st         会话与 Token 统计
+  /stats, /st         显示统计信息
+  /work, /w           管理工作区
+  /rag, /rg           管理 RAG 知识库
 
 快捷键:
-  Enter               提交输入
+  Enter               发送消息
   Ctrl+Enter          换行
+  Shift+Tab           切换权限模式
   Esc                 取消当前任务";
 
         Messages.Add(new SystemMessageItem { Content = helpText });
