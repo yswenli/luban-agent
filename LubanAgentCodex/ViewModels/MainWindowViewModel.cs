@@ -14,10 +14,12 @@
 *描述：主窗口 ViewModel，管理消息流、会话和 Agent 交互
 *
 *****************************************************************************/
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
 using LubanAgentCodex.ViewModels.Messages;
+using LubanAgentCodex.Views;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Sessions;
 using Microsoft.Extensions.DependencyInjection;
@@ -171,6 +173,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var cmd = parts[0].ToLowerInvariant();
+        var args = ExpandSubCommandAliases(parts.Skip(1).ToArray());
 
         switch (cmd)
         {
@@ -184,9 +187,9 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case "/mode":
-                if (parts.Length > 1)
+                if (args.Length > 0)
                 {
-                    var mode = parts[1].ToLowerInvariant() switch
+                    var mode = args[0].ToLowerInvariant() switch
                     {
                         "default" => ToolPermissionMode.Default,
                         "plan" => ToolPermissionMode.Plan,
@@ -207,7 +210,7 @@ public partial class MainWindowViewModel : ObservableObject
                     {
                         Messages.Add(new SystemMessageItem
                         {
-                            Content = $"无效模式: {parts[1]}. 可用: default, plan, accept-edits, bypass",
+                            Content = $"无效模式: {args[0]}. 可用: default, plan, accept-edits, bypass",
                             IsError = true
                         });
                     }
@@ -223,17 +226,47 @@ public partial class MainWindowViewModel : ObservableObject
 
             case "/model":
             case "/m":
-                await ExecuteModelCommandAsync(parts.Skip(1).ToArray());
+                await ExecuteModelCommandAsync(args);
                 break;
 
             case "/session":
             case "/se":
-                await ExecuteSessionCommandAsync(parts.Skip(1).ToArray());
+                await ExecuteSessionCommandAsync(args);
                 break;
 
             case "/stats":
             case "/st":
                 ShowStats();
+                break;
+
+            case "/provider":
+            case "/p":
+                ShowProviderManagerAsync(args);
+                break;
+
+            case "/skill":
+            case "/sk":
+                ShowSkillManagerAsync(args);
+                break;
+
+            case "/rule":
+            case "/r":
+                ShowRuleManagerAsync(args);
+                break;
+
+            case "/mcp":
+            case "/mp":
+                ShowMcpManagerAsync(args);
+                break;
+
+            case "/work":
+            case "/w":
+                ShowWorkManagerAsync(args);
+                break;
+
+            case "/rag":
+            case "/rg":
+                ShowRagManagerAsync(args);
                 break;
 
             default:
@@ -244,6 +277,105 @@ public partial class MainWindowViewModel : ObservableObject
                 });
                 break;
         }
+    }
+
+    /// <summary>
+    /// 子命令简写展开
+    /// </summary>
+    private static string[] ExpandSubCommandAliases(string[] parts)
+    {
+        var result = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            result[i] = parts[i] switch
+            {
+                "-l" => "-list",
+                "-a" => "-add",
+                "-u" => "-update",
+                "-d" => "-delete",
+                "-s" => "-switch",
+                "-n" => "-new",
+                "-c" => "-clear",
+                "-t" => "-tools",
+                _ => parts[i]
+            };
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 显示 Provider 管理窗口
+    /// </summary>
+    private async Task ShowProviderManagerAsync(string[] args)
+    {
+        // TODO: 创建 ProviderManageWindow
+        Messages.Add(new SystemMessageItem { Content = "Provider 管理窗口即将实现" });
+    }
+
+    /// <summary>
+    /// 显示 Skill 管理窗口
+    /// </summary>
+    private void ShowSkillManagerAsync(string[] args)
+    {
+        var workspaceManager = Services.GetService<IWorkspaceManager>();
+        var workspace = workspaceManager?.CurrentWorkspace;
+        if (workspace == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
+            return;
+        }
+        var window = new SkillManageWindow(Services, workspace);
+        window.Show();
+    }
+
+    /// <summary>
+    /// 显示 Rule 管理窗口
+    /// </summary>
+    private void ShowRuleManagerAsync(string[] args)
+    {
+        var workspaceManager = Services.GetService<IWorkspaceManager>();
+        var workspace = workspaceManager?.CurrentWorkspace;
+        if (workspace == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
+            return;
+        }
+        var window = new RuleManageWindow(Services, workspace);
+        window.Show();
+    }
+
+    /// <summary>
+    /// 显示 MCP 管理窗口
+    /// </summary>
+    private void ShowMcpManagerAsync(string[] args)
+    {
+        var workspaceManager = Services.GetService<IWorkspaceManager>();
+        var workspace = workspaceManager?.CurrentWorkspace;
+        if (workspace == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
+            return;
+        }
+        var window = new MCPManageWindow(Services, workspace);
+        window.Show();
+    }
+
+    /// <summary>
+    /// 显示工作区管理窗口
+    /// </summary>
+    private async Task ShowWorkManagerAsync(string[] args)
+    {
+        // TODO: 创建 WorkManageWindow
+        Messages.Add(new SystemMessageItem { Content = "工作区管理窗口即将实现" });
+    }
+
+    /// <summary>
+    /// 显示 RAG 知识库管理窗口
+    /// </summary>
+    private async Task ShowRagManagerAsync(string[] args)
+    {
+        // TODO: 创建 RagManageWindow
+        Messages.Add(new SystemMessageItem { Content = "RAG 知识库管理窗口即将实现" });
     }
 
     private void ShowHelp()
