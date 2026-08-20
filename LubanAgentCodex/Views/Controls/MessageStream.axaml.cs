@@ -70,7 +70,41 @@ public partial class MessageStream : UserControl
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        UpdateItemsControl();
+        if (_messagesItems == null) return;
+
+        switch (e.Action)
+        {
+            case NotifyCollectionChangedAction.Add:
+                // 新增项：只添加新控件
+                if (e.NewItems != null)
+                {
+                    foreach (var item in e.NewItems)
+                    {
+                        if (item is MessageItemBase msg)
+                        {
+                            var control = CreateControlForMessage(msg);
+                            if (control != null)
+                            {
+                                _messagesItems.Items.Add(control);
+                            }
+                        }
+                    }
+                }
+                break;
+
+            case NotifyCollectionChangedAction.Remove:
+                // 移除项：根据索引移除
+                if (e.OldStartingIndex >= 0 && e.OldStartingIndex < _messagesItems.Items.Count)
+                {
+                    _messagesItems.Items.RemoveAt(e.OldStartingIndex);
+                }
+                break;
+
+            case NotifyCollectionChangedAction.Reset:
+                // 清空：重新加载
+                UpdateItemsControl();
+                break;
+        }
 
         if (_scroller != null && _autoScroll)
         {

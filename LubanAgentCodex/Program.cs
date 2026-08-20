@@ -14,10 +14,6 @@
 *描述：LubanAgentCodex GUI 应用程序主入口，初始化数据库并启动 Avalonia
 *
 *****************************************************************************/
-using Avalonia;
-
-using LubanAgentCore.Infrastructure;
-
 namespace LubanAgentCodex;
 
 /// <summary>

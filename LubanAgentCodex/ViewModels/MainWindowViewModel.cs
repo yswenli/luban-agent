@@ -22,6 +22,7 @@ using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCore.Models;
 using LubanAgentCore.Utils;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.ObjectModel;
 using System.Text;
@@ -86,6 +87,16 @@ public partial class MainWindowViewModel : ObservableObject
         if (IsRunning || string.IsNullOrWhiteSpace(InputText))
             return;
 
+        var input = InputText.Trim();
+
+        // 处理 / 命令
+        if (input.StartsWith('/'))
+        {
+            InputText = "";
+            await ExecuteCommandAsync(input);
+            return;
+        }
+
         if (!_agentHost.IsInitialized)
         {
             try
@@ -104,7 +115,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         IsRunning = true;
-        var input = InputText;
         InputText = "";
 
         // 添加用户消息
@@ -139,7 +149,10 @@ public partial class MainWindowViewModel : ObservableObject
         finally
         {
             FlushPending();
-            _currentAssistant.IsComplete = true;
+            if (_currentAssistant != null)
+            {
+                _currentAssistant.IsComplete = true;
+            }
             _currentAssistant = null;
             IsRunning = false;
             _cts?.Dispose();
@@ -156,6 +169,253 @@ public partial class MainWindowViewModel : ObservableObject
         _cts?.Cancel();
     }
 
+    /// <summary>
+    /// 执行 / 命令
+    /// </summary>
+    private async Task ExecuteCommandAsync(string input)
+    {
+        var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var cmd = parts[0].ToLowerInvariant();
+
+        switch (cmd)
+        {
+            case "/help":
+                ShowHelp();
+                break;
+
+            case "/clear":
+                ClearMessages();
+                Messages.Add(new SystemMessageItem { Content = "会话已清空" });
+                break;
+
+            case "/mode":
+                if (parts.Length > 1)
+                {
+                    var mode = parts[1].ToLowerInvariant() switch
+                    {
+                        "default" => ToolPermissionMode.Default,
+                        "plan" => ToolPermissionMode.Plan,
+                        "accept-edits" or "acceptedits" => ToolPermissionMode.AcceptEdits,
+                        "bypass" or "bypasspermissions" => ToolPermissionMode.BypassPermissions,
+                        _ => (ToolPermissionMode?)null
+                    };
+
+                    if (mode.HasValue)
+                    {
+                        PermissionMode = mode.Value;
+                        Messages.Add(new SystemMessageItem
+                        {
+                            Content = $"权限模式已切换: {GetPermissionModeDisplay(PermissionMode)}"
+                        });
+                    }
+                    else
+                    {
+                        Messages.Add(new SystemMessageItem
+                        {
+                            Content = $"无效模式: {parts[1]}. 可用: default, plan, accept-edits, bypass",
+                            IsError = true
+                        });
+                    }
+                }
+                else
+                {
+                    Messages.Add(new SystemMessageItem
+                    {
+                        Content = $"当前权限模式: {GetPermissionModeDisplay(PermissionMode)}\n可用模式: default / plan / accept-edits / bypass"
+                    });
+                }
+                break;
+
+            case "/model":
+            case "/m":
+                await ExecuteModelCommandAsync(parts.Skip(1).ToArray());
+                break;
+
+            case "/session":
+            case "/se":
+                await ExecuteSessionCommandAsync(parts.Skip(1).ToArray());
+                break;
+
+            case "/stats":
+            case "/st":
+                ShowStats();
+                break;
+
+            default:
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = $"未知命令: {cmd}，输入 /help 查看可用命令",
+                    IsError = true
+                });
+                break;
+        }
+    }
+
+    private void ShowHelp()
+    {
+        var helpText = @"可用命令:
+  /help               显示此帮助
+  /clear              清空会话历史
+  /mode [name]        查看或切换权限模式
+  /model, /m          管理模型
+  /session, /se       管理对话会话
+  /stats, /st         会话与 Token 统计
+
+快捷键:
+  Enter               提交输入
+  Ctrl+Enter          换行
+  Esc                 取消当前任务";
+
+        Messages.Add(new SystemMessageItem { Content = helpText });
+    }
+
+    private string GetPermissionModeDisplay(ToolPermissionMode mode) => mode switch
+    {
+        ToolPermissionMode.Default => "默认 (Default)",
+        ToolPermissionMode.Plan => "计划 (Plan)",
+        ToolPermissionMode.AcceptEdits => "接受编辑 (AcceptEdits)",
+        ToolPermissionMode.BypassPermissions => "跳过权限 (Bypass)",
+        _ => mode.ToString()
+    };
+
+    private async Task ExecuteModelCommandAsync(string[] args)
+    {
+        var configManager = Services.GetService<ConfigManager>();
+        if (configManager == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "配置管理器未初始化", IsError = true });
+            return;
+        }
+
+        if (args.Length == 0 || args[0] == "-list" || args[0] == "list")
+        {
+            // 列出所有模型
+            var sb = new StringBuilder();
+            sb.AppendLine("可用模型:");
+
+            foreach (var provider in configManager.Providers)
+            {
+                var models = configManager.GetAllModels(provider.Name);
+                foreach (var model in models)
+                {
+                    var fullName = $"{provider.Name}:{model}";
+                    var selected = fullName == configManager.SelectedModel ? " (当前)" : "";
+                    sb.AppendLine($"  {fullName}{selected}");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(configManager.SelectedModel))
+            {
+                sb.AppendLine($"\n当前选择: {configManager.SelectedModel}");
+            }
+
+            Messages.Add(new SystemMessageItem { Content = sb.ToString() });
+        }
+        else if (args[0] == "-switch" || args[0] == "switch")
+        {
+            if (args.Length < 2)
+            {
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = "用法: /model -switch <provider:model>",
+                    IsError = true
+                });
+                return;
+            }
+
+            var modelId = string.Join(' ', args.Skip(1));
+            try
+            {
+                configManager.SetSelectedModel(modelId);
+                Messages.Add(new SystemMessageItem { Content = $"已切换模型: {modelId}" });
+            }
+            catch (Exception ex)
+            {
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = $"切换模型失败: {ex.Message}",
+                    IsError = true
+                });
+            }
+        }
+        else
+        {
+            Messages.Add(new SystemMessageItem
+            {
+                Content = "用法: /model [-list] [-switch <provider:model>]"
+            });
+        }
+    }
+
+    private async Task ExecuteSessionCommandAsync(string[] args)
+    {
+        var sessionManager = Services.GetService<ISessionManager>();
+        if (sessionManager == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "会话管理器未初始化", IsError = true });
+            return;
+        }
+
+        if (args.Length == 0 || args[0] == "-list" || args[0] == "list")
+        {
+            // 列出所有会话
+            var sessions = await sessionManager.GetUserSessionsAsync("");
+            var sb = new StringBuilder();
+            sb.AppendLine("会话列表:");
+
+            int index = 1;
+            foreach (var session in sessions)
+            {
+                var current = session.SessionId == sessionManager.CurrentSession?.SessionId ? " (当前)" : "";
+                sb.AppendLine($"  {index}. {session.Title}{current}");
+                index++;
+            }
+
+            if (!sessions.Any())
+            {
+                sb.AppendLine("  (无会话)");
+            }
+
+            Messages.Add(new SystemMessageItem { Content = sb.ToString() });
+        }
+        else if (args[0] == "-new" || args[0] == "new")
+        {
+            var title = args.Length > 1 ? string.Join(' ', args.Skip(1)) : "新会话";
+            var session = await sessionManager.CreateSessionAsync(null, title);
+            await sessionManager.SetCurrentSessionAsync(session.SessionId);
+            Messages.Add(new SystemMessageItem { Content = $"已创建并切换到会话: {title}" });
+        }
+        else if (args[0] == "-clear" || args[0] == "clear")
+        {
+            sessionManager.ClearCurrentSession();
+            ClearMessages();
+            Messages.Add(new SystemMessageItem { Content = "会话已清空" });
+        }
+        else
+        {
+            Messages.Add(new SystemMessageItem
+            {
+                Content = "用法: /session [-list] [-new <标题>] [-clear]"
+            });
+        }
+    }
+
+    private void ShowStats()
+    {
+        var sessionManager = Services.GetService<ISessionManager>();
+        var sb = new StringBuilder();
+        sb.AppendLine("统计信息:");
+        sb.AppendLine($"  消息数量: {Messages.Count}");
+        sb.AppendLine($"  权限模式: {GetPermissionModeDisplay(PermissionMode)}");
+
+        if (sessionManager?.CurrentSession != null)
+        {
+            sb.AppendLine($"  当前会话: {sessionManager.CurrentSession.SessionId}");
+        }
+
+        Messages.Add(new SystemMessageItem { Content = sb.ToString() });
+    }
+
     private async Task ConsumeStreamAsync(string input, CancellationToken ct)
     {
         await foreach (var evt in _agentHost.RunStreamingAsync(
@@ -164,17 +424,37 @@ public partial class MainWindowViewModel : ObservableObject
             switch (evt)
             {
                 case TextDeltaEvent t:
+                    // 如果当前没有 AssistantMessageItem 或已完成，创建新的
+                    if (_currentAssistant == null || _currentAssistant.IsComplete)
+                    {
+                        FlushPending();
+                        _currentAssistant = new AssistantMessageItem();
+                        Dispatcher.UIThread.Post(() => Messages.Add(_currentAssistant));
+                    }
                     _pendingText.Append(t.Delta);
                     _throttle?.Schedule();
                     break;
 
                 case ThinkingDeltaEvent t:
+                    // 如果当前没有 AssistantMessageItem 或已完成，创建新的
+                    if (_currentAssistant == null || _currentAssistant.IsComplete)
+                    {
+                        FlushPending();
+                        _currentAssistant = new AssistantMessageItem();
+                        Dispatcher.UIThread.Post(() => Messages.Add(_currentAssistant));
+                    }
                     _pendingThinking.Append(t.Delta);
                     _throttle?.Schedule();
                     break;
 
                 case ToolCallStartedEvent tc:
                     FlushPending();
+                    // 结束当前 AssistantMessageItem，确保工具调用卡片显示在正确位置
+                    if (_currentAssistant != null)
+                    {
+                        _currentAssistant.IsComplete = true;
+                        _currentAssistant = null;
+                    }
                     var toolItem = new ToolCallItem
                     {
                         ToolName = tc.Name,

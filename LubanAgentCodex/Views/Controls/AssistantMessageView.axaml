@@ -33,7 +33,8 @@
                  BorderThickness="0"
                  Foreground="{DynamicResource TextPrimaryBrush}"
                  TextWrapping="Wrap"
-                 FontSize="14" />
+                 FontSize="14"
+                 FontFamily="Consolas, Menlo, Monaco, Courier New, monospace" />
 
         <!-- 流式指示器 -->
         <TextBlock IsVisible="{Binding IsStreaming}"

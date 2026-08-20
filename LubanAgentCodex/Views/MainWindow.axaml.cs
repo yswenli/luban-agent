@@ -85,6 +85,14 @@ public partial class MainWindow : Window
                 _inputBox.Text = "";
             };
 
+            // 处理模型切换事件
+            _inputBox.ModelChanged += (s, model) =>
+            {
+                // 模型已通过 InputBox 内部的 ConfigManager 更新
+                // 这里可以添加通知或其他逻辑
+                System.Diagnostics.Debug.WriteLine($"模型已切换: {model}");
+            };
+
             _viewModel.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(MainWindowViewModel.IsRunning))
