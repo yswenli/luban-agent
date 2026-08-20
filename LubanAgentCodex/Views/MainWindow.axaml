@@ -10,7 +10,7 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,*,Auto">
 
         <!-- 顶部标题栏 -->
         <controls:TitleBar Grid.Row="0"
@@ -29,6 +29,10 @@
                                    x:Name="InputBox" />
             </Grid>
         </Grid>
+
+        <!-- 底部状态栏 -->
+        <controls:FooterBar Grid.Row="2"
+                            x:Name="FooterBar" />
 
     </Grid>
 
