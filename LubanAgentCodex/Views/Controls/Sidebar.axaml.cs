@@ -219,9 +219,63 @@ public partial class Sidebar : UserControl
             {
                 try
                 {
-                    var repo = _services!.GetRequiredService<WorkspaceRepository>();
-                    await repo.DeleteAsync(w => w.WorkspaceId == ws.WorkspaceId);
-                    LoadWorkspaces();
+                    var parentWindow = TopLevel.GetTopLevel(this) as Window;
+                    if (parentWindow == null) return;
+
+                    // 确认对话框
+                    var confirmDialog = new Window
+                    {
+                        Title = "确认删除",
+                        Width = 350,
+                        Height = 150,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner
+                    };
+
+                    var confirmContent = new StackPanel
+                    {
+                        Margin = new Thickness(20),
+                        Spacing = 16
+                    };
+
+                    confirmContent.Children.Add(new TextBlock
+                    {
+                        Text = $"确定要删除工作区 \"{ws.Name}\" 吗？",
+                        TextWrapping = TextWrapping.Wrap
+                    });
+
+                    confirmContent.Children.Add(new TextBlock
+                    {
+                        Text = "删除后将无法恢复，相关的会话和数据也会被删除。",
+                        Foreground = Brush.Parse("#F44336"),
+                        TextWrapping = TextWrapping.Wrap
+                    });
+
+                    var buttonPanel = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8
+                    };
+
+                    var okButton = new Button { Content = "确定删除" };
+                    var cancelButton = new Button { Content = "取消" };
+
+                    okButton.Click += (s2, e2) => confirmDialog.Close(true);
+                    cancelButton.Click += (s2, e2) => confirmDialog.Close(false);
+
+                    buttonPanel.Children.Add(okButton);
+                    buttonPanel.Children.Add(cancelButton);
+                    confirmContent.Children.Add(buttonPanel);
+
+                    confirmDialog.Content = confirmContent;
+
+                    var result = await confirmDialog.ShowDialog<bool?>(parentWindow);
+                    if (result == true)
+                    {
+                        var repo = _services!.GetRequiredService<WorkspaceRepository>();
+                        await repo.DeleteAsync(w => w.WorkspaceId == ws.WorkspaceId);
+                        LoadWorkspaces();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -283,12 +337,83 @@ public partial class Sidebar : UserControl
                 sessStack.Children.Add(sessName);
                 sessRow.Child = sessStack;
 
+                // 会话右键菜单
+                var sessFlyout = new MenuFlyout();
+                var deleteSessItem = new Avalonia.Controls.MenuItem { Header = "🗑️ 删除会话" };
+
+                var sessionCopy = session; // 捕获副本
+                deleteSessItem.Click += async (s, e) =>
+                {
+                    try
+                    {
+                        var parentWindow = TopLevel.GetTopLevel(this) as Window;
+                        if (parentWindow == null) return;
+
+                        // 确认对话框
+                        var confirmDialog = new Window
+                        {
+                            Title = "确认删除",
+                            Width = 350,
+                            Height = 150,
+                            WindowStartupLocation = WindowStartupLocation.CenterOwner
+                        };
+
+                        var confirmContent = new StackPanel
+                        {
+                            Margin = new Thickness(20),
+                            Spacing = 16
+                        };
+
+                        confirmContent.Children.Add(new TextBlock
+                        {
+                            Text = $"确定要删除会话 \"{sessionCopy.Title ?? "新会话"}\" 吗？",
+                            TextWrapping = TextWrapping.Wrap
+                        });
+
+                        var buttonPanel = new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            HorizontalAlignment = HorizontalAlignment.Right,
+                            Spacing = 8
+                        };
+
+                        var okButton = new Button { Content = "确定删除" };
+                        var cancelButton = new Button { Content = "取消" };
+
+                        okButton.Click += (s2, e2) => confirmDialog.Close(true);
+                        cancelButton.Click += (s2, e2) => confirmDialog.Close(false);
+
+                        buttonPanel.Children.Add(okButton);
+                        buttonPanel.Children.Add(cancelButton);
+                        confirmContent.Children.Add(buttonPanel);
+
+                        confirmDialog.Content = confirmContent;
+
+                        var result = await confirmDialog.ShowDialog<bool?>(parentWindow);
+                        if (result == true)
+                        {
+                            var sessionRepo = _services!.GetRequiredService<SessionRepository>();
+                            await sessionRepo.SoftDeleteAsync(sessionCopy.SessionId);
+                            LoadWorkspaces(); // 刷新列表
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"删除会话失败: {ex.Message}");
+                    }
+                };
+
+                sessFlyout.Items.Add(deleteSessItem);
+                sessRow.ContextFlyout = sessFlyout;
+
                 sessRow.PointerPressed += (s, e) =>
                 {
+                    if (e.GetCurrentPoint(sessRow).Properties.IsRightButtonPressed)
+                        return; // 右键不触发选择
                     SessionSelected?.Invoke(this, new SessionItem
                     {
-                        SessionId = session.SessionId,
-                        Title = session.Title ?? "新会话",
+                        SessionId = sessionCopy.SessionId,
+                        Title = sessionCopy.Title ?? "新会话",
                     });
                 };
 
