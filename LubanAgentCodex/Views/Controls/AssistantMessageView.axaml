@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
              x:Class="LubanAgentCodex.Views.Controls.AssistantMessageView"
              x:DataType="vm:AssistantMessageItem">
 
@@ -26,15 +27,9 @@
             </StackPanel>
         </Border>
 
-        <!-- 主要内容（可选取） -->
-        <TextBox Text="{Binding Content}"
-                 IsReadOnly="True"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Foreground="{DynamicResource TextPrimaryBrush}"
-                 TextWrapping="Wrap"
-                 FontSize="14"
-                 FontFamily="Consolas, Menlo, Monaco, Courier New, monospace" />
+        <!-- 主要内容（Markdown 渲染，支持鼠标选取） -->
+        <md:MarkdownScrollViewer 
+            Markdown="{Binding Content}" />
 
         <!-- 流式指示器 -->
         <TextBlock IsVisible="{Binding IsStreaming}"
