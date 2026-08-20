@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             xmlns:controls="using:LubanAgentCodex.Views.Controls"
+             x:Class="LubanAgentCodex.Views.Controls.MessageStream">
+
+    <ScrollViewer Name="Scroller"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <ItemsControl Name="MessagesItems"
+                      Margin="16" />
+    </ScrollViewer>
+
+</UserControl>

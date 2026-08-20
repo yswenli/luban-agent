@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.Sidebar">
+
+    <Border Background="{DynamicResource SidebarBrush}"
+            BorderBrush="{DynamicResource DividerBrush}"
+            BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="*,Auto,Auto,Auto,Auto">
+
+            <!-- 工作区 + 会话列表 -->
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Name="WorkspacePanel" />
+            </ScrollViewer>
+
+            <!-- 分隔线 -->
+            <Border Grid.Row="1" Height="1" Background="{DynamicResource DividerBrush}" Margin="16,8" />
+
+            <!-- RAG 知识库 -->
+            <StackPanel Grid.Row="2" Margin="0,8,0,0">
+                <TextBlock Text="📚 RAG 知识库"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           Padding="16,0,16,8" />
+                <ListBox Name="RagListBox"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="6,4" CornerRadius="4" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal" Margin="32,0,0,0">
+                                    <TextBlock Text="📄" Margin="0,0,8,0" FontSize="12" />
+                                    <TextBlock Text="{Binding}"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
+            <!-- 分隔线 -->
+            <Border Grid.Row="3" Height="1" Background="{DynamicResource DividerBrush}" Margin="16,8" />
+
+            <!-- 底部项目信息 -->
+            <Border Grid.Row="4" Padding="16" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,1,0,0">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                        <TextBlock Text=" LubanAgentCodex"
+                                   FontSize="14"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text="v1.0.0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,0,0,4">
+                        <Span Foreground="{DynamicResource PrimaryBrush}"> GitHub</Span>
+                    </TextBlock>
+                    <TextBlock Text="Author: yswenli"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="yswenli@outlook.com"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="© 2026 All Rights Reserved"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextTertiaryBrush}" />
+                </StackPanel>
+            </Border>
+
+        </Grid>
+    </Border>
+
+</UserControl>

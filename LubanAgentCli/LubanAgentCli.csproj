@@ -1,0 +1,101 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PublishAot>False</PublishAot>
+
+		<PublishSingleFile>false</PublishSingleFile>
+		<SelfContained>false</SelfContained>
+
+		<!-- 只保留当前平台运行时，减少 bin 目录体积 -->
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+
+		<StripSymbols>true</StripSymbols>
+		<Optimize>true</Optimize>
+		<DebugType>none</DebugType>
+
+		<!-- 屏蔽语言包 -->
+		<SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+		<GenerateSatelliteAssemblies>false</GenerateSatelliteAssemblies>
+		<UseResourceManifest>false</UseResourceManifest>
+
+		<!-- 不复制 Playwright 驱动（约 101MB）到输出目录，首次使用 Browser 工具时按需安装到用户目录 -->
+		<PlaywrightPlatform>none</PlaywrightPlatform>
+		<StartupObject>LubanAgent.Program</StartupObject>
+		<ApplicationIcon>favicon.ico</ApplicationIcon>
+
+		<!-- dotnet tool 全局安装支持 -->
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>luban-agent-cli</ToolCommandName>
+		<PackageId>LuBan.Agent.CLI</PackageId>
+		<PackageVersion>1.0.0</PackageVersion>
+		<Authors>yswenli</Authors>
+		<Description>LuBan AI Agent 命令行工具，支持多 Agent 编排、工具调用、会话管理</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Remove="appsettings.json" />
+		<None Remove="EmbeddingModels\bge-small-zh-v1.5.zip" />
+	</ItemGroup>
+
+	<!-- 无头渲染快照工具，用于在无 TTY 环境下回归验证 TUI 布局 -->
+	<ItemGroup>
+		<InternalsVisibleTo Include="TuiSnapshot" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Pack>true</Pack>
+			<PackagePath>tools/</PackagePath>
+		</Content>
+		<Content Include="favicon.ico" />
+		<Content Include="EmbeddingModels\bge-small-zh-v1.5.zip">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+			<!-- 工具包只需要 tools/ 下经构建输出带入的一份，禁止再打入 content/contentFiles（否则 52MB 被打 3 份） -->
+			<Pack>false</Pack>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="LuBan.AIAgent" Version="2026.8.171" />
+		<PackageReference Include="LuBan.Logging" Version="2026.8.171" />
+		<PackageReference Include="LuBan.Orm" Version="2026.8.171" />
+		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
+		<PackageReference Include="System.Management" Version="8.0.0" />
+		<PackageReference Include="Terminal.Gui" Version="2.4.17" />
+		<PackageReference Include="Terminal.Gui.Editor" Version="2.5.7" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+		<!-- OpenAI 版本必须满足 M.E.AI.OpenAI 10.9.0 的约束 (>=2.12.0 && <2.13.0)；
+		     2.13.0 的流式工具调用表示有破坏性变更，会导致工具调用 chunk 解析为空 update、轮次静默结束 -->
+		<PackageReference Include="OpenAI" Version="2.12.0" />
+
+		<!-- CLI 的 Database 工具仅支持 SqlServer/MySql/PostgreSql/SQLite，
+		     裁剪 SqlSugarCore 传递的其余数据库驱动（Oracle/达梦/人大金仓/神舟通用），约 7MB。
+		     若未来通过 SqlSugar 直连这些数据库，移除对应排除项即可恢复 -->
+		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.8.0" ExcludeAssets="all" PrivateAssets="all" />
+		<PackageReference Include="Oscar.Data.SqlClient" Version="4.0.4" ExcludeAssets="all" PrivateAssets="all" />
+		<PackageReference Include="SqlSugarCore.Dm" Version="8.8.1" ExcludeAssets="all" PrivateAssets="all" />
+		<PackageReference Include="SqlSugarCore.Kdbndp" Version="9.3.8.413" ExcludeAssets="all" PrivateAssets="all" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+	</ItemGroup>
+
+	<!-- 删除第三方原生库随包分发的调试符号与链接库（libSkiaSharp.pdb 约 85MB），生产运行不需要；
+	     playwright.ps1 是驱动调起脚本，驱动已改为按需安装，脚本不再随包分发 -->
+	<Target Name="StripNativeDebugArtifacts" AfterTargets="Build;Publish">
+		<Delete Files="$(OutDir)libSkiaSharp.pdb;$(OutDir)onnxruntime.lib;$(OutDir)onnxruntime_providers_shared.lib;$(OutDir)playwright.ps1" />
+		<Delete Condition="'$(PublishDir)' != ''" Files="$(PublishDir)libSkiaSharp.pdb;$(PublishDir)onnxruntime.lib;$(PublishDir)onnxruntime_providers_shared.lib;$(PublishDir)playwright.ps1" />
+	</Target>
+</Project>

@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:LubanAgentCodex.Views"
+        x:Class="LubanAgentCodex.Views.WorkspacePickerWindow"
+        Title="选择工作区"
+        Width="600"
+        Height="500"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="24">
+        <!-- 标题 -->
+        <TextBlock Grid.Row="0"
+                   Text="选择或创建工作区"
+                   FontSize="24"
+                   FontWeight="Bold"
+                   Margin="0,0,0,16" />
+
+        <!-- 工作区列表 -->
+        <Border Grid.Row="1"
+                BorderBrush="#3F3F46"
+                BorderThickness="1"
+                CornerRadius="4"
+                Margin="0,0,0,16">
+            <ListBox Name="WorkspaceListBox"
+                     Background="Transparent"
+                     BorderThickness="0">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="local:WorkspaceItem">
+                        <Border Padding="12,8"
+                                Margin="4,2"
+                                Background="Transparent"
+                                CornerRadius="4">
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0"
+                                           Text="{Binding DisplayName}"
+                                           FontWeight="Bold"
+                                           Foreground="White" />
+                                <TextBlock Grid.Row="1" Grid.Column="0"
+                                           Text="{Binding RootPath}"
+                                           Foreground="Gray"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                                           Text="{Binding LastActiveText}"
+                                           Foreground="Gray"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Name="OpenFolderButton"
+                    Content="📂 打开文件夹..."
+                    MinWidth="120" />
+            <Button Name="SelectButton"
+                    Content="选择"
+                    MinWidth="80"
+                    IsEnabled="False" />
+            <Button Name="CancelButton"
+                    Content="取消"
+                    MinWidth="80" />
+        </StackPanel>
+    </Grid>
+
+</Window>

@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             x:Class="LubanAgentCodex.Views.Controls.SystemMessageView"
+             x:DataType="vm:SystemMessageItem">
+
+    <Border Margin="0,8"
+            Padding="8,16"
+            Background="{DynamicResource CardBrush}"
+            CornerRadius="6"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            HorizontalAlignment="Center">
+        <TextBox Text="{Binding Content}"
+                 IsReadOnly="True"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Foreground="{DynamicResource TextTertiaryBrush}"
+                 TextWrapping="Wrap"
+                 FontSize="13"
+                 HorizontalAlignment="Center" />
+    </Border>
+
+</UserControl>

@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             x:Class="LubanAgentCodex.Views.Controls.AssistantMessageView"
+             x:DataType="vm:AssistantMessageItem">
+
+    <StackPanel Margin="0,8">
+        <!-- 思考内容（如果有） -->
+        <Border IsVisible="{Binding HasThinking}"
+                Margin="0,0,0,12"
+                Padding="12"
+                Background="{DynamicResource BackgroundBrush}"
+                CornerRadius="6"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1">
+            <StackPanel>
+                <TextBlock Text=" 思考中..."
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           FontSize="12"
+                           Margin="0,0,0,8" />
+                <TextBlock Text="{Binding ThinkingContent}"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           TextWrapping="Wrap"
+                           FontSize="13"
+                           FontStyle="Italic" />
+            </StackPanel>
+        </Border>
+
+        <!-- 主要内容（可选取） -->
+        <TextBox Text="{Binding Content}"
+                 IsReadOnly="True"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Foreground="{DynamicResource TextPrimaryBrush}"
+                 TextWrapping="Wrap"
+                 FontSize="14" />
+
+        <!-- 流式指示器 -->
+        <TextBlock IsVisible="{Binding IsStreaming}"
+                   Text="▌"
+                   Foreground="{DynamicResource PrimaryBrush}"
+                   FontSize="14"
+                   Margin="0,4,0,0" />
+    </StackPanel>
+
+</UserControl>

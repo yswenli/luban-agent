@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="./LubanAgentCodex/LubanAgentCodex.csproj" Id="29f46c66-a4d2-4c2b-9785-a21291358fab" />
+  <Project Path="./LubanAgentCore/LubanAgentCore.csproj" Id="cfb76597-700c-475a-b73a-ac14eb8ed56b" />
+  <Project Path="./LubanAgentCli/LubanAgentCli.csproj" />
+</Solution>

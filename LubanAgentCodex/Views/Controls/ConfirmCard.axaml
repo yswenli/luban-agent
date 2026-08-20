@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.ConfirmCard">
+
+    <Border Margin="0,8"
+            Padding="16"
+            Background="{DynamicResource CardBrush}"
+            CornerRadius="8"
+            BorderBrush="{DynamicResource WarningBrush}"
+            BorderThickness="2"
+            HorizontalAlignment="Left">
+        <Grid RowDefinitions="Auto,Auto,Auto">
+            <!-- 标题 -->
+            <TextBlock Grid.Row="0"
+                       Text="⚠️ 需要确认"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource WarningBrush}"
+                       Margin="0,0,0,12"
+                       FontSize="14" />
+
+            <!-- 工具信息 -->
+            <Grid Grid.Row="1" Margin="0,0,0,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           Name="ToolNameText"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="13" />
+                <Border Grid.Row="1"
+                        Background="{DynamicResource BackgroundBrush}"
+                        CornerRadius="4"
+                        Padding="8,12"
+                        Margin="0,8,0,0">
+                    <TextBox Name="ArgumentsText"
+                             IsReadOnly="True"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontFamily="Consolas,Menlo,monospace"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             TextWrapping="Wrap"
+                             MaxHeight="150" />
+                </Border>
+            </Grid>
+
+            <!-- 按钮 -->
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Right">
+                <Button Name="AllowButton"
+                        Content="✓ 允许"
+                        MinWidth="80"
+                        Background="{DynamicResource SuccessBrush}"
+                        Foreground="White"
+                        Cursor="Hand"
+                        CornerRadius="6" />
+                <Button Name="AllowAllButton"
+                        Content=" 本轮全允许"
+                        MinWidth="120"
+                        Background="{DynamicResource InfoBrush}"
+                        Foreground="White"
+                        Cursor="Hand"
+                        CornerRadius="6" />
+                <Button Name="DenyButton"
+                        Content="✗ 拒绝"
+                        MinWidth="80"
+                        Background="{DynamicResource ErrorBrush}"
+                        Foreground="White"
+                        Cursor="Hand"
+                        CornerRadius="6" />
+            </StackPanel>
+        </Grid>
+    </Border>
+
+</UserControl>

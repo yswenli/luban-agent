@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.ToolCallCard">
+
+    <Border Margin="0,8"
+            Padding="14,16"
+            Background="{DynamicResource CardBrush}"
+            CornerRadius="8"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            HorizontalAlignment="Left">
+        <Grid RowDefinitions="Auto,Auto">
+            <!-- 标题行 -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Name="StatusIcon"
+                           Grid.Column="0"
+                           Text="🔧"
+                           Margin="0,0,8,0"
+                           VerticalAlignment="Center"
+                           FontSize="16" />
+                <TextBlock Name="ToolNameText"
+                           Grid.Column="1"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="13" />
+                <TextBlock Name="StateText"
+                           Grid.Column="2"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           VerticalAlignment="Center"
+                           FontSize="12" />
+            </Grid>
+
+            <!-- 参数（可折叠） -->
+            <Expander Grid.Row="1"
+                      Margin="0,8,0,0"
+                      IsExpanded="False">
+                <Expander.Header>
+                    <TextBlock Text=" 查看参数"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               FontSize="12" />
+                </Expander.Header>
+                <Border Background="{DynamicResource BackgroundBrush}"
+                        CornerRadius="4"
+                        Padding="8,12"
+                        Margin="0,8,0,0">
+                    <TextBox Name="ArgumentsText"
+                             IsReadOnly="True"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontFamily="Consolas,Menlo,monospace"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             TextWrapping="Wrap" />
+                </Border>
+            </Expander>
+        </Grid>
+    </Border>
+
+</UserControl>

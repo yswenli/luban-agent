@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             x:Class="LubanAgentCodex.Views.Controls.UserMessageView"
+             x:DataType="vm:UserMessageItem">
+
+    <StackPanel HorizontalAlignment="Right" Margin="0,8">
+        <Border BorderBrush="{DynamicResource PrimaryBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="12,10"
+                Background="Transparent"
+                MaxWidth="500">
+            <TextBox Text="{Binding Content}"
+                     IsReadOnly="True"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     TextWrapping="Wrap"
+                     FontSize="14" />
+        </Border>
+        <TextBlock Text="{Binding TimeText}"
+                   FontSize="11"
+                   Foreground="{DynamicResource TextTertiaryBrush}"
+                   HorizontalAlignment="Right"
+                   Margin="0,4,4,0" />
+    </StackPanel>
+
+</UserControl>

@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:LubanAgentCodex.Views"
+        x:Class="LubanAgentCodex.Views.SkillManageWindow"
+        Title="技能管理"
+        Width="600"
+        Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+
+        <!-- 标题 -->
+        <TextBlock Grid.Row="0"
+                   Text="⚡ 技能管理"
+                   FontSize="18"
+                   FontWeight="Bold"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   Margin="0,0,0,16" />
+
+        <!-- 技能列表 -->
+        <ListBox Grid.Row="1"
+                 Name="SkillList"
+                 Background="{DynamicResource SidebarBrush}"
+                 BorderBrush="{DynamicResource BorderBrush}"
+                 BorderThickness="1"
+                 CornerRadius="8">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="local:SkillItem">
+                    <Border Padding="12,8" Margin="4,2" CornerRadius="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding Name}"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="13" />
+                                <TextBlock Text="{Binding Description}"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1"
+                                       Text="✓"
+                                       Foreground="{DynamicResource SuccessBrush}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- 关闭按钮 -->
+        <Button Grid.Row="2"
+                Content="关闭"
+                MinWidth="80"
+                HorizontalAlignment="Right"
+                Margin="0,16,0,0"
+                Background="{DynamicResource CardBrush}"
+                Foreground="{DynamicResource TextSecondaryBrush}"
+                CornerRadius="6"
+                Cursor="Hand" />
+
+    </Grid>
+
+</Window>

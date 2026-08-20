@@ -1,0 +1,166 @@
+using LuBan.AIAgent;
+using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.MCP;
+using LuBan.AIAgent.Rules;
+using LuBan.AIAgent.Skills;
+using LubanAgentCore.Agents;
+using LubanAgentCore.Configuration;
+using LubanAgentCore.Models;
+using LubanAgentCore.Services;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
+using System.Runtime.CompilerServices;
+
+namespace LubanAgentCodex.Services;
+
+/// <summary>
+/// Agent 宿主服务：封装 Agent 创建与流式对话，输出 GUI 无关的 StreamEvent 序列。
+/// </summary>
+public class AgentHostService
+{
+    private readonly IServiceProvider _services;
+    private LuBanAgent? _agent;
+    private WorkspaceInfo? _workspace;
+
+    public IServiceProvider Services => _services;
+
+    public AgentHostService(IServiceProvider services)
+    {
+        _services = services;
+    }
+
+    public bool IsInitialized => _agent != null;
+
+    /// <summary>
+    /// 初始化 Agent（在首次对话前调用）。
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
+        _workspace = workspaceManager.CurrentWorkspace
+            ?? throw new InvalidOperationException("未设置当前工作区");
+
+        var agentFactory = _services.GetRequiredService<ILuBanAgentFactory>();
+        var ruleEngine = _services.GetRequiredService<RuleEngine>();
+        var pluginRegistry = _services.GetRequiredService<ToolPluginRegistry>();
+        var skillRegistry = _services.GetRequiredService<SkillRegistry>();
+        var mcpRegistry = _services.GetRequiredService<MCPRegistry>();
+        var configManager = _services.GetRequiredService<ConfigManager>();
+
+        var modelName = configManager.SelectedModel
+            ?? throw new InvalidOperationException("未选择模型");
+
+        // 加载工作区级组件
+        skillRegistry.LoadFromWorkspace(_workspace.RootPath);
+        mcpRegistry.LoadFromWorkspace(_workspace.RootPath);
+        ruleEngine.LoadFromWorkspace(_workspace.RootPath);
+
+        // 选择 Profile
+        AgentProfile profile = _workspace.Type == "Rag"
+            ? new RagAgentProfile(_workspace)
+            : new NormalAgentProfile();
+
+        _agent = await profile.CreateAgentAsync(
+            agentFactory, modelName, _workspace,
+            ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
+    }
+
+    /// <summary>
+    /// 流式对话，输出 StreamEvent 序列。
+    /// </summary>
+    /// <param name="input">用户输入</param>
+    /// <param name="confirmHandler">工具确认处理器（返回 ConfirmResult）</param>
+    /// <param name="permissionMode">权限模式</param>
+    /// <param name="ct">取消令牌</param>
+    public async IAsyncEnumerable<StreamEvent> RunStreamingAsync(
+        string input,
+        Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
+        ToolPermissionMode permissionMode,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (_agent == null)
+            throw new InvalidOperationException("Agent 未初始化，请先调用 InitializeAsync");
+
+        var context = _services.GetRequiredService<ToolConfirmationContext>();
+        context.Mode = permissionMode;
+        context.CancellationToken = ct;
+        context.WorkspacePathChecker = path => WorkspaceManager.IsWithinWorkspace(path);
+
+        // 适配 ConfirmResult → bool
+        context.Callback = (toolName, args) =>
+        {
+            var result = confirmHandler(toolName, args);
+            if (result == ConfirmResult.AllowAll)
+                context.AllowedThisTurn.Add(toolName);
+            return result != ConfirmResult.Deny;
+        };
+
+        try
+        {
+            await foreach (var update in _agent.RunStreamingAsync(input, ct))
+            {
+                if (update.Contents is null) continue;
+
+                foreach (var content in update.Contents)
+                {
+                    // 思考过程
+                    if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                    {
+                        yield return new ThinkingDeltaEvent(reasoning.Text);
+                        continue;
+                    }
+
+                    // 工具调用
+                    if (content is FunctionCallContent functionCall)
+                    {
+                        var args = functionCall.Arguments != null
+                            ? new Dictionary<string, object?>(functionCall.Arguments)
+                            : new Dictionary<string, object?>();
+                        yield return new ToolCallStartedEvent(
+                            functionCall.Name,
+                            functionCall.CallId,
+                            args);
+                        continue;
+                    }
+
+                    // 工具结果
+                    if (content is FunctionResultContent functionResult)
+                    {
+                        if (functionResult.Exception is not null)
+                        {
+                            yield return new ToolCallFailedEvent(
+                                functionResult.CallId,
+                                functionResult.Exception.Message);
+                        }
+                        else
+                        {
+                            yield return new ToolCallCompletedEvent(functionResult.CallId);
+                        }
+                        continue;
+                    }
+
+                    // 正文回复
+                    if (content is TextContent text && !string.IsNullOrEmpty(text.Text))
+                    {
+                        yield return new TextDeltaEvent(text.Text);
+                        continue;
+                    }
+
+                    // 错误
+                    if (content is ErrorContent error)
+                    {
+                        yield return new ErrorEvent(error.Message);
+                        continue;
+                    }
+
+                    // UsageContent 静默跳过
+                }
+            }
+        }
+        finally
+        {
+            context.Reset();
+        }
+    }
+}

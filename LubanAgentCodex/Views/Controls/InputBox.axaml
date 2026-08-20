@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.InputBox">
+
+    <Border Background="{DynamicResource BackgroundBrush}"
+            BorderBrush="{DynamicResource DividerBrush}"
+            BorderThickness="0,1,0,0"
+            Padding="16,12,24,16">
+        <Grid RowDefinitions="Auto,Auto">
+
+            <!-- 第一行：输入框 + 发送按钮 -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                <Border Grid.Column="0"
+                        Background="{DynamicResource SidebarBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="14,12">
+                    <TextBox Name="InputTextBox"
+                             PlaceholderText="输入你的问题或指令...（Enter 发送，Ctrl+Enter 换行）"
+                             AcceptsReturn="False"
+                             TextWrapping="Wrap"
+                             MinHeight="36"
+                             MaxHeight="100"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             CaretBrush="{DynamicResource TextPrimaryBrush}" />
+                </Border>
+
+                <Button Grid.Column="1"
+                        Name="SendButton"
+                        Content="➤"
+                        FontSize="18"
+                        MinWidth="48"
+                        MinHeight="48"
+                        Background="{DynamicResource PrimaryBrush}"
+                        Foreground="White"
+                        CornerRadius="12"
+                        Margin="12,0,0,0"
+                        Cursor="Hand"
+                        VerticalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center" />
+            </Grid>
+
+            <!-- 第二行：工具栏 -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+                <Button Grid.Column="0"
+                        Name="AttachButton"
+                        Content="📎 附件"
+                        FontSize="12"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="8,4"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Cursor="Hand"
+                        Margin="0,0,8,0" />
+                <Button Grid.Column="1"
+                        Name="PermissionButton"
+                        Content="⚡ 权限模式"
+                        FontSize="12"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="8,4"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Cursor="Hand"
+                        Margin="0,0,8,0" />
+                <Button Grid.Column="2"
+                        Name="StatsButton"
+                        Content="📊 统计"
+                        FontSize="12"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="8,4"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Cursor="Hand" />
+                <StackPanel Grid.Column="3"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8">
+                    <TextBlock Name="ProcessingHint"
+                               Text=" AI 正在处理..."
+                               FontSize="11"
+                               Foreground="{DynamicResource WarningBrush}"
+                               VerticalAlignment="Center"
+                               IsVisible="False" />
+                    <ComboBox Name="ModelCombo"
+                              MinWidth="120"
+                              FontSize="12"
+                              Background="{DynamicResource CardBrush}"
+                              Foreground="{DynamicResource TextSecondaryBrush}"
+                              BorderBrush="{DynamicResource BorderBrush}"
+                              VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+        </Grid>
+    </Border>
+
+</UserControl>

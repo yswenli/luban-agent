@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:LubanAgentCodex.Views.Controls"
+        x:Class="LubanAgentCodex.Views.MainWindow"
+        Title="LubanCodex"
+        Width="920"
+        Height="670"
+        MinWidth="800"
+        MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- 顶部标题栏 -->
+        <controls:TitleBar Grid.Row="0"
+                           x:Name="TitleBar" />
+
+        <!-- 主内容区：侧边栏 + (消息流 + 输入框) -->
+        <Grid Grid.Row="1" ColumnDefinitions="280,*">
+            <controls:Sidebar Grid.Column="0"
+                              x:Name="Sidebar" />
+
+            <!-- 右侧：消息流 + 输入框 -->
+            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+                <controls:MessageStream Grid.Row="0"
+                                        x:Name="MessageStream" />
+                <controls:InputBox Grid.Row="1"
+                                   x:Name="InputBox" />
+            </Grid>
+        </Grid>
+
+    </Grid>
+
+</Window>
