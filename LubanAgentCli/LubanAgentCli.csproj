@@ -62,8 +62,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
-		<PackageReference Include="System.Management" Version="8.0.0" />
+		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+		<PackageReference Include="System.Management" Version="10.0.11" />
 		<PackageReference Include="Terminal.Gui" Version="2.4.17" />
 		<PackageReference Include="Terminal.Gui.Editor" Version="2.5.7" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
@@ -74,14 +74,20 @@
 		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
 		<!-- OpenAI 版本必须满足 M.E.AI.OpenAI 10.9.0 的约束 (>=2.12.0 && <2.13.0)；
 		     2.13.0 的流式工具调用表示有破坏性变更，会导致工具调用 chunk 解析为空 update、轮次静默结束 -->
-		<PackageReference Include="OpenAI" Version="2.12.0" />
+		<PackageReference Include="OpenAI" Version="2.13.0" />
 
 		<!-- CLI 的 Database 工具仅支持 SqlServer/MySql/PostgreSql/SQLite，
 		     裁剪 SqlSugarCore 传递的其余数据库驱动（Oracle/达梦/人大金仓/神舟通用），约 7MB。
 		     若未来通过 SqlSugar 直连这些数据库，移除对应排除项即可恢复 -->
-		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.8.0" ExcludeAssets="all" PrivateAssets="all" />
-		<PackageReference Include="Oscar.Data.SqlClient" Version="4.0.4" ExcludeAssets="all" PrivateAssets="all" />
-		<PackageReference Include="SqlSugarCore.Dm" Version="8.8.1" ExcludeAssets="all" PrivateAssets="all" />
+		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.26.300" ExcludeAssets="all" PrivateAssets="all">
+		  <IncludeAssets>none</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Oscar.Data.SqlClient" Version="4.2.36" ExcludeAssets="all" PrivateAssets="all">
+		  <IncludeAssets>none</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="SqlSugarCore.Dm" Version="8.8.2" ExcludeAssets="all" PrivateAssets="all">
+		  <IncludeAssets>none</IncludeAssets>
+		</PackageReference>
 		<PackageReference Include="SqlSugarCore.Kdbndp" Version="9.3.8.413" ExcludeAssets="all" PrivateAssets="all" />
 	</ItemGroup>
 

@@ -241,32 +241,32 @@ public partial class MainWindowViewModel : ObservableObject
 
             case "/provider":
             case "/p":
-                ShowProviderManagerAsync(args);
+                ShowProviderManager(args);
                 break;
 
             case "/skill":
             case "/sk":
-                ShowSkillManagerAsync(args);
+                ShowSkillManager(args);
                 break;
 
             case "/rule":
             case "/r":
-                ShowRuleManagerAsync(args);
+                ShowRuleManager(args);
                 break;
 
             case "/mcp":
             case "/mp":
-                ShowMcpManagerAsync(args);
+                ShowMcpManager(args);
                 break;
 
             case "/work":
             case "/w":
-                ShowWorkManagerAsync(args);
+                ShowWorkManager(args);
                 break;
 
             case "/rag":
             case "/rg":
-                ShowRagManagerAsync(args);
+                ShowRagManager(args);
                 break;
 
             default:
@@ -306,7 +306,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 Provider 管理窗口
     /// </summary>
-    private void ShowProviderManagerAsync(string[] args)
+    private void ShowProviderManager(string[] args)
     {
         var window = new ProviderManageWindow(Services);
         window.Show();
@@ -315,7 +315,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 Skill 管理窗口
     /// </summary>
-    private void ShowSkillManagerAsync(string[] args)
+    private void ShowSkillManager(string[] args)
     {
         var workspaceManager = Services.GetService<IWorkspaceManager>();
         var workspace = workspaceManager?.CurrentWorkspace;
@@ -331,7 +331,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 Rule 管理窗口
     /// </summary>
-    private void ShowRuleManagerAsync(string[] args)
+    private void ShowRuleManager(string[] args)
     {
         var workspaceManager = Services.GetService<IWorkspaceManager>();
         var workspace = workspaceManager?.CurrentWorkspace;
@@ -347,7 +347,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 MCP 管理窗口
     /// </summary>
-    private void ShowMcpManagerAsync(string[] args)
+    private void ShowMcpManager(string[] args)
     {
         var workspaceManager = Services.GetService<IWorkspaceManager>();
         var workspace = workspaceManager?.CurrentWorkspace;
@@ -363,7 +363,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示工作区管理窗口
     /// </summary>
-    private void ShowWorkManagerAsync(string[] args)
+    private void ShowWorkManager(string[] args)
     {
         var window = new WorkManageWindow(Services);
         window.Show();
@@ -372,7 +372,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 显示 RAG 知识库管理窗口
     /// </summary>
-    private void ShowRagManagerAsync(string[] args)
+    private void ShowRagManager(string[] args)
     {
         var window = new RagManageWindow(Services);
         window.Show();
