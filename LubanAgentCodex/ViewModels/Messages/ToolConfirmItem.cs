@@ -14,7 +14,7 @@
 *描述：工具确认消息数据模型，用于需要用户确认的工具调用
 *
 *****************************************************************************/
-using LubanAgentCore.Models;
+using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 

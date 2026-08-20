@@ -41,7 +41,6 @@ global using LubanAgentCore.Agents;
 global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Retrieval;
 global using LubanAgentCore.Services;
-global using LubanAgentCore.Models;
 global using LubanAgentCore.Utils;
 global using LubanAgentCore.Infrastructure;
 

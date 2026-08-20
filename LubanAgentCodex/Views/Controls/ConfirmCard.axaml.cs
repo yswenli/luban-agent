@@ -17,7 +17,7 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCore.Models;
+using LuBan.AIAgent.Abstractions;
 using System.Text.Json;
 
 namespace LubanAgentCodex.Views.Controls;

@@ -1,3 +1,19 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*Author：yswenli
+*命名空间：LubanAgentCore.Services
+*文件名： AgentHostService
+*版本号： V1.0.0.0
+*唯一标识：Agent 宿主服务
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/20
+*描述：Agent 宿主服务：封装 Agent 创建与流式对话，输出 UI 无关的 StreamEvent 序列。
+*
+*****************************************************************************/
 using LuBan.AIAgent;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
@@ -7,15 +23,15 @@ using LuBan.AIAgent.Skills;
 using LubanAgentCore.Agents;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Models;
-using LubanAgentCore.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.CompilerServices;
 
-namespace LubanAgentCodex.Services;
+namespace LubanAgentCore.Services;
 
 /// <summary>
-/// Agent 宿主服务：封装 Agent 创建与流式对话，输出 GUI 无关的 StreamEvent 序列。
+/// Agent 宿主服务：封装 Agent 创建与流式对话，输出 UI 无关的 StreamEvent 序列。
+/// CLI 和 GUI 共用此服务。
 /// </summary>
 public class AgentHostService
 {

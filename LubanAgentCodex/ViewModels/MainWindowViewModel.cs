@@ -15,17 +15,12 @@
 *
 *****************************************************************************/
 using Avalonia.Threading;
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using LubanAgentCodex.Services;
-using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCore.Models;
+using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
+using LubanAgentCodex.ViewModels.Messages;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Sessions;
 using Microsoft.Extensions.DependencyInjection;
-using System.Collections.ObjectModel;
-using System.Text;
 
 namespace LubanAgentCodex.ViewModels;
 

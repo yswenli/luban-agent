@@ -62,9 +62,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="LuBan.AIAgent" Version="2026.8.171" />
-		<PackageReference Include="LuBan.Logging" Version="2026.8.171" />
-		<PackageReference Include="LuBan.Orm" Version="2026.8.171" />
 		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
 		<PackageReference Include="System.Management" Version="8.0.0" />
 		<PackageReference Include="Terminal.Gui" Version="2.4.17" />
