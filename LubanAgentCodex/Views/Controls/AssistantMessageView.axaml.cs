@@ -18,6 +18,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using AvaloniaEdit;
+using AvaloniaEdit.Document;
 using LubanAgentCodex.ViewModels.Messages;
 
 namespace LubanAgentCodex.Views.Controls;
@@ -66,9 +67,10 @@ public partial class AssistantMessageView : UserControl
         if (_editor != null && _viewModel != null)
         {
             var content = _viewModel.Content ?? "";
-            if (_editor.Text != content)
+            // 使用 Document 属性来设置内容
+            if (_editor.Document == null || _editor.Document.Text != content)
             {
-                _editor.Text = content;
+                _editor.Document = new TextDocument(content);
                 // 滚动到底部
                 _editor.ScrollToEnd();
             }
