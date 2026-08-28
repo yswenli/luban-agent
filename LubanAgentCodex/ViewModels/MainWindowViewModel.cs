@@ -118,18 +118,20 @@ public partial class MainWindowViewModel : ObservableObject
         // 添加用户消息
         Messages.Add(new UserMessageItem { Content = input });
 
-        // 创建 AI 消息项
-        _currentAssistant = new AssistantMessageItem();
-        Messages.Add(_currentAssistant);
+        // 注意：不预创建 AssistantMessageItem，正文项在首个 TextDeltaEvent 到达时懒创建，
+        // 确保它排在思考内容/工具卡片之后（修复显示顺序错乱）
 
         _cts = new CancellationTokenSource();
 
-        // 初始化节流器
-        _throttle ??= new FlushThrottle(FlushPending, TimeSpan.FromMilliseconds(50));
+        // 初始化节流器：回调投递到 UI 线程执行，与事件处理天然串行
+        _throttle ??= new FlushThrottle(
+            () => Dispatcher.UIThread.Post(FlushPending),
+            TimeSpan.FromMilliseconds(50));
 
         try
         {
-            // 关键：消费循环放后台线程，避免确认回调阻塞 UI 线程导致死锁
+            // 关键：消费循环放后台线程，避免确认回调阻塞 UI 线程导致死锁；
+            // 事件本身全部投递到 UI 线程按序处理（Dispatcher 队列 FIFO 保序）
             await Task.Run(() => ConsumeStreamAsync(input, _cts.Token));
         }
         catch (OperationCanceledException)
@@ -146,15 +148,16 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            FlushPending();
-            if (_currentAssistant != null)
+            // 收尾同样投递到 UI 线程，排在所有已投递事件之后执行
+            Dispatcher.UIThread.Post(() =>
             {
-                _currentAssistant.IsComplete = true;
-            }
-            _currentAssistant = null;
-            IsRunning = false;
-            _cts?.Dispose();
+                FlushPending();
+                CompleteCurrentItems();
+                IsRunning = false;
+            });
+            var cts = _cts;
             _cts = null;
+            cts?.Dispose();
         }
     }
 
@@ -551,118 +554,127 @@ public partial class MainWindowViewModel : ObservableObject
         Messages.Add(new SystemMessageItem { Content = sb.ToString() });
     }
 
+    /// <summary>
+    /// 后台消费流式事件：只负责转发，全部事件按到达顺序投递到 UI 线程
+    /// </summary>
     private async Task ConsumeStreamAsync(string input, CancellationToken ct)
     {
         await foreach (var evt in _agentHost.RunStreamingAsync(
             input, ConfirmCallback, PermissionMode, ct))
         {
-            switch (evt)
-            {
-                case TextDeltaEvent t:
-                    // 如果当前没有 AssistantMessageItem 或已完成，创建新的
-                    if (_currentAssistant == null || _currentAssistant.IsComplete)
-                    {
-                        FlushPending();
-                        _currentAssistant = new AssistantMessageItem();
-                        Dispatcher.UIThread.Post(() => Messages.Add(_currentAssistant));
-                    }
-                    _pendingText.Append(t.Delta);
-                    _throttle?.Schedule();
-                    break;
+            var e = evt;
+            Dispatcher.UIThread.Post(() => HandleStreamEvent(e));
+        }
+    }
 
-                case ThinkingDeltaEvent t:
-                    // 思考内容作为独立消息项显示
-                    if (_currentThinking == null || _currentThinking.IsComplete)
-                    {
-                        FlushPending();
-                        _currentThinking = new ThinkingMessageItem();
-                        Dispatcher.UIThread.Post(() => Messages.Add(_currentThinking));
-                    }
-                    _pendingThinking.Append(t.Delta);
-                    _throttle?.Schedule();
-                    break;
-
-                case ToolCallStartedEvent tc:
+    /// <summary>
+    /// UI 线程上串行处理流式事件，保证消息流显示顺序：
+    /// 思考 → 工具调用 → 工具结果 → ... → 最终正文
+    /// </summary>
+    private void HandleStreamEvent(StreamEvent evt)
+    {
+        switch (evt)
+        {
+            case TextDeltaEvent t:
+                // 正文项懒创建：首个文本到达时才插入，确保排在思考/工具之后
+                if (_currentAssistant == null || _currentAssistant.IsComplete)
+                {
                     FlushPending();
-                    // 结束当前思考和助手消息
-                    if (_currentThinking != null)
-                    {
-                        _currentThinking.IsComplete = true;
-                        _currentThinking = null;
-                    }
-                    if (_currentAssistant != null)
-                    {
-                        _currentAssistant.IsComplete = true;
-                        _currentAssistant = null;
-                    }
-                    var toolItem = new ToolCallItem
-                    {
-                        ToolName = tc.Name,
-                        CallId = tc.CallId,
-                        Arguments = tc.Arguments,
-                        State = ToolCallState.Running
-                    };
-                    Dispatcher.UIThread.Post(() => Messages.Add(toolItem));
-                    break;
+                    _currentAssistant = new AssistantMessageItem();
+                    Messages.Add(_currentAssistant);
+                }
+                _pendingText.Append(t.Delta);
+                _throttle?.Schedule();
+                break;
 
-                case ToolCallCompletedEvent tcc:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        for (int i = Messages.Count - 1; i >= 0; i--)
-                        {
-                            if (Messages[i] is ToolCallItem tool && tool.CallId == tcc.CallId)
-                            {
-                                tool.State = ToolCallState.Done;
-                                break;
-                            }
-                        }
-                    });
-                    break;
+            case ThinkingDeltaEvent t:
+                // 思考内容作为独立消息项显示
+                if (_currentThinking == null || _currentThinking.IsComplete)
+                {
+                    FlushPending();
+                    _currentThinking = new ThinkingMessageItem();
+                    Messages.Add(_currentThinking);
+                }
+                _pendingThinking.Append(t.Delta);
+                _throttle?.Schedule();
+                break;
 
-                case ToolCallFailedEvent tcf:
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        for (int i = Messages.Count - 1; i >= 0; i--)
-                        {
-                            if (Messages[i] is ToolCallItem tool && tool.CallId == tcf.CallId)
-                            {
-                                tool.State = ToolCallState.Failed;
-                                tool.ErrorMessage = tcf.Error;
-                                break;
-                            }
-                        }
-                    });
-                    break;
+            case ToolCallStartedEvent tc:
+                FlushPending();
+                CompleteCurrentItems();
+                Messages.Add(new ToolCallItem
+                {
+                    ToolName = tc.Name,
+                    CallId = tc.CallId,
+                    Arguments = tc.Arguments,
+                    State = ToolCallState.Running
+                });
+                break;
 
-                case ErrorEvent e:
-                    Dispatcher.UIThread.Post(() => Messages.Add(
-                        new SystemMessageItem { Content = e.Message, IsError = true }));
-                    break;
+            case ToolCallCompletedEvent tcc:
+                UpdateToolCallState(tcc.CallId, ToolCallState.Done, null);
+                break;
+
+            case ToolCallFailedEvent tcf:
+                UpdateToolCallState(tcf.CallId, ToolCallState.Failed, tcf.Error);
+                break;
+
+            case ErrorEvent e:
+                Messages.Add(new SystemMessageItem { Content = e.Message, IsError = true });
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 结束当前思考/正文消息项（仅 UI 线程调用）
+    /// </summary>
+    private void CompleteCurrentItems()
+    {
+        if (_currentThinking != null)
+        {
+            _currentThinking.IsComplete = true;
+            _currentThinking = null;
+        }
+        if (_currentAssistant != null)
+        {
+            _currentAssistant.IsComplete = true;
+            _currentAssistant = null;
+        }
+    }
+
+    /// <summary>
+    /// 更新工具调用卡片状态（仅 UI 线程调用）
+    /// </summary>
+    private void UpdateToolCallState(string callId, ToolCallState state, string? error)
+    {
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i] is ToolCallItem tool && tool.CallId == callId)
+            {
+                tool.State = state;
+                tool.ErrorMessage = error;
+                break;
             }
         }
     }
 
+    /// <summary>
+    /// 刷新待显示的增量（仅 UI 线程调用，直接同步追加，顺序确定）
+    /// </summary>
     private void FlushPending()
     {
-        var text = _pendingText.ToString();
-        var thinking = _pendingThinking.ToString();
-
-        if (text.Length > 0)
+        if (_pendingText.Length > 0)
         {
+            var text = _pendingText.ToString();
             _pendingText.Clear();
-            if (_currentAssistant != null)
-            {
-                Dispatcher.UIThread.Post(() => _currentAssistant.AppendDelta(text));
-            }
+            _currentAssistant?.AppendDelta(text);
         }
 
-        if (thinking.Length > 0)
+        if (_pendingThinking.Length > 0)
         {
+            var thinking = _pendingThinking.ToString();
             _pendingThinking.Clear();
-            if (_currentThinking != null)
-            {
-                Dispatcher.UIThread.Post(() => _currentThinking.AppendDelta(thinking));
-            }
+            _currentThinking?.AppendDelta(thinking);
         }
     }
 
