@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- 排除"过时"类：IL2026/CS0618/CS0612/SYSLIB0014/0022/0021 -->
+    <!-- 排除"环境"类：NU1900/NU5100(审计) + NU1608(依赖版本约束，OpenAI 2.13.0 超出 AI.OpenAI 约束) -->
+    <NoWarn>$(NoWarn);IL2026;CS0618;CS0612;SYSLIB0014;SYSLIB0022;SYSLIB0021;NU1900;NU5100;NU1608</NoWarn>
+    <!-- NU1900 属 restore 阶段漏洞审计，NoWarn 管不到，必须关审计 -->
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+</Project>

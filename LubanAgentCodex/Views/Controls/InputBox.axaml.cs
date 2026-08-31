@@ -140,7 +140,6 @@ public partial class InputBox : UserControl
     }
 
     public event EventHandler? SendRequested;
-    public event EventHandler? CancelRequested;
     public event EventHandler<string>? ModelChanged;
 
     private bool _isProcessing;
