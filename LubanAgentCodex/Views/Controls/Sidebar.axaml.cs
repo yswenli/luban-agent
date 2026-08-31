@@ -98,6 +98,8 @@ public partial class Sidebar : UserControl
             return;
 
         _workspacePanel.Children.Clear();
+        _workspacePanel.Children.Add(BuildNewWorkspaceButton());
+
         var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
         var currentWorkspaceId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
 
@@ -150,7 +152,7 @@ public partial class Sidebar : UserControl
                 Margin = new Thickness(0, 0, 4, 0),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = Brush.Parse("#858585"),
+                Foreground = Brush.Parse("#4CAF50"),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             ToolTip.SetTip(newSessionBtn, "新建会话");
@@ -449,6 +451,120 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
+    /// 构建「新建工作区」按钮（列表顶部常驻，渐变 + hover 高亮）
+    /// </summary>
+    private Button BuildNewWorkspaceButton()
+    {
+        var gradientNormal = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            GradientStops = new GradientStops
+            {
+                new GradientStop(Color.Parse("#2563EB"), 0),
+                new GradientStop(Color.Parse("#06B6D4"), 1),
+            }
+        };
+        var gradientHover = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+            GradientStops = new GradientStops
+            {
+                new GradientStop(Color.Parse("#3B82F6"), 0),
+                new GradientStop(Color.Parse("#22D3EE"), 1),
+            }
+        };
+
+        var content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        content.Children.Add(new TextBlock { Text = "➕", FontSize = 14, Foreground = Brush.Parse("#67E8F9") });
+        content.Children.Add(new TextBlock { Text = "新建工作区", FontSize = 13, FontWeight = FontWeight.SemiBold });
+
+        var btn = new Button
+        {
+            Margin = new Thickness(12, 8, 12, 8),
+            Height = 38,
+            CornerRadius = new CornerRadius(9),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Foreground = Brushes.White,
+            Background = gradientNormal,
+            BorderThickness = new Thickness(0),
+            Content = content,
+        };
+
+        // hover 高亮
+        btn.PointerEntered += (s, e) => btn.Background = gradientHover;
+        btn.PointerExited += (s, e) => btn.Background = gradientNormal;
+
+        btn.Click += async (s, e) => await CreateNewWorkspaceAsync();
+        return btn;
+    }
+
+    /// <summary>
+    /// 弹出新建工作区对话框并创建工作区
+    /// </summary>
+    private async Task CreateNewWorkspaceAsync()
+    {
+        if (_workspaceManager == null) return;
+        try
+        {
+            var owner = TopLevel.GetTopLevel(this) as Window;
+            if (owner == null) return;
+
+            var dialog = new NewWorkspaceDialog();
+            var ok = await dialog.ShowDialog<bool?>(owner);
+            if (ok != true) return;
+
+            var ws = await _workspaceManager.CreateWorkspaceAsync(dialog.WorkspacePath!, dialog.WorkspaceName);
+            LoadWorkspaces();
+            WorkspaceSelected?.Invoke(this, ws);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"创建工作区失败: {ex.Message}");
+            await ShowErrorAsync($"创建工作区失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 内联错误提示弹窗
+    /// </summary>
+    private async Task ShowErrorAsync(string msg)
+    {
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var dlg = new Window
+        {
+            Title = "错误",
+            Width = 360,
+            Height = 150,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        var sp = new StackPanel { Margin = new Thickness(20), Spacing = 16 };
+        sp.Children.Add(new TextBlock
+        {
+            Text = msg,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush.Parse("#FFFFFF"),
+        });
+        var okBtn = new Button { Content = "确定", HorizontalAlignment = HorizontalAlignment.Right };
+        okBtn.Click += (s2, e2) => dlg.Close();
+        sp.Children.Add(okBtn);
+        dlg.Content = sp;
+
+        if (owner != null) await dlg.ShowDialog(owner);
+        else dlg.Show();
+    }
+
+    /// <summary>
     /// 为指定工作区创建新会话：入库后刷新侧边栏并切换到该会话
     /// </summary>
     private async Task CreateSessionForWorkspaceAsync(WorkspaceInfo ws)
@@ -528,14 +644,23 @@ public partial class Sidebar : UserControl
             var initBtn = new Button
             {
                 Name = "InitRagButton",
-                Content = "➕ 初始化知识库",
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        new TextBlock { Text = "➕", Foreground = Brush.Parse("#AB47BC") },
+                        new TextBlock { Text = "初始化知识库", Foreground = Brush.Parse("#CCCCCC") },
+                    }
+                },
                 FontSize = 12,
                 Background = Brushes.Transparent,
                 BorderBrush = Brush.Parse("#3F3F46"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(8, 4),
-                Foreground = Brush.Parse("#CCCCCC"),
                 Cursor = new Cursor(StandardCursorType.Hand),
                 Margin = new Thickness(32, 8, 16, 0),
                 HorizontalAlignment = HorizontalAlignment.Left,
