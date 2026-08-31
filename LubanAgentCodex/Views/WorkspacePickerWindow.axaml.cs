@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
@@ -36,6 +37,7 @@ public partial class WorkspacePickerWindow : Window
         {
             _workspaceListBox.ItemsSource = Workspaces;
             _workspaceListBox.SelectionChanged += OnWorkspaceSelected;
+            _workspaceListBox.PointerPressed += OnWorkspaceListPointerPressed;
         }
 
         if (_openFolderButton != null)
@@ -78,6 +80,30 @@ public partial class WorkspacePickerWindow : Window
     {
         if (_selectButton != null)
             _selectButton.IsEnabled = e.AddedItems.Count > 0;
+    }
+
+    /// <summary>
+    /// 双击工作区项：等效于先选中该项，再点击「选择」按钮
+    /// </summary>
+    private void OnWorkspaceListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.ClickCount != 2 || _workspaceListBox == null) return;
+        if (!e.GetCurrentPoint(_workspaceListBox).Properties.IsLeftButtonPressed) return;
+
+        // 从点击源向上找到被双击的 ListBoxItem，显式选中，
+        // 不依赖 SelectionChanged 在双击序列中的时序（避免 SelectedItem 仍为 null 导致无反应）
+        var hit = e.Source as Control;
+        while (hit != null && hit is not ListBoxItem)
+        {
+            hit = hit.Parent as Control;
+        }
+
+        if (hit is ListBoxItem { DataContext: WorkspaceItem wsItem })
+        {
+            _workspaceListBox.SelectedItem = wsItem;
+            if (_selectButton != null) _selectButton.IsEnabled = true;
+            OnSelectClicked(_workspaceListBox, e);
+        }
     }
 
     private async void OnOpenFolderClicked(object? sender, RoutedEventArgs e)

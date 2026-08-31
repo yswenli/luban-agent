@@ -21,6 +21,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using LubanAgentCore.Entities;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,7 +117,7 @@ public partial class Sidebar : UserControl
 
             var wsGrid = new Grid
             {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto")
             };
 
             var wsIcon = new TextBlock { Text = "📁", Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -138,6 +139,24 @@ public partial class Sidebar : UserControl
                 Foreground = Brush.Parse("#858585"),
                 IsVisible = false,
                 VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            // 新建会话按钮（常显于菜单之前）
+            var newSessionBtn = new Button
+            {
+                Content = "➕",
+                FontSize = 14,
+                Padding = new Thickness(4, 2),
+                Margin = new Thickness(0, 0, 4, 0),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = Brush.Parse("#858585"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            ToolTip.SetTip(newSessionBtn, "新建会话");
+            newSessionBtn.Click += async (s, e) =>
+            {
+                await CreateSessionForWorkspaceAsync(ws);
             };
 
             // 创建 Flyout 菜单
@@ -292,9 +311,11 @@ public partial class Sidebar : UserControl
 
             Grid.SetColumn(wsIcon, 0);
             Grid.SetColumn(wsName, 1);
-            Grid.SetColumn(wsMenuBtn, 2);
+            Grid.SetColumn(newSessionBtn, 2);
+            Grid.SetColumn(wsMenuBtn, 3);
             wsGrid.Children.Add(wsIcon);
             wsGrid.Children.Add(wsName);
+            wsGrid.Children.Add(newSessionBtn);
             wsGrid.Children.Add(wsMenuBtn);
             wsRow.Child = wsGrid;
 
@@ -410,6 +431,11 @@ public partial class Sidebar : UserControl
                 {
                     if (e.GetCurrentPoint(sessRow).Properties.IsRightButtonPressed)
                         return; // 右键不触发选择
+                    if (e.ClickCount == 2)
+                    {
+                        _ = RenameSessionAsync(sessionCopy); // 双击重命名会话
+                        return;
+                    }
                     SessionSelected?.Invoke(this, new SessionItem
                     {
                         SessionId = sessionCopy.SessionId,
@@ -419,6 +445,63 @@ public partial class Sidebar : UserControl
 
                 _workspacePanel.Children.Add(sessRow);
             }
+        }
+    }
+
+    /// <summary>
+    /// 为指定工作区创建新会话：入库后刷新侧边栏并切换到该会话
+    /// </summary>
+    private async Task CreateSessionForWorkspaceAsync(WorkspaceInfo ws)
+    {
+        if (_sessionRepo == null) return;
+        try
+        {
+            var newSession = new DbSession
+            {
+                SessionId = Guid.NewGuid().ToString("N"),
+                UserId = "default",
+                Title = "新对话",
+                CreateTime = DateTime.Now,
+                UpdateTime = DateTime.Now,
+                IsDelete = false,
+                WorkspaceId = ws.WorkspaceId,
+            };
+            await _sessionRepo.InsertAsync(newSession);
+            LoadWorkspaces();
+            SessionSelected?.Invoke(this, new SessionItem
+            {
+                SessionId = newSession.SessionId,
+                Title = newSession.Title,
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"创建会话失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 双击会话项重命名
+    /// </summary>
+    private async Task RenameSessionAsync(DbSession session)
+    {
+        if (_sessionRepo == null) return;
+        try
+        {
+            var parentWindow = TopLevel.GetTopLevel(this) as Window;
+            if (parentWindow == null) return;
+
+            var dialog = new RenameDialog(session.Title ?? "新会话");
+            var result = await dialog.ShowDialog<string?>(parentWindow);
+            if (!string.IsNullOrWhiteSpace(result) && result != session.Title)
+            {
+                await _sessionRepo.UpdateTitleAsync(session.SessionId, result);
+                LoadWorkspaces();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"重命名会话失败: {ex.Message}");
         }
     }
 

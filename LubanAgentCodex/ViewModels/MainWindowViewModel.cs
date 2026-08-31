@@ -171,6 +171,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 重置 Agent，下次发送消息时按最新配置（如切换后的模型）重建
+    /// </summary>
+    public void ResetAgent() => _agentHost.Reset();
+
+    /// <summary>
     /// 执行 / 命令
     /// </summary>
     private async Task ExecuteCommandAsync(string input)

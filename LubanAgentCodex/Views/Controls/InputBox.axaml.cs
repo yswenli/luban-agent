@@ -19,6 +19,7 @@ using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using LubanAgentCore.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Threading.Tasks;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -32,6 +33,7 @@ public partial class InputBox : UserControl
     private TextBlock? _processingHint;
     private ComboBox? _modelCombo;
     private ConfigManager? _configManager;
+    private bool _suppressSelectionChanged;
 
     public InputBox()
     {
@@ -63,35 +65,90 @@ public partial class InputBox : UserControl
     {
         _configManager = services.GetRequiredService<ConfigManager>();
         LoadModels();
+        RefreshModels();
     }
 
     /// <summary>
-    /// 加载可用模型列表
+    /// 加载可用模型列表。
+    /// 始终保证当前选中模型出现在下拉项中并处于选中状态；
+    /// 同时纳入各 Provider 通过远程刷新获取的模型（ProviderHelper._fetchedModels 缓存）。
     /// </summary>
     private void LoadModels()
     {
         if (_modelCombo == null || _configManager == null) return;
 
-        _modelCombo.Items.Clear();
-        var allModels = new List<string>();
-
-        foreach (var provider in _configManager.Providers)
+        _suppressSelectionChanged = true;
+        try
         {
-            var models = _configManager.GetAllModels(provider.Name);
-            foreach (var model in models)
+            _modelCombo.Items.Clear();
+            var allModels = new List<string>();
+
+            foreach (var provider in _configManager.Providers)
             {
-                var fullName = $"{provider.Name}:{model}";
-                allModels.Add(fullName);
-                _modelCombo.Items.Add(fullName);
+                var models = _configManager.GetAllModels(provider.Name);
+                foreach (var model in models)
+                {
+                    var fullName = $"{provider.Name}:{model}";
+                    allModels.Add(fullName);
+                    _modelCombo.Items.Add(fullName);
+                }
+            }
+
+            // 当前选中模型必须常显：即便其所属 Provider 无任何预设/自定义/远程模型，也要加入下拉
+            if (!string.IsNullOrEmpty(_configManager.SelectedModel) &&
+                !allModels.Contains(_configManager.SelectedModel))
+            {
+                allModels.Add(_configManager.SelectedModel);
+                _modelCombo.Items.Add(_configManager.SelectedModel);
+            }
+
+            // 选中当前模型
+            if (!string.IsNullOrEmpty(_configManager.SelectedModel))
+            {
+                var idx = allModels.IndexOf(_configManager.SelectedModel);
+                if (idx >= 0) _modelCombo.SelectedIndex = idx;
             }
         }
-
-        // 选中当前模型
-        if (!string.IsNullOrEmpty(_configManager.SelectedModel))
+        finally
         {
-            var idx = allModels.IndexOf(_configManager.SelectedModel);
-            if (idx >= 0) _modelCombo.SelectedIndex = idx;
+            _suppressSelectionChanged = false;
         }
+    }
+
+    /// <summary>
+    /// 后台异步拉取各 Provider 的远程模型列表（/v1/models），成功后重建下拉项。
+    /// 单个 Provider 失败不影响其它 Provider，且最终回退到「仅当前模型」的可用状态。
+    /// </summary>
+    private void RefreshModels()
+    {
+        if (_configManager == null || _modelCombo == null) return;
+
+        _ = Task.Run(async () =>
+        {
+            foreach (var provider in _configManager.Providers)
+            {
+                if (string.IsNullOrWhiteSpace(provider.BaseUrl) &&
+                    string.IsNullOrWhiteSpace(provider.ApiKey))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await ProviderHelper.RefreshModelsAsync(
+                        provider.Name,
+                        provider.ApiKey ?? string.Empty,
+                        provider.BaseUrl);
+                }
+                catch
+                {
+                    // 忽略单个 Provider 刷新失败，留给 LoadModels 的回退逻辑
+                }
+            }
+
+            // 回到 UI 线程重建下拉项
+            Avalonia.Threading.Dispatcher.UIThread.Post(LoadModels);
+        });
     }
 
     /// <summary>
@@ -99,8 +156,12 @@ public partial class InputBox : UserControl
     /// </summary>
     private void OnModelSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
+        if (_suppressSelectionChanged) return;
         if (_modelCombo?.SelectedItem is string model && _configManager != null)
         {
+            // 幂等护栏：避免重复触发（如 ComboBox 下拉点选时重复引发 SelectionChanged）
+            // 已与当前持久化模型相同则视为无变化，跳过
+            if (model == _configManager.SelectedModel) return;
             _configManager.SetSelectedModel(model);
             ModelChanged?.Invoke(this, model);
         }

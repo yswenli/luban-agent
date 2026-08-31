@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/19
-*描述：主窗口，包含标题栏、侧边栏、消息流、输入框和页脚状态栏
+*描述：主窗口，包含侧边栏、消息流、输入框和页脚状态栏
 *
 *****************************************************************************/
 using Avalonia.Controls;
@@ -36,14 +36,15 @@ public partial class MainWindow : Window
     private MainWindowViewModel? _viewModel;
     private MessageStream? _messageStream;
     private InputBox? _inputBox;
-    private TitleBar? _titleBar;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
+    private bool _confirmedClose;
 
     public MainWindow()
     {
         InitializeComponent();
+        Closing += OnClosing;
     }
 
     private void InitializeComponent()
@@ -51,7 +52,6 @@ public partial class MainWindow : Window
         AvaloniaXamlLoader.Load(this);
         _messageStream = this.FindControl<MessageStream>("MessageStream");
         _inputBox = this.FindControl<InputBox>("InputBox");
-        _titleBar = this.FindControl<TitleBar>("TitleBar");
         _sidebar = this.FindControl<Sidebar>("Sidebar");
         _footerBar = this.FindControl<FooterBar>("FooterBar");
         
@@ -64,59 +64,150 @@ public partial class MainWindow : Window
     /// </summary>
     public void SetServiceProvider(IServiceProvider services)
     {
-        _viewModel = new MainWindowViewModel(services);
-        DataContext = _viewModel;
-
-        // 初始化页脚数据提供者
-        _footerDataProvider = new LubanAgentCodex.Services.FooterDataProvider(services);
-
-        // 绑定侧边栏
-        if (_sidebar != null)
+        // 完整初始化仅执行一次：避免重复创建 ViewModel、重复订阅事件
+        // （App 会在窗口创建与工作区选择完成后各调用一次，重复订阅会导致模型切换等事件被触发多次）
+        if (_viewModel == null)
         {
-            _sidebar.SetServiceProvider(services);
-            _sidebar.WorkspaceSelected += OnWorkspaceSelected;
-            _sidebar.SessionSelected += OnSessionSelected;
-            _sidebar.RagInitRequested += OnRagInitRequested;
-        }
+            _viewModel = new MainWindowViewModel(services);
+            DataContext = _viewModel;
 
-        // 绑定消息流
-        if (_messageStream != null)
-        {
-            _messageStream.SetMessages(_viewModel.Messages);
-            _viewModel.Messages.CollectionChanged += OnMessagesChanged;
-        }
+            // 初始化页脚数据提供者
+            _footerDataProvider = new LubanAgentCodex.Services.FooterDataProvider(services);
 
-        // 绑定输入框
-        if (_inputBox != null)
-        {
-            _inputBox.SetServiceProvider(services);
-            _inputBox.SendRequested += async (s, e) =>
+            // 绑定消息流
+            if (_messageStream != null)
             {
-                _viewModel.InputText = _inputBox.Text;
-                await _viewModel.SendCommand.ExecuteAsync(null);
-                _inputBox.Text = "";
-            };
+                _messageStream.SetMessages(_viewModel.Messages);
+                _viewModel.Messages.CollectionChanged += OnMessagesChanged;
+            }
 
-            // 处理模型切换事件
-            _inputBox.ModelChanged += (s, model) =>
+            // 绑定输入框
+            if (_inputBox != null)
             {
-                // 模型已通过 InputBox 内部的 ConfigManager 更新
-                // 这里可以添加通知或其他逻辑
-                System.Diagnostics.Debug.WriteLine($"模型已切换: {model}");
-            };
-
-            _viewModel.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(MainWindowViewModel.IsRunning))
+                _inputBox.SetServiceProvider(services);
+                _inputBox.SendRequested += async (s, e) =>
                 {
-                    _inputBox.IsRunning = _viewModel.IsRunning;
-                }
-            };
+                    _viewModel.InputText = _inputBox.Text;
+                    await _viewModel.SendCommand.ExecuteAsync(null);
+                    _inputBox.Text = "";
+                };
+
+                // 处理模型切换事件：重置 Agent，下次发送消息时用新模型重建
+                _inputBox.ModelChanged += (s, model) =>
+                {
+                    _viewModel?.ResetAgent();
+                    _viewModel?.Messages.Add(new SystemMessageItem { Content = $"已切换模型: {model}" });
+                };
+
+                _viewModel.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(MainWindowViewModel.IsRunning))
+                    {
+                        _inputBox.IsRunning = _viewModel.IsRunning;
+                    }
+                };
+            }
+
+            // 绑定侧边栏并订阅其事件（仅首次）
+            if (_sidebar != null)
+            {
+                _sidebar.SetServiceProvider(services);
+                _sidebar.WorkspaceSelected += OnWorkspaceSelected;
+                _sidebar.SessionSelected += OnSessionSelected;
+                _sidebar.RagInitRequested += OnRagInitRequested;
+            }
+        }
+        else
+        {
+            // 后续调用（如工作区切换后）仅刷新侧边栏数据，不再重建 VM / 重复订阅
+            _sidebar?.SetServiceProvider(services);
         }
 
-        // 更新标题栏和页脚
-        UpdateTitleBar();
+        // 更新页脚
         UpdateFooter();
+    }
+
+    /// <summary>
+    /// 窗口关闭拦截：先弹确认，避免误操作退出
+    /// </summary>
+    private async void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_confirmedClose) return;
+
+        // 先阻止关闭，再弹确认框
+        e.Cancel = true;
+
+        var confirm = await ConfirmExitAsync();
+        if (confirm)
+        {
+            _confirmedClose = true;
+            Close(); // 再次触发 Closing，此时 _confirmedClose 已置位，直接放行
+        }
+    }
+
+    /// <summary>
+    /// 退出确认对话框
+    /// </summary>
+    private async Task<bool> ConfirmExitAsync()
+    {
+        var dialog = new Window
+        {
+            Title = "退出确认",
+            Width = 400,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var content = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Spacing = 16
+        };
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "确定要退出 Luban Agent 吗？",
+            FontSize = 14,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "退出后当前会话将关闭，未发送的内容不会保存。",
+            Foreground = Avalonia.Media.Brush.Parse("#858585"),
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8
+        };
+
+        var okButton = new Button { Content = "退出" };
+        var cancelButton = new Button { Content = "取消" };
+
+        okButton.Click += (s, e) => dialog.Close(true);
+        cancelButton.Click += (s, e) => dialog.Close(false);
+
+        buttonPanel.Children.Add(cancelButton);
+        buttonPanel.Children.Add(okButton);
+        content.Children.Add(buttonPanel);
+
+        dialog.Content = content;
+
+        var result = await dialog.ShowDialog<bool?>(this);
+        return result == true;
+    }
+
+    /// <summary>
+    /// 跳过退出确认直接关闭（初始化流程中用户取消工作区选择时调用）
+    /// </summary>
+    public void ForceClose()
+    {
+        _confirmedClose = true;
+        Close();
     }
 
     /// <summary>
@@ -244,10 +335,6 @@ public partial class MainWindow : Window
         if (_viewModel != null)
         {
             await _viewModel.LoadSessionHistoryAsync(item.SessionId);
-            if (_titleBar != null)
-            {
-                _titleBar.SessionTitle = item.Title;
-            }
             UpdateFooter();
         }
     }
@@ -263,7 +350,6 @@ public partial class MainWindow : Window
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     _sidebar?.SetServiceProvider(_viewModel.Services);
-                    UpdateTitleBar();
                     UpdateFooter();
                 });
             });
@@ -319,16 +405,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateTitleBar()
-    {
-        if (_titleBar != null && _viewModel?.Services != null)
-        {
-            var workspaceManager = _viewModel.Services.GetRequiredService<IWorkspaceManager>();
-            if (workspaceManager.CurrentWorkspace != null)
-            {
-                _titleBar.SessionTitle = workspaceManager.CurrentWorkspace.Name;
-            }
-            _titleBar.SessionTime = DateTime.Now.ToString("MM月dd日 HH:mm");
-        }
-    }
 }

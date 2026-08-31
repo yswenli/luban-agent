@@ -97,8 +97,8 @@ public class App : Application
                 }
                 else
                 {
-                    // 用户取消，退出应用
-                    desktop.Shutdown();
+                    // 用户取消，退出应用（跳过主窗口的退出确认）
+                    mainWindow.ForceClose();
                 }
             };
         }

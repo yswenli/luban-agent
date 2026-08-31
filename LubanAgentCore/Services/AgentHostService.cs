@@ -49,6 +49,15 @@ public class AgentHostService
     public bool IsInitialized => _agent != null;
 
     /// <summary>
+    /// 重置 Agent（置空当前实例），下次对话时按最新配置重建。
+    /// 用于模型切换等配置变更后让新配置生效。
+    /// </summary>
+    public void Reset()
+    {
+        _agent = null;
+    }
+
+    /// <summary>
     /// 初始化 Agent（在首次对话前调用）。
     /// </summary>
     public async Task InitializeAsync()
