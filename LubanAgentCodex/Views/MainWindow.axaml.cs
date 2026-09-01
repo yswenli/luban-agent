@@ -38,8 +38,10 @@ public partial class MainWindow : Window
     private InputBox? _inputBox;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
+    private Grid? _loadingOverlay;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
+    private bool _closing;
 
     public MainWindow()
     {
@@ -54,7 +56,8 @@ public partial class MainWindow : Window
         _inputBox = this.FindControl<InputBox>("InputBox");
         _sidebar = this.FindControl<Sidebar>("Sidebar");
         _footerBar = this.FindControl<FooterBar>("FooterBar");
-        
+        _loadingOverlay = this.FindControl<Grid>("LoadingOverlay");
+
         // 订阅键盘事件
         this.KeyDown += OnKeyDown;
     }
@@ -105,6 +108,13 @@ public partial class MainWindow : Window
                     {
                         _inputBox.IsRunning = _viewModel.IsRunning;
                     }
+                    else if (e.PropertyName == nameof(MainWindowViewModel.IsSwitchingSession))
+                    {
+                        if (_loadingOverlay != null)
+                        {
+                            _loadingOverlay.IsVisible = _viewModel.IsSwitchingSession;
+                        }
+                    }
                 };
             }
 
@@ -137,7 +147,12 @@ public partial class MainWindow : Window
         // 先阻止关闭，再弹确认框
         e.Cancel = true;
 
+        // 确认框 await 期间再次触发关闭：已有对话框在等待，直接拦截，避免重复弹窗
+        if (_closing) return;
+        _closing = true;
+
         var confirm = await ConfirmExitAsync();
+        _closing = false;
         if (confirm)
         {
             _confirmedClose = true;

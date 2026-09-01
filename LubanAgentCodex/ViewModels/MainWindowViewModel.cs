@@ -57,6 +57,12 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isRunning;
 
     /// <summary>
+    /// 是否正在切换会话（用于显示中央加载提示）
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSwitchingSession;
+
+    /// <summary>
     /// 权限模式
     /// </summary>
     [ObservableProperty]
@@ -691,26 +697,34 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (IsRunning) return;
 
-        var sessionManager = _agentHost.Services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
-        await sessionManager.SetCurrentSessionAsync(sessionId);
-
-        Messages.Clear();
-
-        var messages = await sessionManager.GetLatestMessagesAsync(sessionId, 50);
-        foreach (var msg in messages.OrderBy(m => m.CreatedAt))
+        IsSwitchingSession = true;
+        try
         {
-            if (msg.Role == "user")
+            var sessionManager = _agentHost.Services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
+            await sessionManager.SetCurrentSessionAsync(sessionId);
+
+            Messages.Clear();
+
+            var messages = await sessionManager.GetLatestMessagesAsync(sessionId, 50);
+            foreach (var msg in messages.OrderBy(m => m.CreatedAt))
             {
-                Messages.Add(new UserMessageItem { Content = msg.Content });
-            }
-            else if (msg.Role == "assistant")
-            {
-                Messages.Add(new AssistantMessageItem
+                if (msg.Role == "user")
                 {
-                    Content = msg.Content,
-                    IsComplete = true
-                });
+                    Messages.Add(new UserMessageItem { Content = msg.Content });
+                }
+                else if (msg.Role == "assistant")
+                {
+                    Messages.Add(new AssistantMessageItem
+                    {
+                        Content = msg.Content,
+                        IsComplete = true
+                    });
+                }
             }
+        }
+        finally
+        {
+            IsSwitchingSession = false;
         }
     }
 

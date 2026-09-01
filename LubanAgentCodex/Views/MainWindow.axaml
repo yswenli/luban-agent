@@ -30,6 +30,34 @@
         <controls:FooterBar Grid.Row="1"
                             x:Name="FooterBar" />
 
+        <!-- 切换会话中央加载提示 -->
+        <Grid Grid.Row="0"
+              Grid.RowSpan="2"
+              x:Name="LoadingOverlay"
+              IsVisible="False"
+              Background="#80000000"
+              ZIndex="100">
+            <Border Background="{DynamicResource CardBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="30,24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <StackPanel Orientation="Vertical"
+                            Spacing="14"
+                            HorizontalAlignment="Center">
+                    <ProgressBar IsIndeterminate="True"
+                                 Width="180"
+                                 Height="4" />
+                    <TextBlock Text="正在切换会话…"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="14"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
     </Grid>
 
 </Window>
