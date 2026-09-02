@@ -188,4 +188,64 @@ public static class Dialogs
         if (owner != null) await dlg.ShowDialog(owner);
         else dlg.Show();
     }
+
+    /// <summary>
+    /// 美观的信息提示对话框：信息图标 + 说明 + 确定(主) 按钮
+    /// </summary>
+    public static async Task ShowInfoAsync(Window? owner, string message)
+    {
+        var dlg = new Window
+        {
+            Title = "提示",
+            Width = 384,
+            Height = 160,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+        };
+        dlg.Classes.Add("dlgWindow");
+
+        var card = new Border { Classes = { "dlgCard" } };
+        var stack = new StackPanel { Spacing = 16 };
+
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        header.Children.Add(new TextBlock
+        {
+            Text = "ℹ",
+            FontSize = 20,
+            Foreground = new SolidColorBrush(Color.Parse("#4FC3F7")),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = message,
+            FontSize = 13.5,
+            Foreground = TextPrimaryBrush,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        stack.Children.Add(header);
+
+        var ok = new Button { Content = "确定", HorizontalAlignment = HorizontalAlignment.Right };
+        ok.Classes.Add("dlgPrimary");
+        ok.Click += (s, e) => dlg.Close();
+
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+        Grid.SetRow(stack, 0);
+        Grid.SetRow(ok, 1);
+        grid.Children.Add(stack);
+        grid.Children.Add(ok);
+        card.Child = grid;
+        dlg.Content = card;
+
+        if (owner != null) await dlg.ShowDialog(owner);
+        else dlg.Show();
+    }
 }

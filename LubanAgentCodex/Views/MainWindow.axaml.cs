@@ -24,6 +24,7 @@ using LubanAgentCodex.Views.Controls;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Retrieval;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Specialized;
 using System.Linq;
@@ -408,8 +409,41 @@ public partial class MainWindow : Window
             // 创建 RAG 工作区
             try
             {
-                var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");
-                _sidebar?.SetServiceProvider(_viewModel.Services);
+                    var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");
+
+                    // 初始化向量索引：将所选目录内容嵌入并建立检索库，使知识库可问答。
+                    // 必须在“当前工作区=该 RAG 工作区”下索引，保证切块按 WorkspaceId 隔离。
+                    var retrieval = _viewModel.Services.GetService<IRetrievalService>();
+                    if (retrieval != null)
+                    {
+                        var previous = workspaceManager.CurrentWorkspace;
+                        try
+                        {
+                            await workspaceManager.EnsureAuthorizedAsync(ragWs);
+                            await workspaceManager.SetCurrentAsync(ragWs.WorkspaceId);
+                            var report = await retrieval.IndexDirectoryAsync(path);
+                            await Dialogs.ShowInfoAsync(this,
+                                $"知识库已初始化并索引完成：\n扫描 {report.ScannedFiles} 个文件，切块 {report.TotalChunks} 块。");
+                        }
+                        catch (Exception idxEx)
+                        {
+                            await Dialogs.ShowErrorAsync(this,
+                                $"知识库已创建，但索引失败：{idxEx.Message}\n你仍可在对话中让 AI 执行索引。");
+                        }
+                        finally
+                        {
+                            // 恢复到用户此前所在工作区，避免意外切换会话
+                            if (previous != null)
+                                await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
+                        }
+                    }
+                    else
+                    {
+                        await Dialogs.ShowInfoAsync(this,
+                            "知识库已创建，但嵌入模型未就绪，暂未建立索引。\n请将嵌入模型包放入 EmbeddingModels 目录后重新初始化。");
+                    }
+
+                    _sidebar?.SetServiceProvider(_viewModel.Services);
             }
             catch (Exception ex)
             {

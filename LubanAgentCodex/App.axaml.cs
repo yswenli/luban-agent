@@ -20,10 +20,15 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using LubanAgentCodex.Views;
 using LubanAgentCore.Hosting;
+using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
+using LuBan.AIAgent.Configuration;
+using LuBan.Logging;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LubanAgentCodex;
@@ -78,9 +83,21 @@ public class App : Application
                 splash.SetStatus("正在加载应用配置…");
                 var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
 
-                // 3) 初始化核心服务（DI 容器）
+                // 3) 准备检索嵌入模型（RAG 知识库依赖），并初始化核心服务（DI 容器）
+                splash.SetStatus("正在准备检索嵌入模型…");
+                OnnxEmbeddingGenerator? embedder = null;
+                ModelManager? modelManager = null;
+                try
+                {
+                    (embedder, modelManager) = await PrepareRetrievalAsync(configuration, msg => splash.SetStatus(msg));
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("准备检索嵌入模型失败", ex);
+                }
+
                 splash.SetStatus("正在初始化核心服务…");
-                _services = AgentHostBuilder.BuildServiceProvider(configuration);
+                _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager);
 
                 // 4) 设置工作区授权回调（GUI 自动授权）
                 var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
@@ -128,5 +145,33 @@ public class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// 准备检索嵌入模型（与 CLI 的 StartupRunner.PrepareRetrievalAsync 一致）：
+    /// 从本地 zip 解压并构建 ONNX 嵌入生成器。若检索未启用、模型未知或本地模型包缺失，
+    /// 则返回 (null,null)，检索功能降级关闭（RAG 知识库问答将不可用，但不会崩溃）。
+    /// </summary>
+    private static async Task<(OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)> PrepareRetrievalAsync(
+        IConfiguration configuration, Action<string> report, CancellationToken ct = default)
+    {
+        var retrieval = configuration.GetSection("LuBanAgent:Tools:Retrieval").Get<RetrievalToolOptions>() ?? new RetrievalToolOptions();
+        if (!retrieval.Enabled) return (null, null);
+        var spec = EmbeddingModelCatalog.Find(retrieval.ModelId);
+        if (spec == null)
+        {
+            report($"未知的嵌入模型：{retrieval.ModelId}，检索功能已禁用");
+            return (null, null);
+        }
+        var mm = new ModelManager(spec);
+        if (mm.IsModelReady()) return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
+        var ok = await mm.EnsureModelAsync(report, ct);
+        if (!ok || !mm.IsModelReady())
+        {
+            report($"本地嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用");
+            report($"请将模型包放到: {mm.LocalZipPath}");
+            return (null, null);
+        }
+        return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
     }
 }
