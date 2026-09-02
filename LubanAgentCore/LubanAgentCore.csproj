@@ -20,4 +20,13 @@
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="SqlSugarCore" Version="5.1.4.217" />
   </ItemGroup>
+
+  <!-- 嵌入模型包：单一来源，经 ProjectReference 内容传播带入每个引用方（Cli/Codex）的输出目录。
+       运行期由 ModelManager.LocalZipPath 按 AppDomain.BaseDirectory/EmbeddingModels 解析。 -->
+  <ItemGroup>
+    <Content Include="EmbeddingModels\bge-small-zh-v1.5.zip">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Pack>false</Pack>
+    </Content>
+  </ItemGroup>
 </Project>
