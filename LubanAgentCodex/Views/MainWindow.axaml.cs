@@ -324,52 +324,48 @@ public partial class MainWindow : Window
 
     private async void OnWorkspaceSelected(object? sender, WorkspaceInfo ws)
     {
-        var services = _viewModel?.Services;
-        if (services == null) return;
-
-        var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
-
-        // 桌面端 AuthorizationPrompt 恒为 true（自动授权）：切换工作区前先确保已授权，
-        // 否则工作区根目录不会被注入 PathGuard.AllowedRoots，导致文件/目录/分析类工具
-        // 在 IsAllowed 处被拒（提示"路径不在允许访问的范围内"），且不会弹出任何权限询问。
-        if (!ws.IsAuthorized)
-            await workspaceManager.EnsureAuthorizedAsync(ws);
-
-        await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
-
-        // 知识库（RAG）工作区：自动加载其会话，无需在列表中选择
-        if (ws.Type == "Rag")
+        Logger.Warn($"[诊断] OnWorkspaceSelected: ws={ws.Name}, type={ws.Type}, authorized={ws.IsAuthorized}");
+        try
         {
-            var sessionRepo = services.GetRequiredService<SessionRepository>();
-            var sessions = await sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
-            string sessionId;
-            if (sessions.Count > 0)
+            var services = _viewModel?.Services;
+            if (services == null) return;
+
+            var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+
+            // 桌面端 AuthorizationPrompt 恒为 true（自动授权）：切换工作区前先确保已授权，
+            // 否则工作区根目录不会被注入 PathGuard.AllowedRoots，导致文件/目录/分析类工具
+            // 在 IsAllowed 处被拒（提示"路径不在允许访问的范围内"），且不会弹出任何权限询问。
+            if (!ws.IsAuthorized)
+                await workspaceManager.EnsureAuthorizedAsync(ws);
+
+            // SetCurrentAsync 内部已恢复或新建当前会话（SwitchWorkspaceAsync）
+            await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+
+            // 知识库（RAG）工作区：自动加载当前会话历史，无需在列表中选择。
+            // 复用 SetCurrentAsync 已恢复/新建的 CurrentSession，避免重复建会话（知识库只保留一个会话）
+            if (ws.Type == "Rag")
             {
-                sessionId = sessions.OrderByDescending(s => s.UpdateTime).First().SessionId;
-            }
-            else
-            {
-                var newSession = new DbSession
+                var sessionManager = services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
+                var current = sessionManager.CurrentSession;
+                if (current == null)
                 {
-                    SessionId = Guid.NewGuid().ToString("N"),
-                    UserId = "default",
-                    Title = "知识库对话",
-                    CreateTime = DateTime.Now,
-                    UpdateTime = DateTime.Now,
-                    IsDelete = false,
-                    WorkspaceId = ws.WorkspaceId,
-                };
-                await sessionRepo.InsertAsync(newSession);
-                sessionId = newSession.SessionId;
+                    // 异常兜底：当前会话缺失则新建
+                    current = await sessionManager.CreateSessionAsync(userId: "default", title: "知识库对话");
+                }
+                await _viewModel!.LoadSessionHistoryAsync(current.SessionId);
             }
-            await _viewModel!.LoadSessionHistoryAsync(sessionId);
-        }
 
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                _sidebar?.SetServiceProvider(services);
+                UpdateFooter();
+            });
+        }
+        catch (Exception ex)
         {
-            _sidebar?.SetServiceProvider(services);
-            UpdateFooter();
-        });
+            Logger.Error("MainWindow.OnWorkspaceSelected 切换知识库会话异常", ex);
+            await Dialogs.ShowErrorAsync(this, $"切换到知识库会话失败：{ex.Message}");
+        }
     }
 
     /// <summary>

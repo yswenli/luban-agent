@@ -19,6 +19,7 @@ using LuBan.AIAgent.Rules;
 using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
+using LubanAgentCore.Repositories;
 
 namespace LubanAgentCore.Services;
 
@@ -427,6 +428,47 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         else
             list = await _repo.GetUserWorkspacesAsync(userId);
         return list.Select(ToWorkspaceInfo);
+    }
+
+    /// <summary>
+    /// 删除工作区：逻辑删除工作区记录，并清理其下所有会话与 RAG 索引。
+    /// </summary>
+    /// <remarks>
+    /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现 Sidebar 走物理删除、管理窗口走逻辑删除，
+    /// 且 Sidebar 遗漏清理 rag_file/rag_chunk 而残留孤儿索引的情况）。
+    /// 清理顺序固定为：会话软删 → RAG 文件/切块物理删 → 工作区逻辑删。
+    /// 说明：RagFileRepository/RagChunkRepository 未注册进 DI（构造仅需可选 tenantId），故此处直接构造；
+    /// 与 CLI 的 WorkCommand 现有写法一致。
+    /// </remarks>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
+    public async Task<bool> DeleteWorkspaceAsync(string workspaceId)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return false;
+
+        var ragFileRepo = new RagFileRepository();
+        var ragChunkRepo = new RagChunkRepository();
+
+        await _sessionRepo.SoftDeleteByWorkspaceAsync(workspaceId);
+        await ragFileRepo.DeleteByWorkspaceAsync(workspaceId);
+        await ragChunkRepo.DeleteByWorkspaceAsync(workspaceId);
+        await _repo.LogicDeleteAsync(w => w.WorkspaceId == workspaceId);
+
+        // 若删除的正是当前工作区：移除其注入的 PathGuard 根目录，并清空当前引用与会话，
+        // 避免后续操作仍然指向一个已被逻辑删除的工作区。
+        WorkspaceInfo? target;
+        lock (_currentLock) target = _current;
+
+        if (target != null && target.WorkspaceId == workspaceId)
+        {
+            if (target.IsAuthorized)
+                RemoveWorkspaceRootFromPathGuard(target.RootPath);
+
+            lock (_currentLock) _current = null;
+            _sessionManager.ClearCurrentSession();
+        }
+
+        return true;
     }
 
     /// <summary>

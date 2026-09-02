@@ -68,8 +68,8 @@ public partial class Sidebar : UserControl
         if (_ragListBox != null)
         {
             _ragListBox.AddHandler(Button.ClickEvent, OnRagItemButtonClick);
-            // 复用工作区「会话列表」的指针事件模型：单击/双击均切换，右键与删除按钮除外
-            _ragListBox.PointerPressed += OnRagListBoxPointerPressed;
+            // ListBoxItem 内部会标记 PointerPressed 已处理，需用 handledEventsToo 才能收到冒泡事件
+            _ragListBox.AddHandler(InputElement.PointerPressedEvent, OnRagListBoxPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
         }
     }
 
@@ -98,6 +98,7 @@ public partial class Sidebar : UserControl
 
         // 从事件源向上回溯，找到对应的知识库列表项模型
         var model = FindRagRowModelFromSource(e.Source);
+        Logger.Warn($"[诊断] OnRagListBoxPointerPressed: source={e.Source?.GetType().Name}, model={(model == null ? "null" : model.Workspace?.Name)}");
         if (model?.Workspace is null) return;
 
         // 单击或双击都切换到该知识库的会话（双击交互对齐「工作区会话列表」）

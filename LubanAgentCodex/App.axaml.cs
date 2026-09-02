@@ -103,6 +103,8 @@ public class App : Application
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，ProviderEditDialog 预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);
 
+                Logger.Warn("[诊断] App 初始化完成，Logger 已就绪");
+
                 // 4) 设置工作区授权回调（GUI 自动授权）
                 var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
                 if (workspaceManager is LubanAgentCore.Services.WorkspaceManager wm)
