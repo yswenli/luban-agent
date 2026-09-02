@@ -66,7 +66,11 @@ public partial class Sidebar : UserControl
         _workspacePanel = this.FindControl<StackPanel>("WorkspacePanel");
         _ragListBox = this.FindControl<ListBox>("RagListBox");
         if (_ragListBox != null)
+        {
             _ragListBox.AddHandler(Button.ClickEvent, OnRagItemButtonClick);
+            // 复用工作区「会话列表」的指针事件模型：单击/双击均切换，右键与删除按钮除外
+            _ragListBox.PointerPressed += OnRagListBoxPointerPressed;
+        }
     }
 
     /// <summary>
@@ -81,17 +85,37 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
-    /// 点击知识库项：切换到该知识库的会话（复用工作区切换流程）
+    /// 知识库列表指针事件（对齐工作区「会话列表」）：单击 / 双击均切换到该知识库的会话，
+    /// 双击显式触发切换，单击同样可快速打开；删除按钮与右键不触发。
     /// </summary>
-    private void OnRagItemPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void OnRagListBoxPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         // 点击删除按钮不触发切换
         if (IsFromDeleteButton(e.Source)) return;
 
-        if (sender is Border border && border.DataContext is RagRowModel model && model.Workspace != null)
+        // 右键不触发切换
+        if (e.GetCurrentPoint(_ragListBox).Properties.IsRightButtonPressed) return;
+
+        // 从事件源向上回溯，找到对应的知识库列表项模型
+        var model = FindRagRowModelFromSource(e.Source);
+        if (model?.Workspace is null) return;
+
+        // 单击或双击都切换到该知识库的会话（双击交互对齐「工作区会话列表」）
+        WorkspaceSelected?.Invoke(this, model.Workspace);
+    }
+
+    /// <summary>
+    /// 从指针事件源向上回溯，找到 DataContext 为 RagRowModel 的控件
+    /// </summary>
+    private static RagRowModel? FindRagRowModelFromSource(object? source)
+    {
+        var ctrl = source as Control;
+        while (ctrl != null)
         {
-            WorkspaceSelected?.Invoke(this, model.Workspace);
+            if (ctrl.DataContext is RagRowModel model) return model;
+            ctrl = ctrl.Parent as Control;
         }
+        return null;
     }
 
     /// <summary>

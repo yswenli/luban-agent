@@ -24,8 +24,7 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="local:RagRowModel">
                             <Border Padding="6,4" CornerRadius="4" Cursor="Hand"
-                                    BorderThickness="0"
-                                    PointerPressed="OnRagItemPointerPressed">
+                                    BorderThickness="0">
                                 <Grid ColumnDefinitions="Auto,*,Auto">
                                     <TextBlock Grid.Column="0"
                                                Text="📚"
