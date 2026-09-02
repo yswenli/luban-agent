@@ -9,42 +9,44 @@
         Background="{DynamicResource BackgroundBrush}">
 
     <Border Classes="dlgCard">
-        <Grid RowDefinitions="Auto,Auto" RowSpacing="16">
+        <Grid RowDefinitions="*,Auto">
 
-            <!-- 标题 -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="✏️" FontSize="17" VerticalAlignment="Center" />
-                <TextBlock Text="重命名"
-                           FontSize="16"
-                           FontWeight="Bold"
-                           Foreground="{DynamicResource TextPrimaryBrush}"
-                           VerticalAlignment="Center" />
-            </StackPanel>
+            <!-- 内容区（顶部） -->
+            <StackPanel Grid.Row="0" Spacing="16">
+                <!-- 标题 -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="✏️" FontSize="17" VerticalAlignment="Center" />
+                    <TextBlock Text="重命名"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
 
-            <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="16">
-                <TextBox Grid.Row="0"
-                         Name="NameTextBox"
+                <TextBox Name="NameTextBox"
                          PlaceholderText="输入新名称"
                          FontSize="14"
                          CornerRadius="8"
                          Background="{DynamicResource SidebarBrush}"
                          Foreground="{DynamicResource TextPrimaryBrush}"
                          BorderBrush="{DynamicResource BorderBrush}" />
+            </StackPanel>
 
-                <StackPanel Grid.Row="1"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Spacing="10">
-                    <Button Name="CancelButton"
-                            Content="取消"
-                            Classes="dlgGhost"
-                            MinWidth="80" />
-                    <Button Name="OkButton"
-                            Content="确定"
-                            Classes="dlgPrimary"
-                            MinWidth="80" />
-                </StackPanel>
-            </Grid>
+            <!-- 按钮区（固定在右下角） -->
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="10"
+                        Margin="0,16,0,0">
+                <Button Name="CancelButton"
+                        Content="取消"
+                        Classes="dlgGhost"
+                        MinWidth="80" />
+                <Button Name="OkButton"
+                        Content="确定"
+                        Classes="dlgPrimary"
+                        MinWidth="80" />
+            </StackPanel>
 
         </Grid>
     </Border>

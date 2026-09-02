@@ -91,13 +91,13 @@ public static class Dialogs
             });
         }
 
-        // 按钮区
+        // 按钮区（固定在右下角）
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             Spacing = 10,
-            Margin = new Thickness(0, 6, 0, 0),
+            Margin = new Thickness(0, 10, 0, 0),
         };
         var cancel = new Button { Content = "取消" };
         cancel.Classes.Add("dlgGhost");
@@ -107,9 +107,16 @@ public static class Dialogs
         ok.Click += (s, e) => dlg.Close(true);
         buttons.Children.Add(cancel);
         buttons.Children.Add(ok);
-        stack.Children.Add(buttons);
 
-        card.Child = stack;
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+        Grid.SetRow(stack, 0);
+        Grid.SetRow(buttons, 1);
+        grid.Children.Add(stack);
+        grid.Children.Add(buttons);
+        card.Child = grid;
         dlg.Content = card;
 
         if (owner == null)
@@ -166,9 +173,16 @@ public static class Dialogs
         var ok = new Button { Content = "确定", HorizontalAlignment = HorizontalAlignment.Right };
         ok.Classes.Add("dlgPrimary");
         ok.Click += (s, e) => dlg.Close();
-        stack.Children.Add(ok);
 
-        card.Child = stack;
+        var grid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+        Grid.SetRow(stack, 0);
+        Grid.SetRow(ok, 1);
+        grid.Children.Add(stack);
+        grid.Children.Add(ok);
+        card.Child = grid;
         dlg.Content = card;
 
         if (owner != null) await dlg.ShowDialog(owner);
