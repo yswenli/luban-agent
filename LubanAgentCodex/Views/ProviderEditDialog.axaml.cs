@@ -92,8 +92,10 @@ public partial class ProviderEditDialog : Window
         }
         OnTypeChanged(null, null!);
 
-        this.FindControl<Button>("OkButton").Click += OnOk;
-        this.FindControl<Button>("CancelButton").Click += (_, _) => Close(null);
+        if (this.FindControl<Button>("OkButton") is { } okBtn)
+            okBtn.Click += OnOk;
+        if (this.FindControl<Button>("CancelButton") is { } cancelBtn)
+            cancelBtn.Click += (_, _) => Close(null);
     }
 
     /// <summary>
@@ -107,7 +109,15 @@ public partial class ProviderEditDialog : Window
         if (_nameBox != null) { _nameBox.Text = existing.Name; _nameBox.IsReadOnly = true; }
         if (_apiKeyBox != null) _apiKeyBox.Text = existing.ApiKey;
         if (_baseUrlBox != null) _baseUrlBox.Text = existing.BaseUrl ?? "";
-        if (_typeCombo != null) _typeCombo.IsEnabled = false;
+
+        // 定位 TypeCombo 到匹配项（找不到则选末尾"自定义"）
+        if (_typeCombo != null)
+        {
+            var typeIdx = Array.FindIndex(Builtin, b => b.Name == existing.Name);
+            if (typeIdx < 0) typeIdx = Builtin.Length - 1;
+            _typeCombo.SelectedIndex = typeIdx;
+            _typeCombo.IsEnabled = false;
+        }
         _selectedType = existing.Name;
     }
 

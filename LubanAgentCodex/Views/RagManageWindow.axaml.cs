@@ -68,19 +68,7 @@ public partial class RagManageWindow : Window
 
     private async void LoadRagWorkspaces()
     {
-        if (_ragListBox == null) return;
-
-        var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
-        var ragWorkspaces = workspaces.Where(w => w.Type == "Rag").ToList();
-        _ragListBox.ItemsSource = ragWorkspaces.Select(w => new RagItem
-        {
-            WorkspaceId = w.WorkspaceId,
-            Name = w.Name,
-            RootPath = w.RootPath,
-            FileCount = "-",
-            ChunkCount = "-",
-            Status = "已创建"
-        }).ToList();
+        await LoadRagWorkspacesAsync();
     }
 
     private async void OnCreate(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -195,13 +183,41 @@ public partial class RagManageWindow : Window
         }).ToList();
     }
 
-    private void OnBack(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnBack(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_resultListBox == null || _ragListBox == null || _backButton == null) return;
         _resultListBox.IsVisible = false;
         _ragListBox.IsVisible = true;
         _backButton.IsVisible = false;
-        LoadRagWorkspaces();
+        await LoadRagWorkspacesAsync();
+    }
+
+    private async Task LoadRagWorkspacesAsync()
+    {
+        if (_ragListBox == null) return;
+
+        try
+        {
+            var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
+            var ragWorkspaces = workspaces.Where(w => w.Type == "Rag").ToList();
+            _ragListBox.ItemsSource = ragWorkspaces.Select(w => new RagItem
+            {
+                WorkspaceId = w.WorkspaceId,
+                Name = w.Name,
+                RootPath = w.RootPath,
+                FileCount = "-",
+                ChunkCount = "-",
+                Status = "已创建"
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RagManageWindow.LoadRagWorkspaces 异常", ex);
+            _ragListBox.ItemsSource = new List<RagItem>
+            {
+                new() { Name = "加载失败", Status = ex.Message }
+            };
+        }
     }
 
     private async void OnDelete(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

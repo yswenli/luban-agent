@@ -58,12 +58,14 @@ public partial class ModelSelectDialog : Window
             };
         }
 
-        this.FindControl<Button>("OkButton").Click += (_, _) =>
-        {
-            if (string.IsNullOrEmpty(SelectedModel)) return;
-            Close(SelectedModel);
-        };
-        this.FindControl<Button>("CancelButton").Click += (_, _) => Close(null);
+        if (this.FindControl<Button>("OkButton") is { } okBtn)
+            okBtn.Click += (_, _) =>
+            {
+                if (string.IsNullOrEmpty(SelectedModel)) return;
+                Close(SelectedModel);
+            };
+        if (this.FindControl<Button>("CancelButton") is { } cancelBtn)
+            cancelBtn.Click += (_, _) => Close(null);
     }
 
     private void InitializeComponent()

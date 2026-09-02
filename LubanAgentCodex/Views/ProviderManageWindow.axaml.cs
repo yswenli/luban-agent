@@ -130,7 +130,6 @@ public partial class ProviderManageWindow : Window
     private async void OnDelete(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_providerListBox?.SelectedItem is not ProviderItem item) return;
-        var idx = _providerListBox.SelectedIndex;
         try
         {
             var ok = await Dialogs.ShowConfirmAsync(this, "删除 Provider",
@@ -138,10 +137,12 @@ public partial class ProviderManageWindow : Window
             if (!ok) return;
 
             var provider = _configManager.GetProvider(item.Name);
-            _configManager.Providers.RemoveAt(idx);
+            if (provider == null) { await Dialogs.ShowErrorAsync(this, "Provider 不存在"); return; }
+
+            _configManager.Providers.Remove(provider);
             _configManager.Save();
 
-            if (provider != null && _configManager.SelectedModel?.StartsWith($"{provider.Name}:") == true)
+            if (_configManager.SelectedModel?.StartsWith($"{provider.Name}:") == true)
                 _configManager.ClearSelectedModel();
 
             LoadProviders();
