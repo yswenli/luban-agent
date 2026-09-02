@@ -92,9 +92,16 @@ public partial class MainWindow : Window
                 _inputBox.SetServiceProvider(services);
                 _inputBox.SendRequested += async (s, e) =>
                 {
-                    _viewModel.InputText = _inputBox.Text;
-                    await _viewModel.SendCommand.ExecuteAsync(null);
+                    var text = _inputBox.Text;
+                    if (string.IsNullOrWhiteSpace(text)) return;
+
+                    // 立即清空输入框：InputTextBox 未绑定 InputText，且 SendAsync 内部只清空
+                    // VM 的 InputText 属性，不会清文本框；原实现把 _inputBox.Text = "" 放在 await
+                    // 之后，导致整轮对话（含 AI 流式响应）期间文本一直残留在框内，回车/点发送都如此。
+                    _viewModel.InputText = text;
                     _inputBox.Text = "";
+
+                    await _viewModel.SendCommand.ExecuteAsync(null);
                 };
 
                 // 处理模型切换事件：重置 Agent，下次发送消息时用新模型重建
