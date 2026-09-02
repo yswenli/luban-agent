@@ -18,16 +18,14 @@
 
             <!-- RAG 知识库 -->
             <StackPanel Grid.Row="2" Margin="0,8,0,0">
-                <TextBlock Text="📚 RAG 知识库"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextTertiaryBrush}"
-                           Padding="16,0,16,8" />
                 <ListBox Name="RagListBox"
                          Background="Transparent"
                          BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="local:RagRowModel">
-                            <Border Padding="6,4" CornerRadius="4" Cursor="Hand">
+                            <Border Padding="6,4" CornerRadius="4" Cursor="Hand"
+                                    BorderThickness="0"
+                                    PointerPressed="OnRagItemPointerPressed">
                                 <Grid ColumnDefinitions="Auto,*,Auto">
                                     <TextBlock Grid.Column="0"
                                                Text="📚"

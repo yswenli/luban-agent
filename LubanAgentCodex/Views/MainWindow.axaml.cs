@@ -21,10 +21,12 @@ using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views.Controls;
+using LubanAgentCore.Entities;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Specialized;
+using System.Linq;
 
 namespace LubanAgentCodex.Views;
 
@@ -312,21 +314,47 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWorkspaceSelected(object? sender, WorkspaceInfo ws)
+    private async void OnWorkspaceSelected(object? sender, WorkspaceInfo ws)
     {
-        var workspaceManager = _viewModel?.Services?.GetRequiredService<IWorkspaceManager>();
-        if (workspaceManager != null && _viewModel?.Services != null)
+        var services = _viewModel?.Services;
+        if (services == null) return;
+
+        var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+
+        // 知识库（RAG）工作区：自动加载其会话，无需在列表中选择
+        if (ws.Type == "Rag")
         {
-            _ = Task.Run(async () =>
+            var sessionRepo = services.GetRequiredService<SessionRepository>();
+            var sessions = await sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
+            string sessionId;
+            if (sessions.Count > 0)
             {
-                await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                sessionId = sessions.OrderByDescending(s => s.UpdateTime).First().SessionId;
+            }
+            else
+            {
+                var newSession = new DbSession
                 {
-                    _sidebar?.SetServiceProvider(_viewModel.Services);
-                    UpdateFooter();
-                });
-            });
+                    SessionId = Guid.NewGuid().ToString("N"),
+                    UserId = "default",
+                    Title = "知识库对话",
+                    CreateTime = DateTime.Now,
+                    UpdateTime = DateTime.Now,
+                    IsDelete = false,
+                    WorkspaceId = ws.WorkspaceId,
+                };
+                await sessionRepo.InsertAsync(newSession);
+                sessionId = newSession.SessionId;
+            }
+            await _viewModel!.LoadSessionHistoryAsync(sessionId);
         }
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _sidebar?.SetServiceProvider(services);
+            UpdateFooter();
+        });
     }
 
     /// <summary>

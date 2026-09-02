@@ -81,6 +81,34 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
+    /// 点击知识库项：切换到该知识库的会话（复用工作区切换流程）
+    /// </summary>
+    private void OnRagItemPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // 点击删除按钮不触发切换
+        if (IsFromDeleteButton(e.Source)) return;
+
+        if (sender is Border border && border.DataContext is RagRowModel model && model.Workspace != null)
+        {
+            WorkspaceSelected?.Invoke(this, model.Workspace);
+        }
+    }
+
+    /// <summary>
+    /// 判断指针事件源是否来自「删除知识库」按钮（含其子元素）
+    /// </summary>
+    private static bool IsFromDeleteButton(object? source)
+    {
+        var ctrl = source as Control;
+        while (ctrl != null)
+        {
+            if (ctrl.Name == "DeleteRagBtn") return true;
+            ctrl = ctrl.Parent as Control;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 设置服务提供者并加载数据
     /// </summary>
     public void SetServiceProvider(IServiceProvider services)
@@ -550,7 +578,12 @@ public partial class Sidebar : UserControl
 
         // 统一显示为「知识库」，不在工作区列表中重复展示真实名称
         _ragListBox.ItemsSource = ragWorkspaces
-            .Select(w => new RagRowModel { WorkspaceId = w.WorkspaceId, DisplayName = "知识库" })
+            .Select(w => new RagRowModel
+            {
+                WorkspaceId = w.WorkspaceId,
+                DisplayName = "知识库",
+                Workspace = w,
+            })
             .ToList();
         _ragListBox.IsVisible = ragWorkspaces.Count > 0;
 
@@ -584,7 +617,7 @@ public partial class Sidebar : UserControl
                     CornerRadius = new CornerRadius(6),
                     Padding = new Thickness(8, 4),
                     Cursor = new Cursor(StandardCursorType.Hand),
-                    Margin = new Thickness(32, 8, 16, 0),
+                    Margin = new Thickness(16, 8, 16, 0),
                     HorizontalAlignment = HorizontalAlignment.Left,
                 };
 
@@ -643,12 +676,13 @@ public class SessionItem
     public string Title { get; set; } = "";
 }
 
-/// <summary>
-/// RAG 知识库列表项（侧边栏「RAG 知识库」分区）
-/// </summary>
-public class RagRowModel
-{
-    public string WorkspaceId { get; set; } = "";
-    public string DisplayName { get; set; } = "知识库";
-}
+    /// <summary>
+    /// RAG 知识库列表项（侧边栏「RAG 知识库」分区）
+    /// </summary>
+    public class RagRowModel
+    {
+        public string WorkspaceId { get; set; } = "";
+        public string DisplayName { get; set; } = "知识库";
+        public WorkspaceInfo? Workspace { get; set; }
+    }
 
