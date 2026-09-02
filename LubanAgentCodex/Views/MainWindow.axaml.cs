@@ -336,6 +336,19 @@ public partial class MainWindow : Window
     {
         if (_viewModel?.Services == null) return;
 
+        // 知识库只能初始化一个：已存在时提示先删除
+        var workspaceManager = _viewModel.Services.GetRequiredService<IWorkspaceManager>();
+        var alreadyHasRag = false;
+        foreach (var w in await workspaceManager.GetUserWorkspacesAsync())
+        {
+            if (w.Type == "Rag") { alreadyHasRag = true; break; }
+        }
+        if (alreadyHasRag)
+        {
+            await Dialogs.ShowErrorAsync(this, "已存在知识库，请先删除后再初始化。");
+            return;
+        }
+
         // 弹出文件夹选择器让用户选择 RAG 目录
         var storage = this.StorageProvider;
         var folders = await storage.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
@@ -351,7 +364,6 @@ public partial class MainWindow : Window
             if (string.IsNullOrEmpty(path)) return;
 
             // 创建 RAG 工作区
-            var workspaceManager = _viewModel.Services.GetRequiredService<IWorkspaceManager>();
             try
             {
                 var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");

@@ -17,6 +17,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -64,6 +65,19 @@ public partial class Sidebar : UserControl
         AvaloniaXamlLoader.Load(this);
         _workspacePanel = this.FindControl<StackPanel>("WorkspacePanel");
         _ragListBox = this.FindControl<ListBox>("RagListBox");
+        if (_ragListBox != null)
+            _ragListBox.AddHandler(Button.ClickEvent, OnRagItemButtonClick);
+    }
+
+    /// <summary>
+    /// RAG 知识库列表项内按钮（删除）的路由处理
+    /// </summary>
+    private void OnRagItemButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is Button btn && btn.Name == "DeleteRagBtn" && btn.DataContext is RagRowModel model)
+        {
+            _ = DeleteRagAsync(model);
+        }
     }
 
     /// <summary>
@@ -105,6 +119,9 @@ public partial class Sidebar : UserControl
 
         foreach (var ws in workspaces)
         {
+            // 知识库（RAG）不显示在工作区列表，仅显示于「RAG 知识库」分区
+            if (ws.Type == "Rag") continue;
+
             var isActive = ws.WorkspaceId == currentWorkspaceId;
 
             // 工作区行
@@ -521,6 +538,7 @@ public partial class Sidebar : UserControl
 
     /// <summary>
     /// 加载 RAG 知识库列表
+    /// 规则：知识库只能初始化一个；已存在时「初始化知识库」按钮隐藏，需先删除再初始化。
     /// </summary>
     private void LoadRagItems()
     {
@@ -530,46 +548,88 @@ public partial class Sidebar : UserControl
         var workspaces = workspaceManager.GetUserWorkspacesAsync().GetAwaiter().GetResult();
         var ragWorkspaces = workspaces.Where(w => w.Type == "Rag").ToList();
 
-        _ragListBox.ItemsSource = ragWorkspaces.Select(w => w.Name).ToList();
+        // 统一显示为「知识库」，不在工作区列表中重复展示真实名称
+        _ragListBox.ItemsSource = ragWorkspaces
+            .Select(w => new RagRowModel { WorkspaceId = w.WorkspaceId, DisplayName = "知识库" })
+            .ToList();
+        _ragListBox.IsVisible = ragWorkspaces.Count > 0;
 
-        // 添加"初始化 RAG"按钮
+        // 移除旧的初始化按钮
         if (_ragListBox.Parent is StackPanel parent)
         {
-            // 移除旧的初始化按钮
             var existingBtn = parent.Children.OfType<Button>().FirstOrDefault(b => b.Name == "InitRagButton");
             if (existingBtn != null) parent.Children.Remove(existingBtn);
 
-            var initBtn = new Button
+            // 仅当尚未初始化知识库时才显示「初始化知识库」按钮
+            if (ragWorkspaces.Count == 0)
             {
-                Name = "InitRagButton",
-                Content = new StackPanel
+                var initBtn = new Button
                 {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 4,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Children =
+                    Name = "InitRagButton",
+                    Content = new StackPanel
                     {
-                        new TextBlock { Text = "➕", Foreground = Brush.Parse("#AB47BC") },
-                        new TextBlock { Text = "初始化知识库", Foreground = Brush.Parse("#CCCCCC") },
-                    }
-                },
-                FontSize = 12,
-                Background = Brushes.Transparent,
-                BorderBrush = Brush.Parse("#3F3F46"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(8, 4),
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Margin = new Thickness(32, 8, 16, 0),
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 4,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Children =
+                        {
+                            new TextBlock { Text = "➕", Foreground = Brush.Parse("#AB47BC") },
+                            new TextBlock { Text = "初始化知识库", Foreground = Brush.Parse("#CCCCCC") },
+                        }
+                    },
+                    FontSize = 12,
+                    Background = Brushes.Transparent,
+                    BorderBrush = Brush.Parse("#3F3F46"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 4),
+                    Cursor = new Cursor(StandardCursorType.Hand),
+                    Margin = new Thickness(32, 8, 16, 0),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                };
 
-            initBtn.Click += async (s, e) =>
-            {
-                RagInitRequested?.Invoke(this, EventArgs.Empty);
-            };
+                initBtn.Click += async (s, e) =>
+                {
+                    RagInitRequested?.Invoke(this, EventArgs.Empty);
+                };
 
-            parent.Children.Add(initBtn);
+                parent.Children.Add(initBtn);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 删除知识库：先确认，再删除工作区及其会话；删除后「初始化知识库」按钮恢复显示
+    /// </summary>
+    private async Task DeleteRagAsync(RagRowModel model)
+    {
+        try
+        {
+            var parentWindow = TopLevel.GetTopLevel(this) as Window;
+            if (parentWindow == null) return;
+
+            var confirmed = await Dialogs.ShowConfirmAsync(parentWindow, "删除知识库",
+                "确定要删除知识库吗？",
+                "删除后将无法恢复，相关的会话和数据也会被删除。",
+                "确定删除", danger: true);
+            if (confirmed != true) return;
+
+            var services = _services!;
+            var wsRepo = services.GetRequiredService<WorkspaceRepository>();
+            await wsRepo.DeleteAsync(w => w.WorkspaceId == model.WorkspaceId);
+
+            // 同时清理其下的会话
+            var sessionRepo = services.GetRequiredService<SessionRepository>();
+            var sessions = await sessionRepo.GetByWorkspaceAsync(model.WorkspaceId);
+            foreach (var s in sessions)
+                await sessionRepo.SoftDeleteAsync(s.SessionId);
+
+            LoadRagItems();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"删除知识库失败: {ex.Message}");
+            await ShowErrorAsync($"删除知识库失败：{ex.Message}");
         }
     }
 }
@@ -581,5 +641,14 @@ public class SessionItem
 {
     public string SessionId { get; set; } = "";
     public string Title { get; set; } = "";
+}
+
+/// <summary>
+/// RAG 知识库列表项（侧边栏「RAG 知识库」分区）
+/// </summary>
+public class RagRowModel
+{
+    public string WorkspaceId { get; set; } = "";
+    public string DisplayName { get; set; } = "知识库";
 }
 
