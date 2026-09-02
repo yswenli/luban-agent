@@ -320,6 +320,13 @@ public partial class MainWindow : Window
         if (services == null) return;
 
         var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+
+        // 桌面端 AuthorizationPrompt 恒为 true（自动授权）：切换工作区前先确保已授权，
+        // 否则工作区根目录不会被注入 PathGuard.AllowedRoots，导致文件/目录/分析类工具
+        // 在 IsAllowed 处被拒（提示"路径不在允许访问的范围内"），且不会弹出任何权限询问。
+        if (!ws.IsAuthorized)
+            await workspaceManager.EnsureAuthorizedAsync(ws);
+
         await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
 
         // 知识库（RAG）工作区：自动加载其会话，无需在列表中选择
