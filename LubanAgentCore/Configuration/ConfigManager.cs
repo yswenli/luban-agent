@@ -194,6 +194,15 @@ public class ConfigManager : IAppConfigReader
     }
 
     /// <summary>
+    /// 清空当前选中的模型（用于删除 Provider 后清理）
+    /// </summary>
+    public void ClearSelectedModel()
+    {
+        _config.SelectedModel = null;
+        Save();
+    }
+
+    /// <summary>
     /// 清空全部配置并保存
     /// </summary>
     public void Clear()

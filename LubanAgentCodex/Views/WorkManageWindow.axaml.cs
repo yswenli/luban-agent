@@ -16,6 +16,7 @@
 *****************************************************************************/
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,11 +56,8 @@ public partial class WorkManageWindow : Window
         if (_switchButton != null) _switchButton.Click += OnSwitch;
         if (_deleteButton != null) _deleteButton.Click += OnDelete;
         if (_authorizeButton != null) _authorizeButton.Click += OnAuthorize;
-
         if (_workspaceListBox != null)
-        {
             _workspaceListBox.SelectionChanged += OnSelectionChanged;
-        }
     }
 
     private async void LoadWorkspaces()
@@ -69,40 +67,118 @@ public partial class WorkManageWindow : Window
         var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
         var currentId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
 
-        var items = workspaces.Select(w => new WorkspaceItem
+        _workspaceListBox.ItemsSource = workspaces.Select(w => new WorkspaceItem
         {
             WorkspaceId = w.WorkspaceId,
             TypeIcon = w.Type == "Rag" ? "📚" : "📁",
             Name = w.Name,
             RootPath = w.RootPath,
-            Status = w.WorkspaceId == currentId ? "✓ 当前" : ""
+            Status = w.WorkspaceId == currentId ? "✓ 当前" : "",
+            IsAuthorized = w.IsAuthorized ? "✓" : "✗"
         }).ToList();
-
-        _workspaceListBox.ItemsSource = items;
     }
 
-    private void OnAdd(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnAdd(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        // TODO: 新建工作区
+        try
+        {
+            var dlg = new NewWorkspaceDialog();
+            var ok = await dlg.ShowDialog<bool?>(this);
+            if (ok != true) return;
+
+            var ws = await _workspaceManager.CreateWorkspaceAsync(dlg.WorkspacePath!, dlg.WorkspaceName, "Normal");
+            LoadWorkspaces();
+            await Dialogs.ShowInfoAsync(this, $"已创建工作区: {ws.Name}，可点切换使用");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WorkManageWindow.OnAdd 异常", ex);
+            await Dialogs.ShowErrorAsync(this, ex.Message);
+        }
     }
 
     private async void OnSwitch(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_workspaceListBox?.SelectedItem is WorkspaceItem item)
+        if (_workspaceListBox?.SelectedItem is not WorkspaceItem item) return;
+        try
         {
             await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
             LoadWorkspaces();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WorkManageWindow.OnSwitch 异常", ex);
+            await Dialogs.ShowErrorAsync(this, ex.Message);
         }
     }
 
     private async void OnDelete(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        // TODO: 删除工作区
+        if (_workspaceListBox?.SelectedItem is not WorkspaceItem item) return;
+        try
+        {
+            var ok = await Dialogs.ShowConfirmAsync(this, "删除工作区",
+                $"删除 '{item.Name}' 将同时删除其下所有会话和索引，确认？",
+                okText: "删除", danger: true);
+            if (!ok) return;
+
+            var sessionRepo = _services.GetRequiredService<SessionRepository>();
+            var ragFileRepo = new RagFileRepository();
+            var ragChunkRepo = new RagChunkRepository();
+            var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
+
+            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId);
+            await ragFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
+            await ragChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
+            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId);
+
+            if (_workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId)
+                await Dialogs.ShowInfoAsync(this, "当前工作区已删除，请切换到其他工作区");
+
+            LoadWorkspaces();
+            await Dialogs.ShowInfoAsync(this, "已删除工作区");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WorkManageWindow.OnDelete 异常", ex);
+            await Dialogs.ShowErrorAsync(this, ex.Message);
+        }
     }
 
     private async void OnAuthorize(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        // TODO: 授权工作区
+        if (_workspaceListBox?.SelectedItem is not WorkspaceItem item) return;
+        try
+        {
+            var ws = (await _workspaceManager.GetUserWorkspacesAsync())
+                .FirstOrDefault(w => w.WorkspaceId == item.WorkspaceId);
+            if (ws == null) return;
+
+            if (ws.IsAuthorized)
+            {
+                await Dialogs.ShowInfoAsync(this, "工作区已授权");
+                return;
+            }
+
+            var switched = false;
+            if (_workspaceManager.CurrentWorkspace?.WorkspaceId != item.WorkspaceId)
+            {
+                await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
+                switched = true;
+            }
+
+            var ok = await _workspaceManager.EnsureAuthorizedAsync(ws);
+            LoadWorkspaces();
+            if (ok)
+                await Dialogs.ShowInfoAsync(this, switched ? "已授权并切换为该工作区" : "工作区已授权");
+            else
+                await Dialogs.ShowErrorAsync(this, "授权失败");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("WorkManageWindow.OnAuthorize 异常", ex);
+            await Dialogs.ShowErrorAsync(this, ex.Message);
+        }
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -120,5 +196,6 @@ public partial class WorkManageWindow : Window
         public string Name { get; set; } = "";
         public string RootPath { get; set; } = "";
         public string Status { get; set; } = "";
+        public string IsAuthorized { get; set; } = "";
     }
 }

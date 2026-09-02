@@ -16,7 +16,8 @@
                 <!-- 标题 -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="✏️" FontSize="17" VerticalAlignment="Center" />
-                    <TextBlock Text="重命名"
+                    <TextBlock Name="TitleTextBlock"
+                               Text="重命名"
                                FontSize="16"
                                FontWeight="Bold"
                                Foreground="{DynamicResource TextPrimaryBrush}"

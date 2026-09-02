@@ -19,6 +19,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using LubanAgentCodex.Views;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
@@ -98,6 +99,9 @@ public class App : Application
 
                 splash.SetStatus("正在初始化核心服务…");
                 _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager);
+
+                // 初始化 ProviderHelper（使 GetEndpoints 可用，ProviderEditDialog 预填 BaseUrl 依赖）
+                ProviderHelper.Initialize(configuration);
 
                 // 4) 设置工作区授权回调（GUI 自动授权）
                 var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();

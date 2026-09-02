@@ -7,21 +7,19 @@
         WindowStartupLocation="CenterOwner">
 
     <Grid RowDefinitions="Auto,*">
-        <!-- 工具栏 -->
-        <StackPanel Grid.Row="0" 
-                    Orientation="Horizontal" 
-                    Spacing="8" 
-                    Margin="16,16,16,8">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,16,16,8">
             <Button Name="CreateButton" Content="+ 创建知识库" />
             <Button Name="IndexButton" Content="索引" IsEnabled="False" />
             <Button Name="SearchButton" Content="搜索" IsEnabled="False" />
             <Button Name="DeleteButton" Content="删除" IsEnabled="False" />
+            <Button Name="BackButton" Content="← 返回列表" IsVisible="False" />
         </StackPanel>
 
-        <!-- RAG 工作区列表 -->
-        <ListBox Grid.Row="1"
-                 Name="RagListBox"
-                 Margin="16,0,16,16">
-        </ListBox>
+        <!-- 知识库列表（默认显示） -->
+        <ListBox Grid.Row="1" Name="RagListBox" Margin="16,0,16,16" />
+
+        <!-- 搜索结果列表（默认隐藏，与 RagListBox 同位置叠加） -->
+        <ListBox Grid.Row="1" Name="ResultListBox" Margin="16,0,16,16" IsVisible="False" />
     </Grid>
+
 </Window>

@@ -25,11 +25,28 @@ namespace LubanAgentCodex.Views;
 public partial class RenameDialog : Window
 {
     private TextBox? _nameTextBox;
+    private TextBlock? _titleTextBlock;
+    private string? _dialogTitle;
+    private string? _watermark;
 
     /// <summary>
     /// 输入的新名称
     /// </summary>
     public string? Result { get; private set; }
+
+    /// <summary>自定义窗口标题与内容标题，null 时默认"重命名"</summary>
+    public string? DialogTitle
+    {
+        get => _dialogTitle;
+        set { _dialogTitle = value; ApplyTitle(); }
+    }
+
+    /// <summary>输入框占位提示，null 时保持 axaml 默认</summary>
+    public string? Watermark
+    {
+        get => _watermark;
+        set { _watermark = value; ApplyWatermark(); }
+    }
 
     /// <summary>
     /// 无参构造函数（Avalonia XAML 加载需要）
@@ -56,6 +73,7 @@ public partial class RenameDialog : Window
     {
         AvaloniaXamlLoader.Load(this);
         _nameTextBox = this.FindControl<TextBox>("NameTextBox");
+        _titleTextBlock = this.FindControl<TextBlock>("TitleTextBlock");
 
         var okButton = this.FindControl<Button>("OkButton");
         var cancelButton = this.FindControl<Button>("CancelButton");
@@ -64,6 +82,19 @@ public partial class RenameDialog : Window
             okButton.Click += OnOk;
         if (cancelButton != null)
             cancelButton.Click += OnCancel;
+    }
+
+    private void ApplyTitle()
+    {
+        var title = _dialogTitle ?? "重命名";
+        this.Title = title;
+        if (_titleTextBlock != null) _titleTextBlock.Text = title;
+    }
+
+    private void ApplyWatermark()
+    {
+        if (_watermark != null && _nameTextBox != null)
+            _nameTextBox.PlaceholderText = _watermark;
     }
 
     private void OnOk(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
