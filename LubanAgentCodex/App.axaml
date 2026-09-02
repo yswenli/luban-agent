@@ -11,5 +11,6 @@
     </Application.Resources>
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://LubanAgentCodex/Styles/Dialogs.axaml" />
     </Application.Styles>
 </Application>

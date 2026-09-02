@@ -243,54 +243,10 @@ public partial class Sidebar : UserControl
                     var parentWindow = TopLevel.GetTopLevel(this) as Window;
                     if (parentWindow == null) return;
 
-                    // 确认对话框
-                    var confirmDialog = new Window
-                    {
-                        Title = "确认删除",
-                        Width = 350,
-                        Height = 150,
-                        WindowStartupLocation = WindowStartupLocation.CenterOwner
-                    };
-
-                    var confirmContent = new StackPanel
-                    {
-                        Margin = new Thickness(20),
-                        Spacing = 16
-                    };
-
-                    confirmContent.Children.Add(new TextBlock
-                    {
-                        Text = $"确定要删除工作区 \"{ws.Name}\" 吗？",
-                        TextWrapping = TextWrapping.Wrap
-                    });
-
-                    confirmContent.Children.Add(new TextBlock
-                    {
-                        Text = "删除后将无法恢复，相关的会话和数据也会被删除。",
-                        Foreground = Brush.Parse("#F44336"),
-                        TextWrapping = TextWrapping.Wrap
-                    });
-
-                    var buttonPanel = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Right,
-                        Spacing = 8
-                    };
-
-                    var okButton = new Button { Content = "确定删除" };
-                    var cancelButton = new Button { Content = "取消" };
-
-                    okButton.Click += (s2, e2) => confirmDialog.Close(true);
-                    cancelButton.Click += (s2, e2) => confirmDialog.Close(false);
-
-                    buttonPanel.Children.Add(okButton);
-                    buttonPanel.Children.Add(cancelButton);
-                    confirmContent.Children.Add(buttonPanel);
-
-                    confirmDialog.Content = confirmContent;
-
-                    var result = await confirmDialog.ShowDialog<bool?>(parentWindow);
+                    var result = await Dialogs.ShowConfirmAsync(parentWindow, "确认删除",
+                        $"确定要删除工作区 \"{ws.Name}\" 吗？",
+                        "删除后将无法恢复，相关的会话和数据也会被删除。",
+                        "确定删除", danger: true);
                     if (result == true)
                     {
                         var repo = _services!.GetRequiredService<WorkspaceRepository>();
@@ -372,47 +328,9 @@ public partial class Sidebar : UserControl
                         var parentWindow = TopLevel.GetTopLevel(this) as Window;
                         if (parentWindow == null) return;
 
-                        // 确认对话框
-                        var confirmDialog = new Window
-                        {
-                            Title = "确认删除",
-                            Width = 350,
-                            Height = 150,
-                            WindowStartupLocation = WindowStartupLocation.CenterOwner
-                        };
-
-                        var confirmContent = new StackPanel
-                        {
-                            Margin = new Thickness(20),
-                            Spacing = 16
-                        };
-
-                        confirmContent.Children.Add(new TextBlock
-                        {
-                            Text = $"确定要删除会话 \"{sessionCopy.Title ?? "新会话"}\" 吗？",
-                            TextWrapping = TextWrapping.Wrap
-                        });
-
-                        var buttonPanel = new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Spacing = 8
-                        };
-
-                        var okButton = new Button { Content = "确定删除" };
-                        var cancelButton = new Button { Content = "取消" };
-
-                        okButton.Click += (s2, e2) => confirmDialog.Close(true);
-                        cancelButton.Click += (s2, e2) => confirmDialog.Close(false);
-
-                        buttonPanel.Children.Add(okButton);
-                        buttonPanel.Children.Add(cancelButton);
-                        confirmContent.Children.Add(buttonPanel);
-
-                        confirmDialog.Content = confirmContent;
-
-                        var result = await confirmDialog.ShowDialog<bool?>(parentWindow);
+                        var result = await Dialogs.ShowConfirmAsync(parentWindow, "确认删除",
+                            $"确定要删除会话 \"{sessionCopy.Title ?? "新会话"}\" 吗？",
+                            null, "确定删除", danger: true);
                         if (result == true)
                         {
                             var sessionRepo = _services!.GetRequiredService<SessionRepository>();
@@ -541,27 +459,7 @@ public partial class Sidebar : UserControl
     private async Task ShowErrorAsync(string msg)
     {
         var owner = TopLevel.GetTopLevel(this) as Window;
-        var dlg = new Window
-        {
-            Title = "错误",
-            Width = 360,
-            Height = 150,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-        };
-        var sp = new StackPanel { Margin = new Thickness(20), Spacing = 16 };
-        sp.Children.Add(new TextBlock
-        {
-            Text = msg,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush.Parse("#FFFFFF"),
-        });
-        var okBtn = new Button { Content = "确定", HorizontalAlignment = HorizontalAlignment.Right };
-        okBtn.Click += (s2, e2) => dlg.Close();
-        sp.Children.Add(okBtn);
-        dlg.Content = sp;
-
-        if (owner != null) await dlg.ShowDialog(owner);
-        else dlg.Show();
+        await Dialogs.ShowErrorAsync(owner, msg);
     }
 
     /// <summary>

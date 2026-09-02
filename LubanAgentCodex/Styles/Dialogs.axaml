@@ -1,0 +1,94 @@
+<Styles xmlns="https://github.com/avaloniaui"
+       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 对话框窗口背景 -->
+    <Style Selector="Window.dlgWindow">
+        <Setter Property="Background" Value="{DynamicResource BackgroundBrush}" />
+    </Style>
+
+    <!-- 对话框主按钮 -->
+    <Style Selector="Button.dlgPrimary">
+        <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="MinWidth" Value="92" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Transitions">
+            <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.12" />
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.dlgPrimary:pointerover">
+        <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
+    </Style>
+    <Style Selector="Button.dlgPrimary:pressed">
+        <Setter Property="Background" Value="#005C99" />
+    </Style>
+
+    <!-- 对话框次按钮（幽灵） -->
+    <Style Selector="Button.dlgGhost">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="MinWidth" Value="92" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="Transitions">
+            <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.12" />
+                <BrushTransition Property="BorderBrush" Duration="0:0:0.12" />
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.dlgGhost:pointerover">
+        <Setter Property="Background" Value="{DynamicResource SidebarBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TextTertiaryBrush}" />
+    </Style>
+    <Style Selector="Button.dlgGhost:pressed">
+        <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+    </Style>
+
+    <!-- 对话框危险按钮 -->
+    <Style Selector="Button.dlgDanger">
+        <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="MinWidth" Value="92" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Transitions">
+            <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.12" />
+            </Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.dlgDanger:pointerover">
+        <Setter Property="Background" Value="#E53935" />
+    </Style>
+    <Style Selector="Button.dlgDanger:pressed">
+        <Setter Property="Background" Value="#C62828" />
+    </Style>
+
+    <!-- 对话框内容卡片 -->
+    <Style Selector="Border.dlgCard">
+        <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BoxShadow" Value="0 12 34 0 #00000055" />
+        <Setter Property="Padding" Value="24" />
+    </Style>
+
+</Styles>

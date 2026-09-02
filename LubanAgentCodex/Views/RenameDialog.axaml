@@ -3,42 +3,50 @@
         x:Class="LubanAgentCodex.Views.RenameDialog"
         Title="重命名"
         Width="400"
-        Height="180"
+        Height="190"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Grid RowDefinitions="Auto,Auto" Margin="20">
+    <Border Classes="dlgCard">
+        <Grid RowDefinitions="Auto,Auto" RowSpacing="16">
 
-        <TextBox Grid.Row="0"
-                 Name="NameTextBox"
-                 PlaceholderText="输入新名称"
-                 Margin="0,0,0,16"
-                 FontSize="14"
-                 Background="{DynamicResource SidebarBrush}"
-                 Foreground="{DynamicResource TextPrimaryBrush}"
-                 BorderBrush="{DynamicResource BorderBrush}" />
+            <!-- 标题 -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="✏️" FontSize="17" VerticalAlignment="Center" />
+                <TextBlock Text="重命名"
+                           FontSize="16"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
 
-        <StackPanel Grid.Row="1"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="8">
-            <Button Name="OkButton"
-                    Content="确定"
-                    MinWidth="80"
-                    Background="{DynamicResource PrimaryBrush}"
-                    Foreground="White"
-                    CornerRadius="6"
-                    Cursor="Hand" />
-            <Button Name="CancelButton"
-                    Content="取消"
-                    MinWidth="80"
-                    Background="{DynamicResource CardBrush}"
-                    Foreground="{DynamicResource TextSecondaryBrush}"
-                    CornerRadius="6"
-                    Cursor="Hand" />
-        </StackPanel>
+            <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="16">
+                <TextBox Grid.Row="0"
+                         Name="NameTextBox"
+                         PlaceholderText="输入新名称"
+                         FontSize="14"
+                         CornerRadius="8"
+                         Background="{DynamicResource SidebarBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderBrush}" />
 
-    </Grid>
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="10">
+                    <Button Name="CancelButton"
+                            Content="取消"
+                            Classes="dlgGhost"
+                            MinWidth="80" />
+                    <Button Name="OkButton"
+                            Content="确定"
+                            Classes="dlgPrimary"
+                            MinWidth="80" />
+                </StackPanel>
+            </Grid>
+
+        </Grid>
+    </Border>
 
 </Window>

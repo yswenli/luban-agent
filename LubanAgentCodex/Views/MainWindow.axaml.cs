@@ -161,59 +161,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 退出确认对话框
+    /// 退出确认对话框（统一美观样式）
     /// </summary>
     private async Task<bool> ConfirmExitAsync()
     {
-        var dialog = new Window
-        {
-            Title = "退出确认",
-            Width = 400,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-
-        var content = new StackPanel
-        {
-            Margin = new Avalonia.Thickness(20),
-            Spacing = 16
-        };
-
-        content.Children.Add(new TextBlock
-        {
-            Text = "确定要退出 Luban Agent 吗？",
-            FontSize = 14,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
-
-        content.Children.Add(new TextBlock
-        {
-            Text = "退出后当前会话将关闭，未发送的内容不会保存。",
-            Foreground = Avalonia.Media.Brush.Parse("#858585"),
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
-
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-            Spacing = 8
-        };
-
-        var okButton = new Button { Content = "退出" };
-        var cancelButton = new Button { Content = "取消" };
-
-        okButton.Click += (s, e) => dialog.Close(true);
-        cancelButton.Click += (s, e) => dialog.Close(false);
-
-        buttonPanel.Children.Add(cancelButton);
-        buttonPanel.Children.Add(okButton);
-        content.Children.Add(buttonPanel);
-
-        dialog.Content = content;
-
-        var result = await dialog.ShowDialog<bool?>(this);
-        return result == true;
+        return await Dialogs.ShowConfirmAsync(
+            this,
+            "退出确认",
+            "确定要退出 Luban Agent 吗？",
+            "退出后当前会话将关闭，未发送的内容不会保存。",
+            "退出",
+            danger: true);
     }
 
     /// <summary>
