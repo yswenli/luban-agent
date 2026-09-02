@@ -428,7 +428,6 @@ LubanAgentCodex/
 │       └── ThinkingMessageItem.cs
 ├── Views/
 │   ├── MainWindow.axaml(.cs)   # Main window
-│   ├── WorkspacePickerWindow   # Workspace picker
 │   ├── RenameDialog            # Rename dialog
 │   ├── SkillManageWindow       # Skill management window
 │   ├── RuleManageWindow        # Rule management window

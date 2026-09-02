@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/19
-*描述：Avalonia 应用程序，负责初始化 DI、显示工作区选择器和主窗口
+*描述：Avalonia 应用程序，负责初始化 DI、自动恢复工作区并显示主窗口
 *
 *****************************************************************************/
 using Avalonia;
@@ -22,6 +22,8 @@ using LubanAgentCodex.Views;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
+using System.IO;
+using System.Linq;
 
 namespace LubanAgentCodex;
 
@@ -73,34 +75,28 @@ public class App : Application
                 wm.AuthorizationPrompt = _ => Task.FromResult(true);
             }
 
+            // 自动恢复/初始化当前工作区（原交互式「选择工作区」弹窗已移除）
+            var wsManager = _services.GetRequiredService<IWorkspaceManager>();
+            var workspaces = await wsManager.GetUserWorkspacesAsync();
+            var target = workspaces
+                .Where(w => w.Type != "Rag")
+                .OrderByDescending(w => w.LastActiveAt)
+                .FirstOrDefault();
+            if (target == null)
+            {
+                // 无任何工作区时，以应用启动目录自动创建普通工作区
+                target = await wsManager.CreateWorkspaceAsync(
+                    Path.GetFullPath(Directory.GetCurrentDirectory()), type: "Normal");
+            }
+
+            // 授权并设为当前工作区（GUI 已通过 AuthorizationPrompt 自动授权，不会弹窗）
+            await wsManager.EnsureAuthorizedAsync(target);
+            await wsManager.SetCurrentAsync(target.WorkspaceId);
+
             // 创建并显示主窗口
             var mainWindow = new MainWindow();
             mainWindow.SetServiceProvider(_services);
             desktop.MainWindow = mainWindow;
-
-            // 在主窗口显示后弹出工作区选择器
-            mainWindow.Opened += async (s, e) =>
-            {
-                var picker = new WorkspacePickerWindow();
-                picker.SetServiceProvider(_services);
-                var selectedWorkspace = await picker.ShowDialog<WorkspaceInfo?>(mainWindow);
-
-                if (selectedWorkspace != null)
-                {
-                    // 授权工作区（将 RootPath 加入 PathGuard.AllowedRoots）
-                    var wsManager = _services.GetRequiredService<IWorkspaceManager>();
-                    await wsManager.EnsureAuthorizedAsync(selectedWorkspace);
-                    await wsManager.SetCurrentAsync(selectedWorkspace.WorkspaceId);
-
-                    // 刷新侧边栏
-                    mainWindow.SetServiceProvider(_services);
-                }
-                else
-                {
-                    // 用户取消，退出应用（跳过主窗口的退出确认）
-                    mainWindow.ForceClose();
-                }
-            };
         }
 
         base.OnFrameworkInitializationCompleted();
