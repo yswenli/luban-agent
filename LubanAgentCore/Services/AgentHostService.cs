@@ -104,8 +104,17 @@ public class AgentHostService
         ToolPermissionMode permissionMode,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
+        // 否则会复用上一工作区的 Profile（如普通工作区），
+        // 导致 RAG 知识库不加载检索工具组/RAG 系统提示词，表现与常规工作区无异。
+        var currentWorkspace = _services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace;
+        if (_agent == null || (currentWorkspace != null && _workspace?.WorkspaceId != currentWorkspace.WorkspaceId))
+        {
+            await InitializeAsync();
+        }
+
         if (_agent == null)
-            throw new InvalidOperationException("Agent 未初始化，请先调用 InitializeAsync");
+            throw new InvalidOperationException("Agent 初始化失败，请先调用 InitializeAsync");
 
         var context = _services.GetRequiredService<ToolConfirmationContext>();
         context.Mode = permissionMode;
