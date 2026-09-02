@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/19
-*描述：Avalonia 应用程序，负责初始化 DI、自动恢复工作区并显示主窗口
+*描述：Avalonia 应用程序，负责初始化 DI、自动恢复工作区、显示启动闪屏与主窗口
 *
 *****************************************************************************/
 using Avalonia;
@@ -24,6 +24,7 @@ using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace LubanAgentCodex;
 
@@ -64,39 +65,66 @@ public class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // 初始化 DI
-            var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
-            _services = AgentHostBuilder.BuildServiceProvider(configuration);
+            // 1) 立即显示启动闪屏，居中展示启动图
+            var splash = new SplashWindow();
+            splash.Show();
 
-            // 设置工作区授权回调（GUI 自动授权，用户已在选择器中确认）
-            var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
-            if (workspaceManager is LubanAgentCore.Services.WorkspaceManager wm)
+            // 让闪屏有机会完成首帧渲染，再开始耗时初始化
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+            try
             {
-                wm.AuthorizationPrompt = _ => Task.FromResult(true);
-            }
+                // 2) 加载应用配置
+                splash.SetStatus("正在加载应用配置…");
+                var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
 
-            // 自动恢复/初始化当前工作区（原交互式「选择工作区」弹窗已移除）
-            var wsManager = _services.GetRequiredService<IWorkspaceManager>();
-            var workspaces = await wsManager.GetUserWorkspacesAsync();
-            var target = workspaces
-                .Where(w => w.Type != "Rag")
-                .OrderByDescending(w => w.LastActiveAt)
-                .FirstOrDefault();
-            if (target == null)
+                // 3) 初始化核心服务（DI 容器）
+                splash.SetStatus("正在初始化核心服务…");
+                _services = AgentHostBuilder.BuildServiceProvider(configuration);
+
+                // 4) 设置工作区授权回调（GUI 自动授权）
+                var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
+                if (workspaceManager is LubanAgentCore.Services.WorkspaceManager wm)
+                {
+                    wm.AuthorizationPrompt = _ => Task.FromResult(true);
+                }
+
+                // 5) 自动恢复/初始化当前工作区
+                splash.SetStatus("正在准备知识库与工作区…");
+                var wsManager = _services.GetRequiredService<IWorkspaceManager>();
+                var workspaces = await wsManager.GetUserWorkspacesAsync();
+                var target = workspaces
+                    .Where(w => w.Type != "Rag")
+                    .OrderByDescending(w => w.LastActiveAt)
+                    .FirstOrDefault();
+                if (target == null)
+                {
+                    target = await wsManager.CreateWorkspaceAsync(
+                        Path.GetFullPath(Directory.GetCurrentDirectory()), type: "Normal");
+                }
+                await wsManager.EnsureAuthorizedAsync(target);
+                await wsManager.SetCurrentAsync(target.WorkspaceId);
+
+                // 6) 构建并显示主窗口
+                splash.SetStatus("正在构建主界面…");
+                var mainWindow = new MainWindow();
+                mainWindow.SetServiceProvider(_services);
+                desktop.MainWindow = mainWindow;
+                mainWindow.Show();
+
+                // 7) 主窗口就绪：标记完成，等待 1 秒后关闭闪屏
+                splash.MarkReady();
+                await Task.Delay(1000);
+                splash.Close();
+            }
+            catch (System.Exception ex)
             {
-                // 无任何工作区时，以应用启动目录自动创建普通工作区
-                target = await wsManager.CreateWorkspaceAsync(
-                    Path.GetFullPath(Directory.GetCurrentDirectory()), type: "Normal");
+                // 初始化失败：记录日志，关闭闪屏，避免应用卡在启动画面
+                Logger.Error("Startup", ex);
+                splash.SetStatus("初始化失败：" + ex.Message);
+                await Task.Delay(2000);
+                splash.Close();
             }
-
-            // 授权并设为当前工作区（GUI 已通过 AuthorizationPrompt 自动授权，不会弹窗）
-            await wsManager.EnsureAuthorizedAsync(target);
-            await wsManager.SetCurrentAsync(target.WorkspaceId);
-
-            // 创建并显示主窗口
-            var mainWindow = new MainWindow();
-            mainWindow.SetServiceProvider(_services);
-            desktop.MainWindow = mainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();

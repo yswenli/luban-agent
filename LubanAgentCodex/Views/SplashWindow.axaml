@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LubanAgentCodex.Views.SplashWindow"
+        Title="Luban AI Agent"
+        Width="530"
+        Height="360"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowDecorations="None"
+        Background="#050912">
+
+    <Grid RowDefinitions="300,60">
+
+        <!-- 居中显示的科技感启动图（530 x 300） -->
+        <Image Grid.Row="0"
+               Width="530"
+               Height="300"
+               Source="avares://LubanAgentCodex/Assets/splash.png"
+               Stretch="Fill" />
+
+        <!-- 初始化状态：底部居中 -->
+        <Border Grid.Row="1"
+                Background="#050912"
+                BorderBrush="#1A2236"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Vertical"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <ProgressBar x:Name="InitProgress"
+                             IsIndeterminate="True"
+                             Width="140"
+                             Height="3"
+                             Foreground="#67E8F9"
+                             Background="#15233A" />
+                <TextBlock x:Name="StatusText"
+                           Text="正在加载应用配置…"
+                           FontSize="13"
+                           Foreground="#D6E4F5"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
