@@ -34,34 +34,6 @@ internal static class StartupRunner
         => AgentHostBuilder.BuildConfiguration(args);
 
     /// <summary>
-    /// 准备嵌入模型（下载进度通过 report 回调报告）。
-    /// </summary>
-    public static async Task<(OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)> PrepareRetrievalAsync(
-        IConfiguration configuration,
-        Action<string> report,
-        CancellationToken ct)
-    {
-        var retrieval = configuration.GetSection("LuBanAgent:Tools:Retrieval").Get<RetrievalToolOptions>() ?? new RetrievalToolOptions();
-        if (!retrieval.Enabled) return (null, null);
-        var spec = EmbeddingModelCatalog.Find(retrieval.ModelId);
-        if (spec == null)
-        {
-            report($"未知的嵌入模型：{retrieval.ModelId}，检索功能已禁用");
-            return (null, null);
-        }
-        var mm = new ModelManager(spec);
-        if (mm.IsModelReady()) return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
-        var ok = await mm.EnsureModelAsync(report, ct);
-        if (!ok || !mm.IsModelReady())
-        {
-            report($"本地嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用");
-            report($"请将模型包放到: {mm.LocalZipPath}");
-            return (null, null);
-        }
-        return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
-    }
-
-    /// <summary>
     /// 构建服务容器。
     /// </summary>
     public static IServiceProvider BuildServiceProvider(

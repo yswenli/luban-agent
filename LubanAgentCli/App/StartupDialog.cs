@@ -142,7 +142,7 @@ internal class StartupDialog : Dialog
             Report("③ 准备嵌入模型...");
             _retrievalCts = new CancellationTokenSource();
             _dispatcher.Invoke(() => _cancelButton.Visible = true);
-            var (embedder, modelManager) = await StartupRunner.PrepareRetrievalAsync(
+            var (embedder, modelManager) = await RetrievalBootstrap.PrepareAsync(
                 config, Report, _retrievalCts.Token);
             _dispatcher.Invoke(() => _cancelButton.Visible = false);
 
