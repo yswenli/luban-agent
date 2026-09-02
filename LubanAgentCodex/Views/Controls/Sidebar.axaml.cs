@@ -98,7 +98,6 @@ public partial class Sidebar : UserControl
 
         // 从事件源向上回溯，找到对应的知识库列表项模型
         var model = FindRagRowModelFromSource(e.Source);
-        Logger.Warn($"[诊断] OnRagListBoxPointerPressed: source={e.Source?.GetType().Name}, model={(model == null ? "null" : model.Workspace?.Name)}");
         if (model?.Workspace is null) return;
 
         // 单击或双击都切换到该知识库的会话（双击交互对齐「工作区会话列表」）

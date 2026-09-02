@@ -14,7 +14,7 @@
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1">
             <StackPanel>
-                <TextBlock Text=" 思考中..."
+                <TextBlock Text="{Binding ThinkingLabel}"
                            Foreground="{DynamicResource TextTertiaryBrush}"
                            FontSize="12"
                            Margin="0,0,0,8" />

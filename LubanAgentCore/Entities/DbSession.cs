@@ -96,6 +96,12 @@ public class DbSessionMessage : EntityBase
     public string Content { get; set; } = "";
 
     /// <summary>
+    /// AI 思考内容（reasoning，仅 assistant 消息可能有）
+    /// </summary>
+    [SugarColumn(ColumnDescription = "思考内容", ColumnDataType = "text", IsNullable = true)]
+    public string? Thinking { get; set; }
+
+    /// <summary>
     /// Token 数量
     /// </summary>
     [SugarColumn(ColumnDescription = "Token数量", IsNullable = true)]

@@ -239,6 +239,13 @@ internal sealed class ConversationViewModel : IDisposable
                 }
                 else if (msg.Role == "assistant")
                 {
+                    if (!string.IsNullOrWhiteSpace(msg.Thinking))
+                    {
+                        var tBlock = new ThinkingBlock();
+                        tBlock.AppendContent(msg.Thinking);
+                        tBlock.MarkComplete();
+                        _doc.AppendBlock(tBlock);
+                    }
                     var block = new AssistantMessageBlock();
                     block.AppendContent(msg.Content);
                     block.MarkComplete();
@@ -592,6 +599,7 @@ internal sealed class ConversationViewModel : IDisposable
                 {
                     _thinkingCompleted = true;
                     _thinkingBlock.MarkComplete();
+                    _doc.NotifyBlockChanged(_thinkingBlock);
                 }
 
                 _doc.AppendToAnswerBlock(answer);

@@ -12,7 +12,7 @@
             BorderThickness="1"
             HorizontalAlignment="Left">
         <StackPanel>
-            <TextBlock Text=" 思考中..."
+            <TextBlock Text="{Binding ThinkingLabel}"
                        Foreground="{DynamicResource TextTertiaryBrush}"
                        FontSize="12"
                        Margin="0,0,0,8" />

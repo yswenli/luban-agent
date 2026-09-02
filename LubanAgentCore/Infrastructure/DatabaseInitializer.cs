@@ -46,6 +46,7 @@ public static class DatabaseInitializer
         LuBanOrm.Init();
 
         EnsureIsCompactedColumn();
+        EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
         var dbPath = GetDatabasePath();
 
@@ -170,6 +171,22 @@ public static class DatabaseInitializer
         catch
         {
             // 列已存在（CodeFirst 已迁移或重复执行），忽略
+        }
+    }
+
+    /// <summary>
+    /// 兜底迁移：ai_session_message 新增 Thinking 列（AI 思考内容持久化）
+    /// </summary>
+    private static void EnsureThinkingColumn()
+    {
+        try
+        {
+            new SessionMessageRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Thinking TEXT");
+        }
+        catch
+        {
+            // 列已存在，忽略
         }
     }
 

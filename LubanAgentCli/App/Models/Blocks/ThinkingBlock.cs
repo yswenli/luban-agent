@@ -73,8 +73,8 @@ public sealed class ThinkingBlock : Block
         if (IsCollapsed)
         {
             var summary = Content.Length > 0
-                ? $"▸ 思考中 · {Content.Length} 字符"
-                : "▸ 思考中…";
+                ? $"{(IsComplete ? "▸ 已思考" : "▸ 思考中")} · {Content.Length} 字符"
+                : (IsComplete ? "▸ 已思考" : "▸ 思考中…");
             lines.Add(RenderLine.Single(summary, BlockColors.Thinking, TextStyle.Italic));
         }
         else

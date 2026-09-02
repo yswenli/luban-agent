@@ -141,13 +141,14 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// <summary>
     /// 添加消息到会话
     /// </summary>
-    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null)
+    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null)
     {
         var message = new DbSessionMessage
         {
             SessionId = sessionId,
             Role = role,
             Content = content,
+            Thinking = thinking,
             Tokens = tokens,
             CreateTime = DateTime.Now,
             IsDelete = false
@@ -328,6 +329,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
             SessionId = message.SessionId,
             Role = message.Role,
             Content = message.Content,
+            Thinking = message.Thinking,
             Tokens = message.Tokens,
             CreatedAt = message.CreateTime
         };

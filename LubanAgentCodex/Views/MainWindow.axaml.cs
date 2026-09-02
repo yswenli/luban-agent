@@ -324,7 +324,6 @@ public partial class MainWindow : Window
 
     private async void OnWorkspaceSelected(object? sender, WorkspaceInfo ws)
     {
-        Logger.Warn($"[诊断] OnWorkspaceSelected: ws={ws.Name}, type={ws.Type}, authorized={ws.IsAuthorized}");
         try
         {
             var services = _viewModel?.Services;

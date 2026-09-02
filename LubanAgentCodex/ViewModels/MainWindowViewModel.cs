@@ -717,6 +717,7 @@ public partial class MainWindowViewModel : ObservableObject
                     Messages.Add(new AssistantMessageItem
                     {
                         Content = msg.Content,
+                        Thinking = msg.Thinking ?? "",
                         IsComplete = true
                     });
                 }

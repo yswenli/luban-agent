@@ -6,19 +6,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LuBan.AIAgent" Version="2026.9.2.1" />
-    <PackageReference Include="LuBan.Logging" Version="2026.9.2.1" />
-    <PackageReference Include="LuBan.Orm" Version="2026.9.2.1" />
-    <PackageReference Include="LuBan.DI" Version="2026.9.2.1" />
-    <PackageReference Include="LuBan.Common" Version="2026.9.2.1" />
-    <PackageReference Include="LuBan.Threading" Version="2026.9.2.1" />
+    <PackageReference Include="LuBan.AIAgent" Version="2026.9.2.2" />
+    <PackageReference Include="LuBan.Logging" Version="2026.9.2.2" />
+    <PackageReference Include="LuBan.Orm" Version="2026.9.2.2" />
+    <PackageReference Include="LuBan.DI" Version="2026.9.2.2" />
+    <PackageReference Include="LuBan.Common" Version="2026.9.2.2" />
+    <PackageReference Include="LuBan.Threading" Version="2026.9.2.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-    <PackageReference Include="SqlSugarCore" Version="5.1.4.217" />
+    <PackageReference Include="SqlSugarCore" Version="5.1.4.218" />
   </ItemGroup>
 
   <!-- 嵌入模型包：单一来源，经 ProjectReference 内容传播带入每个引用方（Cli/Codex）的输出目录。

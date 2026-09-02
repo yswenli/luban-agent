@@ -34,6 +34,11 @@ public partial class ThinkingMessageItem : MessageItemBase
     [ObservableProperty] private bool _isComplete;
 
     /// <summary>
+    /// 思考状态标签（流式输出时显示"思考中"，完成后显示"已思考"）
+    /// </summary>
+    public string ThinkingLabel => IsStreaming ? " 思考中..." : " 已思考";
+
+    /// <summary>
     /// 是否正在流式输出
     /// </summary>
     public bool IsStreaming => !IsComplete;
@@ -50,5 +55,6 @@ public partial class ThinkingMessageItem : MessageItemBase
     partial void OnIsCompleteChanged(bool value)
     {
         OnPropertyChanged(nameof(IsStreaming));
+        OnPropertyChanged(nameof(ThinkingLabel));
     }
 }
