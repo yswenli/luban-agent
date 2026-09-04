@@ -432,7 +432,7 @@ LubanAgentCodex/
 │   ├── SkillManageWindow       # 技能管理窗口
 │   ├── RuleManageWindow        # 规则管理窗口
 │   ├── MCPManageWindow         # MCP 服务管理窗口
-│   ├── ProviderManageWindow    # Provider 管理窗口
+│   ├── SettingsWindow          # 统一设置中心（技能/规则/MCP/供应商/模型）
 │   ├── WorkManageWindow        # 工作区管理窗口
 │   ├── RagManageWindow         # RAG 管理窗口
 │   └── Controls/               # 自定义控件

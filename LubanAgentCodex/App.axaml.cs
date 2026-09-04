@@ -100,7 +100,7 @@ public class App : Application
                 splash.SetStatus("正在初始化核心服务…");
                 _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager);
 
-                // 初始化 ProviderHelper（使 GetEndpoints 可用，ProviderEditDialog 预填 BaseUrl 依赖）
+                // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);
 
                 // 4) 设置工作区授权回调（GUI 自动授权）

@@ -319,12 +319,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 显示 Provider 管理窗口
+    /// 打开统一设置中心并定位到「供应商」页签（替代旧的 ProviderManageWindow）
     /// </summary>
     private void ShowProviderManager(string[] args)
     {
-        var window = new ProviderManageWindow(Services);
-        window.Show();
+        OpenSettings(SettingsTabKind.Provider);
     }
 
     /// <summary>

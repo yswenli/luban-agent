@@ -2,30 +2,31 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="LubanAgentCodex.Views.SettingsWindow"
         Classes="dlgWindow"
-        Title="设置 · 工作区配置"
+        Title="设置中心"
         Width="980" Height="640"
         MinWidth="840" MinHeight="540"
         WindowStartupLocation="CenterOwner">
 
     <!--
       三栏 IDE 风布局（方案 A）：
-        左栏 = 配置作用域（★ 全局 + 各工作区）
+        左栏 = 设置分类导航（工作区配置：技能/规则/MCP + 供应商与模型：供应商/模型）
         中栏 = 当前类型的条目列表
         右栏 = 条目编辑器
-      顶部 Tab 切换「技能 / 规则 / MCP」，底部为动作栏。
+      顶栏 = 作用域下拉（工作区配置类）或「全局 config.json」说明（供应商/模型类），由代码填充
+      底部为动作栏（删除 / 应用配置 / 保存）。
       所有可交互控件均用 Name 命名，代码-behind 通过 FindControl 解析（项目运行时 XAML 约定）。
     -->
     <Grid ColumnDefinitions="220,1,*">
 
-        <!-- 左栏：配置作用域 -->
+        <!-- 左栏：设置分类导航 -->
         <Grid Grid.Column="0" RowDefinitions="Auto,*">
             <TextBlock Grid.Row="0"
-                       Text="配置作用域"
+                       Text="设置分类"
                        Margin="16,16,16,8"
                        FontSize="12"
                        Foreground="{DynamicResource TextTertiaryBrush}" />
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel Name="ScopePanel" Margin="8,0,8,8" />
+                <StackPanel Name="CategoryPanel" Margin="8,0,8,8" />
             </ScrollViewer>
         </Grid>
 
@@ -35,9 +36,9 @@
         <!-- 右区：Tab + 条目 + 编辑器 + 动作栏 -->
         <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
 
-            <!-- 顶部类型 Tab（技能 / 规则 / MCP），由代码填充 -->
+            <!-- 顶栏：作用域下拉（工作区配置类）/ 全局说明（供应商与模型类），由代码填充 -->
             <StackPanel Grid.Row="0"
-                        Name="TabBar"
+                        Name="TopBar"
                         Orientation="Horizontal"
                         Margin="16,16,16,8"
                         Spacing="8" />

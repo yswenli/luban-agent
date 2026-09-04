@@ -432,7 +432,7 @@ LubanAgentCodex/
 │   ├── SkillManageWindow       # Skill management window
 │   ├── RuleManageWindow        # Rule management window
 │   ├── MCPManageWindow         # MCP service management window
-│   ├── ProviderManageWindow    # Provider management window
+│   ├── SettingsWindow          # Unified settings center (skills/rules/MCP/providers/models)
 │   ├── WorkManageWindow        # Workspace management window
 │   ├── RagManageWindow         # RAG management window
 │   └── Controls/               # Custom controls

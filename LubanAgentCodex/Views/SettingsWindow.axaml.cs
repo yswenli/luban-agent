@@ -6,13 +6,14 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow
 *版本号： V1.0.0.0
-*唯一标识：工作区设置中心（技能 / 规则 / MCP）
+*唯一标识：统一设置中心（工作区配置 + 供应商与模型）
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/4
-*描述：三栏 IDE 风设置窗，直接读写作用域目录下的 .luban-agent（skills/rules/mcps）。
-*      左栏为配置作用域（★ 全局 + 各工作区），顶部 Tab 切类型，中栏条目列表，右栏编辑器。
+*描述：三栏 IDE 风设置窗，合并「工作区配置（技能/规则/MCP）」与「供应商与模型」两类配置。
+*      左栏为分类导航，顶栏为作用域下拉（工作区类）或全局说明（供应商/模型类），
+*      中栏条目列表，右栏编辑器。
 *
 *****************************************************************************/
 using Avalonia;
@@ -24,6 +25,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using LuBan.AIAgent;
 using LuBan.AIAgent.Configuration;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
@@ -44,30 +46,30 @@ public enum SettingsTabKind
 
     /// <summary>MCP 服务（mcps/&lt;name&gt;.json）</summary>
     Mcp,
+
+    /// <summary>供应商（全局 config.json）</summary>
+    Provider,
+
+    /// <summary>模型（跨供应商，全局 config.json）</summary>
+    Model,
 }
 
 /// <summary>
-/// 工作区设置中心：直接编辑作用域下 <c>.luban-agent</c> 目录内的 skills / rules / mcps。
+/// 统一设置中心：编辑工作区作用域下 <c>.luban-agent</c> 的 skills/rules/mcps，
+/// 以及全局 <c>config.json</c> 中的供应商与模型。
 /// </summary>
-/// <remarks>
-/// 作用域分两类：
-/// <list type="bullet">
-/// <item><description><b>★ 全局</b>：用户级 <c>~/.luban-agent</c>（由 <see cref="GlobalLubanAgentPath"/> 解析）。</description></item>
-/// <item><description><b>工作区</b>：指定工作区根目录下的 <c>.luban-agent</c>。</description></item>
-/// </list>
-/// 加载顺序由框架保证：先加载全局、再加载工作区，同标识项工作区覆盖全局（见设计文档 4.7）。
-/// </remarks>
 public partial class SettingsWindow : Window
 {
     private readonly IServiceProvider? _services;
     private readonly List<WorkspaceInfo> _workspaces = new();
+    private ConfigManager? _configManager;
 
     /// <summary>当前选中工作区；null 表示选中「★ 全局」。</summary>
     private WorkspaceInfo? _selectedWorkspace;
 
     private SettingsTabKind _tab = SettingsTabKind.Skill;
 
-    /// <summary>当前条目标识：技能=目录名，规则/MCP=文件名（去 .json）。</summary>
+    /// <summary>当前条目标识：技能=目录名，规则/MCP=文件名（去 .json），供应商=Name，模型=provider:model。</summary>
     private string? _selectedItemKey;
 
     private bool IsGlobal => _selectedWorkspace == null;
@@ -76,8 +78,8 @@ public partial class SettingsWindow : Window
 
     private readonly Dictionary<string, Control> _editorFields = new(StringComparer.Ordinal);
 
-    private StackPanel? _scopePanel;
-    private StackPanel? _tabBar;
+    private StackPanel? _categoryPanel;
+    private StackPanel? _topBar;
     private ListBox? _itemList;
     private ScrollViewer? _editorHost;
     private TextBlock? _hintText;
@@ -85,6 +87,30 @@ public partial class SettingsWindow : Window
     private Button? _deleteItemBtn;
     private Button? _applyBtn;
     private Button? _saveBtn;
+
+    /// <summary>供应商编辑器中「自定义模型」行容器，供保存时收集。</summary>
+    private StackPanel? _providerCustomModelsPanel;
+
+    // 复刻 CLI BuiltinProviders（name, displayName, needCustomEndpoint, needCustomApiKey, defaultUrl）
+    private static readonly (string Name, string Display, bool NeedEndpoint, bool NeedKey, string DefaultUrl)[] Builtin =
+    {
+        ("openai", "OpenAI", false, false, ""),
+        ("azure", "Azure OpenAI", true, false, "https://your-resource.openai.azure.com"),
+        ("deepseek", "DeepSeek", false, false, ""),
+        ("kimi", "Kimi (Moonshot)", false, false, ""),
+        ("glm", "智谱 GLM", false, false, ""),
+        ("qwen", "通义千问", false, false, ""),
+        ("doubao", "豆包", false, false, ""),
+        ("claude", "Claude", false, false, ""),
+        ("gemini", "Google Gemini", false, false, ""),
+        ("ollama", "Ollama (本地)", true, true, "http://localhost:11434/v1"),
+        ("minimax", "MiniMax", false, false, ""),
+        ("ark", "字节方舟 (火山引擎)", false, false, ""),
+        ("bailian", "阿里百炼", false, false, ""),
+        ("hunyuan", "腾讯混元", false, false, ""),
+        ("mimo", "小米 MiMo", false, false, ""),
+        ("custom", "自定义 OpenAI 兼容 API", true, false, ""),
+    };
 
     /// <summary>
     /// 无参构造函数（Avalonia XAML 加载需要）
@@ -102,6 +128,8 @@ public partial class SettingsWindow : Window
     public SettingsWindow(IServiceProvider services, WorkspaceInfo? currentWorkspace) : this()
     {
         _services = services;
+        try { _configManager = _services.GetRequiredService<ConfigManager>(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"获取 ConfigManager 失败: {ex.Message}"); _configManager = null; }
         _selectedWorkspace = currentWorkspace;
         _ = LoadAsync();
     }
@@ -110,8 +138,8 @@ public partial class SettingsWindow : Window
     {
         AvaloniaXamlLoader.Load(this);
 
-        _scopePanel = this.FindControl<StackPanel>("ScopePanel");
-        _tabBar = this.FindControl<StackPanel>("TabBar");
+        _categoryPanel = this.FindControl<StackPanel>("CategoryPanel");
+        _topBar = this.FindControl<StackPanel>("TopBar");
         _itemList = this.FindControl<ListBox>("ItemList");
         _editorHost = this.FindControl<ScrollViewer>("EditorHost");
         _hintText = this.FindControl<TextBlock>("HintText");
@@ -124,7 +152,8 @@ public partial class SettingsWindow : Window
         {
             _itemList.SelectionChanged += (s, e) =>
             {
-                if (_itemList.SelectedItem is string key && key != _selectedItemKey)
+                var key = GetSelectedItemKey();
+                if (key != null && key != _selectedItemKey)
                 {
                     _selectedItemKey = key;
                     BuildEditor();
@@ -146,7 +175,7 @@ public partial class SettingsWindow : Window
             var all = await mgr.GetUserWorkspacesAsync();
 
             _workspaces.Clear();
-            // D9：RAG 知识库工作区不纳入设置窗的工作区列表
+            // RAG 知识库工作区不纳入设置窗的工作区列表
             _workspaces.AddRange(all
                 .Where(w => w.Type != "Rag")
                 .OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase));
@@ -161,21 +190,22 @@ public partial class SettingsWindow : Window
             System.Diagnostics.Debug.WriteLine($"加载工作区列表失败: {ex.Message}");
         }
 
-        BuildScopePanel();
-        BuildTabBar();
+        BuildCategoryNav();
+        BuildTopBar();
         RefreshItems();
         BuildEditor();
     }
 
     /// <summary>
-    /// 预选指定类型页签（供命令面板 /skill /rule /mcp 定位使用）。
+    /// 预选指定类型页签（供命令面板 /skill /rule /mcp /provider 定位使用）。
     /// </summary>
     /// <param name="kind">要切换到的配置类型</param>
     public void PreselectTab(SettingsTabKind kind)
     {
         _tab = kind;
         _selectedItemKey = null;
-        BuildTabBar();
+        BuildCategoryNav();
+        BuildTopBar();
         RefreshItems();
         BuildEditor();
     }
@@ -183,7 +213,7 @@ public partial class SettingsWindow : Window
     // ---------------- 路径解析 ----------------
 
     /// <summary>
-    /// 按当前作用域解析三类配置目录。
+    /// 按当前作用域解析三类配置目录（仅工作区配置类使用）。
     /// </summary>
     /// <returns>(skills 目录, rules 目录, mcps 目录)</returns>
     private (string skills, string rules, string mcps) ResolveDirs()
@@ -195,7 +225,7 @@ public partial class SettingsWindow : Window
         return (Path.Combine(baseDir, "skills"), Path.Combine(baseDir, "rules"), Path.Combine(baseDir, "mcps"));
     }
 
-    /// <summary>当前类型对应的目录。</summary>
+    /// <summary>当前类型对应的目录（仅工作区配置类）。</summary>
     private string CurrentDir()
     {
         var dirs = ResolveDirs();
@@ -207,112 +237,119 @@ public partial class SettingsWindow : Window
         };
     }
 
-    // ---------------- 左栏：作用域 ----------------
+    // ---------------- 左栏：分类导航 ----------------
 
-    private void BuildScopePanel()
+    private void BuildCategoryNav()
     {
-        if (_scopePanel == null) return;
-        _scopePanel.Children.Clear();
+        if (_categoryPanel == null) return;
+        _categoryPanel.Children.Clear();
 
-        _scopePanel.Children.Add(BuildScopeRow(
-            "★ 全局", GlobalLubanAgentPath.Root, IsGlobal, () =>
+        void AddGroup(string title)
+        {
+            _categoryPanel.Children.Add(new TextBlock
             {
-                _selectedWorkspace = null;
-                OnScopeChanged();
-            }));
-
-        _scopePanel.Children.Add(new Border
-        {
-            Height = 1,
-            Background = Brush.Parse("#2A2A2A"),
-            Margin = new Thickness(8, 6),
-        });
-
-        foreach (var ws in _workspaces)
-        {
-            var captured = ws;
-            var selected = !IsGlobal && _selectedWorkspace?.WorkspaceId == ws.WorkspaceId;
-            var title = string.IsNullOrWhiteSpace(ws.Name) ? ws.RootPath : ws.Name;
-
-            _scopePanel.Children.Add(BuildScopeRow(title, ws.RootPath, selected, () =>
-            {
-                _selectedWorkspace = captured;
-                OnScopeChanged();
-            }));
-        }
-    }
-
-    private static Border BuildScopeRow(string title, string sub, bool selected, Action onSelect)
-    {
-        var border = new Border
-        {
-            Padding = new Thickness(10, 8),
-            Margin = new Thickness(0, 2),
-            CornerRadius = new CornerRadius(6),
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Background = selected ? Brush.Parse("#2D2D30") : Brushes.Transparent,
-            BorderThickness = selected ? new Thickness(2, 0, 0, 0) : new Thickness(0),
-            BorderBrush = selected ? Brush.Parse("#007ACC") : null,
-        };
-
-        var stack = new StackPanel();
-        stack.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontSize = 12,
-            Foreground = Brushes.White,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-
-        if (!string.IsNullOrWhiteSpace(sub))
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = sub,
-                FontSize = 10,
+                Text = title,
+                FontSize = 11,
                 Foreground = Brush.Parse("#8A8A8A"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0, 2, 0, 0),
+                Margin = new Thickness(8, 10, 8, 4),
             });
         }
 
-        border.Child = stack;
-        border.PointerPressed += (s, e) => onSelect();
-        return border;
+        void AddItem(string text, SettingsTabKind kind)
+        {
+            var btn = new Button
+            {
+                Content = text,
+                Padding = new Thickness(10, 6),
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Classes = { _tab == kind ? "dlgPrimary" : "dlgGhost" },
+            };
+            btn.Click += (s, e) => PreselectTab(kind);
+            _categoryPanel.Children.Add(btn);
+        }
+
+        AddGroup("工作区配置");
+        AddItem("技能", SettingsTabKind.Skill);
+        AddItem("规则", SettingsTabKind.Rule);
+        AddItem("MCP 服务", SettingsTabKind.Mcp);
+        AddGroup("供应商与模型");
+        AddItem("供应商", SettingsTabKind.Provider);
+        AddItem("模型", SettingsTabKind.Model);
+    }
+
+    // ---------------- 顶栏：作用域 / 全局说明 ----------------
+
+    private void BuildTopBar()
+    {
+        if (_topBar == null) return;
+        _topBar.Children.Clear();
+
+        // 供应商 / 模型类：无作用域，显示全局说明
+        if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model)
+        {
+            _topBar.Children.Add(new TextBlock
+            {
+                Text = "全局 config.json（供应商与模型配置不分工作区）",
+                FontSize = 12,
+                Foreground = Brush.Parse("#8A8A8A"),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            return;
+        }
+
+        // 工作区配置类：作用域下拉
+        _topBar.Children.Add(new TextBlock
+        {
+            Text = "作用域：",
+            FontSize = 12,
+            Foreground = Brush.Parse("#8A8A8A"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0),
+        });
+
+        var combo = new ComboBox
+        {
+            FontSize = 12,
+            Padding = new Thickness(8, 4),
+            MinWidth = 220,
+            Background = Brush.Parse("#1E1E1E"),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brush.Parse("#3F3F46"),
+        };
+
+        var items = new List<string> { "★ 全局" };
+        items.AddRange(_workspaces.Select(w => string.IsNullOrWhiteSpace(w.Name) ? w.RootPath : w.Name));
+        combo.ItemsSource = items;
+
+        var currentLabel = IsGlobal ? "★ 全局"
+            : (_selectedWorkspace != null ? (string.IsNullOrWhiteSpace(_selectedWorkspace.Name) ? _selectedWorkspace.RootPath : _selectedWorkspace.Name) : "★ 全局");
+        combo.SelectedItem = currentLabel;
+
+        combo.SelectionChanged += (s, e) =>
+        {
+            var sel = combo.SelectedItem as string;
+            if (sel == "★ 全局")
+                _selectedWorkspace = null;
+            else
+            {
+                var ws = _workspaces.FirstOrDefault(w => (string.IsNullOrWhiteSpace(w.Name) ? w.RootPath : w.Name) == sel);
+                _selectedWorkspace = ws;
+            }
+            OnScopeChanged();
+        };
+
+        _topBar.Children.Add(combo);
     }
 
     private void OnScopeChanged()
     {
         _selectedItemKey = null;
-        BuildScopePanel();
         RefreshItems();
         BuildEditor();
-    }
-
-    // ---------------- 顶部 Tab ----------------
-
-    private void BuildTabBar()
-    {
-        if (_tabBar == null) return;
-        _tabBar.Children.Clear();
-
-        void AddTab(string text, SettingsTabKind kind)
-        {
-            var btn = new Button
-            {
-                Content = text,
-                Padding = new Thickness(14, 6),
-                FontSize = 12,
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Classes = { _tab == kind ? "dlgPrimary" : "dlgGhost" },
-            };
-            btn.Click += (s, e) => PreselectTab(kind);
-            _tabBar.Children.Add(btn);
-        }
-
-        AddTab("技能", SettingsTabKind.Skill);
-        AddTab("规则", SettingsTabKind.Rule);
-        AddTab("MCP", SettingsTabKind.Mcp);
     }
 
     // ---------------- 中栏：条目列表 ----------------
@@ -345,16 +382,67 @@ public partial class SettingsWindow : Window
     {
         if (_itemList == null) return;
 
-        var items = EnumerateItems();
-        _itemList.ItemsSource = items;
+        // 供应商类：对象列表（含脱敏 ApiKey 与默认标记）
+        if (_tab == SettingsTabKind.Provider)
+        {
+            var list = (_configManager?.Providers ?? new List<ProviderConfig>())
+                .Select(p => new ProviderListItem
+                {
+                    Name = p.Name,
+                    Display = $"{p.Name}   {(string.IsNullOrEmpty(p.ApiKey) ? "" : MaskApiKey(p.ApiKey))}" +
+                              (_configManager != null && _configManager.SelectedModel?.StartsWith(p.Name + ":") == true ? "   ✓默认" : ""),
+                })
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _itemList.ItemsSource = list;
+            var first = list.FirstOrDefault();
+            var match = _selectedItemKey != null ? list.FirstOrDefault(x => x.Name == _selectedItemKey) : null;
+            _itemList.SelectedItem = match ?? first;
+            _selectedItemKey = (match ?? first)?.Name;
+            UpdateActionBar();
+            return;
+        }
 
-        if (_selectedItemKey != null && items.Contains(_selectedItemKey))
+        // 模型类：对象列表（provider:model，默认加标记）
+        if (_tab == SettingsTabKind.Model)
+        {
+            var list = new List<ModelListItem>();
+            if (_configManager != null)
+                foreach (var p in _configManager.Providers)
+                    foreach (var m in _configManager.GetAllModels(p.Name))
+                    {
+                        var key = $"{p.Name}:{m}";
+                        list.Add(new ModelListItem { Key = key, Display = key + (_configManager.SelectedModel == key ? "   ✓默认" : "") });
+                    }
+            list = list.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToList();
+            _itemList.ItemsSource = list;
+            var first = list.FirstOrDefault();
+            var match = _selectedItemKey != null ? list.FirstOrDefault(x => x.Key == _selectedItemKey) : null;
+            _itemList.SelectedItem = match ?? first;
+            _selectedItemKey = (match ?? first)?.Key;
+            UpdateActionBar();
+            return;
+        }
+
+        // 工作区配置（技能 / 规则 / MCP）
+        var strs = EnumerateItems();
+        _itemList.ItemsSource = strs;
+        if (_selectedItemKey != null && strs.Contains(_selectedItemKey))
             _itemList.SelectedItem = _selectedItemKey;
         else
         {
-            _selectedItemKey = items.FirstOrDefault();
+            _selectedItemKey = strs.FirstOrDefault();
             _itemList.SelectedItem = _selectedItemKey;
         }
+        UpdateActionBar();
+    }
+
+    private string? GetSelectedItemKey()
+    {
+        if (_itemList?.SelectedItem == null) return null;
+        if (_tab == SettingsTabKind.Provider && _itemList.SelectedItem is ProviderListItem pi) return pi.Name;
+        if (_tab == SettingsTabKind.Model && _itemList.SelectedItem is ModelListItem mi) return mi.Key;
+        return _itemList.SelectedItem as string;
     }
 
     private bool ItemExists(string name)
@@ -370,6 +458,28 @@ public partial class SettingsWindow : Window
 
     private void NewItem()
     {
+        // 供应商：创建草稿（占位 Name），待编辑器填写后保存
+        if (_tab == SettingsTabKind.Provider)
+        {
+            if (_configManager == null) { SetHint("配置管理器不可用，无法新建供应商。", true); return; }
+            var name = "new-provider";
+            var i = 1;
+            while (_configManager.HasProvider(name)) name = $"new-provider-{i++}";
+            _selectedItemKey = name;
+            RefreshItems();
+            BuildEditor();
+            SetHint("已新建供应商草稿，请填写 Name / ApiKey 后点击「保存」。", false);
+            return;
+        }
+
+        // 模型：无独立新建入口，使用右侧内联「新建自定义模型」
+        if (_tab == SettingsTabKind.Model)
+        {
+            SetHint("请使用右侧编辑器的「新建自定义模型」：选择供应商并填写模型名。", true);
+            return;
+        }
+
+        // 工作区配置（技能 / 规则 / MCP）
         var dir = CurrentDir();
         try
         {
@@ -388,28 +498,28 @@ public partial class SettingsWindow : Window
             _ => "new-mcp",
         };
 
-        var name = baseName;
-        var i = 1;
-        while (ItemExists(name)) name = $"{baseName}-{i++}";
+        var name2 = baseName;
+        var j = 1;
+        while (ItemExists(name2)) name2 = $"{baseName}-{j++}";
 
         try
         {
             if (_tab == SettingsTabKind.Skill)
             {
-                var d = Path.Combine(dir, name);
+                var d = Path.Combine(dir, name2);
                 Directory.CreateDirectory(d);
                 File.WriteAllText(Path.Combine(d, "SKILL.md"),
-                    BuildSkillMarkdown(name, "", "custom", "", ""));
+                    BuildSkillMarkdown(name2, "", "custom", "", ""));
             }
             else if (_tab == SettingsTabKind.Rule)
             {
-                File.WriteAllText(Path.Combine(dir, name + ".json"),
-                    JsonSerializer.Serialize(new CustomRuleConfig { Id = name, Name = name }, JsonOpts));
+                File.WriteAllText(Path.Combine(dir, name2 + ".json"),
+                    JsonSerializer.Serialize(new CustomRuleConfig { Id = name2, Name = name2 }, JsonOpts));
             }
             else
             {
-                File.WriteAllText(Path.Combine(dir, name + ".json"),
-                    JsonSerializer.Serialize(new McpServerConfig { Name = name }, JsonOpts));
+                File.WriteAllText(Path.Combine(dir, name2 + ".json"),
+                    JsonSerializer.Serialize(new McpServerConfig { Name = name2 }, JsonOpts));
             }
         }
         catch (Exception ex)
@@ -418,7 +528,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        _selectedItemKey = name;
+        _selectedItemKey = name2;
         RefreshItems();
         BuildEditor();
         SetHint("已新建条目，请填写内容后点击「保存」。", false);
@@ -429,6 +539,7 @@ public partial class SettingsWindow : Window
     private void BuildEditor()
     {
         _editorFields.Clear();
+        _providerCustomModelsPanel = null;
         if (_editorHost == null) return;
 
         var key = _selectedItemKey;
@@ -442,12 +553,9 @@ public partial class SettingsWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 16, 0, 0),
             };
-            if (_deleteItemBtn != null) _deleteItemBtn.IsEnabled = false;
             UpdateActionBar();
             return;
         }
-
-        if (_deleteItemBtn != null) _deleteItemBtn.IsEnabled = true;
 
         var host = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
 
@@ -461,8 +569,14 @@ public partial class SettingsWindow : Window
                 case SettingsTabKind.Rule:
                     BuildRuleEditor(host, key);
                     break;
-                default:
+                case SettingsTabKind.Mcp:
                     BuildMcpEditor(host, key);
+                    break;
+                case SettingsTabKind.Provider:
+                    BuildProviderEditor(host, key);
+                    break;
+                case SettingsTabKind.Model:
+                    BuildModelEditor(host, key);
                     break;
             }
         }
@@ -562,6 +676,202 @@ public partial class SettingsWindow : Window
         });
     }
 
+    private void BuildProviderEditor(StackPanel host, string key)
+    {
+        if (_configManager == null) { SetHint("配置管理器不可用，无法编辑供应商。", true); return; }
+        var provider = _configManager.GetProvider(key);
+        var isNew = provider == null;
+        if (isNew) provider = new ProviderConfig { Name = key };
+
+        // 类型（仅新建态显示，便捷预填 Name / BaseUrl）
+        ComboBox? typeCombo = null;
+        if (isNew)
+        {
+            typeCombo = AddCombo(host, "类型（内置预设，可选）", Builtin.Select(b => b.Display), Builtin[0].Display);
+        }
+
+        var nameBox = AddField(host, "Name（唯一标识，小写）", provider.Name);
+        if (!isNew) nameBox.IsReadOnly = true;
+
+        SetField("ApiKey", AddPasswordField(host, "ApiKey", provider.ApiKey));
+        SetField("BaseUrl", AddField(host, "BaseUrl（空=默认）", provider.BaseUrl ?? ""));
+        SetField("DisplayName", AddField(host, "DisplayName（可选）", provider.DisplayName ?? ""));
+        SetField("NetworkTimeoutSeconds", AddField(host, "NetworkTimeoutSeconds（空=默认 60）", provider.NetworkTimeoutSeconds?.ToString() ?? ""));
+
+        if (typeCombo != null)
+            typeCombo.SelectionChanged += (s, e) => OnProviderTypeChanged(typeCombo, nameBox, (TextBox)_editorFields["BaseUrl"]);
+
+        // 自定义模型
+        host.Children.Add(new TextBlock
+        {
+            Text = "自定义模型（可增删）",
+            FontSize = 11,
+            Foreground = Brush.Parse("#8A8A8A"),
+            Margin = new Thickness(0, 8, 0, 4),
+        });
+        var modelsPanel = new StackPanel();
+        host.Children.Add(modelsPanel);
+        _providerCustomModelsPanel = modelsPanel;
+        foreach (var m in provider.CustomModels) AddCustomModelRow(modelsPanel, m);
+        var addModelBtn = new Button
+        {
+            Content = "＋ 添加模型",
+            Classes = { "dlgGhost" },
+            Padding = new Thickness(8, 6),
+            Margin = new Thickness(0, 6, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        addModelBtn.Click += (s, e) => AddCustomModelRow(modelsPanel, "");
+        host.Children.Add(addModelBtn);
+
+        // 设为默认模型（仅已有供应商）
+        if (!isNew)
+        {
+            host.Children.Add(new TextBlock
+            {
+                Text = "设为默认模型",
+                FontSize = 11,
+                Foreground = Brush.Parse("#8A8A8A"),
+                Margin = new Thickness(0, 12, 0, 4),
+            });
+            var modelCombo = AddCombo(host, "选择模型", _configManager.GetAllModels(provider.Name), "");
+            var setDefaultBtn = new Button
+            {
+                Content = "设为默认",
+                Classes = { "dlgGhost" },
+                Padding = new Thickness(8, 6),
+                Margin = new Thickness(0, 6, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            setDefaultBtn.Click += (s, e) =>
+            {
+                var m = modelCombo.SelectedItem as string;
+                if (string.IsNullOrEmpty(m)) { SetHint("请先选择模型。", true); return; }
+                _configManager.SetSelectedModel($"{provider.Name}:{m}");
+                SetHint($"已设为默认模型：{provider.Name}:{m}", false);
+                RefreshItems();
+            };
+            host.Children.Add(setDefaultBtn);
+        }
+    }
+
+    private void BuildModelEditor(StackPanel host, string key)
+    {
+        if (_configManager == null) { SetHint("配置管理器不可用，无法编辑模型。", true); return; }
+        var parts = key.Split(':', 2);
+        var pName = parts[0];
+        var mName = parts.Length > 1 ? parts[1] : "";
+        var provider = _configManager.GetProvider(pName);
+        var isCustom = provider != null && provider.CustomModels.Contains(mName);
+
+        host.Children.Add(new TextBlock
+        {
+            Text = $"模型：{key}",
+            FontSize = 12,
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        if (isCustom)
+        {
+            SetField("ModelName", AddField(host, "模型名称（可改名）", mName));
+            var renameBtn = new Button
+            {
+                Content = "改名",
+                Classes = { "dlgGhost" },
+                Padding = new Thickness(8, 6),
+                Margin = new Thickness(0, 6, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            renameBtn.Click += (s, e) =>
+            {
+                var nm = GetText("ModelName").Trim();
+                if (string.IsNullOrEmpty(nm)) { SetHint("名称不能为空。", true); return; }
+                _configManager.UpdateCustomModel(pName, mName, nm);
+                _selectedItemKey = $"{pName}:{nm}";
+                RefreshItems();
+                BuildEditor();
+                SetHint("已改名。", false);
+            };
+            host.Children.Add(renameBtn);
+
+            var delBtn = new Button
+            {
+                Content = "删除模型",
+                Classes = { "dlgDanger" },
+                Padding = new Thickness(8, 6),
+                Margin = new Thickness(0, 6, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            delBtn.Click += (s, e) =>
+            {
+                _configManager.RemoveCustomModel(pName, mName);
+                _selectedItemKey = null;
+                RefreshItems();
+                BuildEditor();
+                SetHint("已删除自定义模型。", false);
+            };
+            host.Children.Add(delBtn);
+        }
+        else
+        {
+            host.Children.Add(new TextBlock
+            {
+                Text = "内置模型（只读），可设为默认。",
+                FontSize = 11,
+                Foreground = Brush.Parse("#8A8A8A"),
+            });
+        }
+
+        var setDefaultBtn = new Button
+        {
+            Content = "设为默认",
+            Classes = { "dlgGhost" },
+            Padding = new Thickness(8, 6),
+            Margin = new Thickness(0, 10, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        setDefaultBtn.Click += (s, e) =>
+        {
+            _configManager.SetSelectedModel(key);
+            SetHint($"已设为默认：{key}", false);
+            RefreshItems();
+        };
+        host.Children.Add(setDefaultBtn);
+
+        // 新建自定义模型（内联）
+        host.Children.Add(new TextBlock
+        {
+            Text = "新建自定义模型",
+            FontSize = 11,
+            Foreground = Brush.Parse("#8A8A8A"),
+            Margin = new Thickness(0, 12, 0, 4),
+        });
+        var pCombo = AddCombo(host, "选择供应商", (_configManager.Providers ?? new List<ProviderConfig>()).Select(p => p.Name).ToList(), pName);
+        SetField("NewModelName", AddField(host, "模型名称", ""));
+        var addBtn = new Button
+        {
+            Content = "添加模型",
+            Classes = { "dlgPrimary" },
+            Padding = new Thickness(8, 6),
+            Margin = new Thickness(0, 6, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        addBtn.Click += (s, e) =>
+        {
+            var selP = pCombo.SelectedItem as string;
+            var nm = GetText("NewModelName").Trim();
+            if (string.IsNullOrEmpty(selP) || string.IsNullOrEmpty(nm)) { SetHint("请选择供应商并填写模型名。", true); return; }
+            try { _configManager.AddCustomModel(selP, nm); }
+            catch (Exception ex) { SetHint($"添加失败：{ex.Message}", true); return; }
+            _selectedItemKey = $"{selP}:{nm}";
+            RefreshItems();
+            BuildEditor();
+            SetHint("已添加自定义模型。", false);
+        };
+        host.Children.Add(addBtn);
+    }
+
     // ---------------- 编辑器字段辅助 ----------------
 
     private void SetField(string key, Control control) => _editorFields[key] = control;
@@ -600,6 +910,32 @@ public partial class SettingsWindow : Window
             AcceptsReturn = multiline,
             TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
             MinHeight = height,
+        };
+
+        host.Children.Add(tb);
+        return tb;
+    }
+
+    private static TextBox AddPasswordField(StackPanel host, string label, string? value)
+    {
+        host.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 11,
+            Foreground = Brush.Parse("#8A8A8A"),
+            Margin = new Thickness(0, 8, 0, 4),
+        });
+
+        var tb = new TextBox
+        {
+            Text = value ?? "",
+            FontSize = 12,
+            Padding = new Thickness(8, 6),
+            Background = Brush.Parse("#1E1E1E"),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brush.Parse("#3F3F46"),
+            PasswordChar = '*',
         };
 
         host.Children.Add(tb);
@@ -645,6 +981,81 @@ public partial class SettingsWindow : Window
         };
         host.Children.Add(cb);
         return cb;
+    }
+
+    private void AddCustomModelRow(StackPanel panel, string value)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        var tb = new TextBox
+        {
+            Text = value,
+            FontSize = 12,
+            Padding = new Thickness(8, 6),
+            Background = Brush.Parse("#1E1E1E"),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brush.Parse("#3F3F46"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        var del = new Button
+        {
+            Content = "删除",
+            Classes = { "dlgDanger" },
+            Padding = new Thickness(8, 6),
+        };
+        del.Click += (s, e) => panel.Children.Remove(row);
+        row.Children.Add(tb);
+        row.Children.Add(del);
+        panel.Children.Add(row);
+    }
+
+    private List<string> CollectCustomModels()
+    {
+        var result = new List<string>();
+        if (_providerCustomModelsPanel == null) return result;
+        foreach (var child in _providerCustomModelsPanel.Children)
+        {
+            if (child is StackPanel row && row.Children.Count > 0 && row.Children[0] is TextBox tb)
+            {
+                var v = tb.Text?.Trim();
+                if (!string.IsNullOrEmpty(v)) result.Add(v);
+            }
+        }
+        return result;
+    }
+
+    private void OnProviderTypeChanged(ComboBox typeCombo, TextBox nameBox, TextBox baseUrlBox)
+    {
+        var idx = typeCombo.SelectedIndex;
+        if (idx < 0 || idx >= Builtin.Length) return;
+        var (name, _, needEndpoint, _, defaultUrl) = Builtin[idx];
+        nameBox.Text = name;
+        nameBox.IsReadOnly = name != "custom";
+        baseUrlBox.Text = needEndpoint ? defaultUrl : TryGetDefaultEndpoint(name);
+    }
+
+    private static string TryGetDefaultEndpoint(string name)
+    {
+        try
+        {
+            var eps = ProviderHelper.GetEndpoints(name);
+            return eps.Count > 0 ? (eps[0].Url ?? "") : "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static string MaskApiKey(string apiKey)
+    {
+        if (string.IsNullOrEmpty(apiKey) || apiKey.Length <= 8) return "****";
+        return $"{apiKey[..4]}...{apiKey[^4..]}";
     }
 
     // ---------------- 技能 Markdown 拼装 / 解析 ----------------
@@ -721,8 +1132,14 @@ public partial class SettingsWindow : Window
                 case SettingsTabKind.Rule:
                     await SaveRuleAsync();
                     break;
-                default:
+                case SettingsTabKind.Mcp:
                     await SaveMcpAsync();
+                    break;
+                case SettingsTabKind.Provider:
+                    await SaveProviderAsync();
+                    break;
+                case SettingsTabKind.Model:
+                    SetHint("模型变更已即时保存（无需点击「保存」）。", false);
                     break;
             }
         }
@@ -865,17 +1282,83 @@ public partial class SettingsWindow : Window
         SetSavedHint();
     }
 
+    private async Task SaveProviderAsync()
+    {
+        if (_configManager == null) { SetHint("配置管理器不可用，无法保存。", true); return; }
+
+        var name = GetText("Name").Trim().ToLowerInvariant();
+        var apiKey = GetText("ApiKey").Trim();
+        var baseUrl = string.IsNullOrWhiteSpace(GetText("BaseUrl")) ? null : GetText("BaseUrl").Trim();
+        var displayName = GetText("DisplayName").Trim();
+        var timeoutText = GetText("NetworkTimeoutSeconds").Trim();
+
+        if (string.IsNullOrEmpty(name)) { SetHint("Name 不能为空。", true); return; }
+        if (string.IsNullOrEmpty(apiKey)) { SetHint("ApiKey 不能为空。", true); return; }
+
+        // upsert（仅更新 ApiKey / BaseUrl，保留 DisplayName / CustomModels 等）
+        _configManager.AddProvider(name, apiKey, baseUrl);
+        var provider = _configManager.GetProvider(name);
+        if (provider == null) { SetHint("保存失败：Provider 不存在。", true); return; }
+
+        provider.DisplayName = string.IsNullOrEmpty(displayName) ? null : displayName;
+        provider.NetworkTimeoutSeconds = int.TryParse(timeoutText, out var t) && t > 0 ? t : null;
+
+        // 自定义模型差异更新
+        var desired = CollectCustomModels();
+        var current = provider.CustomModels.ToList();
+        foreach (var m in desired.Where(m => !current.Contains(m))) _configManager.AddCustomModel(name, m);
+        foreach (var m in current.Where(m => !desired.Contains(m))) _configManager.RemoveCustomModel(name, m);
+
+        _configManager.Save();
+
+        _selectedItemKey = name;
+        RefreshItems();
+        BuildEditor();
+        SetSavedHint();
+    }
+
     private async Task DeleteItemAsync()
     {
         var key = _selectedItemKey;
         if (string.IsNullOrEmpty(key)) return;
 
+        if (_tab == SettingsTabKind.Provider)
+        {
+            if (_configManager == null) return;
+            var provider = _configManager.GetProvider(key);
+            if (provider == null) return;
+
+            var ok = await Dialogs.ShowConfirmAsync(this, "确认删除",
+                $"确定删除供应商 \"{key}\" 吗？",
+                "该供应商及其配置将被直接删除，且不可恢复。",
+                "确定删除", danger: true);
+            if (!ok) return;
+
+            _configManager.Providers.Remove(provider);
+            _configManager.Save();
+            if (_configManager.SelectedModel?.StartsWith($"{key}:") == true)
+                _configManager.ClearSelectedModel();
+
+            _selectedItemKey = null;
+            RefreshItems();
+            BuildEditor();
+            SetHint("已删除该供应商。", false);
+            return;
+        }
+
+        if (_tab == SettingsTabKind.Model)
+        {
+            SetHint("模型删除请使用右侧编辑器的「删除模型」按钮。", true);
+            return;
+        }
+
+        // 工作区配置（技能 / 规则 / MCP）
         var owner = this;
-        var ok = await Dialogs.ShowConfirmAsync(owner, "确认删除",
+        var confirm = await Dialogs.ShowConfirmAsync(owner, "确认删除",
             $"确定要删除条目 \"{key}\" 吗？",
             "该条目对应的文件或目录将被直接删除，且不可恢复。",
             "确定删除", danger: true);
-        if (!ok) return;
+        if (!confirm) return;
 
         try
         {
@@ -905,13 +1388,14 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 「应用配置」：重置 Agent 宿主，使其在下次对话时按「先全局 → 后工作区」重新加载配置。
+    /// 「应用配置」：重置 Agent 宿主，使其在下次对话时按最新配置加载。
+    /// 供应商/模型为全局配置，恒可应用。
     /// </summary>
     private void ApplyConfig()
     {
         try
         {
-            var host = _services.GetRequiredService<AgentHostService>();
+            var host = _services!.GetRequiredService<AgentHostService>();
             host.Reset();
             SetHint("已重置 Agent 宿主，新配置将在下次对话时生效（不打断当前上下文）。", false);
         }
@@ -922,10 +1406,11 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 仅「★ 全局」与「当前正在对话的工作区」支持立即应用（其余工作区需切换后才加载）。
+    /// 供应商/模型为全局配置恒可应用；工作区配置仅「★ 全局」或「当前对话工作区」可立即应用。
     /// </summary>
     private bool CanApply()
     {
+        if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model) return true;
         if (IsGlobal) return true;
 
         try
@@ -944,7 +1429,24 @@ public partial class SettingsWindow : Window
     {
         var canApply = CanApply();
         if (_applyBtn != null) _applyBtn.IsVisible = canApply;
-        if (_deleteItemBtn != null) _deleteItemBtn.IsEnabled = !string.IsNullOrEmpty(_selectedItemKey);
+
+        if (_tab == SettingsTabKind.Model)
+        {
+            // 模型：内联操作，隐藏新建 / 删除 / 保存
+            if (_newItemBtn != null) _newItemBtn.IsVisible = false;
+            if (_deleteItemBtn != null) _deleteItemBtn.IsVisible = false;
+            if (_saveBtn != null) _saveBtn.IsVisible = false;
+        }
+        else
+        {
+            if (_newItemBtn != null) _newItemBtn.IsVisible = true;
+            if (_deleteItemBtn != null)
+            {
+                _deleteItemBtn.IsVisible = true;
+                _deleteItemBtn.IsEnabled = !string.IsNullOrEmpty(_selectedItemKey);
+            }
+            if (_saveBtn != null) _saveBtn.IsVisible = true;
+        }
     }
 
     private void SetSavedHint()
@@ -959,5 +1461,21 @@ public partial class SettingsWindow : Window
         if (_hintText == null) return;
         _hintText.Text = text;
         _hintText.Foreground = isError ? Brushes.OrangeRed : Brush.Parse("#8A8A8A");
+    }
+
+    // ---------------- 列表项类型 ----------------
+
+    private class ProviderListItem
+    {
+        public string Name { get; set; } = "";
+        public string Display { get; set; } = "";
+        public override string ToString() => Display;
+    }
+
+    private class ModelListItem
+    {
+        public string Key { get; set; } = "";
+        public string Display { get; set; } = "";
+        public override string ToString() => Display;
     }
 }
