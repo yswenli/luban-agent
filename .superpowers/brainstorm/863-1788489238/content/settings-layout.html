@@ -1,0 +1,122 @@
+<h2>设置窗布局方案（参考 WorkBuddy / Trae 层级导航）</h2>
+<p class="subtitle">窗体左栏=工作区列表（你已选定）；右侧编辑该工作区的 skills / rules / mcps。三种右侧布局，点选其一。</p>
+
+<div class="cards">
+  <!-- 方案 A -->
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 A · 三栏 IDE 风（推荐）</div>
+        <div class="mockup-body">
+          <div style="display:flex;gap:6px;height:230px;font-size:11px;">
+            <!-- 工作区列表 -->
+            <div style="width:130px;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;">
+              <div class="label" style="margin-bottom:6px;">工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;background:#2a4d6e;color:#cfe6ff;margin-bottom:4px;">▸ 当前工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 后端API</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 运维脚本</div>
+            </div>
+            <!-- 条目列表 + 顶部Tab -->
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <div style="display:flex;gap:4px;">
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#2a4d6e;color:#cfe6ff;font-size:11px;">技能</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">规则</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">MCP</span>
+              </div>
+              <div style="flex:1;display:flex;gap:6px;">
+                <div style="width:120px;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;">
+                  <div class="label" style="margin-bottom:6px;">技能条目</div>
+                  <div style="padding:4px 6px;border-radius:4px;background:#2a2a2a;color:#ddd;margin-bottom:4px;">code-review</div>
+                  <div style="padding:4px 6px;border-radius:4px;background:#2a2a2a;color:#ddd;margin-bottom:4px;">doc-gen</div>
+                  <div style="padding:4px 6px;border-radius:4px;background:#2a2a2a;color:#ddd;margin-bottom:4px;">+ 新建</div>
+                </div>
+                <div style="flex:1;border:1px solid #3a3a3a;border-radius:6px;padding:8px;background:#161616;color:#9aa;font-family:monospace;font-size:10px;overflow:hidden;">
+                  ---<br/>name: code-review<br/>description: 审查代码<br/>---<br/># 正文 Markdown / JSON<br/>编辑区（SKILL.md 或 *.json）
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 三栏 IDE 风</h3>
+      <p>左工作区｜中条目｜右编辑器，顶部 Tab 切类型。信息一眼看全，最像 Trae/WorkBuddy 的层级导航。窗口略宽（约 880px）。</p>
+    </div>
+  </div>
+
+  <!-- 方案 B -->
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 B · 两栏 + 列表/编辑器上下叠</div>
+        <div class="mockup-body">
+          <div style="display:flex;gap:6px;height:230px;font-size:11px;">
+            <div style="width:130px;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;">
+              <div class="label" style="margin-bottom:6px;">工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;background:#2a4d6e;color:#cfe6ff;margin-bottom:4px;">▸ 当前工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 后端API</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 运维脚本</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <div style="display:flex;gap:4px;">
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#2a4d6e;color:#cfe6ff;font-size:11px;">技能</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">规则</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">MCP</span>
+              </div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+                <div style="height:90px;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;overflow:auto;">
+                  <div class="label" style="margin-bottom:4px;">技能条目（上）</div>
+                  <div style="padding:4px 6px;border-radius:4px;background:#2a2a2a;color:#ddd;margin-bottom:4px;">code-review ｜ doc-gen ｜ + 新建</div>
+                </div>
+                <div style="flex:1;border:1px solid #3a3a3a;border-radius:6px;padding:8px;background:#161616;color:#9aa;font-family:monospace;font-size:10px;overflow:hidden;">
+                  编辑器（下，空间被压缩）:<br/>name: code-review<br/>description: ...<br/># 正文
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 两栏 + 上下叠</h3>
+      <p>左工作区｜右 Tab，Tab 内列表在上、编辑器在下。窗口更窄，但编辑器纵向空间被列表挤占，长内容需滚动。</p>
+    </div>
+  </div>
+
+  <!-- 方案 C -->
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 C · 手风琴（类型内条目就地展开编辑）</div>
+        <div class="mockup-body">
+          <div style="display:flex;gap:6px;height:230px;font-size:11px;">
+            <div style="width:130px;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;">
+              <div class="label" style="margin-bottom:6px;">工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;background:#2a4d6e;color:#cfe6ff;margin-bottom:4px;">▸ 当前工作区</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 后端API</div>
+              <div style="padding:5px 6px;border-radius:4px;color:#bbb;margin-bottom:4px;">▸ 运维脚本</div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <div style="display:flex;gap:4px;">
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#2a4d6e;color:#cfe6ff;font-size:11px;">技能</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">规则</span>
+                <span style="padding:3px 10px;border-radius:4px 4px 0 0;background:#262626;color:#999;font-size:11px;">MCP</span>
+              </div>
+              <div style="flex:1;border:1px solid #3a3a3a;border-radius:6px;padding:6px;background:#1b1b1b;overflow:auto;">
+                <div class="label" style="margin-bottom:4px;">条目（点击就地展开）</div>
+                <div style="padding:6px;border-radius:4px;background:#2a2a2a;color:#ddd;margin-bottom:4px;">▾ code-review<br/><span style="color:#9aa;font-family:monospace;font-size:10px;">name: code-review<br/># 编辑中…</span></div>
+                <div style="padding:6px;border-radius:4px;background:#222;color:#bbb;margin-bottom:4px;">▸ doc-gen</div>
+                <div style="padding:6px;border-radius:4px;background:#222;color:#bbb;margin-bottom:4px;">＋ 新建技能</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 手风琴</h3>
+      <p>左工作区｜右 Tab，条目用折叠面板，点开就地编辑。最紧凑、窗口最小，但编辑时看不到完整列表，多条目对比不便。</p>
+    </div>
+  </div>
+</div>

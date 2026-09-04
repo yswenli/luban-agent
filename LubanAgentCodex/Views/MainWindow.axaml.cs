@@ -135,6 +135,7 @@ public partial class MainWindow : Window
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
                 _sidebar.RagInitRequested += OnRagInitRequested;
+                _sidebar.SettingsRequested += OnSettingsRequested;
             }
         }
         else
@@ -458,6 +459,35 @@ public partial class MainWindow : Window
                 };
                 await dialog.ShowDialog(this);
             }
+        }
+    }
+
+    /// <summary>
+    /// 打开工作区设置中心（技能 / 规则 / MCP）
+    /// </summary>
+    private async void OnSettingsRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            var services = _viewModel?.Services;
+            if (services == null) return;
+
+            // 预选当前正在对话的工作区（非 RAG），便于直接编辑其配置；
+            // RAG 知识库工作区不纳入设置窗（D9），当前为 RAG 时回落到「★ 全局」。
+            var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+            var current = workspaceManager.CurrentWorkspace;
+            WorkspaceInfo? preselect = (current != null && current.Type != "Rag") ? current : null;
+
+            var settings = new SettingsWindow(services, preselect);
+            await settings.ShowDialog(this);
+
+            // 关闭后刷新侧边栏（配置可能已变更，工作区名称等需同步）
+            _sidebar?.SetServiceProvider(services);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("MainWindow.OnSettingsRequested 打开设置中心异常", ex);
+            await Dialogs.ShowErrorAsync(this, $"打开设置中心失败：{ex.Message}");
         }
     }
 

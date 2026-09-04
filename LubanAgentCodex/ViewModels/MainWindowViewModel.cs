@@ -328,50 +328,41 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 显示 Skill 管理窗口
+    /// 打开工作区设置中心并定位到「技能」页签（替代旧的 SkillManageWindow）
     /// </summary>
     private void ShowSkillManager(string[] args)
     {
-        var workspaceManager = Services.GetService<IWorkspaceManager>();
-        var workspace = workspaceManager?.CurrentWorkspace;
-        if (workspace == null)
-        {
-            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
-            return;
-        }
-        var window = new SkillManageWindow(Services, workspace);
-        window.Show();
+        OpenSettings(SettingsTabKind.Skill);
     }
 
     /// <summary>
-    /// 显示 Rule 管理窗口
+    /// 打开工作区设置中心并定位到「规则」页签（替代旧的 RuleManageWindow）
     /// </summary>
     private void ShowRuleManager(string[] args)
     {
-        var workspaceManager = Services.GetService<IWorkspaceManager>();
-        var workspace = workspaceManager?.CurrentWorkspace;
-        if (workspace == null)
-        {
-            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
-            return;
-        }
-        var window = new RuleManageWindow(Services, workspace);
-        window.Show();
+        OpenSettings(SettingsTabKind.Rule);
     }
 
     /// <summary>
-    /// 显示 MCP 管理窗口
+    /// 打开工作区设置中心并定位到「MCP」页签（替代旧的 MCPManageWindow）
     /// </summary>
     private void ShowMcpManager(string[] args)
     {
+        OpenSettings(SettingsTabKind.Mcp);
+    }
+
+    /// <summary>
+    /// 打开工作区设置中心并预选当前工作区（非 RAG）与指定页签。
+    /// 命令面板路径无 Window owner，故用非模态 Show（侧边栏「⚙ 设置」按钮走 MainWindow 的模态 ShowDialog）。
+    /// </summary>
+    private void OpenSettings(SettingsTabKind kind)
+    {
         var workspaceManager = Services.GetService<IWorkspaceManager>();
-        var workspace = workspaceManager?.CurrentWorkspace;
-        if (workspace == null)
-        {
-            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
-            return;
-        }
-        var window = new MCPManageWindow(Services, workspace);
+        var current = workspaceManager?.CurrentWorkspace;
+        var preselect = (current != null && current.Type != "Rag") ? current : null;
+
+        var window = new SettingsWindow(Services, preselect);
+        window.PreselectTab(kind);
         window.Show();
     }
 

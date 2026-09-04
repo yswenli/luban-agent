@@ -96,4 +96,15 @@ public class WorkspaceRepository : BaseRepository<DbWorkspace>
         await UpdateAsync(w => new DbWorkspace { LastActiveAt = DateTime.Now, UpdateTime = DateTime.Now },
             w => w.WorkspaceId == workspaceId);
     }
+
+    /// <summary>
+    /// 更新工作区显示名
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="name">新的显示名</param>
+    public async Task UpdateNameAsync(string workspaceId, string name)
+    {
+        await UpdateAsync(w => new DbWorkspace { Name = name, UpdateTime = DateTime.Now },
+            w => w.WorkspaceId == workspaceId);
+    }
 }

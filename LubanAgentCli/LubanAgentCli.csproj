@@ -89,6 +89,10 @@
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Properties\" />
+	</ItemGroup>
+
 	<!-- 删除第三方原生库随包分发的调试符号与链接库（libSkiaSharp.pdb 约 85MB），生产运行不需要；
 	     playwright.ps1 是驱动调起脚本，驱动已改为按需安装，脚本不再随包分发 -->
 	<Target Name="StripNativeDebugArtifacts" AfterTargets="Build;Publish">

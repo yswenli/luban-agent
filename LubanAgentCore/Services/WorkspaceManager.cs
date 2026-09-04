@@ -118,6 +118,25 @@ public interface IWorkspaceManager
     /// </summary>
     /// <param name="workspaceId">工作区ID</param>
     Task SetCurrentAsync(string workspaceId);
+
+    /// <summary>
+    /// 删除工作区：逻辑删除工作区记录，并级联清理其下所有会话与 RAG 索引。
+    /// </summary>
+    /// <remarks>
+    /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现宿主 A 走物理删除、宿主 B 走逻辑删除，
+    /// 且遗漏清理 rag_file/rag_chunk 而残留孤儿索引的情况）。
+    /// </remarks>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
+    Task<bool> DeleteWorkspaceAsync(string workspaceId);
+
+    /// <summary>
+    /// 重命名工作区（仅改显示名，不涉及目录移动）。
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="name">新的显示名</param>
+    /// <returns>是否执行了重命名；工作区ID 或名称为空白时返回 false。</returns>
+    Task<bool> RenameWorkspaceAsync(string workspaceId, string name);
 }
 
 /// <summary>
@@ -467,6 +486,32 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             lock (_currentLock) _current = null;
             _sessionManager.ClearCurrentSession();
         }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 重命名工作区：仅更新显示名，不移动工作区目录。
+    /// </summary>
+    /// <remarks>
+    /// 若重命名的正是当前工作区，同步更新内存中的 <see cref="CurrentWorkspace"/> 实例，
+    /// 避免 UI 仍显示旧名称（宿主侧通常直接绑定该实例）。
+    /// </remarks>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="name">新的显示名</param>
+    /// <returns>是否执行了重命名；工作区ID 或名称为空白时返回 false。</returns>
+    public async Task<bool> RenameWorkspaceAsync(string workspaceId, string name)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return false;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+
+        await _repo.UpdateNameAsync(workspaceId, name.Trim());
+
+        WorkspaceInfo? target;
+        lock (_currentLock) target = _current;
+
+        if (target != null && target.WorkspaceId == workspaceId)
+            target.Name = name.Trim();
 
         return true;
     }

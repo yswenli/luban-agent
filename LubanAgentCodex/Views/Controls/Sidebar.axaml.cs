@@ -55,6 +55,11 @@ public partial class Sidebar : UserControl
     /// </summary>
     public event EventHandler? RagInitRequested;
 
+    /// <summary>
+    /// 工作区设置中心打开请求（由底部「⚙ 设置」按钮触发）
+    /// </summary>
+    public event EventHandler? SettingsRequested;
+
     public Sidebar()
     {
         InitializeComponent();
@@ -71,6 +76,10 @@ public partial class Sidebar : UserControl
             // ListBoxItem 内部会标记 PointerPressed 已处理，需用 handledEventsToo 才能收到冒泡事件
             _ragListBox.AddHandler(InputElement.PointerPressedEvent, OnRagListBoxPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
         }
+
+        // 底部「⚙ 设置」按钮：打开工作区设置中心（技能 / 规则 / MCP）
+        if (this.FindControl<Button>("SettingsBtn") is Button settingsBtn)
+            settingsBtn.Click += (s, e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -200,19 +209,7 @@ public partial class Sidebar : UserControl
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            var wsMenuBtn = new Button
-            {
-                Content = "⋯",
-                FontSize = 14,
-                Padding = new Thickness(4, 2),
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = Brush.Parse("#858585"),
-                IsVisible = false,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            // 新建会话按钮（常显于菜单之前）
+            // 新建会话按钮（常显）
             var newSessionBtn = new Button
             {
                 Content = "➕",
@@ -230,97 +227,40 @@ public partial class Sidebar : UserControl
                 await CreateSessionForWorkspaceAsync(ws);
             };
 
-            // 创建 Flyout 菜单
-            var flyout = new MenuFlyout();
-            var renameItem = new Avalonia.Controls.MenuItem { Header = "✏️ 重命名工作区" };
-            var skillItem = new Avalonia.Controls.MenuItem { Header = "⚡ 技能管理" };
-            var ruleItem = new Avalonia.Controls.MenuItem { Header = "📏 规则管理" };
-            var mcpItem = new Avalonia.Controls.MenuItem { Header = "🔌 MCP 服务" };
-            var deleteItem = new Avalonia.Controls.MenuItem { Header = "🗑️ 删除工作区" };
-
-            renameItem.Click += async (s, e) =>
+            // 删除工作区按钮（替代原「⋯」菜单中的删除项）
+            var deleteBtn = new Button
             {
-                try
-                {
-                    var parentWindow = TopLevel.GetTopLevel(this) as Window;
-                    if (parentWindow == null) return;
-
-                    var dialog = new RenameDialog(ws.Name);
-                    var result = await dialog.ShowDialog<string?>(parentWindow);
-                    if (!string.IsNullOrWhiteSpace(result) && result != ws.Name)
-                    {
-                        var repo = _services!.GetRequiredService<WorkspaceRepository>();
-                        var dbWs = await repo.GetByIdAsync(ws.WorkspaceId);
-                        if (dbWs != null)
-                        {
-                            dbWs.Name = result;
-                            await repo.UpdateAsync(dbWs);
-                            ws.Name = result;
-                            LoadWorkspaces();
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"重命名工作区失败: {ex.Message}");
-                }
+                Content = "−",
+                FontSize = 16,
+                FontWeight = FontWeight.Bold,
+                Padding = new Thickness(4, 2),
+                Margin = new Thickness(0, 0, 2, 0),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = Brush.Parse("#858585"),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                VerticalAlignment = VerticalAlignment.Center,
             };
-
-            skillItem.Click += (s, e) =>
+            ToolTip.SetTip(deleteBtn, "删除工作区");
+            deleteBtn.Click += async (s, e) =>
             {
                 try
                 {
-                    var win = new SkillManageWindow(_services!, ws);
-                    win.Show();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"打开技能管理失败: {ex.Message}");
-                }
-            };
+                    var owner = TopLevel.GetTopLevel(this) as Window;
+                    if (owner == null) return;
 
-            ruleItem.Click += (s, e) =>
-            {
-                try
-                {
-                    var win = new RuleManageWindow(_services!, ws);
-                    win.Show();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"打开规则管理失败: {ex.Message}");
-                }
-            };
-
-            mcpItem.Click += (s, e) =>
-            {
-                try
-                {
-                    var win = new MCPManageWindow(_services!, ws);
-                    win.Show();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"打开MCP服务管理失败: {ex.Message}");
-                }
-            };
-
-            deleteItem.Click += async (s, e) =>
-            {
-                try
-                {
-                    var parentWindow = TopLevel.GetTopLevel(this) as Window;
-                    if (parentWindow == null) return;
-
-                    var result = await Dialogs.ShowConfirmAsync(parentWindow, "确认删除",
-                        $"确定要删除工作区 \"{ws.Name}\" 吗？",
-                        "删除后将无法恢复，相关的会话和数据也会被删除。",
+                    var display = string.IsNullOrWhiteSpace(ws.Name) ? GetDisplayName(ws.RootPath) : ws.Name;
+                    var ok = await Dialogs.ShowConfirmAsync(owner, "确认删除",
+                        $"确定要删除工作区 \"{display}\" 吗？",
+                        "删除后将逻辑删除该工作区，并级联清理其会话与关联的 RAG 向量索引。",
                         "确定删除", danger: true);
-                    if (result == true)
+                    if (ok)
                     {
-                        var repo = _services!.GetRequiredService<WorkspaceRepository>();
-                        await repo.DeleteAsync(w => w.WorkspaceId == ws.WorkspaceId);
+                        // D6：统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 RAG 索引），
+                        // 避免此前「物理删除且遗漏 rag_file/rag_chunk 清理」留下的孤儿索引。
+                        await _workspaceManager!.DeleteWorkspaceAsync(ws.WorkspaceId);
                         LoadWorkspaces();
+                        LoadRagItems();
                     }
                 }
                 catch (Exception ex)
@@ -329,31 +269,25 @@ public partial class Sidebar : UserControl
                 }
             };
 
-            flyout.Items.Add(renameItem);
-            flyout.Items.Add(skillItem);
-            flyout.Items.Add(ruleItem);
-            flyout.Items.Add(mcpItem);
-            flyout.Items.Add(deleteItem);
-            wsMenuBtn.Flyout = flyout;
-
             Grid.SetColumn(wsIcon, 0);
             Grid.SetColumn(wsName, 1);
             Grid.SetColumn(newSessionBtn, 2);
-            Grid.SetColumn(wsMenuBtn, 3);
+            Grid.SetColumn(deleteBtn, 3);
             wsGrid.Children.Add(wsIcon);
             wsGrid.Children.Add(wsName);
             wsGrid.Children.Add(newSessionBtn);
-            wsGrid.Children.Add(wsMenuBtn);
+            wsGrid.Children.Add(deleteBtn);
             wsRow.Child = wsGrid;
 
-            // Hover 显示菜单按钮
-            wsRow.PointerEntered += (s, e) => wsMenuBtn.IsVisible = true;
-            wsRow.PointerExited += (s, e) => wsMenuBtn.IsVisible = false;
-
-            // 点击工作区切换
+            // 单击切换工作区；双击工作区名进入行内重命名（D2，替代原菜单里的「重命名」弹窗）
             wsRow.PointerPressed += (s, e) =>
             {
-                if (e.Source is Button) return;
+                if (e.Source is Button || e.Source is TextBox) return;
+                if (e.ClickCount == 2)
+                {
+                    BeginRenameWorkspace(wsGrid, ws, 1);
+                    return;
+                }
                 WorkspaceSelected?.Invoke(this, ws);
             };
 
@@ -589,6 +523,96 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
+    /// 双击工作区名进入行内重命名：临时用 TextBox 替换名称列，回车保存、Esc 取消、失焦视为保存。
+    /// </summary>
+    /// <param name="wsGrid">工作区行 Grid（4 列：图标｜名称｜新建会话｜删除）</param>
+    /// <param name="ws">待重命名的工作区</param>
+    /// <param name="nameColumn">名称所在列索引</param>
+    private void BeginRenameWorkspace(Grid wsGrid, WorkspaceInfo ws, int nameColumn)
+    {
+        // 已在编辑中则忽略，避免重复插入 TextBox
+        if (wsGrid.Children.OfType<TextBox>().Any()) return;
+
+        var original = wsGrid.Children
+            .OfType<TextBlock>()
+            .FirstOrDefault(t => Grid.GetColumn(t) == nameColumn);
+        if (original == null) return;
+
+        var index = wsGrid.Children.IndexOf(original);
+
+        var editor = new TextBox
+        {
+            Text = ws.Name ?? "",
+            FontSize = 13,
+            Padding = new Thickness(2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Brush.Parse("#1E1E1E"),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(1),
+            BorderBrush = Brush.Parse("#007ACC"),
+        };
+        Grid.SetColumn(editor, nameColumn);
+
+        var finished = false;
+
+        // 还原为只读文本（Remove 会触发 LostFocus，finished 标志可防止递归）
+        void Restore()
+        {
+            wsGrid.Children.Remove(editor);
+            if (!wsGrid.Children.Contains(original))
+                wsGrid.Children.Insert(Math.Min(index, wsGrid.Children.Count), original);
+        }
+
+        async Task FinishAsync(bool commit)
+        {
+            if (finished) return;
+            finished = true;
+
+            var newName = (editor.Text ?? "").Trim();
+            Restore();
+
+            if (!commit) return;
+            if (string.IsNullOrWhiteSpace(newName) || newName == ws.Name) return;
+
+            try
+            {
+                // 统一走 WorkspaceManager（含更新内存中的当前工作区实例，避免 UI 仍显示旧名）
+                if (_workspaceManager != null)
+                    await _workspaceManager.RenameWorkspaceAsync(ws.WorkspaceId, newName);
+                ws.Name = newName;
+                LoadWorkspaces();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"重命名工作区失败: {ex.Message}");
+                await ShowErrorAsync($"重命名工作区失败：{ex.Message}");
+            }
+        }
+
+        editor.KeyDown += async (s, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                await FinishAsync(true);
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                await FinishAsync(false);
+            }
+        };
+
+        // 失焦视为提交（与常见文件树重命名行为一致）
+        editor.LostFocus += async (s, e) => await FinishAsync(true);
+
+        wsGrid.Children.Remove(original);
+        wsGrid.Children.Insert(Math.Min(index, wsGrid.Children.Count), editor);
+        editor.Focus();
+        editor.SelectAll();
+    }
+
+    /// <summary>
     /// 加载 RAG 知识库列表
     /// 规则：知识库只能初始化一个；已存在时「初始化知识库」按钮隐藏，需先删除再初始化。
     /// </summary>
@@ -671,15 +695,9 @@ public partial class Sidebar : UserControl
                 "确定删除", danger: true);
             if (confirmed != true) return;
 
-            var services = _services!;
-            var wsRepo = services.GetRequiredService<WorkspaceRepository>();
-            await wsRepo.DeleteAsync(w => w.WorkspaceId == model.WorkspaceId);
-
-            // 同时清理其下的会话
-            var sessionRepo = services.GetRequiredService<SessionRepository>();
-            var sessions = await sessionRepo.GetByWorkspaceAsync(model.WorkspaceId);
-            foreach (var s in sessions)
-                await sessionRepo.SoftDeleteAsync(s.SessionId);
+            // 统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 rag_file/rag_chunk 索引），
+            // 取代此前「物理删工作区 + 逐个软删会话」的写法——后者会残留孤儿向量索引。
+            await _workspaceManager!.DeleteWorkspaceAsync(model.WorkspaceId);
 
             LoadRagItems();
         }

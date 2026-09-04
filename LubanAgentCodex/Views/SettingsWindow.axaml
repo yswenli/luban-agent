@@ -1,0 +1,91 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LubanAgentCodex.Views.SettingsWindow"
+        Classes="dlgWindow"
+        Title="设置 · 工作区配置"
+        Width="980" Height="640"
+        MinWidth="840" MinHeight="540"
+        WindowStartupLocation="CenterOwner">
+
+    <!--
+      三栏 IDE 风布局（方案 A）：
+        左栏 = 配置作用域（★ 全局 + 各工作区）
+        中栏 = 当前类型的条目列表
+        右栏 = 条目编辑器
+      顶部 Tab 切换「技能 / 规则 / MCP」，底部为动作栏。
+      所有可交互控件均用 Name 命名，代码-behind 通过 FindControl 解析（项目运行时 XAML 约定）。
+    -->
+    <Grid ColumnDefinitions="220,1,*">
+
+        <!-- 左栏：配置作用域 -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*">
+            <TextBlock Grid.Row="0"
+                       Text="配置作用域"
+                       Margin="16,16,16,8"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextTertiaryBrush}" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Name="ScopePanel" Margin="8,0,8,8" />
+            </ScrollViewer>
+        </Grid>
+
+        <!-- 分隔线 -->
+        <Border Grid.Column="1" Background="{DynamicResource DividerBrush}" />
+
+        <!-- 右区：Tab + 条目 + 编辑器 + 动作栏 -->
+        <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
+
+            <!-- 顶部类型 Tab（技能 / 规则 / MCP），由代码填充 -->
+            <StackPanel Grid.Row="0"
+                        Name="TabBar"
+                        Orientation="Horizontal"
+                        Margin="16,16,16,8"
+                        Spacing="8" />
+
+            <!-- 中栏条目列表 + 右栏编辑器 -->
+            <Grid Grid.Row="1" ColumnDefinitions="240,1,*">
+                <Grid Grid.Column="0" RowDefinitions="*,Auto">
+                    <ListBox Grid.Row="0"
+                             Name="ItemList"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Margin="16,0,8,0" />
+                    <Button Grid.Row="1"
+                            Name="NewItemBtn"
+                            Content="＋ 新建"
+                            Margin="16,8,8,16"
+                            Padding="8,6"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Classes="dlgGhost" />
+                </Grid>
+
+                <Border Grid.Column="1" Background="{DynamicResource DividerBrush}" />
+
+                <ScrollViewer Grid.Column="2"
+                              Name="EditorHost"
+                              VerticalScrollBarVisibility="Auto"
+                              Margin="16,0,16,8" />
+            </Grid>
+
+            <!-- 底部：左侧提示 + 右侧动作按钮 -->
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="16,8,16,16">
+                <TextBlock Grid.Column="0"
+                           Name="HintText"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextTertiaryBrush}" />
+                <StackPanel Grid.Column="1"
+                            Name="ActionBar"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <Button Name="DeleteItemBtn" Content="删除此条目" Classes="dlgDanger" Padding="12,6" />
+                    <Button Name="ApplyBtn" Content="应用配置" Classes="dlgGhost" Padding="12,6" />
+                    <Button Name="SaveBtn" Content="保存" Classes="dlgPrimary" Padding="12,6" />
+                </StackPanel>
+            </Grid>
+
+        </Grid>
+    </Grid>
+</Window>
