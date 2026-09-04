@@ -16,7 +16,7 @@
 
                 <!-- 标题 -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="➕" FontSize="18" Foreground="#06B6D4" VerticalAlignment="Center" />
+                    <TextBlock Text="✚" FontSize="18" Foreground="#CCCCCC" VerticalAlignment="Center" />
                     <TextBlock Text="新建工作区"
                                FontSize="16"
                                FontWeight="Bold"

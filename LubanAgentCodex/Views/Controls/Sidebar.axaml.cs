@@ -223,7 +223,16 @@ public partial class Sidebar : UserControl
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto")
             };
 
-            var wsIcon = new TextBlock { Text = "📁", Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            // 文件夹图标（矢量 PathIcon，尊重 Foreground，跟随主题配色）
+            var wsIcon = new PathIcon
+            {
+                Data = StreamGeometry.Parse("M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"),
+                Width = 14,
+                Height = 14,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brush.Parse("#CCCCCC"),
+            };
             var wsName = new TextBlock
             {
                 Text = string.IsNullOrWhiteSpace(ws.Name) ? GetDisplayName(ws.RootPath) : ws.Name,
@@ -235,13 +244,13 @@ public partial class Sidebar : UserControl
             // 新建会话按钮（常显）
             var newSessionBtn = new Button
             {
-                Content = "➕",
+                Content = "✚",
                 FontSize = 14,
                 Padding = new Thickness(4, 2),
                 Margin = new Thickness(0, 0, 4, 0),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = Brush.Parse("#4CAF50"),
+                Foreground = Brush.Parse("#CCCCCC"),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             ToolTip.SetTip(newSessionBtn, "新建会话");
@@ -260,7 +269,7 @@ public partial class Sidebar : UserControl
                 Margin = new Thickness(0, 0, 2, 0),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = Brush.Parse("#858585"),
+                Foreground = Brush.Parse("#C62828"),
                 Cursor = new Cursor(StandardCursorType.Hand),
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -328,7 +337,16 @@ public partial class Sidebar : UserControl
                 };
 
                 var sessStack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(32, 0, 0, 0) };
-                var sessIcon = new TextBlock { Text = "💬", Margin = new Thickness(0, 0, 8, 0), FontSize = 12 };
+                // 会话图标（矢量 PathIcon，尊重 Foreground，跟随主题配色）
+                var sessIcon = new PathIcon
+                {
+                    Data = StreamGeometry.Parse("M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"),
+                    Width = 12,
+                    Height = 12,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Brush.Parse("#CCCCCC"),
+                };
                 var sessName = new TextBlock
                 {
                     Text = session.Title ?? "新会话",
@@ -344,7 +362,24 @@ public partial class Sidebar : UserControl
 
                 // 会话右键菜单
                 var sessFlyout = new MenuFlyout();
-                var deleteSessItem = new Avalonia.Controls.MenuItem { Header = "🗑️ 删除会话" };
+                // 删除会话菜单项（矢量 PathIcon 垃圾桶图标 + 文案，深红危险色与删除按钮保持一致）
+                var deleteSessItem = new Avalonia.Controls.MenuItem();
+                var sessDelPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                sessDelPanel.Children.Add(new PathIcon
+                {
+                    Data = StreamGeometry.Parse("M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"),
+                    Width = 14,
+                    Height = 14,
+                    Foreground = Brush.Parse("#C62828"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                sessDelPanel.Children.Add(new TextBlock { Text = "删除会话", Foreground = Brush.Parse("#C62828") });
+                deleteSessItem.Header = sessDelPanel;
 
                 var sessionCopy = session; // 捕获副本
                 deleteSessItem.Click += async (s, e) =>
@@ -399,27 +434,7 @@ public partial class Sidebar : UserControl
     /// </summary>
     private Button BuildNewWorkspaceButton()
     {
-        var gradientNormal = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops = new GradientStops
-            {
-                new GradientStop(Color.Parse("#2563EB"), 0),
-                new GradientStop(Color.Parse("#06B6D4"), 1),
-            }
-        };
-        var gradientHover = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops = new GradientStops
-            {
-                new GradientStop(Color.Parse("#3B82F6"), 0),
-                new GradientStop(Color.Parse("#22D3EE"), 1),
-            }
-        };
-
+        // 样式对齐底部「⚙ 设置」按钮：透明背景 + 浅灰边框 + 浅灰文字
         var content = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -427,7 +442,7 @@ public partial class Sidebar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        content.Children.Add(new TextBlock { Text = "➕", FontSize = 14, Foreground = Brush.Parse("#67E8F9") });
+        content.Children.Add(new TextBlock { Text = "✚", FontSize = 14, Foreground = Brush.Parse("#CCCCCC") });
         content.Children.Add(new TextBlock { Text = "新建工作区", FontSize = 13, FontWeight = FontWeight.SemiBold });
 
         var btn = new Button
@@ -439,15 +454,14 @@ public partial class Sidebar : UserControl
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Foreground = Brushes.White,
-            Background = gradientNormal,
-            BorderThickness = new Thickness(0),
+            Foreground = Brush.Parse("#CCCCCC"),
+            Background = Brushes.Transparent,
+            BorderBrush = Brush.Parse("#333333"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 6),
+            FontSize = 12,
             Content = content,
         };
-
-        // hover 高亮
-        btn.PointerEntered += (s, e) => btn.Background = gradientHover;
-        btn.PointerExited += (s, e) => btn.Background = gradientNormal;
 
         btn.Click += async (s, e) => await CreateNewWorkspaceAsync();
         return btn;
@@ -677,7 +691,7 @@ public partial class Sidebar : UserControl
                         VerticalAlignment = VerticalAlignment.Center,
                         Children =
                         {
-                            new TextBlock { Text = "➕", Foreground = Brush.Parse("#AB47BC") },
+                            new TextBlock { Text = "✚", Foreground = Brush.Parse("#CCCCCC") },
                             new TextBlock { Text = "初始化知识库", Foreground = Brush.Parse("#CCCCCC") },
                         }
                     },
