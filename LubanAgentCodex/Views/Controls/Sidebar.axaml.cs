@@ -80,6 +80,29 @@ public partial class Sidebar : UserControl
         // 底部「⚙ 设置」按钮：打开工作区设置中心（技能 / 规则 / MCP）
         if (this.FindControl<Button>("SettingsBtn") is Button settingsBtn)
             settingsBtn.Click += (s, e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+        // 底部「GitHub ↗」按钮：在默认浏览器打开仓库地址
+        if (this.FindControl<Button>("GitHubBtn") is Button githubBtn)
+            githubBtn.Click += (s, e) => OpenGitHub();
+    }
+
+    /// <summary>
+    /// 在默认浏览器中打开 GitHub 仓库
+    /// </summary>
+    private void OpenGitHub()
+    {
+        try
+        {
+            var url = "https://github.com/yswenli/luban-agent";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"打开 GitHub 失败: {ex.Message}");
+        }
     }
 
     /// <summary>

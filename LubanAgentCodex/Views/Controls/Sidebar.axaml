@@ -72,9 +72,19 @@
                                    Foreground="{DynamicResource TextTertiaryBrush}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,0,0,4">
-                        <Span Foreground="{DynamicResource PrimaryBrush}"> GitHub</Span>
-                    </TextBlock>
+                    <!-- GitHub 仓库链接：点击在默认浏览器打开 -->
+                    <Button Name="GitHubBtn"
+                            Content="GitHub ↗"
+                            FontSize="11"
+                            Padding="0"
+                            Margin="0,0,0,4"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            HorizontalAlignment="Left"
+                            HorizontalContentAlignment="Left"
+                            Foreground="{DynamicResource PrimaryBrush}"
+                            Cursor="Hand"
+                            ToolTip.Tip="在浏览器中打开 GitHub 仓库" />
                     <TextBlock Text="Author: yswenli"
                                FontSize="11"
                                Foreground="{DynamicResource TextTertiaryBrush}"
