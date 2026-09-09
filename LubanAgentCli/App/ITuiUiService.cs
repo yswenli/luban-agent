@@ -49,6 +49,6 @@ public interface ITuiUiService
     /// <summary>多字段表单框。返回按字段顺序的值列表，取消返回 null。取消/校验失败时不返回部分值。</summary>
     IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields);
 
-    /// <summary>表格弹窗（TableView，仅查看，"关闭"按钮）。</summary>
-    void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows);
+    /// <summary>表格弹窗（TableView，"关闭/选择"按钮）。返回选中行索引（-1 表示未选中或取消）。</summary>
+    int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false);
 }

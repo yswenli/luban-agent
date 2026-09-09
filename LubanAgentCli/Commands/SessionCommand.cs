@@ -145,10 +145,18 @@ public class SessionCommand : CommandBase
             rows.Add(new[] { $"{i + 1}. {session.SessionId}", title, updateTime, messageCount, tokens, preview });
         }
 
-        Ui.ShowTable("历史会话（更新时间倒序）", new[] { "会话 ID", "名称", "更新时间", "消息数", "Token", "预览" }, rows);
+        var selected = Ui.ShowTable(
+            "历史会话（更新时间倒序）",
+            new[] { "会话 ID", "名称", "更新时间", "消息数", "Token", "预览" },
+            rows,
+            selectable: true);
 
-        Writer.WriteLine();
-        Writer.WriteInfo("提示: 使用 /se -s <编号> 切换会话");
+        if (selected >= 0 && selected < sessions.Count)
+        {
+            var session = sessions[selected];
+            await _sessionManager.SetCurrentSessionAsync(session.SessionId);
+            Writer.WriteSuccess($"已切换到会话: {session.Title}（下一轮对话自动加载该会话历史）");
+        }
     }
 
     /// <summary>
