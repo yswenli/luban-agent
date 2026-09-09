@@ -27,7 +27,7 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 {
     public event Action<string>? SubmitRequested;
 
-protected override bool OnKeyDown(Key key)
+    protected override bool OnKeyDown(Key key)
     {
         Infrastructure.TuiDiag.KeyArrival();
 
@@ -100,7 +100,7 @@ internal sealed class InputBarView : View
         };
         SetScheme(bgScheme);
 
-_editor = new MultilineEditor
+        _editor = new MultilineEditor
         {
             X = 2,
             Y = 0,

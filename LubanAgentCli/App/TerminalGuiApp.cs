@@ -9,12 +9,14 @@
 *唯一标识：TUI 应用启动引导
 *当前的用户域：WALLE
 *创建人：yswenli
-*电子邮箱：yswenli@outlook.com
+*电子邮箱：yswen@outlook.com
 *创建时间：2026/8/11
 *描述：Terminal.Gui 应用启动引导，负责初始化驱动、运行顶层视图与优雅关闭
 *
 *****************************************************************************/
+using System.Runtime.InteropServices;
 using LubanAgentCli.App.Services;
+using LubanAgentCli.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCli.App;
@@ -28,13 +30,20 @@ internal sealed class TerminalGuiApp : IDisposable
 {
     private TitleService? _titleService;
     private Action<string>? _titleChangedHandler;
+    private bool _timerPeriodRaised;
+    private FastInputBootstrapper? _fastInput;
 
     /// <summary>
     /// Terminal.Gui 应用
     /// </summary>
     public TerminalGuiApp()
     {
-        Application.MaximumIterationsPerSecond = 60;
+        Application.MaximumIterationsPerSecond = 120;
+
+        if (OperatingSystem.IsWindows())
+        {
+            _timerPeriodRaised = TimeApi.TryRaiseTimerResolution();
+        }
     }
 
     /// <summary>
@@ -47,6 +56,9 @@ internal sealed class TerminalGuiApp : IDisposable
     /// </summary>
     public void Dispose()
     {
+        _fastInput?.Dispose();
+        _fastInput = null;
+
         if (_titleService is not null && _titleChangedHandler is not null)
         {
             _titleService.TitleChanged -= _titleChangedHandler;
@@ -55,6 +67,12 @@ internal sealed class TerminalGuiApp : IDisposable
         if (Services is IDisposable disposable)
         {
             disposable.Dispose();
+        }
+
+        if (_timerPeriodRaised && OperatingSystem.IsWindows())
+        {
+            TimeApi.RestoreTimerResolution();
+            _timerPeriodRaised = false;
         }
     }
 
@@ -102,6 +120,10 @@ internal sealed class TerminalGuiApp : IDisposable
 
             application = Application.Create();
             application.Init(driverName);
+
+            _fastInput = new FastInputBootstrapper();
+            var fastInputOk = _fastInput.TryEnable(application);
+            Logger.Warn($"[TuiDiag] FastInput enabled={fastInputOk}");
 
             ConfigureDriver(application);
             if (TuiDiag.Enabled)
@@ -187,6 +209,51 @@ internal sealed class TerminalGuiApp : IDisposable
 
         Logger.Error("TUI 主循环未捕获异常", ex);
         return true;
+    }
+
+    /// <summary>
+    /// Windows 多媒体计时器精度 P/Invoke。
+    /// </summary>
+    private static class TimeApi
+    {
+        private const uint TIMERR_NOERROR = 0;
+
+        public static bool TryRaiseTimerResolution()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return false;
+            }
+
+            try
+            {
+                return timeBeginPeriod(1) == TIMERR_NOERROR;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static void RestoreTimerResolution()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    _ = timeEndPeriod(1);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        [DllImport("winmm.dll", ExactSpelling = true)]
+        private static extern uint timeBeginPeriod(uint uPeriod);
+
+        [DllImport("winmm.dll", ExactSpelling = true)]
+        private static extern uint timeEndPeriod(uint uPeriod);
     }
 
 }
