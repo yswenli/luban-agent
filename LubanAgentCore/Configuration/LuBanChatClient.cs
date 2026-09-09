@@ -2,7 +2,7 @@
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
 *Author：yswenli
-*命名空间：LubanAgent.Configuration
+*命名空间：LubanAgentCore.Configuration
 *文件名： LuBanChatClient
 *版本号： V1.0.0.0
 *唯一标识：新建

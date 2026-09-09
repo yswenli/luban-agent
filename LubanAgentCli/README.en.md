@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
 English | [中文](README.md)
 
@@ -324,7 +324,6 @@ On launch, enters a Terminal.Gui full-screen alt-screen interface with a top-to-
 | `/browse` | `/b` | Website-specific Agent Operations |
 | `/stats` | `/st` | Session & Token Statistics |
 | `/work` | `/w` | Workspace Management |
-| `/rag` | `/rg` | Knowledge Base Management |
 | `/rag` | `/rg` | Knowledge Base Management |
 
 ---
@@ -836,7 +835,7 @@ Available tools for github:
 
 | Component | Description |
 |-----------|-------------|
-| **Terminal.Gui 2.4.17** | Full-screen TUI framework (net10.0, 24-bit TrueColor, alt-screen) |
+| **Terminal.Gui 2.6.0-develop.61** | Full-screen TUI framework (net10.0, 24-bit TrueColor, alt-screen) |
 | **Microsoft.Agents.AI.Foundry** | Agent runtime framework |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
 | **Microsoft.Playwright** | Browser automation engine |

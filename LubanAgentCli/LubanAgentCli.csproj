@@ -10,10 +10,6 @@
 		<PublishSingleFile>false</PublishSingleFile>
 		<SelfContained>false</SelfContained>
 
-		<!-- 只保留当前平台运行时，减少 bin 目录体积 -->
-		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
-		<IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
-
 		<StripSymbols>true</StripSymbols>
 		<Optimize>true</Optimize>
 		<DebugType>none</DebugType>

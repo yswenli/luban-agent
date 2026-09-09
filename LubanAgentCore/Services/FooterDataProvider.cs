@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Services
+*命名空间：LubanAgentCore.Services
 *文件名： FooterDataProvider
 *版本号： V1.0.0.0
 *唯一标识：页脚数据提供者

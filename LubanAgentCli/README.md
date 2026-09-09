@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
 [English](README.en.md) | 中文
 
@@ -854,7 +854,7 @@ github 可用的工具：
 
 | 组件 | 说明 |
 |------|------|
-| **Terminal.Gui 2.4.17** | 全屏 TUI 框架（net10.0，24-bit TrueColor，alt-screen） |
+| **Terminal.Gui 2.6.0-develop.61** | 全屏 TUI 框架（net10.0，24-bit TrueColor，alt-screen） |
 | **Microsoft.Agents.AI.Foundry** | Agent 运行时框架 |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |

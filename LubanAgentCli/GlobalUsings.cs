@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent
+*命名空间：LubanAgentCli
 *文件名： GlobalUsings
 *版本号： V1.0.0.0
 *唯一标识：新建
