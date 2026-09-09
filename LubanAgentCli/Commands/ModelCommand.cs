@@ -2,7 +2,7 @@
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
 *Author：yswenli
-*命名空间：LubanAgent.Commands
+*命名空间：LubanAgentCli.Commands
 *文件名： ModelCommand
 *版本号： V1.0.0.0
 *唯一标识：新建

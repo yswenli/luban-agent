@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Commands
+*命名空间：LubanAgentCli.Commands
 *文件名： RagCommand
 *版本号： V1.0.0.0
 *唯一标识：RAG 知识库管理命令
