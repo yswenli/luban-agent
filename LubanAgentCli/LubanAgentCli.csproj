@@ -35,6 +35,7 @@
 		<PackageVersion>1.0.0</PackageVersion>
 		<Authors>yswenli</Authors>
 		<Description>LuBan AI Agent 命令行工具，支持多 Agent 编排、工具调用、会话管理</Description>
+		<PlatformTarget>AnyCPU</PlatformTarget>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -68,7 +69,7 @@
 		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
 		<!-- OpenAI 版本必须满足 M.E.AI.OpenAI 10.9.0 的约束 (>=2.12.0 && <2.13.0)；
 		     2.13.0 的流式工具调用表示有破坏性变更，会导致工具调用 chunk 解析为空 update、轮次静默结束 -->
-		<PackageReference Include="OpenAI" Version="2.13.0" />
+		<PackageReference Include="OpenAI" Version="2.12.0" />
 
 		<!-- CLI 的 Database 工具仅支持 SqlServer/MySql/PostgreSql/SQLite，
 		     裁剪 SqlSugarCore 传递的其余数据库驱动（Oracle/达梦/人大金仓/神舟通用），约 7MB。

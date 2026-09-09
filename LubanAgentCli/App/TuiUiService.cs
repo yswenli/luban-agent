@@ -198,8 +198,9 @@ internal sealed class TuiUiService : ITuiUiService
 
         return RunModal(() =>
         {
-            // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 3 行给按钮
+            // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 5 行给按钮+border
             var contentHeight = fields.Sum(f => f.Multiline ? 8 : 3);
+            var dialogHeight = Math.Min(contentHeight + 5, 32);
 
             List<string>? values = null;
             var inputs = new List<View>(fields.Count);
@@ -236,7 +237,7 @@ internal sealed class TuiUiService : ITuiUiService
                 X = Pos.Center(),
                 Y = Pos.Center(),
                 Width = 72,
-                Height = Math.Min(contentHeight + 3, 32)
+                Height = dialogHeight
             };
 
             var y = 0;
@@ -290,12 +291,12 @@ internal sealed class TuiUiService : ITuiUiService
 #pragma warning restore CS0618
 
     /// <inheritdoc/>
-    public void ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows)
+    public int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false)
     {
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(rows);
 
-        RunModal<object?>(() =>
+        return RunModal(() =>
         {
             var dt = new System.Data.DataTable();
             foreach (var c in columns)
@@ -304,7 +305,6 @@ internal sealed class TuiUiService : ITuiUiService
             }
             foreach (var r in rows)
             {
-                // 列数不足补空串，超出截断，保证 DataTable 不抛异常
                 var cells = columns.Select((_, i) => i < r.Count ? (object)(r[i] ?? string.Empty) : string.Empty).ToArray();
                 dt.Rows.Add(cells);
             }
@@ -324,16 +324,54 @@ internal sealed class TuiUiService : ITuiUiService
                 Y = 0,
                 Width = Dim.Fill(),
                 Height = Dim.Fill(2),
-                Table = new DataTableSource(dt)
+                Table = new DataTableSource(dt),
+                FullRowSelect = true,
+                MultiSelect = false
             };
             dialog.Add(table);
 
-            var close = new Button { Text = "关闭" };
-            close.Accepting += (_, _) => dialog.RequestStop();
+            var selectedIndex = -1;
+
+            int GetSelectedRow()
+            {
+                try
+                {
+                    var regions = table.MultiSelectedRegions;
+                    if (regions is not null && regions.Count > 0)
+                    {
+                        return regions.First().Origin.Y;
+                    }
+                }
+                catch { }
+                return -1;
+            }
+
+            var close = new Button { Text = selectable ? "选择" : "关闭" };
+            close.Accepting += (_, _) =>
+            {
+                if (selectable)
+                {
+                    selectedIndex = GetSelectedRow();
+                }
+                dialog.RequestStop();
+            };
             dialog.AddButton(close);
 
+            if (selectable)
+            {
+                table.Accepted += (_, _) =>
+                {
+                    var row = GetSelectedRow();
+                    if (row >= 0)
+                    {
+                        selectedIndex = row;
+                        dialog.RequestStop();
+                    }
+                };
+            }
+
             _app.Run(dialog);
-            return null;
+            return selectedIndex;
         });
     }
 }
