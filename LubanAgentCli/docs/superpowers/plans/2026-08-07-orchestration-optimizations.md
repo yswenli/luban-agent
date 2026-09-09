@@ -73,7 +73,7 @@
 ```csharp
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
+*CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LuBan.AIAgent.Tests.Orchestration
@@ -153,7 +153,7 @@ Expected: 编译失败，`HeuristicFilterOptions` 类型不存在。
 ```csharp
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
+*CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LuBan.AIAgent.Configuration
@@ -735,7 +735,7 @@ git -C "D:\WorkBench\Walle\luban\luban-framework" commit -m "test: add MockProvi
 ```csharp
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
+*CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LuBan.AIAgent.Tests.Orchestration

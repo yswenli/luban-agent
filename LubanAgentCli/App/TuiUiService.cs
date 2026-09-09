@@ -336,11 +336,8 @@ internal sealed class TuiUiService : ITuiUiService
             {
                 try
                 {
-                    var regions = table.MultiSelectedRegions;
-                    if (regions is not null && regions.Count > 0)
-                    {
-                        return regions.First().Origin.Y;
-                    }
+                    var sel = table.Value;
+                    return sel?.SelectedCell.Y ?? -1;
                 }
                 catch { }
                 return -1;

@@ -1,6 +1,6 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
-*CLR版本： .net8.0
+*CLR版本： .net10.0
 *Author：yswenli
 *命名空间：LubanAgent.Commands
 *文件名： ModelCommand
