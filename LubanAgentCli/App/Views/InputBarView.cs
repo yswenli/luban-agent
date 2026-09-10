@@ -17,6 +17,8 @@
 *****************************************************************************/
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
+using Command = Terminal.Gui.Input.Command;
+using Key = Terminal.Gui.Input.Key;
 
 namespace LubanAgentCli.App.Views;
 
@@ -36,10 +38,12 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             Logger.Warn($"[TuiDiag] Editor.OnKeyDown: key={key}");
         }
 
-        // Shift+Enter 或 Ctrl+Enter 换行
+        // Shift+Enter 或 Ctrl+Enter 换行。
+        // 必须走 Command.NewLine：ReplaceSelection 在无选区时是 no-op（插不进任何字符），
+        // 而 NewLine 是 Editor 官方的 Enter 绑定，可同时复用其自动缩进策略。
         if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
         {
-            ReplaceSelection("\n");
+            InvokeCommand(Command.NewLine);
             return true;
         }
 
@@ -112,6 +116,12 @@ internal sealed class InputBarView : View
         };
         _editor.SetScheme(bgScheme);
         _editor.SubmitRequested += text => Submitted?.Invoke(text);
+
+        // 解除 Editor 默认的 Tab/Shift+Tab 缩进/反缩进绑定，
+        // 让这两个键能冒泡到 RootView 的全局快捷键处理
+        // （Tab 切换任务视图、Shift+Tab 切换权限模式）
+        _editor.KeyBindings.Remove(Key.Tab);
+        _editor.KeyBindings.Remove(Key.Tab.WithShift);
 
         Add(_editor);
     }

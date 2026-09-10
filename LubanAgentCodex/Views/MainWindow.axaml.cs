@@ -125,6 +125,11 @@ public partial class MainWindow : Window
                             _loadingOverlay.IsVisible = _viewModel.IsSwitchingSession;
                         }
                     }
+                    else if (e.PropertyName == nameof(MainWindowViewModel.PermissionMode))
+                    {
+                        // /mode 命令等任意路径改动模式都要同步页脚，避免显示与实际模式不一致
+                        UpdateFooter();
+                    }
                 };
             }
 
@@ -213,6 +218,14 @@ public partial class MainWindow : Window
     private void CyclePermissionMode()
     {
         if (_viewModel == null) return;
+
+        // 与 CLI 行为对齐：in-flight 回合的 context.Mode 在流开始时已固定，
+        // 运行中切换只会让页脚与实际生效模式不一致，故直接拒绝并提示
+        if (_viewModel.IsRunning)
+        {
+            _viewModel.Messages.Add(new SystemMessageItem { Content = "Agent 运行中无法切换权限模式" });
+            return;
+        }
 
         _viewModel.PermissionMode = _viewModel.PermissionMode switch
         {

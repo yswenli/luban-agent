@@ -82,67 +82,114 @@ public class ModelCommand : CommandBase
     }
 
     /// <summary>
-    /// 列出所有可用模型
+    /// 列出模型并交互式选择 Model 来确认当前使用的 LLM
     /// </summary>
     private async Task<bool> ExecuteListAsync()
     {
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
-            Writer.WriteInfo("暂无配置的 Provider，请先使用 provider add 添加");
-            return true;
+            Writer.WriteInfo("暂无配置的 Provider");
+            // 直接引导用户添加 Provider
+            return await ExecuteAddAsync(Array.Empty<string>());
         }
 
-        // 先异步刷新所有 Provider 的模型列表（容错、不阻塞）
-        foreach (var p in providers)
+        // 检查是否有当前 provider
+        string? currentProviderName = null;
+        if (!string.IsNullOrEmpty(ConfigManager.SelectedModel) && ConfigManager.SelectedModel.Contains(':'))
+        {
+            currentProviderName = ConfigManager.SelectedModel.Split(':', 2)[0];
+            if (!ConfigManager.HasProvider(currentProviderName))
+            {
+                currentProviderName = null;
+            }
+        }
+
+        ProviderConfig selectedProvider;
+
+        if (currentProviderName is null)
+        {
+            // 没有当前 provider，需要选择
+            var providerChosen = Ui.Choose("选择 Provider",
+                providers.Select(p => ProviderHelper.GetDisplayName(p.Name)).ToList());
+
+            if (providerChosen is null) return true; // 用户取消
+
+            selectedProvider = providers[providerChosen.Value];
+        }
+        else
+        {
+            // 有当前 provider，直接使用
+            selectedProvider = ConfigManager.GetProvider(currentProviderName)!;
+            Writer.WriteInfo($"当前 Provider: {ProviderHelper.GetDisplayName(currentProviderName)}");
+        }
+
+        var providerName = selectedProvider.Name;
+
+        // 刷新该 Provider 的模型列表（容错、不阻塞）
+        if (!string.IsNullOrEmpty(selectedProvider.ApiKey))
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderHelper.RefreshModelsAsync(p.Name, p.ApiKey, p.BaseUrl, cts.Token);
+                await ProviderHelper.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
             }
             catch (OperationCanceledException)
             {
-                Writer.WriteInfo($"刷新 {p.Name} 模型列表超时，将使用本地预定义模型。");
+                Writer.WriteInfo($"刷新 {ProviderHelper.GetDisplayName(providerName)} 模型列表超时，将使用本地预定义模型。");
             }
             catch (Exception ex)
             {
-                Writer.WriteInfo($"刷新 {p.Name} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+                Writer.WriteInfo($"刷新 {ProviderHelper.GetDisplayName(providerName)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
             }
         }
 
-        var rows = new List<IReadOnlyList<string>>();
-        foreach (var p in providers)
-        {
-            var displayName = ProviderHelper.GetDisplayName(p.Name);
+        // 显示该 Provider 的模型列表
+        var allModels = ProviderHelper.GetAllModels(providerName, selectedProvider.CustomModels);
 
-            var allModels = ProviderHelper.GetAllModels(p.Name, p.CustomModels);
-            if (allModels.Count == 0)
+        if (allModels.Count == 0)
+        {
+            // 没有预定义模型，让用户手动输入
+            var values = Ui.ShowForm($"{ProviderHelper.GetDisplayName(providerName)} 没有可用模型", new[]
             {
-                rows.Add(new[] { displayName, "(无可用模型)", "" });
-            }
-            else
+                new FormField("请输入模型名称")
+            });
+            if (values is null) return true; // 用户取消
+
+            var modelName = values[0].Trim();
+            if (string.IsNullOrEmpty(modelName))
             {
-                foreach (var model in allModels)
-                {
-                    var tags = new List<string>();
-                    if (ConfigManager.SelectedModel == $"{p.Name}:{model}") tags.Add("当前");
-                    if (p.CustomModels?.Contains(model) == true) tags.Add("自定义");
-                    rows.Add(new[] { displayName, model, string.Join(", ", tags) });
-                }
+                Writer.WriteError("模型名称不能为空");
+                return true;
             }
+
+            ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
+            Writer.WriteSuccess($"已确认 LLM: {ProviderHelper.GetDisplayName(providerName)} - {modelName}");
+            return true;
         }
 
-        Ui.ShowTable("所有可用模型", new[] { "Provider", "模型", "备注" }, rows);
+        // 显示模型列表，让用户选择（默认第一个）
+        var modelChosen = Ui.Choose($"{ProviderHelper.GetDisplayName(providerName)} 可用模型（回车确认，未选则默认第一个）",
+            allModels.Select(m =>
+            {
+                var isSelected = ConfigManager.SelectedModel == $"{providerName}:{m}" ? " (已选)" : "";
+                return $"{m}{isSelected}";
+            }).ToList());
 
-        if (!string.IsNullOrEmpty(ConfigManager.SelectedModel))
+        string selectedModel;
+        if (modelChosen is null)
         {
-            Writer.WriteSuccess($"当前选择的模型: {ConfigManager.SelectedModel}");
+            // 用户直接关闭，使用第一个模型
+            selectedModel = allModels[0];
+            Writer.WriteInfo($"未选择，使用默认模型: {selectedModel}");
         }
         else
         {
-            Writer.WriteInfo("当前未选择模型，请使用 model switch 选择");
+            selectedModel = allModels[modelChosen.Value];
         }
+
+        ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
+        Writer.WriteSuccess($"已确认 LLM: {ProviderHelper.GetDisplayName(providerName)} - {selectedModel}");
 
         return true;
     }

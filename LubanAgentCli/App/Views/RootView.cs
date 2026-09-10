@@ -44,6 +44,8 @@ internal sealed class RootView : Runnable
     private volatile bool _initializing;
     private readonly Action<ToolPermissionMode> _onPermissionModeChanged;
     private readonly Action _onExitRequested;
+    private Terminal.Gui.App.IKeyboard? _keyboard;
+    private EventHandler<Terminal.Gui.Input.Key>? _onGlobalKeyDown;
 
     /// <summary>
     /// 初始化顶层容器、文档模型、ViewModel 与三区域布局。
@@ -125,6 +127,15 @@ internal sealed class RootView : Runnable
         // 延迟设置焦点：EndInit 阶段 Application 主循环尚未开始，
         // SetFocus 不会立即生效。在 IsRunningChanged 时设置焦点。
         IsRunningChanged += OnIsRunningChanged;
+        // 全局按键兜底：Editor 等焦点视图可能消费按键导致冒泡链断裂，
+        // 订阅应用级 Keyboard.KeyDown 确保 Shift+Tab 等全局快捷键始终可达
+        var app = GetApp();
+        if (app?.Keyboard is { } keyboard)
+        {
+            _keyboard = keyboard;
+            _onGlobalKeyDown = OnGlobalKeyDown;
+            keyboard.KeyDown += _onGlobalKeyDown;
+        }
     }
 
     /// <summary>
@@ -159,12 +170,82 @@ internal sealed class RootView : Runnable
     {
         if (disposing)
         {
+            if (_keyboard is not null && _onGlobalKeyDown is not null)
+            {
+                _keyboard.KeyDown -= _onGlobalKeyDown;
+                _keyboard = null;
+                _onGlobalKeyDown = null;
+            }
             _inputBar.Submitted -= OnInputSubmitted;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
             _vm.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// 应用级键盘事件兜底。仅处理 Shift+Tab（权限模式切换）：
+    /// RootView 为顶层 Runnable 时才生效，模态对话框运行期间不抢键；
+    /// 已被视图链正常处理的事件（Handled）不重复处理。
+    /// </summary>
+    private void OnGlobalKeyDown(object? sender, Key key)
+    {
+        if (key != Key.Tab.WithShift || key.Handled)
+        {
+            return;
+        }
+
+        var app = GetApp();
+        if (app is null || !ReferenceEquals(app.TopRunnable, this))
+        {
+            return;
+        }
+
+        HandleShiftTab(key);
+    }
+
+    /// <summary>
+    /// Shift+Tab 权限模式切换（供 RootView.OnKeyDown 与全局兜底共用）。
+    /// 应用级 Keyboard.KeyDown 早于视图派发触发，同一次按键可能经两条路径到达，
+    /// 用 <see cref="Key.Handled"/> 去重，避免模式跳两级、Bypass 确认弹两次。
+    /// </summary>
+    private void HandleShiftTab(Key key)
+    {
+        if (key.Handled)
+        {
+            return;
+        }
+
+        key.Handled = true;
+
+        if (_vm.IsRunning)
+        {
+            _doc.AppendBlock(new SystemBlock("Agent 运行中无法切换权限模式"));
+            return;
+        }
+
+        var newMode = _vm.CyclePermissionMode();
+
+        // BypassPermissions 需二次确认
+        if (newMode == ToolPermissionMode.BypassPermissions)
+        {
+            var confirmBlock = ChoiceBlocks.BypassConfirm(confirmed =>
+            {
+                if (!confirmed)
+                {
+                    _vm.SetPermissionMode(ToolPermissionMode.Default);
+                }
+                _doc.AppendBlock(new SystemBlock(
+                    confirmed ? "⚠ Bypass Permissions 已启用" : "已恢复 Default 模式",
+                    foreground: confirmed ? BlockColors.Failure : BlockColors.Success));
+            });
+            _doc.AppendBlock(confirmBlock);
+            return;
+        }
+
+        _doc.AppendBlock(new SystemBlock(
+            $"权限模式: {_vm.PermissionModeDisplay}", foreground: BlockColors.Accent));
     }
 
     // ── 全局快捷键 ──
@@ -194,33 +275,7 @@ internal sealed class RootView : Runnable
 
         if (key == Key.Tab.WithShift)
         {
-            if (_vm.IsRunning)
-            {
-                _doc.AppendBlock(new SystemBlock("Agent 运行中无法切换权限模式"));
-                return true;
-            }
-
-            var newMode = _vm.CyclePermissionMode();
-
-            // BypassPermissions 需二次确认
-            if (newMode == ToolPermissionMode.BypassPermissions)
-            {
-                var confirmBlock = ChoiceBlocks.BypassConfirm(confirmed =>
-                {
-                    if (!confirmed)
-                    {
-                        _vm.SetPermissionMode(ToolPermissionMode.Default);
-                    }
-                    _doc.AppendBlock(new SystemBlock(
-                        confirmed ? "⚠ Bypass Permissions 已启用" : "已恢复 Default 模式",
-                        foreground: confirmed ? BlockColors.Failure : BlockColors.Success));
-                });
-                _doc.AppendBlock(confirmBlock);
-                return true;
-            }
-
-            _doc.AppendBlock(new SystemBlock(
-                $"权限模式: {_vm.PermissionModeDisplay}", foreground: BlockColors.Accent));
+            HandleShiftTab(key);
             return true;
         }
 

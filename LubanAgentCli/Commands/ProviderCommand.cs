@@ -358,35 +358,98 @@ public class ProviderCommand : CommandBase
     }
 
     /// <summary>
-    /// 列出所有已配置的 Provider
+    /// 列出所有已配置的 Provider，并交互式选择 Provider 和 Model 来确认当前使用的 LLM
     /// </summary>
     /// <returns>是否已处理</returns>
-    private Task<bool> ExecuteListAsync()
+    private async Task<bool> ExecuteListAsync()
     {
         var providers = ConfigManager.Providers;
         if (providers.Count == 0)
         {
-            Writer.WriteInfo("已配置的 Provider: (暂无)");
-            return Task.FromResult(true);
+            Writer.WriteInfo("暂无配置的 Provider");
+            // 直接引导用户添加 Provider
+            return await ExecuteAddAsync(Array.Empty<string>());
         }
 
-        var rows = providers
-            .Select(p =>
+        // 步骤 1：选择 Provider
+        var providerChosen = Ui.Choose("选择 Provider",
+            providers.Select(p =>
             {
-                var displayName = GetProviderDisplayName(p.Name);
                 var isCurrent = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
-                return (IReadOnlyList<string>)new[]
-                {
-                    $"{displayName}{isCurrent}",
-                    MaskApiKey(p.ApiKey),
-                    string.IsNullOrEmpty(p.BaseUrl) ? "(默认)" : p.BaseUrl!
-                };
-            })
-            .ToList();
+                return $"{GetProviderDisplayName(p.Name)}{isCurrent}";
+            }).ToList());
 
-        Ui.ShowTable("已配置的 Provider", new[] { "Provider", "API Key", "Base URL" }, rows);
+        if (providerChosen is null) return true; // 用户取消
 
-        return Task.FromResult(true);
+        var selectedProvider = providers[providerChosen.Value];
+        var providerName = selectedProvider.Name;
+
+        // 步骤 2：刷新该 Provider 的模型列表（容错、不阻塞）
+        if (!string.IsNullOrEmpty(selectedProvider.ApiKey))
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await ProviderHelper.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Writer.WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表超时，将使用本地预定义模型。");
+            }
+            catch (Exception ex)
+            {
+                Writer.WriteInfo($"刷新 {GetProviderDisplayName(providerName)} 模型列表失败: {ex.Message}，将使用本地预定义模型。");
+            }
+        }
+
+        // 步骤 3：选择 Model
+        var allModels = ProviderHelper.GetAllModels(providerName, selectedProvider.CustomModels);
+
+        if (allModels.Count == 0)
+        {
+            // 没有预定义模型，让用户手动输入
+            var values = Ui.ShowForm($"{GetProviderDisplayName(providerName)} 没有可用模型", new[]
+            {
+                new FormField("请输入模型名称")
+            });
+            if (values is null) return true; // 用户取消
+
+            var modelName = values[0].Trim();
+            if (string.IsNullOrEmpty(modelName))
+            {
+                Writer.WriteError("模型名称不能为空");
+                return true;
+            }
+
+            ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
+            Writer.WriteSuccess($"已确认 LLM: {GetProviderDisplayName(providerName)} - {modelName}");
+            return true;
+        }
+
+        // 显示模型列表，让用户选择（默认第一个）
+        var modelChosen = Ui.Choose($"{GetProviderDisplayName(providerName)} 可用模型（回车确认，未选则默认第一个）",
+            allModels.Select(m =>
+            {
+                var isSelected = ConfigManager.SelectedModel == $"{providerName}:{m}" ? " (已选)" : "";
+                return $"{m}{isSelected}";
+            }).ToList());
+
+        string selectedModel;
+        if (modelChosen is null)
+        {
+            // 用户直接关闭，使用第一个模型
+            selectedModel = allModels[0];
+            Writer.WriteInfo($"未选择，使用默认模型: {selectedModel}");
+        }
+        else
+        {
+            selectedModel = allModels[modelChosen.Value];
+        }
+
+        ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
+        Writer.WriteSuccess($"已确认 LLM: {GetProviderDisplayName(providerName)} - {selectedModel}");
+
+        return true;
     }
 
     /// <summary>

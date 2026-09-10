@@ -65,23 +65,6 @@ public static class ChoiceBlocks
             ],
             opt => onResolve((bool)opt.Value));
 
-    /// <summary>
-    /// Plan 模式退出确认块。
-    /// </summary>
-    /// <param name="pendingCount">待处理的计划项数量。</param>
-    /// <param name="onResolve">用户选择后的回调。</param>
-    /// <returns>内联选择块实例。</returns>
-    public static InlineChoiceBlock PlanExit(int pendingCount, Action<PlanExitAction> onResolve)
-        => new(
-            "Plan 模式退出",
-            $"有 {pendingCount} 个计划项待处理",
-            [
-                new ChoiceOption('E', "执行全部", PlanExitAction.ExecuteAll, "切换到 Default 并逐个确认"),
-                new ChoiceOption('R', "逐个确认", PlanExitAction.ReviewEach, "逐项选择执行/跳过"),
-                new ChoiceOption('D', "放弃", PlanExitAction.Discard, "丢弃所有计划项"),
-            ],
-            opt => onResolve((PlanExitAction)opt.Value));
-
     private static string Str(object? value)
     {
         if (value is null) return "null";

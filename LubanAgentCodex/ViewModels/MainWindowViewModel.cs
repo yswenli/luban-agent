@@ -560,12 +560,43 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private async Task ConsumeStreamAsync(string input, CancellationToken ct)
     {
+        var plannedCount = 0;
+
         await foreach (var evt in _agentHost.RunStreamingAsync(
-            input, ConfirmCallback, PermissionMode, ct))
+            input,
+            ConfirmCallback,
+            PermissionMode,
+            onPlannedAction: (tool, args) =>
+            {
+                Interlocked.Increment(ref plannedCount);
+                var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
+                Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
+            },
+            ct: ct))
         {
             var e = evt;
             Dispatcher.UIThread.Post(() => HandleStreamEvent(e));
         }
+
+        ReportPlannedActions(Volatile.Read(ref plannedCount));
+    }
+
+    /// <summary>
+    /// Plan 模式回合结束汇总：本轮计划项均未执行，提示切换模式后重新发起。
+    /// </summary>
+    /// <param name="plannedCount">本轮收集到的计划项数量。</param>
+    private void ReportPlannedActions(int plannedCount)
+    {
+        if (PermissionMode != ToolPermissionMode.Plan || plannedCount <= 0)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem
+        {
+            Content = $"📋 Plan 模式：本轮记录 {plannedCount} 个计划项，均未执行。"
+                + "切换到 default / accept-edits 后重新发送即可执行。"
+        }));
     }
 
     /// <summary>

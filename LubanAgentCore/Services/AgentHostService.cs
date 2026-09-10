@@ -97,11 +97,13 @@ public class AgentHostService
     /// <param name="input">用户输入</param>
     /// <param name="confirmHandler">工具确认处理器（返回 ConfirmResult）</param>
     /// <param name="permissionMode">权限模式</param>
+    /// <param name="onPlannedAction">Plan 模式计划项回调；Plan 下工具不执行，仅经此回调上报</param>
     /// <param name="ct">取消令牌</param>
     public async IAsyncEnumerable<StreamEvent> RunStreamingAsync(
         string input,
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
         ToolPermissionMode permissionMode,
+        Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
@@ -117,18 +119,20 @@ public class AgentHostService
             throw new InvalidOperationException("Agent 初始化失败，请先调用 InitializeAsync");
 
         var context = _services.GetRequiredService<ToolConfirmationContext>();
-        context.Mode = permissionMode;
-        context.CancellationToken = ct;
-        context.WorkspacePathChecker = path => WorkspaceManager.IsWithinWorkspace(path);
 
-        // 适配 ConfirmResult → bool
-        context.Callback = (toolName, args) =>
-        {
-            var result = confirmHandler(toolName, args);
-            if (result == ConfirmResult.AllowAll)
-                context.AllowedThisTurn.Add(toolName);
-            return result != ConfirmResult.Deny;
-        };
+        // 统一装配（与 CLI 共用 ConfigureForTurn）：模式策略由框架分发，
+        // 回调仅在需要人工确认时被调用；ConfirmResult → bool 在此适配
+        context.ConfigureForTurn(
+            permissionMode,
+            ct,
+            (toolName, args) =>
+            {
+                var result = confirmHandler(toolName, args);
+                if (result == ConfirmResult.AllowAll)
+                    context.AllowedThisTurn.Add(toolName);
+                return result != ConfirmResult.Deny;
+            },
+            onPlannedAction);
 
         try
         {

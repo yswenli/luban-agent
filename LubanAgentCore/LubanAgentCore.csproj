@@ -5,20 +5,34 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- 临时措施：框架权限模式修复（ConfirmationOutcome / EvaluateAsync / Plan 不执行）已改完但尚未发包，
+       先以 ProjectReference 直连 framework 源码验证；待 2026.9.10.1 手动发布到私有源后，
+       应删除本 ItemGroup 并恢复下方注释掉的 PackageReference。 -->
   <ItemGroup>
-    <PackageReference Include="LuBan.AIAgent" Version="2026.9.4.2" />
-    <PackageReference Include="LuBan.Logging" Version="2026.9.4.2" />
-    <PackageReference Include="LuBan.Orm" Version="2026.9.4.2" />
-    <PackageReference Include="LuBan.DI" Version="2026.9.4.2" />
-    <PackageReference Include="LuBan.Common" Version="2026.9.4.2" />
-    <PackageReference Include="LuBan.Threading" Version="2026.9.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.DI\LuBan.DI.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Common\LuBan.Common.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Threading\LuBan.Threading.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 发包后恢复：
+    <PackageReference Include="LuBan.AIAgent" Version="2026.9.10.1" />
+    <PackageReference Include="LuBan.Logging" Version="2026.9.10.1" />
+    <PackageReference Include="LuBan.Orm" Version="2026.9.10.1" />
+    <PackageReference Include="LuBan.DI" Version="2026.9.10.1" />
+    <PackageReference Include="LuBan.Common" Version="2026.9.10.1" />
+    <PackageReference Include="LuBan.Threading" Version="2026.9.10.1" />
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-    <PackageReference Include="SqlSugarCore" Version="5.1.4.218" />
+    <PackageReference Include="SqlSugarCore" Version="5.1.4.220" />
   </ItemGroup>
 
   <!-- 嵌入模型包：单一来源，经 ProjectReference 内容传播带入每个引用方（Cli/Codex）的输出目录。

@@ -47,6 +47,9 @@ internal sealed class ConversationViewModel : IDisposable
 
     private CancellationTokenSource? _currentCts;
 
+    // Plan 模式下本轮收集的计划项数量（回合结束时汇总提示，工具均不执行）
+    private int _plannedCount;
+
     // 流式 token 合批缓冲：agent 线程追加、节流冲刷时取出，替代逐 token Invoke 洪峰
     private readonly object _streamLock = new();
     private readonly StringBuilder _pendingThinking = new();
@@ -300,6 +303,7 @@ internal sealed class ConversationViewModel : IDisposable
             SpinnerService.Stop();
             _currentCts?.Dispose();
             _currentCts = null;
+            ReportPlannedActions();
             ResetConfirmationContext();
         }
     }
@@ -314,74 +318,90 @@ internal sealed class ConversationViewModel : IDisposable
 
     /// <summary>
     /// 设置工具确认上下文（每轮对话开始前调用）。
+    /// 模式策略由框架统一分发，此处只装配回调：Bypass 全放行、
+    /// Plan 仅记录计划项且不执行、AcceptEdits 放行编辑类、Default 逐项确认。
     /// </summary>
     private void SetupConfirmationContext()
     {
         var context = _services.GetRequiredService<ToolConfirmationContext>();
-        context.Mode = PermissionMode;
-        context.CancellationToken = _currentCts?.Token ?? default;
+        Interlocked.Exchange(ref _plannedCount, 0);
 
-        // 设置工作区路径检查器：路径在当前工作区内时，非删除类工具免确认
-        context.WorkspacePathChecker = path => WorkspaceManager.IsWithinWorkspace(path);
-
-        // BypassPermissions 模式：跳过所有确认，不设置 Callback
-        if (PermissionMode == ToolPermissionMode.BypassPermissions)
-        {
-            return;
-        }
-
-        // Plan 模式：收集计划项，不立即确认
-        if (PermissionMode == ToolPermissionMode.Plan)
-        {
-            context.OnPlannedAction = (tool, args) =>
+        context.ConfigureForTurn(
+            PermissionMode,
+            _currentCts?.Token ?? default,
+            confirmCallback: ConfirmTool,
+            onPlannedAction: (tool, args) =>
             {
+                Interlocked.Increment(ref _plannedCount);
                 _dispatcher.Invoke(() =>
                     _doc.AppendBlock(new SystemBlock(
-                        $"  📋 计划项: {tool} {TruncateArgs(args)}",
+                        $"  📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}",
                         foreground: BlockColors.Thinking)));
-            };
+            });
+    }
+
+    /// <summary>
+    /// 人工确认回调：阻塞 agent 线程，等待用户在 TUI 内联选择块上作出决定。
+    /// </summary>
+    /// <param name="toolName">工具名称。</param>
+    /// <param name="args">工具参数。</param>
+    /// <returns>用户是否允许执行。</returns>
+    private bool ConfirmTool(string toolName, IReadOnlyDictionary<string, object?> args)
+    {
+        if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm enter: {toolName}");
+
+        var context = _services.GetRequiredService<ToolConfirmationContext>();
+
+        // 同步确认：用 ManualResetEventSlim 阻塞 agent 线程，
+        // 同时在 UI 线程显示 InlineChoiceBlock
+        using var done = new ManualResetEventSlim(false);
+        var result = false;
+
+        // 注册取消令牌回调：ESC 时 Set 信号以提前解除阻塞
+        var ct = _currentCts?.Token ?? default;
+        CancellationTokenRegistration ctr = default;
+        if (ct.CanBeCanceled)
+        {
+            ctr = ct.Register(() => done.Set());
+        }
+
+        _dispatcher.Invoke(() =>
+        {
+            var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
+            {
+                result = cr == ConfirmResult.Allow || cr == ConfirmResult.AllowAll;
+                if (cr == ConfirmResult.AllowAll)
+                {
+                    context.AllowedThisTurn.Add(toolName);
+                }
+                done.Set();
+            });
+            _doc.AppendBlock(confirmBlock);
+        });
+
+        // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
+        done.Wait(TimeSpan.FromMinutes(2));
+        ctr.Dispose();
+
+        if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm exit: {toolName} -> {result}");
+        return result;
+    }
+
+    /// <summary>
+    /// Plan 模式回合结束时汇总：本轮计划项均未执行，提示切换模式后重新发起。
+    /// </summary>
+    private void ReportPlannedActions()
+    {
+        var count = Volatile.Read(ref _plannedCount);
+        if (PermissionMode != ToolPermissionMode.Plan || count == 0)
+        {
             return;
         }
 
-        // Default / AcceptEdits：设置确认回调
-        context.Callback = (toolName, args) =>
-        {
-            if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm enter: {toolName}");
-
-            // 同步确认：用 ManualResetEventSlim 阻塞 agent 线程，
-            // 同时在 UI 线程显示 InlineChoiceBlock
-            using var done = new ManualResetEventSlim(false);
-            var result = false;
-
-            // 注册取消令牌回调：ESC 时 Set 信号以提前解除阻塞
-            var ct = _currentCts?.Token ?? default;
-            CancellationTokenRegistration ctr = default;
-            if (ct.CanBeCanceled)
-            {
-                ctr = ct.Register(() => done.Set());
-            }
-
-            _dispatcher.Invoke(() =>
-            {
-                var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
-                {
-                    result = cr == ConfirmResult.Allow || cr == ConfirmResult.AllowAll;
-                    if (cr == ConfirmResult.AllowAll)
-                    {
-                        context.AllowedThisTurn.Add(toolName);
-                    }
-                    done.Set();
-                });
-                _doc.AppendBlock(confirmBlock);
-            });
-
-            // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
-            done.Wait(TimeSpan.FromMinutes(2));
-            ctr.Dispose();
-
-            if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm exit: {toolName} -> {result}");
-            return result;
-        };
+        _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+            $"📋 Plan 模式：本轮记录 {count} 个计划项，均未执行。"
+            + "按 Shift+Tab 切到 default / accept-edits 后重新发起即可执行。",
+            foreground: BlockColors.Accent)));
     }
 
     /// <summary>
@@ -390,15 +410,6 @@ internal sealed class ConversationViewModel : IDisposable
     private void ResetConfirmationContext()
     {
         _services.GetRequiredService<ToolConfirmationContext>().Reset();
-    }
-
-    private static string TruncateArgs(IReadOnlyDictionary<string, object?> args)
-    {
-        if (args.Count == 0) return string.Empty;
-        var first = args.First();
-        var val = first.Value?.ToString() ?? "null";
-        if (val.Length > 40) val = val[..37] + "...";
-        return $"{first.Key}={val}";
     }
 
     /// <summary>
