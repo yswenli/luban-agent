@@ -93,6 +93,7 @@ public abstract class AgentProfile
             modelName: modelName,
             systemPrompt: fullPrompt,
             toolGroups: ToolGroups,
+            retrievalMode: RetrievalMode,
             useSessionHistory: true);
     }
 
