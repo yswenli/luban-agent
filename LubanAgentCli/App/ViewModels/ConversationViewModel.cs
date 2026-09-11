@@ -16,6 +16,7 @@
 *
 *****************************************************************************/
 using System.Text;
+using LubanAgentCli.App.Models.Blocks;
 using LubanAgentCli.App.Services;
 using LubanAgentCli.App.Views;
 using LubanAgentCore.Services;
@@ -128,6 +129,28 @@ internal sealed class ConversationViewModel : IDisposable
     /// <summary>当前是否正在运行 agent 对话。</summary>
     public bool IsRunning { get; private set; }
 
+    /// <summary>
+    /// 当前挂起的确认块（工具确认 / 权限模式二次确认）。非空时，焦点会被切换到会话区，
+    /// 由会话区把按键转发给确认块（agent 阻塞等待期间确认块本身收不到键，必须由会话区转发）。
+    /// 置空即表示确认已结束。设置时会触发 <see cref="PendingChoiceChanged"/>，供 RootView 切换焦点。
+    /// </summary>
+    private InlineChoiceBlock? _pendingChoice;
+
+    /// <summary>当前挂起的确认块。</summary>
+    public InlineChoiceBlock? PendingChoice
+    {
+        get => _pendingChoice;
+        internal set
+        {
+            if (_pendingChoice == value) return;
+            _pendingChoice = value;
+            PendingChoiceChanged?.Invoke();
+        }
+    }
+
+    /// <summary>确认块挂起状态变化事件（RootView 订阅以切换键盘焦点）。</summary>
+    public event Action? PendingChoiceChanged;
+
     /// <summary>历史回放的消息条数限制。</summary>
     private const int HistoryLoadLimit = 20;
 
@@ -221,30 +244,7 @@ internal sealed class ConversationViewModel : IDisposable
 
             if (needRebuild)
             {
-                if (ws is null)
-                    throw new InvalidOperationException("未设置当前工作区");
-                if (string.IsNullOrEmpty(model))
-                    throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
-
-                _agentFactory ??= _services.GetRequiredService<ILuBanAgentFactory>();
-                _ruleEngine ??= _services.GetRequiredService<RuleEngine>();
-                _pluginRegistry ??= _services.GetRequiredService<ToolPluginRegistry>();
-                _skillRegistry ??= _services.GetRequiredService<SkillRegistry>();
-                _mcpRegistry ??= _services.GetRequiredService<MCPRegistry>();
-
-                _workspace = ws;
-                _modelName = model;
-                _profile = ws.Type == "Rag" ? new RagAgentProfile(ws) : new NormalAgentProfile();
-                var newAgent = await _profile.CreateAgentAsync(
-                    _agentFactory, _modelName, _workspace,
-                    _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);
-                // 释放旧 Agent 实例，避免重建时连接/句柄等资源泄漏
-                if (_agent is IDisposable oldAgent)
-                {
-                    try { oldAgent.Dispose(); }
-                    catch (Exception ex) { Logger.Warn($"释放旧 Agent 失败: {ex.Message}"); }
-                }
-                _agent = newAgent;
+                await RebuildAgentCoreAsync();
             }
 
             _titleService.SetWorkspace(ws?.Name ?? "-");
@@ -284,6 +284,42 @@ internal sealed class ConversationViewModel : IDisposable
                 _footerView?.SetNeedsDraw();
             });
         }
+    }
+
+    /// <summary>
+    /// 重建 Agent 核心：释放旧实例并基于当前工作区/模型创建新实例。
+    /// 不触碰文档与历史，仅替换 _agent 与 _workspace/_modelName。
+    /// 调用方需保证当前不在流式对话中途（或已自行保证安全）。
+    /// </summary>
+    private async Task RebuildAgentCoreAsync()
+    {
+        var wsMgr = _services.GetRequiredService<IWorkspaceManager>();
+        var ws = wsMgr.CurrentWorkspace;
+        var model = _configManager.SelectedModel;
+        if (ws is null)
+            throw new InvalidOperationException("未设置当前工作区");
+        if (string.IsNullOrEmpty(model))
+            throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
+
+        _agentFactory ??= _services.GetRequiredService<ILuBanAgentFactory>();
+        _ruleEngine ??= _services.GetRequiredService<RuleEngine>();
+        _pluginRegistry ??= _services.GetRequiredService<ToolPluginRegistry>();
+        _skillRegistry ??= _services.GetRequiredService<SkillRegistry>();
+        _mcpRegistry ??= _services.GetRequiredService<MCPRegistry>();
+
+        _workspace = ws;
+        _modelName = model;
+        _profile = ws.Type == "Rag" ? new RagAgentProfile(ws) : new NormalAgentProfile();
+        var newAgent = await _profile.CreateAgentAsync(
+            _agentFactory, _modelName, _workspace,
+            _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);
+        // 释放旧 Agent 实例，避免重建时连接/句柄等资源泄漏
+        if (_agent is IDisposable oldAgent)
+        {
+            try { oldAgent.Dispose(); }
+            catch (Exception ex) { Logger.Warn($"释放旧 Agent 失败: {ex.Message}"); }
+        }
+        _agent = newAgent;
     }
 
     /// <summary>
@@ -409,6 +445,32 @@ internal sealed class ConversationViewModel : IDisposable
         // 忙碌指示：页脚 spinner 动画（参考 Claude Code 的 waiting 提示），流式结束时停止
         SpinnerService.Start("AI 正在思考… (Esc 取消)");
 
+        // 未授权工作区：提交任务前主动弹授权确认（MessageBox 模态，键盘可达）。
+        // 授权后工作区根目录加入 PathGuard，文件类工具即可访问，避免"未授权 + 文件操作"无限挂起。
+        // 若用户拒绝，仍继续运行（闲聊不受影响）；需要文件的任务由框架报错而非静默挂起。
+        var wsMgr = _workspaceManager ?? _services.GetService<IWorkspaceManager>() as WorkspaceManager;
+        if (wsMgr is not null)
+        {
+            var ws = wsMgr.CurrentWorkspace;
+            if (ws is not null && !ws.IsAuthorized)
+            {
+                try
+                {
+                    var authorized = await wsMgr.EnsureAuthorizedAsync(ws);
+                    if (!authorized)
+                    {
+                        _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                            "⚠ 当前工作区未授权，涉及文件的操作可能受限。可执行 /work -authorize 授权后重试。",
+                            foreground: BlockColors.Accent)));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn("工作区授权检查失败", ex);
+                }
+            }
+        }
+
         try
         {
             // 设置权限模式与确认回调
@@ -516,14 +578,17 @@ internal sealed class ConversationViewModel : IDisposable
                 {
                     context.AllowedThisTurn.Add(toolName);
                 }
+                PendingChoice = null;
                 done.Set();
             });
             _doc.AppendBlock(confirmBlock);
+            PendingChoice = confirmBlock;
         });
 
         // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
         done.Wait(TimeSpan.FromMinutes(2));
         ctr.Dispose();
+        PendingChoice = null;
 
         if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm exit: {toolName} -> {result}");
         return result;

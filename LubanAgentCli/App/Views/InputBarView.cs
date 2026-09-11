@@ -29,6 +29,18 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 {
     public event Action<string>? SubmitRequested;
 
+    /// <summary>
+    /// 按键预路由：当存在挂起的确认块（工具确认 / 授权二次确认）时由 RootView 注入，
+    /// 把按键优先转发给确认块。agent 阻塞等待期间焦点停留在输入编辑器，确认块本身收不到键，
+    /// 必须由这里转发，否则确认键到不了确认块、agent 会一直等到超时。
+    /// </summary>
+    public Func<Key, bool>? KeyPreRouter { get; set; }
+
+    /// <summary>
+    /// 预路由成功消费按键后通知上层重绘（确认块的选中/焦点高亮需要刷新）。
+    /// </summary>
+    public Action? OnPreRoutedKey { get; set; }
+
     protected override bool OnKeyDown(Key key)
     {
         Infrastructure.TuiDiag.KeyArrival();
@@ -36,6 +48,22 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
         if (Infrastructure.TuiDiag.Enabled)
         {
             Logger.Warn($"[TuiDiag] Editor.OnKeyDown: key={key}");
+        }
+
+        // 优先路由给挂起的确认块
+        if (KeyPreRouter is not null && KeyPreRouter(key))
+        {
+            OnPreRoutedKey?.Invoke();
+            return true;
+        }
+
+        // Ctrl+V / Ctrl+Shift+V：直接调用框架内置的 Paste 命令。
+        // Editor 覆盖 OnKeyDown 后不会处理 KeyBindings 中的 Ctrl+V 粘贴；
+        // InvokeCommand(Command.Paste) 会执行框架的粘贴处理（读取 Application.Clipboard 并插入光标处），最可靠。
+        if (key == Key.V.WithCtrl || key == Key.V.WithShift.WithCtrl)
+        {
+            InvokeCommand(Command.Paste);
+            return true;
         }
 
         // Shift+Enter 或 Ctrl+Enter 换行。
@@ -74,6 +102,24 @@ internal sealed class InputBarView : View
     /// 用户提交输入时触发（Enter）。
     /// </summary>
     public event Action<string>? Submitted;
+
+    /// <summary>
+    /// 按键预路由（由 RootView 注入）：把按键优先转发给挂起的确认块。
+    /// </summary>
+    public Func<Key, bool>? KeyPreRouter
+    {
+        get => _editor.KeyPreRouter;
+        set => _editor.KeyPreRouter = value;
+    }
+
+    /// <summary>
+    /// 预路由成功消费按键后的重绘通知（由 RootView 注入）。
+    /// </summary>
+    public Action? OnPreRoutedKey
+    {
+        get => _editor.OnPreRoutedKey;
+        set => _editor.OnPreRoutedKey = value;
+    }
 
     /// <summary>
     /// 输入框背景色（亮蓝色，调试阶段便于定位）。
@@ -116,6 +162,8 @@ internal sealed class InputBarView : View
         };
         _editor.SetScheme(bgScheme);
         _editor.SubmitRequested += text => Submitted?.Invoke(text);
+
+        // Ctrl+V 粘贴已在 OnKeyDown 中通过 InvokeCommand(Command.Paste) 处理，无需在此绑定 KeyBindings。
 
         // 解除 Editor 默认的 Tab/Shift+Tab 缩进/反缩进绑定，
         // 让这两个键能冒泡到 RootView 的全局快捷键处理

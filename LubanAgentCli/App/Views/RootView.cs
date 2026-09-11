@@ -42,6 +42,10 @@ internal sealed class RootView : Runnable
     private readonly InputBarView _inputBar;
     private bool _vmInitialized;
     private volatile bool _initializing;
+
+    // 待执行队列：Agent 运行期间提交的输入在此排队，本轮结束后顺序执行
+    private readonly System.Collections.Generic.Queue<string> _inputQueue = new();
+    private volatile bool _runActive;
     private readonly Action<ToolPermissionMode> _onPermissionModeChanged;
     private readonly Action _onExitRequested;
     private Terminal.Gui.App.IKeyboard? _keyboard;
@@ -93,7 +97,7 @@ internal sealed class RootView : Runnable
         _doc.AppendBlock(new SystemBlock(string.Empty));
 
         // 会话区：从顶部开始，高度=填充到底部（footer 1 + inputBar 4 = 5）
-        _conversation = new ConversationView(_doc)
+        _conversation = new ConversationView(_doc, _vm)
         {
             X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(5)
         };
@@ -113,8 +117,17 @@ internal sealed class RootView : Runnable
             X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 4
         };
         _inputBar.Submitted += OnInputSubmitted;
+        // 当存在挂起的确认块（工具确认 / 授权二次确认）时，把输入编辑器的按键优先转发给它：
+        // agent 阻塞等待期间焦点仍在输入编辑器，确认块本身收不到键，必须由这里转发，否则会等到超时。
+        _inputBar.KeyPreRouter = key =>
+        {
+            var pc = _vm.PendingChoice;
+            return pc is not null && pc.Selected is null && pc.HandleKey(key);
+        };
+        _inputBar.OnPreRoutedKey = () => _conversation.SetNeedsDraw();
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
         _vm.PermissionModeChanged += _onPermissionModeChanged;
+        _vm.PendingChoiceChanged += OnPendingChoiceChanged;
 
         Add(_conversation, _footer, _inputBar);
     }
@@ -151,6 +164,26 @@ internal sealed class RootView : Runnable
         }
     }
 
+    /// <summary>
+    /// 确认块挂起状态变化：挂起时聚焦会话区（会话区可把按键转发给确认块），
+    /// 结束后聚焦回输入编辑器（便于继续输入/排队）。
+    /// 修复确认块因焦点缺失而收不到键、导致 2 分钟超时的问题。
+    /// </summary>
+    private void OnPendingChoiceChanged()
+    {
+        _dispatcher.Invoke(() =>
+        {
+            if (_vm.PendingChoice is not null)
+            {
+                _conversation.SetFocus();
+            }
+            else
+            {
+                _inputBar.FocusInput();
+            }
+        });
+    }
+
     /// <summary>会话文档模型。</summary>
     public ConversationDocument Document => _doc;
 
@@ -180,6 +213,7 @@ internal sealed class RootView : Runnable
             _inputBar.Submitted -= OnInputSubmitted;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
+            _vm.PendingChoiceChanged -= OnPendingChoiceChanged;
             _vm.Dispose();
         }
         base.Dispose(disposing);
@@ -233,6 +267,7 @@ internal sealed class RootView : Runnable
         {
             var confirmBlock = ChoiceBlocks.BypassConfirm(confirmed =>
             {
+                _vm.PendingChoice = null;
                 if (!confirmed)
                 {
                     _vm.SetPermissionMode(ToolPermissionMode.Default);
@@ -242,6 +277,7 @@ internal sealed class RootView : Runnable
                     foreground: confirmed ? BlockColors.Failure : BlockColors.Success));
             });
             _doc.AppendBlock(confirmBlock);
+            _vm.PendingChoice = confirmBlock;
             return;
         }
 
@@ -316,7 +352,8 @@ internal sealed class RootView : Runnable
     // ── 输入提交 ──
 
     /// <summary>
-    /// 处理用户提交输入：路由命令、初始化 Agent 或执行流式对话。
+    /// 处理用户提交输入：运行期间（或一次提交正在派发 / 初始化中）入队排队，否则立即执行。
+    /// 首次输入会先初始化 Agent。
     /// </summary>
     /// <param name="text">用户输入文本。</param>
     private void OnInputSubmitted(string text)
@@ -328,13 +365,15 @@ internal sealed class RootView : Runnable
             return;
         }
 
-        // Agent 运行期间禁止执行 `/` 命令（尤其是切换工作区/模型/会话）：
-        // SwitchWorkspaceAsync 会同步修改进程 CWD，若在在途流式对话期间切换，
-        // 运行中的旧 Agent 的相对路径/工具调用会错误解析到新工作区根目录。
-        // /exit、/quit 已在上方单独处理，不受此限制。
-        if (_vm.IsRunning && text.StartsWith('/'))
+        // Agent 运行期间（或一次提交正在派发 / 初始化中）：所有输入（命令与对话）进入待执行队列，
+        // 本轮结束后自动顺序执行。避免打断在途流式对话，也避免重复提交被静默丢弃。
+        if (_runActive || _vm.IsRunning || _initializing)
         {
-            _doc.AppendBlock(new SystemBlock("Agent 正在运行中，请等待完成或按 Esc 取消；如需切换上下文请先结束当前对话"));
+            _inputQueue.Enqueue(text);
+            var preview = PreviewInput(text);
+            _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                $"🕓 已加入待执行队列（共 {_inputQueue.Count} 条）: {preview}",
+                foreground: BlockColors.Accent)));
             return;
         }
 
@@ -347,65 +386,90 @@ internal sealed class RootView : Runnable
             }
         }
 
-        if (_vm.IsRunning)
-        {
-            _doc.AppendBlock(new SystemBlock("Agent 正在运行中，请等待完成或按 Esc 取消"));
-            return;
-        }
+        SubmitAsync(text);
+    }
 
-        // 首次输入时初始化 Agent（用 _initializing 标志防止重复触发）
+    /// <summary>为待执行队列生成单行预览文本。</summary>
+    private static string PreviewInput(string text)
+    {
+        var t = text.Replace("\r", " ").Replace("\n", " ").Trim();
+        return t.Length > 40 ? t[..40] + "…" : t;
+    }
+
+    /// <summary>
+    /// 提交一条输入到 Agent：首次输入会先初始化 Agent，之后直接执行流式对话。
+    /// 全程在后台线程运行，确保 UI 线程始终自由（渲染、键盘路由、队列不受影响）。
+    /// </summary>
+    private void SubmitAsync(string text)
+    {
+        // 标记“提交派发中”，防止在 Agent 真正进入运行态(IsRunning)前的空隙里重复派发
+        _runActive = true;
+
         if (!_vmInitialized)
         {
             if (_initializing)
             {
-                _doc.AppendBlock(new SystemBlock("Agent 正在初始化中，请稍候..."));
+                _runActive = false;
+                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock("Agent 正在初始化中，请稍候...")));
                 return;
             }
+
             _initializing = true;
-            _ = InitializeAndProcessAsync(text).ContinueWith(task =>
+            _ = Task.Run(async () =>
             {
-                _initializing = false;
-                if (task.IsFaulted)
+                try
                 {
-                    var msg = task.Exception?.InnerException?.Message ?? "未知错误";
-                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                        $"Agent 异常: {msg}",
-                        foreground: BlockColors.Failure)));
+                    await _vm.InitializeAsync();
+                    _vmInitialized = true;
+                    await _vm.ProcessInputAsync(text);
                 }
-            }, TaskContinuationOptions.OnlyOnFaulted);
+                catch (Exception ex)
+                {
+                    Logger.Error("InitializeAndProcessAsync 异常", ex);
+                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                        $"Agent 初始化失败: {ex.Message}", foreground: BlockColors.Failure)));
+                }
+                finally
+                {
+                    _initializing = false;
+                    DrainQueue();
+                }
+            });
+            return;
         }
-        else
+
+        _ = Task.Run(async () =>
         {
-            _ = _vm.ProcessInputAsync(text).ContinueWith(task =>
+            try
             {
-                if (task.IsFaulted)
-                {
-                    var msg = task.Exception?.InnerException?.Message ?? "未知错误";
-                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                        $"Agent 异常: {msg}",
-                        foreground: BlockColors.Failure)));
-                }
-            }, TaskContinuationOptions.OnlyOnFaulted);
-        }
+                await _vm.ProcessInputAsync(text);
+            }
+            catch (Exception ex)
+            {
+                var msg = ex.Message;
+                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                    $"Agent 异常: {msg}", foreground: BlockColors.Failure)));
+            }
+            finally
+            {
+                DrainQueue();
+            }
+        });
     }
 
     /// <summary>
-    /// 首次输入时初始化 Agent 并处理文本。
+    /// 当前一轮对话结束后，若待执行队列非空则顺序执行下一条；否则释放“派发中”标志。
+    /// 递归触发，保证队列中的命令/对话按提交顺序依次执行。
     /// </summary>
-    /// <param name="text">用户输入文本。</param>
-    private async Task InitializeAndProcessAsync(string text)
+    private void DrainQueue()
     {
-        try
+        if (_inputQueue.TryDequeue(out var next))
         {
-            await _vm.InitializeAsync();
-            _vmInitialized = true;
-            await _vm.ProcessInputAsync(text);
+            SubmitAsync(next);
         }
-        catch (Exception ex)
+        else
         {
-            Logger.Error("InitializeAndProcessAsync 异常", ex);
-            _doc.AppendBlock(new SystemBlock(
-                $"Agent 初始化失败: {ex.Message}", foreground: BlockColors.Failure));
+            _runActive = false;
         }
     }
 }

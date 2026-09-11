@@ -18,6 +18,7 @@
 
 using LubanAgentCli.App.Models;
 using LubanAgentCli.App.Models.Blocks;
+using LubanAgentCli.App.ViewModels;
 
 using Terminal.Gui.Text;
 
@@ -31,6 +32,7 @@ namespace LubanAgentCli.App.Views;
 internal sealed class ConversationView : View
 {
     private readonly ConversationDocument _doc;
+    private readonly ConversationViewModel _vm;
     private readonly FlushThrottle _throttle;
     private readonly List<RenderLine> _renderBuffer = new(256);
     private bool _dirty = true;
@@ -53,10 +55,11 @@ internal sealed class ConversationView : View
     /// 初始化会话区视图并关联文档模型。
     /// </summary>
     /// <param name="doc">会话文档模型（由 RootView 注入）。</param>
-    public ConversationView(ConversationDocument doc)
+    public ConversationView(ConversationDocument doc, ConversationViewModel vm)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
-        CanFocus = false;
+        _vm = vm ?? throw new ArgumentNullException(nameof(vm));
+        CanFocus = true;
         // 鼠标位置跟踪（DECSET 1003）会使终端在每次鼠标移动时上送事件、加重主循环负担，
         // 因此平时关闭，仅在左键按下后的拖拽选择期间启用（见 OnMouseEvent）。
 
@@ -475,19 +478,27 @@ internal sealed class ConversationView : View
             return true;
         }
 
-        // 将按键转发给最后一个 Block（如果是 InlineChoiceBlock）
-        if (_doc.BlockCount > 0)
+        // 将按键转发给挂起的确认块：优先使用 VM 的 PendingChoice（权威），
+        // 否则取最后一个未确认的 InlineChoiceBlock。确认块挂起时焦点已切到会话区，
+        // 由这里把按键送达 ConfirmTool 的 ManualResetEventSlim，避免其干等 2 分钟超时。
+        InlineChoiceBlock? pending = _vm.PendingChoice;
+        if (pending is null)
         {
-            var (lastBlock, _) = _doc.BlockAtLine(Math.Max(0, _doc.TotalLines - 1));
-            if (lastBlock is InlineChoiceBlock choice && choice.Selected is null)
+            for (var i = _doc.Blocks.Count - 1; i >= 0; i--)
             {
-                if (choice.HandleKey(key))
+                if (_doc.Blocks[i] is InlineChoiceBlock cb && cb.Selected is null)
                 {
-                    _dirty = true;
-                    SetNeedsDraw();
-                    return true;
+                    pending = cb;
+                    break;
                 }
             }
+        }
+
+        if (pending is not null && pending.HandleKey(key))
+        {
+            _dirty = true;
+            SetNeedsDraw();
+            return true;
         }
 
         return base.OnKeyDown(key);
