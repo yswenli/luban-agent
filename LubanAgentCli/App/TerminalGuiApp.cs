@@ -31,7 +31,9 @@ internal sealed class TerminalGuiApp : IDisposable
     private TitleService? _titleService;
     private Action<string>? _titleChangedHandler;
     private bool _timerPeriodRaised;
+#if !PUBLISH_AOT
     private FastInputBootstrapper? _fastInput;
+#endif
 
     /// <summary>
     /// Terminal.Gui 应用
@@ -56,8 +58,10 @@ internal sealed class TerminalGuiApp : IDisposable
     /// </summary>
     public void Dispose()
     {
+#if !PUBLISH_AOT
         _fastInput?.Dispose();
         _fastInput = null;
+#endif
 
         if (_titleService is not null && _titleChangedHandler is not null)
         {
@@ -121,9 +125,11 @@ internal sealed class TerminalGuiApp : IDisposable
             application = Application.Create();
             application.Init(driverName);
 
+#if !PUBLISH_AOT
             _fastInput = new FastInputBootstrapper();
             var fastInputOk = _fastInput.TryEnable(application);
             Logger.Warn($"[TuiDiag] FastInput enabled={fastInputOk}");
+#endif
 
             ConfigureDriver(application);
             if (TuiDiag.Enabled)

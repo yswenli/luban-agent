@@ -1,3 +1,4 @@
+#if !PUBLISH_AOT
 using System.Reflection;
 using System.Threading;
 
@@ -246,3 +247,4 @@ internal sealed class FastInputBootstrapper : IDisposable
         }
     }
 }
+#endif
