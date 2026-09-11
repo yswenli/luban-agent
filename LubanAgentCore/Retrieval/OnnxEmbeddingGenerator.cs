@@ -51,16 +51,7 @@ public class OnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<floa
                 var vocabTxtPath = EnsureVocabTxt(tokenizerJsonPath);
                 var options = BuildBertOptions();
 
-                var bertTokenizerType = typeof(Tokenizer).Assembly.GetType("Microsoft.ML.Tokenizers.BertTokenizer");
-                if (bertTokenizerType == null)
-                    throw new NotSupportedException("Microsoft.ML.Tokenizers 版本不支持 BertTokenizer");
-
-                var createMethod = bertTokenizerType.GetMethod("Create", new[] { typeof(string), typeof(BertOptions) });
-                if (createMethod == null)
-                    throw new NotSupportedException("BertTokenizer.Create(string, BertOptions) 方法不存在");
-
-                _tokenizer = createMethod.Invoke(null, new object[] { vocabTxtPath, options }) as Tokenizer
-                    ?? throw new InvalidOperationException("BertTokenizer.Create 返回 null");
+                _tokenizer = BertTokenizer.Create(vocabTxtPath, options);
             }
             _session ??= new InferenceSession(Path.Combine(_modelDir, "onnx", "model.onnx"));
             return (_session, _tokenizer);
