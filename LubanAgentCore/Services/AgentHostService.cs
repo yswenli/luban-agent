@@ -54,6 +54,11 @@ public class AgentHostService
     /// </summary>
     public void Reset()
     {
+        if (_agent is IDisposable oldAgent)
+        {
+            try { oldAgent.Dispose(); }
+            catch { /* 忽略释放异常，避免影响后续重建 */ }
+        }
         _agent = null;
     }
 
@@ -86,9 +91,16 @@ public class AgentHostService
             ? new RagAgentProfile(_workspace)
             : new NormalAgentProfile();
 
-        _agent = await profile.CreateAgentAsync(
+        var newAgent = await profile.CreateAgentAsync(
             agentFactory, modelName, _workspace,
             ruleEngine, pluginRegistry, skillRegistry, mcpRegistry);
+        // 释放旧 Agent 实例，避免重建时连接/句柄等资源泄漏
+        if (_agent is IDisposable oldAgent)
+        {
+            try { oldAgent.Dispose(); }
+            catch { /* 忽略释放异常，避免影响新 Agent 使用 */ }
+        }
+        _agent = newAgent;
     }
 
     /// <summary>

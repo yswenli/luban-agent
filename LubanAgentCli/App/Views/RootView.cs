@@ -105,6 +105,7 @@ internal sealed class RootView : Runnable
         var footerProvider = new FooterDataProvider();
         _footer.SetProvider(footerProvider);
         _footer.SetMode(_vm.PermissionModeDisplay);
+        _vm.SetFooter(_footer, footerProvider);
 
         // 输入栏初始高度=4（2行内容 + 边框上下各1），随内容视觉折行动态扩展
         _inputBar = new InputBarView
@@ -324,6 +325,16 @@ internal sealed class RootView : Runnable
             || string.Equals(text, "/quit", StringComparison.OrdinalIgnoreCase))
         {
             ConfirmExit();
+            return;
+        }
+
+        // Agent 运行期间禁止执行 `/` 命令（尤其是切换工作区/模型/会话）：
+        // SwitchWorkspaceAsync 会同步修改进程 CWD，若在在途流式对话期间切换，
+        // 运行中的旧 Agent 的相对路径/工具调用会错误解析到新工作区根目录。
+        // /exit、/quit 已在上方单独处理，不受此限制。
+        if (_vm.IsRunning && text.StartsWith('/'))
+        {
+            _doc.AppendBlock(new SystemBlock("Agent 正在运行中，请等待完成或按 Esc 取消；如需切换上下文请先结束当前对话"));
             return;
         }
 

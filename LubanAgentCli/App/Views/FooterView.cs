@@ -70,6 +70,26 @@ internal sealed class FooterView : View
 
         col += Write(col, $"[{_modeText}]", TuiTheme.Accent, viewport.Width, TextStyle.Bold);
         col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
+
+        if (p is not null)
+        {
+            if (!string.IsNullOrEmpty(p.WorkspaceName))
+            {
+                col += Write(col, $"ws:{p.WorkspaceName}", TuiTheme.SystemMessage, viewport.Width);
+                col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
+            }
+            if (!string.IsNullOrEmpty(p.ModelName))
+            {
+                col += Write(col, $"m:{p.ModelName}", TuiTheme.SystemMessage, viewport.Width);
+                col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
+            }
+            if (!string.IsNullOrEmpty(p.SessionTitle))
+            {
+                col += Write(col, $"#{p.SessionTitle}", TuiTheme.SystemMessage, viewport.Width);
+                col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
+            }
+        }
+
         col += Write(col, ShortenPath(Directory.GetCurrentDirectory()), TuiTheme.SystemMessage, viewport.Width);
         col += Write(col, "  ", TuiTheme.SystemMessage, viewport.Width);
 

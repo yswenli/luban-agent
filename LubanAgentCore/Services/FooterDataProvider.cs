@@ -33,6 +33,15 @@ public sealed class FooterDataProvider
     /// <summary>当前权限模式可读名称。</summary>
     public string ModeDisplay { get; set; } = "default";
 
+    /// <summary>当前工作区名称（由会话视图在上下文切换时更新）。</summary>
+    public string WorkspaceName { get; set; } = "";
+
+    /// <summary>当前模型标识（由会话视图在上下文切换时更新）。</summary>
+    public string ModelName { get; set; } = "";
+
+    /// <summary>当前会话标题（由会话视图在上下文切换时更新）。</summary>
+    public string SessionTitle { get; set; } = "";
+
     /// <summary>累计 token 用量（调用方通过 RecordUsage 更新）。</summary>
     public int TotalTokens { get; set; }
 

@@ -17,6 +17,8 @@
 *****************************************************************************/
 using System.Text;
 using LubanAgentCli.App.Services;
+using LubanAgentCli.App.Views;
+using LubanAgentCore.Services;
 
 namespace LubanAgentCli.App.ViewModels;
 
@@ -44,6 +46,20 @@ internal sealed class ConversationViewModel : IDisposable
     private MCPRegistry? _mcpRegistry;
     private WorkspaceInfo? _workspace;
     private string? _modelName;
+
+    // 上下文同步：防重入信号量 + 运行中延迟同步标志 + 突发合并调度标志
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private volatile bool _pendingSync;
+    // 突发合并：避免同一同步突发（如切工作区先后触发工作区变更+会话变更两次事件）重复清文档/重载历史
+    private int _syncScheduled;
+
+    // 已加载到文档的会话标识：用于避免会话历史被重复加载（如初始化前已切换过工作区/会话）
+    private string? _loadedSessionId;
+
+    // 由 DI 解析并缓存的引用，用于事件订阅/退订与页脚刷新
+    private readonly WorkspaceManager? _workspaceManager;
+    private FooterView? _footerView;
+    private FooterDataProvider? _footerProvider;
 
     private CancellationTokenSource? _currentCts;
 
@@ -138,75 +154,193 @@ internal sealed class ConversationViewModel : IDisposable
             _sessionManager = sm;
             sm.CurrentSessionChanged += OnCurrentSessionChanged;
         }
+
+        _workspaceManager = services.GetRequiredService<IWorkspaceManager>() as WorkspaceManager;
+        if (_workspaceManager is not null)
+        {
+            _workspaceManager.CurrentWorkspaceChanged += OnCurrentWorkspaceChanged;
+        }
+        _configManager.SelectedModelChanged += OnSelectedModelChanged;
     }
 
     private void OnCurrentSessionChanged(string sessionId)
     {
-        Task.Run(async () =>
+        RequestSync();
+    }
+
+    private void OnCurrentWorkspaceChanged(WorkspaceInfo ws)
+    {
+        RequestSync();
+    }
+
+    private void OnSelectedModelChanged(string? model)
+    {
+        RequestSync();
+    }
+
+    /// <summary>
+    /// 注入页脚视图与数据提供者，使上下文切换能刷新状态栏。
+    /// </summary>
+    public void SetFooter(FooterView footer, FooterDataProvider provider)
+    {
+        _footerView = footer;
+        _footerProvider = provider;
+    }
+
+    /// <summary>
+    /// 同步当前运行上下文（工作区/模型/会话）到 UI 与 Agent。
+    /// 在以下场景调用：首次初始化、切换工作区、切换模型、切换会话。
+    /// 会按需重建 Agent、清空并重建会话文档、加载当前会话历史、刷新状态栏。
+    /// </summary>
+    /// <param name="clearDoc">是否清空会话文档（切换上下文时应清空；首次初始化保留启动横幅）。</param>
+    private async Task SyncContextAsync(bool clearDoc = true)
+    {
+        // Agent 运行中不可重建：标记待同步，待本轮结束后再执行，避免破坏运行中的 Agent 状态
+        if (IsRunning)
+        {
+            _pendingSync = true;
+            return;
+        }
+
+        // 调用方（InitializeAsync / RequestSync）负责持有 _syncGate；此处不再自行加锁，避免同一线程重入死锁
+        {
+            var wsMgr = _services.GetRequiredService<IWorkspaceManager>();
+            var ws = wsMgr.CurrentWorkspace;
+            var model = _configManager.SelectedModel;
+            var session = _iSessionManager.CurrentSession;
+
+            // 仅当工作区或模型发生变化时才重建 Agent，避免无谓重建
+            var needRebuild = _agent is null
+                || _workspace?.WorkspaceId != ws?.WorkspaceId
+                || _modelName != model;
+
+            _dispatcher.Invoke(() =>
+            {
+                if (clearDoc) _doc.Clear();
+            });
+
+            if (needRebuild)
+            {
+                if (ws is null)
+                    throw new InvalidOperationException("未设置当前工作区");
+                if (string.IsNullOrEmpty(model))
+                    throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
+
+                _agentFactory ??= _services.GetRequiredService<ILuBanAgentFactory>();
+                _ruleEngine ??= _services.GetRequiredService<RuleEngine>();
+                _pluginRegistry ??= _services.GetRequiredService<ToolPluginRegistry>();
+                _skillRegistry ??= _services.GetRequiredService<SkillRegistry>();
+                _mcpRegistry ??= _services.GetRequiredService<MCPRegistry>();
+
+                _workspace = ws;
+                _modelName = model;
+                _profile = ws.Type == "Rag" ? new RagAgentProfile(ws) : new NormalAgentProfile();
+                var newAgent = await _profile.CreateAgentAsync(
+                    _agentFactory, _modelName, _workspace,
+                    _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);
+                // 释放旧 Agent 实例，避免重建时连接/句柄等资源泄漏
+                if (_agent is IDisposable oldAgent)
+                {
+                    try { oldAgent.Dispose(); }
+                    catch (Exception ex) { Logger.Warn($"释放旧 Agent 失败: {ex.Message}"); }
+                }
+                _agent = newAgent;
+            }
+
+            _titleService.SetWorkspace(ws?.Name ?? "-");
+            _titleService.SetModel(model ?? "-");
+            _titleService.SetSessionTitle(session?.Title ?? "新会话");
+
+            if (_footerProvider is not null)
+            {
+                _footerProvider.WorkspaceName = ws?.Name ?? "-";
+                _footerProvider.ModelName = model ?? "-";
+                _footerProvider.SessionTitle = session?.Title ?? "新会话";
+            }
+
+            if (session is not null)
+            {
+                // 仅在首次加载、会话切换或强制刷新(clearDoc)时重载历史，避免重复加载
+                if (clearDoc || _loadedSessionId != session.SessionId)
+                {
+                    await LoadHistoryAsync(session.SessionId);
+                    _loadedSessionId = session.SessionId;
+                }
+            }
+            else
+            {
+                _loadedSessionId = null;
+            }
+
+            _dispatcher.Invoke(() =>
+            {
+                // 仅首次初始化（不清空文档）时追加一条状态行；切换场景由状态栏常驻显示
+                if (!clearDoc)
+                {
+                    _doc.AppendBlock(new SystemBlock(
+                        $"模型: {model ?? "-"}  |  工作区: {ws?.Name ?? "-"}  |  会话: {session?.Title ?? "新会话"}",
+                        foreground: BlockColors.Success));
+                }
+                _footerView?.SetNeedsDraw();
+            });
+        }
+    }
+
+    /// <summary>
+    /// 初始化 Agent（首次对话前调用一次）。
+    /// 统一走 <see cref="SyncContextAsync"/> 构建 Agent 与加载会话，并保留启动横幅（不清空文档）。
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        await _syncGate.WaitAsync();
+        try
+        {
+            await SyncContextAsync(clearDoc: false);
+        }
+        finally
+        {
+            _syncGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 请求一次上下文同步，并合并同一突发内的多次事件
+    /// （例如切换工作区会依次触发“工作区变更”与“当前会话变更”两个事件）。
+    /// 通过 20ms 去抖 + 单次调度，把多次事件合并为一次清文档/重载历史，
+    /// 既避免重复渲染，也保证读取到突发结束后的最终状态。
+    /// </summary>
+    private void RequestSync()
+    {
+        // 已有同步在排队/执行中：本次事件的状态变更会在那一次执行时被读取，无需重复调度
+        if (Interlocked.Exchange(ref _syncScheduled, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
         {
             try
             {
-                await LoadHistoryAsync(sessionId);
-                if (_iSessionManager.CurrentSession is not null)
+                await Task.Delay(20);
+                await _syncGate.WaitAsync();
+                try
                 {
-                    _titleService.SetSessionTitle(_iSessionManager.CurrentSession.Title ?? "新会话");
+                    await SyncContextAsync();
+                }
+                finally
+                {
+                    _syncGate.Release();
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error($"加载会话历史失败: {sessionId}", ex);
+                Logger.Error("同步上下文失败", ex);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _syncScheduled, 0);
             }
         });
-    }
-
-    /// <summary>
-    /// 初始化 Agent（在首次对话前调用一次）。
-    /// </summary>
-    public async Task InitializeAsync()
-    {
-        var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
-        _workspace = workspaceManager.CurrentWorkspace
-            ?? throw new InvalidOperationException("未设置当前工作区");
-
-        // 按工作区类型选择 Profile（与 AgiCommand.Execute 一致）
-        _profile = _workspace.Type == "Rag"
-            ? new RagAgentProfile(_workspace)
-            : new NormalAgentProfile();
-
-        _agentFactory = _services.GetRequiredService<ILuBanAgentFactory>();
-        _ruleEngine = _services.GetRequiredService<RuleEngine>();
-        _pluginRegistry = _services.GetRequiredService<ToolPluginRegistry>();
-        _skillRegistry = _services.GetRequiredService<SkillRegistry>();
-        _mcpRegistry = _services.GetRequiredService<MCPRegistry>();
-
-        _modelName = _configManager.SelectedModel
-            ?? throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
-
-        _titleService.SetWorkspace(_workspace.Name);
-        _titleService.SetModel(_modelName);
-
-        // 加载文件级 Skill（项目级 + 用户级）
-        var configPath = _workspace.ConfigPath;
-        if (configPath != null)
-        {
-            var skillsDir = Path.Combine(_workspace.RootPath, configPath, "skills");
-            _skillRegistry.LoadFromWorkspace(_workspace.RootPath);
-        }
-
-        _agent = await _profile.CreateAgentAsync(
-            _agentFactory, _modelName, _workspace,
-            _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);
-
-        _dispatcher.Invoke(() =>
-            _doc.AppendBlock(new SystemBlock(
-                $"模型: {_modelName}  |  工作区: {_workspace.Name}",
-                foreground: BlockColors.Success)));
-
-        // 加载当前会话历史
-        if (_iSessionManager.CurrentSession is not null)
-        {
-            await LoadHistoryAsync(_iSessionManager.CurrentSession.SessionId);
-        }
     }
 
     /// <summary>
@@ -305,6 +439,14 @@ internal sealed class ConversationViewModel : IDisposable
             _currentCts = null;
             ReportPlannedActions();
             ResetConfirmationContext();
+
+            // 运行期间发生的上下文切换（工作区/模型/会话）被延迟，
+            // 本轮结束后再触发一次同步，避免破坏运行中的 Agent 状态
+            if (_pendingSync)
+            {
+                _pendingSync = false;
+                RequestSync();
+            }
         }
     }
 
@@ -628,5 +770,11 @@ internal sealed class ConversationViewModel : IDisposable
         {
             _sessionManager.CurrentSessionChanged -= OnCurrentSessionChanged;
         }
+        if (_workspaceManager is not null)
+        {
+            _workspaceManager.CurrentWorkspaceChanged -= OnCurrentWorkspaceChanged;
+        }
+        _configManager.SelectedModelChanged -= OnSelectedModelChanged;
+        _syncGate.Dispose();
     }
 }

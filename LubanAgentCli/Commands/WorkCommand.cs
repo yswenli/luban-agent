@@ -148,7 +148,16 @@ public class WorkCommand : CommandBase
             });
         }
 
-        Ui.ShowTable("工作区列表", new[] { "名称", "类型", "根目录", "授权", "会话数", "最后活跃" }, rows);
+        var selected = Ui.ShowTable("工作区列表（回车切换）", new[] { "名称", "类型", "根目录", "授权", "会话数", "最后活跃" }, rows, selectable: true);
+        if (selected >= 0 && selected < workspaces.Count)
+        {
+            var ws = workspaces[selected];
+            await _workspaceManager.SwitchWorkspaceAsync(ws.WorkspaceId);
+            Writer.WriteSuccess($"已切换到工作区: {ws.Name}");
+            Writer.WriteInfo($"  根目录: {ws.RootPath}");
+            Writer.WriteInfo($"  授权状态: {(ws.IsAuthorized ? "已授权" : "未授权")}");
+            Writer.WriteInfo("  输入 /agi 开始工作");
+        }
     }
 
     /// <summary>
