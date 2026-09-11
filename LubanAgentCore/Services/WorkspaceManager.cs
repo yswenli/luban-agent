@@ -250,6 +250,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     public WorkspaceInfo? CurrentWorkspace => Current;
 
+    /// <summary>当前工作区变更时触发（参数为新工作区）。</summary>
+    public event Action<WorkspaceInfo>? CurrentWorkspaceChanged;
+
     /// <summary>
     /// 创建 WorkspaceManager 实例
     /// </summary>
@@ -317,6 +320,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         var newCurrent = ToWorkspaceInfo(ws);
         lock (_currentLock) _current = newCurrent;
+        CurrentWorkspaceChanged?.Invoke(newCurrent);
 
         // 3. 注入新工作区的 RootPath（如果已授权）
         if (newCurrent.IsAuthorized)
@@ -681,7 +685,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
                     Action = "allow"
                 };
 
-                var json = config.ToJson(hasIndentation: true);
+                var json = JsonSerializer.Serialize(config, ConfigJsonOptions.Pretty.GetTypeInfo(typeof(CustomRuleConfig)));
                 File.WriteAllText(ruleFile, json);
             }
             catch (Exception ex)

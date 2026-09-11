@@ -108,7 +108,7 @@ public class ConfigManager : IAppConfigReader
             if (File.Exists(_configPath))
             {
                 var json = File.ReadAllText(_configPath);
-                var config = JsonSerializer.Deserialize<AppConfig>(json);
+                var config = JsonSerializer.Deserialize(json, ConfigJsonOptions.Pretty.GetTypeInfo(typeof(AppConfig))) as AppConfig;
                 if (config != null)
                 {
                     _config = config;
@@ -141,7 +141,7 @@ public class ConfigManager : IAppConfigReader
     {
         try
         {
-            var json = _config.ToJson(hasIndentation: true);
+            var json = JsonSerializer.Serialize(_config, ConfigJsonOptions.Pretty.GetTypeInfo(typeof(AppConfig)));
             var directory = Path.GetDirectoryName(_configPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
@@ -181,6 +181,9 @@ public class ConfigManager : IAppConfigReader
         Save();
     }
 
+    /// <summary>选中模型变更时触发（model 为新值，null 表示清空）。</summary>
+    public event Action<string?>? SelectedModelChanged;
+
     /// <summary>
     /// 设置当前选中的模型
     /// </summary>
@@ -191,6 +194,7 @@ public class ConfigManager : IAppConfigReader
             throw new ArgumentException("模型不能为空", nameof(model));
         _config.SelectedModel = model;
         Save();
+        SelectedModelChanged?.Invoke(model);
     }
 
     /// <summary>
@@ -200,6 +204,7 @@ public class ConfigManager : IAppConfigReader
     {
         _config.SelectedModel = null;
         Save();
+        SelectedModelChanged?.Invoke(null);
     }
 
     /// <summary>
