@@ -23,6 +23,7 @@
 *****************************************************************************/
 using LuBan.AIAgent.MCP;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Skills;
 
 namespace LubanAgentCore.Agents;
@@ -56,6 +57,12 @@ public abstract class AgentProfile
     /// 当前激活的 Skill（对话内通过 /skill -switch 切换）。
     /// </summary>
     public ISkill? ActiveSkill { get; set; }
+
+    /// <summary>
+    /// 构建运行期工具参数覆盖。派生类可重写以定制子参数（如 Headless、Shell、Timeout），
+    /// null 表示使用框架内置默认值。
+    /// </summary>
+    protected virtual ToolGroupOptions BuildToolOptions() => new();
 
     /// <summary>
     /// 创建 Agent 实例。先加载工作区级别的组件（Skills/MCPs/Rules），再通过工厂创建 Agent。
@@ -94,7 +101,8 @@ public abstract class AgentProfile
             systemPrompt: fullPrompt,
             toolGroups: ToolGroups,
             retrievalMode: RetrievalMode,
-            useSessionHistory: true);
+            useSessionHistory: true,
+            toolsOptions: BuildToolOptions());
     }
 
     /// <summary>

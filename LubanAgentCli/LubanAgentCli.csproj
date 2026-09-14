@@ -67,9 +67,7 @@
 		     2.13.0 的流式工具调用表示有破坏性变更，会导致工具调用 chunk 解析为空 update、轮次静默结束 -->
 		<PackageReference Include="OpenAI" Version="2.13.0" />
 
-		<!-- CLI 的 Database 工具仅支持 SqlServer/MySql/PostgreSql/SQLite，
-		     裁剪 SqlSugarCore 传递的其余数据库驱动（Oracle/达梦/人大金仓/神舟通用），约 7MB。
-		     若未来通过 SqlSugar 直连这些数据库，移除对应排除项即可恢复 -->
+		<!-- SQLite 持久化仅需 SqlSugarCore，裁剪其余数据库驱动约 7MB -->
 		<PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.26.301" ExcludeAssets="all" PrivateAssets="all">
 		  <IncludeAssets>none</IncludeAssets>
 		</PackageReference>

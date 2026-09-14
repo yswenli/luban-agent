@@ -15,6 +15,8 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Configuration;
+
 namespace LubanAgentCore.Agents;
 
 /// <summary>
@@ -43,4 +45,11 @@ public class NormalAgentProfile : AgentProfile
     /// 检索模式，null 表示不使用检索。
     /// </summary>
     public override string? RetrievalMode => null;
+
+    /// <inheritdoc/>
+    protected override ToolGroupOptions BuildToolOptions() => new()
+    {
+        Browser = { Headless = false },
+        Script = { Shell = "cmd", DefaultTimeout = 30000 }
+    };
 }

@@ -85,6 +85,7 @@ internal sealed class ConversationViewModel : IDisposable
     private ThinkingBlock? _thinkingBlock;
     private bool _thinkingCompleted;
     private ActionSpinnerBlock? _currentSpinner;
+    private ToolCallBlock? _currentToolBlock;
 
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
@@ -668,6 +669,7 @@ internal sealed class ConversationViewModel : IDisposable
         _thinkingBlock = null;
         _thinkingCompleted = false;
         _currentSpinner = null;
+        _currentToolBlock = null;
 
         _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
 
@@ -733,22 +735,19 @@ internal sealed class ConversationViewModel : IDisposable
                     {
                         CloseThinkingBlock();
 
-                        // 完成上一个 spinner 并插入新 spinner（全部在 UI 线程）
                         _dispatcher.Invoke(() =>
                         {
+                            // 完成上一个 spinner（思考阶段）
                             if (_currentSpinner is not null)
                             {
                                 _currentSpinner.MarkComplete();
                                 _currentSpinner = null;
                             }
 
-                            _currentSpinner = new ActionSpinnerBlock($"正在调用工具 {functionCall.Name}…", _doc, _dispatcher);
-                            _doc.AppendBlock(_currentSpinner);
+                            var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId, _doc, _dispatcher);
+                            _doc.AppendBlock(toolBlock);
+                            _currentToolBlock = toolBlock;
                         });
-
-                        var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId);
-
-                        _dispatcher.Invoke(() => _doc.AppendBlock(toolBlock));
                         continue;
                     }
 
@@ -762,6 +761,18 @@ internal sealed class ConversationViewModel : IDisposable
                                 $"❌ 工具执行失败: {functionResult.Exception.Message}",
                                 foreground: BlockColors.Failure)));
                         }
+
+                        _dispatcher.Invoke(() =>
+                        {
+                            if (_currentToolBlock is not null)
+                            {
+                                if (functionResult.Exception is not null)
+                                    _currentToolBlock.MarkFailed(functionResult.Exception.Message);
+                                else
+                                    _currentToolBlock.MarkComplete();
+                                _currentToolBlock = null;
+                            }
+                        });
                         continue;
                     }
 
@@ -828,6 +839,13 @@ internal sealed class ConversationViewModel : IDisposable
                     {
                         _currentSpinner.MarkComplete();
                         _currentSpinner = null;
+                    }
+
+                    // 若流结束时有工具块仍在执行（流中断/取消），标记为失败避免误显"完成"
+                    if (_currentToolBlock is not null)
+                    {
+                        _currentToolBlock.MarkFailed("流中断");
+                        _currentToolBlock = null;
                     }
 
                     // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本

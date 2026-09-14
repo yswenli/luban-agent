@@ -42,16 +42,16 @@
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
 
-### 🛠️ 7 大内置工具组
+### 🛠️ 9 大内置工具组
 | 工具组 | 能力 |
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
 | 📁 **文件系统工具** | 读取、写入、列出目录，支持安全路径限制 |
 | 🔧 **脚本执行工具** | 执行 Shell、Lua、Python 脚本 |
-| 🗄️ **数据库工具** | ADO.NET 直连执行 SQL（MySQL/PostgreSQL/SQL Server/SQLite），支持动态连接字符串 |
-| 🔴 **Redis 工具** | 通过 redis-cli 执行 Redis 命令 |
 | 🌍 **Web 工具** | 发送 HTTP 请求获取网页内容 |
 | 🔍 **语义检索工具** | 索引本地代码/文档，按语义搜索相关片段 |
+| 🗜️ **上下文压缩工具** | 压缩当前会话的对话历史，释放 token 预算（LLM 可主动调用） |
+| 🧠 **本地记忆工具** | 长期记忆的存储、查询和管理 |
 
 ### 🎯 Skill 系统
 内置九大核心技能，即插即用：
@@ -405,17 +405,15 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 ...
 ```
 
-### 场景四：数据库查询
+### 场景四：上下文压缩
 
 ```
-你: 帮我查询用户表中最近的10条记录
+你: 帮我压缩一下当前的对话上下文
 
-[调用工具]: run_sql
-  参数 sql: SELECT * FROM users ORDER BY created_at DESC LIMIT 10
-[工具结果]: ...
+[调用工具]: CompactContextAsync
+[工具结果]: { "compactCount": 12, "remainingCount": 8 }
 
-🤖 查询结果如下：
-...
+🤖 已压缩上下文：归档 12 条消息，保留 8 条活跃消息
 ```
 
 ### 场景五：复合任务自动编排
@@ -625,32 +623,6 @@ LubanAgent/
       "CompactTargetMessages": 50,
       "CompactThreshold": 10
     },
-    "Tools": {
-      "Browser": {
-        "Enabled": true,
-        "Headless": false,
-        "Timeout": 30000
-      },
-      "FileSystem": {
-        "Enabled": true,
-        "AllowedRoots": ["C:\\Work"]
-      },
-      "Script": {
-        "Enabled": true,
-        "Shell": "cmd",
-        "DefaultTimeout": 30000
-      },
-      "Web": {
-        "Enabled": true
-      },
-      "Retrieval": {
-        "Enabled": true,
-        "ModelId": "bge-small-zh-v1.5",
-        "AutoDownload": true,
-        "MaxFileSizeKB": 5120,
-        "DefaultTopK": 5
-      }
-    },
     "Orchestration": {
       "Enabled": true,
       "PlannerType": "Composite",
@@ -701,8 +673,6 @@ LubanAgent/
 **需要确认的操作包括**：
 - 📝 **文件系统**: 写入文件、删除文件、创建/删除目录
 - 🔧 **脚本执行**: 执行 Shell、Lua、Python 脚本
-- 🗄️ **数据库**: INSERT、UPDATE、DELETE 操作
-- 🔴 **Redis**: SET、DELETE、FLUSHDB 操作
 
 ### 会话管理
 
@@ -867,7 +837,7 @@ github 可用的工具：
 - 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击 `▸` 展开查看详情
 - 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ 行提示"
 - 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择
-- 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、数据库、Redis、Web 请求、语义检索
+- 🛠️ **9 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP、多 Agent 编排
 - ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认（InlineChoiceBlock 内联确认）
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
 - 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider

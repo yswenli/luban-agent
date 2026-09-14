@@ -22,6 +22,8 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Configuration;
+
 namespace LubanAgentCore.Agents;
 
 /// <summary>
@@ -44,7 +46,7 @@ public class RagAgentProfile : AgentProfile
     {
         _workspace = workspace;
         _systemPrompt = "你是一个知识库问答专家。请基于检索到的文档片段回答问题，不要超出文档范围。如果文档中没有相关信息，请明确告知用户。";
-        _toolGroups = new[] { "retrieval", "filesystem" };
+        _toolGroups = new[] { "retrieval", "filesystem", "context" };
         LoadRagConfig();
     }
 
@@ -62,6 +64,13 @@ public class RagAgentProfile : AgentProfile
     /// 检索模式，使用 auto 表示自动检索。
     /// </summary>
     public override string? RetrievalMode => "auto";
+
+    /// <inheritdoc/>
+    protected override ToolGroupOptions BuildToolOptions() => new()
+    {
+        Browser = { Headless = false },
+        Script = { Shell = "cmd", DefaultTimeout = 30000 }
+    };
 
     /// <summary>
     /// 从工作区的 rag-config.json 加载 agentProfile 配置，覆盖默认的系统提示词与工具组。

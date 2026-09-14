@@ -42,16 +42,16 @@ This isn't science fiction—this is **LuBan Agent**.
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 9 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
 | 📁 **FileSystem Tools** | Read, write, list directories with secure path restrictions |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
-| 🗄️ **Database Tools** | Execute SQL via ADO.NET direct connections (MySQL/PostgreSQL/SQL Server/SQLite), with dynamic connection string support |
-| 🔴 **Redis Tools** | Execute Redis commands via redis-cli |
 | 🌍 **Web Tools** | Send HTTP requests to fetch web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |
+| 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
+| 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
 
 ### 🎯 Skill System
 Nine core built-in skills, plug and play:
@@ -380,17 +380,15 @@ Improvement suggestions:
 ...
 ```
 
-### Use Case 4: Database Query
+### Use Case 4: Context Compaction
 
 ```
-You: Query the 10 most recent records from the users table
+You: Help me compact the current conversation context
 
-[Calling tool]: run_sql
-  Parameter sql: SELECT * FROM users ORDER BY created_at DESC LIMIT 10
-[Tool result]: ...
+[Calling tool]: CompactContextAsync
+[Tool result]: { "compactCount": 12, "remainingCount": 8 }
 
-🤖 Query results:
-...
+🤖 Context compacted: archived 12 messages, kept 8 active messages
 ```
 
 ### Use Case 5: Composite Task Auto-Orchestration
@@ -606,32 +604,6 @@ LubanAgent/
       "CompactTargetMessages": 50,
       "CompactThreshold": 10
     },
-    "Tools": {
-      "Browser": {
-        "Enabled": true,
-        "Headless": false,
-        "Timeout": 30000
-      },
-      "FileSystem": {
-        "Enabled": true,
-        "AllowedRoots": ["C:\\Work"]
-      },
-      "Script": {
-        "Enabled": true,
-        "Shell": "cmd",
-        "DefaultTimeout": 30000
-      },
-      "Web": {
-        "Enabled": true
-      },
-      "Retrieval": {
-        "Enabled": true,
-        "ModelId": "bge-small-zh-v1.5",
-        "AutoDownload": true,
-        "MaxFileSizeKB": 5120,
-        "DefaultTopK": 5
-      }
-    },
     "Orchestration": {
       "Enabled": true,
       "PlannerType": "Composite",
@@ -681,9 +653,7 @@ Execute this operation? (y/N): y
 
 **Operations requiring confirmation**:
 - 📝 **FileSystem**: Write files, delete files, create/delete directories
-- 🔧 **Script Execution**: Execute Shell, Lua, Python scripts
-- 🗄️ **Database**: INSERT, UPDATE, DELETE operations
-- 🔴 **Redis**: SET, DELETE, FLUSHDB operations
+- 🔧 **Script**: Execute Shell, Lua, Python scripts
 
 ### Session Management
 
@@ -849,7 +819,7 @@ Available tools for github:
 - 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines new" prompt
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
-- 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, database, Redis, web requests, and semantic retrieval
+- 🛠️ **9 Built-in Tool Groups** cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP, and multi-agent orchestration
 - ⚠️ **ToolConfirmationService** uses inline InlineChoiceBlock for tool confirmation (allow/deny/allow all this turn)
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution

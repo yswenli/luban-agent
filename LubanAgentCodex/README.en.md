@@ -47,16 +47,16 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 9 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
 | 📁 **File System Tools** | Read, write, list directories, with safe path restrictions |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
-| 🗄️ **Database Tools** | ADO.NET direct SQL execution (MySQL/PostgreSQL/SQL Server/SQLite) |
-| 🔴 **Redis Tools** | Execute Redis commands via redis-cli |
 | 🌍 **Web Tools** | Send HTTP requests to get web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents, search relevant fragments by semantics |
+| 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
+| 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
 
 ### 🎯 Skill System
 Built-in nine core skills, plug and play:
@@ -296,17 +296,15 @@ Improvement suggestions:
 ...
 ```
 
-### Scenario 4: Database Query
+### Scenario 4: Context Compaction
 
 ```
-You: Help me query the latest 10 records in user table
+You: Help me compact the current conversation context
 
-⚙️ Calling tool: ExecuteQueryAsync
-   Parameters: sql = SELECT * FROM users ORDER BY created_at DESC LIMIT 10
+⚙️ Calling tool: CompactContextAsync
 ✓ Tool execution complete
 
-🤖 Query results as follows:
-...
+🤖 Context compacted: archived 12 messages, kept 8 active messages
 ```
 
 ### Scenario 5: Complex Task Auto-Orchestration
@@ -465,39 +463,6 @@ LubanAgentCodex/
       "CompactTargetMessages": 50,
       "CompactThreshold": 10
     },
-    "Tools": {
-      "Browser": {
-        "Enabled": true,
-        "Headless": false,
-        "Timeout": 30000
-      },
-      "FileSystem": {
-        "Enabled": true,
-        "AllowedRoots": ["C:\\Work"]
-      },
-      "Script": {
-        "Enabled": true,
-        "Shell": "cmd",
-        "DefaultTimeout": 30000
-      },
-      "Database": {
-        "Enabled": true,
-        "ConnectionString": "Server=..."
-      },
-      "Redis": {
-        "Enabled": true
-      },
-      "Web": {
-        "Enabled": true
-      },
-      "Retrieval": {
-        "Enabled": true,
-        "ModelId": "bge-small-zh-v1.5",
-        "AutoDownload": true,
-        "MaxFileSizeKB": 5120,
-        "DefaultTopK": 5
-      }
-    },
     "Orchestration": {
       "Enabled": true,
       "PlannerType": "Composite",
@@ -542,8 +507,6 @@ Parameters:
 **Operations requiring confirmation**:
 - 📝 **File System**: Write files, delete files, create/delete directories
 - 🔧 **Script Execution**: Execute Shell, Lua, Python scripts
-- 🗄️ **Database**: INSERT, UPDATE, DELETE operations
-- 🔴 **Redis**: SET, DELETE, FLUSHDB operations
 
 ### Session Management
 
@@ -665,7 +628,7 @@ github available tools:
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **7 Built-in Tool Groups**: Cover browser automation, file operations, script execution, database, Redis, web requests, semantic retrieval
+- 🛠️ **9 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP, multi-agent orchestration
 - ⚠️ **Dangerous Operation Confirmation**: Automatically requires user confirmation for write, delete, execute and other dangerous operations
 - 🔒 **Path Authorization**: After workspace authorization, AI Agent can access root directory and its subdirectories
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix

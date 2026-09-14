@@ -682,6 +682,7 @@ public partial class SettingsWindow : Window
         var provider = _configManager.GetProvider(key);
         var isNew = provider == null;
         if (isNew) provider = new ProviderConfig { Name = key };
+        var nonNullProvider = provider!;
 
         // 类型（仅新建态显示，便捷预填 Name / BaseUrl）
         ComboBox? typeCombo = null;
@@ -690,13 +691,13 @@ public partial class SettingsWindow : Window
             typeCombo = AddCombo(host, "类型（内置预设，可选）", Builtin.Select(b => b.Display), Builtin[0].Display);
         }
 
-        var nameBox = AddField(host, "Name（唯一标识，小写）", provider.Name);
+        var nameBox = AddField(host, "Name（唯一标识，小写）", nonNullProvider.Name);
         if (!isNew) nameBox.IsReadOnly = true;
 
-        SetField("ApiKey", AddPasswordField(host, "ApiKey", provider.ApiKey));
-        SetField("BaseUrl", AddField(host, "BaseUrl（空=默认）", provider.BaseUrl ?? ""));
-        SetField("DisplayName", AddField(host, "DisplayName（可选）", provider.DisplayName ?? ""));
-        SetField("NetworkTimeoutSeconds", AddField(host, "NetworkTimeoutSeconds（空=默认 60）", provider.NetworkTimeoutSeconds?.ToString() ?? ""));
+        SetField("ApiKey", AddPasswordField(host, "ApiKey", nonNullProvider.ApiKey));
+        SetField("BaseUrl", AddField(host, "BaseUrl（空=默认）", nonNullProvider.BaseUrl ?? ""));
+        SetField("DisplayName", AddField(host, "DisplayName（可选）", nonNullProvider.DisplayName ?? ""));
+        SetField("NetworkTimeoutSeconds", AddField(host, "NetworkTimeoutSeconds（空=默认 60）", nonNullProvider.NetworkTimeoutSeconds?.ToString() ?? ""));
 
         if (typeCombo != null)
             typeCombo.SelectionChanged += (s, e) => OnProviderTypeChanged(typeCombo, nameBox, (TextBox)_editorFields["BaseUrl"]);
@@ -712,7 +713,7 @@ public partial class SettingsWindow : Window
         var modelsPanel = new StackPanel();
         host.Children.Add(modelsPanel);
         _providerCustomModelsPanel = modelsPanel;
-        foreach (var m in provider.CustomModels) AddCustomModelRow(modelsPanel, m);
+        foreach (var m in nonNullProvider.CustomModels) AddCustomModelRow(modelsPanel, m);
         var addModelBtn = new Button
         {
             Content = "＋ 添加模型",
@@ -734,7 +735,7 @@ public partial class SettingsWindow : Window
                 Foreground = Brush.Parse("#8A8A8A"),
                 Margin = new Thickness(0, 12, 0, 4),
             });
-            var modelCombo = AddCombo(host, "选择模型", _configManager.GetAllModels(provider.Name), "");
+            var modelCombo = AddCombo(host, "选择模型", _configManager.GetAllModels(nonNullProvider.Name), "");
             var setDefaultBtn = new Button
             {
                 Content = "设为默认",
@@ -747,8 +748,8 @@ public partial class SettingsWindow : Window
             {
                 var m = modelCombo.SelectedItem as string;
                 if (string.IsNullOrEmpty(m)) { SetHint("请先选择模型。", true); return; }
-                _configManager.SetSelectedModel($"{provider.Name}:{m}");
-                SetHint($"已设为默认模型：{provider.Name}:{m}", false);
+                _configManager.SetSelectedModel($"{nonNullProvider.Name}:{m}");
+                SetHint($"已设为默认模型：{nonNullProvider.Name}:{m}", false);
                 RefreshItems();
             };
             host.Children.Add(setDefaultBtn);

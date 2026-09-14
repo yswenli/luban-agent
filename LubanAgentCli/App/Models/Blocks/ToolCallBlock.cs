@@ -12,22 +12,28 @@
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
 *描述：Agent 工具调用，单行“工具执行中”可见状态块（参考 Claude Code）。
-*运行中显示动画 spinner + ⏳ + 工具名 + 实时耗时；完成后变为 ✓ 工具完成（成功）
-*或 ✗ 工具执行失败（失败）。替代原先“正在调用工具”spinner 与静态
-*“正在使用工具”两行冗余显示，单一状态块清晰表达工具正在/已完成/失败。
-*
-*****************************************************************************/
+ *运行中显示动画 spinner + ⏳ + 友好中文动作名 + 实时耗时；完成后变为
+ *✓ 动作完成（成功）或 ✗ 动作失败（失败）。工具方法名经 ToolDisplayNames
+ *映射为友好中文动作名（如 GrepAsync → 全仓搜索）。替代原先“正在调用工具”
+ *spinner 与静态“正在使用工具”两行冗余显示，单一状态块清晰表达执行状态。
+ *
+ *****************************************************************************/
 using LubanAgentCli.App.ViewModels;
+using LubanAgentCore.Utils;
+
+// 消歧：全局 using 引入了 Spectre.Console.Color
+using Color = Terminal.Gui.Drawing.Color;
 
 namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
 /// 工具执行中状态块。单行显示工具的实时执行状态：
 /// <list type="bullet">
-///   <item>运行中：<c>⠋ ⏳ 工具执行中: 工具名 · N.Ns</c>（琥珀/淡黄，带动画）。</item>
-///   <item>成功：<c>✓ 工具完成: 工具名 · N.Ns</c>（绿色）。</item>
-///   <item>失败：<c>✗ 工具执行失败: 工具名 · N.Ns</c>（红色）。</item>
+///   <item>运行中：<c>⠋ ⏳ 正在全仓搜索… · N.Ns</c>（淡黄，带动画）。</item>
+///   <item>成功：<c>✓ 全仓搜索完成 · N.Ns</c>（绿色）。</item>
+///   <item>失败：<c>✗ 全仓搜索失败 · N.Ns</c>（红色）。</item>
 /// </list>
+/// 工具名经 <see cref="ToolDisplayNames.GetAction"/> 映射为友好中文名。
 /// 不可折叠，不展示参数与返回内容（参考 Claude Code 的精简提示）。
 /// </summary>
 public sealed class ToolCallBlock : Block
@@ -41,8 +47,11 @@ public sealed class ToolCallBlock : Block
     private volatile bool _stopped;
     private bool _failed;
 
-    /// <summary>工具名称。</summary>
+    /// <summary>工具名称（框架原始方法名）。</summary>
     public string ToolName { get; }
+
+    /// <summary>工具中文动作名（映射后的友好名称）。</summary>
+    public string DisplayName { get; }
 
     /// <summary>工具调用 ID（MCP 协议中的 callId）。</summary>
     public string? CallId { get; set; }
@@ -57,6 +66,7 @@ public sealed class ToolCallBlock : Block
     public ToolCallBlock(string toolName, string? callId, ConversationDocument doc, IUiDispatcher dispatcher)
     {
         ToolName = toolName ?? throw new ArgumentNullException(nameof(toolName));
+        DisplayName = ToolDisplayNames.GetAction(toolName);
         CallId = callId;
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -82,18 +92,18 @@ public sealed class ToolCallBlock : Block
 
         if (_failed)
         {
-            text = $"✗ 工具执行失败: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            text = $"✗ {DisplayName}失败 · {elapsed.TotalSeconds:F1}s";
             color = BlockColors.Failure;
         }
         else if (IsComplete)
         {
-            text = $"✓ 工具完成: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            text = $"✓ {DisplayName}完成 · {elapsed.TotalSeconds:F1}s";
             color = BlockColors.Success;
         }
         else
         {
             var frame = Frames[_frameIndex % Frames.Length];
-            text = $"{frame} ⏳ 工具执行中: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            text = $"{frame} ⏳ 正在{DisplayName}… · {elapsed.TotalSeconds:F1}s";
             color = BlockColors.ToolCall;
         }
 
