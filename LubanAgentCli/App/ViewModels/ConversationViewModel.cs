@@ -143,7 +143,10 @@ internal sealed class ConversationViewModel : IDisposable
         internal set
         {
             if (_pendingChoice == value) return;
+            var oldTitle = _pendingChoice?.Title;
+            var newTitle = value?.Title;
             _pendingChoice = value;
+            Logger.Warn($"[TuiDiag-PendingChoice] set: old=({(oldTitle is null ? "null" : $"'{oldTitle}'")}) -> new=({(newTitle is null ? "null" : $"'{newTitle}'")}) Selected={(value?.Selected?.Key.ToString() ?? "null")}");
             PendingChoiceChanged?.Invoke();
         }
     }

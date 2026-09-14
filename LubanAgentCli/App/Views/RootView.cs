@@ -122,7 +122,12 @@ internal sealed class RootView : Runnable
         _inputBar.KeyPreRouter = key =>
         {
             var pc = _vm.PendingChoice;
-            return pc is not null && pc.Selected is null && pc.HandleKey(key);
+            var consumed = pc is not null && pc.Selected is null && pc.HandleKey(key);
+            if (Infrastructure.TuiDiag.Enabled && consumed)
+            {
+                Logger.Warn($"[TuiDiag-Enter] KeyPreRouter consumed key={key} PendingChoice.Title='{pc!.Title}' Selected=null");
+            }
+            return consumed;
         };
         _inputBar.OnPreRoutedKey = () => _conversation.SetNeedsDraw();
         _onPermissionModeChanged = mode => _footer.SetMode(_vm.PermissionModeDisplay);
@@ -260,7 +265,17 @@ internal sealed class RootView : Runnable
             return;
         }
 
+        // 防御性清残留：用户若在 BypassConfirm 等待中又按 Shift+Tab 试图跳过确认，
+        // 必须把上一次的 PendingChoice 清掉，否则 KeyPreRouter 会持续吞掉所有 Enter，
+        // 直到本回合被某种流程清掉为止，导致"回车毫无反应"的隐性 bug。
+        if (_vm.PendingChoice is not null && _vm.PendingChoice.Selected is null)
+        {
+            Logger.Warn($"[TuiDiag-PendingChoice] HandleShiftTab clearing stale PendingChoice.Title='{_vm.PendingChoice.Title}'");
+            _vm.PendingChoice = null;
+        }
+
         var newMode = _vm.CyclePermissionMode();
+        Logger.Warn($"[TuiDiag-PermMode] HandleShiftTab cycle -> {_vm.PermissionModeDisplay} (newMode={newMode})");
 
         // BypassPermissions 需二次确认
         if (newMode == ToolPermissionMode.BypassPermissions)
@@ -278,6 +293,7 @@ internal sealed class RootView : Runnable
             });
             _doc.AppendBlock(confirmBlock);
             _vm.PendingChoice = confirmBlock;
+            Logger.Warn($"[TuiDiag-PendingChoice] HandleShiftTab set PendingChoice='{confirmBlock.Title}' (BypassConfirm)");
             return;
         }
 
@@ -358,6 +374,11 @@ internal sealed class RootView : Runnable
     /// <param name="text">用户输入文本。</param>
     private void OnInputSubmitted(string text)
     {
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Submit] OnInputSubmitted textLen={text.Length} runActive={_runActive} isRunning={_vm.IsRunning} initializing={_initializing} queueCount={_inputQueue.Count} PendingChoice={( _vm.PendingChoice is null ? "null" : $"'{_vm.PendingChoice.Title}'(Selected={_vm.PendingChoice.Selected?.Key.ToString() ?? "null"})")}");
+        }
+
         if (string.Equals(text, "/exit", StringComparison.OrdinalIgnoreCase)
             || string.Equals(text, "/quit", StringComparison.OrdinalIgnoreCase))
         {

@@ -45,14 +45,13 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
     {
         Infrastructure.TuiDiag.KeyArrival();
 
-        if (Infrastructure.TuiDiag.Enabled)
-        {
-            Logger.Warn($"[TuiDiag] Editor.OnKeyDown: key={key}");
-        }
-
         // 优先路由给挂起的确认块
         if (KeyPreRouter is not null && KeyPreRouter(key))
         {
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag-Enter] key={key} consumed-by=KeyPreRouter(PendingChoice)");
+            }
             OnPreRoutedKey?.Invoke();
             return true;
         }
@@ -63,6 +62,10 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
         if (key == Key.V.WithCtrl || key == Key.V.WithShift.WithCtrl)
         {
             InvokeCommand(Command.Paste);
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag-Enter] key={key} branch=Paste(InvokeCommand)");
+            }
             return true;
         }
 
@@ -72,15 +75,27 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
         if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
         {
             InvokeCommand(Command.NewLine);
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag-Enter] key={key} branch=NewLine");
+            }
             return true;
         }
 
         if (key == Key.Enter)
         {
             var text = (Text ?? string.Empty).Trim();
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag-Enter] key=Enter prerouter=not-consumed Text.Length='{(Text?.Length ?? 0)}' trimmed.Length='{text.Length}'");
+            }
             if (text.Length > 0)
             {
                 Text = string.Empty;
+                if (Infrastructure.TuiDiag.Enabled)
+                {
+                    Logger.Warn($"[TuiDiag-Enter] key=Enter SUBMIT textLen={text.Length}");
+                }
                 SubmitRequested?.Invoke(text);
             }
             return true;
