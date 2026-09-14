@@ -700,8 +700,11 @@ public partial class MainWindowViewModel : ObservableObject
         {
             if (Messages[i] is ToolCallItem tool && tool.CallId == callId)
             {
-                tool.State = state;
+                // 必须先写错误信息再改状态：ToolCallCard 只订阅 State，
+                // State 的 setter 会同步触发渲染，若此时 ErrorMessage 尚未赋值，
+                // 卡片会永远显示兜底文案「工具执行失败」而丢掉真实原因。
                 tool.ErrorMessage = error;
+                tool.State = state;
                 break;
             }
         }

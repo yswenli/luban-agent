@@ -85,7 +85,13 @@ internal sealed class ConversationViewModel : IDisposable
     private ThinkingBlock? _thinkingBlock;
     private bool _thinkingCompleted;
     private ActionSpinnerBlock? _currentSpinner;
-    private ToolCallBlock? _currentToolBlock;
+
+    /// <summary>
+    /// 本轮正在执行的工具块（按调用先后顺序）。同一轮可能出现多个工具调用，
+    /// 结果需按 CallId 精确匹配，故用列表而非单槽字段。
+    /// 仅在 UI 线程（_dispatcher.Invoke 内部）读写。
+    /// </summary>
+    private readonly List<ToolCallBlock> _runningToolBlocks = new();
 
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
@@ -669,7 +675,7 @@ internal sealed class ConversationViewModel : IDisposable
         _thinkingBlock = null;
         _thinkingCompleted = false;
         _currentSpinner = null;
-        _currentToolBlock = null;
+        _runningToolBlocks.Clear();
 
         _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
 
@@ -746,7 +752,7 @@ internal sealed class ConversationViewModel : IDisposable
 
                             var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId, _doc, _dispatcher);
                             _doc.AppendBlock(toolBlock);
-                            _currentToolBlock = toolBlock;
+                            _runningToolBlocks.Add(toolBlock);
                         });
                         continue;
                     }
@@ -764,13 +770,20 @@ internal sealed class ConversationViewModel : IDisposable
 
                         _dispatcher.Invoke(() =>
                         {
-                            if (_currentToolBlock is not null)
+                            // 同一轮可能有多个工具调用：框架会先连续产出多个 FunctionCall，再产出各自结果，
+                            // 故按 CallId 精确匹配；结果不带 CallId 时才退化为「最早的未完成块」。
+                            // 带 CallId 但匹配不到时不猜（留给 finally 统一按"流中断"收尾），避免错配。
+                            var target = !string.IsNullOrEmpty(functionResult.CallId)
+                                ? _runningToolBlocks.FirstOrDefault(b => string.Equals(b.CallId, functionResult.CallId, StringComparison.Ordinal))
+                                : _runningToolBlocks.FirstOrDefault(b => !b.IsComplete);
+
+                            if (target is not null)
                             {
                                 if (functionResult.Exception is not null)
-                                    _currentToolBlock.MarkFailed(functionResult.Exception.Message);
+                                    target.MarkFailed(functionResult.Exception.Message);
                                 else
-                                    _currentToolBlock.MarkComplete();
-                                _currentToolBlock = null;
+                                    target.MarkComplete();
+                                _runningToolBlocks.Remove(target);
                             }
                         });
                         continue;
@@ -841,12 +854,11 @@ internal sealed class ConversationViewModel : IDisposable
                         _currentSpinner = null;
                     }
 
-                    // 若流结束时有工具块仍在执行（流中断/取消），标记为失败避免误显"完成"
-                    if (_currentToolBlock is not null)
-                    {
-                        _currentToolBlock.MarkFailed("流中断");
-                        _currentToolBlock = null;
-                    }
+                    // 若流结束时仍有工具块在执行（流中断/取消/结果缺失），全部标记失败：
+                    // 既避免误显"完成"，也避免残留块的动画 Timer 永久运行（一直显示"正在…"）。
+                    foreach (var pending in _runningToolBlocks)
+                        pending.MarkFailed("流中断");
+                    _runningToolBlocks.Clear();
 
                     // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
                     _doc.RelayoutLastBlock();
