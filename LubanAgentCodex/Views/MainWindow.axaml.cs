@@ -204,6 +204,14 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Esc 取消当前对话
+        if (e.Key == Key.Escape)
+        {
+            _viewModel?.CancelCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         // Shift+Tab 切换权限模式
         if (e.Key == Key.Tab && e.KeyModifiers == KeyModifiers.Shift)
         {

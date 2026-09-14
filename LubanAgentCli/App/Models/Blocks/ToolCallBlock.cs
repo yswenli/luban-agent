@@ -6,22 +6,41 @@
 *命名空间：LubanAgent.Models.Blocks
 *文件名： ToolCallBlock
 *版本号： V1.0.0.0
-*唯一标识：工具调用 Block
+*唯一标识：工具执行中状态块
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：Agent 工具调用，淡黄色，单行显示"正在使用工具[名称]"（参考 Claude Code）
+*描述：Agent 工具调用，单行“工具执行中”可见状态块（参考 Claude Code）。
+*运行中显示动画 spinner + ⏳ + 工具名 + 实时耗时；完成后变为 ✓ 工具完成（成功）
+*或 ✗ 工具执行失败（失败）。替代原先“正在调用工具”spinner 与静态
+*“正在使用工具”两行冗余显示，单一状态块清晰表达工具正在/已完成/失败。
 *
 *****************************************************************************/
+using LubanAgentCli.App.ViewModels;
+
 namespace LubanAgentCli.App.Models.Blocks;
 
 /// <summary>
-/// 工具调用 Block。淡黄色着色，单行显示 <c>正在使用工具[工具名]</c>，
-/// 完成后追加耗时后缀；不可折叠，不展示参数与返回内容。
+/// 工具执行中状态块。单行显示工具的实时执行状态：
+/// <list type="bullet">
+///   <item>运行中：<c>⠋ ⏳ 工具执行中: 工具名 · N.Ns</c>（琥珀/淡黄，带动画）。</item>
+///   <item>成功：<c>✓ 工具完成: 工具名 · N.Ns</c>（绿色）。</item>
+///   <item>失败：<c>✗ 工具执行失败: 工具名 · N.Ns</c>（红色）。</item>
+/// </list>
+/// 不可折叠，不展示参数与返回内容（参考 Claude Code 的精简提示）。
 /// </summary>
 public sealed class ToolCallBlock : Block
 {
+    private static readonly string[] Frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+
+    private readonly ConversationDocument _doc;
+    private readonly IUiDispatcher _dispatcher;
+    private int _frameIndex;
+    private Timer? _animationTimer;
+    private volatile bool _stopped;
+    private bool _failed;
+
     /// <summary>工具名称。</summary>
     public string ToolName { get; }
 
@@ -29,14 +48,19 @@ public sealed class ToolCallBlock : Block
     public string? CallId { get; set; }
 
     /// <summary>
-    /// 初始化工具调用 Block。
+    /// 初始化工具执行中状态块。
     /// </summary>
     /// <param name="toolName">工具名称。</param>
     /// <param name="callId">调用 ID（可选）。</param>
-    public ToolCallBlock(string toolName, string? callId = null)
+    /// <param name="doc">会话文档，用于动画刷新时通知重绘。</param>
+    /// <param name="dispatcher">UI 线程调度器，动画帧需编组到 UI 线程。</param>
+    public ToolCallBlock(string toolName, string? callId, ConversationDocument doc, IUiDispatcher dispatcher)
     {
         ToolName = toolName ?? throw new ArgumentNullException(nameof(toolName));
         CallId = callId;
+        _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        StartAnimation();
     }
 
     /// <inheritdoc/>
@@ -52,7 +76,72 @@ public sealed class ToolCallBlock : Block
     /// <inheritdoc/>
     public override void Render(List<RenderLine> lines, int width)
     {
-        var durationStr = Duration.HasValue ? $" · {Duration.Value.TotalSeconds:F1}s" : string.Empty;
-        lines.Add(RenderLine.Single($"正在使用工具[{ToolName}]{durationStr}", BlockColors.ToolCall));
+        var elapsed = Duration ?? (DateTime.UtcNow - StartedAtUtc);
+        string text;
+        Color color;
+
+        if (_failed)
+        {
+            text = $"✗ 工具执行失败: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            color = BlockColors.Failure;
+        }
+        else if (IsComplete)
+        {
+            text = $"✓ 工具完成: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            color = BlockColors.Success;
+        }
+        else
+        {
+            var frame = Frames[_frameIndex % Frames.Length];
+            text = $"{frame} ⏳ 工具执行中: {ToolName} · {elapsed.TotalSeconds:F1}s";
+            color = BlockColors.ToolCall;
+        }
+
+        var truncated = TextMeasure.TruncateByColumns(text, width);
+        lines.Add(RenderLine.Single(truncated, color));
+    }
+
+    /// <summary>
+    /// 标记工具执行失败：停止动画并以失败样式渲染。
+    /// </summary>
+    /// <param name="error">失败原因（仅记录，不重复渲染消息；具体错误由 ViewModel 单独附红行）。</param>
+    public void MarkFailed(string? error)
+    {
+        _failed = true;
+        MarkComplete();
+    }
+
+    /// <inheritdoc/>
+    public override void MarkComplete()
+    {
+        base.MarkComplete();
+        StopAnimation();
+        NotifyChanged();
+    }
+
+    private void StartAnimation()
+    {
+        _animationTimer = new Timer(_ =>
+        {
+            if (_stopped) return;
+            _dispatcher.Invoke(() =>
+            {
+                if (_stopped) return;
+                _frameIndex++;
+                NotifyChanged();
+            });
+        }, null, 0, 100);
+    }
+
+    private void StopAnimation()
+    {
+        _stopped = true;
+        _animationTimer?.Dispose();
+        _animationTimer = null;
+    }
+
+    private void NotifyChanged()
+    {
+        _doc.NotifyBlockChanged(this);
     }
 }

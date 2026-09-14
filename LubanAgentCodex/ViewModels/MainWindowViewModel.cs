@@ -33,6 +33,7 @@ public partial class MainWindowViewModel : ObservableObject
 {
     private readonly AgentHostService _agentHost;
     private CancellationTokenSource? _cts;
+    private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
     private readonly StringBuilder _pendingText = new();
     private readonly StringBuilder _pendingThinking = new();
     private FlushThrottle? _throttle;
@@ -128,6 +129,7 @@ public partial class MainWindowViewModel : ObservableObject
         // 确保它排在思考内容/工具卡片之后（修复显示顺序错乱）
 
         _cts = new CancellationTokenSource();
+        var runSeq = Interlocked.Increment(ref _activeRunSeq); // 本次对话运行序号；取消/新对话将使其失效
 
         // 初始化节流器：回调投递到 UI 线程执行，与事件处理天然串行
         _throttle ??= new FlushThrottle(
@@ -138,7 +140,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             // 关键：消费循环放后台线程，避免确认回调阻塞 UI 线程导致死锁；
             // 事件本身全部投递到 UI 线程按序处理（Dispatcher 队列 FIFO 保序）
-            await Task.Run(() => ConsumeStreamAsync(input, _cts.Token));
+            await Task.Run(() => ConsumeStreamAsync(input, _cts.Token, runSeq));
         }
         catch (OperationCanceledException)
         {
@@ -173,7 +175,11 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Cancel()
     {
-        _cts?.Cancel();
+        if (_cts == null)
+            return;
+        // 失效当前运行序号：丢弃取消后迟到的旧事件（避免下次输入仍执行上次对话）
+        Interlocked.Increment(ref _activeRunSeq);
+        _cts.Cancel();
     }
 
     /// <summary>
@@ -558,7 +564,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 后台消费流式事件：只负责转发，全部事件按到达顺序投递到 UI 线程
     /// </summary>
-    private async Task ConsumeStreamAsync(string input, CancellationToken ct)
+    private async Task ConsumeStreamAsync(string input, CancellationToken ct, int runSeq)
     {
         var plannedCount = 0;
 
@@ -568,6 +574,7 @@ public partial class MainWindowViewModel : ObservableObject
             PermissionMode,
             onPlannedAction: (tool, args) =>
             {
+                if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
                 Interlocked.Increment(ref plannedCount);
                 var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
                 Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
@@ -575,10 +582,11 @@ public partial class MainWindowViewModel : ObservableObject
             ct: ct))
         {
             var e = evt;
-            Dispatcher.UIThread.Post(() => HandleStreamEvent(e));
+            Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
         }
 
-        ReportPlannedActions(Volatile.Read(ref plannedCount));
+        if (runSeq == _activeRunSeq)
+            ReportPlannedActions(Volatile.Read(ref plannedCount));
     }
 
     /// <summary>
@@ -603,8 +611,13 @@ public partial class MainWindowViewModel : ObservableObject
     /// UI 线程上串行处理流式事件，保证消息流显示顺序：
     /// 思考 → 工具调用 → 工具结果 → ... → 最终正文
     /// </summary>
-    private void HandleStreamEvent(StreamEvent evt)
+    private void HandleStreamEvent(StreamEvent evt, int runSeq)
     {
+        // 运行序号防护：取消或新对话发起后，迟到的旧事件一律丢弃，
+        // 避免"按 Esc 取消后，下次输入仍继续执行上次对话"。
+        if (runSeq != _activeRunSeq)
+            return;
+
         switch (evt)
         {
             case TextDeltaEvent t:
@@ -620,10 +633,14 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case ThinkingDeltaEvent t:
-                // 思考内容作为独立消息项显示
-                if (_currentThinking == null || _currentThinking.IsComplete)
+                // 思考内容作为独立消息项显示。
+                // 若已输出过正文、当前又产生新的思考，则收尾旧思考块并另起一块，
+                // 使"思考→输出→再思考"按发生顺序交错显示，而非堆积在顶部单块。
+                if (_currentThinking == null || _currentThinking.IsComplete || _currentAssistant != null)
                 {
                     FlushPending();
+                    if (_currentThinking != null)
+                        _currentThinking.IsComplete = true;
                     _currentThinking = new ThinkingMessageItem();
                     Messages.Add(_currentThinking);
                 }

@@ -64,6 +64,13 @@ internal sealed class ConversationViewModel : IDisposable
 
     private CancellationTokenSource? _currentCts;
 
+    // 运行序号 + 取消覆盖机制（参考 Codex MainWindowViewModel 的 _activeRunSeq）：
+    // 每次发起对话自增；取消(Esc)或新对话会作废旧序号，使旧运行的迟到事件/挂起任务被丢弃，
+    // 避免“Esc 取消后，下次输入仍执行上次对话”。
+    private int _activeRunSeq;
+    private int _currentRunSeq;
+    private bool _cancelRequested;
+
     // Plan 模式下本轮收集的计划项数量（回合结束时汇总提示，工具均不执行）
     private int _plannedCount;
 
@@ -437,9 +444,16 @@ internal sealed class ConversationViewModel : IDisposable
     /// <param name="input">用户输入文本。</param>
     public async Task ProcessInputAsync(string input)
     {
-        if (IsRunning) return;
+        // 允许在“已请求取消（Esc）”时覆盖旧的挂起运行；否则运行中直接返回，避免并发跑两条对话。
+        // 参考 Codex 的 _activeRunSeq 机制：Esc 后旧运行被作废，新输入可干净地开启新一轮。
+        if (IsRunning && !_cancelRequested) return;
         if (string.IsNullOrWhiteSpace(input)) return;
         if (_agent is null) throw new InvalidOperationException("Agent 未初始化");
+
+        // 作废旧运行并开启新一轮：捕获本次运行序号，供流处理中丢弃迟到事件
+        if (_cancelRequested) _cancelRequested = false;
+        var runSeq = Interlocked.Increment(ref _activeRunSeq);
+        _currentRunSeq = runSeq;
 
         IsRunning = true;
         TuiDiag.AgentRunning = true;
@@ -452,6 +466,7 @@ internal sealed class ConversationViewModel : IDisposable
         // 授权后工作区根目录加入 PathGuard，文件类工具即可访问，避免"未授权 + 文件操作"无限挂起。
         // 若用户拒绝，仍继续运行（闲聊不受影响）；需要文件的任务由框架报错而非静默挂起。
         var wsMgr = _workspaceManager ?? _services.GetService<IWorkspaceManager>() as WorkspaceManager;
+        if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag-Phase] PI: auth-check start authorized={wsMgr?.CurrentWorkspace?.IsAuthorized}");
         if (wsMgr is not null)
         {
             var ws = wsMgr.CurrentWorkspace;
@@ -482,7 +497,7 @@ internal sealed class ConversationViewModel : IDisposable
             // 追加用户消息
             _dispatcher.Invoke(() => _doc.AppendBlock(new UserMessageBlock(input)));
 
-            await RunStreamingAsync(input, _currentCts.Token);
+            await RunStreamingAsync(input, _currentCts.Token, runSeq);
         }
         catch (OperationCanceledException)
         {
@@ -497,29 +512,38 @@ internal sealed class ConversationViewModel : IDisposable
         }
         finally
         {
-            IsRunning = false;
-            TuiDiag.AgentRunning = false;
-            SpinnerService.Stop();
-            _currentCts?.Dispose();
-            _currentCts = null;
-            ReportPlannedActions();
-            ResetConfirmationContext();
-
-            // 运行期间发生的上下文切换（工作区/模型/会话）被延迟，
-            // 本轮结束后再触发一次同步，避免破坏运行中的 Agent 状态
-            if (_pendingSync)
+            // 仅当本次运行仍是“当前活动运行”时才复位全局态；
+            // 若已被取消/被新运行覆盖（_activeRunSeq 已变化），则不复位，避免误伤新运行。
+            // 注意：旧运行若仍挂起在后台，其 _currentCts 已被新运行覆写，此处不可 Dispose。
+            if (runSeq == Volatile.Read(ref _activeRunSeq))
             {
-                _pendingSync = false;
-                RequestSync();
+                IsRunning = false;
+                TuiDiag.AgentRunning = false;
+                SpinnerService.Stop();
+                _currentCts?.Dispose();
+                _currentCts = null;
+                ReportPlannedActions();
+                ResetConfirmationContext();
+
+                // 运行期间发生的上下文切换（工作区/模型/会话）被延迟，
+                // 本轮结束后再触发一次同步，避免破坏运行中的 Agent 状态
+                if (_pendingSync)
+                {
+                    _pendingSync = false;
+                    RequestSync();
+                }
             }
         }
     }
 
     /// <summary>
-    /// 取消当前对话。
+    /// 取消当前对话（Esc）。参考 Codex：先作废当前运行序号（使迟到事件/挂起任务被丢弃），
+    /// 再取消令牌；并标记 _cancelRequested，使随后到来的新输入可干净地覆盖旧的挂起运行。
     /// </summary>
     public void Cancel()
     {
+        _cancelRequested = true;
+        Interlocked.Increment(ref _activeRunSeq); // 作废当前运行：其迟到事件/append 将被丢弃
         _currentCts?.Cancel();
     }
 
@@ -539,6 +563,9 @@ internal sealed class ConversationViewModel : IDisposable
             confirmCallback: ConfirmTool,
             onPlannedAction: (tool, args) =>
             {
+                // 运行已作废（Esc/新对话）：丢弃计划项，避免污染新对话
+                if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+
                 Interlocked.Increment(ref _plannedCount);
                 _dispatcher.Invoke(() =>
                     _doc.AppendBlock(new SystemBlock(
@@ -574,6 +601,9 @@ internal sealed class ConversationViewModel : IDisposable
 
         _dispatcher.Invoke(() =>
         {
+            // 运行已作废（Esc/新对话）：不弹确认块，避免旧运行干扰新对话
+            if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+
             var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
             {
                 result = cr == ConfirmResult.Allow || cr == ConfirmResult.AllowAll;
@@ -627,22 +657,50 @@ internal sealed class ConversationViewModel : IDisposable
     /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程，
     /// 避免逐 token Invoke 洪峰压垮主循环；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
     /// </summary>
-    private async Task RunStreamingAsync(string input, CancellationToken ct)
+    private async Task RunStreamingAsync(string input, CancellationToken ct, int runSeq)
     {
         if (_agent is null) return;
+
+        // 记录本次运行序号：供下方 _dispatcher.Invoke 与 FlushPendingTokens 判断是否已被作废
+        _currentRunSeq = runSeq;
 
         // 重置当前会话的流式状态（字段级，供跨会话复用的节流回调使用）
         _thinkingBlock = null;
         _thinkingCompleted = false;
         _currentSpinner = null;
 
-        _streamThrottle ??= new FlushThrottle(FlushPendingTokens, TimeSpan.FromMilliseconds(50));
+        _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
+
+        bool firstToken = false;
+        if (TuiDiag.Enabled)
+        {
+            _ = Task.Delay(20000).ContinueWith(_ =>
+            {
+                if (!firstToken)
+                    Logger.Warn("[TuiDiag-Watchdog] PI: 20s 内无任何流 token —— 很可能卡在 agent/LLM/工具调用（非 UI 线程）");
+            });
+        }
 
         try
         {
             await foreach (var update in _agent.RunStreamingAsync(input, ct))
             {
+                // 运行已被取消/被新对话覆盖：停止消费流，丢弃后续（迟到的旧事件）。
+                // 参考 Codex 的 runSeq 防护，避免“Esc 取消后，旧运行的输出仍追加到文档/被误判为活跃”。
+                if (runSeq != Volatile.Read(ref _activeRunSeq))
+                {
+                    if (TuiDiag.Enabled)
+                        Logger.Warn($"[TuiDiag] stream stale aborted: runSeq={runSeq} active={Volatile.Read(ref _activeRunSeq)}");
+                    break;
+                }
+
                 if (update.Contents is null) continue;
+
+                if (!firstToken)
+                {
+                    firstToken = true;
+                    if (TuiDiag.Enabled) Logger.Warn("[TuiDiag-Phase] PI: first stream update received");
+                }
 
                 // 边界取证：记录框架每次 yield 的内容类型（定位"只产出 reasoning 就结束"类问题）
                 if (TuiDiag.Enabled)
@@ -673,7 +731,7 @@ internal sealed class ConversationViewModel : IDisposable
                     // ─── 工具调用 ───
                     if (content is FunctionCallContent functionCall)
                     {
-                        FlushPendingTokens();
+                        CloseThinkingBlock();
 
                         // 完成上一个 spinner 并插入新 spinner（全部在 UI 线程）
                         _dispatcher.Invoke(() =>
@@ -699,7 +757,7 @@ internal sealed class ConversationViewModel : IDisposable
                     {
                         if (functionResult.Exception is not null)
                         {
-                            FlushPendingTokens();
+                            CloseThinkingBlock();
                             _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
                                 $"❌ 工具执行失败: {functionResult.Exception.Message}",
                                 foreground: BlockColors.Failure)));
@@ -728,7 +786,7 @@ internal sealed class ConversationViewModel : IDisposable
                     // ─── 流内错误（provider 返回的错误内容，不能静默丢弃）───
                     if (content is ErrorContent error)
                     {
-                        FlushPendingTokens();
+                        CloseThinkingBlock();
                         Logger.Warn($"[TuiDiag] ErrorContent: {error.Message}");
                         _dispatcher.Invoke(() => _doc.AppendBlock(
                             new SystemBlock($"错误: {error.Message}", foreground: BlockColors.Failure)));
@@ -756,22 +814,52 @@ internal sealed class ConversationViewModel : IDisposable
         }
         finally
         {
-            // 取消/异常路径也冲刷剩余 token，保证已产出内容不丢失
-            FlushPendingTokens();
-
-            // 完成最后一个 spinner（无论正常完成还是异常/取消）
-            _dispatcher.Invoke(() =>
+            // 仅当仍是当前活动运行才操作文档；否则（已被取消/覆盖）跳过，避免污染新运行
+            var stale = _currentRunSeq != Volatile.Read(ref _activeRunSeq);
+            if (!stale)
             {
-                if (_currentSpinner is not null)
-                {
-                    _currentSpinner.MarkComplete();
-                    _currentSpinner = null;
-                }
+                // 取消/异常路径也冲刷剩余 token，保证已产出内容不丢失；并关闭最后的思考块
+                CloseThinkingBlock();
 
-                // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
-                _doc.RelayoutLastBlock();
-                _doc.MarkLastComplete();
-            });
+                // 完成最后一个 spinner（无论正常完成还是异常/取消）
+                _dispatcher.Invoke(() =>
+                {
+                    if (_currentSpinner is not null)
+                    {
+                        _currentSpinner.MarkComplete();
+                        _currentSpinner = null;
+                    }
+
+                    // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
+                    _doc.RelayoutLastBlock();
+                    _doc.MarkLastComplete();
+                });
+            }
+            else if (TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag] RunStreaming finally stale: current={_currentRunSeq} active={Volatile.Read(ref _activeRunSeq)} —— 跳过文档清理");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 关闭当前思考块：先冲刷缓冲的思考 token，再将思考块标记为完成并置空，
+    /// 使下一轮思考（工具调用后的第二轮 CoT）能创建新块并追加到当前位置，实现顺序交织。
+    /// 在工具调用 / 工具结果(失败) / 流内错误 / 流结束等“思考阶段边界”处调用。
+    /// </summary>
+    private void CloseThinkingBlock()
+    {
+        FlushPendingTokens();
+
+        if (_thinkingBlock is not null)
+        {
+            if (!_thinkingCompleted)
+            {
+                _thinkingBlock.MarkComplete();
+                _doc.NotifyBlockChanged(_thinkingBlock);
+            }
+            _thinkingBlock = null;
+            _thinkingCompleted = false;
         }
     }
 
@@ -793,6 +881,14 @@ internal sealed class ConversationViewModel : IDisposable
         }
 
         if (thinking.Length == 0 && answer.Length == 0) return;
+
+        // 运行已被作废（Esc/新对话）：丢弃缓冲内容，不再追加到文档，避免污染新对话
+        if (_currentRunSeq != Volatile.Read(ref _activeRunSeq))
+        {
+            if (TuiDiag.Enabled)
+                Logger.Warn($"[TuiDiag] FlushPendingTokens stale: current={_currentRunSeq} active={Volatile.Read(ref _activeRunSeq)} dropped={thinking.Length + answer.Length}");
+            return;
+        }
 
         TuiDiag.Record("StreamFlush.chars", thinking.Length + answer.Length, thresholdMs: 0);
 
@@ -822,6 +918,11 @@ internal sealed class ConversationViewModel : IDisposable
                     _thinkingBlock.MarkComplete();
                     _doc.NotifyBlockChanged(_thinkingBlock);
                 }
+
+                // 一轮回复产出后关闭当前思考块：后续若再出现思考（工具调用后的第二轮 CoT）
+                // 将创建新的思考块并追加到当前位置，实现“思考→工具→思考→输出”的顺序交织，
+                // 而不是把所有思考堆在对话开头。
+                _thinkingBlock = null;
 
                 _doc.AppendToAnswerBlock(answer);
                 _doc.RelayoutLastBlock();

@@ -6,12 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LuBan.AIAgent" Version="2026.9.11.1" />
+    <!-- 临时：直接引用 framework 源码，便于改 LuBan.AIAgent 排查 hang；发包后改回 PackageReference -->
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Common\LuBan.Common.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.DI\LuBan.DI.csproj" />
+    <ProjectReference Include="..\..\luban-framework\LuBan.Threading\LuBan.Threading.csproj" />
     <PackageReference Include="LuBan.Logging" Version="2026.9.11.1" />
     <PackageReference Include="LuBan.Orm" Version="2026.9.11.1" />
-    <PackageReference Include="LuBan.DI" Version="2026.9.11.1" />
-    <PackageReference Include="LuBan.Common" Version="2026.9.11.1" />
-    <PackageReference Include="LuBan.Threading" Version="2026.9.11.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />

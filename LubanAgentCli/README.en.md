@@ -621,13 +621,6 @@ LubanAgent/
         "Shell": "cmd",
         "DefaultTimeout": 30000
       },
-      "Database": {
-        "Enabled": true,
-        "ConnectionString": "Server=..."
-      },
-      "Redis": {
-        "Enabled": true
-      },
       "Web": {
         "Enabled": true
       },

@@ -270,8 +270,6 @@ luban-agent/
       "Browser":    { "Enabled": true, "Headless": false },
       "FileSystem": { "Enabled": true, "AllowedRoots": ["C:\\Work"] },
       "Script":     { "Enabled": true, "Shell": "cmd" },
-      "Database":   { "Enabled": true },
-      "Redis":      { "Enabled": true },
       "Web":        { "Enabled": true },
       "Retrieval":  { "Enabled": true, "ModelId": "bge-small-zh-v1.5" }
     },
