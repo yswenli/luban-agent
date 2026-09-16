@@ -98,7 +98,7 @@ Built-in nine core skills, plug and play:
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace isolation**: Each workspace has independent root directory, session history, and configuration directory
-- **Stable workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts; historical random IDs are migrated automatically on startup and duplicate memories are merged
+- **Stable workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
 - **Workspace configuration directory**: Automatically creates `.luban-agent/` under each workspace root, can place custom `skills`, `rules`, `mcps` configurations
 - **Temporary file management**: Scripts, screenshots, intermediate files generated at runtime uniformly stored in `.luban-agent/temp/`, supports automatic cleanup of expired files
 - **RAG Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A

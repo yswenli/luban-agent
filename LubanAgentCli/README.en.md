@@ -97,7 +97,7 @@ Nine core built-in skills, plug and play:
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
-- **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts; historical random IDs are migrated automatically on startup and duplicate memories are merged
+- **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
 - **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations
 - **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated, no cross-workspace data leaks
@@ -569,7 +569,6 @@ LubanAgent/
 │   ├── FlushThrottle.cs         # Streaming refresh throttle (16ms window)
 │   ├── DatabaseInitializer.cs
 │   ├── WorkspaceIdGenerator.cs  # Path-derived workspace ID (normalize + SHA256)
-│   ├── WorkspaceIdMigrator.cs   # Migrates legacy random IDs to derived IDs (main + memory DB, idempotent)
 │   └── SqliteLocalMemoryStore.cs
 ├── Services/              # Core services
 │   ├── FooterDataProvider.cs    # Footer metadata (git branch/token usage)

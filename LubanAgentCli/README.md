@@ -97,7 +97,7 @@
 
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
-- **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆；启动时自动迁移历史随机 ID 并合并重复记忆
+- **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆
 - **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
 - **临时文件管理**：运行时生成的脚本、截图、中间文件统一存放于 `.luban-agent/temp/`，支持自动清理过期文件
 - **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
@@ -594,7 +594,6 @@ LubanAgent/
 │   ├── FlushThrottle.cs         # 流式刷新节流器（16ms 窗口）
 │   ├── DatabaseInitializer.cs
 │   ├── WorkspaceIdGenerator.cs  # 路径派生工作区 ID（归一化 + SHA256）
-│   ├── WorkspaceIdMigrator.cs   # 历史随机 ID → 派生 ID 迁移（主库 + 记忆库，幂等）
 │   └── SqliteLocalMemoryStore.cs
 ├── Services/              # 核心服务
 │   ├── FooterDataProvider.cs    # 页脚元数据（git 分支/token 用量）

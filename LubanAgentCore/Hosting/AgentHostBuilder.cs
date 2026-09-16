@@ -85,7 +85,7 @@ public static class AgentHostBuilder
         services.AddSingleton<ILocalMemoryStore>(sp =>
         {
             var opts = sp.GetRequiredService<IOptions<LocalMemoryOptions>>().Value;
-            return new SqliteLocalMemoryStore(WorkspaceIdMigrator.ResolveMemoryDbPath(opts));
+            return new SqliteLocalMemoryStore(ResolveMemoryDbPath(opts));
         });
 
         services.AddLuBanAgent(configuration);
@@ -171,6 +171,22 @@ public static class AgentHostBuilder
             Logger.Error("工作区初始化失败", ex);
             notices.Add($"工作区初始化失败: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 解析本地记忆库路径：优先使用配置项，留空则回退到用户数据目录默认路径。
+    /// </summary>
+    /// <param name="options">本地记忆配置选项，可为 null。</param>
+    /// <returns>记忆库绝对路径。</returns>
+    private static string ResolveMemoryDbPath(LocalMemoryOptions? options)
+    {
+        var dbPath = options?.DatabasePath;
+        if (string.IsNullOrWhiteSpace(dbPath))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            dbPath = Path.Combine(appData, "LuBan", "AIAgent", "localmemory.db");
+        }
+        return Path.GetFullPath(dbPath);
     }
 
     private sealed class DelegateWorkspaceContextProvider(Func<string?> getWorkspaceId)
