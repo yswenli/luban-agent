@@ -108,6 +108,9 @@ public enum HitActionType
     /// <summary>打开外部 URL。</summary>
     OpenUrl,
 
+    /// <summary>打开子代理节点详情。</summary>
+    OpenNodeDetail,
+
     /// <summary>自定义动作。</summary>
     Custom
 }

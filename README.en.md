@@ -87,10 +87,12 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - **Serial/Parallel Hybrid Orchestration**: Layer-based topological sort, parallel within same layer, serial across layers
 - **SubAgent Scheduling**: Each DAG node executed by independent SubAgent with tool group isolation
 - **Context Passing**: Nodes reference predecessor outputs via `{dep:xxx}` placeholders
+- **Memory Context Injection**: The orchestration entry builds workspace long-term memory and rule context once, then injects it into every SubAgent's system prompt
 - **Orchestration Extensions**: workspace `.luban-agent/plans/*.json` for task templates and `.luban-agent/roles/*.json` for custom SubAgent roles
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory (`.luban-agent/`)
+- **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts; historical random IDs are migrated automatically on startup and duplicate memories are merged
 - **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated
 - **Path Authorization Management**: Workspace authorization integrates with PathGuard; only authorized workspace root directories are accessible
@@ -313,8 +315,8 @@ User configurations (Providers, custom Skills, rules, etc.) are automatically sa
 - ⌨️ **CLI Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit
 - 🛡️ **Four Permission Modes**: Default / Plan / AcceptEdits / BypassPermissions, with automatic confirmation for dangerous operations
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers
-- 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution
-- 📂 **Workspace Isolation**: Each workspace has its own session history and config directory (`.luban-agent/`)
+- 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution, and SubAgents inherit workspace long-term memory
+- 📂 **Workspace Isolation**: Each workspace has its own session history and config directory (`.luban-agent/`), with a host-stable workspace ID that shares long-term memory
 - 🔍 **RAG Knowledge Base**: After indexing local documents, conversations are automatically augmented with retrieval
 
 ---

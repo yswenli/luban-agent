@@ -154,6 +154,20 @@ public class AgentHostService
 
                 foreach (var content in update.Contents)
                 {
+                    // 编排进度：规划与节点执行均为长耗时非流式过程，
+                    // 转为进度事件供 UI 实时反馈（否则此阶段内容区长时间空白）
+                    if (content is OrchestrationProgressContent progress)
+                    {
+                        yield return new OrchestrationProgressEvent(
+                            progress.EventType,
+                            progress.NodeId,
+                            progress.Message,
+                            progress.NodeResult?.Elapsed.TotalSeconds,
+                            progress.NodeResult?.Error,
+                            progress.Activity);
+                        continue;
+                    }
+
                     // 思考过程
                     if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {

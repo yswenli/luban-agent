@@ -14,6 +14,8 @@
 *描述：工作区仓储
 *
 *****************************************************************************/
+using LubanAgentCore.Infrastructure;
+
 namespace LubanAgentCore.Repositories;
 
 /// <summary>
@@ -35,7 +37,10 @@ public class WorkspaceRepository : BaseRepository<DbWorkspace>
     /// </summary>
     public async Task<DbWorkspace?> GetByRootPathAsync(string rootPath)
     {
-        return await GetFirstAsync(w => w.RootPath == rootPath && !w.IsDelete);
+        // 归一化后再比较：库中 RootPath 已由 WorkspaceManager 归一化写入，
+        // 此处同步归一化入参，避免尾斜杠/大小写差异导致漏命中而重复建工作区
+        var normalized = WorkspaceIdGenerator.Normalize(rootPath);
+        return await GetFirstAsync(w => w.RootPath == normalized && !w.IsDelete);
     }
 
     /// <summary>

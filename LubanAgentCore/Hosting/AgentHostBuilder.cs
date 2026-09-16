@@ -85,13 +85,7 @@ public static class AgentHostBuilder
         services.AddSingleton<ILocalMemoryStore>(sp =>
         {
             var opts = sp.GetRequiredService<IOptions<LocalMemoryOptions>>().Value;
-            var dbPath = opts.DatabasePath;
-            if (string.IsNullOrWhiteSpace(dbPath))
-            {
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                dbPath = Path.Combine(appData, "LuBan", "AIAgent", "localmemory.db");
-            }
-            return new SqliteLocalMemoryStore(dbPath);
+            return new SqliteLocalMemoryStore(WorkspaceIdMigrator.ResolveMemoryDbPath(opts));
         });
 
         services.AddLuBanAgent(configuration);

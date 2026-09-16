@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+        x:Class="LubanAgentCodex.Views.NodeDetailWindow"
+        x:DataType="vm:OrchestrationNodeItem"
+        Title="子代理详情"
+        Width="900"
+        Height="640"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto"
+          Margin="16">
+        <!-- 头部：节点描述与状态 -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding StatusIcon}"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       FontSize="16" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding Description}"
+                       FontWeight="Bold"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontSize="14" />
+            <TextBlock Grid.Column="2"
+                       Text="{Binding StatusText}"
+                       Margin="8,0,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextTertiaryBrush}"
+                       FontSize="12" />
+        </Grid>
+
+        <TextBlock Grid.Row="1"
+                   Text="{Binding Error}"
+                   IsVisible="{Binding IsFailed}"
+                   Margin="0,8,0,0"
+                   Foreground="{DynamicResource ErrorBrush}"
+                   TextWrapping="Wrap"
+                   FontSize="12" />
+
+        <!-- 活动时间线 -->
+        <ScrollViewer Grid.Row="2"
+                      Name="ActivityScroller"
+                      Margin="0,12,0,0"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl Name="ActivityItems"
+                          ItemsSource="{Binding Activities}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:NodeActivityDisplayItem">
+                        <StackPanel Margin="0,0,0,10">
+                            <TextBlock Text="{Binding Header}"
+                                       IsVisible="{Binding HasHeader}"
+                                       FontWeight="Bold"
+                                       FontSize="12"
+                                       Foreground="{Binding Foreground}" />
+                            <TextBox Text="{Binding Content}"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Padding="0"
+                                     TextWrapping="Wrap"
+                                     FontSize="12"
+                                     Foreground="{Binding Foreground}"
+                                     FontFamily="{Binding FontFamily}"
+                                     FontStyle="{Binding FontStyle}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="3"
+                   Text="Esc 关闭"
+                   Margin="0,12,0,0"
+                   Foreground="{DynamicResource TextTertiaryBrush}"
+                   FontSize="11" />
+    </Grid>
+
+</Window>

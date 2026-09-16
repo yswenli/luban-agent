@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             x:Class="LubanAgentCodex.Views.Controls.OrchestrationNodeCard"
+             x:DataType="vm:OrchestrationNodeItem"
+             Cursor="Hand">
+
+    <UserControl.Styles>
+        <Style Selector="Border#RootBorder:pointerover">
+            <Setter Property="Background" Value="#35353A" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Name="RootBorder"
+            Margin="0,8"
+            Padding="14,10"
+            Background="{DynamicResource CardBrush}"
+            CornerRadius="8"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            HorizontalAlignment="Stretch">
+        <Grid RowDefinitions="Auto,Auto">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Name="StatusIconText"
+                           Grid.Column="0"
+                           Text="{Binding StatusIcon}"
+                           Margin="0,0,8,0"
+                           VerticalAlignment="Center"
+                           FontSize="14" />
+                <TextBlock Name="DescriptionText"
+                           Grid.Column="1"
+                           Text="{Binding Description}"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="13" />
+                <TextBlock Name="StatusText"
+                           Grid.Column="2"
+                           Text="{Binding StatusText}"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           FontSize="12" />
+            </Grid>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="0,6,0,0">
+                <TextBlock Text="{Binding DetailHint}"
+                           IsVisible="{Binding HasActivities}"
+                           Foreground="{DynamicResource TextTertiaryBrush}"
+                           FontSize="11" />
+                <TextBlock Text="{Binding Error}"
+                           IsVisible="{Binding IsFailed}"
+                           Foreground="{DynamicResource ErrorBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           FontSize="11" />
+            </StackPanel>
+        </Grid>
+    </Border>
+
+</UserControl>

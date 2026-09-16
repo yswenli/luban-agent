@@ -399,10 +399,35 @@ internal sealed class ConversationView : View
                     SetNeedsDraw();
                     return true;
                 }
+
+                // 子代理节点行：整屏切进节点详情（仿 opencode 的 subagent 展开）
+                if (action?.Type == HitActionType.OpenNodeDetail && block is OrchestrationNodeBlock nodeBlock)
+                {
+                    OpenNodeDetail(nodeBlock);
+                    return true;
+                }
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 打开子代理节点详情（整屏模态）。节点列表取当前文档内的全部节点块快照，
+    /// ←/→ 在快照内切换；关闭后回到主视图并重绘。
+    /// </summary>
+    /// <param name="nodeBlock">被点击的节点块。</param>
+    private void OpenNodeDetail(OrchestrationNodeBlock nodeBlock)
+    {
+        var nodes = _doc.Blocks.OfType<OrchestrationNodeBlock>().ToList();
+        var index = nodes.IndexOf(nodeBlock);
+        if (index < 0) return;
+
+        using var dialog = new NodeDetailView(nodes, index);
+        GetApp()?.Run(dialog);
+
+        _dirty = true;
+        SetNeedsDraw();
     }
 
     /// <summary>

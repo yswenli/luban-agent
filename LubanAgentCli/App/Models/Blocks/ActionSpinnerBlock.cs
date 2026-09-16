@@ -26,7 +26,7 @@ public sealed class ActionSpinnerBlock : Block
 {
     private static readonly string[] Frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
-    private readonly string _description;
+    private string _description;
     private readonly ConversationDocument _doc;
     private readonly IUiDispatcher _dispatcher;
     private int _frameIndex;
@@ -41,6 +41,18 @@ public sealed class ActionSpinnerBlock : Block
         _doc = doc;
         _dispatcher = dispatcher;
         StartAnimation();
+    }
+
+    /// <summary>
+    /// 更新 spinner 阶段文案（如「AI 正在思考…」→「正在规划任务…」）。
+    /// 必须在 UI 线程调用。
+    /// </summary>
+    /// <param name="description">新的阶段描述。</param>
+    public void SetDescription(string description)
+    {
+        if (_stopped || string.Equals(_description, description, StringComparison.Ordinal)) return;
+        _description = description;
+        NotifyChanged();
     }
 
     public override void Layout(int width)

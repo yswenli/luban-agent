@@ -93,6 +93,15 @@ internal sealed class ConversationViewModel : IDisposable
     /// </summary>
     private readonly List<ToolCallBlock> _runningToolBlocks = new();
 
+    /// <summary>
+    /// 本轮正在执行的编排节点块（按启动先后顺序）。同层节点可并行执行，
+    /// 每个节点各自占一行独立动画，结束后由对应完成/失败事件按 NodeId 就地收尾。
+    /// 用列表而非字典：NodeId 可能为空或重复（重规划），字典键覆盖会丢失旧块
+    /// 使其动画 Timer 永久运行。
+    /// 仅在 UI 线程（_dispatcher.Invoke 内部）读写。
+    /// </summary>
+    private readonly List<OrchestrationNodeBlock> _runningNodeBlocks = new();
+
     /// <summary>当前权限模式。</summary>
     public ToolPermissionMode PermissionMode { get; private set; } = ToolPermissionMode.Default;
 
@@ -551,7 +560,51 @@ internal sealed class ConversationViewModel : IDisposable
     {
         _cancelRequested = true;
         Interlocked.Increment(ref _activeRunSeq); // 作废当前运行：其迟到事件/append 将被丢弃
-        _currentCts?.Cancel();
+
+        // 立即复位"运行中"全局态。Cancel() 由 UI 线程按键处理（RootView.OnKeyDown）调用，
+        // 标量字段直接写即可；若等到旧运行的 finally 复位则永远等不到 ——
+        // _activeRunSeq 已被递增，旧运行被判定为 stale 而跳过复位，
+        // 会导致 IsRunning 永久 true（后续输入全进待执行队列且无活动运行去 DrainQueue）。
+        var cancelledSeq = _currentRunSeq;
+        IsRunning = false;
+        TuiDiag.AgentRunning = false;
+        SpinnerService.Stop();
+
+        // 先摘除引用再取消：在途旧运行仍持有该 Token（ConfirmTool 曾 ct.Register），
+        // 故此处只置空不 Dispose，避免 "已释放的 CancellationTokenSource" 异常。
+        var cts = _currentCts;
+        _currentCts = null;
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("取消当前任务令牌失败", ex);
+        }
+
+        ResetConfirmationContext();
+
+        // 收尾 UI 状态：完成 spinner/工具块动画，避免动画 Timer 永久运行（一直显示"正在…"）。
+        // 用取消时的 runSeq 兜底：若新一轮已抢先启动，则不复位，避免误伤新运行。
+        _dispatcher.Invoke(() =>
+        {
+            if (_currentRunSeq != cancelledSeq) return;
+
+            CompleteSpinner();
+
+            foreach (var pending in _runningToolBlocks)
+                pending.MarkFailed("已取消");
+            _runningToolBlocks.Clear();
+
+// 编排节点块同理：取消后不再有完成事件，就地收尾避免动画泄漏
+                foreach (var pending in _runningNodeBlocks)
+                    pending.MarkFailed("已取消", null, null);
+                _runningNodeBlocks.Clear();
+
+            _doc.RelayoutLastBlock();
+            _doc.MarkLastComplete();
+        });
     }
 
     /// <summary>
@@ -676,8 +729,23 @@ internal sealed class ConversationViewModel : IDisposable
         _thinkingCompleted = false;
         _currentSpinner = null;
         _runningToolBlocks.Clear();
+        // 上一轮若异常退出可能残留未收尾的节点块：先停掉动画再清空，避免 Timer 泄漏
+        foreach (var pending in _runningNodeBlocks)
+            pending.MarkFailed("已中断", null, null);
+        _runningNodeBlocks.Clear();
 
         _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
+
+        // 立即反馈：提交后立刻插入 spinner，避免 planner/编排等非流式阶段长时间"死屏"
+        // （首个思考/正文 token 到达时复用本块，不会再新建）
+        _dispatcher.Invoke(() =>
+        {
+            if (_currentSpinner is null)
+            {
+                _currentSpinner = new ActionSpinnerBlock("AI 正在思考… (Esc 取消)", _doc, _dispatcher);
+                _doc.AppendBlock(_currentSpinner);
+            }
+        });
 
         bool firstToken = false;
         if (TuiDiag.Enabled)
@@ -718,6 +786,13 @@ internal sealed class ConversationViewModel : IDisposable
 
                 foreach (var content in update.Contents)
                 {
+                    // ─── 编排进度（规划/节点开始/节点完成等）：逐行追加系统提示 ───
+                    if (content is OrchestrationProgressContent progress)
+                    {
+                        HandleOrchestrationProgress(progress);
+                        continue;
+                    }
+
                     // ─── 思考过程（仅过滤 null/空串，保留换行等空白 token）───
                     if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {
@@ -860,6 +935,11 @@ internal sealed class ConversationViewModel : IDisposable
                         pending.MarkFailed("流中断");
                     _runningToolBlocks.Clear();
 
+                    // 编排节点块同理：流中断时未能收到完成事件，需就地收尾，避免动画泄漏
+                    foreach (var pending in _runningNodeBlocks)
+                        pending.MarkFailed("流中断", null, null);
+                    _runningNodeBlocks.Clear();
+
                     // 补一次最终布局：合批期间追加的尾部 token 需要进入 LineCount/TotalLines 账本
                     _doc.RelayoutLastBlock();
                     _doc.MarkLastComplete();
@@ -870,6 +950,160 @@ internal sealed class ConversationViewModel : IDisposable
                 Logger.Warn($"[TuiDiag] RunStreaming finally stale: current={_currentRunSeq} active={Volatile.Read(ref _activeRunSeq)} —— 跳过文档清理");
             }
         }
+    }
+
+    /// <summary>
+    /// 处理编排进度事件：逐行追加系统提示，让规划/节点执行等长耗时阶段有实时反馈。
+    /// 规划阶段复用等待中的 spinner 并切换文案；节点执行阶段每节点一条独立动画行
+    /// （参考 opencode 的 subagent 展示），由对应完成/失败事件就地收尾。
+    /// </summary>
+    /// <param name="progress">编排进度事件。</param>
+    private void HandleOrchestrationProgress(OrchestrationProgressContent progress)
+    {
+        _dispatcher.Invoke(() =>
+        {
+            // 运行已作废（Esc/新对话）：丢弃迟到进度，避免污染新对话
+            if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+
+            // 规划阶段：复用等待中的动画 spinner，只切换阶段文案，
+            // 用持续动画覆盖 planner 数十秒的"黑盒"（而非直接收尾成静态行）。
+            if (progress.EventType == ProgressEventType.PlanningStarted)
+            {
+                if (_currentSpinner is null)
+                {
+                    _currentSpinner = new ActionSpinnerBlock("正在规划任务…", _doc, _dispatcher);
+                    _doc.AppendBlock(_currentSpinner);
+                }
+                else
+                {
+                    _currentSpinner.SetDescription("正在规划任务…");
+                }
+                return;
+            }
+
+            // 节点内部活动（思考/正文/工具调用/结果）：路由到对应运行中的节点块。
+            // 必须置于下面的按 EventType 的文案分支之前，否则会被当成未知事件走 spinner 收尾逻辑。
+            if (progress.EventType == ProgressEventType.NodeActivity)
+            {
+                if (progress.Activity is null) return;
+
+                var target = !string.IsNullOrEmpty(progress.NodeId)
+                    ? _runningNodeBlocks.FirstOrDefault(b => string.Equals(b.NodeId, progress.NodeId, StringComparison.Ordinal))
+                    : _runningNodeBlocks.LastOrDefault(b => !b.IsComplete);
+
+                target?.AppendActivity(progress.Activity);
+                return;
+            }
+
+            // 节点开始：收尾规划 spinner，插入该节点的独立动画行
+            if (progress.EventType == ProgressEventType.NodeStarted)
+            {
+                CompleteSpinner();
+
+                var nodeId = progress.NodeId ?? "";
+                var description = progress.Message ?? (string.IsNullOrEmpty(nodeId) ? "子任务" : nodeId);
+                var nodeBlock = new OrchestrationNodeBlock(nodeId, description, _doc, _dispatcher);
+                _doc.AppendBlock(nodeBlock);
+                _runningNodeBlocks.Add(nodeBlock);
+                return;
+            }
+
+            // 节点完成/失败/跳过：就地收尾对应动画行（该行保留为历史），并行节点互不影响
+            if (progress.EventType is ProgressEventType.NodeCompleted or ProgressEventType.NodeFailed or ProgressEventType.NodeSkipped)
+            {
+                CompleteSpinner();
+
+                // 按 NodeId 精确匹配；NodeId 缺失时退化为「最早的未完成块」，绝不猜错配
+                var target = !string.IsNullOrEmpty(progress.NodeId)
+                    ? _runningNodeBlocks.FirstOrDefault(b => string.Equals(b.NodeId, progress.NodeId, StringComparison.Ordinal))
+                    : _runningNodeBlocks.FirstOrDefault(b => !b.IsComplete);
+
+                if (target is not null)
+                {
+                    var elapsed = progress.NodeResult?.Elapsed.TotalSeconds;
+                    switch (progress.EventType)
+                    {
+                        case ProgressEventType.NodeFailed:
+                            target.MarkFailed(progress.NodeResult?.Error ?? progress.Message ?? "失败", elapsed, progress.Message);
+                            break;
+                        case ProgressEventType.NodeSkipped:
+                            target.MarkSkipped(progress.Message);
+                            break;
+                        default:
+                            target.MarkSucceeded(elapsed, progress.Message);
+                            break;
+                    }
+                    _runningNodeBlocks.Remove(target);
+                    return;
+                }
+
+                // 未匹配到活动行（如因前驱失败被跳过、未发 NodeStarted）：退化为单行摘要
+                AppendNodeSummary(progress);
+                return;
+            }
+
+            // 反思重规划：复用等待中的动画 spinner 并切换文案，覆盖反思阶段的静默期
+            // （反思超时可达 Orchestration.ReflectionTimeoutSeconds，默认 180 秒）
+            if (progress.EventType == ProgressEventType.ReflectionStarted)
+            {
+                var description = progress.Message ?? "正在反思重规划…";
+                if (_currentSpinner is null)
+                {
+                    _currentSpinner = new ActionSpinnerBlock(description, _doc, _dispatcher);
+                    _doc.AppendBlock(_currentSpinner);
+                }
+                else
+                {
+                    _currentSpinner.SetDescription(description);
+                }
+                return;
+            }
+
+            string? text = progress.EventType switch
+            {
+                ProgressEventType.PlanningCompleted => $" {progress.Message ?? "任务图谱已生成"}",
+                _ => null
+            };
+
+            // 已进入规划完成阶段：收尾等待中的 spinner
+            CompleteSpinner();
+
+            if (text is null) return;
+
+            _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.System));
+        });
+    }
+
+    /// <summary>
+    /// 为未匹配到活动动画行的节点追加单行摘要（如因前驱失败被跳过、取消、未发 NodeStarted）。
+    /// 依据 <see cref="NodeResult.Status"/> 区分成功/跳过/取消/失败，避免把"跳过"误显为绿勾。
+    /// 须在 UI 线程调用。
+    /// </summary>
+    /// <param name="progress">节点完成/失败进度事件。</param>
+    private void AppendNodeSummary(OrchestrationProgressContent progress)
+    {
+        var name = progress.Message ?? progress.NodeId ?? "子任务";
+        var elapsed = progress.NodeResult?.Elapsed.TotalSeconds;
+
+        var (text, color) = progress.NodeResult?.Status switch
+        {
+            TaskNodeStatus.Skipped => ($"− {name} · 已跳过", BlockColors.System),
+            TaskNodeStatus.Cancelled => ($"− {name} · 已取消", BlockColors.System),
+            TaskNodeStatus.Failed => ($"✗ {name} · {progress.NodeResult?.Error ?? "失败"}", BlockColors.Failure),
+            _ => ($"✓ {name} · {elapsed.GetValueOrDefault():F1}s", BlockColors.Success)
+        };
+
+        _doc.AppendBlock(new SystemBlock(text, foreground: color));
+    }
+
+    /// <summary>
+    /// 完成并清空当前 spinner（若存在）。须在 UI 线程调用。
+    /// </summary>
+    private void CompleteSpinner()
+    {
+        if (_currentSpinner is null) return;
+        _currentSpinner.MarkComplete();
+        _currentSpinner = null;
     }
 
     /// <summary>

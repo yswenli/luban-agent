@@ -4,6 +4,7 @@ global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Configuration;
 global using LuBan.AIAgent.LocalMemory;
 global using LuBan.AIAgent.MCP;
+global using LuBan.AIAgent.Orchestration.Models;
 global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Rules;
 global using LuBan.AIAgent.Sessions;

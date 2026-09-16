@@ -140,6 +140,7 @@ public partial class MessageStream : UserControl
             ThinkingMessageItem => new ThinkingMessageView { DataContext = message },
             ToolCallItem tool => new ToolCallCard { DataContext = tool },
             ToolConfirmItem confirm => new ConfirmCard { DataContext = confirm },
+            OrchestrationNodeItem node => new OrchestrationNodeCard { DataContext = node },
             SystemMessageItem => new SystemMessageView { DataContext = message },
             _ => null
         };

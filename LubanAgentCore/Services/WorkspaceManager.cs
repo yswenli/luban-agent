@@ -19,6 +19,7 @@ using LuBan.AIAgent.Rules;
 using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
 using LuBan.DI;
+using LubanAgentCore.Infrastructure;
 using LubanAgentCore.Repositories;
 
 namespace LubanAgentCore.Services;
@@ -277,7 +278,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     public async Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = "Normal")
     {
-        var fullPath = Path.GetFullPath(rootPath);
+        // 归一化后再入库：去除末尾分隔符、解析符号链接、统一大小写，
+        // 避免同一目录因写法差异（尾斜杠/大小写）被登记为多个工作区
+        var fullPath = WorkspaceIdGenerator.Normalize(rootPath);
 
         // 内部唯一性校验（防止绕过 WorkCommand 的调用方造成重复）
         var existing = await _repo.GetByRootPathAsync(fullPath);
@@ -288,8 +291,11 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         var ws = new DbWorkspace
         {
-            WorkspaceId = Guid.NewGuid().ToString("N"),
-            Name = name ?? Path.GetFileName(fullPath),
+            // 由路径派生而非随机生成：同一目录在 CLI/GUI 等不同宿主数据库中恒得同一ID，
+            // 保证共享的长期记忆库能跨宿主命中
+            WorkspaceId = WorkspaceIdGenerator.Compute(fullPath),
+            // 显示名取原始目录名（保留大小写），避免深链归一化后界面/系统提示词里全是全大写路径
+            Name = name ?? WorkspaceIdGenerator.SuggestName(rootPath),
             RootPath = fullPath,
             Type = type,
             IsAuthorized = false,
@@ -355,9 +361,11 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 设置进程当前工作目录（使相对路径和脚本默认工作目录指向工作区根目录）
+    /// 设置进程当前工作目录（使相对路径和脚本默认工作目录指向工作区根目录），
+    /// 同时把工作区根目录写入 <see cref="LuBanAgentOptions.WorkspaceRoot"/>，
+    /// 供编排子系统向子代理注入路径上下文（子代理不继承父 Agent 的系统提示词）。
     /// </summary>
-    private static void SetCurrentDirectory(string rootPath)
+    private void SetCurrentDirectory(string rootPath)
     {
         try
         {
@@ -368,6 +376,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         {
             // 工作目录设置失败不阻断工作区切换，仅影响相对路径解析
         }
+
+        // 无论 SetCurrentDirectory 是否成功都显式记录工作区根，避免子代理拿到过期/错误路径
+        _options.Value.WorkspaceRoot = rootPath;
     }
 
     /// <summary>

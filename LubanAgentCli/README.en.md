@@ -89,13 +89,15 @@ Nine core built-in skills, plug and play:
 - **Serial/Parallel Hybrid Orchestration**: Layer-based topological sort, parallel within same layer, serial across layers
 - **SubAgent Scheduling**: Each DAG node executed by independent SubAgent with tool group isolation
 - **Context Passing**: Nodes reference predecessor outputs via `{dep:xxx}` placeholders
+- **Memory Context Injection**: The orchestration entry builds workspace long-term memory and rule context once, then injects it into every SubAgent's system prompt
 - **Error Handling**: Critical node failure skips successors, non-critical failure continues execution
 - **Seamless Integration**: Automatically triggered in `/agi` conversation, no manual command switching needed
 - **Orchestration Extensions**: workspace `.luban-agent/plans/*.json` for task templates and `.luban-agent/roles/*.json` for custom SubAgent roles; `Orchestration:PlannerModel` and node `ModelName` support `provider:model` multi-model routing
-- **Heuristic Pre-Filter**: short inputs without composite keywords skip task planning, saving LLM calls
+- **Heuristic Pre-Filter**: task planning is only entered when the input length falls within `[MinLength, MaxLength]` and a composite keyword matches, saving LLM calls and preventing ordinary long questions from being misclassified as composite tasks
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
+- **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts; historical random IDs are migrated automatically on startup and duplicate memories are merged
 - **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations
 - **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated, no cross-workspace data leaks
@@ -566,6 +568,8 @@ LubanAgent/
 ├── Infrastructure/        # Infrastructure
 │   ├── FlushThrottle.cs         # Streaming refresh throttle (16ms window)
 │   ├── DatabaseInitializer.cs
+│   ├── WorkspaceIdGenerator.cs  # Path-derived workspace ID (normalize + SHA256)
+│   ├── WorkspaceIdMigrator.cs   # Migrates legacy random IDs to derived IDs (main + memory DB, idempotent)
 │   └── SqliteLocalMemoryStore.cs
 ├── Services/              # Core services
 │   ├── FooterDataProvider.cs    # Footer metadata (git branch/token usage)
@@ -611,10 +615,12 @@ LubanAgent/
       "ExposeAsTool": false,
       "MaxParallelism": 3,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 120,
+      "DefaultNodeTimeoutSeconds": 300,
       "HeuristicFilter": {
         "Enabled": true,
-        "MaxLength": 20,
+        "MinLength": 8,
+        "MaxLength": 200,
+        "RequireKeyword": true,
         "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
       }
     }

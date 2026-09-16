@@ -117,6 +117,7 @@ public sealed class ToolCallBlock : Block
     /// <param name="error">失败原因（仅记录，不重复渲染消息；具体错误由 ViewModel 单独附红行）。</param>
     public void MarkFailed(string? error)
     {
+        if (IsComplete) return;
         _failed = true;
         MarkComplete();
     }

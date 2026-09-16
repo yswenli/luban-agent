@@ -103,6 +103,9 @@ public class App : Application
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);
 
+                // 迁移历史随机工作区ID → 路径派生ID（须在工作区恢复前执行，避免按旧ID 漏命中而重复建库）
+                foreach (var msg in WorkspaceIdMigrator.Migrate(_services)) Logger.Info(msg);
+
                 // 4) 设置工作区授权回调（GUI 自动授权）
                 var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
                 if (workspaceManager is LubanAgentCore.Services.WorkspaceManager wm)

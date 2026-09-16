@@ -39,6 +39,7 @@ public partial class MainWindowViewModel : ObservableObject
     private FlushThrottle? _throttle;
     private AssistantMessageItem? _currentAssistant;
     private ThinkingMessageItem? _currentThinking;
+    private readonly List<OrchestrationNodeItem> _runningNodes = new();
 
     /// <summary>
     /// 服务提供者
@@ -131,6 +132,9 @@ public partial class MainWindowViewModel : ObservableObject
         _cts = new CancellationTokenSource();
         var runSeq = Interlocked.Increment(ref _activeRunSeq); // 本次对话运行序号；取消/新对话将使其失效
 
+        // 新回合开始：清空上一回合遗留的运行中节点（节点卡片保留在消息流中作为历史）
+        _runningNodes.Clear();
+
         // 初始化节流器：回调投递到 UI 线程执行，与事件处理天然串行
         _throttle ??= new FlushThrottle(
             () => Dispatcher.UIThread.Post(FlushPending),
@@ -161,6 +165,12 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 FlushPending();
                 CompleteCurrentItems();
+                // 回合收尾：把仍标记为运行中的节点落定为结束态，避免卡片一直显示"运行中"
+                foreach (var node in _runningNodes)
+                {
+                    node.IsComplete = true;
+                }
+                _runningNodes.Clear();
                 IsRunning = false;
             });
             var cts = _cts;
@@ -671,7 +681,101 @@ public partial class MainWindowViewModel : ObservableObject
             case ErrorEvent e:
                 Messages.Add(new SystemMessageItem { Content = e.Message, IsError = true });
                 break;
+
+            case OrchestrationProgressEvent p:
+                HandleOrchestrationProgress(p);
+                break;
         }
+    }
+
+    /// <summary>
+    /// 处理编排进度事件：节点级事件渲染为可点击的节点卡片（点击查看子代理详情），
+    /// 其余事件追加一行系统提示，让规划/反思等长耗时阶段有实时反馈。
+    /// （渲染口径与 CLI 的 HandleOrchestrationProgress 对齐）
+    /// </summary>
+    /// <param name="progress">编排进度事件。</param>
+    private void HandleOrchestrationProgress(OrchestrationProgressEvent progress)
+    {
+        // 节点开始：插入节点卡片，后续活动/完成事件按 NodeId 回填
+        if (progress.EventType == ProgressEventType.NodeStarted)
+        {
+            var nodeBlock = new OrchestrationNodeItem
+            {
+                NodeId = progress.NodeId ?? "",
+                Description = progress.Message ?? progress.NodeId ?? "子任务"
+            };
+            _runningNodes.Add(nodeBlock);
+            Messages.Add(nodeBlock);
+            return;
+        }
+
+        // 节点活动：把子代理想法/工具调用/结果追加到对应节点卡片
+        if (progress.EventType == ProgressEventType.NodeActivity)
+        {
+            if (progress.Activity is null)
+                return;
+            FindNode(progress.NodeId)?.AppendActivity(progress.Activity);
+            return;
+        }
+
+        // 节点结束：收尾节点卡片（命中则不再追加系统提示行）
+        if (progress.EventType is ProgressEventType.NodeCompleted or ProgressEventType.NodeFailed or ProgressEventType.NodeSkipped)
+        {
+            var nodeBlock = FindNode(progress.NodeId);
+            if (nodeBlock != null)
+            {
+                nodeBlock.ElapsedSeconds = progress.ElapsedSeconds.GetValueOrDefault();
+                if (progress.EventType == ProgressEventType.NodeFailed)
+                {
+                    nodeBlock.IsFailed = true;
+                    nodeBlock.Error = progress.Error;
+                }
+                else if (progress.EventType == ProgressEventType.NodeSkipped)
+                {
+                    nodeBlock.IsSkipped = true;
+                }
+                else
+                {
+                    nodeBlock.IsComplete = true;
+                }
+                _runningNodes.Remove(nodeBlock);
+                return;
+            }
+        }
+
+        var text = progress.EventType switch
+        {
+            ProgressEventType.PlanningStarted => $"⏳ {progress.Message ?? "正在规划任务…"}",
+            ProgressEventType.PlanningCompleted => $"▸ {progress.Message ?? "任务图谱已生成"}",
+            ProgressEventType.NodeStarted => $"▶ 开始执行: {progress.Message ?? progress.NodeId}",
+            ProgressEventType.NodeCompleted => $"✓ {progress.Message ?? progress.NodeId} · {progress.ElapsedSeconds.GetValueOrDefault():F1}s",
+            ProgressEventType.NodeFailed => $"✗ {progress.Message ?? progress.NodeId} · {progress.Error ?? "失败"}",
+            ProgressEventType.NodeSkipped => $"− {progress.Message ?? progress.NodeId} · 已跳过（前驱失败）",
+            ProgressEventType.ReflectionStarted => $"↻ {progress.Message ?? "反思重规划"}",
+            _ => null
+        };
+
+        if (text is null)
+            return;
+
+        Messages.Add(new SystemMessageItem
+        {
+            Content = text,
+            IsError = progress.EventType == ProgressEventType.NodeFailed
+        });
+    }
+
+    /// <summary>
+    /// 按节点标识查找运行中的节点卡片；未提供 NodeId 时退化为最近一个未结束的节点
+    /// </summary>
+    /// <param name="nodeId">节点标识。</param>
+    /// <returns>节点卡片，未命中返回 null。</returns>
+    private OrchestrationNodeItem? FindNode(string? nodeId)
+    {
+        if (!string.IsNullOrEmpty(nodeId))
+            return _runningNodes.FirstOrDefault(n => string.Equals(n.NodeId, nodeId, StringComparison.Ordinal));
+
+        return _runningNodes.LastOrDefault(n => !n.IsComplete && !n.IsFailed);
     }
 
     /// <summary>
@@ -776,6 +880,7 @@ public partial class MainWindowViewModel : ObservableObject
     public void ClearMessages()
     {
         Messages.Clear();
+        _runningNodes.Clear();
     }
 
     private ConfirmResult ConfirmCallback(string toolName, IReadOnlyDictionary<string, object?> args)

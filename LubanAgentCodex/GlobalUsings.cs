@@ -29,6 +29,7 @@ global using CommunityToolkit.Mvvm.Input;
 // LuBan
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.MCP;
+global using LuBan.AIAgent.Orchestration.Models;
 global using LuBan.AIAgent.Rules;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Orm;

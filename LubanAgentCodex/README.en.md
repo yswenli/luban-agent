@@ -92,10 +92,13 @@ Built-in nine core skills, plug and play:
 - **Serial/parallel mixed orchestration**: Based on topological layering, same-layer nodes execute in parallel, cross-layer nodes execute serially
 - **SubAgent scheduling**: Each DAG node executed by independent SubAgent, supporting tool group isolation
 - **Context passing**: Nodes reference predecessor output through `{dep:xxx}` placeholders
+- **Memory context injection**: The orchestration entry builds workspace long-term memory and rule context once, then injects it into every SubAgent's system prompt
 - **Error handling**: Critical node failure skips successors, non-critical node failure continues execution
+- **Heuristic pre-filter**: task planning is only entered when the input length falls within `[MinLength, MaxLength]` and a composite keyword matches, saving LLM calls and preventing ordinary long questions from being misclassified as composite tasks
 
 ### 📂 Workspace & Knowledge Base
 - **Workspace isolation**: Each workspace has independent root directory, session history, and configuration directory
+- **Stable workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts; historical random IDs are migrated automatically on startup and duplicate memories are merged
 - **Workspace configuration directory**: Automatically creates `.luban-agent/` under each workspace root, can place custom `skills`, `rules`, `mcps` configurations
 - **Temporary file management**: Scripts, screenshots, intermediate files generated at runtime uniformly stored in `.luban-agent/temp/`, supports automatic cleanup of expired files
 - **RAG Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A
@@ -469,10 +472,12 @@ LubanAgentCodex/
       "AutoDetect": true,
       "MaxParallelism": 3,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 120,
+      "DefaultNodeTimeoutSeconds": 300,
       "HeuristicFilter": {
         "Enabled": true,
-        "MaxLength": 20,
+        "MinLength": 8,
+        "MaxLength": 200,
+        "RequireKeyword": true,
         "Keywords": [ "and", "simultaneously", "then", "also", "additionally", "moreover", "analyze and", "search and" ]
       }
     }

@@ -89,13 +89,15 @@
 - **串行/并行混合编排**：基于拓扑分层，同层节点并行执行，跨层串行执行
 - **SubAgent 调度**：每个 DAG 节点由独立 SubAgent 执行，支持工具组隔离
 - **上下文传递**：节点间通过 `{dep:xxx}` 占位符引用前驱输出
+- **记忆上下文注入**：编排入口统一构建工作区长期记忆与规则上下文，随每个 SubAgent 的系统提示词一并下发
 - **错误处理**：关键节点失败跳过后继，非关键节点失败继续执行
 - **无感集成**：在 `/agi` 对话中自动触发，无需手动切换命令
 - **编排扩展**：工作区 `.luban-agent/plans/*.json` 定义任务模板、`.luban-agent/roles/*.json` 定义自定义 SubAgent 角色；`Orchestration:PlannerModel` 与节点 `ModelName` 支持 `provider:model` 多模型路由
-- **启发式预过滤**：短输入且无复合关键词时跳过任务拆解，节省 LLM 调用
+- **启发式预过滤**：仅当输入长度落在 `[MinLength, MaxLength]` 且命中复合关键词时才进入任务拆解，节省 LLM 调用，并避免普通长问题被误判为复合任务
 
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
+- **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆；启动时自动迁移历史随机 ID 并合并重复记忆
 - **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
 - **临时文件管理**：运行时生成的脚本、截图、中间文件统一存放于 `.luban-agent/temp/`，支持自动清理过期文件
 - **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
@@ -591,6 +593,8 @@ LubanAgent/
 ├── Infrastructure/        # 基础设施
 │   ├── FlushThrottle.cs         # 流式刷新节流器（16ms 窗口）
 │   ├── DatabaseInitializer.cs
+│   ├── WorkspaceIdGenerator.cs  # 路径派生工作区 ID（归一化 + SHA256）
+│   ├── WorkspaceIdMigrator.cs   # 历史随机 ID → 派生 ID 迁移（主库 + 记忆库，幂等）
 │   └── SqliteLocalMemoryStore.cs
 ├── Services/              # 核心服务
 │   ├── FooterDataProvider.cs    # 页脚元数据（git 分支/token 用量）
@@ -630,10 +634,12 @@ LubanAgent/
       "ExposeAsTool": false,
       "MaxParallelism": 3,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 120,
+      "DefaultNodeTimeoutSeconds": 300,
       "HeuristicFilter": {
         "Enabled": true,
-        "MaxLength": 20,
+        "MinLength": 8,
+        "MaxLength": 200,
+        "RequireKeyword": true,
         "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
       }
     }

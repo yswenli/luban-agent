@@ -149,6 +149,10 @@ internal class StartupDialog : Dialog
             Report("④ 构建服务容器...");
             Services = StartupRunner.BuildServiceProvider(config, embedder, modelManager);
 
+            // 迁移历史随机工作区ID → 路径派生ID（须在工作区初始化前执行，避免按旧ID 漏命中而重复建库）
+            Report("④ 迁移工作区ID...");
+            foreach (var msg in WorkspaceIdMigrator.Migrate(Services)) Report(msg);
+
             var workspaceManager = Services.GetRequiredService<IWorkspaceManager>() as WorkspaceManager;
             if (workspaceManager != null)
             {
