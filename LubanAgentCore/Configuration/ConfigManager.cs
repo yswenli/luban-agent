@@ -537,7 +537,10 @@ public class ConfigManager : IAppConfigReader
         var timeoutSeconds = provider.NetworkTimeoutSeconds ?? 60;
         var clientOptions = new OpenAI.OpenAIClientOptions
         {
-            NetworkTimeout = TimeSpan.FromSeconds(timeoutSeconds)
+            NetworkTimeout = TimeSpan.FromSeconds(timeoutSeconds),
+            // 禁用 SDK 内置重试（默认 ClientRetryPolicy.Default 会再重试 3 次），
+            // 由 LuBan.AIAgent 的 ResilientChatClient 统一重试，避免次数相乘与不可见重试
+            RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(0)
         };
         if (!string.IsNullOrEmpty(provider.BaseUrl))
             clientOptions.Endpoint = new Uri(provider.BaseUrl);

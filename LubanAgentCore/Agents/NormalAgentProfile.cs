@@ -47,6 +47,9 @@ public class NormalAgentProfile : AgentProfile
     public override string? RetrievalMode => null;
 
     /// <inheritdoc/>
+    protected override bool LoadWorkspaceAgentsMd => true;
+
+    /// <inheritdoc/>
     protected override ToolGroupOptions BuildToolOptions() => new()
     {
         Browser = { Headless = false },

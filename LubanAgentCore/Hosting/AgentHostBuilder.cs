@@ -58,7 +58,8 @@ public static class AgentHostBuilder
         services.AddScoped<Microsoft.Extensions.AI.IChatClient>(sp =>
         {
             var cm = sp.GetRequiredService<ConfigManager>();
-            return cm.CreateChatClient();
+            var opts = sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
+            return LuBan.AIAgent.Errors.ChatClientResilience.Wrap(cm.CreateChatClient(), opts);
         });
 
         services.AddSingleton<IProviderRouter>(sp =>
@@ -69,7 +70,11 @@ public static class AgentHostBuilder
             {
                 if (!string.IsNullOrEmpty(p.ApiKey))
                 {
-                    var clientOptions = new OpenAI.OpenAIClientOptions();
+                    var clientOptions = new OpenAI.OpenAIClientOptions
+                    {
+                        // 禁用 SDK 内置重试，由 ResilientChatClient 统一重试（与 ConfigManager.CreateChatClient 一致）
+                        RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(0)
+                    };
                     if (p.NetworkTimeoutSeconds.HasValue)
                         clientOptions.NetworkTimeout = TimeSpan.FromSeconds(p.NetworkTimeoutSeconds.Value);
                     if (!string.IsNullOrEmpty(p.BaseUrl))
@@ -94,6 +99,7 @@ public static class AgentHostBuilder
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
         services.AddSingleton<ISessionManager, SessionManager>();
+        services.AddSingleton<IAgentsMdInitializer, AgentsMdInitializer>();
 
         services.AddSingleton<SessionRepository>();
         services.AddSingleton<SessionMessageRepository>();

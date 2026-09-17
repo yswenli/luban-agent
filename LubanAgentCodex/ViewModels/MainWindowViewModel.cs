@@ -18,6 +18,9 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
+using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Errors;
+using Microsoft.Extensions.Options;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views;
 using LuBan.AIAgent.Abstractions;
@@ -82,6 +85,14 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(IServiceProvider services)
     {
         _agentHost = new AgentHostService(services);
+
+        // 自动重试进度提示：框架回调运行在调用线程，编组到 UI 线程追加系统消息
+        // （显式使用 Normal 优先级，避免低于 await 续体优先级导致通知显示在终结消息之后）
+        services.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.OnApiRetry = notice =>
+            Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem
+            {
+                Content = $"⟳ {ApiErrorClassifier.GetCategoryLabel(notice.Category)}：{notice.Delay.TotalSeconds:F0}s 后重试（第 {notice.Attempt} 次，最多 {notice.MaxAttempts - 1} 次）"
+            }), DispatcherPriority.Normal);
     }
 
     /// <summary>
@@ -111,9 +122,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
             catch (Exception ex)
             {
+                var message = ex is AgentApiException apiEx ? apiEx.Error.FriendlyMessage : ex.Message;
                 Messages.Add(new SystemMessageItem
                 {
-                    Content = $"初始化失败: {ex.Message}",
+                    Content = $"初始化失败: {message}",
                     IsError = true
                 });
                 return;
@@ -150,6 +162,15 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Messages.Add(new SystemMessageItem { Content = "已取消" });
         }
+        catch (AgentApiException apiEx)
+        {
+            // 框架已完成错误分类：只渲染友好文案，原始异常进日志
+            Messages.Add(new SystemMessageItem
+            {
+                Content = apiEx.Error.FriendlyMessage,
+                IsError = true
+            });
+        }
         catch (Exception ex)
         {
             Messages.Add(new SystemMessageItem
@@ -166,6 +187,109 @@ public partial class MainWindowViewModel : ObservableObject
                 FlushPending();
                 CompleteCurrentItems();
                 // 回合收尾：把仍标记为运行中的节点落定为结束态，避免卡片一直显示"运行中"
+                foreach (var node in _runningNodes)
+                {
+                    node.IsComplete = true;
+                }
+                _runningNodes.Clear();
+                IsRunning = false;
+            });
+            var cts = _cts;
+            _cts = null;
+            cts?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 初始化工作区 AGENTS.md：把生成提示词投入聊天流，落盘后追加校验提示。
+    /// 复用与 <see cref="SendAsync"/> 相同的运行态装配（IsRunning / 取消 / 节流）。
+    /// </summary>
+    /// <param name="options">表单收集的生成选项</param>
+    public async Task RunInitAgentsMdAsync(AgentsMdOptions options)
+    {
+        if (IsRunning) return;
+
+        var initializer = Services.GetRequiredService<IAgentsMdInitializer>();
+        var workspaceManager = Services.GetRequiredService<IWorkspaceManager>();
+        var workspace = workspaceManager.CurrentWorkspace;
+        if (workspace == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
+            return;
+        }
+
+        if (!_agentHost.IsInitialized)
+        {
+            try
+            {
+                await _agentHost.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                Messages.Add(new SystemMessageItem { Content = $"初始化失败: {ex.Message}", IsError = true });
+                return;
+            }
+        }
+
+        string prompt;
+        try
+        {
+            prompt = initializer.BuildPrompt(options);
+        }
+        catch (Exception ex)
+        {
+            Messages.Add(new SystemMessageItem { Content = $"构建提示词失败: {ex.Message}", IsError = true });
+            return;
+        }
+
+        Messages.Add(new UserMessageItem
+        {
+            Content = $"初始化工作区 AGENTS.md：{options.AgentName}（{options.AgentScene}，{options.OutputMode}）"
+        });
+
+        IsRunning = true;
+        _cts = new CancellationTokenSource();
+        var runSeq = Interlocked.Increment(ref _activeRunSeq);
+        _runningNodes.Clear();
+        _throttle ??= new FlushThrottle(
+            () => Dispatcher.UIThread.Post(FlushPending),
+            TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            var text = await Task.Run(() => ConsumeStreamAsync(prompt, _cts.Token, runSeq));
+
+            var markdown = initializer.Normalize(text);
+            if (string.IsNullOrWhiteSpace(markdown))
+            {
+                Messages.Add(new SystemMessageItem { Content = "生成结果为空，AGENTS.md 未写入", IsError = true });
+                return;
+            }
+
+            var targetPath = initializer.GetTargetPath(workspace);
+            await initializer.WriteAsync(workspace, markdown, _cts.Token);
+
+            Messages.Add(new SystemMessageItem { Content = $"已生成 {targetPath}" });
+            Messages.Add(new SystemMessageItem { Content = initializer.BuildVerificationPrompt(targetPath) });
+
+            // 让下一回合的 Agent 重建，从而读到新的 AGENTS.md
+            _agentHost.Reset();
+        }
+        catch (OperationCanceledException)
+        {
+            Messages.Add(new SystemMessageItem { Content = "已取消" });
+        }
+        catch (Exception ex)
+        {
+            var message = ex is AgentApiException apiEx ? apiEx.Error.FriendlyMessage : ex.Message;
+            Messages.Add(new SystemMessageItem { Content = $"错误: {message}", IsError = true });
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                FlushPending();
+                CompleteCurrentItems();
                 foreach (var node in _runningNodes)
                 {
                     node.IsComplete = true;
@@ -574,9 +698,11 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 后台消费流式事件：只负责转发，全部事件按到达顺序投递到 UI 线程
     /// </summary>
-    private async Task ConsumeStreamAsync(string input, CancellationToken ct, int runSeq)
+    /// <returns>本回合累积的正文文本（供 AGENTS.md 等需要拿到完整输出的场景复用）</returns>
+    private async Task<string> ConsumeStreamAsync(string input, CancellationToken ct, int runSeq)
     {
         var plannedCount = 0;
+        var sb = new StringBuilder();
 
         await foreach (var evt in _agentHost.RunStreamingAsync(
             input,
@@ -592,11 +718,15 @@ public partial class MainWindowViewModel : ObservableObject
             ct: ct))
         {
             var e = evt;
+            if (e is TextDeltaEvent delta)
+                sb.Append(delta.Delta);
             Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
         }
 
         if (runSeq == _activeRunSeq)
             ReportPlannedActions(Volatile.Read(ref plannedCount));
+
+        return sb.ToString();
     }
 
     /// <summary>

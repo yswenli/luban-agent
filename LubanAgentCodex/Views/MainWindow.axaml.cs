@@ -140,6 +140,7 @@ public partial class MainWindow : Window
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
                 _sidebar.RagInitRequested += OnRagInitRequested;
+                _sidebar.AgentsMdInitRequested += OnAgentsMdInitRequested;
                 _sidebar.SettingsRequested += OnSettingsRequested;
             }
         }
@@ -386,6 +387,67 @@ public partial class MainWindow : Window
         {
             Logger.Error("MainWindow.OnWorkspaceSelected 切换知识库会话异常", ex);
             await Dialogs.ShowErrorAsync(this, $"切换到知识库会话失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 初始化工作区 AGENTS.md 请求：切到目标工作区 → 结构化表单 → 生成 → 落盘 → 注入聊天流
+    /// </summary>
+    private async void OnAgentsMdInitRequested(object? sender, WorkspaceInfo ws)
+    {
+        try
+        {
+            var services = _viewModel?.Services;
+            if (services == null) return;
+
+            if (_viewModel!.IsRunning)
+            {
+                await Dialogs.ShowErrorAsync(this, "Agent 运行中，请等待当前回合结束后再试。");
+                return;
+            }
+
+            var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+
+            // 与 OnWorkspaceSelected 一致：先确保授权。授权后工作区根目录才会注入 PathGuard.AllowedRoots，
+            // 否则生成过程中的文件/目录类工具会被拒（提示"路径不在允许访问的范围内"）
+            if (!ws.IsAuthorized)
+                await workspaceManager.EnsureAuthorizedAsync(ws);
+
+            // 决策：右键非当前工作区时先切过去，保证生成时的文件访问与落盘都作用于目标工作区
+            await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _sidebar?.SetServiceProvider(services);
+                UpdateFooter();
+            });
+
+            var initializer = services.GetRequiredService<IAgentsMdInitializer>();
+            var existing = initializer.ReadExisting(ws);
+
+            // 预填：Agent 名称默认取工作区名；输出模式默认 full
+            var dialog = new InitAgentsMdDialog(new AgentsMdOptions { AgentName = ws.Name });
+            var options = await dialog.ShowDialog<AgentsMdOptions?>(this);
+            if (options == null) return;
+
+            if (existing != null)
+            {
+                var confirmed = await Dialogs.ShowConfirmAsync(
+                    this,
+                    "覆盖 AGENTS.md",
+                    "已存在 AGENTS.md，将合并更新并覆盖",
+                    initializer.GetTargetPath(ws),
+                    "覆盖",
+                    danger: true);
+                if (!confirmed) return;
+            }
+
+            await _viewModel.RunInitAgentsMdAsync(options with { ExistingContent = existing });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("MainWindow.OnAgentsMdInitRequested 初始化 AGENTS.md 异常", ex);
+            await Dialogs.ShowErrorAsync(this, $"初始化 AGENTS.md 失败：{ex.Message}");
         }
     }
 

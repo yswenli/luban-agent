@@ -65,6 +65,11 @@ public abstract class AgentProfile
     protected virtual ToolGroupOptions BuildToolOptions() => new();
 
     /// <summary>
+    /// 是否把工作区根目录的 AGENTS.md 注入系统提示词。默认关闭，普通工作区打开。
+    /// </summary>
+    protected virtual bool LoadWorkspaceAgentsMd => false;
+
+    /// <summary>
     /// 创建 Agent 实例。先加载工作区级别的组件（Skills/MCPs/Rules），再通过工厂创建 Agent。
     /// </summary>
     /// <remarks>
@@ -151,6 +156,29 @@ public abstract class AgentProfile
             sb.AppendLine();
             sb.AppendLine("## 基础行为规则");
             sb.AppendLine(contentRule.Content);
+        }
+
+        if (LoadWorkspaceAgentsMd)
+        {
+            try
+            {
+                var agentsMdPath = Path.Combine(workspace.RootPath, "AGENTS.md");
+                if (File.Exists(agentsMdPath))
+                {
+                    var content = File.ReadAllText(agentsMdPath);
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine();
+                        sb.AppendLine("## 工作区规约 (AGENTS.md)");
+                        sb.AppendLine(content);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"读取工作区 AGENTS.md 失败: {workspace.RootPath}", ex);
+            }
         }
 
         return sb.ToString();

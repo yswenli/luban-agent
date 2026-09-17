@@ -28,7 +28,7 @@ namespace LubanAgentCli.App.ViewModels;
 /// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，
 /// 本类不直接持有 View 引用。
 /// </summary>
-internal sealed class ConversationViewModel : IDisposable
+internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTrigger
 {
     private readonly IServiceProvider _services;
     private readonly IUiDispatcher _dispatcher;
@@ -53,6 +53,13 @@ internal sealed class ConversationViewModel : IDisposable
     private volatile bool _pendingSync;
     // 突发合并：避免同一同步突发（如切工作区先后触发工作区变更+会话变更两次事件）重复清文档/重载历史
     private int _syncScheduled;
+
+    // 强制重建请求：工作区上下文文件（AGENTS.md）变更后置位，下一次同步无条件重建 Agent，
+    // 使新内容进入系统提示词
+    private int _pendingForceReload;
+    // 保留视图请求：上下文文件变更（如 /init 落盘）时置位，重建 Agent 但不清文档、不重载历史，
+    // 避免刚输出的生成结果被清屏
+    private int _pendingKeepView;
 
     // 已加载到文档的会话标识：用于避免会话历史被重复加载（如初始化前已切换过工作区/会话）
     private string? _loadedSessionId;
@@ -219,12 +226,24 @@ internal sealed class ConversationViewModel : IDisposable
 
     private void OnCurrentWorkspaceChanged(WorkspaceInfo ws)
     {
-        RequestSync();
+        // 强制重建：切换/重新加载工作区时必须重新读取该工作区的 AGENTS.md 注入系统提示词
+        RequestSync(forceReload: true);
     }
 
     private void OnSelectedModelChanged(string? model)
     {
         RequestSync();
+    }
+
+    /// <summary>
+    /// 请求重载 Agent 上下文（<see cref="IAgentContextReloadTrigger"/> 实现）。
+    /// 用于 AGENTS.md 落盘后让新内容进入系统提示词；运行中会被延迟到本轮结束后执行。
+    /// 重建 Agent 但保留当前会话视图（不清文档、不重载历史），避免刚输出的结果被清屏。
+    /// </summary>
+    public void RequestReload()
+    {
+        Interlocked.Exchange(ref _pendingKeepView, 1);
+        RequestSync(forceReload: true);
     }
 
     /// <summary>
@@ -245,11 +264,17 @@ internal sealed class ConversationViewModel : IDisposable
     private async Task SyncContextAsync(bool clearDoc = true)
     {
         // Agent 运行中不可重建：标记待同步，待本轮结束后再执行，避免破坏运行中的 Agent 状态
+        // （强制重载标志保持置位，本轮结束后的同步会再次读取到）
         if (IsRunning)
         {
             _pendingSync = true;
             return;
         }
+
+        // 消费强制重载请求：AGENTS.md 等上下文文件变更后必须重建 Agent 才能生效
+        var forceReload = Interlocked.Exchange(ref _pendingForceReload, 0) == 1;
+        // 消费保留视图请求：仅在上下文文件变更路径置位，重建 Agent 但不打断当前会话视图
+        var keepView = Interlocked.Exchange(ref _pendingKeepView, 0) == 1;
 
         // 调用方（InitializeAsync / RequestSync）负责持有 _syncGate；此处不再自行加锁，避免同一线程重入死锁
         {
@@ -258,14 +283,19 @@ internal sealed class ConversationViewModel : IDisposable
             var model = _configManager.SelectedModel;
             var session = _iSessionManager.CurrentSession;
 
-            // 仅当工作区或模型发生变化时才重建 Agent，避免无谓重建
-            var needRebuild = _agent is null
+            // 仅当工作区或模型发生变化时才重建 Agent，避免无谓重建；
+            // 强制重载（上下文文件变更）时无条件重建
+            var needRebuild = forceReload
+                || _agent is null
                 || _workspace?.WorkspaceId != ws?.WorkspaceId
                 || _modelName != model;
 
+            // 保留视图请求不重载历史、不清文档：保持当前会话视图，仅替换 Agent
+            var resetDoc = clearDoc && !keepView;
+
             _dispatcher.Invoke(() =>
             {
-                if (clearDoc) _doc.Clear();
+                if (resetDoc) _doc.Clear();
             });
 
             if (needRebuild)
@@ -287,7 +317,7 @@ internal sealed class ConversationViewModel : IDisposable
             if (session is not null)
             {
                 // 仅在首次加载、会话切换或强制刷新(clearDoc)时重载历史，避免重复加载
-                if (clearDoc || _loadedSessionId != session.SessionId)
+                if (resetDoc || _loadedSessionId != session.SessionId)
                 {
                     await LoadHistoryAsync(session.SessionId);
                     _loadedSessionId = session.SessionId;
@@ -354,6 +384,9 @@ internal sealed class ConversationViewModel : IDisposable
     /// </summary>
     public async Task InitializeAsync()
     {
+        // 启动加载工作区时无条件重建 Agent，确保读取该工作区的 AGENTS.md 注入系统提示词
+        Interlocked.Exchange(ref _pendingForceReload, 1);
+
         await _syncGate.WaitAsync();
         try
         {
@@ -371,8 +404,13 @@ internal sealed class ConversationViewModel : IDisposable
     /// 通过 20ms 去抖 + 单次调度，把多次事件合并为一次清文档/重载历史，
     /// 既避免重复渲染，也保证读取到突发结束后的最终状态。
     /// </summary>
-    private void RequestSync()
+    private void RequestSync(bool forceReload = false)
     {
+        if (forceReload)
+        {
+            Interlocked.Exchange(ref _pendingForceReload, 1);
+        }
+
         // 已有同步在排队/执行中：本次事件的状态变更会在那一次执行时被读取，无需重复调度
         if (Interlocked.Exchange(ref _syncScheduled, 1) == 1)
         {
@@ -519,6 +557,13 @@ internal sealed class ConversationViewModel : IDisposable
         {
             _dispatcher.Invoke(() =>
                 _doc.AppendBlock(new SystemBlock("任务已取消", foreground: BlockColors.Failure)));
+        }
+        catch (AgentApiException apiEx)
+        {
+            // 框架已完成错误分类：只渲染友好文案，原始异常进日志
+            Logger.Error("Agent 对话异常", apiEx, apiEx.Error.Category.ToString());
+            _dispatcher.Invoke(() =>
+                _doc.AppendBlock(new SystemBlock(apiEx.Error.FriendlyMessage, foreground: BlockColors.Failure)));
         }
         catch (Exception ex)
         {

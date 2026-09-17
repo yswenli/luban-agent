@@ -17,6 +17,7 @@
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Configuration;
+global using LuBan.AIAgent.Errors;
 global using LuBan.AIAgent.MCP;
 global using LuBan.AIAgent.Orchestration.Models;
 global using LuBan.AIAgent.Retrieval;
@@ -44,6 +45,7 @@ global using LubanAgentCore.Utils;
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.DependencyInjection;
+global using Microsoft.Extensions.Options;
 
 global using Spectre.Console;
 

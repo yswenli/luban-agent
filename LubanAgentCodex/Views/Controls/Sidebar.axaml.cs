@@ -56,6 +56,11 @@ public partial class Sidebar : UserControl
     public event EventHandler? RagInitRequested;
 
     /// <summary>
+    /// 请求初始化工作区 AGENTS.md（参数：目标工作区）
+    /// </summary>
+    public event EventHandler<WorkspaceInfo>? AgentsMdInitRequested;
+
+    /// <summary>
     /// 工作区设置中心打开请求（由底部「⚙ 设置」按钮触发）
     /// </summary>
     public event EventHandler? SettingsRequested;
@@ -311,9 +316,36 @@ public partial class Sidebar : UserControl
             wsGrid.Children.Add(deleteBtn);
             wsRow.Child = wsGrid;
 
+            // 工作区右键菜单：初始化 AGENTS.md
+            var wsCopy = ws;
+            var initItem = new Avalonia.Controls.MenuItem();
+            var wsInitPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            wsInitPanel.Children.Add(new PathIcon
+            {
+                Data = StreamGeometry.Parse("M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"),
+                Width = 14,
+                Height = 14,
+                Foreground = Brush.Parse("#CCCCCC"),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            wsInitPanel.Children.Add(new TextBlock { Text = "初始化 AGENTS.md", Foreground = Brush.Parse("#CCCCCC") });
+            initItem.Header = wsInitPanel;
+            initItem.Click += (s, e) => AgentsMdInitRequested?.Invoke(this, wsCopy);
+
+            var wsFlyout = new MenuFlyout();
+            wsFlyout.Items.Add(initItem);
+            wsRow.ContextFlyout = wsFlyout;
+
             // 单击切换工作区；双击工作区名进入行内重命名（D2，替代原菜单里的「重命名」弹窗）
             wsRow.PointerPressed += (s, e) =>
             {
+                if (e.GetCurrentPoint(wsRow).Properties.IsRightButtonPressed)
+                    return; // 右键只弹菜单，不切换工作区
                 if (e.Source is Button || e.Source is TextBox) return;
                 if (e.ClickCount == 2)
                 {

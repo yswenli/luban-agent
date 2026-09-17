@@ -74,6 +74,13 @@ internal sealed class RootView : Runnable
         _dispatcher = dispatcher;
         _ui = ui;
         _doc = new ConversationDocument();
+
+        // 自动重试进度提示：框架回调运行在调用线程，需编组到 UI 线程
+        services.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.OnApiRetry = notice =>
+            _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                $"⟳ {ApiErrorClassifier.GetCategoryLabel(notice.Category)}：{notice.Delay.TotalSeconds:F0}s 后重试（第 {notice.Attempt} 次，最多 {notice.MaxAttempts - 1} 次）",
+                foreground: BlockColors.Accent)));
+
         _vm = new ConversationViewModel(services, dispatcher, _doc);
         _commandVm = new CommandViewModel(_doc, _vm, services, dispatcher, ui);
         _onExitRequested = ConfirmExit;
@@ -399,15 +406,23 @@ internal sealed class RootView : Runnable
         }
 
         // `/` 命令路由给 CommandViewModel
-        if (text.StartsWith('/'))
+        if (TryDispatchCommand(text))
         {
-            if (_commandVm.TryExecute(text))
-            {
-                return;
-            }
+            return;
         }
 
         SubmitAsync(text);
+    }
+
+    /// <summary>
+    /// 尝试把输入作为 `/` 命令派发给 <see cref="CommandViewModel"/>。
+    /// 非命令或未识别的命令返回 false，由调用方按普通对话提交。
+    /// 命令可能直接操作文档/视图（如 /clear），**必须在 UI 线程调用**。
+    /// </summary>
+    /// <param name="text">用户输入文本。</param>
+    private bool TryDispatchCommand(string text)
+    {
+        return text.StartsWith('/') && _commandVm.TryExecute(text);
     }
 
     /// <summary>为待执行队列生成单行预览文本。</summary>
@@ -480,17 +495,32 @@ internal sealed class RootView : Runnable
 
     /// <summary>
     /// 当前一轮对话结束后，若待执行队列非空则顺序执行下一条；否则释放“派发中”标志。
-    /// 递归触发，保证队列中的命令/对话按提交顺序依次执行。
+    /// 队列中的 `/` 命令必须走命令路由（否则会被当作普通对话发给 Agent），
+    /// 且命令可能直接操作文档/视图（如 /clear），因此整个排空过程编组到 UI 线程执行，
+    /// 保证命令与对话严格按提交顺序处理。
     /// </summary>
     private void DrainQueue()
     {
-        if (_inputQueue.TryDequeue(out var next))
+        _dispatcher.Invoke(DrainQueueOnUiThread);
+    }
+
+    /// <summary>
+    /// 在 UI 线程排空待执行队列：命令同步执行后继续排空，普通对话提交后等待其结束再排空。
+    /// </summary>
+    private void DrainQueueOnUiThread()
+    {
+        while (_inputQueue.TryDequeue(out var next))
         {
+            if (TryDispatchCommand(next))
+            {
+                // 管理型命令自身异步执行、不占用对话运行态，继续排空剩余队列
+                continue;
+            }
+
             SubmitAsync(next);
+            return;
         }
-        else
-        {
-            _runActive = false;
-        }
+
+        _runActive = false;
     }
 }

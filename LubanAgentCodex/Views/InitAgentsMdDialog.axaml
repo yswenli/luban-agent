@@ -1,0 +1,136 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LubanAgentCodex.Views.InitAgentsMdDialog"
+        Title="初始化 AGENTS.md"
+        Width="520"
+        Height="620"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Border Classes="dlgCard">
+        <Grid RowDefinitions="*,Auto">
+
+            <!-- 内容区 -->
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                      RowSpacing="12">
+
+                    <!-- 标题 -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="📄" FontSize="18" Foreground="#CCCCCC" VerticalAlignment="Center" />
+                        <TextBlock Text="初始化 AGENTS.md"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- 说明 -->
+                    <TextBlock Grid.Row="1"
+                               Text="将根据当前工作区结构生成 AGENTS.md，用于约束 Agent 在本工作区的行为。"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                    <!-- Agent 名称 -->
+                    <StackPanel Grid.Row="2" Spacing="6">
+                        <TextBlock Text="Agent 名称 *" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBox Name="AgentNameBox"
+                                 PlaceholderText="例如：日志分析助手"
+                                 FontSize="13"
+                                 CornerRadius="8"
+                                 Background="{DynamicResource SidebarBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" />
+                    </StackPanel>
+
+                    <!-- 业务场景 -->
+                    <StackPanel Grid.Row="3" Spacing="6">
+                        <TextBlock Text="业务场景 *" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBox Name="AgentSceneBox"
+                                 PlaceholderText="例如：解析并排查线上日志"
+                                 FontSize="13"
+                                 CornerRadius="8"
+                                 Background="{DynamicResource SidebarBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" />
+                    </StackPanel>
+
+                    <!-- 能力清单 -->
+                    <StackPanel Grid.Row="4" Spacing="6">
+                        <TextBlock Text="能力清单（每行一条，可选）" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBox Name="CapabilitiesBox"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="72"
+                                 FontSize="13"
+                                 CornerRadius="8"
+                                 Background="{DynamicResource SidebarBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" />
+                    </StackPanel>
+
+                    <!-- 工具/API -->
+                    <StackPanel Grid.Row="5" Spacing="6">
+                        <TextBlock Text="工具 / API（每行一条，可选）" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBox Name="ToolsBox"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="72"
+                                 FontSize="13"
+                                 CornerRadius="8"
+                                 Background="{DynamicResource SidebarBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderBrush}" />
+                    </StackPanel>
+
+                    <!-- 输出模式 -->
+                    <StackPanel Grid.Row="6" Spacing="6">
+                        <TextBlock Text="输出模式" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="18">
+                            <RadioButton Name="ModeFullRadio"
+                                         GroupName="OutputMode"
+                                         IsChecked="True"
+                                         Content="完整（10 章）"
+                                         FontSize="13"
+                                         Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <RadioButton Name="ModeLiteRadio"
+                                         GroupName="OutputMode"
+                                         Content="精简（4 章）"
+                                         FontSize="13"
+                                         Foreground="{DynamicResource TextPrimaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 错误提示 -->
+                    <TextBlock Grid.Row="7"
+                               Name="ErrorText"
+                               Foreground="#F44336"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               IsVisible="False" />
+
+                </Grid>
+            </ScrollViewer>
+
+            <!-- 按钮区 -->
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="10"
+                        Margin="0,14,0,0">
+                <Button Name="CancelButton"
+                        Content="取消"
+                        Classes="dlgGhost"
+                        MinWidth="80" />
+                <Button Name="OkButton"
+                        Content="生成"
+                        Classes="dlgPrimary"
+                        MinWidth="80" />
+            </StackPanel>
+
+        </Grid>
+    </Border>
+
+</Window>

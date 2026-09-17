@@ -90,6 +90,7 @@ internal sealed class CommandViewModel
             case "/stats":    case "/st":        ExecuteManagementCommand<StatsCommand>(parts); return true;
             case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
             case "/rag":      case "/rg":        ExecuteManagementCommand<RagCommand>(parts); return true;
+            case "/init":                        ExecuteManagementCommand<InitCommand>(parts); return true;
 
             // ── Agent 对话（默认激活）──
             case "/agi": case "/a": case "/browse": case "/b":
@@ -123,6 +124,7 @@ internal sealed class CommandViewModel
         _writer.WriteLine("  /stats, /st         会话与 Token 统计");
         _writer.WriteLine("  /work, /w           工作区管理");
         _writer.WriteLine("  /rag, /rg           知识库管理");
+        _writer.WriteLine("  /init <描述文本>    初始化工作区 AGENTS.md");
         _writer.WriteLine("  /exit, /quit        退出程序");
         _writer.WriteLine();
         _writer.WriteLine("快捷键:");
@@ -206,7 +208,8 @@ internal sealed class CommandViewModel
             catch (Exception ex)
             {
                 Logger.Error("管理命令执行异常", ex);
-                _writer.WriteError($"命令执行异常: {ex.Message}");
+                var message = ex is AgentApiException apiEx ? apiEx.Error.FriendlyMessage : ex.Message;
+                _writer.WriteError($"命令执行异常: {message}");
             }
         });
     }
@@ -247,6 +250,11 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<RagFileRepository>(),
                 _services.GetRequiredService<RagChunkRepository>(),
                 _services.GetRequiredService<SessionRepository>(), _writer, _ui),
+            nameof(InitCommand) => (TCommand)(object)new InitCommand(configManager, configuration,
+                _services.GetRequiredService<IAgentsMdInitializer>(),
+                _services.GetRequiredService<IWorkspaceManager>(),
+                _services.GetRequiredService<ILuBanAgentFactory>(), _writer, _ui,
+                _conversationVm),
             _ => null
         };
     }
