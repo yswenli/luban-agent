@@ -255,24 +255,41 @@ public partial class InputBox : UserControl
     }
 
     /// <summary>
-    /// Ctrl+V 时探测剪贴板中的文件。注意不要同步 e.Handled=true 后再 await：
-    /// 事件早已冒泡完成，异步置位无效。这里不拦截默认粘贴——文件形式的剪贴板数据
-    /// 不含文本格式，TextBox 不会插入内容；无文件时退化为普通文本粘贴。
+    /// Ctrl+V 时探测剪贴板中的文件或位图。注意不要同步 e.Handled=true 后再 await：
+    /// 事件早已冒泡完成，异步置位无效。这里不拦截默认粘贴——文件/位图形式的剪贴板数据
+    /// 不含文本格式，TextBox 不会插入内容；无文件无位图时退化为普通文本粘贴。
     /// </summary>
     private async Task HandleClipboardFilesAsync()
     {
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard == null) return;
+        try
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return;
 
-        var files = await clipboard.TryGetFilesAsync();
-        if (files == null) return;
+            var files = await clipboard.TryGetFilesAsync();
+            if (files != null)
+            {
+                var paths = files.Select(f => f.TryGetLocalPath())
+                                 .Where(p => !string.IsNullOrEmpty(p))
+                                 .Cast<string>()
+                                 .ToList();
+                foreach (var p in paths)
+                    ImagePasted?.Invoke(this, p);
+                if (paths.Count > 0) return;
+            }
 
-        var paths = files.Select(f => f.TryGetLocalPath())
-                         .Where(p => !string.IsNullOrEmpty(p))
-                         .Cast<string>()
-                         .ToList();
-        foreach (var p in paths)
-            ImagePasted?.Invoke(this, p);
+            // 剪贴板位图（如系统截图）：写入工作区临时目录后按附件路径加入
+            var bitmap = await clipboard.TryGetBitmapAsync();
+            if (bitmap == null) return;
+
+            var tempPath = LuBan.Common.IO.TempDirectory.GetTempFilePath("clipboard-", ".png");
+            bitmap.Save(tempPath);
+            ImagePasted?.Invoke(this, tempPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug("InputBox.HandleClipboardFilesAsync 读取剪贴板失败", ex);
+        }
     }
 
     private bool _isProcessing;

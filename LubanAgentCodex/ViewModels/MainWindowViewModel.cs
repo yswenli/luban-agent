@@ -100,25 +100,47 @@ public partial class MainWindowViewModel : ObservableObject
         if (_pendingAttachmentPaths.Count == 0)
         {
             PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
+            AttachmentsChanged?.Invoke(this, EventArgs.Empty);
+            return;
         }
-        else
+
+        // 逐个处理：个别文件（如环境无法解码的 HEIC）失败时只丢弃该文件，
+        // 保证 _pendingAttachmentPaths 与 PendingAttachments 始终一致，
+        // 避免"附件条不可见/不可移除却仍被发送"导致整轮失败。
+        var infos = new List<AttachmentDisplayInfo>();
+        var valid = new List<string>();
+        foreach (var path in _pendingAttachmentPaths)
         {
             try
             {
-                var processed = service.ProcessAsync(_pendingAttachmentPaths, generateThumbnails: true)
+                var processed = service.ProcessAsync(new[] { path }, generateThumbnails: true)
                     .GetAwaiter().GetResult();
-                PendingAttachments = AttachmentService.ToDisplayInfos(processed);
+                infos.Add(AttachmentService.ToDisplayInfos(processed)[0]);
+                valid.Add(path);
             }
             catch (Exception ex)
             {
-                // 处理失败：保留上一次有效展示，避免附件条被清空导致状态与路径列表不一致
                 Messages.Add(new SystemMessageItem
                 {
-                    Content = $"附件处理失败：{ex.Message}",
+                    Content = $"附件不可用：{System.IO.Path.GetFileName(path)} - {ex.Message}",
                     IsError = true
                 });
             }
         }
+
+        _pendingAttachmentPaths.Clear();
+        _pendingAttachmentPaths.AddRange(valid);
+        PendingAttachments = infos;
+        AttachmentsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>清空待发送附件（切换/清空会话时调用）。</summary>
+    public void ClearPendingAttachments()
+    {
+        if (_pendingAttachmentPaths.Count == 0 && PendingAttachments.Count == 0)
+            return;
+        _pendingAttachmentPaths.Clear();
+        PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
         AttachmentsChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1081,16 +1103,19 @@ public partial class MainWindowViewModel : ObservableObject
 
             Messages.Clear();
 
+            // 切换会话：丢弃上一会话遗留的待发附件
+            ClearPendingAttachments();
+
             var messages = await sessionManager.GetLatestMessagesAsync(sessionId, 50);
             foreach (var msg in messages.OrderBy(m => m.CreatedAt))
             {
                 if (msg.Role == "user")
                 {
                     Messages.Add(new UserMessageItem
-        {
-            Content = msg.Content,
-            Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
-        });
+                    {
+                        Content = msg.Content,
+                        Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
+                    });
                 }
                 else if (msg.Role == "assistant")
                 {
@@ -1116,6 +1141,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         Messages.Clear();
         _runningNodes.Clear();
+        ClearPendingAttachments();
     }
 
     private ConfirmResult ConfirmCallback(string toolName, IReadOnlyDictionary<string, object?> args)

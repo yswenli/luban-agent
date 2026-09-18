@@ -43,7 +43,7 @@ public partial class MainWindow : Window
     private InputBox? _inputBox;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
-private Grid? _loadingOverlay;
+    private Grid? _loadingOverlay;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
@@ -95,7 +95,11 @@ private Grid? _loadingOverlay;
                 _inputBox.SetServiceProvider(services);
 
                 // 附件预览条：绑定 ViewModel 的待发送附件并在变化时刷新
-                _viewModel.AttachmentsChanged += (s, e) => UpdateAttachmentBar();
+                _viewModel.AttachmentsChanged += (s, e) =>
+                {
+                    UpdateAttachmentBar();
+                    UpdateAttachButtonState();
+                };
                 UpdateAttachmentBar();
                 UpdateAttachButtonState();
 
@@ -111,6 +115,11 @@ private Grid? _loadingOverlay;
                     _inputBox.Text = "";
 
                     await _viewModel.SendCommand.ExecuteAsync(null);
+
+                    // 早退路径（非 vision 图片 / 初始化失败）不会消费输入：回填文本框避免文本丢失。
+                    // 成功发送或 / 命令会把 VM.InputText 置空，且若期间用户已输入新文本则不回填。
+                    if (!string.IsNullOrEmpty(_viewModel.InputText) && string.IsNullOrEmpty(_inputBox.Text))
+                        _inputBox.Text = _viewModel.InputText;
                 };
 
                 // 附件入口：📎 选择文件 / Ctrl+V 粘贴 / 拖拽
@@ -364,7 +373,7 @@ private Grid? _loadingOverlay;
     }
 
     /// <summary>
-    /// 按当前模型能力启用/禁用 📎 附件按钮
+    /// 按当前模型能力与附件数量启用/禁用 📎 附件按钮
     /// </summary>
     private void UpdateAttachButtonState()
     {
@@ -372,9 +381,14 @@ private Grid? _loadingOverlay;
 
         var modelId = _viewModel.Services.GetService<ConfigManager>()?.SelectedModel ?? "";
         var supported = ModelCapability.SupportsVision(modelId);
-        _inputBox.SetAttachEnabled(
-            supported,
-            supported ? "选择附件（也可拖拽文件到窗口 / Ctrl+V 粘贴）" : "当前模型不支持图片附件");
+        var atCap = _viewModel.PendingAttachments.Count >= AttachmentService.MaxAttachmentsPerMessage;
+
+        if (!supported)
+            _inputBox.SetAttachEnabled(false, "当前模型不支持图片附件");
+        else if (atCap)
+            _inputBox.SetAttachEnabled(false, $"已达上限 {AttachmentService.MaxAttachmentsPerMessage} 个附件");
+        else
+            _inputBox.SetAttachEnabled(true, "选择附件（也可拖拽文件到窗口 / Ctrl+V 粘贴）");
     }
 
     /// <summary>
@@ -384,10 +398,18 @@ private Grid? _loadingOverlay;
     {
         if (_viewModel == null) return;
 
+        var extensions = _viewModel.Services.GetRequiredService<AttachmentService>().SupportedExtensions
+            .Select(e => "*" + e)
+            .ToList();
+
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择附件",
-            AllowMultiple = true
+            AllowMultiple = true,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("支持的附件") { Patterns = extensions }
+            }
         });
 
         var paths = files.Select(f => f.TryGetLocalPath())
@@ -401,7 +423,7 @@ private Grid? _loadingOverlay;
         {
             _viewModel.Messages.Add(new SystemMessageItem
             {
-                Content = $"最多 {AttachmentService.MaxAttachmentsPerMessage} 个附件，已忽略多余文件"
+                Content = $"已添加 {added} 个附件；其余被忽略（不支持的类型、重复或已达上限 {AttachmentService.MaxAttachmentsPerMessage} 个）"
             });
         }
     }
