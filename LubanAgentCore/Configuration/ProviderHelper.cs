@@ -280,10 +280,7 @@ public static class ProviderHelper
         if (string.IsNullOrWhiteSpace(modelId))
             return false;
 
-        var id = modelId.Trim();
-        var colon = id.LastIndexOf(':');
-        if (colon >= 0 && colon < id.Length - 1)
-            id = id[(colon + 1)..];
+        var id = StripProviderPrefix(modelId.Trim());
 
         if (MatchesVision(id))
             return true;
@@ -293,6 +290,22 @@ public static class ProviderHelper
             return MatchesVision(id[(slash + 1)..]);
 
         return false;
+    }
+
+    /// <summary>
+    /// 剥离 "provider:" 前缀。仅当冒号前段是已知 provider 名时才剥离，
+    /// 避免误伤自带冒号的模型 ID（如 Bedrock 的 "anthropic.claude-...-v1:0"）。
+    /// </summary>
+    private static string StripProviderPrefix(string id)
+    {
+        var colon = id.IndexOf(':');
+        if (colon <= 0 || colon >= id.Length - 1)
+            return id;
+
+        var prefix = id[..colon];
+        return _models.ContainsKey(prefix) || _defaultBaseUrls.ContainsKey(prefix)
+            ? id[(colon + 1)..]
+            : id;
     }
 
     private static bool MatchesVision(string id)

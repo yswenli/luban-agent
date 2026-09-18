@@ -17,7 +17,10 @@ public sealed class AttachmentService
     public const int MaxAttachmentsPerMessage = 5;
 
     private static readonly Regex FileRefPattern =
-        new("@(?:\"([^\"]+)\"|(\\S+))", RegexOptions.Compiled);
+        new("(?<![A-Za-z0-9_.@-])@(?:\"([^\"]+)\"|([^\\s@]+))", RegexOptions.Compiled);
+
+    private static readonly char[] TrailingPunctuation =
+        { ',', ';', ':', '，', '。', '；', '：', '、', ')', ']', '}', '！', '？', '!', '?' };
 
     private readonly IAttachmentProcessor _processor;
     private readonly IWorkspaceManager? _workspace;
@@ -43,7 +46,7 @@ public sealed class AttachmentService
         var paths = new List<string>();
         var text = FileRefPattern.Replace(input, m =>
         {
-            var raw = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
+            var raw = NormalizeToken(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
             var resolved = ResolvePath(raw);
             if (resolved != null && File.Exists(resolved) && _processor.IsSupported(resolved))
             {
@@ -56,6 +59,9 @@ public sealed class AttachmentService
         remainingText = Regex.Replace(text, @"[ \t]{2,}", " ").Trim();
         return paths;
     }
+
+    /// <summary>去掉引用片段首尾空白及常见尾随标点（如 "@a.txt," 中的逗号）。</summary>
+    private static string NormalizeToken(string raw) => raw.Trim().TrimEnd(TrailingPunctuation);
 
     /// <summary>把引用路径解析为绝对路径；相对路径基于当前工作区根目录。</summary>
     /// <param name="path">引用中的路径。</param>
@@ -89,7 +95,7 @@ public sealed class AttachmentService
         var invalid = new List<string>();
         foreach (Match m in FileRefPattern.Matches(input))
         {
-            var raw = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
+            var raw = NormalizeToken(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
             var resolved = service.ResolvePath(raw);
             if (resolved == null || !File.Exists(resolved) || !service._processor.IsSupported(resolved))
                 invalid.Add(raw);
@@ -130,22 +136,6 @@ public sealed class AttachmentService
     /// </summary>
     public ChatMessage BuildUserMessage(string text, IReadOnlyList<ProcessedAttachment> attachments)
         => AttachmentMessageBuilder.Build(text, attachments);
-
-    /// <summary>将附件元数据序列化为 JSON（供持久化）。</summary>
-    public static string? ToAttachmentsJson(IReadOnlyList<ProcessedAttachment> attachments)
-    {
-        if (attachments.Count == 0)
-            return null;
-        var records = attachments.Select(a => new AttachmentRecord
-        {
-            FileName = a.Info.FileName,
-            MediaType = a.Info.MediaType,
-            FileSize = a.Info.FileSize,
-            SourcePath = a.Info.SourcePath,
-            Kind = a.Info.Kind.ToString()
-        }).ToList();
-        return JsonSerializer.Serialize(records);
-    }
 
     /// <summary>转 UI 展示模型。</summary>
     public static IReadOnlyList<AttachmentDisplayInfo> ToDisplayInfos(IReadOnlyList<ProcessedAttachment> attachments)
