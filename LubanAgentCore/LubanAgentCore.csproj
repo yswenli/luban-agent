@@ -6,7 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LuBan.AIAgent" Version="2026.9.16.1" />
+    <!-- TODO(发布后回退): 开发期临时改为 ProjectReference，便于 luban-framework 源码改动即时生效；
+         人工发布 NuGet 后改回 <PackageReference Include="LuBan.AIAgent" Version="<新版本>" /> -->
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
     <PackageReference Include="LuBan.Common" Version="2026.9.16.1" />
     <PackageReference Include="LuBan.DI" Version="2026.9.16.1" />
     <PackageReference Include="LuBan.Threading" Version="2026.9.16.1" />

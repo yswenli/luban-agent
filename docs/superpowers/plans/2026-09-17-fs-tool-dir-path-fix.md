@@ -35,10 +35,17 @@ FileNotFoundException: Could not find file 'D:\...\NET10.0'
 
 验证：`FileSystemToolPath` 8/8 通过；`AgentApiError` 39/39 通过；`LuBan.AIAgent` 构建 0 警告 0 错误。
 
-## 后续项（未做，待确认）
+## 后续项（本次已全部处理）
 
-1. **Copy/Move 的目标是目录**未检测：`File.Exists(dest)` 对目录返回 false → 分别误报「权限不足」/「IO 错误」（Minor）。
-2. **`FileSystemMCPClient.CallToolAsync` try/catch 未 await**：异步段抛出的异常会穿透到调用方（既有隐患，测试写目录时曾以未捕获 `UnauthorizedAccessException` 暴露）。
-3. 写/复制/移动的测试仅断言「路径是目录」，未断言各自 requirement 文案（防互换回归）。
-4. `ClassInitialize` 中途失败时 `ClassCleanup` 不执行，可能残留 `luban-fs-path-*` 临时目录。
-5. 无 ACL 访问权限的目录：`Directory.Exists` 返回 false，仍走「未找到文件」（罕见，既有行为）。
+1. ~~Copy/Move 的目标是目录未检测~~ → 已补目标目录检测（`复制目标是文件路径（含文件名），不能是目录` / `移动目标…`），新增 2 个用例。
+2. ~~`FileSystemMCPClient.CallToolAsync` try/catch 未 await~~ → 已改为 `async` + 在 try 内 `await` 三个工具方法，异步异常改为返回 `Fail(ex.Message)`（新增回归用例：写不存在目录时不再穿透异常）。
+3. ~~写/复制/移动测试未断言各自 requirement 文案~~ → 已补断言，防止文案互换回归。
+4. ~~ClassInitialize 失败时 ClassCleanup 不执行~~ → Setup 失败先 `TryDeleteRoot()` 再 rethrow；实测无临时目录残留。
+5. ~~ACL 受限目录仍报「未找到文件」~~ → `ReadFileAsync` 的 FileNotFound/DirectoryNotFound 分支追加「先用 ListDirectory 查看目录内容，再传入具体文件路径」指引。
+
+验证：`FileSystemToolPath` 12/12、`AgentApiError` 39/39、构建 0 警告 0 错误；复核 Ready to merge。
+
+### 已知未做（复核 Minor，范围外）
+
+- `FileSystemMCPClient` 的 `cancellationToken` 接收但未下传；catch 会把取消也转成 `Fail`（若将来传 token 需先 rethrow 取消）。
+- `FileSystemMCPClient` 缺文件分支、`GetFileInfoAsync` 未加 ListDirectory 指引（如需彻底消除误导循环可后续统一）。
