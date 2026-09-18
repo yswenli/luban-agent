@@ -51,4 +51,11 @@ public interface ITuiUiService
 
     /// <summary>表格弹窗（TableView，"关闭/选择"按钮）。返回选中行索引（-1 表示未选中或取消）。</summary>
     int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false);
+
+    /// <summary>
+    /// 打开文件选择对话框，返回选中的文件路径（取消返回空列表）。
+    /// </summary>
+    /// <param name="title">标题。</param>
+    /// <param name="allowMultiple">是否允许多选。</param>
+    IReadOnlyList<string> PickFiles(string title, bool allowMultiple);
 }

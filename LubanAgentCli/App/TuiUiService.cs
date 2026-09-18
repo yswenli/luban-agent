@@ -371,4 +371,30 @@ internal sealed class TuiUiService : ITuiUiService
             return selectedIndex;
         });
     }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> PickFiles(string title, bool allowMultiple)
+    {
+        return RunModal<IReadOnlyList<string>>(() =>
+        {
+            using var dialog = new OpenDialog
+            {
+                Title = title,
+                AllowsMultipleSelection = allowMultiple,
+                OpenMode = OpenMode.File,
+                MustExist = true,
+                X = Pos.Center(),
+                Y = Pos.Center(),
+                Width = 80,
+                Height = 24
+            };
+            _app.Run(dialog);
+            if (dialog.Canceled || dialog.FilePaths is null)
+                return Array.Empty<string>();
+            return dialog.FilePaths
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(Path.GetFullPath)
+                .ToList();
+        });
+    }
 }
