@@ -373,20 +373,22 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 按当前模型能力与附件数量启用/禁用 📎 附件按钮
+    /// 按当前模型能力与附件数量启用/禁用 📎 附件按钮。
+    /// 非 vision 模型不禁用按钮（文本文件仍可添加），仅在加入图片时提示；
+    /// 仅当达到附件数量上限时禁用。
     /// </summary>
     private void UpdateAttachButtonState()
     {
         if (_inputBox == null || _viewModel == null) return;
 
         var modelId = _viewModel.Services.GetService<ConfigManager>()?.SelectedModel ?? "";
-        var supported = ModelCapability.SupportsVision(modelId);
+        var supportsVision = ModelCapability.SupportsVision(modelId);
         var atCap = _viewModel.PendingAttachments.Count >= AttachmentService.MaxAttachmentsPerMessage;
 
-        if (!supported)
-            _inputBox.SetAttachEnabled(false, "当前模型不支持图片附件");
-        else if (atCap)
+        if (atCap)
             _inputBox.SetAttachEnabled(false, $"已达上限 {AttachmentService.MaxAttachmentsPerMessage} 个附件");
+        else if (!supportsVision)
+            _inputBox.SetAttachEnabled(true, "当前模型不支持图片，仅可添加文本文件");
         else
             _inputBox.SetAttachEnabled(true, "选择附件（也可拖拽文件到窗口 / Ctrl+V 粘贴）");
     }

@@ -242,6 +242,8 @@ public partial class InputBox : UserControl
         if (_attachButton == null) return;
         _attachButton.IsEnabled = enabled;
         _attachButton.Opacity = enabled ? 1.0 : 0.5;
+        // 默认禁用态不显示 ToolTip；开启后可提示"已达上限"等原因
+        ToolTip.SetShowOnDisabled(_attachButton, true);
         ToolTip.SetTip(_attachButton, tip);
     }
 

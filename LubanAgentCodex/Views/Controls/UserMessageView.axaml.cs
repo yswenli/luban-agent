@@ -15,7 +15,9 @@
 *
 *****************************************************************************/
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using LubanAgentCore.Models;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -32,5 +34,33 @@ public partial class UserMessageView : UserControl
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
+    }
+
+    /// <summary>
+    /// 点击图片附件缩略图：弹出大图查看窗口。源文件不存在（历史回放）时回退缩略图。
+    /// </summary>
+    private void OnAttachmentPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not AttachmentDisplayInfo info || !info.IsImage)
+            return;
+
+        var path = !string.IsNullOrEmpty(info.SourcePath) && File.Exists(info.SourcePath)
+            ? info.SourcePath
+            : info.ThumbnailPath;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            return;
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        try
+        {
+            var viewer = new ImageViewerWindow(path, info.FileName);
+            if (owner != null) viewer.Show(owner);
+            else viewer.Show();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("UserMessageView.OnAttachmentPressed 打开大图失败", ex);
+        }
+        e.Handled = true;
     }
 }

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
+             xmlns:conv="using:LubanAgentCodex.Converters"
              x:Class="LubanAgentCodex.Views.Controls.InputBox">
 
     <Border Background="{DynamicResource BackgroundBrush}"
@@ -22,16 +23,37 @@
                                 BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Padding="8,3"
+                                Padding="6,3"
                                 Margin="0,0,6,6">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="📎"
-                                           FontSize="11"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding FileName}"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" />
+                                <Border Width="32" Height="32"
+                                        CornerRadius="4"
+                                        ClipToBounds="True"
+                                        Background="{DynamicResource SidebarBrush}"
+                                        VerticalAlignment="Center">
+                                    <Grid>
+                                        <!-- 图片：缩略图 -->
+                                        <Image Source="{Binding ThumbnailPath, Converter={x:Static conv:ThumbnailPathConverter.Instance}}"
+                                               Stretch="UniformToFill"
+                                               IsVisible="{Binding IsImage}" />
+                                        <!-- 非图片或无缩略图：文件图标 -->
+                                        <TextBlock Text="📄"
+                                                   FontSize="14"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   IsVisible="{Binding !IsImage}" />
+                                    </Grid>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding FileName}"
+                                               FontSize="11"
+                                               MaxWidth="140"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding FileSize, Converter={x:Static conv:FileSizeConverter.Instance}}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextTertiaryBrush}" />
+                                </StackPanel>
                                 <Button Content="✕"
                                         FontSize="10"
                                         Padding="2,0"
@@ -39,6 +61,7 @@
                                         BorderThickness="0"
                                         Foreground="{DynamicResource TextSecondaryBrush}"
                                         Cursor="Hand"
+                                        VerticalAlignment="Center"
                                         Click="OnRemoveAttachmentClick" />
                             </StackPanel>
                         </Border>

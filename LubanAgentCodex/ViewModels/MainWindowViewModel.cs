@@ -44,6 +44,8 @@ public partial class MainWindowViewModel : ObservableObject
     private ThinkingMessageItem? _currentThinking;
     private readonly List<OrchestrationNodeItem> _runningNodes = new();
     private readonly List<string> _pendingAttachmentPaths = new();
+    private int _attachmentVersion;
+    private Task _attachmentRefreshTask = Task.CompletedTask;
 
     /// <summary>当前待发送附件。</summary>
     public IReadOnlyList<AttachmentDisplayInfo> PendingAttachments { get; private set; } = Array.Empty<AttachmentDisplayInfo>();
@@ -51,7 +53,8 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>附件列表变化通知。</summary>
     public event EventHandler? AttachmentsChanged;
 
-    /// <summary>添加附件路径（去重、上限 5、仅受支持且存在的文件）。返回实际新增数。</summary>
+    /// <summary>添加附件路径（去重、上限 5、仅受支持且存在的文件）。返回实际加入的路径数。</summary>
+    /// <remarks>校验同步完成；解码/缩略图等重活异步刷新，避免阻塞 UI 线程。</remarks>
     public int AddAttachments(IEnumerable<string> paths)
     {
         var service = Services.GetRequiredService<AttachmentService>();
@@ -79,59 +82,114 @@ public partial class MainWindowViewModel : ObservableObject
             _pendingAttachmentPaths.Add(full);
             added++;
         }
-        RefreshPendingAttachments(service);
+
+        if (added > 0)
+        {
+            _attachmentVersion++;
+            _attachmentRefreshTask = RefreshPendingAttachmentsAsync(service);
+        }
         return added;
     }
 
-    /// <summary>移除指定附件。</summary>
-    public void RemoveAttachment(string fileName)
+    /// <summary>移除指定附件（参数为完整路径；兼容按文件名移除的旧调用）。</summary>
+    public void RemoveAttachment(string fileNameOrPath)
     {
         var target = _pendingAttachmentPaths.FirstOrDefault(p =>
-            string.Equals(System.IO.Path.GetFileName(p), fileName, StringComparison.OrdinalIgnoreCase));
-        if (target != null)
-        {
-            _pendingAttachmentPaths.Remove(target);
-            RefreshPendingAttachments(Services.GetRequiredService<AttachmentService>());
-        }
+            string.Equals(p, fileNameOrPath, StringComparison.OrdinalIgnoreCase))
+            ?? _pendingAttachmentPaths.FirstOrDefault(p =>
+                string.Equals(System.IO.Path.GetFileName(p), fileNameOrPath, StringComparison.OrdinalIgnoreCase));
+        if (target == null) return;
+
+        _pendingAttachmentPaths.Remove(target);
+        _attachmentVersion++;
+        _attachmentRefreshTask = RefreshPendingAttachmentsAsync(Services.GetRequiredService<AttachmentService>());
     }
 
-    private void RefreshPendingAttachments(AttachmentService service)
+    /// <summary>
+    /// 异步处理待发附件：逐文件解码/生成缩略图并更新预览；个别文件失败只丢弃该文件。
+    /// 处理期间不阻塞 UI 线程；处理结果回投 UI 线程后再更新集合（避免跨线程访问）。
+    /// </summary>
+    private async Task RefreshPendingAttachmentsAsync(AttachmentService service)
     {
-        if (_pendingAttachmentPaths.Count == 0)
+        var version = _attachmentVersion;
+        var paths = _pendingAttachmentPaths.ToList();
+
+        var modelId = Services.GetService<ConfigManager>()?.SelectedModel ?? "";
+        var supportsVision = ModelCapability.SupportsVision(modelId);
+
+        var infos = new List<AttachmentDisplayInfo>(paths.Count);
+        var valid = new List<string>(paths.Count);
+        var imagesRejected = new List<string>();
+        var failures = new List<string>();
+
+        if (paths.Count > 0)
         {
-            PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
-            AttachmentsChanged?.Invoke(this, EventArgs.Empty);
-            return;
+            await Task.Run(async () =>
+            {
+                foreach (var path in paths)
+                {
+                    try
+                    {
+                        var processed = await service.ProcessAsync(new[] { path }, generateThumbnails: true)
+                            .ConfigureAwait(false);
+                        var info = AttachmentService.ToDisplayInfos(processed)[0];
+
+                        if (info.IsImage && !supportsVision)
+                        {
+                            imagesRejected.Add(info.FileName);
+                            continue;
+                        }
+
+                        infos.Add(info);
+                        valid.Add(path);
+                    }
+                    catch (Exception ex)
+                    {
+                        failures.Add($"{System.IO.Path.GetFileName(path)} - {ex.Message}");
+                    }
+                }
+            });
         }
 
-        // 逐个处理：个别文件（如环境无法解码的 HEIC）失败时只丢弃该文件，
-        // 保证 _pendingAttachmentPaths 与 PendingAttachments 始终一致，
-        // 避免"附件条不可见/不可移除却仍被发送"导致整轮失败。
-        var infos = new List<AttachmentDisplayInfo>();
-        var valid = new List<string>();
-        foreach (var path in _pendingAttachmentPaths)
-        {
-            try
-            {
-                var processed = service.ProcessAsync(new[] { path }, generateThumbnails: true)
-                    .GetAwaiter().GetResult();
-                infos.Add(AttachmentService.ToDisplayInfos(processed)[0]);
-                valid.Add(path);
-            }
-            catch (Exception ex)
-            {
-                Messages.Add(new SystemMessageItem
-                {
-                    Content = $"附件不可用：{System.IO.Path.GetFileName(path)} - {ex.Message}",
-                    IsError = true
-                });
-            }
-        }
+        // 刷新期间列表又被改动（新增/移除/清空/发送）：放弃本次过期结果，由最新一次刷新收尾
+        if (version != _attachmentVersion)
+            return;
 
         _pendingAttachmentPaths.Clear();
         _pendingAttachmentPaths.AddRange(valid);
         PendingAttachments = infos;
         AttachmentsChanged?.Invoke(this, EventArgs.Empty);
+
+        foreach (var failure in failures)
+        {
+            Messages.Add(new SystemMessageItem
+            {
+                Content = $"附件不可用：{failure}",
+                IsError = true
+            });
+        }
+
+        if (imagesRejected.Count > 0)
+        {
+            Messages.Add(new SystemMessageItem
+            {
+                Content = $"当前模型 {modelId} 不支持图片，已忽略：{string.Join("、", imagesRejected)}。请切换支持 vision 的模型。",
+                IsError = true
+            });
+        }
+    }
+
+    /// <summary>等待进行中的附件处理完成（发送前调用，确保待发路径已校验）。</summary>
+    private async Task WaitForAttachmentsAsync()
+    {
+        try
+        {
+            await _attachmentRefreshTask;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("MainWindowViewModel.WaitForAttachmentsAsync 附件处理失败", ex);
+        }
     }
 
     /// <summary>清空待发送附件（切换/清空会话时调用）。</summary>
@@ -139,6 +197,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_pendingAttachmentPaths.Count == 0 && PendingAttachments.Count == 0)
             return;
+        _attachmentVersion++;
+        _attachmentRefreshTask = Task.CompletedTask;
         _pendingAttachmentPaths.Clear();
         PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
         AttachmentsChanged?.Invoke(this, EventArgs.Empty);
@@ -215,6 +275,9 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         // 图片附件 + 非 vision 模型：提示并中止（拖拽/粘贴可能绕过按钮禁用）
+        // 先等待附件处理完成，确保 PendingAttachments 反映最新状态
+        await WaitForAttachmentsAsync();
+
         if (PendingAttachments.Any(a => a.IsImage))
         {
             var modelId = Services.GetRequiredService<ConfigManager>().SelectedModel ?? "";

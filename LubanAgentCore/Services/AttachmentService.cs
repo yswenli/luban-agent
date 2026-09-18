@@ -149,7 +149,8 @@ public sealed class AttachmentService
             a.Info.FileName, a.Info.MediaType, a.Info.FileSize,
             a.ThumbnailPath,
             a.Info.Kind == AttachmentKind.Image,
-            a.PixelSize)).ToList();
+            a.PixelSize,
+            a.Info.SourcePath)).ToList();
 
     /// <summary>历史附件 JSON（<see cref="AttachmentRecord"/> 数组）→ 显示信息。</summary>
     public static IReadOnlyList<AttachmentDisplayInfo> DisplayInfosFromJson(string? json)
@@ -164,7 +165,8 @@ public sealed class AttachmentService
             return records.Select(r => new AttachmentDisplayInfo(
                 r.FileName, r.MediaType, r.FileSize, null,
                 string.Equals(r.Kind, "Image", StringComparison.OrdinalIgnoreCase),
-                null)).ToList();
+                null,
+                string.IsNullOrEmpty(r.SourcePath) ? null : r.SourcePath)).ToList();
         }
         catch
         {

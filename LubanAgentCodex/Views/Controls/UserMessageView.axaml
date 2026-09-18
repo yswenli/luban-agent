@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
              xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
+             xmlns:conv="using:LubanAgentCodex.Converters"
              x:Class="LubanAgentCodex.Views.Controls.UserMessageView"
              x:DataType="vm:UserMessageItem">
 
@@ -20,7 +21,7 @@
                          Foreground="{DynamicResource TextPrimaryBrush}"
                          TextWrapping="Wrap"
                          FontSize="14" />
-                <ItemsControl ItemsSource="{Binding Attachments}" Margin="0,6,0,0">
+                <ItemsControl ItemsSource="{Binding Attachments}" Margin="0,8,0,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal" />
@@ -28,14 +29,41 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:AttachmentDisplayInfo">
-                            <Border Background="{DynamicResource CardBrush}"
-                                    CornerRadius="4"
-                                    Padding="6,3"
-                                    Margin="0,0,6,6">
-                                <TextBlock FontSize="11"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                           Text="{Binding FileName}" />
-                            </Border>
+                            <StackPanel Margin="0,0,8,8" MaxWidth="180">
+                                <!-- 图片：缩略图（点击查看大图） -->
+                                <Border Width="120" Height="120"
+                                        CornerRadius="8"
+                                        ClipToBounds="True"
+                                        Background="{DynamicResource SidebarBrush}"
+                                        IsVisible="{Binding IsImage}"
+                                        Cursor="Hand"
+                                        PointerPressed="OnAttachmentPressed">
+                                    <Grid>
+                                        <TextBlock Text="📄"
+                                                   FontSize="28"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                        <Image Source="{Binding ThumbnailPath, Converter={x:Static conv:ThumbnailPathConverter.Instance}}"
+                                               Stretch="UniformToFill" />
+                                    </Grid>
+                                </Border>
+                                <!-- 文本文件 / 历史无缩略图：文件芯片 -->
+                                <Border Background="{DynamicResource CardBrush}"
+                                        CornerRadius="4"
+                                        Padding="6,3"
+                                        IsVisible="{Binding !IsImage}">
+                                    <TextBlock FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Text="{Binding FileName}" />
+                                </Border>
+                                <TextBlock Text="{Binding FileName}"
+                                           FontSize="10"
+                                           MaxWidth="180"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,2,0,0" />
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

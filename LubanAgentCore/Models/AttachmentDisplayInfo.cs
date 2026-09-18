@@ -7,6 +7,8 @@ namespace LubanAgentCore.Models;
 /// <param name="ThumbnailPath">缩略图路径（仅 Codex）。</param>
 /// <param name="IsImage">是否图片。</param>
 /// <param name="PixelSize">图片像素尺寸。</param>
+/// <param name="SourcePath">源文件绝对路径（用于点击查看大图；历史回放可能已不存在）。</param>
 public record AttachmentDisplayInfo(
     string FileName, string MediaType, long FileSize,
-    string? ThumbnailPath, bool IsImage, string? PixelSize);
+    string? ThumbnailPath, bool IsImage, string? PixelSize,
+    string? SourcePath = null);
