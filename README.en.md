@@ -67,6 +67,13 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - Nine core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery), plug and play
 - **File-based Skills**: Define custom Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project-level or user-level directories
 
+### 📎 Attachment Support (Images + Text Files)
+- **Two attachment kinds**: images (PNG/JPEG/GIF/WebP/BMP/TIFF/HEIC, requires a vision model) and text files (code, config, logs, etc.)
+- **Multiple input paths**: CLI supports `@path` references, the `Ctrl+O` file picker, and terminal drag-and-drop; Codex supports the 📎 button, dropping onto the window, and `Ctrl+V` (clipboard files or screenshots)
+- **Size tiers**: up to 5 attachments per message; text ≤50KB is inlined into the message, >50KB injects only a path hint so the model can read it on demand with file tools
+- **Image preprocessing**: locally resized (max edge 2000px) then sent as base64 `DataContent`; automatically blocked with a prompt when the current model lacks vision
+- **Lightweight persistence**: sessions store only paths and metadata (no base64); history replays rebuild from disk or show placeholders. Codex renders thumbnails in the attachment bar and message area, click to view full size
+
 ### 🛡️ Security & Rule Engine
 - **Path Access Rules**: Restrict filesystem access scope, prevent unauthorized operations
 - **Dangerous Operation Confirmation**: Automatically request user confirmation before write, delete, or execute operations
@@ -312,7 +319,7 @@ User configurations (Providers, custom Skills, rules, etc.) are automatically sa
 ## 💡 Tips
 
 - 🖥️ **Two Clients, One Core**: CLI suits terminal lovers and server environments; Codex suits GUI users—configuration and sessions are fully shared
-- ⌨️ **CLI Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit
+- ⌨️ **CLI Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+O` add attachments
 - 🛡️ **Four Permission Modes**: Default / Plan / AcceptEdits / BypassPermissions, with automatic confirmation for dangerous operations
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution, and SubAgents inherit workspace long-term memory

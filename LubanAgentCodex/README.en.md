@@ -72,6 +72,13 @@ Built-in nine core skills, plug and play:
 
 **File-based Skills**: Support defining custom Skills through SKILL.md files, compatible with OpenCode format, automatically loaded when placed in project-level or user-level directories.
 
+### 📎 Attachment Support (Images + Text Files)
+- **Multiple input paths**: the 📎 button, dropping files onto the window, and `Ctrl+V` for clipboard files or screenshots
+- **Thumbnail preview**: the attachment bar and message area render thumbnails, file names, and sizes; click to view full size (Esc / click to close)
+- **Size tiers**: up to 5 per message; text ≤50KB is inlined, >50KB injects only a path hint for the model to read on demand
+- **Model-aware**: with a non-vision model the 📎 button stays enabled but images are blocked with a prompt; automatically disabled at the 5-item cap
+- **Async processing**: attachments are preprocessed on a background thread so large images don't freeze the UI; failed attachments are dropped individually with a notice
+
 ### 🛡️ Security & Rule Engine
 - **Path access rules**: Restrict file system access scope, prevent unauthorized operations
 - **Dangerous operation confirmation**: Automatically require user confirmation before writing, deleting, executing scripts
@@ -628,7 +635,7 @@ github available tools:
 ## 💡 Tips
 
 - 🖥️ **Graphical Interface**: Launch enters Avalonia desktop application, enter plain text to directly converse with Agent
-- ⌨️ **Shortcuts**: `Enter` send message, `Ctrl+Enter` newline, `Shift+Tab` switch permission mode
+- ⌨️ **Shortcuts**: `Enter` send message, `Ctrl+Enter` newline, `Ctrl+V` paste attachments (files/screenshots), `Shift+Tab` switch permission mode
 - 🛡️ **Four Permission Modes**: `Shift+Tab` cycle through Default / Plan / AcceptEdits / BypassPermissions, footer displays in real-time
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow

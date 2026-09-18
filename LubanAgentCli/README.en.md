@@ -69,6 +69,12 @@ Nine core built-in skills, plug and play:
 
 **File-based Skills**: Support defining custom Skills via SKILL.md files, compatible with OpenCode format. Place them in project-level or user-level directories for automatic loading.
 
+### 📎 Attachment Support (Images + Text Files)
+- **Multiple input paths**: `@path` references, the `Ctrl+O` file picker, and terminal drag-and-drop
+- **Size tiers**: up to 5 per message; text ≤50KB is inlined, >50KB injects only a path hint for the model to read on demand
+- **Image handling**: resized locally before sending; requires a vision model, otherwise blocked with a prompt
+- **Lightweight persistence**: sessions store only paths and metadata; history replays from disk or shows placeholders
+
 ### 🛡️ Security & Rule Engine
 - **Path Access Rules**: Restrict filesystem access scope, prevent unauthorized operations
 - **Dangerous Operation Confirmation**: Automatically request user confirmation before write, delete, or execute operations
@@ -303,10 +309,20 @@ On launch, enters a Terminal.Gui full-screen alt-screen interface with a top-to-
 - **Enter** — Submit input (plain text → Agent; `/` prefix → command panel)
 - **Ctrl+Q** — Force quit TUI
 - **Ctrl+L** — Redraw screen
+- **Ctrl+O** — Open the file picker to add attachments (multi-select)
 - **Esc** — Cancel running Agent task
 - **Shift+Tab** — Cycle permission modes (Default → Plan → AcceptEdits → BypassPermissions)
 - **Tab** — Toggle conversation / Agent task view
 - **Mouse** — Click blocks to collapse/expand; scroll wheel; Shift+drag for native terminal selection
+
+### Attachment Input
+
+- **`@path` reference** — Write `@D:\work\a.cs` or `@./src/a.cs` in the input; resolved into attachments on submit. If any reference cannot be resolved, nothing is sent and a prompt is shown
+- **`Ctrl+O`** — Open the file picker (multi-select) to add attachments
+- **Terminal drag-and-drop** — Drop files onto the terminal window to add them to the pending attachments
+- **Submit** — Attachments-only messages (no text) can also be sent with Enter
+
+Limits: up to **5** attachments per message; images require a vision-capable model; text **≤50KB** is inlined, **>50KB** injects only a path hint for the model to read on demand. A message may mix images and text files.
 
 ### Command List
 
@@ -818,7 +834,7 @@ Available tools for github:
 ## 💡 Tips
 
 - 🖥️ **Full-Screen TUI**: Launch directly into Terminal.Gui full-screen; plain text input talks to Agent
-- ⌨️ **Keyboard Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+L` redraw
+- ⌨️ **Keyboard Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+L` redraw, `Ctrl+O` add attachments
 - 🛡️ **Four Permission Modes**: `Shift+Tab` cycles Default / Plan / AcceptEdits / BypassPermissions; footer shows current mode
 - 🎨 **Collapse/Expand**: Thinking and tool calls default to collapsed; click `▸` to expand
 - 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines new" prompt
