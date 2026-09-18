@@ -103,6 +103,9 @@ public sealed class AttachmentService
         return invalid;
     }
 
+    /// <summary>路径是否属于受支持的附件类型。</summary>
+    public bool IsSupported(string filePath) => _processor.IsSupported(filePath);
+
     /// <summary>处理附件路径集合。</summary>
     public async Task<IReadOnlyList<ProcessedAttachment>> ProcessAsync(
         IReadOnlyList<string> filePaths, bool generateThumbnails = false, CancellationToken ct = default)

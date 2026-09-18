@@ -27,6 +27,11 @@ public class UserMessageItem : MessageItemBase
     public string Content { get; init; } = "";
 
     /// <summary>
+    /// 附件展示信息
+    /// </summary>
+    public IReadOnlyList<AttachmentDisplayInfo> Attachments { get; init; } = Array.Empty<AttachmentDisplayInfo>();
+
+    /// <summary>
     /// 格式化时间文本（用于 UI 绑定）
     /// </summary>
     public string TimeText => Timestamp.ToString("HH:mm");

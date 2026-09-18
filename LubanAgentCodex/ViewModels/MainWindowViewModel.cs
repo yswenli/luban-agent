@@ -43,6 +43,84 @@ public partial class MainWindowViewModel : ObservableObject
     private AssistantMessageItem? _currentAssistant;
     private ThinkingMessageItem? _currentThinking;
     private readonly List<OrchestrationNodeItem> _runningNodes = new();
+    private readonly List<string> _pendingAttachmentPaths = new();
+
+    /// <summary>当前待发送附件。</summary>
+    public IReadOnlyList<AttachmentDisplayInfo> PendingAttachments { get; private set; } = Array.Empty<AttachmentDisplayInfo>();
+
+    /// <summary>附件列表变化通知。</summary>
+    public event EventHandler? AttachmentsChanged;
+
+    /// <summary>添加附件路径（去重、上限 5、仅受支持且存在的文件）。返回实际新增数。</summary>
+    public int AddAttachments(IEnumerable<string> paths)
+    {
+        var service = Services.GetRequiredService<AttachmentService>();
+        var added = 0;
+        foreach (var path in paths)
+        {
+            if (_pendingAttachmentPaths.Count >= AttachmentService.MaxAttachmentsPerMessage)
+                break;
+
+            string full;
+            try
+            {
+                full = System.IO.Path.GetFullPath(path);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!File.Exists(full) || !service.IsSupported(full))
+                continue;
+            if (_pendingAttachmentPaths.Contains(full, StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            _pendingAttachmentPaths.Add(full);
+            added++;
+        }
+        RefreshPendingAttachments(service);
+        return added;
+    }
+
+    /// <summary>移除指定附件。</summary>
+    public void RemoveAttachment(string fileName)
+    {
+        var target = _pendingAttachmentPaths.FirstOrDefault(p =>
+            string.Equals(System.IO.Path.GetFileName(p), fileName, StringComparison.OrdinalIgnoreCase));
+        if (target != null)
+        {
+            _pendingAttachmentPaths.Remove(target);
+            RefreshPendingAttachments(Services.GetRequiredService<AttachmentService>());
+        }
+    }
+
+    private void RefreshPendingAttachments(AttachmentService service)
+    {
+        if (_pendingAttachmentPaths.Count == 0)
+        {
+            PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
+        }
+        else
+        {
+            try
+            {
+                var processed = service.ProcessAsync(_pendingAttachmentPaths, generateThumbnails: true)
+                    .GetAwaiter().GetResult();
+                PendingAttachments = AttachmentService.ToDisplayInfos(processed);
+            }
+            catch (Exception ex)
+            {
+                // 处理失败：保留上一次有效展示，避免附件条被清空导致状态与路径列表不一致
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = $"附件处理失败：{ex.Message}",
+                    IsError = true
+                });
+            }
+        }
+        AttachmentsChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>
     /// 服务提供者
@@ -101,7 +179,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task SendAsync()
     {
-        if (IsRunning || string.IsNullOrWhiteSpace(InputText))
+        if (IsRunning || (string.IsNullOrWhiteSpace(InputText) && _pendingAttachmentPaths.Count == 0))
             return;
 
         var input = InputText.Trim();
@@ -112,6 +190,21 @@ public partial class MainWindowViewModel : ObservableObject
             InputText = "";
             await ExecuteCommandAsync(input);
             return;
+        }
+
+        // 图片附件 + 非 vision 模型：提示并中止（拖拽/粘贴可能绕过按钮禁用）
+        if (PendingAttachments.Any(a => a.IsImage))
+        {
+            var modelId = Services.GetRequiredService<ConfigManager>().SelectedModel ?? "";
+            if (!ModelCapability.SupportsVision(modelId))
+            {
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = $"当前模型 {modelId} 不支持图片，请切换支持 vision 的模型或移除图片附件。",
+                    IsError = true
+                });
+                return;
+            }
         }
 
         if (!_agentHost.IsInitialized)
@@ -132,11 +225,17 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
+        var displayInfos = PendingAttachments;
+        var sendingPaths = _pendingAttachmentPaths.ToList();
+        _pendingAttachmentPaths.Clear();
+        PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
+        AttachmentsChanged?.Invoke(this, EventArgs.Empty);
+
         IsRunning = true;
         InputText = "";
 
         // 添加用户消息
-        Messages.Add(new UserMessageItem { Content = input });
+        Messages.Add(new UserMessageItem { Content = input, Attachments = displayInfos });
 
         // 注意：不预创建 AssistantMessageItem，正文项在首个 TextDeltaEvent 到达时懒创建，
         // 确保它排在思考内容/工具卡片之后（修复显示顺序错乱）
@@ -156,7 +255,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             // 关键：消费循环放后台线程，避免确认回调阻塞 UI 线程导致死锁；
             // 事件本身全部投递到 UI 线程按序处理（Dispatcher 队列 FIFO 保序）
-            await Task.Run(() => ConsumeStreamAsync(input, _cts.Token, runSeq));
+            await Task.Run(() => ConsumeStreamAsync(input, sendingPaths, _cts.Token, runSeq));
         }
         catch (OperationCanceledException)
         {
@@ -257,7 +356,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var text = await Task.Run(() => ConsumeStreamAsync(prompt, _cts.Token, runSeq));
+            var text = await Task.Run(() => ConsumeStreamAsync(prompt, Array.Empty<string>(), _cts.Token, runSeq));
 
             var markdown = initializer.Normalize(text);
             if (string.IsNullOrWhiteSpace(markdown))
@@ -699,13 +798,15 @@ public partial class MainWindowViewModel : ObservableObject
     /// 后台消费流式事件：只负责转发，全部事件按到达顺序投递到 UI 线程
     /// </summary>
     /// <returns>本回合累积的正文文本（供 AGENTS.md 等需要拿到完整输出的场景复用）</returns>
-    private async Task<string> ConsumeStreamAsync(string input, CancellationToken ct, int runSeq)
+    private async Task<string> ConsumeStreamAsync(
+        string input, IReadOnlyList<string> attachmentPaths, CancellationToken ct, int runSeq)
     {
         var plannedCount = 0;
         var sb = new StringBuilder();
 
         await foreach (var evt in _agentHost.RunStreamingAsync(
             input,
+            attachmentPaths,
             ConfirmCallback,
             PermissionMode,
             onPlannedAction: (tool, args) =>
@@ -985,7 +1086,11 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 if (msg.Role == "user")
                 {
-                    Messages.Add(new UserMessageItem { Content = msg.Content });
+                    Messages.Add(new UserMessageItem
+        {
+            Content = msg.Content,
+            Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
+        });
                 }
                 else if (msg.Role == "assistant")
                 {
