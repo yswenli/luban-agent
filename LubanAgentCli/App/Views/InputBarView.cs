@@ -29,6 +29,12 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 {
     public event Action<string>? SubmitRequested;
 
+    /// <summary>请求打开文件选择对话框（Ctrl+O）。</summary>
+    public event Action? OpenFilePickerRequested;
+
+    /// <summary>所属输入区（用于拖拽识别与空文本提交）。</summary>
+    internal InputBarView? Owner { get; set; }
+
     /// <summary>
     /// 按键预路由：当存在挂起的确认块（工具确认 / 授权二次确认）时由 RootView 注入，
     /// 把按键优先转发给确认块。agent 阻塞等待期间焦点停留在输入编辑器，确认块本身收不到键，
@@ -66,6 +72,18 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             {
                 Logger.Warn($"[TuiDiag-Enter] key={key} branch=Paste(InvokeCommand)");
             }
+            // 粘贴内容恰为一个存在的文件路径 → 直接转为附件，不留在输入区
+            if (Owner?.TryConsumeDroppedPath() == true)
+            {
+                return true;
+            }
+            return true;
+        }
+
+        // Ctrl+O：打开文件选择对话框
+        if (key == Key.O.WithCtrl)
+        {
+            OpenFilePickerRequested?.Invoke();
             return true;
         }
 
@@ -89,7 +107,7 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             {
                 Logger.Warn($"[TuiDiag-Enter] key=Enter prerouter=not-consumed Text.Length='{(Text?.Length ?? 0)}' trimmed.Length='{text.Length}'");
             }
-            if (text.Length > 0)
+            if (text.Length > 0 || Owner?.HasAttachments == true)
             {
                 Text = string.Empty;
                 if (Infrastructure.TuiDiag.Enabled)
@@ -112,11 +130,113 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 internal sealed class InputBarView : View
 {
     private readonly MultilineEditor _editor;
+    private readonly List<AttachmentDraft> _drafts = new();
+    private readonly List<string> _draftPaths = new();
+    private Label? _attachmentHint;
+    private IServiceProvider? _services;
 
     /// <summary>
     /// 用户提交输入时触发（Enter）。
     /// </summary>
     public event Action<string>? Submitted;
+
+    /// <summary>
+    /// 用户提交输入（带附件）时触发。
+    /// </summary>
+    public event Action<string, IReadOnlyList<AttachmentDraft>>? SubmittedWithAttachments;
+
+    /// <summary>注入服务提供者（由 RootView 在构造后调用）。</summary>
+    /// <param name="services">服务提供者。</param>
+    public void SetServiceProvider(IServiceProvider services) => _services = services;
+
+    /// <summary>是否有待发送附件。</summary>
+    public bool HasAttachments => _drafts.Count > 0;
+
+    /// <summary>当前待发送附件。</summary>
+    public IReadOnlyList<AttachmentDraft> Attachments => _drafts;
+
+    /// <summary>添加附件（去重，超过 5 个拒绝）。</summary>
+    public bool AddAttachment(string path)
+    {
+        if (_drafts.Count >= 5) return false;
+        var full = Path.GetFullPath(path);
+        if (_draftPaths.Contains(full, StringComparer.OrdinalIgnoreCase)) return true;
+        _draftPaths.Add(full);
+        _drafts.Add(new AttachmentDraft(full, Path.GetFileName(full)));
+        UpdateDraftHint();
+        return true;
+    }
+
+    /// <summary>清空待发送附件。</summary>
+    public void ClearAttachments()
+    {
+        _drafts.Clear();
+        _draftPaths.Clear();
+        UpdateDraftHint();
+    }
+
+    private void UpdateDraftHint()
+    {
+        if (_attachmentHint == null) return;
+        _attachmentHint.Text = _drafts.Count == 0
+            ? string.Empty
+            : string.Join(" ", _drafts.Select(d => $"[📎 {d.FileName}]"));
+    }
+
+    /// <summary>若编辑器整段内容恰为一个存在的文件路径（拖拽/粘贴路径），转为附件并清空输入。</summary>
+    internal bool TryConsumeDroppedPath()
+    {
+        var line = _editor.Text?.Trim() ?? string.Empty;
+        if (line.Length == 0 || line.Contains('\n')) return false;
+        var resolved = ResolveExistingFile(line);
+        if (resolved == null) return false;
+        if (!AddAttachment(resolved)) return false;
+        _editor.Text = string.Empty;
+        return true;
+    }
+
+    private static string? ResolveExistingFile(string candidate)
+    {
+        try
+        {
+            var full = Path.GetFullPath(candidate.Trim('"'));
+            return File.Exists(full) ? full : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>编辑器提交：解析 @引用 → 合并附件 → 触发提交事件。</summary>
+    private void OnEditorSubmit(string text)
+    {
+        var body = text;
+
+        // 解析 @引用：有效引用从正文移除并加入附件；无效引用报错且不发送
+        if (_services?.GetService(typeof(AttachmentService)) is AttachmentService svc)
+        {
+            var refs = svc.ParseFileReferences(text, out body);
+            foreach (var p in refs)
+                AddAttachment(p);
+
+            var invalid = AttachmentService.FindUnresolvedReferences(text, svc);
+            if (invalid.Count > 0)
+            {
+                if (_services.GetService(typeof(ITuiUiService)) is ITuiUiService ui)
+                    ui.Notify("附件错误", $"文件不存在或类型不支持: {string.Join(", ", invalid)}");
+                return; // 不发送，保留编辑器内容供用户修改
+            }
+        }
+
+        var drafts = _drafts.ToList();
+        ClearAttachments();
+
+        if (drafts.Count == 0)
+            Submitted?.Invoke(body);
+        else
+            SubmittedWithAttachments?.Invoke(body, drafts);
+    }
 
     /// <summary>
     /// 按键预路由（由 RootView 注入）：把按键优先转发给挂起的确认块。
@@ -165,18 +285,29 @@ internal sealed class InputBarView : View
         };
         SetScheme(bgScheme);
 
+        _attachmentHint = new Label
+        {
+            X = 2,
+            Y = Pos.AnchorEnd(1),
+            Width = Dim.Fill(),
+            Height = 1,
+            Text = string.Empty
+        };
+        _attachmentHint.SetScheme(bgScheme);
+
         _editor = new MultilineEditor
         {
             X = 2,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Fill(),
+            Height = Dim.Fill(1),
             CanFocus = true,
             Multiline = true,
             WordWrap = false,
         };
         _editor.SetScheme(bgScheme);
-        _editor.SubmitRequested += text => Submitted?.Invoke(text);
+        _editor.Owner = this;
+        _editor.SubmitRequested += OnEditorSubmit;
 
         // Ctrl+V 粘贴已在 OnKeyDown 中通过 InvokeCommand(Command.Paste) 处理，无需在此绑定 KeyBindings。
 
@@ -187,6 +318,16 @@ internal sealed class InputBarView : View
         _editor.KeyBindings.Remove(Key.Tab.WithShift);
 
         Add(_editor);
+        Add(_attachmentHint);
+
+        _editor.OpenFilePickerRequested += () =>
+        {
+            if (_services?.GetService(typeof(ITuiUiService)) is ITuiUiService ui)
+            {
+                foreach (var p in ui.PickFiles("选择附件", allowMultiple: true))
+                    AddAttachment(p);
+            }
+        };
     }
 
     /// <summary>
