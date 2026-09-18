@@ -38,7 +38,7 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
     /// <summary>
     /// 按键预路由：当存在挂起的确认块（工具确认 / 授权二次确认）时由 RootView 注入，
     /// 把按键优先转发给确认块。agent 阻塞等待期间焦点停留在输入编辑器，确认块本身收不到键，
-    /// 必须由这里转发，否则确认键到不了确认块、agent 会一直等到超时。
+    /// 必须由这里转发，否则确认键到不了确认块、agent 会一直等待用户选择。
     /// </summary>
     public Func<Key, bool>? KeyPreRouter { get; set; }
 

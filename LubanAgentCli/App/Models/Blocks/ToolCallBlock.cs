@@ -32,6 +32,7 @@ namespace LubanAgentCli.App.Models.Blocks;
 ///   <item>运行中：<c>⠋ ⏳ 正在全仓搜索… · N.Ns</c>（淡黄，带动画）。</item>
 ///   <item>成功：<c>✓ 全仓搜索完成 · N.Ns</c>（绿色）。</item>
 ///   <item>失败：<c>✗ 全仓搜索失败 · N.Ns</c>（红色）。</item>
+///   <item>用户拒绝/取消：<c>✗ 已被用户拒绝 · N.Ns</c> 或 <c>✗ 已取消 · N.Ns</c>（红色）。</item>
 /// </list>
 /// 工具名经 <see cref="ToolDisplayNames.GetAction"/> 映射为友好中文名。
 /// 不可折叠，不展示参数与返回内容（参考 Claude Code 的精简提示）。
@@ -46,6 +47,7 @@ public sealed class ToolCallBlock : Block
     private Timer? _animationTimer;
     private volatile bool _stopped;
     private bool _failed;
+    private string? _failureStatus;
 
     /// <summary>工具名称（框架原始方法名）。</summary>
     public string ToolName { get; }
@@ -92,7 +94,8 @@ public sealed class ToolCallBlock : Block
 
         if (_failed)
         {
-            text = $"✗ {DisplayName}失败 · {elapsed.TotalSeconds:F1}s";
+            var label = _failureStatus ?? $"{DisplayName}失败";
+            text = $"✗ {label} · {elapsed.TotalSeconds:F1}s";
             color = BlockColors.Failure;
         }
         else if (IsComplete)
@@ -114,10 +117,28 @@ public sealed class ToolCallBlock : Block
     /// <summary>
     /// 标记工具执行失败：停止动画并以失败样式渲染。
     /// </summary>
-    /// <param name="error">失败原因（仅记录，不重复渲染消息；具体错误由 ViewModel 单独附红行）。</param>
+    /// <param name="error">失败原因；当前通用失败样式不渲染也不存储该原因，具体错误由 ViewModel 单独附红行。用户拒绝/取消请使用 <see cref="MarkDeniedByUser"/> 或 <see cref="MarkCancelled"/>。</param>
     public void MarkFailed(string? error)
     {
         if (IsComplete) return;
+        _failed = true;
+        MarkComplete();
+    }
+
+    /// <summary>
+    /// 标记工具调用被用户明确拒绝。
+    /// </summary>
+    public void MarkDeniedByUser() => MarkFailedWithStatus("已被用户拒绝");
+
+    /// <summary>
+    /// 标记工具调用因用户取消而终止。
+    /// </summary>
+    public void MarkCancelled() => MarkFailedWithStatus("已取消");
+
+    private void MarkFailedWithStatus(string status)
+    {
+        if (IsComplete) return;
+        _failureStatus = status;
         _failed = true;
         MarkComplete();
     }

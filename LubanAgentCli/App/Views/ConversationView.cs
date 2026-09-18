@@ -505,7 +505,7 @@ internal sealed class ConversationView : View
 
         // 将按键转发给挂起的确认块：优先使用 VM 的 PendingChoice（权威），
         // 否则取最后一个未确认的 InlineChoiceBlock。确认块挂起时焦点已切到会话区，
-        // 由这里把按键送达 ConfirmTool 的 ManualResetEventSlim，避免其干等 2 分钟超时。
+        // 由这里把按键送达 ConfirmTool 的 ManualResetEventSlim，避免其一直等待用户选择。
         InlineChoiceBlock? pending = _vm.PendingChoice;
         if (pending is null)
         {

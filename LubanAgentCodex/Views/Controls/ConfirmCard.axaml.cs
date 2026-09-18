@@ -84,7 +84,18 @@ public partial class ConfirmCard : UserControl
     {
         _boundItem?.OnRespond(result);
 
-        // 禁用按钮，防止重复点击
+        // 卡片状态落定：显示用户选择，并禁用按钮防止重复点击
+        if (_toolNameText != null)
+        {
+            var status = result switch
+            {
+                ConfirmResult.Allow => "已允许",
+                ConfirmResult.AllowAll => "已允许（本轮全部允许）",
+                _ => "已拒绝"
+            };
+            _toolNameText.Text = $"工具: {_boundItem?.ToolName}（{status}）";
+        }
+
         if (_allowButton != null) _allowButton.IsEnabled = false;
         if (_allowAllButton != null) _allowAllButton.IsEnabled = false;
         if (_denyButton != null) _denyButton.IsEnabled = false;

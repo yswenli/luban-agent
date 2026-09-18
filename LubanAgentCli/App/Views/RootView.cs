@@ -128,7 +128,7 @@ internal sealed class RootView : Runnable
         _inputBar.SubmittedWithAttachments += OnInputSubmitted;
         _inputBar.Submitted += text => OnInputSubmitted(text, Array.Empty<AttachmentDraft>());
         // 当存在挂起的确认块（工具确认 / 授权二次确认）时，把输入编辑器的按键优先转发给它：
-        // agent 阻塞等待期间焦点仍在输入编辑器，确认块本身收不到键，必须由这里转发，否则会等到超时。
+        // agent 阻塞等待期间焦点仍在输入编辑器，确认块本身收不到键，必须由这里转发，否则会一直等待用户选择。
         _inputBar.KeyPreRouter = key =>
         {
             var pc = _vm.PendingChoice;
@@ -182,7 +182,7 @@ internal sealed class RootView : Runnable
     /// <summary>
     /// 确认块挂起状态变化：挂起时聚焦会话区（会话区可把按键转发给确认块），
     /// 结束后聚焦回输入编辑器（便于继续输入/排队）。
-    /// 修复确认块因焦点缺失而收不到键、导致 2 分钟超时的问题。
+    /// 修复确认块因焦点缺失而收不到键、导致长期挂起的问题。
     /// </summary>
     private void OnPendingChoiceChanged()
     {

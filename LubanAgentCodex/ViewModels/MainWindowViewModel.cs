@@ -37,6 +37,9 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly AgentHostService _agentHost;
     private CancellationTokenSource? _cts;
     private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
+
+    // 本轮是否因用户拒绝工具确认而终止：用于取消收尾时区分「已拒绝，本轮终止」与「已取消」
+    private volatile bool _deniedByUser;
     private readonly StringBuilder _pendingText = new();
     private readonly StringBuilder _pendingThinking = new();
     private FlushThrottle? _throttle;
@@ -325,6 +328,9 @@ public partial class MainWindowViewModel : ObservableObject
         // 注意：不预创建 AssistantMessageItem，正文项在首个 TextDeltaEvent 到达时懒创建，
         // 确保它排在思考内容/工具卡片之后（修复显示顺序错乱）
 
+        // 新一轮开始：清除上一轮的拒绝终止标志
+        _deniedByUser = false;
+
         _cts = new CancellationTokenSource();
         var runSeq = Interlocked.Increment(ref _activeRunSeq); // 本次对话运行序号；取消/新对话将使其失效
 
@@ -344,7 +350,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            Messages.Add(new SystemMessageItem { Content = "已取消" });
+            Messages.Add(new SystemMessageItem { Content = _deniedByUser ? "已拒绝，本轮终止" : "已取消" });
         }
         catch (AgentApiException apiEx)
         {
@@ -901,6 +907,13 @@ public partial class MainWindowViewModel : ObservableObject
                 var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
                 Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
             },
+            onUserDenied: (tool, args) =>
+            {
+                // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
+                if (runSeq != _activeRunSeq) return;
+                _deniedByUser = true;
+                _cts?.Cancel();
+            },
             ct: ct))
         {
             var e = evt;
@@ -1230,7 +1243,11 @@ public partial class MainWindowViewModel : ObservableObject
             Messages.Add(confirmItem);
         });
 
-        done.Wait(TimeSpan.FromMinutes(2), ct);
+        // 无限期等待用户响应；Esc/终止时经 ct 注册提前唤醒（ct 可取消时抛 OCE，由 SendAsync 收尾）
+        if (ct.CanBeCanceled)
+            done.Wait(ct);
+        else
+            done.Wait();
 
         return result;
     }

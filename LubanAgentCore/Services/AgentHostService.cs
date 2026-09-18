@@ -111,14 +111,16 @@ public class AgentHostService
     /// <param name="confirmHandler">工具确认处理器（返回 ConfirmResult）</param>
     /// <param name="permissionMode">权限模式</param>
     /// <param name="onPlannedAction">Plan 模式计划项回调；Plan 下工具不执行，仅经此回调上报</param>
+    /// <param name="onUserDenied">用户明确拒绝工具调用时的回调；宿主应在此取消本轮令牌以终止对话</param>
     /// <param name="ct">取消令牌</param>
     public IAsyncEnumerable<StreamEvent> RunStreamingAsync(
         string input,
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
         ToolPermissionMode permissionMode,
         Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
+        Action<string, IReadOnlyDictionary<string, object?>>? onUserDenied = null,
         CancellationToken ct = default)
-        => RunStreamingAsync(input, Array.Empty<string>(), confirmHandler, permissionMode, onPlannedAction, ct);
+        => RunStreamingAsync(input, Array.Empty<string>(), confirmHandler, permissionMode, onPlannedAction, onUserDenied, ct);
 
     /// <summary>
     /// 运行一轮对话（带附件路径）。
@@ -128,6 +130,7 @@ public class AgentHostService
     /// <param name="confirmHandler">工具确认处理器（返回 ConfirmResult）</param>
     /// <param name="permissionMode">权限模式</param>
     /// <param name="onPlannedAction">Plan 模式计划项回调</param>
+    /// <param name="onUserDenied">用户明确拒绝工具调用时的回调；宿主应在此取消本轮令牌以终止对话</param>
     /// <param name="ct">取消令牌</param>
     public async IAsyncEnumerable<StreamEvent> RunStreamingAsync(
         string input,
@@ -135,6 +138,7 @@ public class AgentHostService
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
         ToolPermissionMode permissionMode,
         Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
+        Action<string, IReadOnlyDictionary<string, object?>>? onUserDenied = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var attachmentService = _services.GetRequiredService<AttachmentService>();
@@ -174,7 +178,7 @@ public class AgentHostService
                 yield return new AttachmentAddedEvent(a.Info.FileName, a.Info.MediaType, a.Info.FileSize);
         }
 
-        await foreach (var evt in RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, ct))
+        await foreach (var evt in RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, onUserDenied, ct))
             yield return evt;
     }
 
@@ -184,6 +188,7 @@ public class AgentHostService
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
         ToolPermissionMode permissionMode,
         Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction,
+        Action<string, IReadOnlyDictionary<string, object?>>? onUserDenied,
         [EnumeratorCancellation] CancellationToken ct)
     {
         // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
@@ -209,10 +214,11 @@ public class AgentHostService
             {
                 var result = confirmHandler(toolName, args);
                 if (result == ConfirmResult.AllowAll)
-                    context.AllowedThisTurn.Add(toolName);
+                    context.AllowThisTurn(toolName);
                 return result != ConfirmResult.Deny;
             },
-            onPlannedAction);
+            onPlannedAction,
+            onUserDenied);
 
         try
         {
@@ -267,6 +273,11 @@ public class AgentHostService
                             yield return new ToolCallFailedEvent(
                                 functionResult.CallId,
                                 functionResult.Exception.Message);
+                        }
+                        else if (ToolResult.IsUserCancelled(functionResult.Result))
+                        {
+                            // 拒绝与取消在结果层不可区分：用中性文案，宿主聊天流已分别提示
+                            yield return new ToolCallFailedEvent(functionResult.CallId, "工具调用被拒绝或已取消");
                         }
                         else
                         {

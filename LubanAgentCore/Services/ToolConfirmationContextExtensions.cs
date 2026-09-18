@@ -36,6 +36,7 @@ public static class ToolConfirmationContextExtensions
     /// <param name="cancellationToken">取消令牌（Esc 中断时拒绝后续工具调用）。</param>
     /// <param name="confirmCallback">确认回调；仅在需要人工确认时被框架调用。</param>
     /// <param name="onPlannedAction">Plan 模式计划项回调，宿主用于收集或即时展示。</param>
+    /// <param name="onUserDenied">用户明确拒绝工具调用时的回调；宿主应在此取消本轮令牌以终止对话（非 Esc 取消才会触发）。</param>
     /// <remarks>
     /// 框架已把 <see cref="ToolConfirmationContext.Callback"/> 异步化为 <c>Func&lt;.., Task&lt;bool&gt;&gt;`，
     /// 但两端宿主目前仍以阻塞方式等待 UI 确认（CLI 用 ManualResetEventSlim、GUI 同理），
@@ -47,7 +48,8 @@ public static class ToolConfirmationContextExtensions
         ToolPermissionMode mode,
         CancellationToken cancellationToken,
         Func<string, IReadOnlyDictionary<string, object?>, bool>? confirmCallback,
-        Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null)
+        Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
+        Action<string, IReadOnlyDictionary<string, object?>>? onUserDenied = null)
     {
         context.Mode = mode;
         context.CancellationToken = cancellationToken;
@@ -56,5 +58,6 @@ public static class ToolConfirmationContextExtensions
             ? null
             : (toolName, args) => Task.FromResult(confirmCallback(toolName, args));
         context.OnPlannedAction = onPlannedAction;
+        context.OnUserDenied = onUserDenied;
     }
 }

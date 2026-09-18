@@ -79,6 +79,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     private int _currentRunSeq;
     private bool _cancelRequested;
 
+    // 本轮是否因用户拒绝工具确认而终止：用于 OCE 收尾时区分「已拒绝，本轮终止」与「任务已取消」
+    private volatile bool _deniedByUser;
+
+    // 终止文案是否已输出：拒绝钩子与 OCE 分支都可能尝试提示，用 Interlocked 保证只显示一次
+    private int _denialMessageShown;
+
     // Plan 模式下本轮收集的计划项数量（回合结束时汇总提示，工具均不执行）
     private int _plannedCount;
 
@@ -510,6 +516,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
         // 作废旧运行并开启新一轮：捕获本次运行序号，供流处理中丢弃迟到事件
         if (_cancelRequested) _cancelRequested = false;
+        // 新一轮开始：清除上一轮的拒绝终止标志与文案去重标记
+        _deniedByUser = false;
+        Interlocked.Exchange(ref _denialMessageShown, 0);
         var runSeq = Interlocked.Increment(ref _activeRunSeq);
         _currentRunSeq = runSeq;
 
@@ -589,8 +598,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         }
         catch (OperationCanceledException)
         {
-            _dispatcher.Invoke(() =>
-                _doc.AppendBlock(new SystemBlock("任务已取消", foreground: BlockColors.Failure)));
+            if (Interlocked.Exchange(ref _denialMessageShown, 1) == 0)
+            {
+                var message = _deniedByUser ? "已拒绝，本轮终止" : "任务已取消";
+                _dispatcher.Invoke(() =>
+                    _doc.AppendBlock(new SystemBlock(message, foreground: BlockColors.Failure)));
+            }
         }
         catch (AgentApiException apiEx)
         {
@@ -673,7 +686,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             CompleteSpinner();
 
             foreach (var pending in _runningToolBlocks)
-                pending.MarkFailed("已取消");
+            {
+                if (_deniedByUser)
+                    pending.MarkDeniedByUser();
+                else
+                    pending.MarkCancelled();
+            }
             _runningToolBlocks.Clear();
 
 // 编排节点块同理：取消后不再有完成事件，就地收尾避免动画泄漏
@@ -710,6 +728,25 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                     _doc.AppendBlock(new SystemBlock(
                         $"  📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}",
                         foreground: BlockColors.Thinking)));
+            },
+            onUserDenied: (tool, args) =>
+            {
+                // 运行已作废（Esc/新对话）：旧运行的拒绝不提示、不终止新运行
+                if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+
+                // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
+                _deniedByUser = true;
+                Logger.Warn($"用户拒绝工具调用，终止本轮: {tool}");
+
+                // 直接落终止文案：Cancel() 会使流循环判定 stale 并 break，OCE 分支不一定触发；
+                // 用 Interlocked 保证与 OCE 路径只显示一次
+                if (Interlocked.Exchange(ref _denialMessageShown, 1) == 0)
+                {
+                    _dispatcher.Invoke(() => _doc.AppendBlock(
+                        new SystemBlock("已拒绝，本轮终止", foreground: BlockColors.Failure)));
+                }
+
+                Cancel();
             });
     }
 
@@ -740,15 +777,20 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
         _dispatcher.Invoke(() =>
         {
-            // 运行已作废（Esc/新对话）：不弹确认块，避免旧运行干扰新对话
-            if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+            // 运行已作废（Esc/新对话）：不弹确认块，避免旧运行干扰新对话；
+            // 必须唤醒等待（结果保持 false），否则无限等待会永久挂起
+            if (_currentRunSeq != Volatile.Read(ref _activeRunSeq))
+            {
+                done.Set();
+                return;
+            }
 
             var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
             {
                 result = cr == ConfirmResult.Allow || cr == ConfirmResult.AllowAll;
                 if (cr == ConfirmResult.AllowAll)
                 {
-                    context.AllowedThisTurn.Add(toolName);
+                    context.AllowThisTurn(toolName);
                 }
                 PendingChoice = null;
                 done.Set();
@@ -757,8 +799,8 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             PendingChoice = confirmBlock;
         });
 
-        // 等待用户选择或取消令牌触发（最长 2 分钟超时兜底）
-        done.Wait(TimeSpan.FromMinutes(2));
+        // 等待用户选择（无限期；Esc/终止时经取消令牌注册提前唤醒）
+        done.Wait();
         ctr.Dispose();
         PendingChoice = null;
 
@@ -916,6 +958,11 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                     // ─── 工具结果：不显示返回内容（参考 Claude Code），仅失败时提示一行 ───
                     if (content is FunctionResultContent functionResult)
                     {
+                        // 用户拒绝/取消：不是异常，但也不应显示为"完成"；
+                        // 结果可能是原始 ToolResult，也可能是工厂序列化后的 JsonElement，用框架辅助统一识别
+                        var userCancelled = functionResult.Exception is null
+                            && ToolResult.IsUserCancelled(functionResult.Result);
+
                         if (functionResult.Exception is not null)
                         {
                             CloseThinkingBlock();
@@ -937,6 +984,13 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                             {
                                 if (functionResult.Exception is not null)
                                     target.MarkFailed(functionResult.Exception.Message);
+                                else if (userCancelled)
+                                {
+                                    if (_deniedByUser)
+                                        target.MarkDeniedByUser();
+                                    else
+                                        target.MarkCancelled();
+                                }
                                 else
                                     target.MarkComplete();
                                 _runningToolBlocks.Remove(target);
@@ -1124,7 +1178,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             }
 
             // 反思重规划：复用等待中的动画 spinner 并切换文案，覆盖反思阶段的静默期
-            // （反思超时可达 Orchestration.ReflectionTimeoutSeconds，默认 180 秒）
+            // （反思超时默认无限期，可在 Orchestration 配置）
             if (progress.EventType == ProgressEventType.ReflectionStarted)
             {
                 var description = progress.Message ?? "正在反思重规划…";
