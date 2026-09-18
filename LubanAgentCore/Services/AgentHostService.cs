@@ -16,6 +16,7 @@
 *****************************************************************************/
 using LuBan.AIAgent;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Attachments;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.MCP;
 using LuBan.AIAgent.Rules;
@@ -111,12 +112,79 @@ public class AgentHostService
     /// <param name="permissionMode">权限模式</param>
     /// <param name="onPlannedAction">Plan 模式计划项回调；Plan 下工具不执行，仅经此回调上报</param>
     /// <param name="ct">取消令牌</param>
-    public async IAsyncEnumerable<StreamEvent> RunStreamingAsync(
+    public IAsyncEnumerable<StreamEvent> RunStreamingAsync(
         string input,
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
         ToolPermissionMode permissionMode,
         Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
+        CancellationToken ct = default)
+        => RunStreamingAsync(input, Array.Empty<string>(), confirmHandler, permissionMode, onPlannedAction, ct);
+
+    /// <summary>
+    /// 运行一轮对话（带附件路径）。
+    /// </summary>
+    /// <param name="input">用户输入</param>
+    /// <param name="attachmentPaths">附件文件路径列表</param>
+    /// <param name="confirmHandler">工具确认处理器（返回 ConfirmResult）</param>
+    /// <param name="permissionMode">权限模式</param>
+    /// <param name="onPlannedAction">Plan 模式计划项回调</param>
+    /// <param name="ct">取消令牌</param>
+    public async IAsyncEnumerable<StreamEvent> RunStreamingAsync(
+        string input,
+        IReadOnlyList<string> attachmentPaths,
+        Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
+        ToolPermissionMode permissionMode,
+        Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
         [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var attachmentService = _services.GetRequiredService<AttachmentService>();
+        var configManager = _services.GetRequiredService<ConfigManager>();
+        var modelId = configManager.SelectedModel ?? "";
+
+        IReadOnlyList<ProcessedAttachment> processed = Array.Empty<ProcessedAttachment>();
+        if (attachmentPaths.Count > 0)
+        {
+            string? failure = null;
+            try
+            {
+                processed = await attachmentService.ProcessAsync(attachmentPaths, generateThumbnails: false, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failure = $"附件处理失败: {ex.Message}";
+            }
+
+            if (failure != null)
+            {
+                yield return new ErrorEvent(failure);
+                yield break;
+            }
+
+            if (!attachmentService.CanAttach(modelId, processed))
+            {
+                yield return new ErrorEvent(attachmentService.GetUnsupportedMessage(modelId, processed));
+                yield break;
+            }
+
+            foreach (var a in processed)
+                yield return new AttachmentAddedEvent(a.Info.FileName, a.Info.MediaType, a.Info.FileSize);
+        }
+
+        await foreach (var evt in RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, ct))
+            yield return evt;
+    }
+
+    private async IAsyncEnumerable<StreamEvent> RunCoreAsync(
+        string input,
+        IReadOnlyList<ProcessedAttachment> processed,
+        Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult> confirmHandler,
+        ToolPermissionMode permissionMode,
+        Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
         // 否则会复用上一工作区的 Profile（如普通工作区），
@@ -148,7 +216,10 @@ public class AgentHostService
 
         try
         {
-            await foreach (var update in _agent.RunStreamingAsync(input, ct))
+            var updates = processed.Count == 0
+                ? _agent!.RunStreamingAsync(input, ct)
+                : _agent!.RunStreamingAsync(input, processed, ct);
+            await foreach (var update in updates)
             {
                 if (update.Contents is null) continue;
 

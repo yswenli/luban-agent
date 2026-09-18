@@ -99,6 +99,7 @@ public static class AgentHostBuilder
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
         services.AddSingleton<ISessionManager, SessionManager>();
+        services.AddSingleton<AttachmentService>();
         services.AddSingleton<IAgentsMdInitializer, AgentsMdInitializer>();
 
         services.AddSingleton<SessionRepository>();
