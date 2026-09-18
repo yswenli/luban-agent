@@ -16,7 +16,10 @@
 *****************************************************************************/
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using LubanAgentCore.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
@@ -30,6 +33,7 @@ public partial class InputBox : UserControl
 {
     private TextBox? _inputTextBox;
     private Button? _sendButton;
+    private Button? _attachButton;
     private TextBlock? _processingHint;
     private ComboBox? _modelCombo;
     private ConfigManager? _configManager;
@@ -45,6 +49,7 @@ public partial class InputBox : UserControl
         AvaloniaXamlLoader.Load(this);
         _inputTextBox = this.FindControl<TextBox>("InputTextBox");
         _sendButton = this.FindControl<Button>("SendButton");
+        _attachButton = this.FindControl<Button>("AttachButton");
         _processingHint = this.FindControl<TextBlock>("ProcessingHint");
         _modelCombo = this.FindControl<ComboBox>("ModelCombo");
 
@@ -53,6 +58,9 @@ public partial class InputBox : UserControl
 
         if (_sendButton != null)
             _sendButton.Click += OnSendButtonClick;
+
+        if (_attachButton != null)
+            _attachButton.Click += OnAttachButtonClick;
 
         if (_modelCombo != null)
             _modelCombo.SelectionChanged += OnModelSelectionChanged;
@@ -172,6 +180,12 @@ public partial class InputBox : UserControl
     /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            _ = HandleClipboardFilesAsync();
+            return;
+        }
+
         if (e.Key == Key.Enter)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Shift))
@@ -202,6 +216,45 @@ public partial class InputBox : UserControl
 
     public event EventHandler? SendRequested;
     public event EventHandler<string>? ModelChanged;
+
+    /// <summary>请求选择附件（由 MainWindow 接管 StorageProvider）。</summary>
+    public event EventHandler? AttachRequested;
+
+    /// <summary>粘贴到附件（剪贴板中的文件路径）。</summary>
+    public event EventHandler<string>? ImagePasted;
+
+    /// <summary>请求移除附件（参数为文件名）。</summary>
+    public event EventHandler<string>? AttachmentRemoveRequested;
+
+    private void OnAttachButtonClick(object? sender, RoutedEventArgs e)
+        => AttachRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnRemoveAttachmentClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is AttachmentDisplayInfo info)
+            AttachmentRemoveRequested?.Invoke(this, info.FileName);
+    }
+
+    /// <summary>
+    /// Ctrl+V 时探测剪贴板中的文件。注意不要同步 e.Handled=true 后再 await：
+    /// 事件早已冒泡完成，异步置位无效。这里不拦截默认粘贴——文件形式的剪贴板数据
+    /// 不含文本格式，TextBox 不会插入内容；无文件时退化为普通文本粘贴。
+    /// </summary>
+    private async Task HandleClipboardFilesAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+
+        var files = await clipboard.TryGetFilesAsync();
+        if (files == null) return;
+
+        var paths = files.Select(f => f.TryGetLocalPath())
+                         .Where(p => !string.IsNullOrEmpty(p))
+                         .Cast<string>()
+                         .ToList();
+        foreach (var p in paths)
+            ImagePasted?.Invoke(this, p);
+    }
 
     private bool _isProcessing;
 

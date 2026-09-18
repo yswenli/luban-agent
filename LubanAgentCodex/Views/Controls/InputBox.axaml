@@ -1,15 +1,53 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
              x:Class="LubanAgentCodex.Views.Controls.InputBox">
 
     <Border Background="{DynamicResource BackgroundBrush}"
             BorderBrush="{DynamicResource DividerBrush}"
             BorderThickness="0,1,0,0"
             Padding="16,12,24,16">
-        <Grid RowDefinitions="Auto,Auto">
+        <Grid RowDefinitions="Auto,Auto,Auto">
+
+            <!-- 第 0 行：待发送附件条（有附件时由 MainWindow 显示） -->
+            <ItemsControl Grid.Row="0" Name="AttachmentBar" Margin="0,0,0,8" IsVisible="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:AttachmentDisplayInfo">
+                        <Border Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="8,3"
+                                Margin="0,0,6,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="📎"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding FileName}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button Content="✕"
+                                        FontSize="10"
+                                        Padding="2,0"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="{DynamicResource TextSecondaryBrush}"
+                                        Cursor="Hand"
+                                        Click="OnRemoveAttachmentClick" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
             <!-- 第一行：输入框 + 发送按钮 -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <Border Grid.Column="0"
                         Background="{DynamicResource SidebarBrush}"
                         BorderBrush="{DynamicResource BorderBrush}"
@@ -45,7 +83,7 @@
             </Grid>
 
             <!-- 第二行：工具栏 -->
-            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,*,Auto">
                 <Button Grid.Column="0"
                         Name="AttachButton"
                         Content="📎 附件"
