@@ -109,8 +109,7 @@ internal sealed class TuiUiService : ITuiUiService
                 Title = title,
                 X = Pos.Center(),
                 Y = Pos.Center(),
-                Width = 64,
-                Height = Math.Min(options.Count + 6, 24)
+                Width = 64
             };
 
             var list = new ListView
@@ -118,7 +117,7 @@ internal sealed class TuiUiService : ITuiUiService
                 X = 0,
                 Y = 0,
                 Width = Dim.Fill(),
-                Height = Dim.Fill(2)
+                Height = 16
             };
             list.SetSource(new ObservableCollection<string>(options));
             list.SelectedItem = 0;
