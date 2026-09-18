@@ -69,3 +69,11 @@ public sealed record OrchestrationProgressEvent(
     double? ElapsedSeconds,
     string? Error,
     NodeActivityItem? Activity = null) : StreamEvent;
+
+/// <summary>附件已加入。</summary>
+/// <param name="FileName">文件名。</param>
+/// <param name="MediaType">MIME 类型。</param>
+/// <param name="FileSize">字节数。</param>
+public sealed record AttachmentAddedEvent(
+    string FileName, string MediaType, long FileSize) : StreamEvent;
+
