@@ -29,47 +29,6 @@ public static class ProviderHelper
 
     private static readonly ConcurrentDictionary<string, List<string>> _fetchedModels = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>精确匹配的支持视觉的模型 ID。</summary>
-    private static readonly HashSet<string> _visionModels = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // OpenAI（Azure 复用同一批 ID，无需重复列出）
-        "gpt-4o", "gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano", "o3", "o4-mini",
-        // DeepSeek
-        "deepseek-flash",
-        // Kimi
-        "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6",
-        // GLM
-        "glm-5.3-flash", "glm-5v-turbo", "glm-4.6v", "glm-4.6v-flash",
-        "glm-4.1v-thinking-flash", "glm-4.1v-thinking-flashx", "glm-4v-flash", "glm-ocr",
-        // Qwen（确定支持 VL）
-        "qwen3-vl-plus", "qwen3-vl-flash", "qwen-vl-max", "qwen-vl-plus",
-        "qvq-max", "qvq-plus", "qwen3.5-omni-plus",
-        // Doubao
-        "doubao-1.5-vision-pro", "doubao-1.5-vision-lite", "doubao-vision-pro", "doubao-vision-lite",
-        // Gemini
-        "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite",
-        "gemini-1.5-pro", "gemini-1.5-flash",
-        // MiniMax
-        "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed",
-        "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-H3",
-        // Hunyuan
-        "hunyuan-turbos-vision", "hunyuan-t1-vision", "hunyuan-turbos-vision-video", "tencent-hy-vision-1.5-instruct",
-        // MiMo
-        "mimo-v2.5-pro",
-        // xAI（确定支持）
-        "grok-2-vision", "grok-4",
-        // ERNIE / Qianfan
-        "ernie-4.5", "ernie-4.0-vision", "ernie-3.5-vision"
-    };
-
-    /// <summary>前缀族（通配符），用于 Claude / Bedrock 等版本化模型 ID。</summary>
-    private static readonly string[] _visionPrefixes =
-    {
-        "claude-opus-4", "claude-sonnet-4", "claude-3-7-sonnet", "claude-3-5-sonnet",
-        "anthropic.claude-opus-4", "anthropic.claude-sonnet-4",
-        "anthropic.claude-3-7-sonnet", "anthropic.claude-3-5-sonnet"
-    };
-
     private static readonly Dictionary<string, string> _defaultBaseUrls = new(StringComparer.OrdinalIgnoreCase)
     {
         ["openai"] = "https://api.openai.com/v1/",
@@ -270,74 +229,6 @@ public static class ProviderHelper
 
         return models;
     }
-
-    /// <summary>
-    /// 判断模型是否支持视觉输入。
-    /// </summary>
-    /// <param name="modelId">模型 ID（可含 "provider:" 前缀或 "vendor/model" 形式）。</param>
-    public static bool SupportsVision(string modelId)
-    {
-        if (string.IsNullOrWhiteSpace(modelId))
-            return false;
-
-        var id = StripProviderPrefix(modelId.Trim());
-
-        if (MatchesVision(id))
-            return true;
-
-        var slash = id.IndexOf('/');
-        if (slash > 0 && slash < id.Length - 1)
-            return MatchesVision(id[(slash + 1)..]);
-
-        return false;
-    }
-
-    /// <summary>
-    /// 剥离 "provider:" 前缀。仅当冒号前段是已知 provider 名时才剥离，
-    /// 避免误伤自带冒号的模型 ID（如 Bedrock 的 "anthropic.claude-...-v1:0"）。
-    /// </summary>
-    private static string StripProviderPrefix(string id)
-    {
-        var colon = id.IndexOf(':');
-        if (colon <= 0 || colon >= id.Length - 1)
-            return id;
-
-        var prefix = id[..colon];
-        return _models.ContainsKey(prefix) || _defaultBaseUrls.ContainsKey(prefix)
-            ? id[(colon + 1)..]
-            : id;
-    }
-
-    private static bool MatchesVision(string id)
-    {
-        if (_visionModels.Contains(id))
-            return true;
-        foreach (var p in _visionPrefixes)
-        {
-            if (id.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// 由用户显式声明自定义模型的视觉能力。
-    /// </summary>
-    /// <param name="modelId">模型 ID。</param>
-    /// <param name="supportsVision">是否支持视觉。</param>
-    public static void RegisterCustomModel(string modelId, bool supportsVision)
-    {
-        if (string.IsNullOrWhiteSpace(modelId))
-            return;
-        var id = modelId.Trim();
-        if (supportsVision)
-            _visionModels.Add(id);
-        else
-            _visionModels.Remove(id);
-    }
-
-    /// <summary>支持视觉的模型 ID 快照。</summary>
-    public static IReadOnlyCollection<string> VisionModels => _visionModels;
 
     /// <summary>
     /// 获取 Provider 的全部模型（内置预设、刷新获取及用户自定义模型），并去重

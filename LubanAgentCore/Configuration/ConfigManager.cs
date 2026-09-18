@@ -131,6 +131,21 @@ public class ConfigManager : IAppConfigReader
             Logger.Error("ConfigManager.Load 加载配置失败", ex, _configPath);
             _config = new AppConfig();
         }
+
+        ModelCapabilityRegistry.Initialize(_config.ModelCapabilities, PersistModelCapability);
+    }
+
+    private void PersistModelCapability(string modelId, bool supportsVision)
+    {
+        _config.ModelCapabilities[modelId] = supportsVision;
+        try
+        {
+            Save();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ConfigManager 保存模型能力记录失败", ex, modelId);
+        }
     }
 
     /// <summary>

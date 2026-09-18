@@ -61,4 +61,10 @@ public class AppConfig
     /// 已禁用的内置 MCP 客户端名称列表
     /// </summary>
     public List<string> DisabledBuiltinMcpClients { get; set; } = new();
+
+    /// <summary>
+    /// 各模型的多模态（图片）支持情况登记表，键为 "provider:model"（小写归一化），
+    /// 值为是否支持。无记录表示未知，由 LLM 实际调用结果动态回填。
+    /// </summary>
+    public Dictionary<string, bool> ModelCapabilities { get; set; } = new();
 }

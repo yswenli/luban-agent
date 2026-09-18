@@ -1,3 +1,6 @@
+using System.Text;
+using LuBan.AIAgent.Errors;
+
 namespace LubanAgentCore.Configuration;
 
 /// <summary>模型能力信息。</summary>
@@ -6,13 +9,61 @@ namespace LubanAgentCore.Configuration;
 /// <param name="SupportsToolCalling">是否支持工具调用。</param>
 public record ModelInfo(string Id, bool SupportsVision, bool SupportsToolCalling = true);
 
-/// <summary>模型能力查询入口。</summary>
+/// <summary>模型能力查询入口（多模态能力由 <see cref="ModelCapabilityRegistry"/> 动态登记）。</summary>
 public static class ModelCapability
 {
-    /// <summary>判断模型是否支持视觉。</summary>
-    public static bool SupportsVision(string modelId) => ProviderHelper.SupportsVision(modelId);
+    private static readonly string[] ImageUnsupportedKeywords =
+    [
+        "image", "image_url", "vision", "multimodal", "multi-modal",
+        "图片", "视觉", "多模态"
+    ];
+
+    /// <summary>
+    /// 判断模型是否支持视觉。无记录时乐观放行（true），由 LLM 实际调用结果回填。
+    /// </summary>
+    public static bool SupportsVision(string modelId)
+        => ModelCapabilityRegistry.TryGet(modelId) ?? true;
+
+    /// <summary>查询模型视觉能力登记记录；无记录返回 null（未知）。</summary>
+    public static bool? TryGetVision(string modelId) => ModelCapabilityRegistry.TryGet(modelId);
+
+    /// <summary>登记模型视觉能力并持久化。</summary>
+    public static void SetVision(string modelId, bool supportsVision)
+        => ModelCapabilityRegistry.Set(modelId, supportsVision);
 
     /// <summary>获取模型能力信息（未知模型返回默认能力）。</summary>
     public static ModelInfo GetModelInfo(string modelId)
-        => new(modelId, ProviderHelper.SupportsVision(modelId));
+        => new(modelId, SupportsVision(modelId));
+
+    /// <summary>
+    /// 判断错误文本是否表示「模型不支持图片输入」。
+    /// 仅匹配图片/视觉相关关键词，避免把工具调用等其他能力错误误记为图片不支持。
+    /// </summary>
+    public static bool LooksLikeImageUnsupported(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        // 框架对「能力不支持」使用统一文案（含「工具调用/多模态」），无法区分图片；
+        // 含「工具调用」时判定为工具能力错误，不计入图片能力记录
+        if (text.Contains("工具调用", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return ImageUnsupportedKeywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// 收集异常的原始错误文本。对 <see cref="AgentApiException"/> 跳过其已分类的外层文案
+    /// （该文案对「能力不支持」统一含「多模态」，会误判），只看内层原始异常。
+    /// </summary>
+    public static string CollectRawErrorText(Exception ex)
+    {
+        ArgumentNullException.ThrowIfNull(ex);
+
+        Exception? current = ex is AgentApiException api ? api.InnerException : ex;
+        var sb = new StringBuilder();
+        for (var depth = 0; current != null && depth < 5; depth++, current = current.InnerException)
+            sb.AppendLine(current.Message);
+        return sb.ToString();
+    }
 }

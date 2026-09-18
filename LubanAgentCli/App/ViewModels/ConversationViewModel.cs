@@ -842,6 +842,11 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     {
         if (_agent is null) return;
 
+        var probeModelId = _configManager.SelectedModel ?? "";
+        var probe = VisionCapabilityProbe.Create(probeModelId, attachments.Any(a => a.Info.Kind == AttachmentKind.Image));
+        var probeCompleted = false;
+        Exception? probeError = null;
+
         // 记录本次运行序号：供下方 _dispatcher.Invoke 与 FlushPendingTokens 判断是否已被作废
         _currentRunSeq = runSeq;
 
@@ -1020,6 +1025,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                     // ─── 流内错误（provider 返回的错误内容，不能静默丢弃）───
                     if (content is ErrorContent error)
                     {
+                        probe.Observe(error.Message);
                         CloseThinkingBlock();
                         Logger.Warn($"[TuiDiag] ErrorContent: {error.Message}");
                         _dispatcher.Invoke(() => _doc.AppendBlock(
@@ -1045,9 +1051,19 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             {
                 Logger.Warn("[TuiDiag] stream completed normally");
             }
+
+            // 仅当本轮仍是活动运行时才算正常完成（Esc/新对话导致的 break 不算）
+            probeCompleted = runSeq == Volatile.Read(ref _activeRunSeq);
+        }
+        catch (Exception ex)
+        {
+            probeError = ex;
+            throw;
         }
         finally
         {
+            probe.Complete(probeError, probeCompleted);
+
             // 仅当仍是当前活动运行才操作文档；否则（已被取消/覆盖）跳过，避免污染新运行
             var stale = _currentRunSeq != Volatile.Read(ref _activeRunSeq);
             if (!stale)

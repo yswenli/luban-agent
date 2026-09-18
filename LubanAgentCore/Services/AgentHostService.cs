@@ -178,8 +178,53 @@ public class AgentHostService
                 yield return new AttachmentAddedEvent(a.Info.FileName, a.Info.MediaType, a.Info.FileSize);
         }
 
-        await foreach (var evt in RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, onUserDenied, ct))
-            yield return evt;
+        var hasImage = processed.Any(a => a.Info.Kind == AttachmentKind.Image);
+        var probe = VisionCapabilityProbe.Create(modelId, hasImage);
+
+        if (!probe.IsProbing)
+        {
+            await foreach (var evt in RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, onUserDenied, ct))
+                yield return evt;
+            yield break;
+        }
+
+        // 首次带图调用：由 LLM 实际结果回填模型视觉能力（成功记 true；命中「图片不支持」错误记 false，仅记录不重发）
+        Exception? streamError = null;
+        var completed = false;
+
+        var enumerator = RunCoreAsync(input, processed, confirmHandler, permissionMode, onPlannedAction, onUserDenied, ct)
+            .GetAsyncEnumerator(ct);
+        try
+        {
+            while (true)
+            {
+                StreamEvent current;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        completed = true;
+                        break;
+                    }
+                    current = enumerator.Current;
+                }
+                catch (Exception ex)
+                {
+                    streamError = ex;
+                    throw;
+                }
+
+                if (current is ErrorEvent errorEvent)
+                    probe.Observe(errorEvent.Message);
+
+                yield return current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+            probe.Complete(streamError, completed);
+        }
     }
 
     private async IAsyncEnumerable<StreamEvent> RunCoreAsync(
