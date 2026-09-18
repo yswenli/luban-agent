@@ -36,6 +36,7 @@ public partial class InputBox : UserControl
     private Button? _attachButton;
     private TextBlock? _processingHint;
     private ComboBox? _modelCombo;
+    private ItemsControl? _attachmentBar;
     private ConfigManager? _configManager;
     private bool _suppressSelectionChanged;
 
@@ -52,6 +53,7 @@ public partial class InputBox : UserControl
         _attachButton = this.FindControl<Button>("AttachButton");
         _processingHint = this.FindControl<TextBlock>("ProcessingHint");
         _modelCombo = this.FindControl<ComboBox>("ModelCombo");
+        _attachmentBar = this.FindControl<ItemsControl>("AttachmentBar");
 
         if (_inputTextBox != null)
             _inputTextBox.KeyDown += OnKeyDown;
@@ -225,6 +227,23 @@ public partial class InputBox : UserControl
 
     /// <summary>请求移除附件（参数为文件名）。</summary>
     public event EventHandler<string>? AttachmentRemoveRequested;
+
+    /// <summary>刷新附件预览条。</summary>
+    public void SetAttachments(IReadOnlyList<AttachmentDisplayInfo> attachments)
+    {
+        if (_attachmentBar == null) return;
+        _attachmentBar.ItemsSource = attachments;
+        _attachmentBar.IsVisible = attachments.Count > 0;
+    }
+
+    /// <summary>按模型能力启用/禁用附件入口并更新提示。</summary>
+    public void SetAttachEnabled(bool enabled, string tip)
+    {
+        if (_attachButton == null) return;
+        _attachButton.IsEnabled = enabled;
+        _attachButton.Opacity = enabled ? 1.0 : 0.5;
+        ToolTip.SetTip(_attachButton, tip);
+    }
 
     private void OnAttachButtonClick(object? sender, RoutedEventArgs e)
         => AttachRequested?.Invoke(this, EventArgs.Empty);

@@ -17,10 +17,12 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views.Controls;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Abstractions;
@@ -41,7 +43,7 @@ public partial class MainWindow : Window
     private InputBox? _inputBox;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
-    private Grid? _loadingOverlay;
+private Grid? _loadingOverlay;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
@@ -91,10 +93,16 @@ public partial class MainWindow : Window
             if (_inputBox != null)
             {
                 _inputBox.SetServiceProvider(services);
+
+                // 附件预览条：绑定 ViewModel 的待发送附件并在变化时刷新
+                _viewModel.AttachmentsChanged += (s, e) => UpdateAttachmentBar();
+                UpdateAttachmentBar();
+                UpdateAttachButtonState();
+
                 _inputBox.SendRequested += async (s, e) =>
                 {
                     var text = _inputBox.Text;
-                    if (string.IsNullOrWhiteSpace(text)) return;
+                    if (string.IsNullOrWhiteSpace(text) && _viewModel.PendingAttachments.Count == 0) return;
 
                     // 立即清空输入框：InputTextBox 未绑定 InputText，且 SendAsync 内部只清空
                     // VM 的 InputText 属性，不会清文本框；原实现把 _inputBox.Text = "" 放在 await
@@ -105,11 +113,21 @@ public partial class MainWindow : Window
                     await _viewModel.SendCommand.ExecuteAsync(null);
                 };
 
+                // 附件入口：📎 选择文件 / Ctrl+V 粘贴 / 拖拽
+                _inputBox.AttachRequested += async (s, e) => await PickAttachmentsAsync();
+                _inputBox.ImagePasted += (s, path) => _viewModel?.AddAttachments(new[] { path });
+                _inputBox.AttachmentRemoveRequested += (s, fileName) => _viewModel?.RemoveAttachment(fileName);
+
+                // 拖拽落点：窗口级接管，提取本地文件路径
+                AddHandler(DragDrop.DragOverEvent, OnDragOver);
+                AddHandler(DragDrop.DropEvent, OnDrop);
+
                 // 处理模型切换事件：重置 Agent，下次发送消息时用新模型重建
                 _inputBox.ModelChanged += (s, model) =>
                 {
                     _viewModel?.ResetAgent();
                     _viewModel?.Messages.Add(new SystemMessageItem { Content = $"已切换模型: {model}" });
+                    UpdateAttachButtonState();
                 };
 
                 _viewModel.PropertyChanged += (s, e) =>
@@ -334,6 +352,96 @@ public partial class MainWindow : Window
         {
             _inputBox.IsRunning = _viewModel.IsRunning;
         }
+    }
+
+    /// <summary>
+    /// 刷新附件预览条
+    /// </summary>
+    private void UpdateAttachmentBar()
+    {
+        if (_viewModel == null) return;
+        _inputBox?.SetAttachments(_viewModel.PendingAttachments);
+    }
+
+    /// <summary>
+    /// 按当前模型能力启用/禁用 📎 附件按钮
+    /// </summary>
+    private void UpdateAttachButtonState()
+    {
+        if (_inputBox == null || _viewModel == null) return;
+
+        var modelId = _viewModel.Services.GetService<ConfigManager>()?.SelectedModel ?? "";
+        var supported = ModelCapability.SupportsVision(modelId);
+        _inputBox.SetAttachEnabled(
+            supported,
+            supported ? "选择附件（也可拖拽文件到窗口 / Ctrl+V 粘贴）" : "当前模型不支持图片附件");
+    }
+
+    /// <summary>
+    /// 📎 按钮：选择本地文件并加入附件
+    /// </summary>
+    private async Task PickAttachmentsAsync()
+    {
+        if (_viewModel == null) return;
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择附件",
+            AllowMultiple = true
+        });
+
+        var paths = files.Select(f => f.TryGetLocalPath())
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Select(p => p!)
+            .ToList();
+        if (paths.Count == 0) return;
+
+        var added = _viewModel.AddAttachments(paths);
+        if (added < paths.Count)
+        {
+            _viewModel.Messages.Add(new SystemMessageItem
+            {
+                Content = $"最多 {AttachmentService.MaxAttachmentsPerMessage} 个附件，已忽略多余文件"
+            });
+        }
+    }
+
+    /// <summary>
+    /// 拖拽悬停：仅当携带文件时展示复制光标
+    /// </summary>
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        if (e.DataTransfer.Contains(DataFormat.File))
+        {
+            e.DragEffects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.DragEffects = DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// 拖拽释放：提取本地文件路径加入附件
+    /// </summary>
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        if (_viewModel == null || !e.DataTransfer.Contains(DataFormat.File))
+            return;
+
+        var paths = new List<string>();
+        foreach (var item in e.DataTransfer.TryGetFiles() ?? Array.Empty<IStorageItem>())
+        {
+            var path = item.TryGetLocalPath();
+            if (!string.IsNullOrEmpty(path))
+                paths.Add(path);
+        }
+
+        if (paths.Count > 0)
+            _viewModel.AddAttachments(paths);
+
+        e.Handled = true;
     }
 
     private async void OnSessionSelected(object? sender, SessionItem item)

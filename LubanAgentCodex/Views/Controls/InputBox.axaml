@@ -87,6 +87,7 @@
                 <Button Grid.Column="0"
                         Name="AttachButton"
                         Content="📎 附件"
+                        ToolTip.Tip="选择附件（也可拖拽文件到窗口 / Ctrl+V 粘贴）"
                         FontSize="12"
                         Background="Transparent"
                         BorderBrush="{DynamicResource BorderBrush}"

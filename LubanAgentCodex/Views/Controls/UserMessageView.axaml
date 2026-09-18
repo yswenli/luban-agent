@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:LubanAgentCodex.ViewModels.Messages"
+             xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
              x:Class="LubanAgentCodex.Views.Controls.UserMessageView"
              x:DataType="vm:UserMessageItem">
 
@@ -11,13 +12,34 @@
                 Padding="12,10"
                 Background="Transparent"
                 MaxWidth="500">
-            <TextBox Text="{Binding Content}"
-                     IsReadOnly="True"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Foreground="{DynamicResource TextPrimaryBrush}"
-                     TextWrapping="Wrap"
-                     FontSize="14" />
+            <StackPanel>
+                <TextBox Text="{Binding Content}"
+                         IsReadOnly="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         TextWrapping="Wrap"
+                         FontSize="14" />
+                <ItemsControl ItemsSource="{Binding Attachments}" Margin="0,6,0,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:AttachmentDisplayInfo">
+                            <Border Background="{DynamicResource CardBrush}"
+                                    CornerRadius="4"
+                                    Padding="6,3"
+                                    Margin="0,0,6,6">
+                                <TextBlock FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="{Binding FileName}" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
         </Border>
         <TextBlock Text="{Binding TimeText}"
                    FontSize="11"
