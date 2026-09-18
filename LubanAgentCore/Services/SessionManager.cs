@@ -141,7 +141,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// <summary>
     /// 添加消息到会话
     /// </summary>
-    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null)
+    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null, string? attachments = null)
     {
         var message = new DbSessionMessage
         {
@@ -150,6 +150,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
             Content = content,
             Thinking = thinking,
             Tokens = tokens,
+            Attachments = attachments,
             CreateTime = DateTime.Now,
             IsDelete = false
         };
@@ -331,6 +332,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
             Content = message.Content,
             Thinking = message.Thinking,
             Tokens = message.Tokens,
+            Attachments = message.Attachments,
             CreatedAt = message.CreateTime
         };
     }

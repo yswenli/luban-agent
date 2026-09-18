@@ -48,6 +48,7 @@ public static class DatabaseInitializer
         EnsureIsCompactedColumn();
         EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
+        EnsureAttachmentsColumn();
         var dbPath = GetDatabasePath();
 
         return messages;
@@ -183,6 +184,22 @@ public static class DatabaseInitializer
         {
             new SessionMessageRepository().Context.Ado
                 .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Thinking TEXT");
+        }
+        catch
+        {
+            // 列已存在，忽略
+        }
+    }
+
+    /// <summary>
+    /// 兜底迁移：ai_session_message 新增 Attachments 列（附件元数据 JSON）
+    /// </summary>
+    private static void EnsureAttachmentsColumn()
+    {
+        try
+        {
+            new SessionMessageRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Attachments TEXT");
         }
         catch
         {
