@@ -73,10 +73,7 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
                 Logger.Warn($"[TuiDiag-Enter] key={key} branch=Paste(InvokeCommand)");
             }
             // 粘贴内容恰为一个存在的文件路径 → 直接转为附件，不留在输入区
-            if (Owner?.TryConsumeDroppedPath() == true)
-            {
-                return true;
-            }
+            Owner?.TryConsumeDroppedPath();
             return true;
         }
 
@@ -109,7 +106,6 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             }
             if (text.Length > 0 || Owner?.HasAttachments == true)
             {
-                Text = string.Empty;
                 if (Infrastructure.TuiDiag.Enabled)
                 {
                     Logger.Warn($"[TuiDiag-Enter] key=Enter SUBMIT textLen={text.Length}");
@@ -134,6 +130,7 @@ internal sealed class InputBarView : View
     private readonly List<string> _draftPaths = new();
     private Label? _attachmentHint;
     private IServiceProvider? _services;
+    private ITuiUiService? _ui;
 
     /// <summary>
     /// 用户提交输入时触发（Enter）。
@@ -149,18 +146,28 @@ internal sealed class InputBarView : View
     /// <param name="services">服务提供者。</param>
     public void SetServiceProvider(IServiceProvider services) => _services = services;
 
+    /// <summary>注入 TUI 模态交互服务（由 RootView 在构造后调用，非 DI 注册项）。</summary>
+    /// <param name="ui">TUI 交互服务实例。</param>
+    public void SetUiService(ITuiUiService ui) => _ui = ui;
+
     /// <summary>是否有待发送附件。</summary>
     public bool HasAttachments => _drafts.Count > 0;
-
-    /// <summary>当前待发送附件。</summary>
-    public IReadOnlyList<AttachmentDraft> Attachments => _drafts;
 
     /// <summary>添加附件（去重，超过 5 个拒绝）。</summary>
     public bool AddAttachment(string path)
     {
-        if (_drafts.Count >= 5) return false;
-        var full = Path.GetFullPath(path);
+        string full;
+        try
+        {
+            full = Path.GetFullPath(path);
+        }
+        catch
+        {
+            return false;
+        }
+
         if (_draftPaths.Contains(full, StringComparer.OrdinalIgnoreCase)) return true;
+        if (_drafts.Count >= 5) return false;
         _draftPaths.Add(full);
         _drafts.Add(new AttachmentDraft(full, Path.GetFileName(full)));
         UpdateDraftHint();
@@ -213,24 +220,27 @@ internal sealed class InputBarView : View
     {
         var body = text;
 
-        // 解析 @引用：有效引用从正文移除并加入附件；无效引用报错且不发送
+        // 解析 @引用：先校验无效引用（有则整条不发送、保留编辑器与草稿），再移除有效引用并加入附件
         if (_services?.GetService(typeof(AttachmentService)) is AttachmentService svc)
         {
             var refs = svc.ParseFileReferences(text, out body);
-            foreach (var p in refs)
-                AddAttachment(p);
-
             var invalid = AttachmentService.FindUnresolvedReferences(text, svc);
             if (invalid.Count > 0)
             {
-                if (_services.GetService(typeof(ITuiUiService)) is ITuiUiService ui)
-                    ui.Notify("附件错误", $"文件不存在或类型不支持: {string.Join(", ", invalid)}");
-                return; // 不发送，保留编辑器内容供用户修改
+                _ui?.Notify("附件错误", $"文件不存在或类型不支持: {string.Join(", ", invalid)}");
+                return;
+            }
+
+            foreach (var p in refs)
+            {
+                if (!AddAttachment(p))
+                    _ui?.Notify("附件过多", $"每条消息最多 5 个附件，已忽略: {Path.GetFileName(p)}");
             }
         }
 
         var drafts = _drafts.ToList();
         ClearAttachments();
+        _editor.Text = string.Empty;
 
         if (drafts.Count == 0)
             Submitted?.Invoke(body);
@@ -322,10 +332,13 @@ internal sealed class InputBarView : View
 
         _editor.OpenFilePickerRequested += () =>
         {
-            if (_services?.GetService(typeof(ITuiUiService)) is ITuiUiService ui)
+            if (_ui is not null)
             {
-                foreach (var p in ui.PickFiles("选择附件", allowMultiple: true))
-                    AddAttachment(p);
+                foreach (var p in _ui.PickFiles("选择附件", allowMultiple: true))
+                {
+                    if (!AddAttachment(p))
+                        _ui.Notify("附件过多", $"每条消息最多 5 个附件，已忽略: {Path.GetFileName(p)}");
+                }
             }
         };
     }

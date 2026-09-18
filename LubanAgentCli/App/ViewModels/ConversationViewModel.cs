@@ -560,7 +560,11 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             {
                 try
                 {
-                    processed = await service.ProcessAsync(attachmentPaths!, generateThumbnails: false);
+                    processed = await service.ProcessAsync(attachmentPaths!, generateThumbnails: false, ct: _currentCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {

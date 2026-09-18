@@ -33,7 +33,6 @@ internal sealed class RootView : Runnable
 {
     private readonly IUiDispatcher _dispatcher;
     private readonly ITuiUiService _ui;
-    private readonly IServiceProvider _services;
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel _vm;
     private readonly CommandViewModel _commandVm;
@@ -72,7 +71,6 @@ internal sealed class RootView : Runnable
         CanFocus = true;
         SetScheme(TuiTheme.BuildScheme());
 
-        _services = services;
         _dispatcher = dispatcher;
         _ui = ui;
         _doc = new ConversationDocument();
@@ -126,6 +124,7 @@ internal sealed class RootView : Runnable
             X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 4
         };
         _inputBar.SetServiceProvider(services);
+        _inputBar.SetUiService(ui);
         _inputBar.SubmittedWithAttachments += OnInputSubmitted;
         _inputBar.Submitted += text => OnInputSubmitted(text, Array.Empty<AttachmentDraft>());
         // 当存在挂起的确认块（工具确认 / 授权二次确认）时，把输入编辑器的按键优先转发给它：
