@@ -33,6 +33,7 @@ internal sealed class RootView : Runnable
 {
     private readonly IUiDispatcher _dispatcher;
     private readonly ITuiUiService _ui;
+    private readonly IServiceProvider _services;
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel _vm;
     private readonly CommandViewModel _commandVm;
@@ -71,6 +72,7 @@ internal sealed class RootView : Runnable
         CanFocus = true;
         SetScheme(TuiTheme.BuildScheme());
 
+        _services = services;
         _dispatcher = dispatcher;
         _ui = ui;
         _doc = new ConversationDocument();
@@ -123,7 +125,9 @@ internal sealed class RootView : Runnable
         {
             X = 0, Y = Pos.Bottom(_footer), Width = Dim.Fill(), Height = 4
         };
-        _inputBar.Submitted += OnInputSubmitted;
+        _inputBar.SetServiceProvider(services);
+        _inputBar.SubmittedWithAttachments += OnInputSubmitted;
+        _inputBar.Submitted += text => OnInputSubmitted(text, Array.Empty<AttachmentDraft>());
         // 当存在挂起的确认块（工具确认 / 授权二次确认）时，把输入编辑器的按键优先转发给它：
         // agent 阻塞等待期间焦点仍在输入编辑器，确认块本身收不到键，必须由这里转发，否则会等到超时。
         _inputBar.KeyPreRouter = key =>
@@ -222,7 +226,7 @@ internal sealed class RootView : Runnable
                 _keyboard = null;
                 _onGlobalKeyDown = null;
             }
-            _inputBar.Submitted -= OnInputSubmitted;
+            _inputBar.SubmittedWithAttachments -= OnInputSubmitted;
             _commandVm.ExitRequested -= _onExitRequested;
             _vm.PermissionModeChanged -= _onPermissionModeChanged;
             _vm.PendingChoiceChanged -= OnPendingChoiceChanged;
@@ -379,7 +383,8 @@ internal sealed class RootView : Runnable
     /// 首次输入会先初始化 Agent。
     /// </summary>
     /// <param name="text">用户输入文本。</param>
-    private void OnInputSubmitted(string text)
+    /// <param name="attachments">附件草稿。</param>
+    private void OnInputSubmitted(string text, IReadOnlyList<AttachmentDraft> attachments)
     {
         if (Infrastructure.TuiDiag.Enabled)
         {
@@ -411,7 +416,7 @@ internal sealed class RootView : Runnable
             return;
         }
 
-        SubmitAsync(text);
+        SubmitAsync(text, attachments);
     }
 
     /// <summary>
@@ -436,7 +441,7 @@ internal sealed class RootView : Runnable
     /// 提交一条输入到 Agent：首次输入会先初始化 Agent，之后直接执行流式对话。
     /// 全程在后台线程运行，确保 UI 线程始终自由（渲染、键盘路由、队列不受影响）。
     /// </summary>
-    private void SubmitAsync(string text)
+    private void SubmitAsync(string text, IReadOnlyList<AttachmentDraft> attachments)
     {
         // 标记“提交派发中”，防止在 Agent 真正进入运行态(IsRunning)前的空隙里重复派发
         _runActive = true;
@@ -457,7 +462,7 @@ internal sealed class RootView : Runnable
                 {
                     await _vm.InitializeAsync();
                     _vmInitialized = true;
-                    await _vm.ProcessInputAsync(text);
+                    await _vm.ProcessInputAsync(text, attachments.Select(a => a.Path).ToList());
                 }
                 catch (Exception ex)
                 {
@@ -478,7 +483,7 @@ internal sealed class RootView : Runnable
         {
             try
             {
-                await _vm.ProcessInputAsync(text);
+                await _vm.ProcessInputAsync(text, attachments.Select(a => a.Path).ToList());
             }
             catch (Exception ex)
             {
@@ -517,7 +522,7 @@ internal sealed class RootView : Runnable
                 continue;
             }
 
-            SubmitAsync(next);
+            SubmitAsync(next, Array.Empty<AttachmentDraft>());
             return;
         }
 

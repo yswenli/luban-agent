@@ -14,6 +14,7 @@
 *描述：用户输入消息，不可折叠，单行或多行文本 + 淡蓝白粗体 `>` 前缀
 *
 *****************************************************************************/
+using LubanAgentCore.Models;
 using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除），此处显式指向 Terminal.Gui 类型
@@ -29,6 +30,9 @@ public sealed class UserMessageBlock : Block
     /// <summary>用户输入文本。</summary>
     public string Text { get; }
 
+    /// <summary>附件展示信息。</summary>
+    public IReadOnlyList<AttachmentDisplayInfo> Attachments { get; }
+
     /// <summary>不可折叠。</summary>
     public override bool IsFoldable => false;
 
@@ -36,9 +40,17 @@ public sealed class UserMessageBlock : Block
     /// 初始化用户消息。
     /// </summary>
     /// <param name="text">用户输入文本。</param>
-    public UserMessageBlock(string text)
+    public UserMessageBlock(string text) : this(text, Array.Empty<AttachmentDisplayInfo>()) { }
+
+    /// <summary>
+    /// 初始化用户消息（带附件）。
+    /// </summary>
+    /// <param name="text">用户输入文本。</param>
+    /// <param name="attachments">附件展示信息。</param>
+    public UserMessageBlock(string text, IReadOnlyList<AttachmentDisplayInfo> attachments)
     {
         Text = text ?? string.Empty;
+        Attachments = attachments ?? Array.Empty<AttachmentDisplayInfo>();
         IsComplete = true;
     }
 
@@ -48,13 +60,28 @@ public sealed class UserMessageBlock : Block
         base.Layout(width);
         var contentWidth = Math.Max(1, width - 2); // "> " 前缀占 2 列
         var colWidth = TextMeasure.MeasureColumns(Text);
-        LineCount = Math.Max(1, (colWidth + contentWidth - 1) / contentWidth);
+        var textLines = Math.Max(1, (colWidth + contentWidth - 1) / contentWidth);
+        LineCount = textLines + Attachments.Count;
     }
 
     /// <inheritdoc/>
     public override void Render(List<RenderLine> lines, int width)
     {
         var contentWidth = Math.Max(1, width - 2);
+
+        foreach (var a in Attachments)
+        {
+            var icon = a.IsImage ? "🖼" : "📄";
+            var size = a.FileSize < 1024 ? $"{a.FileSize}B"
+                : a.FileSize < 1024 * 1024 ? $"{a.FileSize / 1024.0:F1}KB"
+                : $"{a.FileSize / 1024.0 / 1024.0:F1}MB";
+            var dim = a.IsImage && !string.IsNullOrEmpty(a.PixelSize) ? $" ({a.PixelSize})" : "";
+            var label = $"  [{icon} {a.FileName}{dim} {size}]";
+            lines.Add(RenderLine.Single(
+                TextMeasure.TruncateByColumns(label, width),
+                BlockColors.Accent));
+        }
+
         var offset = 0;
 
         while (offset < Text.Length)
@@ -70,7 +97,7 @@ public sealed class UserMessageBlock : Block
             offset += take.Length;
         }
 
-        if (LineCount == 0)
+        if (Text.Length == 0)
         {
             lines.Add(RenderLine.Single("> ", BlockColors.UserMessage, TextStyle.Bold));
         }

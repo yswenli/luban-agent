@@ -16,6 +16,7 @@
 *
 *****************************************************************************/
 using System.Text;
+using LuBan.AIAgent.Attachments;
 using LubanAgentCli.App.Models.Blocks;
 using LubanAgentCli.App.Services;
 using LubanAgentCli.App.Views;
@@ -472,7 +473,8 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             {
                 if (msg.Role == "user")
                 {
-                    _doc.AppendBlock(new UserMessageBlock(msg.Content));
+                    _doc.AppendBlock(new UserMessageBlock(
+                        msg.Content, AttachmentService.DisplayInfosFromJson(msg.Attachments)));
                 }
                 else if (msg.Role == "assistant")
                 {
@@ -496,12 +498,14 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// 处理用户输入。启动 agent 流式对话，所有输出以 Block 形式追加到文档。
     /// </summary>
     /// <param name="input">用户输入文本。</param>
-    public async Task ProcessInputAsync(string input)
+    /// <param name="attachmentPaths">附件文件路径。</param>
+    public async Task ProcessInputAsync(string input, IReadOnlyList<string>? attachmentPaths = null)
     {
         // 允许在“已请求取消（Esc）”时覆盖旧的挂起运行；否则运行中直接返回，避免并发跑两条对话。
         // 参考 Codex 的 _activeRunSeq 机制：Esc 后旧运行被作废，新输入可干净地开启新一轮。
         if (IsRunning && !_cancelRequested) return;
-        if (string.IsNullOrWhiteSpace(input)) return;
+        var hasAttachments = attachmentPaths is { Count: > 0 };
+        if (string.IsNullOrWhiteSpace(input) && !hasAttachments) return;
         if (_agent is null) throw new InvalidOperationException("Agent 未初始化");
 
         // 作废旧运行并开启新一轮：捕获本次运行序号，供流处理中丢弃迟到事件
@@ -548,10 +552,36 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             // 设置权限模式与确认回调
             SetupConfirmationContext();
 
-            // 追加用户消息
-            _dispatcher.Invoke(() => _doc.AppendBlock(new UserMessageBlock(input)));
+            // 处理附件：失败或不支持时提示并终止本轮（不发送）
+            var modelId = _configManager.SelectedModel ?? "";
+            var service = _services.GetRequiredService<AttachmentService>();
+            IReadOnlyList<ProcessedAttachment> processed = Array.Empty<ProcessedAttachment>();
+            if (hasAttachments)
+            {
+                try
+                {
+                    processed = await service.ProcessAsync(attachmentPaths!, generateThumbnails: false);
+                }
+                catch (Exception ex)
+                {
+                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                        $"附件处理失败: {ex.Message}", foreground: BlockColors.Failure)));
+                    return;
+                }
 
-            await RunStreamingAsync(input, _currentCts.Token, runSeq);
+                if (!service.CanAttach(modelId, processed))
+                {
+                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                        service.GetUnsupportedMessage(modelId, processed), foreground: BlockColors.Failure)));
+                    return;
+                }
+            }
+
+            // 追加用户消息
+            _dispatcher.Invoke(() => _doc.AppendBlock(
+                new UserMessageBlock(input, AttachmentService.ToDisplayInfos(processed))));
+
+            await RunStreamingAsync(input, processed, _currentCts.Token, runSeq);
         }
         catch (OperationCanceledException)
         {
@@ -762,7 +792,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程，
     /// 避免逐 token Invoke 洪峰压垮主循环；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
     /// </summary>
-    private async Task RunStreamingAsync(string input, CancellationToken ct, int runSeq)
+    private async Task RunStreamingAsync(string input, IReadOnlyList<ProcessedAttachment> attachments, CancellationToken ct, int runSeq)
     {
         if (_agent is null) return;
 
@@ -804,7 +834,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
         try
         {
-            await foreach (var update in _agent.RunStreamingAsync(input, ct))
+            await foreach (var update in (attachments.Count == 0
+                ? _agent.RunStreamingAsync(input, ct)
+                : _agent.RunStreamingAsync(input, attachments, ct)))
             {
                 // 运行已被取消/被新对话覆盖：停止消费流，丢弃后续（迟到的旧事件）。
                 // 参考 Codex 的 runSeq 防护，避免“Esc 取消后，旧运行的输出仍追加到文档/被误判为活跃”。
