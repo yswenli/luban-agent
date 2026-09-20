@@ -40,8 +40,11 @@ internal sealed class RootView : Runnable
     private readonly ConversationView _conversation;
     private readonly FooterView _footer;
     private readonly InputBarView _inputBar;
-    private bool _vmInitialized;
+    private volatile bool _vmInitialized;
     private volatile bool _initializing;
+    // 初始化去重：启动预热与首次输入共用同一任务，避免并发重复初始化 Agent
+    private readonly object _initLock = new();
+    private Task? _initTask;
 
     // 待执行队列：Agent 运行期间提交的输入在此排队，本轮结束后顺序执行
     private readonly System.Collections.Generic.Queue<string> _inputQueue = new();
@@ -91,7 +94,7 @@ internal sealed class RootView : Runnable
         _doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
         _doc.AppendBlock(new SystemBlock(
             "  Enter 发送，Shift+Enter 或 Ctrl+Enter 换行，/exit 退出，Ctrl+Q 退出，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
-        _doc.AppendBlock(new SystemBlock("  首次输入前将自动初始化 Agent..."));
+        _doc.AppendBlock(new SystemBlock("  正在初始化 Agent 并进入默认会话..."));
 
         if (startupNotices is not null)
         {
@@ -176,6 +179,66 @@ internal sealed class RootView : Runnable
         {
             _inputBar.FocusInput();
             IsRunningChanged -= OnIsRunningChanged;
+            // 主循环已启动，后台预热 Agent 并回放默认会话（最近活跃工作区的最近会话）历史，
+            // 使进入主界面即已处于某个会话中，无需先输入或执行 /se -s。
+            StartBackgroundInit();
+        }
+    }
+
+    /// <summary>
+    /// 启动后台初始化：构建 Agent 并加载当前会话历史。
+    /// 初始化期间提交的输入会进入待执行队列，初始化完成后自动顺序执行。
+    /// </summary>
+    private void StartBackgroundInit()
+    {
+        if (_vmInitialized) return;
+        _initializing = true;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await EnsureVmInitializedAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("启动初始化 Agent 失败", ex);
+                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                    $"Agent 初始化失败: {ex.Message}", foreground: BlockColors.Failure)));
+            }
+            finally
+            {
+                _initializing = false;
+                DrainQueue();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 确保 Agent 已初始化。启动预热与首次输入复用同一任务；失败时不缓存任务，允许下次输入重试。
+    /// </summary>
+    private Task EnsureVmInitializedAsync()
+    {
+        if (_vmInitialized) return Task.CompletedTask;
+
+        lock (_initLock)
+        {
+            if (_vmInitialized) return Task.CompletedTask;
+            return _initTask ??= InitializeVmAsync();
+        }
+    }
+
+    private async Task InitializeVmAsync()
+    {
+        try
+        {
+            await _vm.InitializeAsync();
+            _vmInitialized = true;
+        }
+        catch
+        {
+            lock (_initLock) _initTask = null;
+            throw;
         }
     }
 
@@ -378,8 +441,8 @@ internal sealed class RootView : Runnable
     // ── 输入提交 ──
 
     /// <summary>
-    /// 处理用户提交输入：运行期间（或一次提交正在派发 / 初始化中）入队排队，否则立即执行。
-    /// 首次输入会先初始化 Agent。
+    /// 处理用户提交输入：运行期间（或一次提交正在派发 / 启动初始化中）入队排队，否则立即执行。
+    /// Agent 初始化由 <see cref="StartBackgroundInit"/> 在进入主界面后预热，首次输入会复用该初始化任务。
     /// </summary>
     /// <param name="text">用户输入文本。</param>
     /// <param name="attachments">附件草稿。</param>
@@ -437,7 +500,7 @@ internal sealed class RootView : Runnable
     }
 
     /// <summary>
-    /// 提交一条输入到 Agent：首次输入会先初始化 Agent，之后直接执行流式对话。
+    /// 提交一条输入到 Agent：若 Agent 尚未初始化（如启动预热仍在进行）会先复用同一初始化任务，再执行流式对话。
     /// 全程在后台线程运行，确保 UI 线程始终自由（渲染、键盘路由、队列不受影响）。
     /// </summary>
     private void SubmitAsync(string text, IReadOnlyList<AttachmentDraft> attachments)
@@ -445,50 +508,18 @@ internal sealed class RootView : Runnable
         // 标记“提交派发中”，防止在 Agent 真正进入运行态(IsRunning)前的空隙里重复派发
         _runActive = true;
 
-        if (!_vmInitialized)
-        {
-            if (_initializing)
-            {
-                _runActive = false;
-                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock("Agent 正在初始化中，请稍候...")));
-                return;
-            }
-
-            _initializing = true;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _vm.InitializeAsync();
-                    _vmInitialized = true;
-                    await _vm.ProcessInputAsync(text, attachments.Select(a => a.Path).ToList());
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("InitializeAndProcessAsync 异常", ex);
-                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                        $"Agent 初始化失败: {ex.Message}", foreground: BlockColors.Failure)));
-                }
-                finally
-                {
-                    _initializing = false;
-                    DrainQueue();
-                }
-            });
-            return;
-        }
-
         _ = Task.Run(async () =>
         {
             try
             {
+                await EnsureVmInitializedAsync();
                 await _vm.ProcessInputAsync(text, attachments.Select(a => a.Path).ToList());
             }
             catch (Exception ex)
             {
-                var msg = ex.Message;
+                Logger.Error("初始化或处理输入异常", ex);
                 _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                    $"Agent 异常: {msg}", foreground: BlockColors.Failure)));
+                    $"Agent 异常: {ex.Message}", foreground: BlockColors.Failure)));
             }
             finally
             {

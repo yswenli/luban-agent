@@ -141,7 +141,10 @@ public static class AgentHostBuilder
             var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
             var workspaceRepo = sp.GetRequiredService<WorkspaceRepository>();
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
-            var existing = await workspaceRepo.GetByRootPathAsync(cwd);
+
+            // 启动默认进入最近活跃的工作区（GetAllAsync 已按 LastActiveAt DESC 排序）。
+            // 仅在库中没有任何工作区时，才以当前目录隐式创建工作区，保证首次启动可用。
+            var existing = (await workspaceRepo.GetAllAsync()).FirstOrDefault();
             string workspaceId;
             if (existing == null)
             {

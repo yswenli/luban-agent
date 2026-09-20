@@ -118,10 +118,13 @@ public class SessionRepository : BaseRepository<DbSession>
     /// </summary>
     public async Task<DbSession?> GetLatestSessionAsync(string workspaceId)
     {
-        return await AsQueryable()
+        // 无会话时返回 null（而非 FirstAsync 抛异常），调用方据此创建默认会话
+        var list = await AsQueryable()
             .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
             .OrderByDescending(s => s.UpdateTime)
-            .FirstAsync();
+            .Take(1)
+            .ToListAsync();
+        return list.Count > 0 ? list[0] : null;
     }
 
     /// <summary>
