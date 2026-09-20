@@ -2,12 +2,14 @@ using LuBan.AIAgent;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.LocalMemory;
 using LuBan.AIAgent.Retrieval;
+using LuBan.AIAgent.Wiki;
 using LuBan.Logging;
 using LuBan.Orm;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LubanAgentCore.Agents;
 using LubanAgentCore.Commands;
 
 namespace LubanAgentCore.Hosting;
@@ -119,6 +121,11 @@ public static class AgentHostBuilder
                 sp.GetRequiredService<IVectorStore>(),
                 sp.GetRequiredService<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(),
                 sp.GetRequiredService<IOptions<LuBanAgentOptions>>()));
+            services.AddSingleton<IWikiContext, WorkspaceWikiContext>();
+            services.AddSingleton<IWikiService>(sp => new WikiService(
+                sp.GetRequiredService<IRetrievalService>(),
+                sp.GetRequiredService<IWikiContext>(),
+                sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Tools.Wiki));
             if (modelManager != null) services.AddSingleton(modelManager);
         }
 
