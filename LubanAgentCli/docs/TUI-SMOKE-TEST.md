@@ -130,6 +130,16 @@
   无工作区/会话时对应行为 `-`
 - [ ] 65. 自动创建会话标题 — `/session` 新建或切换工作区自动建会话时，标题为「新会话」（全局，含 Codex）
 
+## LLM Wiki（2026-09-20 增量）
+
+- [ ] 66. `/rag -new <一个含 md/csv/xlsx 的目录>` → `/work -switch <名称>`
+- [ ] 67. `/wiki -status` → 应显示页面数 0、最近重建"无"（不报错）
+- [ ] 68. `/wiki -ingest <相对路径>` → LLM 应调用 `wiki.savePage` 建页；确认 `/wiki -status` 页面数 > 0
+- [ ] 69. 直接提问 → LLM 应先 `wiki.search`，wiki 无结果时可回落 raw
+- [ ] 70. `/wiki -lint` → 输出孤儿/死链等发现，无异常
+- [ ] 71. `/wiki -rebuild` → 扫描数 == `wiki/**/*.md`（排除 log.md）数量
+- [ ] 72. 切换到一个 Normal 工作区 → 提问时**不应**出现 `wiki.*` 工具（opt-in 生效）
+
 ## 预期结果
 
 所有项目应通过。如有失败，检查对应任务的实施日志。
