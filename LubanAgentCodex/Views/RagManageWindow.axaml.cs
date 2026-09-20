@@ -38,6 +38,8 @@ public partial class RagManageWindow : Window
     private Button? _searchButton;
     private Button? _deleteButton;
     private Button? _backButton;
+    private Button? _wikiRebuildButton;
+    private Button? _wikiLintButton;
 
     public RagManageWindow(IServiceProvider services)
     {
@@ -62,10 +64,10 @@ public partial class RagManageWindow : Window
         if (_indexButton != null) _indexButton.Click += OnIndex;
         if (_searchButton != null) _searchButton.Click += OnSearch;
         if (_deleteButton != null) _deleteButton.Click += OnDelete;
-        var wikiRebuildButton = this.FindControl<Button>("WikiRebuildButton");
-        if (wikiRebuildButton != null) wikiRebuildButton.Click += OnWikiRebuildClick;
-        var wikiLintButton = this.FindControl<Button>("WikiLintButton");
-        if (wikiLintButton != null) wikiLintButton.Click += OnWikiLintClick;
+        _wikiRebuildButton = this.FindControl<Button>("WikiRebuildButton");
+        if (_wikiRebuildButton != null) _wikiRebuildButton.Click += OnWikiRebuildClick;
+        _wikiLintButton = this.FindControl<Button>("WikiLintButton");
+        if (_wikiLintButton != null) _wikiLintButton.Click += OnWikiLintClick;
         if (_backButton != null) _backButton.Click += OnBack;
         if (_ragListBox != null)
             _ragListBox.SelectionChanged += OnSelectionChanged;
@@ -175,6 +177,7 @@ public partial class RagManageWindow : Window
 
     private async void OnWikiRebuildClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (_ragListBox?.SelectedItem is not RagItem item) return;
         var wiki = _services.GetService<IWikiService>();
         if (wiki == null)
         {
@@ -182,21 +185,34 @@ public partial class RagManageWindow : Window
             return;
         }
 
+        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
+            var ws = (await _workspaceManager.GetUserWorkspacesAsync())
+                .FirstOrDefault(w => w.WorkspaceId == item.WorkspaceId);
+            if (ws == null) return;
+
+            await _workspaceManager.EnsureAuthorizedAsync(ws);
+            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
+
             var report = await wiki.RebuildIndexAsync();
             await Dialogs.ShowInfoAsync(this,
-                $"重建完成：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
+                $"重建完成（{item.Name}）：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
         }
         catch (Exception ex)
         {
             Logger.Error("RagManageWindow.OnWikiRebuildClick 异常", ex);
             await Dialogs.ShowErrorAsync(this, $"重建失败: {ex.Message}");
         }
+        finally
+        {
+            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
+        }
     }
 
     private async void OnWikiLintClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (_ragListBox?.SelectedItem is not RagItem item) return;
         var wiki = _services.GetService<IWikiService>();
         if (wiki == null)
         {
@@ -204,12 +220,20 @@ public partial class RagManageWindow : Window
             return;
         }
 
+        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
+            var ws = (await _workspaceManager.GetUserWorkspacesAsync())
+                .FirstOrDefault(w => w.WorkspaceId == item.WorkspaceId);
+            if (ws == null) return;
+
+            await _workspaceManager.EnsureAuthorizedAsync(ws);
+            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
+
             var report = await wiki.LintAsync();
             var text = report.Findings.Count == 0
-                ? $"共 {report.PageCount} 页，未发现问题。"
-                : $"共 {report.PageCount} 页，{report.Findings.Count} 项：\n" +
+                ? $"（{item.Name}）共 {report.PageCount} 页，未发现问题。"
+                : $"（{item.Name}）共 {report.PageCount} 页，{report.Findings.Count} 项：\n" +
                   string.Join("\n", report.Findings.Take(50).Select(f => $"[{f.Kind}] {f.Path}：{f.Detail}"));
             await Dialogs.ShowInfoAsync(this, text);
         }
@@ -217,6 +241,10 @@ public partial class RagManageWindow : Window
         {
             Logger.Error("RagManageWindow.OnWikiLintClick 异常", ex);
             await Dialogs.ShowErrorAsync(this, $"lint 失败: {ex.Message}");
+        }
+        finally
+        {
+            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
 
@@ -308,6 +336,8 @@ public partial class RagManageWindow : Window
         if (_indexButton != null) _indexButton.IsEnabled = hasSelection;
         if (_searchButton != null) _searchButton.IsEnabled = hasSelection;
         if (_deleteButton != null) _deleteButton.IsEnabled = hasSelection;
+        if (_wikiRebuildButton != null) _wikiRebuildButton.IsEnabled = hasSelection;
+        if (_wikiLintButton != null) _wikiLintButton.IsEnabled = hasSelection;
     }
 
     private class RagItem
