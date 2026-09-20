@@ -53,6 +53,6 @@ public class NormalAgentProfile : AgentProfile
     protected override ToolGroupOptions BuildToolOptions() => new()
     {
         Browser = { Headless = false },
-        Script = { Shell = "cmd", DefaultTimeout = 30000 }
+        Script = { DefaultTimeout = 30000 }
     };
 }

@@ -15,12 +15,9 @@
 *编组跨线程操作到 UI 线程
 *
 *****************************************************************************/
-using System.Text;
 using LuBan.AIAgent.Attachments;
-using LubanAgentCli.App.Models.Blocks;
+
 using LubanAgentCli.App.Services;
-using LubanAgentCli.App.Views;
-using LubanAgentCore.Services;
 
 namespace LubanAgentCli.App.ViewModels;
 
