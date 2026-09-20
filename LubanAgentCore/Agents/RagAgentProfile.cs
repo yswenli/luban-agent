@@ -118,6 +118,9 @@ public class RagAgentProfile : AgentProfile
                 if (wiki.TryGetProperty("includeRaw", out var ir) && ir.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False)
                     _wiki.IncludeRaw = ir.GetBoolean();
             }
+            // wiki 组默认纳入；显式 wiki.enabled=false 可关闭；toolGroups 显式列出时其内容优先，但 wiki 组仍自动补齐。
+            if (_wiki.Enabled && _toolGroups != null && !_toolGroups.Contains("wiki", StringComparer.OrdinalIgnoreCase))
+                _toolGroups = _toolGroups.Append("wiki").ToArray();
         }
         catch
         {

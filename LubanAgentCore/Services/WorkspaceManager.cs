@@ -568,8 +568,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             {
                 var defaultRagConfig = @"{
   ""agentProfile"": {
-    ""systemPrompt"": ""你是一个知识库问答专家。请基于检索到的文档片段回答问题，不要超出文档范围。如果文档中没有相关信息，请明确告知用户。"",
-    ""toolGroups"": [""retrieval"", ""filesystem""],
+    ""systemPrompt"": ""你是一个知识库问答专家，维护并基于 wiki 知识库回答问题。优先使用 wiki 工具检索与沉淀知识；wiki 无相关内容时再回落 raw 来源。"",
+    ""toolGroups"": [""wiki"", ""retrieval"", ""filesystem"", ""context""],
     ""mcpServers"": []
   },
   ""retrieval"": {
