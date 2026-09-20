@@ -49,6 +49,15 @@ public interface ITuiUiService
     /// <summary>多字段表单框。返回按字段顺序的值列表，取消返回 null。取消/校验失败时不返回部分值。</summary>
     IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields);
 
+    /// <summary>
+    /// 运行轻量模态进度框：后台执行 <paramref name="work"/>，work 内通过回调更新状态文本，执行完毕自动关闭。
+    /// work 抛出的异常会在模态关闭后重新抛出，供调用方捕获。仅用于启动阶段等无主循环承载的阻塞任务。
+    /// </summary>
+    /// <param name="title">对话框标题。</param>
+    /// <param name="initialStatus">初始状态文本。</param>
+    /// <param name="work">实际工作，参数为状态更新回调。</param>
+    void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work);
+
     /// <summary>表格弹窗（TableView，"关闭/选择"按钮）。返回选中行索引（-1 表示未选中或取消）。</summary>
     int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false);
 

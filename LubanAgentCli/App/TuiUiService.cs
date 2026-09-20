@@ -290,6 +290,65 @@ internal sealed class TuiUiService : ITuiUiService
 #pragma warning restore CS0618
 
     /// <inheritdoc/>
+    public void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        RunModal<object?>(() =>
+        {
+            using var dialog = new Dialog
+            {
+                Title = title,
+                X = Pos.Center(),
+                Y = Pos.Center(),
+                Width = 64,
+                Height = 8
+            };
+
+            var label = new Label
+            {
+                X = 1,
+                Y = 1,
+                Width = Dim.Fill(2),
+                Height = Dim.Fill(2),
+                Text = initialStatus
+            };
+            dialog.Add(label);
+
+            var app = _app;
+            Exception? error = null;
+            using var completed = new ManualResetEventSlim(false);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await work(msg => app.Invoke(() => label.Text = msg));
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+                finally
+                {
+                    app.Invoke(() => dialog.RequestStop());
+                    completed.Set();
+                }
+            });
+
+            _app.Run(dialog);
+
+            // 等工作彻底结束再抛异常，避免未观察异常丢失；生成任务通常瞬时完成
+            completed.Wait();
+            if (error is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+            }
+            return null;
+        });
+    }
+
+    /// <inheritdoc/>
     public int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false)
     {
         ArgumentNullException.ThrowIfNull(columns);
