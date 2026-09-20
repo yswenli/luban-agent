@@ -11,15 +11,18 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/19
-*描述：消息输入框控件，支持 Enter 发送和 Ctrl+Enter 换行
+*描述：消息输入框控件，支持 Enter 发送和 Ctrl+Enter 换行。
+*       输入 / 时弹出命令补全菜单：Up/Down 选择、Tab/Enter 确认、Esc 关闭。
 *
 *****************************************************************************/
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using LubanAgentCore.Commands;
 using LubanAgentCore.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
@@ -40,6 +43,16 @@ public partial class InputBox : UserControl
     private ConfigManager? _configManager;
     private bool _suppressSelectionChanged;
 
+    private Popup? _completionPopup;
+    private ListBox? _completionList;
+    private ICommandCatalog? _commandCatalog;
+    /// <summary>当前补全候选列表（只读快照，避免遍历 ListBox.Items 反复装箱）。</summary>
+    private IReadOnlyList<SlashCommandDefinition> _completionItems = Array.Empty<SlashCommandDefinition>();
+    /// <summary>应用选中项到输入框时短暂屏蔽 TextChanged 触发的补全刷新，避免抖动。</summary>
+    private bool _suppressCompletionRefresh;
+    /// <summary>程序化设置 ListBox 选中项时屏蔽 OnCompletionSelectionChanged 的应用逻辑。</summary>
+    private bool _syncingSelection;
+
     public InputBox()
     {
         InitializeComponent();
@@ -54,9 +67,14 @@ public partial class InputBox : UserControl
         _processingHint = this.FindControl<TextBlock>("ProcessingHint");
         _modelCombo = this.FindControl<ComboBox>("ModelCombo");
         _attachmentBar = this.FindControl<ItemsControl>("AttachmentBar");
+        _completionPopup = this.FindControl<Popup>("CompletionPopup");
+        _completionList = this.FindControl<ListBox>("CompletionList");
 
         if (_inputTextBox != null)
+        {
             _inputTextBox.KeyDown += OnKeyDown;
+            _inputTextBox.TextChanged += OnInputTextChanged;
+        }
 
         if (_sendButton != null)
             _sendButton.Click += OnSendButtonClick;
@@ -66,6 +84,12 @@ public partial class InputBox : UserControl
 
         if (_modelCombo != null)
             _modelCombo.SelectionChanged += OnModelSelectionChanged;
+
+        if (_completionList != null)
+            _completionList.SelectionChanged += OnCompletionSelectionChanged;
+
+        if (_completionPopup != null)
+            _completionPopup.Closed += OnCompletionPopupClosed;
     }
 
     /// <summary>
@@ -74,6 +98,7 @@ public partial class InputBox : UserControl
     public void SetServiceProvider(IServiceProvider services)
     {
         _configManager = services.GetRequiredService<ConfigManager>();
+        _commandCatalog = services.GetService<ICommandCatalog>();
         LoadModels();
         RefreshModels();
     }
@@ -178,10 +203,36 @@ public partial class InputBox : UserControl
     }
 
     /// <summary>
-    /// 键盘事件处理：Enter 发送，Ctrl+Enter 换行
+    /// 键盘事件处理：命令补全菜单可见时拦截 Up/Down/Tab/Enter/Esc；
+    /// 否则按 Enter 发送、Ctrl+Enter 换行。
     /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // 命令补全菜单可见时优先拦截导航键
+        if (_completionPopup is { IsOpen: true } && _completionList != null)
+        {
+            switch (e.Key)
+            {
+                case Key.Up:
+                    MoveCompletionSelection(-1);
+                    e.Handled = true;
+                    return;
+                case Key.Down:
+                    MoveCompletionSelection(1);
+                    e.Handled = true;
+                    return;
+                case Key.Tab:
+                case Key.Enter:
+                    ApplySelectedCompletion();
+                    e.Handled = true;
+                    return;
+                case Key.Escape:
+                    HideCompletion();
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             _ = HandleClipboardFilesAsync();
@@ -208,6 +259,137 @@ public partial class InputBox : UserControl
                     SendRequested?.Invoke(this, EventArgs.Empty);
             }
         }
+    }
+
+    // ==================== 命令补全 ====================
+
+    /// <summary>TextBox 文本变化时刷新补全菜单（输入 / 前缀触发）。</summary>
+    private void OnInputTextChanged(object? sender, EventArgs e)
+    {
+        if (_suppressCompletionRefresh) return;
+        RefreshCompletion(_inputTextBox?.Text ?? string.Empty);
+    }
+
+    /// <summary>
+    /// 根据当前文本过滤 catalog：首字符非 / 或无匹配则隐藏；
+    /// 多行编辑不触发；否则填充 ListBox 并显示 Popup，选中第一项。
+    /// </summary>
+    private void RefreshCompletion(string text)
+    {
+        if (_commandCatalog == null || _completionPopup == null || _completionList == null)
+            return;
+
+        var trimmed = text.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '/')
+        {
+            HideCompletion();
+            return;
+        }
+
+        // 仅在单行首行触发（多行编辑时不弹）
+        if (text.Contains('\n'))
+        {
+            HideCompletion();
+            return;
+        }
+
+        var matches = _commandCatalog.MatchByPrefix(trimmed, SlashCommandClient.Codex);
+        _completionItems = matches;
+
+        if (matches.Count == 0)
+        {
+            HideCompletion();
+            return;
+        }
+
+        // 程序化重置选中项时屏蔽 OnCompletionSelectionChanged 的应用逻辑
+        _syncingSelection = true;
+        try
+        {
+            _completionList.ItemsSource = matches;
+            _completionList.SelectedIndex = 0;
+        }
+        finally
+        {
+            _syncingSelection = false;
+        }
+        _completionPopup.IsOpen = true;
+    }
+
+    /// <summary>循环移动 ListBox 选中项，并滚动到可见。</summary>
+    private void MoveCompletionSelection(int delta)
+    {
+        if (_completionList == null || _completionItems.Count == 0) return;
+        var current = _completionList.SelectedIndex < 0 ? 0 : _completionList.SelectedIndex;
+        var next = (current + delta + _completionItems.Count) % _completionItems.Count;
+        _completionList.SelectedIndex = next;
+        _completionList.ContainerFromIndex(next)?.BringIntoView();
+    }
+
+    /// <summary>应用当前选中命令到输入框：替换为 "命令名 + 空格"，便于继续输入参数。</summary>
+    private void ApplySelectedCompletion()
+    {
+        if (_completionList == null
+            || _completionList.SelectedIndex < 0
+            || _completionList.SelectedIndex >= _completionItems.Count)
+        {
+            HideCompletion();
+            return;
+        }
+
+        var selected = _completionItems[_completionList.SelectedIndex];
+
+        // 应用文本前屏蔽 TextChanged，避免补全刷新抖动
+        _suppressCompletionRefresh = true;
+        try
+        {
+            if (_inputTextBox != null)
+            {
+                _inputTextBox.Text = selected.Name + " ";
+                _inputTextBox.CaretIndex = _inputTextBox.Text.Length;
+                _inputTextBox.Focus();
+            }
+        }
+        finally
+        {
+            _suppressCompletionRefresh = false;
+        }
+
+        HideCompletion();
+    }
+
+    /// <summary>隐藏补全菜单。</summary>
+    private void HideCompletion()
+    {
+        if (_completionPopup != null)
+            _completionPopup.IsOpen = false;
+    }
+
+    /// <summary>用户鼠标点选列表项时立即应用选中（不发送）。</summary>
+    private void OnCompletionSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSelection) return;
+        if (e.AddedItems.Count > 0)
+            ApplySelectedCompletion();
+    }
+
+    /// <summary>Popup 关闭后清空列表数据，避免下次打开时残留旧选中态。</summary>
+    private void OnCompletionPopupClosed(object? sender, EventArgs e)
+    {
+        if (_completionList != null)
+        {
+            _syncingSelection = true;
+            try
+            {
+                _completionList.ItemsSource = null;
+                _completionList.SelectedIndex = -1;
+            }
+            finally
+            {
+                _syncingSelection = false;
+            }
+        }
+        _completionItems = Array.Empty<SlashCommandDefinition>();
     }
 
     private void OnSendButtonClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

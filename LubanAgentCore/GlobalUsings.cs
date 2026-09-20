@@ -1,6 +1,7 @@
 // Global using 引用 - 外部依赖
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Abstractions;
+global using LuBan.AIAgent.Attachments;
 global using LuBan.AIAgent.Configuration;
 global using LuBan.AIAgent.LocalMemory;
 global using LuBan.AIAgent.MCP;
@@ -15,9 +16,11 @@ global using LuBan.DI;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
+global using LubanAgentCore.Agents;
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Entities;
 global using LubanAgentCore.Infrastructure;
+global using LubanAgentCore.Models;
 // Global using 引用 - 内部命名空间
 global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Retrieval;
@@ -38,6 +41,7 @@ global using SqlSugar;
 
 global using System.Data;
 global using System.IO.Compression;
+global using System.Runtime.CompilerServices;
 global using System.Security.Cryptography;
 global using System.Text;
 global using System.Text.Json;

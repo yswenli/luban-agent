@@ -12,9 +12,10 @@
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
 *描述：输入区视图，使用 Editor 作为高性能文本输入控件，
-*Enter 提交，Shift+Enter 换行。
+*Enter 提交，Shift+Enter 换行。输入 / 时弹出命令补全菜单。
 *
 *****************************************************************************/
+using LubanAgentCore.Commands;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;
 using Command = Terminal.Gui.Input.Command;
@@ -47,6 +48,8 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
     /// </summary>
     public Action? OnPreRoutedKey { get; set; }
 
+    private string _lastTextForCompletion = string.Empty;
+
     protected override bool OnKeyDown(Key key)
     {
         Infrastructure.TuiDiag.KeyArrival();
@@ -62,6 +65,21 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             return true;
         }
 
+        // 命令补全菜单可见时优先拦截导航键
+        if (Owner is { } owner && owner.IsCompletionVisible)
+        {
+            if (key == Key.CursorUp || key == Key.CursorDown
+                || key == Key.Tab || key == Key.Enter
+                || key == Key.Esc)
+            {
+                var handled = owner.HandleCompletionKey(key);
+                if (handled)
+                {
+                    return true;
+                }
+            }
+        }
+
         // Ctrl+V / Ctrl+Shift+V：直接调用框架内置的 Paste 命令。
         // Editor 覆盖 OnKeyDown 后不会处理 KeyBindings 中的 Ctrl+V 粘贴；
         // InvokeCommand(Command.Paste) 会执行框架的粘贴处理（读取 Application.Clipboard 并插入光标处），最可靠。
@@ -74,6 +92,8 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             }
             // 粘贴内容恰为一个存在的文件路径 → 直接转为附件，不留在输入区
             Owner?.TryConsumeDroppedPath();
+            // 粘贴后检查文本变化触发补全刷新
+            Owner?.RefreshCompletion(Text ?? string.Empty);
             return true;
         }
 
@@ -99,6 +119,12 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
 
         if (key == Key.Enter)
         {
+            // 补全菜单可见时 Enter 选中项（不提交）
+            if (Owner is { IsCompletionVisible: true } && Owner.HandleCompletionKey(Key.Enter))
+            {
+                return true;
+            }
+
             var text = (Text ?? string.Empty).Trim();
             if (Infrastructure.TuiDiag.Enabled)
             {
@@ -110,12 +136,112 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
                 {
                     Logger.Warn($"[TuiDiag-Enter] key=Enter SUBMIT textLen={text.Length}");
                 }
+                // 提交前关闭补全菜单
+                Owner?.HideCompletion();
                 SubmitRequested?.Invoke(text);
             }
             return true;
         }
 
-        return base.OnKeyDown(key);
+        var result = base.OnKeyDown(key);
+
+        // 任何按键后检查文本变化，触发补全菜单刷新
+        var currentText = Text ?? string.Empty;
+        if (currentText != _lastTextForCompletion)
+        {
+            _lastTextForCompletion = currentText;
+            Owner?.RefreshCompletion(currentText);
+        }
+
+        return result;
+    }
+}
+
+/// <summary>
+/// 命令补全菜单：浮在 Editor 上方的两列弹出视图。
+/// 左列命令名（20 列宽），右列描述填充。整行高亮选中项（Accent 色，参考图1 salmon 色）。
+/// 仅作为 InputBarView 子视图叠加在 Editor 之上；可见时由 MultilineEditor.OnKeyDown 拦截导航键。
+/// </summary>
+internal sealed class CommandCompletionPopup : View
+{
+    private IReadOnlyList<SlashCommandDefinition> _items = Array.Empty<SlashCommandDefinition>();
+    private int _selected;
+    private int _visibleRows;
+
+    /// <summary>当前选中的命令；未选中或不可见返回 null。</summary>
+    public SlashCommandDefinition? SelectedItem =>
+        IsVisible && _selected >= 0 && _selected < _items.Count ? _items[_selected] : null;
+
+    /// <summary>补全菜单是否处于显示状态。</summary>
+    public bool IsVisible { get; private set; }
+
+    /// <summary>显示补全菜单并设置匹配项。</summary>
+    public void Show(IReadOnlyList<SlashCommandDefinition> items, int maxRows)
+    {
+        _items = items;
+        _selected = 0;
+        _visibleRows = Math.Min(items.Count, Math.Max(1, maxRows));
+        IsVisible = items.Count > 0;
+        Height = _visibleRows;
+        Visible = IsVisible;
+        if (IsVisible)
+        {
+            SetNeedsDraw();
+        }
+    }
+
+    /// <summary>隐藏补全菜单。</summary>
+    public void Hide()
+    {
+        IsVisible = false;
+        Visible = false;
+        _items = Array.Empty<SlashCommandDefinition>();
+        SetNeedsDraw();
+    }
+
+    /// <summary>移动选中项（循环）。</summary>
+    public void MoveSelection(int delta)
+    {
+        if (!IsVisible || _items.Count == 0) return;
+        _selected = (_selected + delta + _items.Count) % _items.Count;
+        SetNeedsDraw();
+    }
+
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        if (!IsVisible || _items.Count == 0) return true;
+
+        var width = Viewport.Width;
+        if (width <= 0) return true;
+
+        var nameCol = Math.Min(20, width / 2);
+
+        for (var i = 0; i < _visibleRows && i < _items.Count; i++)
+        {
+            var cmd = _items[i];
+            var name = cmd.Name;
+            var desc = cmd.Description ?? string.Empty;
+
+            var namePadded = name.Length >= nameCol
+                ? name[..nameCol]
+                : name.PadRight(nameCol);
+            var descMax = Math.Max(0, width - nameCol);
+            var descText = desc.Length > descMax ? desc[..descMax] : desc.PadRight(descMax);
+            var line = namePadded + descText;
+
+            var isSelected = i == _selected;
+            var bg = isSelected ? TuiTheme.Accent : TuiTheme.Background;
+            var fg = isSelected ? TuiTheme.Background : TuiTheme.AssistantText;
+            SetAttribute(new Attribute(fg, bg));
+
+            // 清除行背景（避免上一帧残留）
+            for (var c = 0; c < width; c++)
+            {
+                AddRune(c, i, (Rune)' ');
+            }
+            AddStr(0, i, line);
+        }
+        return true;
     }
 }
 
@@ -128,9 +254,11 @@ internal sealed class InputBarView : View
     private readonly MultilineEditor _editor;
     private readonly List<AttachmentDraft> _drafts = new();
     private readonly List<string> _draftPaths = new();
+    private readonly CommandCompletionPopup _completionPopup;
     private Label? _attachmentHint;
     private IServiceProvider? _services;
     private ITuiUiService? _ui;
+    private ICommandCatalog? _catalog;
 
     /// <summary>
     /// 用户提交输入时触发（Enter）。
@@ -144,14 +272,113 @@ internal sealed class InputBarView : View
 
     /// <summary>注入服务提供者（由 RootView 在构造后调用）。</summary>
     /// <param name="services">服务提供者。</param>
-    public void SetServiceProvider(IServiceProvider services) => _services = services;
+    public void SetServiceProvider(IServiceProvider services)
+    {
+        _services = services;
+        try
+        {
+            _catalog = services.GetService<ICommandCatalog>();
+        }
+        catch
+        {
+            // 容错：catalog 缺失时不影响输入框基础功能
+        }
+    }
 
     /// <summary>注入 TUI 模态交互服务（由 RootView 在构造后调用，非 DI 注册项）。</summary>
     /// <param name="ui">TUI 交互服务实例。</param>
     public void SetUiService(ITuiUiService ui) => _ui = ui;
 
+    /// <summary>补全菜单是否可见。</summary>
+    public bool IsCompletionVisible => _completionPopup.IsVisible;
+
     /// <summary>是否有待发送附件。</summary>
     public bool HasAttachments => _drafts.Count > 0;
+
+    /// <summary>
+    /// 刷新补全菜单：根据当前文本过滤 catalog。首字符非 / 或无匹配时隐藏。
+    /// </summary>
+    internal void RefreshCompletion(string text)
+    {
+        if (_catalog is null)
+        {
+            HideCompletion();
+            return;
+        }
+
+        var trimmed = text.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '/')
+        {
+            HideCompletion();
+            return;
+        }
+
+        // 仅在首行触发（多行编辑时不弹）
+        if (text.Contains('\n'))
+        {
+            HideCompletion();
+            return;
+        }
+
+        var matches = _catalog.MatchByPrefix(trimmed, SlashCommandClient.Cli);
+        if (matches.Count == 0)
+        {
+            HideCompletion();
+            return;
+        }
+
+        // popup 最多显示 8 行
+        _completionPopup.Show(matches, Math.Min(8, matches.Count));
+        SetNeedsDraw();
+    }
+
+    /// <summary>
+    /// 处理补全菜单导航键。返回 true 表示已消费（Enter/Tab 选中、Up/Down 移动、Esc 关闭）。
+    /// </summary>
+    internal bool HandleCompletionKey(Key key)
+    {
+        if (!_completionPopup.IsVisible) return false;
+
+        if (key == Key.CursorUp)
+        {
+            _completionPopup.MoveSelection(-1);
+            SetNeedsDraw();
+            return true;
+        }
+        if (key == Key.CursorDown)
+        {
+            _completionPopup.MoveSelection(1);
+            SetNeedsDraw();
+            return true;
+        }
+        if (key == Key.Esc)
+        {
+            HideCompletion();
+            return true;
+        }
+        if (key == Key.Enter || key == Key.Tab)
+        {
+            var selected = _completionPopup.SelectedItem;
+            if (selected is null) return false;
+
+            // 替换编辑器内容为命令名 + 空格，便于继续输入参数
+            // Terminal.Gui v2 Editor 设置 Text 后光标自动跟随末尾
+            _editor.Text = selected.Name + " ";
+            HideCompletion();
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>隐藏补全菜单。</summary>
+    internal void HideCompletion()
+    {
+        if (_completionPopup.IsVisible)
+        {
+            _completionPopup.Hide();
+            SetNeedsDraw();
+        }
+    }
 
     /// <summary>添加附件（去重，超过 5 个拒绝）。</summary>
     public bool AddAttachment(string path)
@@ -324,11 +551,25 @@ internal sealed class InputBarView : View
         // 解除 Editor 默认的 Tab/Shift+Tab 缩进/反缩进绑定，
         // 让这两个键能冒泡到 RootView 的全局快捷键处理
         // （Tab 切换任务视图、Shift+Tab 切换权限模式）
+        // 注意：补全菜单可见时 Tab 会被 OnKeyDown 顶部拦截选中项，不会触发任务切换
         _editor.KeyBindings.Remove(Key.Tab);
         _editor.KeyBindings.Remove(Key.Tab.WithShift);
 
+        // 命令补全弹层：浮在 Editor 上方（同 X、Y、Width，Height 动态调整）。
+        // 后 Add 的子视图在视觉上层，覆盖 Editor 显示候选命令列表。
+        _completionPopup = new CommandCompletionPopup
+        {
+            X = 2,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = 8,
+            Visible = false,
+            CanFocus = false
+        };
+
         Add(_editor);
         Add(_attachmentHint);
+        Add(_completionPopup);
 
         _editor.OpenFilePickerRequested += () =>
         {

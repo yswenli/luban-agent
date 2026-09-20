@@ -14,20 +14,6 @@
 *描述：Agent 宿主服务：封装 Agent 创建与流式对话，输出 UI 无关的 StreamEvent 序列。
 *
 *****************************************************************************/
-using LuBan.AIAgent;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Attachments;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.MCP;
-using LuBan.AIAgent.Rules;
-using LuBan.AIAgent.Skills;
-using LubanAgentCore.Agents;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Models;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.DependencyInjection;
-using System.Runtime.CompilerServices;
-
 namespace LubanAgentCore.Services;
 
 /// <summary>
@@ -326,7 +312,9 @@ public class AgentHostService
                         }
                         else
                         {
-                            yield return new ToolCallCompletedEvent(functionResult.CallId);
+                            yield return new ToolCallCompletedEvent(
+                                functionResult.CallId,
+                                SummarizeResult(functionResult.Result));
                         }
                         continue;
                     }
@@ -353,5 +341,48 @@ public class AgentHostService
         {
             context.Reset();
         }
+    }
+
+    /// <summary>
+    /// 提取工具结果摘要：截断至 200 字符，超长末尾加 "…"。
+    /// 处理 string / JsonElement / ToolResult / 其它对象（ToString 兜底）。
+    /// </summary>
+    /// <param name="result">工具返回值。</param>
+    /// <returns>摘要文本；无内容返回 null。</returns>
+    private static string? SummarizeResult(object? result)
+    {
+        if (result is null) return null;
+
+        string? text;
+        try
+        {
+            // 优先处理 JsonElement：ToString 输出紧凑 JSON
+            if (result is System.Text.Json.JsonElement je)
+            {
+                text = je.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? je.GetString()
+                    : je.ToString();
+            }
+            // 处理 ToolResult：优先取 Message，其次用 ToString 兜底
+            else if (result is LuBan.AIAgent.Abstractions.ToolResult tr)
+            {
+                text = tr.Message ?? tr.ToString();
+            }
+            else
+            {
+                text = result as string ?? result.ToString();
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        const int MaxLength = 200;
+        return text.Length <= MaxLength
+            ? text
+            : text[..MaxLength] + "…";
     }
 }

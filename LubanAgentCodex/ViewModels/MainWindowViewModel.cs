@@ -16,6 +16,7 @@
 *****************************************************************************/
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using LubanAgentCore.Commands;
 using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
 using LuBan.AIAgent.Configuration;
@@ -213,6 +214,16 @@ public partial class MainWindowViewModel : ObservableObject
     public IServiceProvider Services => _agentHost.Services;
 
     /// <summary>
+    /// 命令清单（用于 InputBox 补全菜单过滤）
+    /// </summary>
+    public ICommandCatalog CommandCatalog { get; }
+
+    /// <summary>
+    /// 请求退出应用时触发（由 MainWindow 订阅调用 Close）
+    /// </summary>
+    public event Action? ExitRequested;
+
+    /// <summary>
     /// 输入文本
     /// </summary>
     [ObservableProperty]
@@ -248,6 +259,7 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(IServiceProvider services)
     {
         _agentHost = new AgentHostService(services);
+        CommandCatalog = services.GetRequiredService<ICommandCatalog>();
 
         // 自动重试进度提示：框架回调运行在调用线程，编组到 UI 线程追加系统消息
         // （显式使用 Normal 优先级，避免低于 await 续体优先级导致通知显示在终结消息之后）
@@ -526,6 +538,11 @@ public partial class MainWindowViewModel : ObservableObject
                 ShowHelp();
                 break;
 
+            case "/exit":
+            case "/quit":
+                ExitRequested?.Invoke();
+                break;
+
             case "/clear":
                 ClearMessages();
                 Messages.Add(new SystemMessageItem { Content = "会话已清空" });
@@ -715,27 +732,32 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ShowHelp()
     {
-        var helpText = @"可用命令:
-  /help               显示此帮助
-  /clear              清空会话历史
-  /mode [name]        查看或切换权限模式
-  /model, /m          管理模型
-  /provider, /p       管理 AI Provider
-  /skill, /sk         管理技能
-  /rule, /r           管理规则
-  /mcp, /mp           管理 MCP 服务
-  /session, /se       管理对话会话
-  /stats, /st         显示统计信息
-  /work, /w           管理工作区
-  /rag, /rg           管理 RAG 知识库
+        var sb = new StringBuilder();
+        sb.AppendLine("可用命令:");
 
-快捷键:
-  Enter               发送消息
-  Ctrl+Enter          换行
-  Shift+Tab           切换权限模式
-  Esc                 取消当前任务";
+        // 按 Category 分组遍历 catalog，自动同步新增命令
+        var codexCmds = CommandCatalog.All.Where(c => c.Supports(SlashCommandClient.Codex)).ToList();
+        var groups = codexCmds.GroupBy(c => c.Category).OrderBy(g => g.Key);
+        foreach (var grp in groups)
+        {
+            sb.AppendLine($"  ── {grp.Key} ──");
+            foreach (var cmd in grp)
+            {
+                var aliases = cmd.Aliases.Count > 0
+                    ? ", " + string.Join(", ", cmd.Aliases)
+                    : "";
+                sb.AppendLine($"  {cmd.Name}{aliases}    {cmd.Description}");
+            }
+        }
 
-        Messages.Add(new SystemMessageItem { Content = helpText });
+        sb.AppendLine();
+        sb.AppendLine("快捷键:");
+        sb.AppendLine("  Enter               发送消息");
+        sb.AppendLine("  Ctrl+Enter          换行");
+        sb.AppendLine("  Shift+Tab           切换权限模式");
+        sb.AppendLine("  Esc                 取消当前任务");
+
+        Messages.Add(new SystemMessageItem { Content = sb.ToString() });
     }
 
     private string GetPermissionModeDisplay(ToolPermissionMode mode) => mode switch
@@ -1000,11 +1022,11 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case ToolCallCompletedEvent tcc:
-                UpdateToolCallState(tcc.CallId, ToolCallState.Done, null);
+                UpdateToolCallState(tcc.CallId, ToolCallState.Done, null, tcc.ResultSummary);
                 break;
 
             case ToolCallFailedEvent tcf:
-                UpdateToolCallState(tcf.CallId, ToolCallState.Failed, tcf.Error);
+                UpdateToolCallState(tcf.CallId, ToolCallState.Failed, tcf.Error, null);
                 break;
 
             case ErrorEvent e:
@@ -1127,16 +1149,17 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 更新工具调用卡片状态（仅 UI 线程调用）
     /// </summary>
-    private void UpdateToolCallState(string callId, ToolCallState state, string? error)
+    private void UpdateToolCallState(string callId, ToolCallState state, string? error, string? resultSummary)
     {
         for (var i = Messages.Count - 1; i >= 0; i--)
         {
             if (Messages[i] is ToolCallItem tool && tool.CallId == callId)
             {
-                // 必须先写错误信息再改状态：ToolCallCard 只订阅 State，
-                // State 的 setter 会同步触发渲染，若此时 ErrorMessage 尚未赋值，
-                // 卡片会永远显示兜底文案「工具执行失败」而丢掉真实原因。
+                // 必须先写错误信息/结果摘要再改状态：ToolCallCard 只订阅 State，
+                // State 的 setter 会同步触发渲染，若此时 ErrorMessage/ResultSummary 尚未赋值，
+                // 卡片会永远显示兜底文案「工具执行失败」而丢掉真实原因/结果摘要。
                 tool.ErrorMessage = error;
+                tool.ResultSummary = resultSummary;
                 tool.State = state;
                 break;
             }

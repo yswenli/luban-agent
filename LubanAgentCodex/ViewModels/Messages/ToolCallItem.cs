@@ -48,6 +48,11 @@ public partial class ToolCallItem : MessageItemBase
     /// 错误信息
     /// </summary>
     [ObservableProperty] private string? _errorMessage;
+
+    /// <summary>
+    /// 工具执行结果摘要（由 ToolCallCompletedEvent.ResultSummary 填充，可为 null）
+    /// </summary>
+    [ObservableProperty] private string? _resultSummary;
 }
 
 /// <summary>

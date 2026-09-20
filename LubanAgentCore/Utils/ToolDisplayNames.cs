@@ -80,4 +80,60 @@ public static class ToolDisplayNames
             ? toolName[..^5]
             : toolName;
     }
+
+    private static readonly Dictionary<string, string> IconMap = new(StringComparer.Ordinal)
+    {
+        // FileSystem
+        ["ReadFileAsync"] = "📄",
+        ["WriteFileAsync"] = "✏️",
+        ["ListDirectoryAsync"] = "📂",
+        ["GetWorkspaceOverviewAsync"] = "🗂️",
+        ["DeleteFileAsync"] = "🗑️",
+        ["DeleteDirectoryAsync"] = "🗑️",
+        ["SearchFilesAsync"] = "🔎",
+        ["GrepAsync"] = "🔎",
+        ["CreateDirectoryAsync"] = "📁",
+        ["CopyFileAsync"] = "📤",
+        ["MoveFileAsync"] = "📦",
+        ["GetFileInfoAsync"] = "ℹ️",
+        // LocalMemory
+        ["SaveAsync"] = "💾",
+        ["SearchAsync"] = "🧠",
+        ["ListAsync"] = "📋",
+        ["DeleteAsync"] = "🗑️",
+        // Browser
+        ["NavigateAsync"] = "🌐",
+        ["ClickAsync"] = "🖱️",
+        ["TypeTextAsync"] = "⌨️",
+        ["ScreenshotAsync"] = "📸",
+        ["GetContentAsync"] = "📄",
+        ["WaitForSelectorAsync"] = "⏱️",
+        ["GetCurrentUrlAsync"] = "🔗",
+        // Web
+        ["FetchUrlAsync"] = "🕷️",
+        // Script
+        ["RunShellAsync"] = "⚙️",
+        ["RunLuaAsync"] = "📜",
+        ["RunPythonAsync"] = "🐍",
+        // Retrieval
+        ["IndexDirectoryAsync"] = "📚",
+        ["IndexContentAsync"] = "📝",
+        ["SearchCodeAsync"] = "🔍",
+        ["GetIndexStatsAsync"] = "📊",
+        // Orchestration
+        ["OrchestrateAsync"] = "🧩",
+        // Context
+        ["CompactContextAsync"] = "📦",
+    };
+
+    /// <summary>
+    /// 返回工具对应的 emoji 图标；未命中时返回 🔧。
+    /// </summary>
+    /// <param name="toolName">框架工具方法名（如 GrepAsync）。</param>
+    /// <returns>emoji 图标（如"🔎"）。</returns>
+    public static string GetIcon(string toolName)
+    {
+        if (string.IsNullOrWhiteSpace(toolName)) return "🔧";
+        return IconMap.TryGetValue(toolName, out var icon) ? icon : "🔧";
+    }
 }

@@ -21,7 +21,9 @@
                          Foreground="{DynamicResource TextPrimaryBrush}"
                          TextWrapping="Wrap"
                          FontSize="14" />
-                <ItemsControl ItemsSource="{Binding Attachments}" Margin="0,8,0,0">
+                <ItemsControl ItemsSource="{Binding Attachments}"
+                             IsVisible="{Binding HasAttachments}"
+                             Margin="0,8,0,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal" />

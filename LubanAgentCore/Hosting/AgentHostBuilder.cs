@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using LubanAgentCore.Commands;
 
 namespace LubanAgentCore.Hosting;
 
@@ -106,6 +107,7 @@ public static class AgentHostBuilder
         services.AddSingleton<SessionMessageRepository>();
         services.AddSingleton<WorkspaceRepository>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
+        services.AddSingleton<ICommandCatalog, CommandCatalog>();
         services.AddSingleton<IWorkspaceContextProvider>(
             new DelegateWorkspaceContextProvider(() => WorkspaceManager.Current?.WorkspaceId));
 

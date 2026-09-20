@@ -2,48 +2,105 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="LubanAgentCodex.Views.Controls.ToolCallCard">
 
-    <Border Margin="0,8"
-            Padding="14,16"
+    <UserControl.Styles>
+        <!-- 紧凑化 Expander：去除内层 Padding -->
+        <Style Selector="Expander">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="Expander /template/ ContentPresenter">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <!-- 图标按钮：去掉 Fluent 默认边框/背景 -->
+        <Style Selector="Button#CopyButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="4,2" />
+        </Style>
+        <Style Selector="Button#CopyButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource DividerBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Border Name="RootBorder"
+            Margin="0,8"
             Background="{DynamicResource CardBrush}"
             CornerRadius="8"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
-            HorizontalAlignment="Left">
-        <Grid RowDefinitions="Auto,Auto">
-            <!-- 标题行 -->
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Name="StatusIcon"
-                           Grid.Column="0"
-                           Text="🔧"
-                           Margin="0,0,8,0"
-                           VerticalAlignment="Center"
-                           FontSize="16" />
-                <TextBlock Name="ToolNameText"
-                           Grid.Column="1"
-                           FontWeight="Bold"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextPrimaryBrush}"
-                           FontSize="13" />
-                <TextBlock Name="StateText"
-                           Grid.Column="2"
-                           Foreground="{DynamicResource TextTertiaryBrush}"
-                           VerticalAlignment="Center"
-                           FontSize="12" />
-            </Grid>
-
-            <!-- 参数（可折叠） -->
-            <Expander Grid.Row="1"
-                      Margin="0,8,0,0"
-                      IsExpanded="False">
-                <Expander.Header>
-                    <TextBlock Text=" 查看参数"
+            Padding="0"
+            HorizontalAlignment="Left"
+            MaxWidth="560">
+        <Grid ColumnDefinitions="3,*">
+            <!-- 左侧色条：运行中黄/完成绿/失败红 -->
+            <Border Name="AccentBar"
+                    Grid.Column="0"
+                    Background="{DynamicResource InfoBrush}"
+                    CornerRadius="8,0,0,8" />
+            <Grid Grid.Column="1"
+                  RowDefinitions="Auto,Auto,Auto"
+                  Margin="12,10">
+                <!-- 标题行：状态图标 + 工具图标 + 工具名 + 状态 + 复制 -->
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                    <TextBlock Name="StatusIcon"
+                               Grid.Column="0"
+                               Text="⏳"
+                               Margin="0,0,6,0"
+                               VerticalAlignment="Center"
+                               FontSize="14" />
+                    <TextBlock Name="ToolIcon"
+                               Grid.Column="1"
+                               Text="🔧"
+                               Margin="0,0,8,0"
+                               VerticalAlignment="Center"
+                               FontSize="14" />
+                    <TextBlock Name="ToolNameText"
+                               Grid.Column="2"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="13"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Name="StateText"
+                               Grid.Column="3"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
                                Foreground="{DynamicResource TextTertiaryBrush}"
                                FontSize="12" />
-                </Expander.Header>
-                <Border Background="{DynamicResource BackgroundBrush}"
+                    <Button Name="CopyButton"
+                            Grid.Column="4"
+                            Margin="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Cursor="Hand"
+                            Click="OnCopyClick"
+                            IsVisible="False">
+                        <TextBlock Text="📋" FontSize="13" />
+                    </Button>
+                </Grid>
+
+                <!-- 结果摘要（仅有内容时显示） -->
+                <Border Name="ResultSummaryBorder"
+                        Grid.Row="1"
+                        Margin="0,6,0,0"
+                        Padding="8,4"
+                        Background="{DynamicResource SidebarBrush}"
                         CornerRadius="4"
-                        Padding="8,12"
-                        Margin="0,8,0,0">
+                        IsVisible="False">
+                    <TextBlock Name="ResultSummaryText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <!-- 参数（折叠） -->
+                <Expander Name="ArgumentsExpander"
+                          Grid.Row="2"
+                          Margin="0,4,0,0"
+                          IsExpanded="False">
+                    <Expander.Header>
+                        <TextBlock Text="查看参数"
+                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                   FontSize="12" />
+                    </Expander.Header>
                     <TextBox Name="ArgumentsText"
                              IsReadOnly="True"
                              Background="Transparent"
@@ -52,9 +109,10 @@
                              FontSize="12"
                              Foreground="{DynamicResource TextSecondaryBrush}"
                              TextWrapping="Wrap"
-                             MaxHeight="100" />
-                </Border>
-            </Expander>
+                             MaxHeight="160"
+                             Margin="0,4,0,0" />
+                </Expander>
+            </Grid>
         </Grid>
     </Border>
 

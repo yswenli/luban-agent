@@ -1,8 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
+             xmlns:commands="clr-namespace:LubanAgentCore.Commands;assembly=LubanAgentCore"
              xmlns:conv="using:LubanAgentCodex.Converters"
              x:Class="LubanAgentCodex.Views.Controls.InputBox">
+
+    <UserControl.Styles>
+        <!-- 命令补全列表项：紧凑行高；选中态用 Primary 高亮 -->
+        <Style Selector="ListBox.completion-list ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="ListBox.completion-list ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <!-- 选中项内描述 TextBlock 跟随 :selected 状态切换前景色 -->
+        <Style Selector="ListBox.completion-list ListBoxItem:selected TextBlock.desc">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+        </Style>
+    </UserControl.Styles>
 
     <Border Background="{DynamicResource BackgroundBrush}"
             BorderBrush="{DynamicResource DividerBrush}"
@@ -69,9 +87,10 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- 第一行：输入框 + 发送按钮 -->
+            <!-- 第一行：输入框 + 发送按钮 + 命令补全弹层 -->
             <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <Border Grid.Column="0"
+                        Name="InputBorder"
                         Background="{DynamicResource SidebarBrush}"
                         BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1"
@@ -88,6 +107,53 @@
                              Foreground="{DynamicResource TextPrimaryBrush}"
                              CaretBrush="{DynamicResource TextPrimaryBrush}" />
                 </Border>
+
+                <!-- 命令补全弹层：浮在 TextBox 上方，输入 / 时显示匹配的命令列表 -->
+                <Popup Name="CompletionPopup"
+                       Grid.Column="0"
+                       PlacementTarget="{Binding #InputBorder}"
+                       Placement="Top"
+                       IsOpen="False"
+                       IsLightDismissEnabled="True"
+                       MaxWidth="500">
+                    <Border Background="{DynamicResource SidebarBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4"
+                            BoxShadow="0 4 12 0 #40000000">
+                        <ListBox Name="CompletionList"
+                                 Classes="completion-list"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 MinWidth="360"
+                                 MaxHeight="240"
+                                 SelectionMode="Single">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="commands:SlashCommandDefinition">
+                                    <Grid ColumnDefinitions="120,*" Height="26">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Name}"
+                                                   FontFamily="Consolas,Menlo,monospace"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PrimaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                        <TextBlock Grid.Column="1"
+                                                   Classes="desc"
+                                                   Text="{Binding Description}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
 
                 <Button Grid.Column="1"
                         Name="SendButton"

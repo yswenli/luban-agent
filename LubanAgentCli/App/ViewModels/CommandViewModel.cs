@@ -16,12 +16,14 @@
 *
 *****************************************************************************/
 using LubanAgentCli.App.Models;
+using LubanAgentCore.Commands;
 
 namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// 命令 ViewModel。解析 / 输入、匹配命令、执行并将结果以 SystemBlock 追加到文档。
 /// 统一 /help /clear /mode /provider /model /session /stats /work /rag 等所有命令。
+/// 命令清单与 Codex 共享 <see cref="ICommandCatalog"/>，避免漂移。
 /// </summary>
 internal sealed class CommandViewModel
 {
@@ -30,6 +32,7 @@ internal sealed class CommandViewModel
     private readonly IServiceProvider _services;
     private readonly ITuiUiService _ui;
     private readonly TuiOutputWriter _writer;
+    private readonly ICommandCatalog _catalog;
 
     /// <summary>
     /// 请求退出应用时触发。
@@ -56,7 +59,13 @@ internal sealed class CommandViewModel
         _services = services;
         _ui = ui ?? throw new ArgumentNullException(nameof(ui));
         _writer = new TuiOutputWriter(_doc, dispatcher);
+        _catalog = services.GetRequiredService<ICommandCatalog>();
     }
+
+    /// <summary>
+    /// 命令清单（用于 InputBarView 补全菜单过滤）。
+    /// </summary>
+    public ICommandCatalog Catalog => _catalog;
 
     /// <summary>
     /// 处理以 / 开头的命令行输入。返回 true 表示已处理。
@@ -112,20 +121,22 @@ internal sealed class CommandViewModel
         _writer.WriteLine("直接输入文本即可与 Agent 对话（无需 /agi 前缀）。");
         _writer.WriteLine();
         _writer.WriteLine("可用命令:");
-        _writer.WriteLine("  /help               显示此帮助");
-        _writer.WriteLine("  /clear              清空会话历史");
-        _writer.WriteLine("  /mode [name]        查看或切换权限模式");
-        _writer.WriteLine("  /provider, /p       管理 AI Provider");
-        _writer.WriteLine("  /model, /m          管理模型");
-        _writer.WriteLine("  /skill, /sk         查看和執行 Skill");
-        _writer.WriteLine("  /rule, /r           管理规则");
-        _writer.WriteLine("  /mcp, /mp           管理 MCP 客户端");
-        _writer.WriteLine("  /session, /se       管理对话会话");
-        _writer.WriteLine("  /stats, /st         会话与 Token 统计");
-        _writer.WriteLine("  /work, /w           工作区管理");
-        _writer.WriteLine("  /rag, /rg           知识库管理");
-        _writer.WriteLine("  /init <描述文本>    初始化工作区 AGENTS.md");
-        _writer.WriteLine("  /exit, /quit        退出程序");
+
+        // 按 Category 分组遍历 catalog，自动同步新增命令
+        var cliCmds = _catalog.All.Where(c => c.Supports(SlashCommandClient.Cli)).ToList();
+        var groups = cliCmds.GroupBy(c => c.Category).OrderBy(g => g.Key);
+        foreach (var grp in groups)
+        {
+            _writer.WriteLine($"  ── {grp.Key} ──");
+            foreach (var cmd in grp)
+            {
+                var aliases = cmd.Aliases.Count > 0
+                    ? ", " + string.Join(", ", cmd.Aliases)
+                    : "";
+                _writer.WriteLine($"  {cmd.Name}{aliases,-20}{cmd.Description}");
+            }
+        }
+
         _writer.WriteLine();
         _writer.WriteLine("快捷键:");
         _writer.WriteLine("  Enter               提交输入");

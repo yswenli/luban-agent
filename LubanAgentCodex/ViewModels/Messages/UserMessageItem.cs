@@ -32,6 +32,11 @@ public class UserMessageItem : MessageItemBase
     public IReadOnlyList<AttachmentDisplayInfo> Attachments { get; init; } = Array.Empty<AttachmentDisplayInfo>();
 
     /// <summary>
+    /// 是否有附件（用于 UI 绑定，控制附件区可见性）
+    /// </summary>
+    public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>
     /// 格式化时间文本（用于 UI 绑定）
     /// </summary>
     public string TimeText => Timestamp.ToString("HH:mm");

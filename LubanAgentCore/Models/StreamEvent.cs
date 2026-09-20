@@ -40,7 +40,9 @@ public sealed record ToolCallStartedEvent(string Name, string CallId, IReadOnlyD
 /// <summary>
 /// 工具调用完成事件
 /// </summary>
-public sealed record ToolCallCompletedEvent(string CallId) : StreamEvent;
+/// <param name="CallId">调用ID</param>
+/// <param name="ResultSummary">结果摘要（前 200 字符，超长末尾加 …，可为 null）</param>
+public sealed record ToolCallCompletedEvent(string CallId, string? ResultSummary = null) : StreamEvent;
 
 /// <summary>
 /// 工具调用失败事件
