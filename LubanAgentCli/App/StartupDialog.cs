@@ -172,8 +172,10 @@ internal class StartupDialog : Dialog
                 };
             }
 
-            Report("⑤ 初始化工作区...");
-            await StartupRunner.InitializeWorkspaceAsync(Services, Notices);
+            // ⑤ 准备工作区：选最近活跃非 RAG 工作区（无则弹创建表单）、授权、设为当前并可生成 AGENTS.md。
+            // 必须在向导的运行中主循环内调用——解析器会弹出嵌套模态表单。
+            Report("⑤ 准备工作区...");
+            await StartupWorkspaceResolver.ResolveAsync(Services, _ui, Notices);
 
             Success = true;
             _dispatcher.Invoke(RequestStop);

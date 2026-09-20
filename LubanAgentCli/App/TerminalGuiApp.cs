@@ -172,8 +172,29 @@ internal sealed class TerminalGuiApp : IDisposable
         }
         finally
         {
+            // 终端恢复后再打印，避免被备用屏幕吞掉；Services 此时仍存活（由 TerminalGuiApp.Dispose 释放）
+            var workspaceLine = "-";
+            var sessionLine = "-";
+            if (Services is not null)
+            {
+                var workspace = Services.GetService<IWorkspaceManager>()?.CurrentWorkspace;
+                if (workspace is not null)
+                {
+                    workspaceLine = $"{workspace.Name} ({workspace.RootPath})";
+                }
+
+                var session = Services.GetService<ISessionManager>()?.CurrentSession;
+                if (session is not null)
+                {
+                    sessionLine = $"{session.Title} ({session.SessionId})";
+                }
+            }
+
             Dispatcher = null;
             application?.Dispose();
+
+            Console.WriteLine($"工作区: {workspaceLine}");
+            Console.WriteLine($"会话: {sessionLine}");
         }
     }
 
