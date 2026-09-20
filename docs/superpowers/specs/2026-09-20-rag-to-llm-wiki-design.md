@@ -31,6 +31,9 @@ Karpathy 提出的 **LLM Wiki** 模式不同：LLM **增量构建并维护一个
 | Q11 | `RetrievalMode` | **改为 `null`，工具按需检索** | 取消每轮 auto 注入 raw，改由 LLM 主动 `wiki.search` |
 | Q12 | wiki 写入权限 | **走 `IToolConfirmationService`** | 与 `RetrievalToolGroup` 一致，受 Plan/权限模式控制 |
 | Q13 | 文档与注释 | **覆盖式要求准确完整** | 文件头注释块 + 中文 XML 注释；中英文 README 成对更新 |
+| Q14 | wiki 工具组门控 | **opt-in 组机制** | `ILuBanToolPlugin` 增默认接口成员 `IsOptIn => false`（wiki 覆写为 `true`）；`ToolPluginRegistry.GetPlugins(null)` 排除 opt-in 组，仅 profile 显式点名才注入——普通工作区（`ToolGroups=null`）自动不获得 wiki 工具 |
+| Q15 | 索引单文件能力 | **扩 `IRetrievalService`** | 现有接口无单文件索引/删除；新增 `IndexFileAsync`/`RemoveAsync`，使 `RebuildIndexAsync` 能逐页索引（排除 `log.md`）并软删除消失页 |
+| Q16 | 提取降级策略 | **`.xls` 尽力、HTML 降级纯文本** | MiniExcel 不读旧版 BIFF `.xls`，失败即告警跳过；HTML 用正则去标签转纯文本（不引 HtmlAgilityPack），不承诺完整 markdown |
 
 ---
 
@@ -62,8 +65,8 @@ Karpathy 提出的 **LLM Wiki** 模式不同：LLM **增量构建并维护一个
 
 | 层 | 新增/改动 | 职责 |
 |---|---|---|
-| 框架 `LuBan.AIAgent` | `IWikiService`/`WikiService`、`WikiToolPlugin`（工具组 `wiki`）、`IWikiContext` 抽象、`ISourceExtractor` + 提取器族、Wiki 默认 schema 文案 | 确定性逻辑与提取层 |
-| Agent | `IWikiContext` 实现、`RagAgentProfile` 扩 `wiki` 工具组、`rag-config.json` 增 `wiki` 节点、`AgentHostBuilder` 注册 | 工作区感知与注册 |
+| 框架 `LuBan.AIAgent` | `IWikiService`/`WikiService`、`WikiToolPlugin`（工具组 `wiki`，opt-in）、`IWikiContext` 抽象、`ISourceExtractor` + 提取器族、Wiki 默认 schema 文案、`ILuBanToolPlugin.IsOptIn` + `ToolPluginRegistry` 筛选调整、`IRetrievalService.IndexFileAsync`/`RemoveAsync` | 确定性逻辑与提取层 |
+| Agent | `IWikiContext` 实现、`RagAgentProfile` 扩 `wiki` 工具组、`rag-config.json` 增 `wiki` 节点、`AgentHostBuilder` 注册 `IWikiContext` + `IWikiService`（embedder 块内） | 工作区感知与注册 |
 | CLI / 桌面 | `/wiki` 命令（CLI）、命令入口（桌面）、薄封装 `IWikiService` | 两端复用同一服务 |
 
 ### 3.2 框架新增：接口与模型
@@ -85,26 +88,42 @@ public interface IWikiContext
 |---|---|---|
 | 读 | `ReadIndexAsync()` | 解析 `index.md` → 结构化 `WikiIndex` |
 | 读 | `ReadPageAsync(string relativePath)` | 读 frontmatter + 正文 |
-| 写 | `SavePageAsync(WikiPage page)` | 落盘 + `index.md` 条目 upsert + `log.md` 追加 + 单页 `IndexContentAsync` **增量重索引** |
-| 写 | `DeletePageAsync(string relativePath)` | 删文件 + 移除 index 条目 + log + 索引软删除 |
+| 写 | `SavePageAsync(WikiPage page)` | 落盘 + `index.md` 条目 upsert + `log.md` 追加 + 单页 `IRetrievalService.IndexFileAsync(<page>)` **增量重索引** |
+| 写 | `DeletePageAsync(string relativePath)` | 删文件 + 移除 index 条目 + log + `IRetrievalService.RemoveAsync(<page>)` 索引软删除 |
 | 查 | `SearchAsync(string query, int topK, bool includeRaw = false)` | 默认 `SearchAsync(pathPrefix=<wikiRoot>)`；`includeRaw` 追加无前缀检索做溯源 |
-| 编排 | `RebuildIndexAsync()` | `IndexDirectoryAsync(<wikiRoot>, "*.md")`（自动软删除消失页） |
+| 编排 | `RebuildIndexAsync()` | 枚举 `wiki/**/*.md`（**排除 `log.md`**）逐页 `IndexFileAsync`；已消失页调 `RemoveAsync` 软删除 |
 | 编排 | `LintAsync()` | 确定性检查，返回 `WikiLintReport` |
-| 统计 | `GetStatsAsync()` | 页数 / 索引切块数 |
+| 统计 | `GetStatsAsync()` | 页数为**文件系统口径**（`wiki/**/*.md`，排除 `log.md`）+ 最近一次 rebuild 报告；**不用**全局 `IRetrievalService.GetStatsAsync`（无 pathPrefix，口径不符） |
 
 **模型**
 
 - `WikiPage`：`RelativePath / Title / Type / Tags / Sources / Body / IndexSummary / Created / Updated`。
 - `WikiIndex` / `WikiIndexEntry`：解析自 `index.md` 的结构化目录。
-- `WikiLintReport { Findings, PageCount, IndexedChunks }`。
+- `WikiLintReport { Findings, PageCount }`（页数取文件系统口径，排除 `log.md`；不暴露全局 `IndexedChunks`）。
 - `LintFinding { Kind, Path, Detail }`，`Kind ∈ { Orphan, DeadLink, Unindexed, MissingSource, StaleCandidate }`。
 - `ExtractedSource`：见 3.3。
 
-**`WikiToolPlugin`（工具组 `wiki`，注册于 `LuBanAgentExtensions`）**
+**`IRetrievalService` 扩展（框架，Q15）**
 
-工具：`wiki.readIndex`、`wiki.readPage`、`wiki.savePage`、`wiki.search`、`wiki.lint`。
+现有接口只有 `IndexDirectoryAsync`/`IndexContentAsync`/`SearchAsync`/`GetStatsAsync`（`IRetrievalService.cs:29-50`），无法单文件索引/排除文件，新增：
 
-关键约束：**LLM 只经 `savePage` 间接维护 `index.md`/`log.md`**，不直接编辑这两个文件，避免格式漂移。`savePage`/`deletePage` 走 `IToolConfirmationService`，返回 `ToolResult.Plan/Denied` 语义与 `RetrievalToolGroup` 一致。
+```csharp
+/// <summary>索引/刷新单个文件（内部复用单文件提取+切块+Upsert）。</summary>
+Task IndexFileAsync(string path, CancellationToken ct = default);
+
+/// <summary>按 sourceName 软删除该文件的全部切块。</summary>
+Task RemoveAsync(string sourceName, CancellationToken ct = default);
+```
+
+`RetrievalService` 内实现（`IndexFileAsync` 复用既有 `IndexSingleContentAsync`，`RemoveAsync` 委托 `IVectorStore.SoftDeleteFileAsync`，`SqliteVectorStore.cs:75`）。**`IndexDirectoryAsync` 行为不变**（向后兼容，供 `/rag -index` 与 raw 索引继续使用）。
+
+**`WikiToolPlugin`（工具组 `wiki`，注册于 `LuBanAgentExtensions`，opt-in）**
+
+工具：`wiki.readIndex`、`wiki.readPage`、`wiki.savePage`、`wiki.deletePage`、`wiki.search`、`wiki.lint`。
+
+**opt-in 门控（Q14）**：`ILuBanToolPlugin` 增默认接口成员 `bool IsOptIn => false`（现有实现无需改动），`WikiToolPlugin` 覆写为 `true`；`ToolPluginRegistry.GetPlugins(null)` 在 `groupNames` 为 null 时过滤掉 opt-in 组（`ToolPluginRegistry.cs:63-71`），仅 `RagAgentProfile.ToolGroups` 显式含 `"wiki"` 时注入。这样 `NormalAgentProfile.ToolGroups => null` 的普通工作区不会获得 wiki 工具。
+
+关键约束：**LLM 只经 `savePage`/`deletePage` 间接维护 `index.md`/`log.md`**，不直接编辑这两个文件，避免格式漂移。两者均走 `IToolConfirmationService`，返回 `ToolResult.Plan/Denied` 语义与 `RetrievalToolGroup` 一致。
 
 ### 3.3 框架新增：源提取层
 
@@ -137,16 +156,17 @@ public sealed class ExtractedSource
 | `JsonExtractor` | `.json .jsonc .jsonl .ndjson` | 缩进 JSON / JSONL 逐行；超大对象截断并附结构摘要 |
 | `DelimitedTextExtractor` | `.csv .tsv` | 转 markdown 表（首行作表头），超宽/超长截断并标注 |
 | `XmlExtractor` | `.xml .xaml .svg` | 缩进文本 |
-| `HtmlExtractor` | `.html .htm` | 去 `script/style/注释`，正文转 markdown |
-| `ExcelExtractor` | `.xlsx .xls` | MiniExcel 读；**每 sheet → 一个 markdown 表**，sheet 名作小节标题 |
+| `HtmlExtractor` | `.html .htm` | 正则去 `script/style/注释` 与标签，**降级为纯文本**（不引 HtmlAgilityPack，不承诺完整 markdown） |
+| `ExcelExtractor` | `.xlsx`（`.xls` 尽力） | MiniExcel 读 `.xlsx`；**每 sheet → 一个 markdown 表**，sheet 名作小节标题。旧版 BIFF `.xls` 不支持，读取失败即告警跳过 |
 
-`SourceExtractorRegistry` 按扩展名路由，未命中回落 `TextExtractor`。
+`SourceExtractorRegistry` 按扩展名路由；`.xls` 也进 `ExcelExtractor` 尝试（失败告警跳过），其余未命中回落 `TextExtractor`。
 
-**与索引的关系（避免改动扩大）**：wiki 页本身是 markdown，天然进入向量库；各源经 ingest 变成 wiki 页后即可检索，**无需改现有索引管线**。仅在 `ChunkerFactory` 补 `.txt/.csv/.tsv/.jsonl/.ndjson` 语言映射（让 raw 层可选索引也正确），`.xlsx/.xls` 保持被 `LooksBinary` 排除不变。
+**与索引的关系（避免改动扩大）**：wiki 页本身是 markdown，天然进入向量库；各源经 ingest 变成 wiki 页后即可检索，**无需改现有索引管线**。仅在 `ChunkerFactory` 补 `.txt/.csv/.tsv/.jsonl/.ndjson` 语言映射（让 raw 层可选索引也正确），`.xlsx/.xls` 保持被 `LooksBinary` 排除不变（xlsx 经提取层转 wiki 页，不走 raw 索引）。
 
 ### 3.4 Agent 层改动
 
-- 新增 `IWikiContext` 实现（读 `WorkspaceManager.Current?.RootPath`），在 `AgentHostBuilder` 注册；同时注册框架 `IWikiService`（对照 `AgentHostBuilder.cs:117` 的 `IVectorStore`/`IRetrievalService` 注册）。
+- 新增 `IWikiContext` 实现（读 `WorkspaceManager.Current?.RootPath`），在 `AgentHostBuilder` 注册。
+- `IWikiService` 注册放进 `AgentHostBuilder.cs:114-123` 的 `if (embedder != null)` 块，与 `IVectorStore`/`IRetrievalService` 同处——`WikiService` 依赖 `IRetrievalService`，embedder 缺失时注册会导致 DI 解析失败；框架 `AddLuBanAgent` 只注册 `WikiToolPlugin`（opt-in），`IWikiService`/`IWikiContext` 由宿主注册。
 - `RagAgentProfile`：
   - `ToolGroups` 增 `"wiki"` → `{ "wiki", "retrieval", "filesystem", "context" }`。
   - `RetrievalMode` 由 `"auto"` 改为 `null`（取消每轮 raw 注入，改由 LLM 主动 `wiki.search`）。
@@ -252,20 +272,22 @@ wiki 下所有 `*.md` 入向量库（为主），**排除 `log.md`**（纯流水
 ### 6.1 配置
 
 - `rag-config.json` 增可选 `wiki` 节点：`{ enabled:true, schemaPath:"wiki/SCHEMA.md", indexRaw:false, topK:8, includeRaw:false }`；缺省即上述默认。
-- `LuBanAgentOptions.Tools` 增 `Wiki` 选项（`Enabled/TopK/IncludeRawDefault/MaxResultChars`）。
-- `LuBanAgentExtensions.AddLuBanAgent` 注册 `WikiToolPlugin` 与 `IWikiService`；agent 侧 `AgentHostBuilder` 注册 `IWikiContext` 实现。
+- `LuBanAgentOptions.Tools` 增 `Wiki` 选项（`Enabled/TopK/IncludeRawDefault/MaxResultChars`），由 `appsettings` 提供全局默认。
+- **数据流**：`RagAgentProfile` 读 `rag-config.json` 的 `wiki` 节点——`schemaPath` 用于系统提示词；`topK/includeRaw` 经 `BuildToolOptions()` 写入 `ToolGroupOptions.Wiki`（运行期覆盖）；`indexRaw/enabled` 由 `/wiki` 命令与 `RagAgentProfile` 判定是否暴露该工具组。
+- 注册归属：框架 `LuBanAgentExtensions.AddLuBanAgent` 注册 `WikiToolPlugin`（opt-in）；agent `AgentHostBuilder` 在 `if (embedder != null)` 块内注册 `IWikiService` 与 `IWikiContext` 实现。
 
 ### 6.2 兼容
 
 - 现有 `/rag`（`new/index/search/list/delete`）与 `retrieval` 工具组**全部保留**，`/rag -index` 仍可索引 raw 供溯源。
 - 旧 Rag 工作区**零迁移**：无 `wiki/` 时由 `WikiService` 惰性创建，首次 ingest 生成 `index.md`/`log.md`/页面。
-- 普通工作区不受影响（不注入 wiki 工具组与 schema）。
+- 普通工作区不受影响：`NormalAgentProfile.ToolGroups => null` 本意是「全部组」，因 `wiki` 为 opt-in（`IsOptIn=true`）且 `GetPlugins(null)` 过滤 opt-in，故不会注入 wiki 工具；且 `NormalAgentProfile` 无 wiki schema。
 
 ### 6.3 打包与依赖
 
 - `LuBan.AIAgent.csproj` 新增 `PackageReference Include="MiniExcel"`。
-- `LuBan.AIAgent.csproj` 的 `<Version>` 按日期制递增，重新打包供 agent 消费。
-- 注意：`luban-agent/LubanAgentCore.csproj` 当前为**临时 ProjectReference** 引用 `LuBan.AIAgent`，人工发布后须改回 NuGet。
+- `LuBan.AIAgent.csproj` 的 `<Version>` 按日期制递增，重新打包并发布。
+- 现状核实：`luban-agent/LubanAgentCore.csproj:18` 是 NuGet `PackageReference Include="LuBan.AIAgent" Version="2026.9.20.1"`（`ProjectReference` 仅存于 `:9-12` 注释，未启用）。**framework 源码改动不会自动流入 agent**，须重新打包发布后把 agent 的 `LuBan.AIAgent` 版本号提升到新版本。
+- 新增 `IRetrievalService.IndexFileAsync`/`RemoveAsync` 属**接口变更**：framework 与 agent 必须同步升级到同一版本，避免运行时 `MissingMethodException`。
 
 ---
 
@@ -291,7 +313,8 @@ wiki 下所有 `*.md` 入向量库（为主），**排除 `log.md`**（纯流水
 - slug 生成与冲突（含中文、非法字符、去重后缀）。
 - frontmatter 解析/序列化；`index.md` 解析与条目 upsert；`log.md` 追加与前缀可 `grep`。
 - `LintAsync` 五类 `Kind` 各自命中。
-- `WikiService` 经 **fake `IRetrievalService`** 验证：`SearchAsync` 默认 `pathPrefix=<wikiRoot>`、`includeRaw` 追加、`SavePageAsync` 触发单页重索引、`DeletePageAsync` 触发软删除。不引 sqlite/ONNX 依赖。
+- `WikiService` 经 **fake `IRetrievalService`** 验证：`SearchAsync` 默认 `pathPrefix=<wikiRoot>`、`includeRaw` 追加、`SavePageAsync` 调 `IndexFileAsync`、`DeletePageAsync` 调 `RemoveAsync`、`RebuildIndexAsync` 逐页 `IndexFileAsync` 且跳过 `log.md`、消失页调 `RemoveAsync`。不引 sqlite/ONNX 依赖。
+- `ToolPluginRegistry.GetPlugins(null)` 排除 opt-in 组（`WikiToolPlugin.IsOptIn==true`）；显式传 `["wiki"]` 时包含；`NormalAgentProfile.ToolGroups==null` 下不含 wiki 工具。
 
 ### 8.2 手动冒烟（agent 无自动化测试）
 
@@ -303,7 +326,7 @@ wiki 下所有 `*.md` 入向量库（为主），**排除 `log.md`**（纯流水
 2. `/wiki -search` 默认命中 wiki 页而非 raw。
 3. `/agi` 基于 wiki 作答并给页面引用；`RetrievalMode=null` 下不再自动注入 raw。
 4. `/wiki -lint` 准确定位死链/孤儿/未收录/缺源/过时候选。
-5. `/wiki -rebuild` 后向量库页数与 wiki 页数一致（排除 `log.md`）。
+5. `/wiki -rebuild` 扫描页数 == `wiki/**/*.md` 文件数（排除 `log.md`）；消失页在向量库被软删除（单测断言 `RemoveAsync` 调用，不依赖全局 `GetStatsAsync`）。
 6. 旧 `/rag` 命令与既有 Rag 工作区零回归。
 7. 中英文 README 成对更新、注释完整、`<Version>` 递增、两仓库 `dotnet build` 通过。
 8. 既有测试（含 13 个脚本工具测试）保持全绿。
