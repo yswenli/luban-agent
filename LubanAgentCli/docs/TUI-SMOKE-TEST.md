@@ -132,13 +132,14 @@
 
 ## LLM Wiki（2026-09-20 增量）
 
-- [ ] 66. `/rag -new <一个含 md/csv/xlsx 的目录>` → `/work -switch <名称>`
+- [ ] 66. `/rag -new <一个含 md/csv/xlsx 的目录>` → `/work -switch <名称>`；新建工作区的 `rag-config.json` 应已含 `"wiki"` 工具组
 - [ ] 67. `/wiki -status` → 应显示页面数 0、最近重建"无"（不报错）
-- [ ] 68. `/wiki -ingest <相对路径>` → LLM 应调用 `wiki.savePage` 建页；确认 `/wiki -status` 页面数 > 0
-- [ ] 69. 直接提问 → LLM 应先 `wiki.search`，wiki 无结果时可回落 raw
-- [ ] 70. `/wiki -lint` → 输出孤儿/死链等发现，无异常
+- [ ] 68. `/wiki -ingest <相对路径|glob>` → 应先把命中文件（含 csv/xlsx）抽取汇总为 `.luban-agent/temp/wiki-ingest-*.md` 单附件，再由 LLM 调用 `SavePageAsync` 建页；确认 `/wiki -status` 页面数 > 0
+- [ ] 68b. `/wiki -ingest ../<工作区外路径>` → 应报"未找到匹配文件"，不得越权读取
+- [ ] 69. 直接提问 → LLM 应先 `SearchAsync`，wiki 无结果时可回落 raw
+- [ ] 70. `/wiki -lint` → 输出孤儿/死链等发现，无异常；未收录(index.md/overview.md)不应误报
 - [ ] 71. `/wiki -rebuild` → 扫描数 == `wiki/**/*.md`（排除 log.md）数量
-- [ ] 72. 切换到一个 Normal 工作区 → 提问时**不应**出现 `wiki.*` 工具（opt-in 生效）
+- [ ] 72. 切换到一个 Normal 工作区 → 提问时**不应**出现 wiki 工具（`SavePageAsync` 等，opt-in 生效）
 
 ## 预期结果
 
