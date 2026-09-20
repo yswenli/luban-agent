@@ -17,6 +17,7 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using LuBan.AIAgent.Retrieval;
+using LuBan.AIAgent.Wiki;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +62,10 @@ public partial class RagManageWindow : Window
         if (_indexButton != null) _indexButton.Click += OnIndex;
         if (_searchButton != null) _searchButton.Click += OnSearch;
         if (_deleteButton != null) _deleteButton.Click += OnDelete;
+        var wikiRebuildButton = this.FindControl<Button>("WikiRebuildButton");
+        if (wikiRebuildButton != null) wikiRebuildButton.Click += OnWikiRebuildClick;
+        var wikiLintButton = this.FindControl<Button>("WikiLintButton");
+        if (wikiLintButton != null) wikiLintButton.Click += OnWikiLintClick;
         if (_backButton != null) _backButton.Click += OnBack;
         if (_ragListBox != null)
             _ragListBox.SelectionChanged += OnSelectionChanged;
@@ -165,6 +170,53 @@ public partial class RagManageWindow : Window
         finally
         {
             if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
+        }
+    }
+
+    private async void OnWikiRebuildClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var wiki = _services.GetService<IWikiService>();
+        if (wiki == null)
+        {
+            await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法重建索引");
+            return;
+        }
+
+        try
+        {
+            var report = await wiki.RebuildIndexAsync();
+            await Dialogs.ShowInfoAsync(this,
+                $"重建完成：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RagManageWindow.OnWikiRebuildClick 异常", ex);
+            await Dialogs.ShowErrorAsync(this, $"重建失败: {ex.Message}");
+        }
+    }
+
+    private async void OnWikiLintClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var wiki = _services.GetService<IWikiService>();
+        if (wiki == null)
+        {
+            await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法执行 lint");
+            return;
+        }
+
+        try
+        {
+            var report = await wiki.LintAsync();
+            var text = report.Findings.Count == 0
+                ? $"共 {report.PageCount} 页，未发现问题。"
+                : $"共 {report.PageCount} 页，{report.Findings.Count} 项：\n" +
+                  string.Join("\n", report.Findings.Take(50).Select(f => $"[{f.Kind}] {f.Path}：{f.Detail}"));
+            await Dialogs.ShowInfoAsync(this, text);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RagManageWindow.OnWikiLintClick 异常", ex);
+            await Dialogs.ShowErrorAsync(this, $"lint 失败: {ex.Message}");
         }
     }
 
