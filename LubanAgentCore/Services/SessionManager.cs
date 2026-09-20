@@ -255,11 +255,11 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         await _sessionRepo.DeleteAllAsync();
         _currentSession = null;
 
-        // 保持"有当前工作区必有当前会话"不变量：清空后立即重建默认会话，
+        // 保持"有当前工作区必有当前会话"不变量：清空后立即重建“新会话”，
         // 否则对话持久化前提（CurrentSession 非空）被破坏，每轮对话再次孤立
         if (WorkspaceManager.Current is not null)
         {
-            await CreateSessionAsync(userId: "default", title: "默认会话");
+            await CreateSessionAsync(userId: "default", title: "新会话");
         }
     }
 
