@@ -97,6 +97,7 @@ public sealed class CommandCatalog : ICommandCatalog
             new("/stats", new[] { "/st" }, "会话与 Token 统计", "管理", "/stats", SlashCommandClient.Both),
             new("/work", new[] { "/w" }, "工作区管理", "管理", "/work [子命令]", SlashCommandClient.Both),
             new("/rag", new[] { "/rg" }, "知识库管理", "管理", "/rag [子命令]", SlashCommandClient.Both),
+            new("/wiki", new[] { "/wk" }, "LLM Wiki 管理", "管理", "/wiki [子命令]", SlashCommandClient.Cli),
             new("/init", Array.Empty<string>(), "初始化工作区 AGENTS.md", "管理", "/init <描述文本>", SlashCommandClient.Cli),
         };
         return list;

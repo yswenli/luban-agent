@@ -15,6 +15,7 @@
 *统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
+using LuBan.AIAgent.Wiki;
 using LubanAgentCli.App.Models;
 using LubanAgentCore.Commands;
 
@@ -99,6 +100,7 @@ internal sealed class CommandViewModel
             case "/stats":    case "/st":        ExecuteManagementCommand<StatsCommand>(parts); return true;
             case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
             case "/rag":      case "/rg":        ExecuteManagementCommand<RagCommand>(parts); return true;
+            case "/wiki":     case "/wk":        ExecuteManagementCommand<WikiCommand>(parts); return true;
             case "/init":                        ExecuteManagementCommand<InitCommand>(parts); return true;
 
             // ── Agent 对话（默认激活）──
@@ -261,6 +263,10 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<RagFileRepository>(),
                 _services.GetRequiredService<RagChunkRepository>(),
                 _services.GetRequiredService<SessionRepository>(), _writer, _ui),
+            nameof(WikiCommand) => (TCommand)(object)new WikiCommand(configManager, configuration,
+                _services.GetRequiredService<IWorkspaceManager>(),
+                _services.GetRequiredService<IWikiService>(),
+                _conversationVm, _writer, _ui),
             nameof(InitCommand) => (TCommand)(object)new InitCommand(configManager, configuration,
                 _services.GetRequiredService<IAgentsMdInitializer>(),
                 _services.GetRequiredService<IWorkspaceManager>(),
