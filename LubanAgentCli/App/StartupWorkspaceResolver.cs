@@ -54,9 +54,16 @@ internal static class StartupWorkspaceResolver
             notices.Add($"当前工作区: {target.Name} ({target.RootPath})");
         }
 
-        // 授权（沿用启动向导设置的授权弹窗）
-        var authorized = await workspaceManager.EnsureAuthorizedAsync(target);
-        notices.Add(authorized ? "工作区已授权" : "工作区未授权，文件操作将受限");
+        // 授权（仅未授权时弹窗，避免已授权工作区每次启动重复确认；沿用启动向导设置的授权弹窗）
+        if (target.IsAuthorized)
+        {
+            notices.Add("工作区已授权");
+        }
+        else
+        {
+            var authorized = await workspaceManager.EnsureAuthorizedAsync(target);
+            notices.Add(authorized ? "工作区已授权" : "工作区未授权，文件操作将受限");
+        }
 
         // 设置为当前工作区（内部恢复最近活跃会话，无则新建“新会话”）
         await workspaceManager.SetCurrentAsync(target.WorkspaceId);
