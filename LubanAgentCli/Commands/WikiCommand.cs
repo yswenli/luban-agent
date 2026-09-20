@@ -14,7 +14,9 @@
 *描述：LLM Wiki 管理命令（status/ingest/lint/rebuild/search）
 *
  *****************************************************************************/
+using System.Text;
 using LuBan.AIAgent.Wiki;
+using LuBan.AIAgent.Wiki.Extractors;
 using LubanAgentCli.App.ViewModels;
 
 namespace LubanAgentCli.Commands;
@@ -122,7 +124,8 @@ internal sealed class WikiCommand : CommandBase
         Writer.WriteLine();
         Writer.WriteLine("LLM Wiki 命令用法：");
         Writer.WriteLine("  /wiki -status              - 显示 wiki 统计");
-        Writer.WriteLine("  /wiki -ingest <路径|glob>  - 让 LLM 读取源文件并写入 wiki");
+        Writer.WriteLine("  /wiki -ingest <工作区内路径|glob> - 让 LLM 读取源文件并写入 wiki");
+        Writer.WriteLine("                               glob 支持 * / ?，递归匹配全部子目录");
         Writer.WriteLine("  /wiki -lint                - 检查孤儿页/死链/未收录/来源缺失");
         Writer.WriteLine("  /wiki -rebuild             - 重建 wiki 向量索引（逐页，排除 log.md）");
         Writer.WriteLine("  /wiki -search <查询>       - 在 wiki 中搜索");
@@ -179,7 +182,7 @@ internal sealed class WikiCommand : CommandBase
 
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /wiki -ingest <路径|glob>");
+            Writer.WriteError("用法: /wiki -ingest <工作区内路径|glob>");
             return;
         }
 
@@ -191,18 +194,64 @@ internal sealed class WikiCommand : CommandBase
 
         var target = string.Join(' ', args[1..]);
         var workspace = _workspaceManager.CurrentWorkspace!;
-        var attachments = ResolveFiles(workspace.RootPath, target);
-        if (attachments.Count == 0)
+        var files = ResolveFiles(workspace.RootPath, target);
+        if (files.Count == 0)
         {
             Writer.WriteError($"未找到匹配文件: {target}");
             return;
         }
 
-        var instruction = $"请读取以下源文件，按 wiki schema 将其沉淀为 wiki 页面（先读 index，必要时并页），并为相关实体/概念建页互链：{target}";
-        Writer.WriteInfo($"开始 ingest：{attachments.Count} 个文件");
+        var rootFull = Path.GetFullPath(workspace.RootPath);
+        var registry = SourceExtractorRegistry.CreateDefault();
+        var sb = new StringBuilder();
+        sb.Append("# Wiki Ingest 源文件\n\n");
+        sb.Append($"- 生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}\n");
+        sb.Append($"- 源文件数：{files.Count}\n\n");
+
+        var merged = 0;
+        foreach (var file in files)
+        {
+            var rel = ToRelativePath(rootFull, file);
+            try
+            {
+                var extracted = await registry.ExtractAsync(file);
+                var body = string.IsNullOrWhiteSpace(extracted.Markdown) ? extracted.Text : extracted.Markdown;
+                sb.Append("## ").Append(rel).Append("\n\n");
+                if (extracted.Truncated) sb.Append("> （内容已截断）\n\n");
+                sb.Append(body).Append("\n\n");
+                merged++;
+            }
+            catch (Exception ex)
+            {
+                Writer.WriteWarning($"跳过 {rel}: {ex.Message}");
+            }
+        }
+
+        if (merged == 0)
+        {
+            Writer.WriteError($"所有源文件均提取失败: {target}");
+            return;
+        }
+
+        var mergedText = sb.ToString();
+        if (mergedText.Length > TextExtractor.MaxChars)
+        {
+            mergedText = mergedText[..TextExtractor.MaxChars];
+            Writer.WriteWarning($"汇总内容超过 {TextExtractor.MaxChars} 字符，已截断");
+        }
+
+        var configDir = workspace.ConfigPath ?? ".luban-agent";
+        var tempDir = Path.Combine(workspace.RootPath, configDir, "temp");
+        Directory.CreateDirectory(tempDir);
+        var tempPath = Path.Combine(tempDir, $"wiki-ingest-{DateTime.Now:yyyyMMddHHmmss}.md");
+        await File.WriteAllTextAsync(tempPath, mergedText);
+
+        var relTemp = ToRelativePath(rootFull, tempPath);
+        var instruction = $"请读取附件中的源文件汇总（{relTemp}），按 wiki schema 将其沉淀为 wiki 页面（先读 index，必要时并页），并为相关实体/概念建页互链。";
+        Writer.WriteInfo($"开始 ingest：汇总 {merged} 个源文件 → {relTemp}");
         try
         {
-            await _conversation.ProcessInputAsync(instruction, attachments);
+            await _conversation.ProcessInputAsync(instruction, new List<string> { tempPath });
         }
         catch (Exception ex)
         {
@@ -212,22 +261,44 @@ internal sealed class WikiCommand : CommandBase
     }
 
     /// <summary>
-    /// 解析工作区根下的文件：单文件 / glob / 目录
+    /// 解析工作区根下的文件：单文件 / glob / 目录，结果限制在工作区内
     /// </summary>
     private static List<string> ResolveFiles(string rootPath, string target)
     {
-        var full = Path.IsPathRooted(target) ? target : Path.Combine(rootPath, target);
+        var rootFull = Path.GetFullPath(rootPath);
+        var full = Path.IsPathRooted(target) ? target : Path.Combine(rootFull, target);
+        if (!IsInsideRoot(rootFull, full)) return new List<string>();
+
         if (File.Exists(full)) return new List<string> { full };
 
         var dir = Path.GetDirectoryName(full);
         var pattern = Path.GetFileName(full);
         if (dir != null && Directory.Exists(dir) && (pattern.Contains('*') || pattern.Contains('?')))
-            return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories).ToList();
+            return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories)
+                .Where(f => IsInsideRoot(rootFull, f)).ToList();
 
         return Directory.Exists(full)
-            ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories).ToList()
+            ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
+                .Where(f => IsInsideRoot(rootFull, f)).ToList()
             : new List<string>();
     }
+
+    /// <summary>
+    /// 判断候选路径是否位于工作区根目录内（防止 ../ 或绝对路径越界）
+    /// </summary>
+    private static bool IsInsideRoot(string rootFull, string candidate)
+    {
+        var full = Path.GetFullPath(candidate);
+        var root = rootFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return full.Equals(root, StringComparison.OrdinalIgnoreCase)
+            || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 计算相对工作区根的展示路径（统一使用正斜杠）
+    /// </summary>
+    private static string ToRelativePath(string rootFull, string path)
+        => Path.GetRelativePath(rootFull, path).Replace('\\', '/');
 
     /// <summary>
     /// 检查孤儿页/死链/未收录/来源缺失
