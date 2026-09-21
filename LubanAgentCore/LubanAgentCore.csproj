@@ -6,16 +6,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- 临时：为验证 LLM Wiki 改造（wiki 服务/工具插件/extractors），
-         把 LuBan.AIAgent 由 NuGet 包改为项目引用。
-         ⚠️ 人工发布 framework 新版本后必须改回下方的 NuGet 引用：
-         <PackageReference Include="LuBan.AIAgent" Version="2026.9.20.2" /> -->
-		<PackageReference Include="LuBan.Common" Version="2026.9.20.1" />
-		<PackageReference Include="LuBan.DI" Version="2026.9.20.1" />
-		<PackageReference Include="LuBan.Threading" Version="2026.9.20.1" />
-		<PackageReference Include="LuBan.Logging" Version="2026.9.20.1" />
-		<PackageReference Include="LuBan.Orm" Version="2026.9.20.1" />
-		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+		<PackageReference Include="LuBan.Common" Version="2026.09.21.1" />
+		<PackageReference Include="LuBan.DI" Version="2026.09.21.1" />
+		<PackageReference Include="LuBan.Threading" Version="2026.09.21.1" />
+		<PackageReference Include="LuBan.Logging" Version="2026.09.21.1" />
+		<PackageReference Include="LuBan.Orm" Version="2026.09.21.1" />
+		<PackageReference Include="LuBan.AIAgent" Version="2026.09.21.1" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />

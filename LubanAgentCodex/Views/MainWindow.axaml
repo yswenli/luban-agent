@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:LubanAgentCodex.Views.Controls"
+        xmlns:vm="using:LubanAgentCodex.ViewModels"
         x:Class="LubanAgentCodex.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
         Title="LubanCodex"
         Width="920"
         Height="670"
@@ -14,7 +16,7 @@
     <Grid RowDefinitions="*,Auto">
 
         <!-- 主内容区：侧边栏 + (消息流 + 输入框) -->
-        <Grid Grid.Row="0" ColumnDefinitions="280,*">
+        <Grid Grid.Row="0" ColumnDefinitions="280,*" x:Name="ContentRoot">
             <controls:Sidebar Grid.Column="0"
                               x:Name="Sidebar" />
 
@@ -31,37 +33,11 @@
         <controls:FooterBar Grid.Row="1"
                             x:Name="FooterBar" />
 
-        <!-- 切换会话中央加载提示 -->
-        <Grid Grid.Row="0"
-              Grid.RowSpan="2"
-              x:Name="LoadingOverlay"
-              IsVisible="False"
-              Background="#80000000"
-              ZIndex="100">
-            <Border Background="{DynamicResource CardBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="12"
-                    BoxShadow="0 12 34 0 #00000066"
-                    Padding="34,28"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
-                <StackPanel Orientation="Vertical"
-                            Spacing="14"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="🔄"
-                               FontSize="26"
-                               HorizontalAlignment="Center" />
-                    <ProgressBar IsIndeterminate="True"
-                                 Width="180"
-                                 Height="4" />
-                    <TextBlock Text="正在切换会话…"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               FontSize="14"
-                               HorizontalAlignment="Center" />
-                </StackPanel>
-            </Border>
-        </Grid>
+        <!-- 忙碌遮罩：切换会话 / 知识库索引等长耗时任务期间全程可见 -->
+        <controls:BusyOverlay Grid.Row="0"
+                              Grid.RowSpan="2"
+                              x:Name="BusyOverlay"
+                              Text="{Binding BusyOverlayText}" />
 
     </Grid>
 

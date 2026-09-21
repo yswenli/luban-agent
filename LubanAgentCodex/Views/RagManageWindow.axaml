@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:LubanAgentCodex.Views.Controls"
         x:Class="LubanAgentCodex.Views.RagManageWindow"
         Title="RAG 知识库管理"
         Width="600"
@@ -7,7 +8,7 @@
         WindowStartupLocation="CenterOwner">
 
     <Grid RowDefinitions="Auto,*">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,16,16,8">
+        <StackPanel Grid.Row="0" Name="ToolBar" Orientation="Horizontal" Spacing="8" Margin="16,16,16,8">
             <Button Name="CreateButton" Content="+ 创建知识库" />
             <Button Name="IndexButton" Content="索引" IsEnabled="False" />
             <Button Name="SearchButton" Content="搜索" IsEnabled="False" />
@@ -22,6 +23,11 @@
 
         <!-- 搜索结果列表（默认隐藏，与 RagListBox 同位置叠加） -->
         <ListBox Grid.Row="1" Name="ResultListBox" Margin="16,0,16,16" IsVisible="False" />
+
+        <!-- 忙碌遮罩：索引/重建/lint 等长耗时任务期间全程覆盖，不可中断 -->
+        <controls:BusyOverlay Grid.Row="0"
+                              Grid.RowSpan="2"
+                              Name="BusyOverlay" />
     </Grid>
 
 </Window>

@@ -206,17 +206,38 @@ public class RagCommand : CommandBase
 
         try
         {
-            var report = await _retrievalService.IndexDirectoryAsync(workspace.RootPath, glob, force: false);
+            var maxFileSizeBytes = RetrievalIndexPlanner.GetMaxFileSizeBytes(Configuration);
+            var fileCount = RetrievalIndexPlanner.Unknown;
+            IndexReport? report = null;
+
+            // 两段式提示：先"正在扫描目录"，预扫出文件数后更新为"共 N 个文件，正在生成向量"。
+            // 进度窗设为不可关闭：索引属长耗时任务，中途关窗会让用户误判为已完成。
+            Ui.RunWithProgress("索引知识库", RetrievalIndexPlanner.IndexScanStatus(workspace.RootPath), async status =>
+            {
+                fileCount = RetrievalIndexPlanner.CountIndexableFiles(workspace.RootPath, glob, maxFileSizeBytes);
+                status(RetrievalIndexPlanner.IndexEmbedStatus(fileCount));
+                if (fileCount == 0) return;
+
+                report = await _retrievalService.IndexDirectoryAsync(workspace.RootPath, glob, force: false);
+            }, closable: false);
+
+            if (fileCount == 0)
+            {
+                Writer.WriteWarning(RetrievalIndexPlanner.NoIndexableFilesText);
+                return;
+            }
+
+            var result = report ?? new IndexReport();
             Writer.WriteSuccess("索引完成");
-            Writer.WriteInfo($"  扫描文件: {report.ScannedFiles}");
-            Writer.WriteInfo($"  新增文件: {report.NewFiles}");
-            Writer.WriteInfo($"  更新文件: {report.UpdatedFiles}");
-            Writer.WriteInfo($"  跳过文件: {report.SkippedFiles}");
-            Writer.WriteInfo($"  总切块数: {report.TotalChunks}");
-            if (report.Errors.Count > 0)
+            Writer.WriteInfo($"  扫描文件: {result.ScannedFiles}");
+            Writer.WriteInfo($"  新增文件: {result.NewFiles}");
+            Writer.WriteInfo($"  更新文件: {result.UpdatedFiles}");
+            Writer.WriteInfo($"  跳过文件: {result.SkippedFiles}");
+            Writer.WriteInfo($"  总切块数: {result.TotalChunks}");
+            if (result.Errors.Count > 0)
             {
                 Writer.WriteWarning("  错误信息：");
-                foreach (var err in report.Errors.Take(5))
+                foreach (var err in result.Errors.Take(5))
                     Writer.WriteError($"  - {err}");
             }
         }

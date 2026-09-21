@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LubanAgentCodex.Views.Controls.BusyOverlay"
+             IsVisible="False"
+             ZIndex="100">
+
+    <!-- 全窗遮罩：长耗时任务（索引/重建/lint）期间全程可见，文案由宿主设置 -->
+    <Grid Background="#80000000">
+        <Border Background="{DynamicResource CardBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                BoxShadow="0 12 34 0 #00000066"
+                Padding="34,28"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <StackPanel Orientation="Vertical"
+                        Spacing="14"
+                        HorizontalAlignment="Center">
+                <TextBlock Text="🔄"
+                           FontSize="26"
+                           HorizontalAlignment="Center" />
+                <ProgressBar IsIndeterminate="True"
+                             Width="180"
+                             Height="4" />
+                <TextBlock Name="StatusText"
+                           Text="正在处理…"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="14"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Grid>
+
+</UserControl>

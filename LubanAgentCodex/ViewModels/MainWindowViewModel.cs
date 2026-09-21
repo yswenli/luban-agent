@@ -242,6 +242,18 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isSwitchingSession;
 
     /// <summary>
+    /// 是否显示忙碌遮罩（知识库索引/重建等长耗时任务，与切换会话共用同一遮罩）
+    /// </summary>
+    [ObservableProperty]
+    private bool _busyOverlayVisible;
+
+    /// <summary>
+    /// 忙碌遮罩状态文本
+    /// </summary>
+    [ObservableProperty]
+    private string _busyOverlayText = "正在处理…";
+
+    /// <summary>
     /// 权限模式
     /// </summary>
     [ObservableProperty]

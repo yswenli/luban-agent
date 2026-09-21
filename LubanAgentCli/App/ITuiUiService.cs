@@ -56,7 +56,11 @@ public interface ITuiUiService
     /// <param name="title">对话框标题。</param>
     /// <param name="initialStatus">初始状态文本。</param>
     /// <param name="work">实际工作，参数为状态更新回调。</param>
-    void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work);
+    /// <param name="closable">
+    /// 是否允许用户按键关闭（Esc/Ctrl+Q）。知识库索引等长耗时且中途关闭会误导用户的任务应传 false，
+    /// 让进度提示全程可见，直到 work 结束自动关闭。
+    /// </param>
+    void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work, bool closable = true);
 
     /// <summary>表格弹窗（TableView，"关闭/选择"按钮）。返回选中行索引（-1 表示未选中或取消）。</summary>
     int ShowTable(string title, IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows, bool selectable = false);

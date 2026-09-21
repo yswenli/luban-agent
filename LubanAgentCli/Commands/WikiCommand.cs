@@ -209,23 +209,32 @@ internal sealed class WikiCommand : CommandBase
         sb.Append($"- 源文件数：{files.Count}\n\n");
 
         var merged = 0;
-        foreach (var file in files)
+
+        // 提取阶段逐文件更新进度（不可关闭）：大文件/Office 转换可能明显耗时，
+        // 提取完成后关闭进度窗，再交回 Agent 正常流式展现。
+        Ui.RunWithProgress("提取源文件", $"正在提取源文件 0/{files.Count}…", async status =>
         {
-            var rel = ToRelativePath(rootFull, file);
-            try
+            var index = 0;
+            foreach (var file in files)
             {
-                var extracted = await registry.ExtractAsync(file);
-                var body = string.IsNullOrWhiteSpace(extracted.Markdown) ? extracted.Text : extracted.Markdown;
-                sb.Append("## ").Append(rel).Append("\n\n");
-                if (extracted.Truncated) sb.Append("> （内容已截断）\n\n");
-                sb.Append(body).Append("\n\n");
-                merged++;
+                index++;
+                var rel = ToRelativePath(rootFull, file);
+                status($"正在提取源文件 {index}/{files.Count}：{rel}");
+                try
+                {
+                    var extracted = await registry.ExtractAsync(file);
+                    var body = string.IsNullOrWhiteSpace(extracted.Markdown) ? extracted.Text : extracted.Markdown;
+                    sb.Append("## ").Append(rel).Append("\n\n");
+                    if (extracted.Truncated) sb.Append("> （内容已截断）\n\n");
+                    sb.Append(body).Append("\n\n");
+                    merged++;
+                }
+                catch (Exception ex)
+                {
+                    Writer.WriteWarning($"跳过 {rel}: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Writer.WriteWarning($"跳过 {rel}: {ex.Message}");
-            }
-        }
+        }, closable: false);
 
         if (merged == 0)
         {
@@ -309,9 +318,29 @@ internal sealed class WikiCommand : CommandBase
 
         try
         {
-            var report = await _wiki.LintAsync();
-            Writer.WriteSuccess($"lint 完成：{report.PageCount} 页，{report.Findings.Count} 项发现");
-            foreach (var f in report.Findings.Take(50))
+            var workspace = _workspaceManager.CurrentWorkspace!;
+            var pageCount = RetrievalIndexPlanner.Unknown;
+            WikiLintReport? report = null;
+
+            // 两段式提示 + 不可关闭进度窗：lint 需逐页解析，避免用户误以为命令卡住。
+            Ui.RunWithProgress("wiki lint", RetrievalIndexPlanner.WikiScanStatus, async status =>
+            {
+                pageCount = RetrievalIndexPlanner.CountWikiPages(workspace.RootPath);
+                status(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在检查孤儿页/死链/未收录"));
+                if (pageCount == 0) return;
+
+                report = await _wiki.LintAsync();
+            }, closable: false);
+
+            if (pageCount == 0)
+            {
+                Writer.WriteWarning(RetrievalIndexPlanner.NoWikiPagesText);
+                return;
+            }
+
+            var result = report ?? new WikiLintReport();
+            Writer.WriteSuccess($"lint 完成：{result.PageCount} 页，{result.Findings.Count} 项发现");
+            foreach (var f in result.Findings.Take(50))
                 Writer.WriteInfo($"  [{f.Kind}] {f.Path}：{f.Detail}");
         }
         catch (Exception ex)
@@ -331,12 +360,32 @@ internal sealed class WikiCommand : CommandBase
         try
         {
             Writer.WriteInfo("开始重建 wiki 索引（排除 log.md）...");
-            var report = await _wiki.RebuildIndexAsync();
-            Writer.WriteSuccess($"重建完成：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
-            if (report.Errors.Count > 0)
+            var workspace = _workspaceManager.CurrentWorkspace!;
+            var pageCount = RetrievalIndexPlanner.Unknown;
+            IndexReport? report = null;
+
+            // 两段式提示 + 不可关闭进度窗：重建需逐页重新嵌入，避免用户误以为命令卡住。
+            Ui.RunWithProgress("重建 wiki 索引", RetrievalIndexPlanner.WikiScanStatus, async status =>
+            {
+                pageCount = RetrievalIndexPlanner.CountWikiPages(workspace.RootPath);
+                status(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在重建向量索引"));
+                if (pageCount == 0) return;
+
+                report = await _wiki.RebuildIndexAsync();
+            }, closable: false);
+
+            if (pageCount == 0)
+            {
+                Writer.WriteWarning(RetrievalIndexPlanner.NoWikiPagesText);
+                return;
+            }
+
+            var result = report ?? new IndexReport();
+            Writer.WriteSuccess($"重建完成：扫描 {result.ScannedFiles}，删除 {result.DeletedFiles}，切块 {result.TotalChunks}");
+            if (result.Errors.Count > 0)
             {
                 Writer.WriteWarning("  错误信息：");
-                foreach (var err in report.Errors.Take(5))
+                foreach (var err in result.Errors.Take(5))
                     Writer.WriteWarning($"  - {err}");
             }
         }

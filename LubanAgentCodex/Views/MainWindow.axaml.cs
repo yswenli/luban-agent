@@ -22,12 +22,14 @@ using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views.Controls;
-using LubanAgentCore.Configuration;
+using LuBan.AIAgent.Configuration;
 using LubanAgentCore.Entities;
+using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Retrieval;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Collections.Specialized;
 using System.Linq;
 
@@ -43,7 +45,8 @@ public partial class MainWindow : Window
     private InputBox? _inputBox;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
-    private Grid? _loadingOverlay;
+    private BusyOverlay? _busyOverlay;
+    private Grid? _contentRoot;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
@@ -61,7 +64,8 @@ public partial class MainWindow : Window
         _inputBox = this.FindControl<InputBox>("InputBox");
         _sidebar = this.FindControl<Sidebar>("Sidebar");
         _footerBar = this.FindControl<FooterBar>("FooterBar");
-        _loadingOverlay = this.FindControl<Grid>("LoadingOverlay");
+        _busyOverlay = this.FindControl<BusyOverlay>("BusyOverlay");
+        _contentRoot = this.FindControl<Grid>("ContentRoot");
 
         // 订阅键盘事件
         this.KeyDown += OnKeyDown;
@@ -145,12 +149,11 @@ public partial class MainWindow : Window
                     {
                         _inputBox.IsRunning = _viewModel.IsRunning;
                     }
-                    else if (e.PropertyName == nameof(MainWindowViewModel.IsSwitchingSession))
+                    else if (e.PropertyName == nameof(MainWindowViewModel.IsSwitchingSession)
+                        || e.PropertyName == nameof(MainWindowViewModel.BusyOverlayVisible)
+                        || e.PropertyName == nameof(MainWindowViewModel.BusyOverlayText))
                     {
-                        if (_loadingOverlay != null)
-                        {
-                            _loadingOverlay.IsVisible = _viewModel.IsSwitchingSession;
-                        }
+                        UpdateBusyOverlay();
                     }
                     else if (e.PropertyName == nameof(MainWindowViewModel.PermissionMode))
                     {
@@ -232,6 +235,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // 知识库索引等长耗时任务期间屏蔽全局快捷键：避免用户以为已可交互
+        if (_viewModel?.BusyOverlayVisible == true) return;
+
         // Esc 取消当前对话
         if (e.Key == Key.Escape)
         {
@@ -246,6 +252,21 @@ public partial class MainWindow : Window
             CyclePermissionMode();
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// 刷新忙碌遮罩：切换会话与知识库索引共用同一遮罩；
+    /// 索引期间同时禁用主内容区（侧边栏/消息流/输入框），确保提示全程可见且不可误操作。
+    /// </summary>
+    private void UpdateBusyOverlay()
+    {
+        if (_busyOverlay == null || _viewModel == null) return;
+
+        var busy = _viewModel.BusyOverlayVisible;
+        _busyOverlay.Text = busy ? _viewModel.BusyOverlayText : "正在切换会话…";
+        _busyOverlay.IsVisible = busy || _viewModel.IsSwitchingSession;
+
+        if (_contentRoot != null) _contentRoot.IsEnabled = !busy;
     }
 
     /// <summary>
@@ -620,41 +641,76 @@ public partial class MainWindow : Window
             // 创建 RAG 工作区
             try
             {
-                    var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");
+                    // 遮罩全程覆盖：创建工作区 → 扫描目录 → 生成向量。
+                    // 索引属长耗时任务且不可中断，避免用户误以为程序卡住。
+                    var vm = _viewModel!;
+                    vm.BusyOverlayText = "正在创建知识库…";
+                    vm.BusyOverlayVisible = true;
 
-                    // 初始化向量索引：将所选目录内容嵌入并建立检索库，使知识库可问答。
-                    // 必须在“当前工作区=该 RAG 工作区”下索引，保证切块按 WorkspaceId 隔离。
-                    var retrieval = _viewModel.Services.GetService<IRetrievalService>();
-                    if (retrieval != null)
+                    try
                     {
-                        var previous = workspaceManager.CurrentWorkspace;
-                        try
+                        var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");
+
+                        // 初始化向量索引：将所选目录内容嵌入并建立检索库，使知识库可问答。
+                        // 必须在“当前工作区=该 RAG 工作区”下索引，保证切块按 WorkspaceId 隔离。
+                        var retrieval = vm.Services.GetService<IRetrievalService>();
+                        if (retrieval != null)
                         {
-                            await workspaceManager.EnsureAuthorizedAsync(ragWs);
-                            await workspaceManager.SetCurrentAsync(ragWs.WorkspaceId);
-                            var report = await retrieval.IndexDirectoryAsync(path);
+                            var previous = workspaceManager.CurrentWorkspace;
+                            try
+                            {
+                                await workspaceManager.EnsureAuthorizedAsync(ragWs);
+                                await workspaceManager.SetCurrentAsync(ragWs.WorkspaceId);
+
+                                var maxFileSizeBytes = vm.Services.GetRequiredService<IOptions<LuBanAgentOptions>>()
+                                    .Value.Tools.Retrieval.MaxFileSizeKB * 1024L;
+
+                                // 预扫与嵌入都放到后台线程，仅遮罩文案在 UI 线程更新
+                                vm.BusyOverlayText = RetrievalIndexPlanner.IndexScanStatus(path);
+                                var fileCount = await Task.Run(() =>
+                                    RetrievalIndexPlanner.CountIndexableFiles(path, null, maxFileSizeBytes));
+
+                                if (fileCount == 0)
+                                {
+                                    vm.BusyOverlayVisible = false;
+                                    await Dialogs.ShowInfoAsync(this,
+                                        $"{RetrievalIndexPlanner.NoIndexableFilesText}\n知识库已创建。");
+                                }
+                                else
+                                {
+                                    vm.BusyOverlayText = RetrievalIndexPlanner.IndexEmbedStatus(fileCount);
+                                    var report = await Task.Run(() => retrieval.IndexDirectoryAsync(path));
+                                    vm.BusyOverlayVisible = false;
+                                    await Dialogs.ShowInfoAsync(this,
+                                        $"知识库已初始化并索引完成：\n扫描 {report.ScannedFiles} 个文件，切块 {report.TotalChunks} 块。");
+                                }
+                            }
+                            catch (Exception idxEx)
+                            {
+                                vm.BusyOverlayVisible = false;
+                                await Dialogs.ShowErrorAsync(this,
+                                    $"知识库已创建，但索引失败：{idxEx.Message}\n你仍可在对话中让 AI 执行索引。");
+                            }
+                            finally
+                            {
+                                // 恢复到用户此前所在工作区，避免意外切换会话
+                                if (previous != null)
+                                    await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
+                            }
+                        }
+                        else
+                        {
+                            vm.BusyOverlayVisible = false;
                             await Dialogs.ShowInfoAsync(this,
-                                $"知识库已初始化并索引完成：\n扫描 {report.ScannedFiles} 个文件，切块 {report.TotalChunks} 块。");
+                                "知识库已创建，但嵌入模型未就绪，暂未建立索引。\n请将嵌入模型包放入 EmbeddingModels 目录后重新初始化。");
                         }
-                        catch (Exception idxEx)
-                        {
-                            await Dialogs.ShowErrorAsync(this,
-                                $"知识库已创建，但索引失败：{idxEx.Message}\n你仍可在对话中让 AI 执行索引。");
-                        }
-                        finally
-                        {
-                            // 恢复到用户此前所在工作区，避免意外切换会话
-                            if (previous != null)
-                                await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
-                        }
-                    }
-                    else
-                    {
-                        await Dialogs.ShowInfoAsync(this,
-                            "知识库已创建，但嵌入模型未就绪，暂未建立索引。\n请将嵌入模型包放入 EmbeddingModels 目录后重新初始化。");
-                    }
 
-                    _sidebar?.SetServiceProvider(_viewModel.Services);
+                        _sidebar?.SetServiceProvider(vm.Services);
+                    }
+                    finally
+                    {
+                        vm.BusyOverlayVisible = false;
+                    }
             }
             catch (Exception ex)
             {

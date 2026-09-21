@@ -188,6 +188,32 @@ internal sealed class TuiUiService : ITuiUiService
         }
     }
 
+    /// <summary>
+    /// 进度对话框（无按钮）。<c>closable=false</c> 时吞掉 Esc/Ctrl+Q 等关闭按键，
+    /// 保证知识库索引等长耗时任务期间提示全程可见，只能等 work 结束自动关闭。
+    /// </summary>
+    private sealed class ProgressDialog : Dialog
+    {
+        private readonly bool _closable;
+
+        /// <param name="closable">是否允许用户按键关闭。</param>
+        public ProgressDialog(bool closable)
+        {
+            _closable = closable;
+        }
+
+        /// <inheritdoc/>
+        protected override bool OnKeyDown(Key key)
+        {
+            if (!_closable && (key == Key.Esc || key == Key.Q.WithCtrl))
+            {
+                return true;
+            }
+
+            return base.OnKeyDown(key);
+        }
+    }
+
 #pragma warning disable CS0618 // TextView 已过时：多行表单字段仍使用（不引入 tui-cs/Editor 新依赖）
     /// <inheritdoc/>
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
@@ -290,13 +316,13 @@ internal sealed class TuiUiService : ITuiUiService
 #pragma warning restore CS0618
 
     /// <inheritdoc/>
-    public void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work)
+    public void RunWithProgress(string title, string initialStatus, Func<Action<string>, Task> work, bool closable = true)
     {
         ArgumentNullException.ThrowIfNull(work);
 
         RunModal<object?>(() =>
         {
-            using var dialog = new Dialog
+            using var dialog = new ProgressDialog(closable)
             {
                 Title = title,
                 X = Pos.Center(),

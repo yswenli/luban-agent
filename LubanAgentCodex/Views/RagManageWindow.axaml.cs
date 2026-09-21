@@ -16,11 +16,15 @@
 *****************************************************************************/
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using LubanAgentCodex.Views.Controls;
+using LuBan.AIAgent.Configuration;
+using LubanAgentCore.Retrieval;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace LubanAgentCodex.Views;
 
@@ -40,6 +44,8 @@ public partial class RagManageWindow : Window
     private Button? _backButton;
     private Button? _wikiRebuildButton;
     private Button? _wikiLintButton;
+    private BusyOverlay? _busyOverlay;
+    private StackPanel? _toolBar;
 
     public RagManageWindow(IServiceProvider services)
     {
@@ -71,7 +77,46 @@ public partial class RagManageWindow : Window
         if (_backButton != null) _backButton.Click += OnBack;
         if (_ragListBox != null)
             _ragListBox.SelectionChanged += OnSelectionChanged;
+
+        _busyOverlay = this.FindControl<BusyOverlay>("BusyOverlay");
+        _toolBar = this.FindControl<StackPanel>("ToolBar");
     }
+
+    /// <summary>
+    /// 显示忙碌遮罩并禁用窗口内容：索引/重建/lint 属长耗时任务，全程覆盖避免误判为卡死
+    /// </summary>
+    private void ShowBusy(string text)
+    {
+        SetContentEnabled(false);
+        _busyOverlay?.Show(text);
+    }
+
+    /// <summary>
+    /// 更新忙碌遮罩状态文本
+    /// </summary>
+    private void UpdateBusy(string text) => _busyOverlay?.UpdateStatus(text);
+
+    /// <summary>
+    /// 隐藏忙碌遮罩并恢复窗口内容
+    /// </summary>
+    private void HideBusy()
+    {
+        _busyOverlay?.Hide();
+        SetContentEnabled(true);
+    }
+
+    private void SetContentEnabled(bool enabled)
+    {
+        if (_toolBar != null) _toolBar.IsEnabled = enabled;
+        if (_ragListBox != null) _ragListBox.IsEnabled = enabled;
+        if (_resultListBox != null) _resultListBox.IsEnabled = enabled;
+    }
+
+    /// <summary>
+    /// 当前配置下单个可索引文件的大小上限（与 framework 索引语义保持一致）
+    /// </summary>
+    private long GetMaxFileSizeBytes() =>
+        _services.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Tools.Retrieval.MaxFileSizeKB * 1024L;
 
     private async void LoadRagWorkspaces()
     {
@@ -121,17 +166,35 @@ public partial class RagManageWindow : Window
             var glob = await dlg.ShowDialog<string?>(this);
             if (glob == null) return;
 
-            var report = await retrieval.IndexDirectoryAsync(ws.RootPath, glob == "" ? null : glob, force: false);
+            // 两段式提示：先"正在扫描目录"，预扫出文件数后更新为"共 N 个文件，正在生成向量"。
+            // 预扫与嵌入都放后台线程，UI 线程只负责更新遮罩文案。
+            var globPattern = glob == "" ? null : glob;
+            ShowBusy(RetrievalIndexPlanner.IndexScanStatus(ws.RootPath));
+            var fileCount = await Task.Run(() =>
+                RetrievalIndexPlanner.CountIndexableFiles(ws.RootPath, globPattern, GetMaxFileSizeBytes()));
+
+            if (fileCount == 0)
+            {
+                HideBusy();
+                await Dialogs.ShowInfoAsync(this, RetrievalIndexPlanner.NoIndexableFilesText);
+                return;
+            }
+
+            UpdateBusy(RetrievalIndexPlanner.IndexEmbedStatus(fileCount));
+            var report = await Task.Run(() => retrieval.IndexDirectoryAsync(ws.RootPath, globPattern, force: false));
+            HideBusy();
             await Dialogs.ShowInfoAsync(this,
                 $"索引完成：扫描 {report.ScannedFiles}，新增 {report.NewFiles}，更新 {report.UpdatedFiles}，跳过 {report.SkippedFiles}，切块 {report.TotalChunks}");
         }
         catch (Exception ex)
         {
+            HideBusy();
             Logger.Error("RagManageWindow.OnIndex 异常", ex);
             await Dialogs.ShowErrorAsync(this, ex.Message);
         }
         finally
         {
+            HideBusy();
             if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
@@ -195,17 +258,32 @@ public partial class RagManageWindow : Window
             await _workspaceManager.EnsureAuthorizedAsync(ws);
             await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
-            var report = await wiki.RebuildIndexAsync();
+            // 两段式提示：先统计 wiki 页面数，再提示正在重建向量索引；全程遮罩覆盖。
+            ShowBusy(RetrievalIndexPlanner.WikiScanStatus);
+            var pageCount = await Task.Run(() => RetrievalIndexPlanner.CountWikiPages(ws.RootPath));
+
+            if (pageCount == 0)
+            {
+                HideBusy();
+                await Dialogs.ShowInfoAsync(this, RetrievalIndexPlanner.NoWikiPagesText);
+                return;
+            }
+
+            UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在重建向量索引"));
+            var report = await Task.Run(() => wiki.RebuildIndexAsync());
+            HideBusy();
             await Dialogs.ShowInfoAsync(this,
                 $"重建完成（{item.Name}）：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
         }
         catch (Exception ex)
         {
+            HideBusy();
             Logger.Error("RagManageWindow.OnWikiRebuildClick 异常", ex);
             await Dialogs.ShowErrorAsync(this, $"重建失败: {ex.Message}");
         }
         finally
         {
+            HideBusy();
             if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
@@ -230,7 +308,20 @@ public partial class RagManageWindow : Window
             await _workspaceManager.EnsureAuthorizedAsync(ws);
             await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
-            var report = await wiki.LintAsync();
+            // 两段式提示：先统计 wiki 页面数，再提示正在执行 lint；全程遮罩覆盖。
+            ShowBusy(RetrievalIndexPlanner.WikiScanStatus);
+            var pageCount = await Task.Run(() => RetrievalIndexPlanner.CountWikiPages(ws.RootPath));
+
+            if (pageCount == 0)
+            {
+                HideBusy();
+                await Dialogs.ShowInfoAsync(this, RetrievalIndexPlanner.NoWikiPagesText);
+                return;
+            }
+
+            UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在执行 lint（孤儿页/死链/未收录）"));
+            var report = await Task.Run(() => wiki.LintAsync());
+            HideBusy();
             var text = report.Findings.Count == 0
                 ? $"（{item.Name}）共 {report.PageCount} 页，未发现问题。"
                 : $"（{item.Name}）共 {report.PageCount} 页，{report.Findings.Count} 项：\n" +
@@ -239,11 +330,13 @@ public partial class RagManageWindow : Window
         }
         catch (Exception ex)
         {
+            HideBusy();
             Logger.Error("RagManageWindow.OnWikiLintClick 异常", ex);
             await Dialogs.ShowErrorAsync(this, $"lint 失败: {ex.Message}");
         }
         finally
         {
+            HideBusy();
             if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
