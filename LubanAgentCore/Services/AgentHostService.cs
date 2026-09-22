@@ -74,8 +74,8 @@ public class AgentHostService
         ruleEngine.LoadFromWorkspace(_workspace.RootPath);
 
         // 选择 Profile
-        AgentProfile profile = _workspace.Type == "Rag"
-            ? new RagAgentProfile(_workspace)
+        AgentProfile profile = _workspace.Type == WorkspaceTypes.LlmWiki
+            ? new LlmWikiAgentProfile(_workspace)
             : new NormalAgentProfile();
 
         var newAgent = await profile.CreateAgentAsync(
@@ -224,7 +224,7 @@ public class AgentHostService
     {
         // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
         // 否则会复用上一工作区的 Profile（如普通工作区），
-        // 导致 RAG 知识库不加载检索工具组/RAG 系统提示词，表现与常规工作区无异。
+        // 导致 LLM Wiki 知识库不加载检索工具组/LLM Wiki 系统提示词，表现与常规工作区无异。
         var currentWorkspace = _services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace;
         if (_agent == null || (currentWorkspace != null && _workspace?.WorkspaceId != currentWorkspace.WorkspaceId))
         {

@@ -1,4 +1,4 @@
-# LuBan Agent Codex
+﻿# LuBan Agent Codex
 
 <div align="center">
 
@@ -108,7 +108,7 @@
 - **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆
 - **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
 - **临时文件管理**：运行时生成的脚本、截图、中间文件统一存放于 `.luban-agent/temp/`，支持自动清理过期文件
-- **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
+- **LLM Wiki 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
 - **向量存储隔离**：不同工作区的索引数据完全隔离，互不串读
 - **路径授权管理**：工作区授权与 PathGuard 集成，仅授权的工作区根目录可访问
 
@@ -235,7 +235,7 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 | `/session` | `/se` | 管理对话会话 |
 | `/stats` | `/st` | 会话与 Token 统计 |
 | `/work` | `/w` | 工作区管理 |
-| `/rag` | `/rg` | 知识库管理 |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki 知识库管理 |
 
 ### 子命令简写
 
@@ -244,9 +244,9 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 | `-l` | `-list` | 所有管理命令 |
 | `-a` | `-add` | 所有管理命令 |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
-| `-s` | `-switch` | 所有管理命令 |
-| `-n` | `-new` | Session/Work/Rag |
+| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
+| `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`） |
+| `-n` | `-new` | Session/Work/LLM Wiki |
 | `-c` | `-clear` | Session |
 
 **示例**：
@@ -373,7 +373,7 @@ AI 会自动识别复合任务并启用 DAG 编排：
 │ 名称     │ 类型 │ 根目录       │ 会话 │ 最后活跃   │ 授权 │
 ├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
 │ * MyProject │ 普通 │ D:\MyProject │ 3    │ 2026-08-20 │ ✓    │
-│   Docs      │ RAG  │ D:\Docs      │ 0    │ -          │ ✗    │
+│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
 └──────────┴──────┴──────────────┴──────┴────────────┴──────┘
 
 # 切换工作区
@@ -382,19 +382,20 @@ AI 会自动识别复合任务并启用 DAG 编排：
   根目录: D:\MyProject
 ```
 
-### 场景七：RAG 知识库问答
+### 场景七：LLM Wiki 知识库问答
 
 ```
-# 1. 创建 RAG 知识库
-> /rag -new D:\KnowledgeBase 我的知识库
-✓ 已创建 RAG 知识库: 我的知识库 - D:\KnowledgeBase
+# 1. 创建 LLM Wiki 知识库
+> /llmwiki -new D:\KnowledgeBase 我的知识库
+✓ 已创建 LLM Wiki 知识库: 我的知识库 - D:\KnowledgeBase
+# 名称可省略：/llmwiki -new D:\KnowledgeBase → 默认名 llmwiki
 
-# 2. 切换到 RAG 工作区
+# 2. 切换到 LLM Wiki 工作区
 > /work -switch 我的知识库
 ✓ 已切换到工作区: 我的知识库
 
 # 3. 授权并索引文件
-> /rag -index *.md
+> /llmwiki -index *.md
 开始索引工作区: 我的知识库
 ✓ 索引完成
   扫描文件: 25
@@ -402,7 +403,7 @@ AI 会自动识别复合任务并启用 DAG 编排：
   总切块数: 142
 
 # 4. 检索测试
-> /rag -search 如何配置工作区
+> /llmwiki -search 如何配置工作区
 找到 3 条相关结果：
 文件: D:\KnowledgeBase\setup.md
 内容: 工作区配置需要...
@@ -442,7 +443,7 @@ LubanAgentCodex/
 │   ├── MCPManageWindow         # MCP 服务管理窗口
 │   ├── SettingsWindow          # 统一设置中心（技能/规则/MCP/供应商/模型）
 │   ├── WorkManageWindow        # 工作区管理窗口
-│   ├── RagManageWindow         # RAG 管理窗口
+│   ├── LlmWikiManageWindow         # LLM Wiki 管理窗口
 │   └── Controls/               # 自定义控件
 │       ├── Sidebar             # 左侧边栏
 │       ├── TitleBar            # 顶部标题栏

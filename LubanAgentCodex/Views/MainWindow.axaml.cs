@@ -50,6 +50,7 @@ public partial class MainWindow : Window
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
+    private KnowledgeTaskService? _knowledgeTasks;
 
     public MainWindow()
     {
@@ -169,10 +170,14 @@ public partial class MainWindow : Window
                 _sidebar.SetServiceProvider(services);
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
-                _sidebar.RagInitRequested += OnRagInitRequested;
+                _sidebar.LlmWikiInitRequested += OnLlmWikiInitRequested;
                 _sidebar.AgentsMdInitRequested += OnAgentsMdInitRequested;
                 _sidebar.SettingsRequested += OnSettingsRequested;
             }
+
+            // 订阅后台知识库任务：终态时向显示区插系统消息（仅首次订阅）
+            _knowledgeTasks = services.GetService<KnowledgeTaskService>();
+            if (_knowledgeTasks != null) _knowledgeTasks.Updated += OnKnowledgeTaskUpdated;
         }
         else
         {
@@ -516,9 +521,9 @@ public partial class MainWindow : Window
             // SetCurrentAsync 内部已恢复或新建当前会话（SwitchWorkspaceAsync）
             await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
 
-            // 知识库（RAG）工作区：自动加载当前会话历史，无需在列表中选择。
+            // 知识库（LLM Wiki）工作区：自动加载当前会话历史，无需在列表中选择。
             // 复用 SetCurrentAsync 已恢复/新建的 CurrentSession，避免重复建会话（知识库只保留一个会话）
-            if (ws.Type == "Rag")
+            if (ws.Type == WorkspaceTypes.LlmWiki)
             {
                 var sessionManager = services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
                 var current = sessionManager.CurrentSession;
@@ -605,30 +610,30 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// RAG 知识库初始化请求
+    /// LLM Wiki 知识库初始化请求
     /// </summary>
-    private async void OnRagInitRequested(object? sender, EventArgs e)
+    private async void OnLlmWikiInitRequested(object? sender, EventArgs e)
     {
         if (_viewModel?.Services == null) return;
 
         // 知识库只能初始化一个：已存在时提示先删除
         var workspaceManager = _viewModel.Services.GetRequiredService<IWorkspaceManager>();
-        var alreadyHasRag = false;
+        var alreadyHasLlmWiki = false;
         foreach (var w in await workspaceManager.GetUserWorkspacesAsync())
         {
-            if (w.Type == "Rag") { alreadyHasRag = true; break; }
+            if (w.Type == WorkspaceTypes.LlmWiki) { alreadyHasLlmWiki = true; break; }
         }
-        if (alreadyHasRag)
+        if (alreadyHasLlmWiki)
         {
             await Dialogs.ShowErrorAsync(this, "已存在知识库，请先删除后再初始化。");
             return;
         }
 
-        // 弹出文件夹选择器让用户选择 RAG 目录
+        // 弹出文件夹选择器让用户选择 LLM Wiki 目录
         var storage = this.StorageProvider;
         var folders = await storage.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
         {
-            Title = "选择 RAG 知识库目录",
+            Title = "选择 LLM Wiki 知识库目录",
             AllowMultiple = false,
         });
 
@@ -638,78 +643,65 @@ public partial class MainWindow : Window
             var path = folder.Path.LocalPath;
             if (string.IsNullOrEmpty(path)) return;
 
-            // 创建 RAG 工作区
+            // 创建 LLM Wiki 工作区：必需部分（创建/授权/预扫）同步完成即放行，索引进后台
             try
             {
-                    // 遮罩全程覆盖：创建工作区 → 扫描目录 → 生成向量。
-                    // 索引属长耗时任务且不可中断，避免用户误以为程序卡住。
                     var vm = _viewModel!;
+                    var previous = workspaceManager.CurrentWorkspace;
                     vm.BusyOverlayText = "正在创建知识库…";
                     vm.BusyOverlayVisible = true;
 
                     try
                     {
-                        var ragWs = await workspaceManager.CreateWorkspaceAsync(path, System.IO.Path.GetFileName(path), type: "Rag");
+                        var llmWikiWs = await workspaceManager.CreateWorkspaceAsync(path, null, type: WorkspaceTypes.LlmWiki);
+                        await workspaceManager.EnsureAuthorizedAsync(llmWikiWs);
+                        await workspaceManager.SetCurrentAsync(llmWikiWs.WorkspaceId);
 
-                        // 初始化向量索引：将所选目录内容嵌入并建立检索库，使知识库可问答。
-                        // 必须在“当前工作区=该 RAG 工作区”下索引，保证切块按 WorkspaceId 隔离。
                         var retrieval = vm.Services.GetService<IRetrievalService>();
-                        if (retrieval != null)
+                        if (retrieval == null)
                         {
-                            var previous = workspaceManager.CurrentWorkspace;
-                            try
-                            {
-                                await workspaceManager.EnsureAuthorizedAsync(ragWs);
-                                await workspaceManager.SetCurrentAsync(ragWs.WorkspaceId);
-
-                                var maxFileSizeBytes = vm.Services.GetRequiredService<IOptions<LuBanAgentOptions>>()
-                                    .Value.Tools.Retrieval.MaxFileSizeKB * 1024L;
-
-                                // 预扫与嵌入都放到后台线程，仅遮罩文案在 UI 线程更新
-                                vm.BusyOverlayText = RetrievalIndexPlanner.IndexScanStatus(path);
-                                var fileCount = await Task.Run(() =>
-                                    RetrievalIndexPlanner.CountIndexableFiles(path, null, maxFileSizeBytes));
-
-                                if (fileCount == 0)
-                                {
-                                    vm.BusyOverlayVisible = false;
-                                    await Dialogs.ShowInfoAsync(this,
-                                        $"{RetrievalIndexPlanner.NoIndexableFilesText}\n知识库已创建。");
-                                }
-                                else
-                                {
-                                    vm.BusyOverlayText = RetrievalIndexPlanner.IndexEmbedStatus(fileCount);
-                                    var report = await Task.Run(() => retrieval.IndexDirectoryAsync(path));
-                                    vm.BusyOverlayVisible = false;
-                                    await Dialogs.ShowInfoAsync(this,
-                                        $"知识库已初始化并索引完成：\n扫描 {report.ScannedFiles} 个文件，切块 {report.TotalChunks} 块。");
-                                }
-                            }
-                            catch (Exception idxEx)
-                            {
-                                vm.BusyOverlayVisible = false;
-                                await Dialogs.ShowErrorAsync(this,
-                                    $"知识库已创建，但索引失败：{idxEx.Message}\n你仍可在对话中让 AI 执行索引。");
-                            }
-                            finally
-                            {
-                                // 恢复到用户此前所在工作区，避免意外切换会话
-                                if (previous != null)
-                                    await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
-                            }
-                        }
-                        else
-                        {
-                            vm.BusyOverlayVisible = false;
                             await Dialogs.ShowInfoAsync(this,
                                 "知识库已创建，但嵌入模型未就绪，暂未建立索引。\n请将嵌入模型包放入 EmbeddingModels 目录后重新初始化。");
+                            return;
                         }
 
-                        _sidebar?.SetServiceProvider(vm.Services);
+                        var maxFileSizeBytes = vm.Services.GetRequiredService<IOptions<LuBanAgentOptions>>()
+                            .Value.Tools.Retrieval.MaxFileSizeKB * 1024L;
+
+                        // 预扫放后台线程，仅遮罩文案在 UI 线程更新（扫描期间按目录刷新动态文案，见 U-1）
+                        vm.BusyOverlayText = RetrievalIndexPlanner.IndexScanStatus(path);
+                        var fileCount = await Task.Run(() =>
+                            RetrievalIndexPlanner.CountIndexableFiles(path, null, maxFileSizeBytes,
+                                scan => Avalonia.Threading.Dispatcher.UIThread.Post(
+                                    () => vm.BusyOverlayText = RetrievalIndexPlanner.IndexScanningStatus(scan.CurrentDirectory, scan.IndexableFiles))));
+
+                        if (fileCount == 0)
+                        {
+                            await Dialogs.ShowInfoAsync(this,
+                                $"{RetrievalIndexPlanner.NoIndexableFilesText}\n知识库已创建。");
+                            return;
+                        }
+
+                        // 必需部分完成：立即关闭遮罩（finally）、恢复原工作区，然后提示并转后台索引
+                        vm.Messages.Add(new SystemMessageItem
+                        {
+                            Content = $"知识库「{llmWikiWs.Name}」已创建，正在后台建立索引（{fileCount} 个文件）…"
+                        });
+
+                        var tasks = vm.Services.GetService<KnowledgeTaskService>();
+                        if (tasks != null)
+                            tasks.StartIndex(llmWikiWs.WorkspaceId, path);
+                        else
+                            await Dialogs.ShowInfoAsync(this,
+                                "知识库已创建，但后台任务服务未就绪，请使用 /llmwiki -index 手动建立索引。");
                     }
                     finally
                     {
+                        // 恢复到用户此前所在工作区，避免意外切换会话；索引按 workspaceId 归属新知识库
+                        if (previous != null)
+                            await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
                         vm.BusyOverlayVisible = false;
+                        _sidebar?.SetServiceProvider(vm.Services);
                     }
             }
             catch (Exception ex)
@@ -722,7 +714,7 @@ public partial class MainWindow : Window
                     Height = 200,
                     Content = new TextBlock
                     {
-                        Text = $"创建 RAG 知识库失败: {ex.Message}",
+                        Text = $"创建 LLM Wiki 知识库失败: {ex.Message}",
                         Margin = new Avalonia.Thickness(20),
                         TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                     },
@@ -731,6 +723,32 @@ public partial class MainWindow : Window
                 await dialog.ShowDialog(this);
             }
         }
+    }
+
+    /// <summary>
+    /// 后台知识库任务终态：向显示区插第二条系统消息（进行中不打扰用户）
+    /// </summary>
+    private void OnKnowledgeTaskUpdated(KnowledgeTaskInfo info)
+    {
+        if (info.State is not (KnowledgeTaskState.Completed or KnowledgeTaskState.Failed or KnowledgeTaskState.Canceled))
+            return;
+
+        var vm = _viewModel;
+        if (vm == null) return;
+
+        var text = info.State switch
+        {
+            KnowledgeTaskState.Completed => $"{info.Label} 已完成：{info.Detail}",
+            KnowledgeTaskState.Canceled => $"{info.Label} 已取消",
+            _ => $"{info.Label} 失败：{info.Detail}"
+        };
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            vm.Messages.Add(new SystemMessageItem
+            {
+                Content = text,
+                IsError = info.State == KnowledgeTaskState.Failed
+            }));
     }
 
     /// <summary>
@@ -743,11 +761,11 @@ public partial class MainWindow : Window
             var services = _viewModel?.Services;
             if (services == null) return;
 
-            // 预选当前正在对话的工作区（非 RAG），便于直接编辑其配置；
-            // RAG 知识库工作区不纳入设置窗（D9），当前为 RAG 时回落到「★ 全局」。
+            // 预选当前正在对话的工作区（非 LLM Wiki），便于直接编辑其配置；
+            // LLM Wiki 知识库工作区不纳入设置窗（D9），当前为 LLM Wiki 时回落到「★ 全局」。
             var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
             var current = workspaceManager.CurrentWorkspace;
-            WorkspaceInfo? preselect = (current != null && current.Type != "Rag") ? current : null;
+            WorkspaceInfo? preselect = (current != null && current.Type != WorkspaceTypes.LlmWiki) ? current : null;
 
             var settings = new SettingsWindow(services, preselect);
             await settings.ShowDialog(this);

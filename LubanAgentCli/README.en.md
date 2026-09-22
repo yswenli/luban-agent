@@ -1,4 +1,4 @@
-# LuBan Agent CLI
+﻿# LuBan Agent CLI
 
 <div align="center">
 
@@ -105,10 +105,10 @@ Nine core built-in skills, plug and play:
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
 - **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
 - **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations
-- **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
+- **LLM Wiki Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated, no cross-workspace data leaks
 - **Path Authorization Management**: Workspace authorization integrates with PathGuard; only authorized workspace root directories are accessible
-- **Default Config Generation**: RAG workspaces automatically generate default `rag-config.json` upon creation
+- **Default Config Generation**: LLM Wiki workspaces automatically generate default `llmwiki-config.json` upon creation
 
 ---
 
@@ -342,7 +342,7 @@ Limits: up to **5** attachments per message; images require a vision-capable mod
 | `/browse` | `/b` | Website-specific Agent Operations |
 | `/stats` | `/st` | Session & Token Statistics |
 | `/work` | `/w` | Workspace Management |
-| `/rag` | `/rg` | Knowledge Base Management |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki knowledge base management |
 
 ---
 
@@ -482,7 +482,7 @@ This is a composite task that needs to be decomposed into parallel subtasks...
 │ Name     │ Type │ Root         │ Sess │ Last Active│ Auth │
 ├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
 │ * MyProject │ Normal │ D:\MyProject │ 3  │ 2026-07-31 │ ✓   │
-│   Docs      │ RAG    │ D:\Docs      │ 0  │ -          │ ✗   │
+│   Docs      │ LLM Wiki    │ D:\Docs      │ 0  │ -          │ ✗   │
 └──────────┴──────┴──────────────┴──────┴────────────┴──────┘
 
 # Switch workspace
@@ -508,19 +508,19 @@ Authorize? (y/N): y
 - Switching workspaces automatically restores the most recent session for that workspace
 - After authorization, AI Agent can access the root directory and its subdirectories
 
-### Use Case 7: RAG Knowledge Base Q&A
+### Use Case 7: LLM Wiki Knowledge Base Q&A
 
 ```
-# 1. Create RAG knowledge base
-> /rag -new D:\KnowledgeBase "My Knowledge Base"
-✓ Created RAG knowledge base: My Knowledge Base - D:\KnowledgeBase
+# 1. Create LLM Wiki knowledge base
+> /llmwiki -new D:\KnowledgeBase "My Knowledge Base"
+✓ Created LLM Wiki knowledge base: My Knowledge Base - D:\KnowledgeBase
 
-# 2. Switch to RAG workspace
+# 2. Switch to LLM Wiki workspace
 > /work -switch "My Knowledge Base"
 ✓ Switched to workspace: My Knowledge Base
 
 # 3. Authorize and index files
-> /rag -index *.md
+> /llmwiki -index *.md
 Indexing workspace: My Knowledge Base
 ✓ Indexing complete
   Scanned files: 25
@@ -528,7 +528,7 @@ Indexing workspace: My Knowledge Base
   Total chunks: 142
 
 # 4. Search test
-> /rag -search "how to configure workspace"
+> /llmwiki -search "how to configure workspace"
 Found 3 relevant results:
 File: D:\KnowledgeBase\setup.md
 Content: Workspace configuration requires...
@@ -541,13 +541,14 @@ Mode: Knowledge Base Q&A (auto-retrieval augmented)
 🤖 According to the knowledge base documentation, use the /work -new command...
 ```
 
-**RAG Knowledge Base Notes**:
+**LLM Wiki Knowledge Base Notes**:
 
-- RAG workspace is a special workspace type focused on file management and knowledge Q&A
+- LLM Wiki workspace is a special workspace type focused on file management and knowledge Q&A
+- The name can be omitted when creating; it defaults to `llmwiki` (multiple knowledge bases sharing the name are distinguished by path)
 - Supports indexing `.txt` and `.md` files by default
 - After indexing, `/agi` conversations automatically retrieve relevant documents and inject context
-- Vector data from different RAG workspaces is completely isolated
-- A default `rag-config.json` configuration file is automatically generated under the workspace root directory
+- Vector data from different LLM Wiki workspaces is completely isolated
+- A default `llmwiki-config.json` configuration file is automatically generated under the workspace root directory
 
 ---
 

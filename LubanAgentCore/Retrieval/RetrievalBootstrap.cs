@@ -30,7 +30,7 @@ public static class RetrievalBootstrap
     /// <param name="ct">取消令牌。</param>
     /// <returns>
     /// 成功时返回嵌入生成器与模型管理器；检索未启用、模型规格未知或本地模型包缺失时返回
-    /// <c>(null, null)</c>，调用方应将检索功能降级关闭（RAG 知识库问答不可用，但不影响其余功能）。
+    /// <c>(null, null)</c>，调用方应将检索功能降级关闭（LLM Wiki 知识库问答不可用，但不影响其余功能）。
     /// </returns>
     public static async Task<(OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)> PrepareAsync(
         IConfiguration configuration,

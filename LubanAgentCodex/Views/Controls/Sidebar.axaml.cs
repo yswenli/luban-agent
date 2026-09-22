@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/19
-*描述：左侧边栏，包含工作区列表、会话树、RAG 知识库和项目信息
+*描述：左侧边栏，包含工作区列表、会话树、LLM Wiki 知识库和项目信息
 *
 *****************************************************************************/
 using Avalonia;
@@ -35,7 +35,7 @@ namespace LubanAgentCodex.Views.Controls;
 public partial class Sidebar : UserControl
 {
     private StackPanel? _workspacePanel;
-    private ListBox? _ragListBox;
+    private ListBox? _llmWikiListBox;
     private IWorkspaceManager? _workspaceManager;
     private SessionRepository? _sessionRepo;
     private IServiceProvider? _services;
@@ -51,9 +51,9 @@ public partial class Sidebar : UserControl
     public event EventHandler<SessionItem>? SessionSelected;
 
     /// <summary>
-    /// RAG 初始化请求事件（参数：选择的工作区）
+    /// LLM Wiki 初始化请求事件（参数：选择的工作区）
     /// </summary>
-    public event EventHandler? RagInitRequested;
+    public event EventHandler? LlmWikiInitRequested;
 
     /// <summary>
     /// 请求初始化工作区 AGENTS.md（参数：目标工作区）
@@ -74,12 +74,12 @@ public partial class Sidebar : UserControl
     {
         AvaloniaXamlLoader.Load(this);
         _workspacePanel = this.FindControl<StackPanel>("WorkspacePanel");
-        _ragListBox = this.FindControl<ListBox>("RagListBox");
-        if (_ragListBox != null)
+        _llmWikiListBox = this.FindControl<ListBox>("LlmWikiListBox");
+        if (_llmWikiListBox != null)
         {
-            _ragListBox.AddHandler(Button.ClickEvent, OnRagItemButtonClick);
+            _llmWikiListBox.AddHandler(Button.ClickEvent, OnLlmWikiItemButtonClick);
             // ListBoxItem 内部会标记 PointerPressed 已处理，需用 handledEventsToo 才能收到冒泡事件
-            _ragListBox.AddHandler(InputElement.PointerPressedEvent, OnRagListBoxPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+            _llmWikiListBox.AddHandler(InputElement.PointerPressedEvent, OnLlmWikiListBoxPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
         }
 
         // 底部「⚙ 设置」按钮：打开工作区设置中心（技能 / 规则 / MCP）
@@ -111,13 +111,13 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
-    /// RAG 知识库列表项内按钮（删除）的路由处理
+    /// LLM Wiki 知识库列表项内按钮（删除）的路由处理
     /// </summary>
-    private void OnRagItemButtonClick(object? sender, RoutedEventArgs e)
+    private void OnLlmWikiItemButtonClick(object? sender, RoutedEventArgs e)
     {
-        if (e.Source is Button btn && btn.Name == "DeleteRagBtn" && btn.DataContext is RagRowModel model)
+        if (e.Source is Button btn && btn.Name == "DeleteLlmWikiBtn" && btn.DataContext is LlmWikiRowModel model)
         {
-            _ = DeleteRagAsync(model);
+            _ = DeleteLlmWikiAsync(model);
         }
     }
 
@@ -125,16 +125,16 @@ public partial class Sidebar : UserControl
     /// 知识库列表指针事件（对齐工作区「会话列表」）：单击 / 双击均切换到该知识库的会话，
     /// 双击显式触发切换，单击同样可快速打开；删除按钮与右键不触发。
     /// </summary>
-    private void OnRagListBoxPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void OnLlmWikiListBoxPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         // 点击删除按钮不触发切换
         if (IsFromDeleteButton(e.Source)) return;
 
         // 右键不触发切换
-        if (e.GetCurrentPoint(_ragListBox).Properties.IsRightButtonPressed) return;
+        if (e.GetCurrentPoint(_llmWikiListBox).Properties.IsRightButtonPressed) return;
 
         // 从事件源向上回溯，找到对应的知识库列表项模型
-        var model = FindRagRowModelFromSource(e.Source);
+        var model = FindLlmWikiRowModelFromSource(e.Source);
         if (model?.Workspace is null) return;
 
         // 单击或双击都切换到该知识库的会话（双击交互对齐「工作区会话列表」）
@@ -142,14 +142,14 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
-    /// 从指针事件源向上回溯，找到 DataContext 为 RagRowModel 的控件
+    /// 从指针事件源向上回溯，找到 DataContext 为 LlmWikiRowModel 的控件
     /// </summary>
-    private static RagRowModel? FindRagRowModelFromSource(object? source)
+    private static LlmWikiRowModel? FindLlmWikiRowModelFromSource(object? source)
     {
         var ctrl = source as Control;
         while (ctrl != null)
         {
-            if (ctrl.DataContext is RagRowModel model) return model;
+            if (ctrl.DataContext is LlmWikiRowModel model) return model;
             ctrl = ctrl.Parent as Control;
         }
         return null;
@@ -163,7 +163,7 @@ public partial class Sidebar : UserControl
         var ctrl = source as Control;
         while (ctrl != null)
         {
-            if (ctrl.Name == "DeleteRagBtn") return true;
+            if (ctrl.Name == "DeleteLlmWikiBtn") return true;
             ctrl = ctrl.Parent as Control;
         }
         return false;
@@ -178,7 +178,7 @@ public partial class Sidebar : UserControl
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _sessionRepo = services.GetRequiredService<SessionRepository>();
         LoadWorkspaces();
-        LoadRagItems();
+        LoadLlmWikiItems();
     }
 
     /// <summary>
@@ -208,8 +208,8 @@ public partial class Sidebar : UserControl
 
         foreach (var ws in workspaces)
         {
-            // 知识库（RAG）不显示在工作区列表，仅显示于「RAG 知识库」分区
-            if (ws.Type == "Rag") continue;
+            // 知识库（LLM Wiki）不显示在工作区列表，仅显示于「LLM Wiki 知识库」分区
+            if (ws.Type == WorkspaceTypes.LlmWiki) continue;
 
             var isActive = ws.WorkspaceId == currentWorkspaceId;
 
@@ -289,15 +289,15 @@ public partial class Sidebar : UserControl
                     var display = string.IsNullOrWhiteSpace(ws.Name) ? GetDisplayName(ws.RootPath) : ws.Name;
                     var ok = await Dialogs.ShowConfirmAsync(owner, "确认删除",
                         $"确定要删除工作区 \"{display}\" 吗？",
-                        "删除后将逻辑删除该工作区，并级联清理其会话与关联的 RAG 向量索引。",
+                        "删除后将逻辑删除该工作区，并级联清理其会话与关联的 LLM Wiki 向量索引。",
                         "确定删除", danger: true);
                     if (ok)
                     {
-                        // D6：统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 RAG 索引），
-                        // 避免此前「物理删除且遗漏 rag_file/rag_chunk 清理」留下的孤儿索引。
+                        // D6：统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 LLM Wiki 索引），
+                        // 避免此前「物理删除且遗漏 llmwiki_file/llmwiki_chunk 清理」留下的孤儿索引。
                         await _workspaceManager!.DeleteWorkspaceAsync(ws.WorkspaceId);
                         LoadWorkspaces();
-                        LoadRagItems();
+                        LoadLlmWikiItems();
                     }
                 }
                 catch (Exception ex)
@@ -682,40 +682,40 @@ public partial class Sidebar : UserControl
     }
 
     /// <summary>
-    /// 加载 RAG 知识库列表
+    /// 加载 LLM Wiki 知识库列表
     /// 规则：知识库只能初始化一个；已存在时「初始化知识库」按钮隐藏，需先删除再初始化。
     /// </summary>
-    private void LoadRagItems()
+    private void LoadLlmWikiItems()
     {
-        if (_ragListBox == null || _services == null) return;
+        if (_llmWikiListBox == null || _services == null) return;
 
         var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
         var workspaces = workspaceManager.GetUserWorkspacesAsync().GetAwaiter().GetResult();
-        var ragWorkspaces = workspaces.Where(w => w.Type == "Rag").ToList();
+        var llmWikiWorkspaces = workspaces.Where(w => w.Type == WorkspaceTypes.LlmWiki).ToList();
 
         // 统一显示为「知识库」，不在工作区列表中重复展示真实名称
-        _ragListBox.ItemsSource = ragWorkspaces
-            .Select(w => new RagRowModel
+        _llmWikiListBox.ItemsSource = llmWikiWorkspaces
+            .Select(w => new LlmWikiRowModel
             {
                 WorkspaceId = w.WorkspaceId,
                 DisplayName = "知识库",
                 Workspace = w,
             })
             .ToList();
-        _ragListBox.IsVisible = ragWorkspaces.Count > 0;
+        _llmWikiListBox.IsVisible = llmWikiWorkspaces.Count > 0;
 
         // 移除旧的初始化按钮
-        if (_ragListBox.Parent is StackPanel parent)
+        if (_llmWikiListBox.Parent is StackPanel parent)
         {
-            var existingBtn = parent.Children.OfType<Button>().FirstOrDefault(b => b.Name == "InitRagButton");
+            var existingBtn = parent.Children.OfType<Button>().FirstOrDefault(b => b.Name == "InitLlmWikiButton");
             if (existingBtn != null) parent.Children.Remove(existingBtn);
 
             // 仅当尚未初始化知识库时才显示「初始化知识库」按钮
-            if (ragWorkspaces.Count == 0)
+            if (llmWikiWorkspaces.Count == 0)
             {
                 var initBtn = new Button
                 {
-                    Name = "InitRagButton",
+                    Name = "InitLlmWikiButton",
                     Content = new StackPanel
                     {
                         Orientation = Orientation.Horizontal,
@@ -740,7 +740,7 @@ public partial class Sidebar : UserControl
 
                 initBtn.Click += async (s, e) =>
                 {
-                    RagInitRequested?.Invoke(this, EventArgs.Empty);
+                    LlmWikiInitRequested?.Invoke(this, EventArgs.Empty);
                 };
 
                 parent.Children.Add(initBtn);
@@ -751,7 +751,7 @@ public partial class Sidebar : UserControl
     /// <summary>
     /// 删除知识库：先确认，再删除工作区及其会话；删除后「初始化知识库」按钮恢复显示
     /// </summary>
-    private async Task DeleteRagAsync(RagRowModel model)
+    private async Task DeleteLlmWikiAsync(LlmWikiRowModel model)
     {
         try
         {
@@ -764,11 +764,11 @@ public partial class Sidebar : UserControl
                 "确定删除", danger: true);
             if (confirmed != true) return;
 
-            // 统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 rag_file/rag_chunk 索引），
+            // 统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 llmwiki_file/llmwiki_chunk 索引），
             // 取代此前「物理删工作区 + 逐个软删会话」的写法——后者会残留孤儿向量索引。
             await _workspaceManager!.DeleteWorkspaceAsync(model.WorkspaceId);
 
-            LoadRagItems();
+            LoadLlmWikiItems();
         }
         catch (Exception ex)
         {
@@ -788,9 +788,9 @@ public class SessionItem
 }
 
     /// <summary>
-    /// RAG 知识库列表项（侧边栏「RAG 知识库」分区）
+    /// LLM Wiki 知识库列表项（侧边栏「LLM Wiki 知识库」分区）
     /// </summary>
-    public class RagRowModel
+    public class LlmWikiRowModel
     {
         public string WorkspaceId { get; set; } = "";
         public string DisplayName { get; set; } = "知识库";

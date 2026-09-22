@@ -84,7 +84,7 @@ public class App : Application
                 splash.SetStatus("正在加载应用配置…");
                 var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
 
-                // 3) 准备检索嵌入模型（RAG 知识库依赖），并初始化核心服务（DI 容器）
+                // 3) 准备检索嵌入模型（LLM Wiki 知识库依赖），并初始化核心服务（DI 容器）
                 splash.SetStatus("正在准备检索嵌入模型…");
                 OnnxEmbeddingGenerator? embedder = null;
                 ModelManager? modelManager = null;
@@ -115,13 +115,13 @@ public class App : Application
                 var wsManager = _services.GetRequiredService<IWorkspaceManager>();
                 var workspaces = await wsManager.GetUserWorkspacesAsync();
                 var target = workspaces
-                    .Where(w => w.Type != "Rag")
+                    .Where(w => w.Type != WorkspaceTypes.LlmWiki)
                     .OrderByDescending(w => w.LastActiveAt)
                     .FirstOrDefault();
                 if (target == null)
                 {
                     target = await wsManager.CreateWorkspaceAsync(
-                        Path.GetFullPath(Directory.GetCurrentDirectory()), type: "Normal");
+                        Path.GetFullPath(Directory.GetCurrentDirectory()), type: WorkspaceTypes.Normal);
                 }
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);

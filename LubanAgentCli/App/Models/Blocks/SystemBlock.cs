@@ -29,8 +29,8 @@ namespace LubanAgentCli.App.Models.Blocks;
 /// </summary>
 public sealed class SystemBlock : Block
 {
-    /// <summary>系统消息文本。</summary>
-    public string Text { get; }
+    /// <summary>系统消息文本。文本可在运行期通过 <see cref="SetText"/> 原地刷新（如后台任务进度节流更新）。</summary>
+    public string Text { get; private set; }
 
     /// <summary>不可折叠。</summary>
     public override bool IsFoldable => false;
@@ -53,6 +53,16 @@ public sealed class SystemBlock : Block
         IsBold = isBold;
         Foreground = foreground ?? BlockColors.System;
         IsComplete = true;
+    }
+
+    /// <summary>
+    /// 原地更新文本。调用方更新后需通过 <see cref="ConversationDocument.NotifyBlockChanged"/> 触发重绘，
+    /// 用于后台任务在同一条系统消息上做节流进度刷新。
+    /// </summary>
+    /// <param name="text">新的文本内容。</param>
+    public void SetText(string text)
+    {
+        Text = text ?? string.Empty;
     }
 
     /// <inheritdoc/>

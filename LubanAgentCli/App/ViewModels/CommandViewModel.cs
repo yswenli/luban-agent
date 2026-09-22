@@ -23,7 +23,7 @@ namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// 命令 ViewModel。解析 / 输入、匹配命令、执行并将结果以 SystemBlock 追加到文档。
-/// 统一 /help /clear /mode /provider /model /session /stats /work /rag 等所有命令。
+/// 统一 /help /clear /mode /provider /model /session /stats /work /llmwiki 等所有命令。
 /// 命令清单与 Codex 共享 <see cref="ICommandCatalog"/>，避免漂移。
 /// </summary>
 internal sealed class CommandViewModel
@@ -99,8 +99,8 @@ internal sealed class CommandViewModel
             case "/session":  case "/se":        ExecuteManagementCommand<SessionCommand>(parts); return true;
             case "/stats":    case "/st":        ExecuteManagementCommand<StatsCommand>(parts); return true;
             case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
-            case "/rag":      case "/rg":        ExecuteManagementCommand<RagCommand>(parts); return true;
-            case "/wiki":     case "/wk":        ExecuteManagementCommand<WikiCommand>(parts); return true;
+            case "/llmwiki":  case "/lw": case "/rag": case "/rg": case "/wiki": case "/wk":
+                                  ExecuteManagementCommand<LlmWikiCommand>(parts); return true;
             case "/init":                        ExecuteManagementCommand<InitCommand>(parts); return true;
 
             // ── Agent 对话（默认激活）──
@@ -204,7 +204,7 @@ internal sealed class CommandViewModel
                     return;
                 }
 
-                var expandedArgs = ExpandSubCommandAliases(parts);
+                var expandedArgs = ExpandSubCommandAliases(parts[0], parts);
                 if (expandedArgs.Length > 1)
                 {
                     var handled = await command.ExecuteAsync(expandedArgs.Skip(1).ToArray());
@@ -256,16 +256,13 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<WorkspaceRepository>(),
                 _services.GetRequiredService<SessionRepository>(), _writer, _ui),
-            nameof(RagCommand) => (TCommand)(object)new RagCommand(configManager, configuration,
+            nameof(LlmWikiCommand) => (TCommand)(object)new LlmWikiCommand(configManager, configuration,
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<WorkspaceRepository>(),
                 _services.GetRequiredService<IRetrievalService>(),
-                _services.GetRequiredService<RagFileRepository>(),
-                _services.GetRequiredService<RagChunkRepository>(),
-                _services.GetRequiredService<SessionRepository>(), _writer, _ui),
-            nameof(WikiCommand) => (TCommand)(object)new WikiCommand(configManager, configuration,
-                _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<IWikiService>(),
+                _services.GetRequiredService<LlmWikiFileRepository>(),
+                _services.GetService<KnowledgeTaskService>(),
                 _conversationVm, _writer, _ui),
             nameof(InitCommand) => (TCommand)(object)new InitCommand(configManager, configuration,
                 _services.GetRequiredService<IAgentsMdInitializer>(),
@@ -276,10 +273,12 @@ internal sealed class CommandViewModel
         };
     }
 
-    /// <summary>子命令缩写展开（与 ConsoleAppService 一致）。</summary>
-    private static string[] ExpandSubCommandAliases(string[] parts)
+    /// <summary>子命令缩写展开（按命令区分歧义简写）。</summary>
+    private static string[] ExpandSubCommandAliases(string cmd, string[] parts)
     {
         if (parts.Length < 2) return parts;
+
+        var isLlmWiki = IsLlmWikiCommand(cmd);
 
         var result = new string[parts.Length];
         result[0] = parts[0];
@@ -289,7 +288,9 @@ internal sealed class CommandViewModel
             result[i] = parts[i] switch
             {
                 "-l" => "-list", "-a" => "-add", "-u" => "-update", "-d" => "-delete",
-                "-s" => "-switch", "-n" => "-new", "-c" => "-clear", "-t" => "-tools",
+                "-s" => isLlmWiki ? "-search" : "-switch",
+                "-i" when isLlmWiki => "-index",
+                "-n" => "-new", "-c" => "-clear", "-t" => "-tools",
                 _ => parts[i]
             };
         }
@@ -297,4 +298,7 @@ internal sealed class CommandViewModel
         return result;
     }
 
+    /// <summary>是否为 LLM Wiki 命令（含别名），用于区分 <c>-s</c>/<c>-i</c> 等歧义简写。</summary>
+    private static bool IsLlmWikiCommand(string cmd)
+        => cmd is "/llmwiki" or "/lw" or "/rag" or "/rg" or "/wiki" or "/wk";
 }

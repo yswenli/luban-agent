@@ -44,10 +44,10 @@ public class DbWorkspace : EntityBase
     public string RootPath { get; set; } = "";
 
     /// <summary>
-    /// 工作区类型：Normal | Rag
+    /// 工作区类型：Normal | LlmWiki
     /// </summary>
     [SugarColumn(ColumnDescription = "类型", Length = 32, IsNullable = false)]
-    public string Type { get; set; } = "Normal";
+    public string Type { get; set; } = WorkspaceTypes.Normal;
 
     /// <summary>
     /// 归属用户

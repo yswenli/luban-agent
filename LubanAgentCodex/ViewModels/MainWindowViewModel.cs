@@ -542,7 +542,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var cmd = parts[0].ToLowerInvariant();
-        var args = ExpandSubCommandAliases(parts.Skip(1).ToArray());
+        var args = ExpandSubCommandAliases(cmd, parts.Skip(1).ToArray());
 
         switch (cmd)
         {
@@ -638,9 +638,13 @@ public partial class MainWindowViewModel : ObservableObject
                 ShowWorkManager(args);
                 break;
 
+            case "/llmwiki":
+            case "/lw":
             case "/rag":
             case "/rg":
-                ShowRagManager(args);
+            case "/wiki":
+            case "/wk":
+                ShowLlmWikiManager(args);
                 break;
 
             default:
@@ -654,10 +658,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 子命令简写展开
+    /// 子命令简写展开（-s 按命令区分：/work 为 -switch，/llmwiki 为 -search）
     /// </summary>
-    private static string[] ExpandSubCommandAliases(string[] parts)
+    private static string[] ExpandSubCommandAliases(string cmd, string[] parts)
     {
+        var isLlmWiki = cmd is "/llmwiki" or "/lw" or "/rag" or "/rg" or "/wiki" or "/wk";
         var result = new string[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {
@@ -667,10 +672,11 @@ public partial class MainWindowViewModel : ObservableObject
                 "-a" => "-add",
                 "-u" => "-update",
                 "-d" => "-delete",
-                "-s" => "-switch",
+                "-s" => isLlmWiki ? "-search" : "-switch",
                 "-n" => "-new",
                 "-c" => "-clear",
                 "-t" => "-tools",
+                "-i" => isLlmWiki ? "-index" : parts[i],
                 _ => parts[i]
             };
         }
@@ -710,14 +716,14 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 打开工作区设置中心并预选当前工作区（非 RAG）与指定页签。
+    /// 打开工作区设置中心并预选当前工作区（非 LLM Wiki）与指定页签。
     /// 命令面板路径无 Window owner，故用非模态 Show（侧边栏「⚙ 设置」按钮走 MainWindow 的模态 ShowDialog）。
     /// </summary>
     private void OpenSettings(SettingsTabKind kind)
     {
         var workspaceManager = Services.GetService<IWorkspaceManager>();
         var current = workspaceManager?.CurrentWorkspace;
-        var preselect = (current != null && current.Type != "Rag") ? current : null;
+        var preselect = (current != null && current.Type != WorkspaceTypes.LlmWiki) ? current : null;
 
         var window = new SettingsWindow(Services, preselect);
         window.PreselectTab(kind);
@@ -734,11 +740,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 显示 RAG 知识库管理窗口
+    /// 显示 LLM Wiki 知识库管理窗口
     /// </summary>
-    private void ShowRagManager(string[] args)
+    private void ShowLlmWikiManager(string[] args)
     {
-        var window = new RagManageWindow(Services);
+        var window = new LlmWikiManageWindow(Services);
         window.Show();
     }
 

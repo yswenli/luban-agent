@@ -1,4 +1,4 @@
-# LuBan Agent
+﻿# LuBan Agent
 
 <div align="center">
 
@@ -28,7 +28,7 @@
 
 | 项目 | 形态 | 说明 |
 |------|------|------|
-| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、RAG 检索、工作区管理 |
+| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理 |
 | **[LubanAgentCli](LubanAgentCli/)** | 命令行 TUI | 基于 Terminal.Gui v2 的全屏终端界面（Claude Code 风格），可安装为 dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，三栏式布局 + 暗色主题 |
 
@@ -100,7 +100,7 @@
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录（`.luban-agent/`）
 - **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆
-- **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
+- **LLM Wiki 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
 - **向量存储隔离**：不同工作区的索引数据完全隔离，互不串读
 - **路径授权管理**：工作区授权与 PathGuard 集成，仅授权的工作区根目录可访问
 
@@ -208,7 +208,7 @@ luban-agent/
 ├── Directory.Build.props     # 全局构建属性
 │
 ├── LubanAgentCore/           # 核心类库（net10.0）
-│   ├── Agents/               # Agent 配置（Normal / RAG Profile）
+│   ├── Agents/               # Agent 配置（Normal / LLM Wiki Profile）
 │   ├── Configuration/        # 配置管理
 │   ├── EmbeddingModels/      # AI 嵌入模型文件（bge-small-zh-v1.5）
 │   ├── Entities/             # 数据实体
@@ -249,7 +249,7 @@ luban-agent/
          └────────┬───────────┘
                   ▼
          ┌─────────────────┐
-         │ LubanAgentCore  │  Agent 运行时 / 工具 / 技能 / 会话 / RAG / 工作区
+         │ LubanAgentCore  │  Agent 运行时 / 工具 / 技能 / 会话 / LLM Wiki / 工作区
          └────────┬────────┘
                   ▼
          ┌─────────────────┐
@@ -324,7 +324,7 @@ luban-agent/
 - 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider
 - 🧩 **多 Agent 编排**：AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行，子代理同时继承工作区长期记忆
 - 📂 **工作区隔离**：每个工作区有独立的会话历史与配置目录（`.luban-agent/`），且工作区 ID 跨宿主稳定、长期记忆可共享
-- 🔍 **RAG 知识库**：索引本地文档后，对话时自动检索增强问答
+- 🔍 **LLM Wiki 知识库**：索引本地文档后，对话时自动检索增强问答
 
 ---
 

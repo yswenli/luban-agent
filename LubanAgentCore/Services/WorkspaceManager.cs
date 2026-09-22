@@ -45,9 +45,9 @@ public class WorkspaceInfo
     public string RootPath { get; set; } = "";
 
     /// <summary>
-    /// 工作区类型：Normal | Rag
+    /// 工作区类型：Normal | LlmWiki
     /// </summary>
-    public string Type { get; set; } = "Normal";
+    public string Type { get; set; } = WorkspaceTypes.Normal;
 
     /// <summary>
     /// 归属用户
@@ -84,10 +84,10 @@ public interface IWorkspaceManager
     /// 创建工作区
     /// </summary>
     /// <param name="rootPath">根目录路径</param>
-    /// <param name="name">显示名（可选）</param>
-    /// <param name="type">工作区类型：Normal | Rag</param>
+    /// <param name="name">显示名（可选；空白时普通工作区取目录名，LLM Wiki 取 <see cref="WorkspaceManager.DefaultLlmWikiName"/>）</param>
+    /// <param name="type">工作区类型：Normal | LlmWiki</param>
     /// <returns>工作区信息</returns>
-    Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = "Normal");
+    Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = WorkspaceTypes.Normal);
 
     /// <summary>
     /// 切换工作区
@@ -121,11 +121,11 @@ public interface IWorkspaceManager
     Task SetCurrentAsync(string workspaceId);
 
     /// <summary>
-    /// 删除工作区：逻辑删除工作区记录，并级联清理其下所有会话与 RAG 索引。
+    /// 删除工作区：逻辑删除工作区记录，并级联清理其下所有会话与 LLM Wiki 索引。
     /// </summary>
     /// <remarks>
     /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现宿主 A 走物理删除、宿主 B 走逻辑删除，
-    /// 且遗漏清理 rag_file/rag_chunk 而残留孤儿索引的情况）。
+    /// 且遗漏清理 llmwiki_file/llmwiki_chunk 而残留孤儿索引的情况）。
     /// </remarks>
     /// <param name="workspaceId">工作区ID</param>
     /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
@@ -145,6 +145,11 @@ public interface IWorkspaceManager
 /// </summary>
 public class WorkspaceManager : IWorkspaceManager, ISingleton
 {
+    /// <summary>
+    /// LLM Wiki 知识库未显式指定名称时的默认显示名
+    /// </summary>
+    public const string DefaultLlmWikiName = "llmwiki";
+
     private readonly WorkspaceRepository _repo;
     private readonly SessionRepository _sessionRepo;
     private readonly ISessionManager _sessionManager;
@@ -176,6 +181,21 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             return null;
         };
     }
+
+    /// <summary>
+    /// 已知工作区根路径缓存（工作区ID → 根路径），用于同步解析非当前工作区。
+    /// 在 <see cref="ToWorkspaceInfo"/>（创建/切换/列举工作区）时写入。
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _knownRoots =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 按工作区ID取已加载过的根路径；未知或空ID返回 null。
+    /// 供 <see cref="Agents.WorkspaceWikiContext.WorkspaceRootFor"/> 这类同步接口使用（避免 sync-over-async）。
+    /// </summary>
+    public static string? GetKnownRootPath(string? workspaceId)
+        => string.IsNullOrEmpty(workspaceId) ? null
+            : _knownRoots.TryGetValue(workspaceId, out var root) ? root : null;
 
     /// <summary>
     /// 当前工作区（静态访问，供非 DI 组件如 SqliteVectorStore、SessionManager 使用）
@@ -276,7 +296,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// <summary>
     /// 创建工作区（内部含路径唯一性校验，避免 TOCTOU 竞态）
     /// </summary>
-    public async Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = "Normal")
+    public async Task<WorkspaceInfo> CreateWorkspaceAsync(string rootPath, string? name = null, string type = WorkspaceTypes.Normal)
     {
         // 归一化后再入库：去除末尾分隔符、解析符号链接、统一大小写，
         // 避免同一目录因写法差异（尾斜杠/大小写）被登记为多个工作区
@@ -294,8 +314,11 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             // 由路径派生而非随机生成：同一目录在 CLI/GUI 等不同宿主数据库中恒得同一ID，
             // 保证共享的长期记忆库能跨宿主命中
             WorkspaceId = WorkspaceIdGenerator.Compute(fullPath),
-            // 显示名取原始目录名（保留大小写），避免深链归一化后界面/系统提示词里全是全大写路径
-            Name = name ?? WorkspaceIdGenerator.SuggestName(rootPath),
+            // 显示名取原始目录名（保留大小写），避免深链归一化后界面/系统提示词里全是全大写路径；
+            // 知识库不指定名称时统一用默认名（多个知识库可同名，按 RootPath 唯一）
+            Name = string.IsNullOrWhiteSpace(name)
+                ? (type == WorkspaceTypes.LlmWiki ? DefaultLlmWikiName : WorkspaceIdGenerator.SuggestName(rootPath))
+                : name,
             RootPath = fullPath,
             Type = type,
             IsAuthorized = false,
@@ -465,14 +488,12 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 删除工作区：逻辑删除工作区记录，并清理其下所有会话与 RAG 索引。
+    /// 删除工作区：逻辑删除工作区记录，并清理其下所有会话与 LLM Wiki 索引。
     /// </summary>
     /// <remarks>
     /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现 Sidebar 走物理删除、管理窗口走逻辑删除，
-    /// 且 Sidebar 遗漏清理 rag_file/rag_chunk 而残留孤儿索引的情况）。
-    /// 清理顺序固定为：会话软删 → RAG 文件/切块物理删 → 工作区逻辑删。
-    /// 说明：RagFileRepository/RagChunkRepository 未注册进 DI（构造仅需可选 tenantId），故此处直接构造；
-    /// 与 CLI 的 WorkCommand 现有写法一致。
+    /// 且 Sidebar 遗漏清理 llmwiki_file/llmwiki_chunk 而残留孤儿索引的情况）。
+    /// 清理顺序固定为：会话软删 → LLM Wiki 文件/切块物理删 → 工作区逻辑删。
     /// </remarks>
     /// <param name="workspaceId">工作区ID</param>
     /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
@@ -480,12 +501,12 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     {
         if (string.IsNullOrWhiteSpace(workspaceId)) return false;
 
-        var ragFileRepo = new RagFileRepository();
-        var ragChunkRepo = new RagChunkRepository();
+        var wikiFileRepo = new LlmWikiFileRepository();
+        var wikiChunkRepo = new LlmWikiChunkRepository();
 
         await _sessionRepo.SoftDeleteByWorkspaceAsync(workspaceId);
-        await ragFileRepo.DeleteByWorkspaceAsync(workspaceId);
-        await ragChunkRepo.DeleteByWorkspaceAsync(workspaceId);
+        await wikiFileRepo.DeleteByWorkspaceAsync(workspaceId);
+        await wikiChunkRepo.DeleteByWorkspaceAsync(workspaceId);
         await _repo.LogicDeleteAsync(w => w.WorkspaceId == workspaceId);
 
         // 若删除的正是当前工作区：移除其注入的 PathGuard 根目录，并清空当前引用与会话，
@@ -561,26 +582,32 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             WriteBuiltinRules(rulesDir);
         }
 
-        if (type == "Rag")
+        if (type == WorkspaceTypes.LlmWiki)
         {
-            var ragConfigPath = Path.Combine(configDir, "rag-config.json");
-            if (!File.Exists(ragConfigPath))
+            var wikiConfigPath = Path.Combine(configDir, "llmwiki-config.json");
+            if (!File.Exists(wikiConfigPath))
             {
-                var defaultRagConfig = @"{
+                // 模板仅包含 LlmWikiAgentProfile.LoadLlmWikiConfig 实际消费的键：
+                // agentProfile.{systemPrompt,toolGroups}、wiki.{enabled,schemaPath,topK,includeRaw}、
+                // retrieval.{defaultTopK,maxResultChars}。systemPrompt 与 LlmWikiAgentProfile 的默认值保持一致。
+                var defaultLlmWikiConfig = @"{
   ""agentProfile"": {
-    ""systemPrompt"": ""你是一个知识库问答专家，维护并基于 wiki 知识库回答问题。优先使用 wiki 工具检索与沉淀知识；wiki 无相关内容时再回落 raw 来源。"",
+    ""systemPrompt"": ""你是一个 LLM Wiki 知识库问答专家，维护并基于 wiki 知识库回答问题。优先使用 wiki 工具检索与沉淀知识；wiki 无相关内容时再回落原始资料。"",
     ""toolGroups"": [""wiki"", ""retrieval"", ""filesystem"", ""context""],
     ""mcpServers"": []
   },
+  ""wiki"": {
+    ""enabled"": true,
+    ""schemaPath"": ""wiki/SCHEMA.md"",
+    ""topK"": 8,
+    ""includeRaw"": true
+  },
   ""retrieval"": {
     ""defaultTopK"": 5,
-    ""maxResultChars"": 8000,
-    ""supportedExtensions"": ["".txt"", "".md""],
-    ""chunkSize"": 500,
-    ""chunkOverlap"": 100
+    ""maxResultChars"": 8000
   }
 }";
-                File.WriteAllText(ragConfigPath, defaultRagConfig);
+                File.WriteAllText(wikiConfigPath, defaultLlmWikiConfig);
             }
         }
     }
@@ -636,6 +663,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     private static WorkspaceInfo ToWorkspaceInfo(DbWorkspace ws)
     {
+        if (!string.IsNullOrEmpty(ws.WorkspaceId) && !string.IsNullOrEmpty(ws.RootPath))
+            _knownRoots[ws.WorkspaceId] = ws.RootPath;
+
         return new WorkspaceInfo
         {
             WorkspaceId = ws.WorkspaceId,

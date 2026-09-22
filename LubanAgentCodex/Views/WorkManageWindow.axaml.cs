@@ -70,7 +70,7 @@ public partial class WorkManageWindow : Window
         _workspaceListBox.ItemsSource = workspaces.Select(w => new WorkspaceItem
         {
             WorkspaceId = w.WorkspaceId,
-            TypeIcon = w.Type == "Rag" ? "📚" : "📁",
+            TypeIcon = w.Type == WorkspaceTypes.LlmWiki ? "📚" : "📁",
             Name = w.Name,
             RootPath = w.RootPath,
             Status = w.WorkspaceId == currentId ? "✓ 当前" : "",
@@ -86,7 +86,7 @@ public partial class WorkManageWindow : Window
             var ok = await dlg.ShowDialog<bool?>(this);
             if (ok != true) return;
 
-            var ws = await _workspaceManager.CreateWorkspaceAsync(dlg.WorkspacePath!, dlg.WorkspaceName, "Normal");
+            var ws = await _workspaceManager.CreateWorkspaceAsync(dlg.WorkspacePath!, dlg.WorkspaceName, WorkspaceTypes.Normal);
             LoadWorkspaces();
             await Dialogs.ShowInfoAsync(this, $"已创建工作区: {ws.Name}，可点切换使用");
         }
@@ -123,13 +123,13 @@ public partial class WorkManageWindow : Window
             if (!ok) return;
 
             var sessionRepo = _services.GetRequiredService<SessionRepository>();
-            var ragFileRepo = new RagFileRepository();
-            var ragChunkRepo = new RagChunkRepository();
+            var wikiFileRepo = new LlmWikiFileRepository();
+            var wikiChunkRepo = new LlmWikiChunkRepository();
             var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
 
             await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId);
-            await ragFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await ragChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
+            await wikiFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
+            await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
             await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId);
 
             if (_workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId)

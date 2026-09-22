@@ -175,12 +175,12 @@ public partial class SettingsWindow : Window
             var all = await mgr.GetUserWorkspacesAsync();
 
             _workspaces.Clear();
-            // RAG 知识库工作区不纳入设置窗的工作区列表
+            // LLM Wiki 知识库工作区不纳入设置窗的工作区列表
             _workspaces.AddRange(all
-                .Where(w => w.Type != "Rag")
+                .Where(w => w.Type != WorkspaceTypes.LlmWiki)
                 .OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase));
 
-            // 预选的工作区若不在列表内（例如已被删除或是 RAG 类型），回落到「★ 全局」
+            // 预选的工作区若不在列表内（例如已被删除或是 LLM Wiki 类型），回落到「★ 全局」
             if (_selectedWorkspace != null &&
                 !_workspaces.Any(w => w.WorkspaceId == _selectedWorkspace.WorkspaceId))
                 _selectedWorkspace = null;

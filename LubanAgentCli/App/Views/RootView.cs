@@ -46,9 +46,12 @@ internal sealed class RootView : Runnable
     private readonly object _initLock = new();
     private Task? _initTask;
 
-    // 待执行队列：Agent 运行期间提交的输入在此排队，本轮结束后顺序执行
-    private readonly System.Collections.Generic.Queue<string> _inputQueue = new();
+    // 待执行队列：Agent 运行期间提交的输入在此排队（含附件），本轮结束后顺序执行
+    private readonly System.Collections.Generic.Queue<(string Text, IReadOnlyList<AttachmentDraft> Attachments)> _inputQueue = new();
     private volatile bool _runActive;
+    // 后台知识库任务（索引 / wiki ingest / rebuild）进行中的状态块：按任务 Id 复用同一条系统消息节流刷新
+    private readonly Dictionary<string, (SystemBlock Block, DateTime At)> _taskBlocks = new(StringComparer.Ordinal);
+    private static readonly TimeSpan TaskProgressInterval = TimeSpan.FromMilliseconds(500);
     private readonly Action<ToolPermissionMode> _onPermissionModeChanged;
     private readonly Action _onExitRequested;
     private Terminal.Gui.App.IKeyboard? _keyboard;
@@ -89,6 +92,13 @@ internal sealed class RootView : Runnable
         _onExitRequested = ConfirmExit;
         _commandVm.ExitRequested += _onExitRequested;
         _agentVm = new AgentViewViewModel(new TaskRegistry(), _doc);
+
+        // 后台知识库任务通知：/llmwiki -index 等转入后台后，进度在显示区节流刷新、终态追加结果。
+        // KnowledgeTaskService 仅在 embedder 可用时注册，缺失时静默跳过。
+        if (services.GetService<KnowledgeTaskService>() is { } knowledgeTasks)
+        {
+            knowledgeTasks.Updated += OnKnowledgeTaskUpdated;
+        }
 
         // 启动横幅
         _doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
@@ -148,6 +158,19 @@ internal sealed class RootView : Runnable
         _vm.PendingChoiceChanged += OnPendingChoiceChanged;
 
         Add(_conversation, _footer, _inputBar);
+
+        var completionPopup = _inputBar.CompletionPopup;
+        completionPopup.X = 2;
+        completionPopup.Y = Pos.Func(_ => _inputBar.Frame.Y - completionPopup.VisibleRows);
+        completionPopup.Width = 30;
+        completionPopup.Height = 10;
+        Add(completionPopup);
+
+        _inputBar.CompletionStateChanged += () =>
+        {
+            completionPopup.SetNeedsDraw();
+            SetNeedsDraw();
+        };
     }
 
     /// <inheritdoc/>
@@ -304,6 +327,11 @@ internal sealed class RootView : Runnable
     /// </summary>
     private void OnGlobalKeyDown(object? sender, Key key)
     {
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Key] App.Keyboard.KeyDown key={key} Handled={key.Handled}");
+        }
+
         if (key != Key.Tab.WithShift || key.Handled)
         {
             return;
@@ -464,7 +492,7 @@ internal sealed class RootView : Runnable
         // 本轮结束后自动顺序执行。避免打断在途流式对话，也避免重复提交被静默丢弃。
         if (_runActive || _vm.IsRunning || _initializing)
         {
-            _inputQueue.Enqueue(text);
+            _inputQueue.Enqueue((text, attachments));
             var preview = PreviewInput(text);
             _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
                 $"🕓 已加入待执行队列（共 {_inputQueue.Count} 条）: {preview}",
@@ -479,6 +507,77 @@ internal sealed class RootView : Runnable
         }
 
         SubmitAsync(text, attachments);
+    }
+
+    // ── 后台知识库任务通知 ──
+
+    /// <summary>
+    /// 后台知识库任务更新：进行中在同一条系统消息上节流刷新，终态追加结果消息；
+    /// wiki ingest 提取完成后自动把产物交给 Agent 整理（走正常输入提交路径，忙碌时排队）。
+    /// 事件来自后台线程，所有文档变更编组到 UI 线程。
+    /// </summary>
+    /// <param name="info">任务信息快照。</param>
+    private void OnKnowledgeTaskUpdated(KnowledgeTaskInfo info)
+    {
+        if (info.State == KnowledgeTaskState.Running)
+        {
+            _dispatcher.Invoke(() => RenderTaskProgress(info));
+            return;
+        }
+
+        _dispatcher.Invoke(() => RenderTaskTerminal(info));
+
+        if (info.Kind == KnowledgeTaskKind.WikiIngest
+            && info.State == KnowledgeTaskState.Completed
+            && !string.IsNullOrWhiteSpace(info.ArtifactPath))
+        {
+            var artifact = info.ArtifactPath!;
+            var root = WorkspaceManager.GetKnownRootPath(info.WorkspaceId);
+            var rel = string.IsNullOrWhiteSpace(root)
+                ? artifact
+                : Path.GetRelativePath(root, artifact).Replace('\\', '/');
+            var instruction =
+                $"请读取附件中的源文件汇总（{rel}），按 wiki schema 将其沉淀为 wiki 页面（先读 index，必要时并页），并为相关实体/概念建页互链。";
+            _dispatcher.Invoke(() => OnInputSubmitted(instruction,
+                new[] { new AttachmentDraft(artifact, Path.GetFileName(artifact)) }));
+        }
+    }
+
+    /// <summary>进行中：同一任务复用同一条系统消息，按 <see cref="TaskProgressInterval"/> 节流刷新。必须在 UI 线程调用。</summary>
+    /// <param name="info">任务信息快照。</param>
+    private void RenderTaskProgress(KnowledgeTaskInfo info)
+    {
+        var text = info.Total > 0
+            ? $"{info.Label}：{info.Done}/{info.Total} · {info.Detail}"
+            : $"{info.Label}：{info.Detail}";
+
+        if (_taskBlocks.TryGetValue(info.Id, out var entry))
+        {
+            if (DateTime.UtcNow - entry.At < TaskProgressInterval) return;
+            _taskBlocks[info.Id] = (entry.Block, DateTime.UtcNow);
+            entry.Block.SetText(text);
+            _doc.NotifyBlockChanged(entry.Block);
+            return;
+        }
+
+        var block = new SystemBlock(text);
+        _taskBlocks[info.Id] = (block, DateTime.UtcNow);
+        _doc.AppendBlock(block);
+    }
+
+    /// <summary>终态：追加一条结果消息并清理进度块追踪。必须在 UI 线程调用。</summary>
+    /// <param name="info">任务信息快照。</param>
+    private void RenderTaskTerminal(KnowledgeTaskInfo info)
+    {
+        var text = info.State switch
+        {
+            KnowledgeTaskState.Completed => $"{info.Label} 已完成：{info.Detail}",
+            KnowledgeTaskState.Canceled => $"{info.Label} 已取消",
+            _ => $"{info.Label} 失败：{info.Detail}"
+        };
+        _taskBlocks.Remove(info.Id);
+        _doc.AppendBlock(new SystemBlock(text,
+            foreground: info.State == KnowledgeTaskState.Failed ? BlockColors.Failure : BlockColors.Success));
     }
 
     /// <summary>
@@ -546,13 +645,13 @@ internal sealed class RootView : Runnable
     {
         while (_inputQueue.TryDequeue(out var next))
         {
-            if (TryDispatchCommand(next))
+            if (TryDispatchCommand(next.Text))
             {
                 // 管理型命令自身异步执行、不占用对话运行态，继续排空剩余队列
                 continue;
             }
 
-            SubmitAsync(next, Array.Empty<AttachmentDraft>());
+            SubmitAsync(next.Text, next.Attachments);
             return;
         }
 

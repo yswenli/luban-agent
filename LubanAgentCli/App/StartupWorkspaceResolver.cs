@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/18
-*描述：启动阶段解析默认工作区：取最近活跃非 RAG 工作区并恢复其最近会话；
+*描述：启动阶段解析默认工作区：取最近活跃非 LLM Wiki 工作区并恢复其最近会话；
 *无可用工作区时弹出创建表单（路径/名称/AGENTS.md 描述），随后授权、设为当前并可选生成 AGENTS.md。
 *调用位置：StartupDialog 关闭之后、RootView 创建之前（CLI 侧主导，向导不再处理工作区）
 *
@@ -72,14 +72,14 @@ internal static class StartupWorkspaceResolver
     }
 
     /// <summary>
-    /// 取最近活跃、类型非 Rag 且根目录仍存在的工作区；仓储已按 LastActiveAt 倒序返回。
+    /// 取最近活跃、类型非 LlmWiki 且根目录仍存在的工作区；仓储已按 LastActiveAt 倒序返回。
     /// </summary>
     private static async Task<WorkspaceInfo?> FindLatestUsableAsync(IWorkspaceManager workspaceManager)
     {
         var workspaces = await workspaceManager.GetUserWorkspacesAsync();
         foreach (var ws in workspaces)
         {
-            if (string.Equals(ws.Type, "Rag", StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(ws.Type, WorkspaceTypes.LlmWiki, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Directory.Exists(ws.RootPath)) continue;
             return ws;
         }
@@ -119,7 +119,7 @@ internal static class StartupWorkspaceResolver
             try
             {
                 created = await workspaceManager.CreateWorkspaceAsync(
-                    path, string.IsNullOrWhiteSpace(name) ? null : name, type: "Normal");
+                    path, string.IsNullOrWhiteSpace(name) ? null : name, type: WorkspaceTypes.Normal);
             }
             catch (InvalidOperationException ex)
             {

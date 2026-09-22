@@ -3,24 +3,24 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Entities
-*文件名： DbRagFile
+*命名空间：LubanAgentCore.Entities
+*文件名： DbLlmWikiFile
 *版本号： V1.0.0.0
-*唯一标识：RAG 索引文件
+*唯一标识：LLM Wiki 索引文件
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/7/27
-*描述：RAG 索引文件
+*描述：LLM Wiki 索引文件
 *
 *****************************************************************************/
 namespace LubanAgentCore.Entities;
 
 /// <summary>
-/// RAG 索引文件实体
+/// LLM Wiki 索引文件实体
 /// </summary>
-[SugarTable("rag_file", "RAG 索引文件")]
-public class DbRagFile : EntityBase
+[SugarTable("llmwiki_file", "LLM Wiki 索引文件")]
+public class DbLlmWikiFile : EntityBase
 {
     /// <summary>
     /// 文件路径
@@ -60,10 +60,10 @@ public class DbRagFile : EntityBase
 }
 
 /// <summary>
-/// RAG 文本切块实体
+/// LLM Wiki 文本切块实体
 /// </summary>
-[SugarTable("rag_chunk", "RAG 文本切块")]
-public class DbRagChunk : EntityBase
+[SugarTable("llmwiki_chunk", "LLM Wiki 文本切块")]
+public class DbLlmWikiChunk : EntityBase
 {
     /// <summary>
     /// 文件 Id

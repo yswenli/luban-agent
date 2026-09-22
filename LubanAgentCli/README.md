@@ -1,4 +1,4 @@
-# LuBan Agent CLI
+﻿# LuBan Agent CLI
 
 <div align="center">
 
@@ -106,10 +106,10 @@
 - **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆
 - **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
 - **临时文件管理**：运行时生成的脚本、截图、中间文件统一存放于 `.luban-agent/temp/`，支持自动清理过期文件
-- **RAG 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
+- **LLM Wiki 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
 - **向量存储隔离**：不同工作区的索引数据完全隔离，互不串读
 - **路径授权管理**：工作区授权与 PathGuard 集成，仅授权的工作区根目录可访问
-- **默认配置生成**：RAG 工作区创建时自动生成 `rag-config.json` 默认配置
+- **默认配置生成**：LLM Wiki 工作区创建时自动生成 `llmwiki-config.json` 默认配置
 
 ---
 
@@ -341,7 +341,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 | `/browse` | `/b` | 针对网站操作特异化 Agent |
 | `/stats` | `/st` | 会话与 Token 统计 |
 | `/work` | `/w` | 工作区管理 |
-| `/rag` | `/rg` | 知识库管理 |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki 知识库管理 |
 | `/init <描述文本>` | — | 初始化工作区 AGENTS.md |
 
 ### 子命令简写
@@ -351,14 +351,14 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 | `-l` | `-list` | 所有管理命令 |
 | `-a` | `-add` | 所有管理命令（注：`/work` 中 `-add` 为 `-authorize` 别名） |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
+| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
 | `-d` | `-days` | Stats（统计天数） |
-| `-s` | `-switch` | 所有管理命令 |
-| `-n` | `-new` | Session/Work/Rag |
+| `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`） |
+| `-n` | `-new` | Session/Work/LLM Wiki |
 | `-c` | `-clear` | Session |
 | `-c` | `-connect` | MCP |
 | `-t` | `-tools` | MCP |
-| `-i` | `-index` | Rag（索引文件） |
+| `-i` | `-index` | LLM Wiki（索引文件） |
 | `-info` | `-info` | Work（工作区信息） |
 | `-add` | `-authorize` | Work（授权工作区） |
 
@@ -368,7 +368,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 - `/st --all` = 跨所有工作区统计
 - `/mp -c filesystem` = `/mcp -connect filesystem`
 - `/work -n D:\MyProject` = 创建工作区
-- `/rag -i *.md` = 索引当前 RAG 工作区的 Markdown 文件
+- `/llmwiki -i *.md` = 索引当前 LLM Wiki 工作区的 Markdown 文件
 
 ---
 
@@ -508,7 +508,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 │ 名称     │ 类型 │ 根目录       │ 会话 │ 最后活跃   │ 授权 │
 ├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
 │ * MyProject │ 普通 │ D:\MyProject │ 3    │ 2026-07-31 │ ✓    │
-│   Docs      │ RAG  │ D:\Docs      │ 0    │ -          │ ✗    │
+│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
 └──────────┴──────┴──────────────┴──────┴────────────┴──────┘
 
 # 切换工作区
@@ -535,19 +535,19 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 - 切换工作区时自动恢复该工作区的最近会话
 - 工作区授权后，AI Agent 可访问根目录及其子目录
 
-### 场景七：RAG 知识库问答
+### 场景七：LLM Wiki 知识库问答
 
 ```
-# 1. 创建 RAG 知识库
-> /rag -new D:\KnowledgeBase 我的知识库
-✓ 已创建 RAG 知识库: 我的知识库 - D:\KnowledgeBase
+# 1. 创建 LLM Wiki 知识库
+> /llmwiki -new D:\KnowledgeBase 我的知识库
+✓ 已创建 LLM Wiki 知识库: 我的知识库 - D:\KnowledgeBase
 
-# 2. 切换到 RAG 工作区
+# 2. 切换到 LLM Wiki 工作区
 > /work -switch 我的知识库
 ✓ 已切换到工作区: 我的知识库
 
 # 3. 授权并索引文件
-> /rag -index *.md
+> /llmwiki -index *.md
 开始索引工作区: 我的知识库
 ✓ 索引完成
   扫描文件: 25
@@ -555,7 +555,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
   总切块数: 142
 
 # 4. 检索测试
-> /rag -search 如何配置工作区
+> /llmwiki -search 如何配置工作区
 找到 3 条相关结果：
 文件: D:\KnowledgeBase\setup.md
 内容: 工作区配置需要...
@@ -568,13 +568,14 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 🤖 根据知识库文档，创建工作区使用 /work -new 命令...
 ```
 
-**RAG 知识库说明**：
+**LLM Wiki 知识库说明**：
 
-- RAG 工作区是特殊工作区，专注于文件管理与知识问答
+- LLM Wiki 工作区是特殊工作区，专注于文件管理与知识问答
+- 创建时名称可省略，默认 `llmwiki`（多个知识库同名时以路径区分）
 - 默认支持 `.txt` 和 `.md` 文件索引
 - 索引后通过 `/agi` 对话时自动检索相关文档并注入上下文
-- 不同 RAG 工作区的向量数据完全隔离
-- 工作区根目录下自动生成 `.luban-agent/rag-config.json` 配置文件
+- 不同 LLM Wiki 工作区的向量数据完全隔离
+- 工作区根目录下自动生成 `.luban-agent/llmwiki-config.json` 配置文件
 
 ---
 

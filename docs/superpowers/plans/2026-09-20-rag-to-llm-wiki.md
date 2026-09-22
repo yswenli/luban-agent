@@ -64,6 +64,7 @@
 **Files:**
 - Modify: `LuBan.AIAgent/Abstractions/ILuBanToolPlugin.cs`
 - Modify: `LuBan.AIAgent/Abstractions/ToolPluginRegistry.cs`
+- Modify: `LuBan.AIAgent/Orchestration/Planner/LlmTaskPlanner.cs`
 - Create: `LuBan.XTestProject/WikiUnitTest.cs`
 
 - [ ] **Step 1: 写失败测试** — 新建 `LuBan.XTestProject/WikiUnitTest.cs`
@@ -132,11 +133,24 @@ public class WikiUnitTest
 
 - [ ] **Step 5: 跑测试确认通过** — 同 Step 2 命令，预期 1 passed。
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 6: 规划器排除 opt-in 组（修正）** — `LlmTaskPlanner.GetAvailableToolGroups()`（`Orchestration/Planner/LlmTaskPlanner.cs:356-358`）当前用 `GetEnabledPlugins()`，会把全局启用的 opt-in 组暴露给规划器，导致普通工作区可能被规划出 `wiki` 组。改用 `GetPlugins(null)`：
+
+```csharp
+    private List<string> GetAvailableToolGroups()
+        => _serviceProvider.GetRequiredService<ToolPluginRegistry>()
+            .GetPlugins(null).Select(p => p.GroupName).ToList();
+```
+
+- [ ] **Step 7: 构建验证** — `dotnet build LuBan.AIAgent/LuBan.AIAgent.csproj`，0 error。
+
+- [ ] **Step 8: 提交**
 
 ```
 git add LuBan.AIAgent/Abstractions/ILuBanToolPlugin.cs LuBan.AIAgent/Abstractions/ToolPluginRegistry.cs LuBan.XTestProject/WikiUnitTest.cs
 git commit -m "feat: 工具插件支持 opt-in 门控，ToolGroups=null 时排除"
+
+git add LuBan.AIAgent/Orchestration/Planner/LlmTaskPlanner.cs
+git commit -m "fix: 规划器可用工具组排除 opt-in 组"
 ```
 
 ---
@@ -147,7 +161,7 @@ git commit -m "feat: 工具插件支持 opt-in 门控，ToolGroups=null 时排�
 - Modify: `LuBan.AIAgent/Retrieval/IRetrievalService.cs`
 - Modify: `LuBan.AIAgent/Retrieval/RetrievalService.cs`
 
-> 不写自动化测试：构造 `RetrievalService` 需要真实 `IEmbeddingGenerator`；行为由 Task 13 的 `FakeRetrievalService` 与冒烟覆盖（spec §8.1）。
+> 不写自动化测试：构造 `RetrievalService` 需要真实 `IEmbeddingGenerator`；行为由 Task 12 的 `FakeRetrievalService` 与冒烟覆盖（spec §8.1）。
 
 - [ ] **Step 1: 扩接口** — 在 `IRetrievalService` 加：
 
@@ -179,10 +193,14 @@ git commit -m "feat: 工具插件支持 opt-in 门控，ToolGroups=null 时排�
         var content = await File.ReadAllTextAsync(fullPath, cancellationToken);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
-        var existing = await _store.GetFilesAsync(fullPath);
-        var old = existing.FirstOrDefault(f => string.Equals(f.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
-        if (!force && old != null && string.Equals(old.FileHash, hash, StringComparison.OrdinalIgnoreCase))
-            return new IndexReport { ScannedFiles = 1, SkippedFiles = 1 };
+        if (!force)
+        {
+            // 前缀查询缩小范围后按路径精确比较（GetFilesAsync 为 StartsWith 语义，需再过滤到相等）。
+            var matched = await _store.GetFilesAsync(fullPath);
+            var old = matched.FirstOrDefault(f => string.Equals(f.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
+            if (old != null && string.Equals(old.FileHash, hash, StringComparison.OrdinalIgnoreCase))
+                return new IndexReport { ScannedFiles = 1, SkippedFiles = 1 };
+        }
 
         var language = _chunkers.GetLanguage(fullPath);
         return await IndexSingleContentAsync(content, language, fullPath, hash, cancellationToken);
@@ -192,9 +210,14 @@ git commit -m "feat: 工具插件支持 opt-in 门控，ToolGroups=null 时排�
     public async Task RemoveAsync(string sourceName, CancellationToken cancellationToken = default)
     {
         using var _ = await _rwLock.WriteLockAsync(cancellationToken);
-        var existing = await _store.GetFilesAsync(null);
-        foreach (var file in existing.Where(f => string.Equals(f.FilePath, sourceName, StringComparison.OrdinalIgnoreCase)))
-            await _store.SoftDeleteFileAsync(file.Id);
+        // 前缀查询缩小范围后按来源名精确比较。
+        var matched = await _store.GetFilesAsync(sourceName);
+        foreach (var file in matched)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.Equals(file.FilePath, sourceName, StringComparison.OrdinalIgnoreCase))
+                await _store.SoftDeleteFileAsync(file.Id);
+        }
     }
 ```
 
@@ -216,17 +239,13 @@ git commit -m "feat: 检索服务支持单文件索引与按来源软删除"
 **Files:**
 - Modify: `LuBan.AIAgent/Retrieval/Chunkers/ChunkerFactory.cs`
 
-- [ ] **Step 1: 改映射** — 在 `ChunkerFactory.cs` 的语言映射字典（约 L120-131）补：
+- [ ] **Step 1: 改映射** — 实际实现不是扩展名→语言字典，而是在 `CreateDefaults()` 的切块器数组里按扩展名注册。`.txt/.csv/.tsv` 本就被 `_fallback`（`SlidingWindowChunker`，语言 `"text"`）覆盖，无需改动；只需把 jsonl 并入 `JsonChunker`：
 
 ```csharp
-            [".txt"] = "text",
-            [".csv"] = "text",
-            [".tsv"] = "text",
-            [".jsonl"] = "json",
-            [".ndjson"] = "json",
+            new JsonChunker("json", new[] { ".json", ".jsonc", ".ipynb", ".jsonl", ".ndjson" }),
 ```
 
-`.xlsx/.xls` 保持被 `LooksBinary`（L84）排除，不动。
+`.xlsx/.xls` 保持被 `LooksBinary` 排除，不动。
 
 - [ ] **Step 2: 构建验证** — `dotnet build LuBan.AIAgent/LuBan.AIAgent.csproj`，0 error。
 
@@ -234,7 +253,7 @@ git commit -m "feat: 检索服务支持单文件索引与按来源软删除"
 
 ```
 git add LuBan.AIAgent/Retrieval/Chunkers/ChunkerFactory.cs
-git commit -m "feat: 分块器补充文本/表格/jsonl 语言映射"
+git commit -m "feat: 分块器补充 jsonl/ndjson 语言映射"
 ```
 
 ---
@@ -251,14 +270,15 @@ git commit -m "feat: 分块器补充文本/表格/jsonl 语言映射"
 namespace LuBan.AIAgent.Configuration;
 
 /// <summary>
-/// Wiki 工具组配置（opt-in，默认关闭，由 Rag profile 显式启用）。
+/// Wiki 工具组配置（opt-in 组，默认启用；靠 ToolGroups 显式点名 + IsOptIn 门控隔离）。
 /// </summary>
 public class WikiToolOptions
 {
     /// <summary>
-    /// 是否启用 wiki 工具组。默认 false，开启后 Rag 工作区才注入 wiki 工具。
+    /// 是否启用 wiki 工具组。默认 true，与其余 7 个工具组选项保持一致；
+    /// 普通工作区靠 opt-in 门控隔离，Rag 工作区在 ToolGroups 中点名 "wiki" 后生效。
     /// </summary>
-    public bool Enabled { get; set; }
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// 默认搜索返回页数。
@@ -1893,6 +1913,7 @@ public class WikiToolPlugin : ILuBanToolPlugin
 
         var confirmation = serviceProvider.GetRequiredService<IToolConfirmationService>();
         var options = toolsOptions?.Wiki ?? _options.Value.Tools.Wiki;
+        if (!options.Enabled) return Array.Empty<AIFunction>();
         var group = new WikiToolGroup(wiki, options, confirmation);
 
         return new List<AIFunction>
@@ -1915,16 +1936,30 @@ public class WikiToolPlugin : ILuBanToolPlugin
 
 ```csharp
     [TestMethod]
-    public void WikiToolPlugin_IsOptIn_AndDisabledByDefault()
+    public void WikiToolPlugin_IsOptIn_AndEnabledByDefault()
     {
         var plugin = new WikiToolPlugin(Options.Create(new LuBanAgentOptions()));
         Assert.AreEqual("wiki", plugin.GroupName);
         Assert.IsTrue(plugin.IsOptIn);
-        Assert.IsFalse(plugin.IsEnabled(new LuBanAgentOptions()));
+        Assert.IsTrue(plugin.IsEnabled(new LuBanAgentOptions()));
+    }
+
+    [TestMethod]
+    public void WikiToolPlugin_GetTools_RespectsDisabledOption()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWikiService>(new StubWikiService());
+        var sp = services.BuildServiceProvider();
+        var plugin = new WikiToolPlugin(Options.Create(new LuBanAgentOptions()));
+
+        var disabled = new ToolGroupOptions { Wiki = { Enabled = false } };
+        Assert.AreEqual(0, plugin.GetTools(sp, disabled).Count);
     }
 ```
 
 - [ ] **Step 4: 跑测试确认通过** — `--filter "FullyQualifiedName~WikiUnitTest"`，全绿。
+
+> 注：`StubWikiService` 为本测试文件内的最小替身（实现 `IWikiService`，成员抛 `NotImplementedException` 即可）；`WikiToolPlugin_GetTools_RespectsDisabledOption` 只走 `Enabled=false` 提前返回路径，无需注册 `IToolConfirmationService`。
 
 - [ ] **Step 5: 提交**
 

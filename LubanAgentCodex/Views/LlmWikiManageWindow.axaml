@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:LubanAgentCodex.Views.Controls"
-        x:Class="LubanAgentCodex.Views.RagManageWindow"
-        Title="RAG 知识库管理"
+        x:Class="LubanAgentCodex.Views.LlmWikiManageWindow"
+        Title="LLM Wiki 知识库管理"
         Width="600"
         Height="400"
         WindowStartupLocation="CenterOwner">
@@ -19,9 +19,9 @@
         </StackPanel>
 
         <!-- 知识库列表（默认显示） -->
-        <ListBox Grid.Row="1" Name="RagListBox" Margin="16,0,16,16" />
+        <ListBox Grid.Row="1" Name="LlmWikiListBox" Margin="16,0,16,16" />
 
-        <!-- 搜索结果列表（默认隐藏，与 RagListBox 同位置叠加） -->
+        <!-- 搜索结果列表（默认隐藏，与 LlmWikiListBox 同位置叠加） -->
         <ListBox Grid.Row="1" Name="ResultListBox" Margin="16,0,16,16" IsVisible="False" />
 
         <!-- 忙碌遮罩：索引/重建/lint 等长耗时任务期间全程覆盖，不可中断 -->

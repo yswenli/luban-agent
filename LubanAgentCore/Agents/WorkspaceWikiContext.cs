@@ -23,4 +23,18 @@ public sealed class WorkspaceWikiContext : IWikiContext
 {
     /// <inheritdoc />
     public string? WorkspaceRoot => WorkspaceManager.Current?.RootPath;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 显式指定 workspaceId 时优先解析该工作区的根（命中已加载缓存），
+    /// 未指定或未命中时回退当前工作区根。后台任务因此不依赖「当前工作区」。
+    /// </remarks>
+    public string? WorkspaceRootFor(string? workspaceId)
+    {
+        var current = WorkspaceManager.Current;
+        if (string.IsNullOrEmpty(workspaceId)) return current?.RootPath;
+        if (current != null && string.Equals(current.WorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase))
+            return current.RootPath;
+        return WorkspaceManager.GetKnownRootPath(workspaceId) ?? current?.RootPath;
+    }
 }

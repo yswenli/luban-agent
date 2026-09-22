@@ -16,6 +16,8 @@
 *****************************************************************************/
 using LuBan.AIAgent.Retrieval.Chunkers;
 
+using System.Diagnostics;
+
 namespace LubanAgentCore.Retrieval;
 
 /// <summary>
@@ -27,6 +29,9 @@ public static class RetrievalIndexPlanner
     /// <summary>预扫失败（目录不可访问等）时返回，调用方应退化为不确定态文案。</summary>
     public const int Unknown = -1;
 
+    /// <summary>扫描阶段进度回调的最小上报间隔（毫秒），避免刷爆 UI 消息循环。</summary>
+    private const int ScanReportIntervalMs = 300;
+
     /// <summary>未发现任何可索引文件时的统一提示。</summary>
     public const string NoIndexableFilesText = "未发现可索引文件（请检查扩展名、文件大小上限与排除目录）";
 
@@ -36,6 +41,12 @@ public static class RetrievalIndexPlanner
     private static readonly ChunkerFactory Chunkers = new();
 
     /// <summary>
+    /// 扫描阶段的进度快照：<paramref name="IndexableFiles"/> 为已发现的可索引文件数，
+    /// <paramref name="CurrentDirectory"/> 为当前正在枚举的目录（用于展示“正在扫描：xxx”）。
+    /// </summary>
+    public sealed record ScanProgress(int IndexableFiles, string CurrentDirectory);
+
+    /// <summary>
     /// 读取配置中的单文件大小上限（字节），口径与 <c>RetrievalBootstrap</c> 一致。
     /// </summary>
     public static long GetMaxFileSizeBytes(IConfiguration configuration)
@@ -43,10 +54,15 @@ public static class RetrievalIndexPlanner
 
     /// <summary>
     /// 统计目录下会被真正索引的文件数：与 <c>RetrievalService.IndexDirectoryAsync</c> 同口径
-    /// （glob 以 ';' 分隔、逐层安全递归、<see cref="ChunkerFactory.ShouldIndex"/> 过滤）。
+    /// （glob 以 ';' 分隔、共用 <see cref="ChunkerFactory.EnumerateFiles"/> 逐层安全递归并剪枝排除目录/重解析点、
+    /// <see cref="ChunkerFactory.ShouldIndex"/> 只做扩展名白名单与大小过滤）。
     /// </summary>
+    /// <param name="rootPath">工作区根目录。</param>
+    /// <param name="glob">文件匹配模式（以 ';' 分隔）；为空表示 <c>*</c>。</param>
+    /// <param name="maxFileSizeBytes">单文件大小上限（字节）。</param>
+    /// <param name="onScan">扫描进度回调（按时间节流），可为 null。</param>
     /// <returns>待索引文件数；失败时返回 <see cref="Unknown"/>。</returns>
-    public static int CountIndexableFiles(string rootPath, string? glob, long maxFileSizeBytes)
+    public static int CountIndexableFiles(string rootPath, string? glob, long maxFileSizeBytes, Action<ScanProgress>? onScan = null)
     {
         if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return 0;
 
@@ -57,9 +73,20 @@ public static class RetrievalIndexPlanner
                 ? new[] { "*" }
                 : glob.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            return patterns.SelectMany(p => SafeEnumerateFiles(root, p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count(f => Chunkers.ShouldIndex(f, root, maxFileSizeBytes));
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var indexable = 0;
+            var stopwatch = Stopwatch.StartNew();
+            foreach (var file in patterns.SelectMany(p => ChunkerFactory.EnumerateFiles(root, p)))
+            {
+                if (!seen.Add(file)) continue;
+                if (Chunkers.ShouldIndex(file, root, maxFileSizeBytes)) indexable++;
+                if (onScan != null && stopwatch.ElapsedMilliseconds >= ScanReportIntervalMs)
+                {
+                    stopwatch.Restart();
+                    onScan(new ScanProgress(indexable, Path.GetDirectoryName(file) ?? root));
+                }
+            }
+            return indexable;
         }
         catch (Exception ex)
         {
@@ -81,7 +108,7 @@ public static class RetrievalIndexPlanner
             var wikiRoot = Path.Combine(workspaceRoot, "wiki");
             if (!Directory.Exists(wikiRoot)) return 0;
 
-            return Directory.EnumerateFiles(wikiRoot, "*.md", SearchOption.AllDirectories)
+            return ChunkerFactory.EnumerateFiles(wikiRoot, "*.md")
                 .Count(f => !string.Equals(Path.GetFileName(f), "log.md", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
@@ -94,6 +121,18 @@ public static class RetrievalIndexPlanner
     /// <summary>索引任务的扫描阶段文案。</summary>
     public static string IndexScanStatus(string target)
         => string.IsNullOrWhiteSpace(target) ? "正在扫描目录…" : $"正在扫描目录：{target}";
+
+    /// <summary>
+    /// 索引任务扫描阶段的动态进度文案（U-1）。目录遍历耗时较长时替换静态文案，
+    /// 让用户看到“确实在推进”，避免误判为卡死。
+    /// </summary>
+    public static string IndexScanningStatus(string currentDirectory, int indexableFiles)
+    {
+        var name = string.IsNullOrWhiteSpace(currentDirectory) ? null : Path.GetFileName(currentDirectory);
+        return string.IsNullOrWhiteSpace(name)
+            ? $"正在扫描目录…（已发现 {indexableFiles} 个可索引文件）"
+            : $"正在扫描：{name}（已发现 {indexableFiles} 个可索引文件）…";
+    }
 
     /// <summary>索引任务的嵌入阶段文案（两段式第二段）。</summary>
     public static string IndexEmbedStatus(int fileCount, string action = "正在生成向量") => fileCount switch
@@ -113,26 +152,4 @@ public static class RetrievalIndexPlanner
         <= 0 => NoWikiPagesText,
         _ => $"共 {pageCount} 页，{action}…"
     };
-
-    /// <summary>
-    /// 与 framework <c>RetrievalService.SafeEnumerateFiles</c> 同实现的逐层安全枚举：
-    /// 单层目录不可访问时跳过该层，不中断整体枚举。
-    /// </summary>
-    private static IEnumerable<string> SafeEnumerateFiles(string root, string pattern)
-    {
-        Queue<string> dirs = new();
-        dirs.Enqueue(root);
-        while (dirs.Count > 0)
-        {
-            var dir = dirs.Dequeue();
-            string[] files;
-            try { files = Directory.GetFiles(dir, pattern); }
-            catch { continue; }
-            foreach (var f in files) yield return f;
-            string[] subDirs;
-            try { subDirs = Directory.GetDirectories(dir); }
-            catch { continue; }
-            foreach (var d in subDirs) dirs.Enqueue(d);
-        }
-    }
 }

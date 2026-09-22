@@ -49,7 +49,7 @@ public abstract class AgentProfile
     public abstract string[]? ToolGroups { get; }
 
     /// <summary>
-    /// 检索模式：null 表示不使用检索；"auto" 表示自动检索注入（RAG 工作区使用）。
+    /// 检索模式：null 表示不使用检索；"auto" 表示自动检索注入（LLM Wiki 工作区使用）。
     /// </summary>
     public abstract string? RetrievalMode { get; }
 

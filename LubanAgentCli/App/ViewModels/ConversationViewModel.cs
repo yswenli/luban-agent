@@ -369,7 +369,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
         _workspace = ws;
         _modelName = model;
-        _profile = ws.Type == "Rag" ? new RagAgentProfile(ws) : new NormalAgentProfile();
+        _profile = ws.Type == WorkspaceTypes.LlmWiki ? new LlmWikiAgentProfile(ws) : new NormalAgentProfile();
         var newAgent = await _profile.CreateAgentAsync(
             _agentFactory, _modelName, _workspace,
             _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);

@@ -140,7 +140,7 @@ public class WorkCommand : CommandBase
             rows.Add(new[]
             {
                 $"{marker}{ws.Name}",
-                ws.Type == "Rag" ? "RAG" : "普通",
+                ws.Type == WorkspaceTypes.LlmWiki ? "LLM Wiki" : "普通",
                 ws.RootPath,
                 ws.IsAuthorized ? "✓" : "✗",
                 sessions.Count.ToString(),
@@ -186,7 +186,7 @@ public class WorkCommand : CommandBase
             return;
         }
 
-        var ws = await _workspaceManager.CreateWorkspaceAsync(path, type: "Normal");
+        var ws = await _workspaceManager.CreateWorkspaceAsync(path, type: WorkspaceTypes.Normal);
         Writer.WriteSuccess($"已创建工作区: {ws.Name} - {ws.RootPath}");
         Writer.WriteInfo($"输入 /work -switch {ws.Name} 切换到此工作区");
     }
@@ -316,20 +316,13 @@ public class WorkCommand : CommandBase
         var confirm = Ui.Confirm("删除工作区", $"删除工作区将同时删除其下所有会话和索引，确认删除 '{target.Name}'？", defaultValue: false);
         if (!confirm) return;
 
-        // 级联删除会话
-        await _sessionRepo.SoftDeleteByWorkspaceAsync(target.WorkspaceId);
+        var wasCurrent = _workspaceManager.CurrentWorkspace?.WorkspaceId == target.WorkspaceId;
 
-        // 物理删除 RAG 索引（文件 + 切块）
-        var ragFileRepo = new RagFileRepository();
-        var ragChunkRepo = new RagChunkRepository();
-        await ragFileRepo.DeleteByWorkspaceAsync(target.WorkspaceId);
-        await ragChunkRepo.DeleteByWorkspaceAsync(target.WorkspaceId);
+        // 统一删除入口：会话软删 → LLM Wiki 索引物理删 → 工作区逻辑删；
+        // 删除当前工作区时还会移除 PathGuard 根目录、清空当前工作区与会话引用。
+        await _workspaceManager.DeleteWorkspaceAsync(target.WorkspaceId);
 
-        // 软删除工作区
-        await _workspaceRepo.LogicDeleteAsync(w => w.WorkspaceId == target.WorkspaceId);
-
-        // 若删除的是当前工作区，清理授权状态并提示用户切换
-        if (_workspaceManager.CurrentWorkspace?.WorkspaceId == target.WorkspaceId)
+        if (wasCurrent)
         {
             Writer.WriteWarning("当前工作区已删除，请使用 /work -switch 切换到其他工作区");
         }
@@ -351,7 +344,7 @@ public class WorkCommand : CommandBase
 
         var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
         Writer.WriteHeader($"工作区: {ws.Name}");
-        Writer.WriteInfo($"  类型: {(ws.Type == "Rag" ? "RAG" : "普通")}");
+        Writer.WriteInfo($"  类型: {(ws.Type == WorkspaceTypes.LlmWiki ? "LLM Wiki" : "普通")}");
         Writer.WriteInfo($"  根目录: {ws.RootPath}");
         Writer.WriteInfo($"  授权状态: {(ws.IsAuthorized ? "已授权" : "未授权")}");
         Writer.WriteInfo($"  会话数: {sessions.Count}");

@@ -30,15 +30,23 @@ public partial class NewWorkspaceDialog : Window
     private TextBox? _pathBox;
     private TextBlock? _errorText;
 
-    /// <summary>用户输入的工作区名称（可为空，创建时取目录名）</summary>
+    /// <summary>用户输入的工作区名称（可为空，创建时按工作区类型取默认名）</summary>
     public string? WorkspaceName { get; private set; }
 
     /// <summary>选中的工作区目录绝对路径</summary>
     public string? WorkspacePath { get; private set; }
 
-    public NewWorkspaceDialog()
+    /// <summary>供 Avalonia 运行时加载器使用的无参构造</summary>
+    public NewWorkspaceDialog() : this(null)
+    {
+    }
+
+    /// <param name="defaultNameHint">有固定默认名的工作区类型（如知识库）的名称提示，仅用于占位文案</param>
+    public NewWorkspaceDialog(string? defaultNameHint)
     {
         InitializeComponent();
+        if (!string.IsNullOrWhiteSpace(defaultNameHint) && _nameBox != null)
+            _nameBox.PlaceholderText = $"工作区名称（默认 {defaultNameHint}）";
     }
 
     private void InitializeComponent()
@@ -91,13 +99,7 @@ public partial class NewWorkspaceDialog : Window
         }
 
         var name = _nameBox?.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            // 名称缺省时取目录名（与 WorkspaceManager.CreateWorkspaceAsync 行为一致）
-            name = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
-        }
-
-        WorkspaceName = name;
+        WorkspaceName = string.IsNullOrWhiteSpace(name) ? null : name;
         WorkspacePath = path;
         Close(true);
     }

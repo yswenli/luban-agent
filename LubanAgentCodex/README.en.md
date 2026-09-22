@@ -1,4 +1,4 @@
-# LuBan Agent Codex
+﻿# LuBan Agent Codex
 
 <div align="center">
 
@@ -108,7 +108,7 @@ Built-in nine core skills, plug and play:
 - **Stable workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
 - **Workspace configuration directory**: Automatically creates `.luban-agent/` under each workspace root, can place custom `skills`, `rules`, `mcps` configurations
 - **Temporary file management**: Scripts, screenshots, intermediate files generated at runtime uniformly stored in `.luban-agent/temp/`, supports automatic cleanup of expired files
-- **RAG Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A
+- **LLM Wiki Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A
 - **Vector storage isolation**: Index data from different workspaces completely isolated, no cross-reading
 - **Path authorization management**: Workspace authorization integrated with PathGuard, only authorized workspace root directories accessible
 
@@ -235,7 +235,7 @@ LuBan Agent Codex provides a concise and powerful command system, all commands s
 | `/session` | `/se` | Manage conversation sessions |
 | `/stats` | `/st` | Session and Token statistics |
 | `/work` | `/w` | Workspace management |
-| `/rag` | `/rg` | Knowledge base management |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki knowledge base management |
 
 ### Sub-command Shortcuts
 
@@ -244,9 +244,9 @@ LuBan Agent Codex provides a concise and powerful command system, all commands s
 | `-l` | `-list` | All management commands |
 | `-a` | `-add` | All management commands |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/Rag |
-| `-s` | `-switch` | All management commands |
-| `-n` | `-new` | Session/Work/Rag |
+| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
+| `-s` | `-switch` | All management commands (`-search` in `/llmwiki`) |
+| `-n` | `-new` | Session/Work/LLM Wiki |
 | `-c` | `-clear` | Session |
 
 **Examples**:
@@ -373,7 +373,7 @@ This is a complex task, needs to be decomposed into multiple subtasks for parall
 │ Name     │ Type │ Root Dir     │ Sess │ Last Active│ Auth │
 ├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
 │ * MyProject │ Normal │ D:\MyProject │ 3    │ 2026-08-20 │ ✓    │
-│   Docs      │ RAG  │ D:\Docs      │ 0    │ -          │ ✗    │
+│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
 └──────────┴──────┴──────────────┴──────┴────────────┴──────┘
 
 # Switch workspace
@@ -382,19 +382,20 @@ This is a complex task, needs to be decomposed into multiple subtasks for parall
   Root directory: D:\MyProject
 ```
 
-### Scenario 7: RAG Knowledge Base Q&A
+### Scenario 7: LLM Wiki Knowledge Base Q&A
 
 ```
-# 1. Create RAG knowledge base
-> /rag -new D:\KnowledgeBase My Knowledge Base
-✓ RAG knowledge base created: My Knowledge Base - D:\KnowledgeBase
+# 1. Create LLM Wiki knowledge base
+> /llmwiki -new D:\KnowledgeBase My Knowledge Base
+✓ LLM Wiki knowledge base created: My Knowledge Base - D:\KnowledgeBase
+# The name can be omitted: /llmwiki -new D:\KnowledgeBase → defaults to llmwiki
 
-# 2. Switch to RAG workspace
+# 2. Switch to LLM Wiki workspace
 > /work -switch My Knowledge Base
 ✓ Switched to workspace: My Knowledge Base
 
 # 3. Authorize and index files
-> /rag -index *.md
+> /llmwiki -index *.md
 Starting to index workspace: My Knowledge Base
 ✓ Indexing complete
   Scanned files: 25
@@ -402,7 +403,7 @@ Starting to index workspace: My Knowledge Base
   Total chunks: 142
 
 # 4. Retrieval test
-> /rag -search how to configure workspace
+> /llmwiki -search how to configure workspace
 Found 3 related results:
 File: D:\KnowledgeBase\setup.md
 Content: Workspace configuration requires...
@@ -442,7 +443,7 @@ LubanAgentCodex/
 │   ├── MCPManageWindow         # MCP service management window
 │   ├── SettingsWindow          # Unified settings center (skills/rules/MCP/providers/models)
 │   ├── WorkManageWindow        # Workspace management window
-│   ├── RagManageWindow         # RAG management window
+│   ├── LlmWikiManageWindow         # LLM Wiki management window
 │   └── Controls/               # Custom controls
 │       ├── Sidebar             # Left sidebar
 │       ├── TitleBar            # Top title bar

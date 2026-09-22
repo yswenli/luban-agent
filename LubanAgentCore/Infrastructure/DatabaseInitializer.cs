@@ -48,6 +48,7 @@ public static class DatabaseInitializer
         EnsureIsCompactedColumn();
         EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
+        EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureAttachmentsColumn();
         var dbPath = GetDatabasePath();
 
@@ -208,7 +209,7 @@ public static class DatabaseInitializer
     }
 
     /// <summary>
-    /// 兜底迁移：ai_session、rag_file、rag_chunk 新增 WorkspaceId 列
+    /// 兜底迁移：ai_session 新增 WorkspaceId 列
     /// </summary>
     private static void EnsureWorkspaceIdColumns()
     {
@@ -218,20 +219,54 @@ public static class DatabaseInitializer
                 .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN WorkspaceId TEXT");
         }
         catch { /* 列已存在，忽略 */ }
+    }
+
+    /// <summary>
+    /// 确保 LLM Wiki 索引表存在，并一次性清理旧版 RAG 数据。
+    /// 现有数据库超过阈值时会跳过 CodeFirst 建表，故此处显式建表；
+    /// 旧表（rag_file/rag_chunk）与旧工作区记录（Type='Rag'）不再使用，直接删除（幂等）。
+    /// </summary>
+    private static void EnsureLlmWikiTablesAndCleanupLegacy(List<string> messages)
+    {
+        var context = new LlmWikiFileRepository().Context;
 
         try
         {
-            new RagFileRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE rag_file ADD COLUMN WorkspaceId TEXT NOT NULL DEFAULT ''");
+            context.CodeFirst.InitTables<DbLlmWikiFile, DbLlmWikiChunk>();
         }
-        catch { /* 列已存在，忽略 */ }
+        catch (Exception ex)
+        {
+            Logger.Error("初始化 LLM Wiki 索引表失败", ex);
+            messages.Add($"初始化 LLM Wiki 索引表失败: {ex.Message}");
+        }
+
+        foreach (var legacyTable in new[] { "rag_file", "rag_chunk" })
+        {
+            try
+            {
+                if (context.DbMaintenance.IsAnyTable(legacyTable, false))
+                {
+                    context.DbMaintenance.DropTable(legacyTable);
+                    messages.Add($"已删除旧版 RAG 数据表 {legacyTable}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"删除旧版 RAG 数据表 {legacyTable} 失败", ex);
+                messages.Add($"删除旧版 RAG 数据表 {legacyTable} 失败: {ex.Message}");
+            }
+        }
 
         try
         {
-            new RagChunkRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE rag_chunk ADD COLUMN WorkspaceId TEXT NOT NULL DEFAULT ''");
+            var rows = context.Ado.ExecuteCommand("DELETE FROM ai_workspace WHERE Type = 'Rag'");
+            if (rows > 0) messages.Add($"已清理 {rows} 个旧版 RAG 工作区记录");
         }
-        catch { /* 列已存在，忽略 */ }
+        catch (Exception ex)
+        {
+            Logger.Error("清理旧版 RAG 工作区记录失败", ex);
+            messages.Add($"清理旧版 RAG 工作区记录失败: {ex.Message}");
+        }
     }
 
     /// <summary>

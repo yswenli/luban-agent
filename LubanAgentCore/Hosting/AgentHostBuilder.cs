@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using LubanAgentCore.Agents;
 using LubanAgentCore.Commands;
+using LubanAgentCore.Repositories;
 
 namespace LubanAgentCore.Hosting;
 
@@ -108,6 +109,8 @@ public static class AgentHostBuilder
         services.AddSingleton<SessionRepository>();
         services.AddSingleton<SessionMessageRepository>();
         services.AddSingleton<WorkspaceRepository>();
+        services.AddSingleton<LlmWikiFileRepository>();
+        services.AddSingleton<LlmWikiChunkRepository>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
         services.AddSingleton<ICommandCatalog, CommandCatalog>();
         services.AddSingleton<IWorkspaceContextProvider>(
@@ -126,6 +129,7 @@ public static class AgentHostBuilder
                 sp.GetRequiredService<IRetrievalService>(),
                 sp.GetRequiredService<IWikiContext>(),
                 sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Tools.Wiki));
+            services.AddSingleton<KnowledgeTaskService>();
             if (modelManager != null) services.AddSingleton(modelManager);
         }
 
@@ -157,7 +161,7 @@ public static class AgentHostBuilder
             string workspaceId;
             if (existing == null)
             {
-                var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: "Normal");
+                var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: WorkspaceTypes.Normal);
                 workspaceId = ws.WorkspaceId;
                 notices.Add($"已创建工作区: {ws.Name} ({ws.RootPath})");
             }

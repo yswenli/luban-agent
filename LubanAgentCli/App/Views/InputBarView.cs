@@ -17,6 +17,7 @@
 *****************************************************************************/
 using LubanAgentCore.Commands;
 using Attribute = Terminal.Gui.Drawing.Attribute;
+using Clipboard = Terminal.Gui.App.Clipboard;
 using Color = Terminal.Gui.Drawing.Color;
 using Command = Terminal.Gui.Input.Command;
 using Key = Terminal.Gui.Input.Key;
@@ -48,11 +49,14 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
     /// </summary>
     public Action? OnPreRoutedKey { get; set; }
 
-    private string _lastTextForCompletion = string.Empty;
-
     protected override bool OnKeyDown(Key key)
     {
         Infrastructure.TuiDiag.KeyArrival();
+
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Enter] MultilineEditor.OnKeyDown ENTER key={key}");
+        }
 
         // 优先路由给挂起的确认块
         if (KeyPreRouter is not null && KeyPreRouter(key))
@@ -80,23 +84,6 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
             }
         }
 
-        // Ctrl+V / Ctrl+Shift+V：直接调用框架内置的 Paste 命令。
-        // Editor 覆盖 OnKeyDown 后不会处理 KeyBindings 中的 Ctrl+V 粘贴；
-        // InvokeCommand(Command.Paste) 会执行框架的粘贴处理（读取 Application.Clipboard 并插入光标处），最可靠。
-        if (key == Key.V.WithCtrl || key == Key.V.WithShift.WithCtrl)
-        {
-            InvokeCommand(Command.Paste);
-            if (Infrastructure.TuiDiag.Enabled)
-            {
-                Logger.Warn($"[TuiDiag-Enter] key={key} branch=Paste(InvokeCommand)");
-            }
-            // 粘贴内容恰为一个存在的文件路径 → 直接转为附件，不留在输入区
-            Owner?.TryConsumeDroppedPath();
-            // 粘贴后检查文本变化触发补全刷新
-            Owner?.RefreshCompletion(Text ?? string.Empty);
-            return true;
-        }
-
         // Ctrl+O：打开文件选择对话框
         if (key == Key.O.WithCtrl)
         {
@@ -105,8 +92,6 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
         }
 
         // Shift+Enter 或 Ctrl+Enter 换行。
-        // 必须走 Command.NewLine：ReplaceSelection 在无选区时是 no-op（插不进任何字符），
-        // 而 NewLine 是 Editor 官方的 Enter 绑定，可同时复用其自动缩进策略。
         if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
         {
             InvokeCommand(Command.NewLine);
@@ -136,24 +121,13 @@ internal sealed class MultilineEditor : Terminal.Gui.Editor.Editor
                 {
                     Logger.Warn($"[TuiDiag-Enter] key=Enter SUBMIT textLen={text.Length}");
                 }
-                // 提交前关闭补全菜单
                 Owner?.HideCompletion();
                 SubmitRequested?.Invoke(text);
             }
             return true;
         }
 
-        var result = base.OnKeyDown(key);
-
-        // 任何按键后检查文本变化，触发补全菜单刷新
-        var currentText = Text ?? string.Empty;
-        if (currentText != _lastTextForCompletion)
-        {
-            _lastTextForCompletion = currentText;
-            Owner?.RefreshCompletion(currentText);
-        }
-
-        return result;
+        return base.OnKeyDown(key);
     }
 }
 
@@ -174,6 +148,9 @@ internal sealed class CommandCompletionPopup : View
 
     /// <summary>补全菜单是否处于显示状态。</summary>
     public bool IsVisible { get; private set; }
+
+    /// <summary>当前可见行数（用于定位计算）。</summary>
+    public int VisibleRows => _visibleRows;
 
     /// <summary>显示补全菜单并设置匹配项。</summary>
     public void Show(IReadOnlyList<SlashCommandDefinition> items, int maxRows)
@@ -230,7 +207,7 @@ internal sealed class CommandCompletionPopup : View
             var line = namePadded + descText;
 
             var isSelected = i == _selected;
-            var bg = isSelected ? TuiTheme.Accent : TuiTheme.Background;
+            var bg = isSelected ? TuiTheme.Accent : new Color(0x80, 0x80, 0x80);
             var fg = isSelected ? TuiTheme.Background : TuiTheme.AssistantText;
             SetAttribute(new Attribute(fg, bg));
 
@@ -255,6 +232,10 @@ internal sealed class InputBarView : View
     private readonly List<AttachmentDraft> _drafts = new();
     private readonly List<string> _draftPaths = new();
     private readonly CommandCompletionPopup _completionPopup;
+    private readonly List<string> _history = new();
+    private int _historyIndex = -1;
+    private const int HistoryMaxSize = 50;
+    private string _lastTextForCompletion = string.Empty;
     private Label? _attachmentHint;
     private IServiceProvider? _services;
     private ITuiUiService? _ui;
@@ -292,6 +273,12 @@ internal sealed class InputBarView : View
     /// <summary>补全菜单是否可见。</summary>
     public bool IsCompletionVisible => _completionPopup.IsVisible;
 
+    /// <summary>命令补全弹层视图（由 RootView 添加到顶层，实现向上展开）。</summary>
+    public CommandCompletionPopup CompletionPopup => _completionPopup;
+
+    /// <summary>补全菜单状态变化时触发（用于通知 RootView 重绘）。</summary>
+    public event Action? CompletionStateChanged;
+
     /// <summary>是否有待发送附件。</summary>
     public bool HasAttachments => _drafts.Count > 0;
 
@@ -327,9 +314,8 @@ internal sealed class InputBarView : View
             return;
         }
 
-        // popup 最多显示 8 行
-        _completionPopup.Show(matches, Math.Min(8, matches.Count));
-        SetNeedsDraw();
+        _completionPopup.Show(matches, Math.Min(10, matches.Count));
+        CompletionStateChanged?.Invoke();
     }
 
     /// <summary>
@@ -376,7 +362,7 @@ internal sealed class InputBarView : View
         if (_completionPopup.IsVisible)
         {
             _completionPopup.Hide();
-            SetNeedsDraw();
+            CompletionStateChanged?.Invoke();
         }
     }
 
@@ -469,10 +455,58 @@ internal sealed class InputBarView : View
         ClearAttachments();
         _editor.Text = string.Empty;
 
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            _history.Add(body);
+            if (_history.Count > HistoryMaxSize)
+                _history.RemoveAt(0);
+            _historyIndex = _history.Count;
+        }
+
         if (drafts.Count == 0)
             Submitted?.Invoke(body);
         else
             SubmittedWithAttachments?.Invoke(body, drafts);
+    }
+
+    internal bool NavigateHistory(int delta)
+    {
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Enter] NavigateHistory delta={delta} historyCount={_history.Count} historyIndex={_historyIndex}");
+        }
+        if (_history.Count == 0) return false;
+
+        var docLine = _editor.Document.GetLineByOffset(_editor.CaretOffset);
+        var line = docLine.LineNumber;
+        var lineCount = _editor.Document.LineCount;
+
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Enter] NavigateHistory line={line} lineCount={lineCount}");
+        }
+
+        // DocumentLine.LineNumber 为 1-based（首行=1）：首行=line 1，末行=lineCount
+        if (delta < 0 && line > 1) return false;
+        if (delta > 0 && line < lineCount) return false;
+
+        var newIndex = _historyIndex + delta;
+        if (newIndex < 0 || newIndex > _history.Count) return false;
+
+        _historyIndex = newIndex;
+        if (newIndex == _history.Count)
+        {
+            _editor.Text = string.Empty;
+        }
+        else
+        {
+            _editor.Text = _history[newIndex];
+        }
+        if (Infrastructure.TuiDiag.Enabled)
+        {
+            Logger.Warn($"[TuiDiag-Enter] NavigateHistory success newIndex={newIndex}");
+        }
+        return true;
     }
 
     /// <summary>
@@ -546,7 +580,117 @@ internal sealed class InputBarView : View
         _editor.Owner = this;
         _editor.SubmitRequested += OnEditorSubmit;
 
-        // Ctrl+V 粘贴已在 OnKeyDown 中通过 InvokeCommand(Command.Paste) 处理，无需在此绑定 KeyBindings。
+        _editor.ContentChanged += (sender, e) =>
+        {
+            var currentText = _editor.Text ?? string.Empty;
+            if (currentText != _lastTextForCompletion)
+            {
+                _lastTextForCompletion = currentText;
+                RefreshCompletion(currentText);
+            }
+        };
+
+        _editor.KeyDown += (sender, e) =>
+        {
+            if (Infrastructure.TuiDiag.Enabled)
+            {
+                Logger.Warn($"[TuiDiag-Enter] Editor.KeyDown key={e}");
+            }
+
+            if (e == Key.CursorUp || e == Key.CursorDown)
+            {
+                if (IsCompletionVisible) return;
+                if (NavigateHistory(e == Key.CursorUp ? -1 : 1))
+                {
+                    e.Handled = true;
+                }
+            }
+            else if (e == Key.V.WithCtrl || e == Key.V.WithShift.WithCtrl)
+            {
+                try
+                {
+                    var clipboard = _editor.App?.Clipboard;
+                    var clipText = clipboard is not null && clipboard.TryGetClipboardData(out var data) ? data : null;
+                    if (Infrastructure.TuiDiag.Enabled)
+                    {
+                        Logger.Warn($"[TuiDiag-Enter] Paste read len={(clipText == null ? -1 : clipText.Length)} supported={(clipboard?.IsSupported.ToString() ?? "null")}");
+                    }
+                    if (!string.IsNullOrEmpty(clipText))
+                    {
+                        _editor.ReplaceSelection(clipText);
+                        if (Infrastructure.TuiDiag.Enabled)
+                        {
+                            Logger.Warn($"[TuiDiag-Enter] Paste inserted len={clipText.Length}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (Infrastructure.TuiDiag.Enabled)
+                    {
+                        Logger.Warn($"[TuiDiag-Enter] Paste failed: {ex.Message}");
+                    }
+                }
+                TryConsumeDroppedPath();
+                RefreshCompletion(_editor.Text ?? string.Empty);
+                e.Handled = true;
+            }
+            else if (e == Key.C.WithCtrl)
+            {
+                if (_editor.HasSelection)
+                {
+                    var selectedText = _editor.SelectedText;
+                    if (!string.IsNullOrEmpty(selectedText))
+                    {
+                        try
+                        {
+                            _editor.App?.Clipboard?.TrySetClipboardData(selectedText);
+                            if (Infrastructure.TuiDiag.Enabled)
+                            {
+                                Logger.Warn($"[TuiDiag-Enter] Copy len={selectedText.Length}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (Infrastructure.TuiDiag.Enabled)
+                            {
+                                Logger.Warn($"[TuiDiag-Enter] Copy failed: {ex.Message}");
+                            }
+                        }
+                    }
+                    e.Handled = true;
+                }
+            }
+            else if (e == Key.X.WithCtrl)
+            {
+                if (_editor.HasSelection)
+                {
+                    var selectedText = _editor.SelectedText;
+                    if (!string.IsNullOrEmpty(selectedText))
+                    {
+                        try
+                        {
+                            _editor.App?.Clipboard?.TrySetClipboardData(selectedText);
+                            _editor.ReplaceSelection(string.Empty);
+                            if (Infrastructure.TuiDiag.Enabled)
+                            {
+                                Logger.Warn($"[TuiDiag-Enter] Cut len={selectedText.Length}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            if (Infrastructure.TuiDiag.Enabled)
+                            {
+                                Logger.Warn($"[TuiDiag-Enter] Cut failed: {ex.Message}");
+                            }
+                        }
+                        TryConsumeDroppedPath();
+                        RefreshCompletion(_editor.Text ?? string.Empty);
+                        e.Handled = true;
+                    }
+                }
+            }
+        };
 
         // 解除 Editor 默认的 Tab/Shift+Tab 缩进/反缩进绑定，
         // 让这两个键能冒泡到 RootView 的全局快捷键处理
@@ -555,21 +699,14 @@ internal sealed class InputBarView : View
         _editor.KeyBindings.Remove(Key.Tab);
         _editor.KeyBindings.Remove(Key.Tab.WithShift);
 
-        // 命令补全弹层：浮在 Editor 上方（同 X、Y、Width，Height 动态调整）。
-        // 后 Add 的子视图在视觉上层，覆盖 Editor 显示候选命令列表。
         _completionPopup = new CommandCompletionPopup
         {
-            X = 2,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = 8,
             Visible = false,
             CanFocus = false
         };
 
         Add(_editor);
         Add(_attachmentHint);
-        Add(_completionPopup);
 
         _editor.OpenFilePickerRequested += () =>
         {

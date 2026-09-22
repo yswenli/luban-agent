@@ -1,4 +1,4 @@
-# LuBan Agent
+﻿# LuBan Agent
 
 <div align="center">
 
@@ -28,7 +28,7 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 
 | Project | Form | Description |
 |---------|------|-------------|
-| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, RAG retrieval, workspace management |
+| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management |
 | **[LubanAgentCli](LubanAgentCli/)** | Command-line TUI | Full-screen terminal UI based on Terminal.Gui v2 (Claude Code style), installable as a dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | Desktop Client | Cross-platform GUI based on Avalonia UI, three-pane layout + dark theme |
 
@@ -100,7 +100,7 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory (`.luban-agent/`)
 - **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
-- **RAG Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
+- **LLM Wiki Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated
 - **Path Authorization Management**: Workspace authorization integrates with PathGuard; only authorized workspace root directories are accessible
 
@@ -208,7 +208,7 @@ luban-agent/
 ├── Directory.Build.props     # Global build properties
 │
 ├── LubanAgentCore/           # Core library (net10.0)
-│   ├── Agents/               # Agent profiles (Normal / RAG)
+│   ├── Agents/               # Agent profiles (Normal / LLM Wiki)
 │   ├── Configuration/        # Configuration management
 │   ├── EmbeddingModels/      # AI embedding model files (bge-small-zh-v1.5)
 │   ├── Entities/             # Data entities
@@ -249,7 +249,7 @@ luban-agent/
          └────────┬───────────┘
                   ▼
          ┌─────────────────┐
-         │ LubanAgentCore  │  Agent runtime / tools / skills / sessions / RAG / workspaces
+         │ LubanAgentCore  │  Agent runtime / tools / skills / sessions / LLM Wiki / workspaces
          └────────┬────────┘
                   ▼
          ┌─────────────────┐
@@ -324,7 +324,7 @@ User configurations (Providers, custom Skills, rules, etc.) are automatically sa
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution, and SubAgents inherit workspace long-term memory
 - 📂 **Workspace Isolation**: Each workspace has its own session history and config directory (`.luban-agent/`), with a host-stable workspace ID that shares long-term memory
-- 🔍 **RAG Knowledge Base**: After indexing local documents, conversations are automatically augmented with retrieval
+- 🔍 **LLM Wiki Knowledge Base**: After indexing local documents, conversations are automatically augmented with retrieval
 
 ---
 
