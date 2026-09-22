@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.1-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 English | [中文](README.md)
 
@@ -197,6 +197,79 @@ You: Show me what directories are on drive D
 ```
 
 > **Security Note**: API Key input is hidden (password input mode); user configuration is automatically saved to `%LocalAppData%\LuBan\AIAgent\config.json`
+
+---
+
+## 📦 Cross-Platform Build & Publish
+
+The project supports building into **single-file executables** that run directly on target machines without requiring .NET runtime installation.
+
+### Prerequisites
+
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download) or later
+- Verify SDK version: `dotnet --version`
+
+### Publish as Single-File Executable
+
+#### Command-line TUI (LubanAgentCli)
+
+```powershell
+# Windows 10/11 x64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+
+# Windows ARM64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Intel (x64)
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Apple Silicon (ARM64)
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true
+
+# Linux x64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
+
+# Linux ARM64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true
+```
+
+#### Desktop Client (LubanAgentCodex)
+
+```powershell
+# Windows 10/11 x64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+
+# Windows ARM64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Intel (x64)
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Apple Silicon (ARM64)
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true
+
+# Linux x64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
+
+# Linux ARM64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true
+```
+
+### Output Location
+
+| Project | Output Path |
+|---------|-------------|
+| LubanAgentCli | `LubanAgentCli/bin/Release/net10.0/<rid>/publish/LubanAgentCli[.exe]` |
+| LubanAgentCodex | `LubanAgentCodex/bin/Release/net10.0/<rid>/publish/LubanAgentCodex[.exe]` |
+
+> Windows output is `.exe`; macOS/Linux output is an extensionless ELF/Mach-O executable.
+
+### Notes
+
+- **NativeAOT not supported**: The project relies heavily on reflection from Terminal.Gui / Avalonia; `PublishAot=true` will cause runtime exceptions
+- **Cross-compilation limitations**: Native dependencies for macOS and Linux (e.g., `libSkiaSharp`) must be compiled on the target platform; it is recommended to run `dotnet publish` directly on the target platform
+- **Playwright browser**: Before using browser tools, run `npx playwright@1.61.0 install chromium` on the target machine
+- **Configuration files**: After publishing, `appsettings.json` is output with the artifacts and can be modified before running; user configuration is saved to `%LocalAppData%\LuBan\AIAgent\` (Windows) or `~/.config/LuBan/AIAgent/` (macOS/Linux)
 
 ---
 

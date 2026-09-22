@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.1-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | 中文
 
@@ -197,6 +197,79 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 ```
 
 > **安全提示**：API Key 输入时会隐藏显示（密码输入模式）；用户配置自动保存在 `%LocalAppData%\LuBan\AIAgent\config.json`
+
+---
+
+## 📦 跨平台编译发布
+
+项目支持编译为**单文件可执行程序**，无需目标机器安装 .NET 运行时即可直接运行。
+
+### 前提条件
+
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download) 或更高版本
+- 确认 SDK 版本：`dotnet --version`
+
+### 发布为单文件可执行程序
+
+#### 命令行 TUI（LubanAgentCli）
+
+```powershell
+# Windows 10/11 x64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+
+# Windows ARM64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Intel (x64)
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Apple Silicon (ARM64)
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true
+
+# Linux x64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
+
+# Linux ARM64
+dotnet publish LubanAgentCli/LubanAgentCli.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true
+```
+
+#### 桌面客户端（LubanAgentCodex）
+
+```powershell
+# Windows 10/11 x64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+
+# Windows ARM64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Intel (x64)
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true
+
+# macOS Apple Silicon (ARM64)
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true
+
+# Linux x64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true
+
+# Linux ARM64
+dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true
+```
+
+### 产物位置
+
+| 项目 | 产物路径 |
+|------|----------|
+| LubanAgentCli | `LubanAgentCli/bin/Release/net10.0/<rid>/publish/LubanAgentCli[.exe]` |
+| LubanAgentCodex | `LubanAgentCodex/bin/Release/net10.0/<rid>/publish/LubanAgentCodex[.exe]` |
+
+> Windows 产物为 `.exe`；macOS/Linux 产物为无扩展名的 ELF/Mach-O 可执行文件。
+
+### 注意事项
+
+- **NativeAOT 暂不支持**：项目依赖 Terminal.Gui / Avalonia 的大量反射机制，`PublishAot=true` 会导致运行时异常
+- **跨平台编译限制**：macOS 和 Linux 的 native 依赖（如 `libSkiaSharp`）需在对应平台上编译，建议在目标平台上直接执行 `dotnet publish`
+- **Playwright 浏览器**：使用浏览器工具前，需在目标机器执行 `npx playwright@1.61.0 install chromium`
+- **配置文件**：发布后 `appsettings.json` 会随产物一起输出，可在运行前修改；用户配置保存在 `%LocalAppData%\LuBan\AIAgent\`（Windows）或 `~/.config/LuBan/AIAgent/`（macOS/Linux）
 
 ---
 

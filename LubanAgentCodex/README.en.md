@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.1-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | [中文](README.md)
 
@@ -47,7 +47,7 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 9 Built-in Tool Groups
+### 🛠️ 7 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
@@ -129,8 +129,8 @@ npx playwright@1.61.0 install chromium
 
 ```bash
 # Clone repository
-git clone https://github.com/yswenli/luban-framework.git
-cd luban-framework/luban-agent
+git clone https://github.com/yswenli/luban-agent.git
+cd luban-agent
 
 # Run program
 dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
@@ -641,7 +641,7 @@ github available tools:
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **9 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP, multi-agent orchestration
+- 🛠️ **7 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, and local memory
 - ⚠️ **Dangerous Operation Confirmation**: Automatically requires user confirmation for write, delete, execute and other dangerous operations
 - 🔒 **Path Authorization**: After workspace authorization, AI Agent can access root directory and its subdirectories
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix

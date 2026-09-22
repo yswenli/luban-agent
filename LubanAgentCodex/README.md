@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.1-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | 中文
 
@@ -47,7 +47,7 @@
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
 
-### 🛠️ 9 大内置工具组
+### 🛠️ 7 大内置工具组
 | 工具组 | 能力 |
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
@@ -129,8 +129,8 @@ npx playwright@1.61.0 install chromium
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yswenli/luban-framework.git
-cd luban-framework/luban-agent
+git clone https://github.com/yswenli/luban-agent.git
+cd luban-agent
 
 # 运行程序
 dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
@@ -641,7 +641,7 @@ github 可用的工具：
 - 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击展开查看详情
 - 📜 **智能滚动**：流式输出自动贴底；手动上滚断开跟随
 - 🌐 **多 Provider 支持**：支持 20+ 种 AI Provider，统一 `provider:model` 格式
-- 🛠️ **9 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP、多 Agent 编排
+- 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆
 - ⚠️ **危险操作确认**：对写入、删除、执行等危险操作自动要求用户确认
 - 🔒 **路径授权**：工作区授权后，AI Agent 可访问根目录及其子目录
 - 🧩 **多 Agent 编排**：AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行

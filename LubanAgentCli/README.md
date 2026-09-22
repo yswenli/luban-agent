@@ -42,7 +42,7 @@
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
 
-### 🛠️ 9 大内置工具组
+### 🛠️ 7 大内置工具组
 | 工具组 | 能力 |
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
@@ -128,8 +128,8 @@ npx playwright@1.61.0 install chromium
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yswenli/luban-framework.git
-cd luban-framework/luban-agent
+git clone https://github.com/yswenli/luban-agent.git
+cd luban-agent
 
 # 运行程序
 dotnet run
@@ -149,8 +149,8 @@ dotnet tool install -g LuBan.Agent.CLI
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/yswenli/luban-framework.git
-cd luban-framework/luban-agent
+git clone https://github.com/yswenli/luban-agent.git
+cd luban-agent
 
 # 2. 打包
 dotnet pack -c Release -o ./artifacts
@@ -861,7 +861,7 @@ github 可用的工具：
 - 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击 `▸` 展开查看详情
 - 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ 行提示"
 - 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择
-- 🛠️ **9 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP、多 Agent 编排
+- 🛠️ **7 大内置工具组**覆盖浏览器自动化、文件操作、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆
 - ⚠️ **ToolConfirmationService** 对写入、删除、执行等危险操作自动要求用户确认（InlineChoiceBlock 内联确认）
 - 🔒 **FileSystemToolOptions.AllowedRoots** 限制文件访问范围，防止 Agent 越权操作
 - 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider
