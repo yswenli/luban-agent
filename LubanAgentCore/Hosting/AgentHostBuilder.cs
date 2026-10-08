@@ -63,7 +63,8 @@ public static class AgentHostBuilder
         {
             var cm = sp.GetRequiredService<ConfigManager>();
             var opts = sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
-            return LuBan.AIAgent.Errors.ChatClientResilience.Wrap(cm.CreateChatClient(), opts);
+            return LuBan.AIAgent.Errors.ChatClientResilience.Wrap(
+                new RequestDumpChatClient(cm.CreateChatClient()), opts);
         });
 
         services.AddSingleton<IProviderRouter>(sp =>

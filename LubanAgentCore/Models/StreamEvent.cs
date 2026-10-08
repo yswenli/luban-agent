@@ -70,7 +70,32 @@ public sealed record OrchestrationProgressEvent(
     string? Message,
     double? ElapsedSeconds,
     string? Error,
-    NodeActivityItem? Activity = null) : StreamEvent;
+    NodeActivityItem? Activity = null) : StreamEvent
+{
+    /// <summary>
+    /// 由框架编排进度模型转换。耗时优先取 <c>ElapsedMs</c>，回退到节点结果耗时（秒）。
+    /// </summary>
+    /// <param name="progress">框架编排进度。</param>
+    public static OrchestrationProgressEvent From(OrchestrationProgress progress)
+        => Create(progress.EventType, progress.NodeId, progress.Message, progress.ElapsedMs, progress.NodeResult, progress.Activity);
+
+    /// <summary>
+    /// 由框架编排进度各字段转换（统一耗时口径：毫秒优先，回退到节点结果秒数）。
+    /// </summary>
+    public static OrchestrationProgressEvent Create(
+        ProgressEventType eventType,
+        string? nodeId,
+        string? message,
+        long? elapsedMs,
+        NodeResult? nodeResult,
+        NodeActivityItem? activity) => new(
+            eventType,
+            nodeId,
+            message,
+            elapsedMs.HasValue ? elapsedMs.Value / 1000.0 : nodeResult?.Elapsed.TotalSeconds,
+            nodeResult?.Error,
+            activity);
+}
 
 /// <summary>附件已加入。</summary>
 /// <param name="FileName">文件名。</param>

@@ -295,6 +295,7 @@ luban-agent/
 │
 ├── LubanAgentCli/            # 命令行 TUI（Terminal.Gui v2 · net10.0）
 │   ├── App/                  # TUI 应用层（启动引导 + DI + 主题）
+│   │   └── Dialogs/          # 弹出层组件（BaseDialog 基类 + 5 个子类）
 │   ├── Views/                # 视图层（纯渲染）
 │   ├── ViewModels/           # MVVM ViewModel 层
 │   ├── Models/               # Block 文档模型

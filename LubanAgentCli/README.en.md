@@ -409,9 +409,9 @@ You: Help me compact the current conversation context
 🤖 Context compacted: archived 12 messages, kept 8 active messages
 ```
 
-### Use Case 5: Composite Task Auto-Orchestration
+### Use Case 5: Composite Task Automatic Orchestration
 
-In `/agi` conversation, AI automatically identifies composite tasks and triggers DAG orchestration:
+In `/agi` conversation, when the model judges the input to be a composite task it first calls `plan_task` to build a task graph, then calls `run_orchestration` to execute the DAG:
 
 ```
 > /agi
@@ -559,8 +559,16 @@ LubanAgent/
 ├── App/                    # TUI application layer (Terminal.Gui bootstrap + DI + theming)
 │   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run bootstrap
 │   ├── TuiTheme.cs             # 24-bit TrueColor theme
+│   ├── TuiUiService.cs         # ITuiUiService facade (modal dialog entry)
 │   ├── IUiDispatcher.cs        # UI thread dispatch abstraction
-│   └── TerminalGuiDispatcher.cs
+│   ├── TerminalGuiDispatcher.cs
+│   └── Dialogs/                # Popup components (unified style)
+│       ├── BaseDialog.cs           # Base dialog (no border + gray bg + white text + title)
+│       ├── ConfirmDialog.cs        # Confirm dialog (Yes/No)
+│       ├── ChooseDialog.cs         # Choose dialog (ListView + OK/Cancel)
+│       ├── FormDialog.cs           # Form dialog (dynamic fields + validation)
+│       ├── TableDialog.cs          # Table dialog (TableView + Select/Close)
+│       └── ProgressDialog.cs       # Progress dialog (no buttons + status update)
 ├── Views/                  # TUI view layer (pure rendering · no business logic)
 │   ├── RootView.cs             # Top-level container (Runnable) + global key bindings + view coordination
 │   ├── ConversationView.cs     # Conversation area (self-drawn, Block document model)
@@ -602,6 +610,20 @@ LubanAgent/
 └── Program.cs             # TUI bootstrap entry point
 ```
 
+### Dialog Architecture
+
+All dialogs inherit from `BaseDialog`, ensuring unified style and behavior:
+
+| Component | Purpose | Buttons |
+|-----------|---------|---------|
+| `ConfirmDialog` | Confirm operations (Yes/No) | Yes/No (default configurable) |
+| `ChooseDialog` | Select one from list | OK/Cancel |
+| `FormDialog` | Dynamic form input | OK/Cancel (with validation) |
+| `TableDialog` | Table data display & selection | Select/Close |
+| `ProgressDialog` | Long-running task progress | None (closable configurable) |
+
+**Unified Style**: No border, gray background (#2D2D2D), white text, bold left-aligned title (accent color), two-line gap between title and content.
+
 **Self-drawn rendering architecture**:
 - `Models/Blocks/` — 7 Block subclasses with distinct colors; `Layout(width)` computes line count, `Render()` produces `List<RenderLine>` color segments
 - `ConversationDocument` — manages Block collection, scroll offset, auto-scroll follow; `GetVisibleLines()` returns visible rows with clipping
@@ -626,19 +648,10 @@ LubanAgent/
     },
     "Orchestration": {
       "Enabled": true,
-      "PlannerType": "Composite",
-      "AutoDetect": true,
-      "ExposeAsTool": false,
-      "MaxParallelism": 3,
+      "PlannerReasoningEffort": "None",
+      "MaxParallelism": 5,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 300,
-      "HeuristicFilter": {
-        "Enabled": true,
-        "MinLength": 8,
-        "MaxLength": 200,
-        "RequireKeyword": true,
-        "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
-      }
+      "DefaultNodeTimeoutSeconds": 300
     }
   }
 }

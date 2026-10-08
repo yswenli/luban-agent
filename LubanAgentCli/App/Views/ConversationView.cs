@@ -209,7 +209,7 @@ internal sealed class ConversationView : View
 
                 SetAttribute(TuiTheme.Attr(seg.Fg, style, bg));
 
-                var text = Truncate(seg.Text, viewport.Width - col);
+                var text = Truncate(StripLineBreaks(seg.Text), viewport.Width - col);
                 if (text.Length > 0)
                 {
                     AddStr(col, row, text);
@@ -573,5 +573,15 @@ internal sealed class ConversationView : View
     private static string Truncate(string text, int maxWidth)
     {
         return TextMeasure.TruncateByColumns(text, maxWidth);
+    }
+
+    /// <summary>
+    /// 防御性切断内嵌换行：Block 已在 Layout/Render 阶段按 \n 拆行，
+    /// 此处兜底避免控制字符被直接写入终端导致排版错乱。
+    /// </summary>
+    private static string StripLineBreaks(string text)
+    {
+        var idx = text.IndexOfAny(['\r', '\n']);
+        return idx < 0 ? text : text[..idx];
     }
 }

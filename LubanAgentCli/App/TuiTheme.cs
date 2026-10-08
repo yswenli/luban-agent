@@ -72,6 +72,12 @@ internal static class TuiTheme
     /// <summary>BypassPermissions 模式 红色（警示）。</summary>
     public static readonly Color ModeBypass = new(0xF0, 0x95, 0x95, 0xFF);
 
+    /// <summary>弹出层背景 中灰 #2D2D2D。</summary>
+    public static readonly Color PopupBackground = new(0x2D, 0x2D, 0x2D, 0xFF);
+
+    /// <summary>弹出层前景 白色 #FFFFFF。</summary>
+    public static readonly Color PopupForeground = new(0xFF, 0xFF, 0xFF, 0xFF);
+
     /// <summary>
     /// 构造前景色为 <paramref name="foreground"/>、背景为主题背景色的属性。
     /// </summary>

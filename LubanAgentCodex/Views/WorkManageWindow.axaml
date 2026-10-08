@@ -1,10 +1,12 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:LubanAgentCodex.Views"
         x:Class="LubanAgentCodex.Views.WorkManageWindow"
         Title="工作区管理"
         Width="700"
         Height="400"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}">
 
     <Grid RowDefinitions="Auto,*">
         <!-- 工具栏 -->
@@ -21,7 +23,49 @@
         <!-- 工作区列表 -->
         <ListBox Grid.Row="1"
                  Name="WorkspaceListBox"
-                 Margin="16,0,16,16">
+                 Margin="16,0,16,16"
+                 Background="{DynamicResource SidebarBrush}"
+                 BorderBrush="{DynamicResource BorderBrush}"
+                 BorderThickness="1"
+                 CornerRadius="8">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="local:WorkspaceItem">
+                    <Border Padding="12,8" Margin="4,2" CornerRadius="4">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding TypeIcon}"
+                                       FontSize="18"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding Name}"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="13"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding RootPath}"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Right">
+                                <TextBlock Text="{Binding Status}"
+                                           Foreground="{DynamicResource SuccessBrush}"
+                                           FontSize="11"
+                                           HorizontalAlignment="Right" />
+                                <TextBlock Text="{Binding AuthorizedText}"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           FontSize="11"
+                                           HorizontalAlignment="Right"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
         </ListBox>
     </Grid>
 </Window>

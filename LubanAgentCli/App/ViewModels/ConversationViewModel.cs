@@ -16,6 +16,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Attachments;
+using LuBan.AIAgent.Orchestration;
 
 using LubanAgentCli.App.Services;
 
@@ -35,6 +36,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     private readonly TitleService _titleService;
     private readonly SessionManager? _sessionManager;
     private readonly ISessionManager _iSessionManager;
+
+    /// <summary>
+    /// TUI 编排进度出口（DI 单例）。编排由工具调用触发、执行在 FunctionInvokingChatClient 内部，
+    /// 进度不经本轮对话流，故每轮 RunStreamingAsync 期间订阅其事件、结束后退订。
+    /// </summary>
+    private readonly TuiOrchestrationProgressSink? _orchestrationSink;
 
     private LuBanAgent? _agent;
     private ILuBanAgentFactory? _agentFactory;
@@ -207,6 +214,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _configManager = services.GetRequiredService<ConfigManager>();
         _titleService = services.GetRequiredService<TitleService>();
+        _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as TuiOrchestrationProgressSink;
 
         _iSessionManager = services.GetRequiredService<ISessionManager>();
         if (_iSessionManager is SessionManager sm)
@@ -880,6 +888,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             });
         }
 
+        if (_orchestrationSink is not null)
+            _orchestrationSink.Progress += OnOrchestrationSinkProgress;
+
         try
         {
             await foreach (var update in (attachments.Count == 0
@@ -1059,6 +1070,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         }
         finally
         {
+            if (_orchestrationSink is not null)
+                _orchestrationSink.Progress -= OnOrchestrationSinkProgress;
+
             probe.Complete(probeError, probeCompleted);
 
             // 仅当仍是当前活动运行才操作文档；否则（已被取消/覆盖）跳过，避免污染新运行
@@ -1099,6 +1113,14 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             }
         }
     }
+
+    /// <summary>
+    /// 编排进度出口回调（可能来自并行节点线程）。交给统一处理器，其内部自行编组到 UI 线程
+    /// 并做运行序号校验。
+    /// </summary>
+    /// <param name="progress">编排进度事件。</param>
+    private void OnOrchestrationSinkProgress(OrchestrationProgressContent progress)
+        => HandleOrchestrationProgress(progress);
 
     /// <summary>
     /// 处理编排进度事件：逐行追加系统提示，让规划/节点执行等长耗时阶段有实时反馈。

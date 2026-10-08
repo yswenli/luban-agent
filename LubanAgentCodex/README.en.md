@@ -319,7 +319,7 @@ You: Help me compact the current conversation context
 
 ### Scenario 5: Complex Task Auto-Orchestration
 
-AI will automatically identify complex tasks and enable DAG orchestration:
+When the model judges the input to be a composite task it first calls `plan_task` to build a task graph, then calls `run_orchestration` to execute the DAG:
 
 ```
 You: Research LuBan-Framework and Luban-Agent two projects, compare their pros and cons, generate a comparison report
@@ -433,7 +433,6 @@ LubanAgentCodex/
 │       ├── AssistantMessageItem.cs
 │       ├── UserMessageItem.cs
 │       ├── ToolCallItem.cs
-│       ├── ToolConfirmItem.cs
 │       └── ThinkingMessageItem.cs
 ├── Views/
 │   ├── MainWindow.axaml(.cs)   # Main window
@@ -454,7 +453,6 @@ LubanAgentCodex/
 │       ├── AssistantMessageView# AI message
 │       ├── ThinkingMessageView # Thinking process
 │       ├── ToolCallCard        # Tool call card
-│       ├── ConfirmCard         # Confirmation card
 │       └── SystemMessageView   # System message
 ```
 
@@ -476,18 +474,10 @@ LubanAgentCodex/
     },
     "Orchestration": {
       "Enabled": true,
-      "PlannerType": "Composite",
-      "AutoDetect": true,
-      "MaxParallelism": 3,
+      "PlannerReasoningEffort": "None",
+      "MaxParallelism": 5,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 300,
-      "HeuristicFilter": {
-        "Enabled": true,
-        "MinLength": 8,
-        "MaxLength": 200,
-        "RequireKeyword": true,
-        "Keywords": [ "and", "simultaneously", "then", "also", "additionally", "moreover", "analyze and", "search and" ]
-      }
+      "DefaultNodeTimeoutSeconds": 300
     }
   }
 }
@@ -503,19 +493,25 @@ User configuration (Provider, custom Skills, rules, etc.) automatically saved lo
 
 ### Dangerous Operation Confirmation
 
-For dangerous operations (writing files, executing scripts, deleting data, etc.), the system will request user confirmation before execution:
+For dangerous operations (writing files, executing scripts, deleting data, etc.), the system shows a **modal confirmation dialog** before execution:
 
 ```
 You: Help me write a file to C:\temp\test.txt
 
-⚠️ Confirmation Required
-Tool: WriteFileAsync
-Parameters:
-  path: C:\temp\test.txt
-  content: File content...
+┌─ Tool Confirmation ──────────────────────┐
+│ ⚠ Confirm whether to run this tool        │
+│ WriteFileAsync                            │
+│ {                                         │
+│   "path": "C:\\temp\\test.txt",            │
+│   "content": "File content..."             │
+│ }                                         │
+│        [✗ Deny] [Allow All This Round] [✓ Allow] │
+└───────────────────────────────────────────┘
 
-[✓ Allow] [ Allow All This Round] [✗ Deny]
+Message stream record: Allowed 写入文件
 ```
+
+The dialog is an application-modal window: the main window is not interactive until you choose; Esc or aborting the session is treated as "Deny".
 
 **Operations requiring confirmation**:
 - 📝 **File System**: Write files, delete files, create/delete directories

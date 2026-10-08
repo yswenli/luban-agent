@@ -85,7 +85,7 @@ public abstract class CommandBase : ICommand
         services.AddSingleton<IConfiguration>(Configuration);
         services.AddSingleton(ConfigManager);
         services.AddSingleton<IChatClient>(sp => ChatClientResilience.Wrap(
-            ConfigManager.CreateChatClient(),
+            new RequestDumpChatClient(ConfigManager.CreateChatClient()),
             sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value));
         services.AddLuBanAgent(Configuration);
         return services.BuildServiceProvider();

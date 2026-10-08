@@ -64,7 +64,8 @@ public class LuBanChatClient : IProviderRouter, IChatClient
         if (_cachedClients.TryGetValue(cacheKey, out var cached))
             return cached;
 
-        var chatClient = clientInfo.Client.GetChatClient(modelName).AsIChatClient();
+        var chatClient = new RequestDumpChatClient(
+            clientInfo.Client.GetChatClient(modelName).AsIChatClient());
         _cachedClients[cacheKey] = chatClient;
         return chatClient;
     }

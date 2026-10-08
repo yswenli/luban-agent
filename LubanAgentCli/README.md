@@ -437,7 +437,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 ### 场景五：复合任务自动编排
 
-在 `/agi` 对话中，AI 会自动识别复合任务并启用 DAG 编排：
+在 `/agi` 对话中，模型判断输入为复合任务时，会先调用 `plan_task` 生成任务图谱，再调用 `run_orchestration` 执行 DAG 编排：
 
 ```
 > /agi
@@ -586,8 +586,16 @@ LubanAgent/
 ├── App/                    # TUI 应用层（Terminal.Gui 启动 + DI + 主题）
 │   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run 启动引导
 │   ├── TuiTheme.cs             # 24-bit TrueColor 配色方案
+│   ├── TuiUiService.cs         # ITuiUiService 外观层（模态对话框入口）
 │   ├── IUiDispatcher.cs        # UI 线程调度抽象
-│   └── TerminalGuiDispatcher.cs
+│   ├── TerminalGuiDispatcher.cs
+│   └── Dialogs/                # 弹出层组件（统一样式）
+│       ├── BaseDialog.cs           # 弹出层基类（无边框 + 灰色背景 + 白色文字 + 标题）
+│       ├── ConfirmDialog.cs        # 确认对话框（是/否）
+│       ├── ChooseDialog.cs         # 选择列表对话框（ListView + 确定/取消）
+│       ├── FormDialog.cs           # 表单对话框（动态字段 + 校验）
+│       ├── TableDialog.cs          # 表格对话框（TableView + 选择/关闭）
+│       └── ProgressDialog.cs       # 进度对话框（无按钮 + 状态更新）
 ├── Views/                  # TUI 视图层（纯渲染 · 无业务逻辑）
 │   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键 + 视图协调
 │   ├── ConversationView.cs     # 会话区自绘（Block 文档模型驱动）
@@ -629,6 +637,20 @@ LubanAgent/
 └── Program.cs             # 程序入口（TUI bootstrap）
 ```
 
+### 弹出层架构
+
+所有弹出层继承 `BaseDialog` 基类，统一样式和行为：
+
+| 组件 | 用途 | 按钮 |
+|------|------|------|
+| `ConfirmDialog` | 确认操作（是/否） | 是/否（默认按钮可配置） |
+| `ChooseDialog` | 从列表选择一项 | 确定/取消 |
+| `FormDialog` | 动态表单输入 | 确定/取消（支持必填校验） |
+| `TableDialog` | 表格数据展示与选择 | 选择/关闭 |
+| `ProgressDialog` | 长耗时任务进度 | 无（可配置是否允许关闭） |
+
+**统一样式**：无边框、灰色背景（#2D2D2D）、白色文字、标题加粗左对齐（橙色）、标题与内容间隔两行。
+
 ---
 
 ## ⚙️ 配置说明
@@ -647,19 +669,10 @@ LubanAgent/
     },
     "Orchestration": {
       "Enabled": true,
-      "PlannerType": "Composite",
-      "AutoDetect": true,
-      "ExposeAsTool": false,
-      "MaxParallelism": 3,
+      "PlannerReasoningEffort": "None",
+      "MaxParallelism": 5,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 300,
-      "HeuristicFilter": {
-        "Enabled": true,
-        "MinLength": 8,
-        "MaxLength": 200,
-        "RequireKeyword": true,
-        "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
-      }
+      "DefaultNodeTimeoutSeconds": 300
     }
   }
 }

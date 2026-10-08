@@ -16,6 +16,7 @@
  *节点仍在运行时按 250ms 轮询活动快照增量刷新（不依赖 Block 的变更通知）。
  *
 *****************************************************************************/
+using LubanAgentCli.App.Dialogs;
 using Terminal.Gui.Text;
 
 // 消歧：全局 using 引入了 Spectre.Console.Color 与 System.Attribute
@@ -28,7 +29,7 @@ namespace LubanAgentCli.App.Views;
 /// 子代理节点详情视图。整屏模态覆盖主界面，头部显示节点序号/描述/状态，
 /// 正文为该节点内部活动的自绘时间轴，底部为操作提示。
 /// </summary>
-internal sealed class NodeDetailView : Dialog
+internal sealed class NodeDetailView : Dialogs.BaseDialog
 {
     private readonly IReadOnlyList<OrchestrationNodeBlock> _nodes;
     private readonly Label _header;
@@ -45,6 +46,7 @@ internal sealed class NodeDetailView : Dialog
     /// <param name="nodes">同批节点快照（按文档顺序），←/→ 在本列表内切换。</param>
     /// <param name="index">初始展示的节点下标。</param>
     public NodeDetailView(IReadOnlyList<OrchestrationNodeBlock> nodes, int index)
+        : base("子代理详情")
     {
         ArgumentNullException.ThrowIfNull(nodes);
         if (nodes.Count == 0) throw new ArgumentException("节点列表不能为空", nameof(nodes));
@@ -52,18 +54,15 @@ internal sealed class NodeDetailView : Dialog
         _nodes = nodes;
         _index = Math.Clamp(index, 0, nodes.Count - 1);
 
-        Title = "子代理详情";
         X = 0;
         Y = 0;
         Width = Dim.Fill();
         Height = Dim.Fill();
-        BorderStyle = LineStyle.Single;
-        SetScheme(TuiTheme.BuildScheme());
 
         _header = new Label
         {
             X = 1,
-            Y = 0,
+            Y = ContentTop,
             Width = Dim.Fill(2),
             Height = 1,
             Text = string.Empty

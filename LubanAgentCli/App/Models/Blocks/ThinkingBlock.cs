@@ -62,8 +62,8 @@ public sealed class ThinkingBlock : Block
             }
 
             var w = Math.Max(1, width - 1); // 缩进 1 列
-            var colWidth = TextMeasure.MeasureColumns(text);
-            LineCount = 1 + Math.Max(1, (colWidth + w - 1) / w);
+            var contentLines = TextMeasure.WrapTextByLines(text, w).Count;
+            LineCount = 1 + Math.Max(1, contentLines);
         }
     }
 
@@ -88,13 +88,9 @@ public sealed class ThinkingBlock : Block
             }
 
             var contentWidth = Math.Max(1, width - 1);
-            var offset = 0;
-            while (offset < text.Length)
+            foreach (var line in TextMeasure.WrapTextByLines(text, contentWidth))
             {
-                var remaining = text[offset..];
-                var take = TextMeasure.TruncateByColumns(remaining, contentWidth);
-                lines.Add(RenderLine.Single($" {take}", BlockColors.Thinking));
-                offset += take.Length;
+                lines.Add(RenderLine.Single($" {line}", BlockColors.Thinking));
             }
         }
     }

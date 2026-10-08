@@ -12,10 +12,11 @@
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/12
 *描述：基于 Terminal.Gui Dialog/MessageBox/TableView/ListView 的 ITuiUiService 实现，
-*支持 UI 线程直跑与后台线程编组等待两种调用方式
+*支持 UI 线程直跑与后台线程编组等待两种调用方式。
+*作为外观层，内部使用 BaseDialog 子类的各个对话框组件。
 *
 *****************************************************************************/
-using System.Collections.ObjectModel;
+using LubanAgentCli.App.Dialogs;
 
 namespace LubanAgentCli.App;
 
@@ -23,6 +24,7 @@ namespace LubanAgentCli.App;
 /// <see cref="ITuiUiService"/> 的 Terminal.Gui 实现。
 /// 构造于 UI 线程（记录线程 ID）；模态方法在 UI 线程直接嵌套 modal Run，
 /// 后台线程经 <see cref="IApplication.Invoke"/> 编组并用信号量同步等待。
+/// 作为外观层，内部使用 <see cref="BaseDialog"/> 子类的各个对话框组件。
 /// </summary>
 internal sealed class TuiUiService : ITuiUiService
 {
@@ -44,6 +46,7 @@ internal sealed class TuiUiService : ITuiUiService
 
     /// <summary>
     /// 在 UI 线程同步执行模态操作并返回结果。
+    /// 若当前已在 UI 线程则直接执行；否则通过 <see cref="IApplication.Invoke"/> 编组到 UI 线程。
     /// </summary>
     private T RunModal<T>(Func<T> action)
     {
@@ -78,11 +81,9 @@ internal sealed class TuiUiService : ITuiUiService
     {
         return RunModal(() =>
         {
-            // AddButton 使最后一个按钮成为默认按钮（DefaultAcceptView）：
-            // defaultValue=false 时"否"在末位（默认），危险操作防误触
-            var buttons = defaultValue ? new[] { "否", "是" } : new[] { "是", "否" };
-            var r = MessageBox.Query(_app, title, message, buttons);
-            return defaultValue ? r == 1 : r == 0;
+            using var dialog = new ConfirmDialog(title, message, defaultValue);
+            _app.Run(dialog);
+            return dialog.Confirmed;
         });
     }
 
@@ -104,118 +105,14 @@ internal sealed class TuiUiService : ITuiUiService
 
         return RunModal(() =>
         {
-            using var dialog = new Dialog
-            {
-                Title = title,
-                X = Pos.Center(),
-                Y = Pos.Center(),
-                Width = 64
-            };
-
-            var list = new ListView
-            {
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                Height = 16
-            };
-            list.SetSource(new ObservableCollection<string>(options));
-            list.SelectedItem = 0;
-            dialog.Add(list);
-
-            var result = -1;
-
-            var ok = new Button { Text = "确定" };
-            ok.Accepting += (_, _) =>
-            {
-                result = list.SelectedItem ?? -1;
-                dialog.RequestStop();
-            };
-            var cancel = new Button { Text = "取消" };
-            cancel.Accepting += (_, _) =>
-            {
-                result = -1;
-                dialog.RequestStop();
-            };
-            // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
-            dialog.AddButton(cancel);
-            dialog.AddButton(ok);
-
+            using var dialog = new ChooseDialog(title, options);
             _app.Run(dialog);
-            return result >= 0 ? result : (int?)null;
+            return dialog.SelectedIndex >= 0 ? dialog.SelectedIndex : (int?)null;
         });
     }
 
-    /// <summary>
-    /// 表单对话框。Terminal.Gui 的 Dialog 在任何未处理 Accept 时都会无条件 RequestStop
-    /// （且先于按钮事件），因此必填校验否决必须在 OnAccepting 层实现。
-    /// </summary>
-    private sealed class FormDialog : Dialog
-    {
-        private readonly Func<bool> _validate;
-        private readonly Action _onValid;
-        private readonly View _cancelButton;
-
-        /// <param name="validate">必填校验，返回 true 表示通过。</param>
-        /// <param name="onValid">校验通过后采集表单值。</param>
-        /// <param name="cancelButton">取消按钮（其 Accept 直接放行关闭）。</param>
-        public FormDialog(Func<bool> validate, Action onValid, View cancelButton)
-        {
-            _validate = validate;
-            _onValid = onValid;
-            _cancelButton = cancelButton;
-        }
-
-        /// <inheritdoc/>
-        protected override bool OnAccepting(CommandEventArgs args)
-        {
-            // 取消按钮放行（values 保持 null）
-            if (args.Context?.Source is { } weak
-                && weak.TryGetTarget(out var src)
-                && ReferenceEquals(src, _cancelButton))
-            {
-                return base.OnAccepting(args);
-            }
-
-            // 校验失败：否决 Accept，对话框保持打开
-            if (!_validate())
-            {
-                return true;
-            }
-
-            _onValid();
-            return base.OnAccepting(args);
-        }
-    }
-
-    /// <summary>
-    /// 进度对话框（无按钮）。<c>closable=false</c> 时吞掉 Esc/Ctrl+Q 等关闭按键，
-    /// 保证知识库索引等长耗时任务期间提示全程可见，只能等 work 结束自动关闭。
-    /// </summary>
-    private sealed class ProgressDialog : Dialog
-    {
-        private readonly bool _closable;
-
-        /// <param name="closable">是否允许用户按键关闭。</param>
-        public ProgressDialog(bool closable)
-        {
-            _closable = closable;
-        }
-
-        /// <inheritdoc/>
-        protected override bool OnKeyDown(Key key)
-        {
-            if (!_closable && (key == Key.Esc || key == Key.Q.WithCtrl))
-            {
-                return true;
-            }
-
-            return base.OnKeyDown(key);
-        }
-    }
-
-#pragma warning disable CS0618 // TextView 已过时：多行表单字段仍使用（不引入 tui-cs/Editor 新依赖）
     /// <inheritdoc/>
+#pragma warning disable CS0618
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
     {
         ArgumentNullException.ThrowIfNull(fields);
@@ -223,11 +120,6 @@ internal sealed class TuiUiService : ITuiUiService
 
         return RunModal(() =>
         {
-            // 每字段占：标签 1 行 + 输入 1 行（多行 6 行）+ 间隔 1 行；底部留 5 行给按钮+border
-            var contentHeight = fields.Sum(f => f.Multiline ? 8 : 3);
-            var dialogHeight = Math.Min(contentHeight + 5, 32);
-
-            List<string>? values = null;
             var inputs = new List<View>(fields.Count);
 
             static string GetValue(View v) => v switch
@@ -250,67 +142,10 @@ internal sealed class TuiUiService : ITuiUiService
                 return true;
             }
 
-            void CaptureValues() => values = inputs.Select(GetValue).ToList();
-
-            // 按钮无需 Accepting 处理器：激活会冒泡 Accept 至对话框，由 FormDialog.OnAccepting 统一处理
-            var ok = new Button { Text = "确定" };
-            var cancel = new Button { Text = "取消" };
-
-            using var dialog = new FormDialog(Validate, CaptureValues, cancel)
-            {
-                Title = title,
-                X = Pos.Center(),
-                Y = Pos.Center(),
-                Width = 72,
-                Height = dialogHeight
-            };
-
-            var y = 0;
-            foreach (var f in fields)
-            {
-                dialog.Add(new Label { X = 0, Y = y, Text = f.Required ? $"{f.Label} *" : f.Label });
-                y++;
-
-                if (f.Multiline)
-                {
-                    var tv = new TextView
-                    {
-                        X = 0,
-                        Y = y,
-                        Width = Dim.Fill(),
-                        Height = 6,
-                        Text = f.InitialValue ?? string.Empty
-                    };
-                    dialog.Add(tv);
-                    inputs.Add(tv);
-                    y += 6;
-                }
-                else
-                {
-                    var tf = new TextField
-                    {
-                        X = 0,
-                        Y = y,
-                        Width = Dim.Fill(),
-                        Text = f.InitialValue ?? string.Empty
-                    };
-                    if (f.IsPassword) tf.Secret = true;
-                    dialog.Add(tf);
-                    inputs.Add(tf);
-                    y++;
-                }
-                y++;
-            }
-
-            // AddButton 使最后一个按钮成为默认按钮：先加"取消"再加"确定"，Enter 默认为确定
-            dialog.AddButton(cancel);
-            dialog.AddButton(ok);
-
-            // 初始焦点放到第一个输入框
-            if (inputs.Count > 0) inputs[0].SetFocus();
-
+            using var dialog = new FormDialog(title, fields, Validate);
+            foreach (var v in dialog.InputViews) inputs.Add(v);
             _app.Run(dialog);
-            return values;
+            return dialog.Values;
         });
     }
 #pragma warning restore CS0618
@@ -322,24 +157,7 @@ internal sealed class TuiUiService : ITuiUiService
 
         RunModal<object?>(() =>
         {
-            using var dialog = new ProgressDialog(closable)
-            {
-                Title = title,
-                X = Pos.Center(),
-                Y = Pos.Center(),
-                Width = 64,
-                Height = 8
-            };
-
-            var label = new Label
-            {
-                X = 1,
-                Y = 1,
-                Width = Dim.Fill(2),
-                Height = Dim.Fill(2),
-                Text = initialStatus
-            };
-            dialog.Add(label);
+            using var dialog = new ProgressDialog(title, initialStatus, closable);
 
             var app = _app;
             Exception? error = null;
@@ -349,7 +167,7 @@ internal sealed class TuiUiService : ITuiUiService
             {
                 try
                 {
-                    await work(msg => app.Invoke(() => label.Text = msg));
+                    await work(msg => app.Invoke(() => dialog.UpdateStatus(msg)));
                 }
                 catch (Exception ex)
                 {
@@ -382,77 +200,9 @@ internal sealed class TuiUiService : ITuiUiService
 
         return RunModal(() =>
         {
-            var dt = new System.Data.DataTable();
-            foreach (var c in columns)
-            {
-                dt.Columns.Add(c);
-            }
-            foreach (var r in rows)
-            {
-                var cells = columns.Select((_, i) => i < r.Count ? (object)(r[i] ?? string.Empty) : string.Empty).ToArray();
-                dt.Rows.Add(cells);
-            }
-
-            using var dialog = new Dialog
-            {
-                Title = title,
-                X = Pos.Center(),
-                Y = Pos.Center(),
-                Width = 100,
-                Height = 26
-            };
-
-            var table = new TableView
-            {
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                Height = Dim.Fill(2),
-                Table = new DataTableSource(dt),
-                FullRowSelect = true,
-                MultiSelect = false
-            };
-            dialog.Add(table);
-
-            var selectedIndex = -1;
-
-            int GetSelectedRow()
-            {
-                try
-                {
-                    var sel = table.Value;
-                    return sel?.SelectedCell.Y ?? -1;
-                }
-                catch { }
-                return -1;
-            }
-
-            var close = new Button { Text = selectable ? "选择" : "关闭" };
-            close.Accepting += (_, _) =>
-            {
-                if (selectable)
-                {
-                    selectedIndex = GetSelectedRow();
-                }
-                dialog.RequestStop();
-            };
-            dialog.AddButton(close);
-
-            if (selectable)
-            {
-                table.Accepted += (_, _) =>
-                {
-                    var row = GetSelectedRow();
-                    if (row >= 0)
-                    {
-                        selectedIndex = row;
-                        dialog.RequestStop();
-                    }
-                };
-            }
-
+            using var dialog = new TableDialog(title, columns.ToArray(), rows, selectable);
             _app.Run(dialog);
-            return selectedIndex;
+            return dialog.SelectedIndex;
         });
     }
 

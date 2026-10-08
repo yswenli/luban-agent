@@ -59,9 +59,8 @@ public sealed class UserMessageBlock : Block
     {
         base.Layout(width);
         var contentWidth = Math.Max(1, width - 2); // "> " 前缀占 2 列
-        var colWidth = TextMeasure.MeasureColumns(Text);
-        var textLines = Math.Max(1, (colWidth + contentWidth - 1) / contentWidth);
-        LineCount = textLines + Attachments.Count;
+        var textLines = TextMeasure.WrapTextByLines(Text, contentWidth).Count;
+        LineCount = Math.Max(1, textLines) + Attachments.Count;
     }
 
     /// <inheritdoc/>
@@ -82,24 +81,12 @@ public sealed class UserMessageBlock : Block
                 BlockColors.Accent));
         }
 
-        var offset = 0;
-
-        while (offset < Text.Length)
+        foreach (var line in TextMeasure.WrapTextByLines(Text, contentWidth))
         {
-            var remaining = Text[offset..];
-            var take = TextMeasure.TruncateByColumns(remaining, contentWidth);
-
             lines.Add(RenderLine.Single(
-                $"> {take}",
+                $"> {line}",
                 BlockColors.UserMessage,
                 TextStyle.Bold));
-
-            offset += take.Length;
-        }
-
-        if (Text.Length == 0)
-        {
-            lines.Add(RenderLine.Single("> ", BlockColors.UserMessage, TextStyle.Bold));
         }
     }
 }

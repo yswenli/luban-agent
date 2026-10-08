@@ -70,8 +70,7 @@ public sealed class SystemBlock : Block
     {
         base.Layout(width);
         var w = Math.Max(1, width);
-        var colWidth = TextMeasure.MeasureColumns(Text);
-        LineCount = Math.Max(1, (colWidth + w - 1) / w);
+        LineCount = Math.Max(1, TextMeasure.WrapTextByLines(Text, w).Count);
     }
 
     /// <inheritdoc/>
@@ -79,18 +78,9 @@ public sealed class SystemBlock : Block
     {
         var style = IsBold ? TextStyle.Bold : TextStyle.None;
 
-        if (string.IsNullOrEmpty(Text))
+        foreach (var line in TextMeasure.WrapTextByLines(Text, width))
         {
-            lines.Add(RenderLine.Single(string.Empty, Foreground, style: style));
-            return;
-        }
-
-        var remaining = Text;
-        while (remaining.Length > 0)
-        {
-            var take = TextMeasure.TruncateByColumns(remaining, width);
-            lines.Add(RenderLine.Single(take, Foreground, style: style));
-            remaining = remaining[take.Length..];
+            lines.Add(RenderLine.Single(line, Foreground, style: style));
         }
     }
 }

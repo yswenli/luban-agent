@@ -21,6 +21,7 @@ using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Errors;
+using LuBan.AIAgent.Orchestration;
 using Microsoft.Extensions.Options;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views;
@@ -36,6 +37,13 @@ namespace LubanAgentCodex.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly AgentHostService _agentHost;
+
+    /// <summary>
+    /// 编排进度出口（DI 单例）。编排由工具调用触发、执行在工具内部，进度不经对话流，
+    /// 故每轮 ConsumeStreamAsync 期间订阅其事件、结束后退订。
+    /// </summary>
+    private readonly HostOrchestrationProgressSink? _orchestrationSink;
+
     private CancellationTokenSource? _cts;
     private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
 
@@ -271,6 +279,7 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel(IServiceProvider services)
     {
         _agentHost = new AgentHostService(services);
+        _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as HostOrchestrationProgressSink;
         CommandCatalog = services.GetRequiredService<ICommandCatalog>();
 
         // 自动重试进度提示：框架回调运行在调用线程，编组到 UI 线程追加系统消息
@@ -935,37 +944,57 @@ public partial class MainWindowViewModel : ObservableObject
         var plannedCount = 0;
         var sb = new StringBuilder();
 
-        await foreach (var evt in _agentHost.RunStreamingAsync(
-            input,
-            attachmentPaths,
-            ConfirmCallback,
-            PermissionMode,
-            onPlannedAction: (tool, args) =>
+        // 编排进度出口：执行在工具内部、不经对话流，故本轮订阅、结束退订；
+        // 迟到事件按运行序号丢弃（可能来自并行节点线程，需编组到 UI 线程）
+        Action<OrchestrationProgressEvent>? onProgress = _orchestrationSink is null
+            ? null
+            : p => Dispatcher.UIThread.Post(() =>
             {
-                if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
-                Interlocked.Increment(ref plannedCount);
-                var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
-                Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
-            },
-            onUserDenied: (tool, args) =>
-            {
-                // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
                 if (runSeq != _activeRunSeq) return;
-                _deniedByUser = true;
-                _cts?.Cancel();
-            },
-            ct: ct))
+                HandleOrchestrationProgress(p);
+            });
+        if (_orchestrationSink is not null && onProgress is not null)
+            _orchestrationSink.Progress += onProgress;
+
+        try
         {
-            var e = evt;
-            if (e is TextDeltaEvent delta)
-                sb.Append(delta.Delta);
-            Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
+            await foreach (var evt in _agentHost.RunStreamingAsync(
+                input,
+                attachmentPaths,
+                ConfirmCallback,
+                PermissionMode,
+                onPlannedAction: (tool, args) =>
+                {
+                    if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
+                    Interlocked.Increment(ref plannedCount);
+                    var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
+                    Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
+                },
+                onUserDenied: (tool, args) =>
+                {
+                    // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
+                    if (runSeq != _activeRunSeq) return;
+                    _deniedByUser = true;
+                    _cts?.Cancel();
+                },
+                ct: ct))
+            {
+                var e = evt;
+                if (e is TextDeltaEvent delta)
+                    sb.Append(delta.Delta);
+                Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
+            }
+
+            if (runSeq == _activeRunSeq)
+                ReportPlannedActions(Volatile.Read(ref plannedCount));
+
+            return sb.ToString();
         }
-
-        if (runSeq == _activeRunSeq)
-            ReportPlannedActions(Volatile.Read(ref plannedCount));
-
-        return sb.ToString();
+        finally
+        {
+            if (_orchestrationSink is not null && onProgress is not null)
+                _orchestrationSink.Progress -= onProgress;
+        }
     }
 
     /// <summary>
@@ -1269,19 +1298,24 @@ public partial class MainWindowViewModel : ObservableObject
         var ct = _cts?.Token ?? CancellationToken.None;
         using var ctr = ct.CanBeCanceled ? ct.Register(() => done.Set()) : default;
 
-        Dispatcher.UIThread.Post(() =>
+        // 工具确认改为模态对话框：在 UI 线程弹出并等待选择，agent 线程阻塞在 done 上
+        Dispatcher.UIThread.Post(async () =>
         {
-            var confirmItem = new ToolConfirmItem
+            try
             {
-                ToolName = toolName,
-                Arguments = args,
-                OnRespond = cr =>
-                {
-                    result = cr;
-                    done.Set();
-                }
-            };
-            Messages.Add(confirmItem);
+                var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                result = await Dialogs.ShowToolConfirmAsync(owner, toolName, args, ct);
+                Messages.Add(new SystemMessageItem { Content = FormatConfirmRecord(toolName, result) });
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"工具确认对话框异常，按拒绝处理: {ex.Message}");
+                result = ConfirmResult.Deny;
+            }
+            finally
+            {
+                done.Set();
+            }
         });
 
         // 无限期等待用户响应；Esc/终止时经 ct 注册提前唤醒（ct 可取消时抛 OCE，由 SendAsync 收尾）
@@ -1291,5 +1325,19 @@ public partial class MainWindowViewModel : ObservableObject
             done.Wait();
 
         return result;
+    }
+
+    /// <summary>
+    /// 确认结果在消息流留痕，如「已允许 执行命令」
+    /// </summary>
+    private static string FormatConfirmRecord(string toolName, ConfirmResult result)
+    {
+        var action = ToolDisplayNames.GetAction(toolName);
+        return result switch
+        {
+            ConfirmResult.Allow => $"已允许 {action}",
+            ConfirmResult.AllowAll => $"已允许 {action}（本轮全部允许）",
+            _ => $"已拒绝 {action}"
+        };
     }
 }

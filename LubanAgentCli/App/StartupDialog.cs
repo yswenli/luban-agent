@@ -14,6 +14,7 @@
 *描述：启动向导对话框，显示初始化进度，支持取消和错误处理
 *
 *****************************************************************************/
+using LubanAgentCli.App.Dialogs;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
@@ -23,10 +24,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace LubanAgentCli.App;
 
-/// <summary>
-/// 启动向导对话框。显示初始化进度，支持取消和错误处理。
-/// </summary>
-internal class StartupDialog : Dialog
+internal class StartupDialog : Dialogs.BaseDialog
 {
     private readonly string[] _args;
     private readonly IUiDispatcher _dispatcher;
@@ -55,53 +53,29 @@ internal class StartupDialog : Dialog
     /// 初始化启动向导对话框。
     /// </summary>
     public StartupDialog(string[] args, IUiDispatcher dispatcher, ITuiUiService ui)
+        : base("正在初始化...", width: 64)
     {
         _args = args;
         _dispatcher = dispatcher;
         _ui = ui;
 
-        Title = "正在初始化...";
-        X = Pos.Center();
-        Y = Pos.Center();
-        Width = 64;
         Height = 18;
 
-        // 设置对话框配色：标题橙色，文字白色，背景深灰
-        var scheme = new Scheme(
-            new Attribute(TuiTheme.AssistantText, TuiTheme.Background))
-        {
-            Normal = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
-            Focus = new Attribute(TuiTheme.Accent, TuiTheme.Background),
-            HotNormal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
-            HotFocus = new Attribute(TuiTheme.Background, TuiTheme.Accent, TextStyle.Bold),
-            Disabled = new Attribute(TuiTheme.SystemMessage, TuiTheme.Background),
-            Active = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
-            HotActive = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
-            Highlight = new Attribute(TuiTheme.Background, TuiTheme.Accent),
-            Editable = new Attribute(TuiTheme.AssistantText, TuiTheme.Background),
-            ReadOnly = new Attribute(TuiTheme.SystemMessage, TuiTheme.Background)
-        };
-        SetScheme(scheme);
-
-        // 设置边框样式
-        BorderStyle = LineStyle.Single;
-
-        // 加粗显示标题
         _bannerLabel = new Label
         {
-            X = Pos.Center(),
-            Y = 0,
+            X = 1,
+            Y = ContentTop,
             Width = 20,
             Height = 1,
             Text = "luban-agent-cli"
         };
         _bannerLabel.SetScheme(new Scheme(
-            new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold))
+            new Attribute(TuiTheme.Accent, TuiTheme.PopupBackground, TextStyle.Bold))
         {
-            Normal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
-            Focus = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
-            HotNormal = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
-            HotFocus = new Attribute(TuiTheme.Accent, TuiTheme.Background, TextStyle.Bold),
+            Normal = new Attribute(TuiTheme.Accent, TuiTheme.PopupBackground, TextStyle.Bold),
+            Focus = new Attribute(TuiTheme.Accent, TuiTheme.PopupBackground, TextStyle.Bold),
+            HotNormal = new Attribute(TuiTheme.Accent, TuiTheme.PopupBackground, TextStyle.Bold),
+            HotFocus = new Attribute(TuiTheme.Accent, TuiTheme.PopupBackground, TextStyle.Bold),
         });
         Add(_bannerLabel);
 

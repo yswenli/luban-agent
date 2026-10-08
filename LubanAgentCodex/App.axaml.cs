@@ -24,9 +24,11 @@ using LubanAgentCore.Hosting;
 using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Orchestration;
 using LuBan.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -98,7 +100,13 @@ public class App : Application
                 }
 
                 splash.SetStatus("正在初始化核心服务…");
-                _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager);
+                _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager, services =>
+                {
+                    // 编排进度出口：框架默认注册 no-op，此处替换为可订阅的宿主实现（供主窗口实时渲染）
+                    services.AddSingleton<HostOrchestrationProgressSink>();
+                    services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
+                        sp => sp.GetRequiredService<HostOrchestrationProgressSink>()));
+                });
 
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);

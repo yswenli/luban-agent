@@ -3,12 +3,14 @@
              x:Class="LubanAgentCodex.Views.Controls.ToolCallCard">
 
     <UserControl.Styles>
-        <!-- 紧凑化 Expander：去除内层 Padding -->
-        <Style Selector="Expander">
-            <Setter Property="Padding" Value="0" />
+        <!-- 参数折叠标题：30px 无壳按钮，去掉 Fluent 默认边框/背景 -->
+        <Style Selector="Button#ArgumentsToggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="8,0" />
         </Style>
-        <Style Selector="Expander /template/ ContentPresenter">
-            <Setter Property="Padding" Value="0" />
+        <Style Selector="Button#ArgumentsToggle:pointerover">
+            <Setter Property="Background" Value="{DynamicResource DividerBrush}" />
         </Style>
         <!-- 图标按钮：去掉 Fluent 默认边框/背景 -->
         <Style Selector="Button#CopyButton">
@@ -91,17 +93,36 @@
                                TextWrapping="Wrap" />
                 </Border>
 
-                <!-- 参数（折叠） -->
-                <Expander Name="ArgumentsExpander"
-                          Grid.Row="2"
-                          Margin="0,4,0,0"
-                          IsExpanded="False">
-                    <Expander.Header>
-                        <TextBlock Text="查看参数"
-                                   Foreground="{DynamicResource TextTertiaryBrush}"
-                                   FontSize="12" />
-                    </Expander.Header>
+                <!-- 参数（折叠）：自定义 30px 标题行，避免 Fluent Expander 自带壳 -->
+                <Grid Name="ArgumentsSection"
+                      Grid.Row="2"
+                      Margin="0,4,0,0"
+                      RowDefinitions="Auto,Auto"
+                      IsVisible="False">
+                    <Button Name="ArgumentsToggle"
+                            Grid.Row="0"
+                            Height="30"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Cursor="Hand"
+                            Click="OnArgumentsToggleClick">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center">
+                            <TextBlock Name="ArgumentsChevron"
+                                       Text="▸"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                            <TextBlock Text="查看参数"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextTertiaryBrush}" />
+                        </StackPanel>
+                    </Button>
                     <TextBox Name="ArgumentsText"
+                             Grid.Row="1"
+                             IsVisible="False"
                              IsReadOnly="True"
                              Background="Transparent"
                              BorderThickness="0"
@@ -111,7 +132,7 @@
                              TextWrapping="Wrap"
                              MaxHeight="160"
                              Margin="0,4,0,0" />
-                </Expander>
+                </Grid>
             </Grid>
         </Grid>
     </Border>

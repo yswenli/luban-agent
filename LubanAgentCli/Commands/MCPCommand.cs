@@ -94,15 +94,13 @@ public class MCPCommand : CommandBase
                 await SwitchServerAsync(); return true;
             case "-connect":
             case "connect":
-                if (args.Length > 1) { await ConnectAsync(args[1]); return true; }
-                break;
+                await ConnectAsync(args.Length > 1 ? args[1] : null); return true;
             case "-tools":
             case "tools":
-                if (args.Length > 1) { await ListToolsAsync(args[1]); return true; }
-                break;
+                await ListToolsAsync(args.Length > 1 ? args[1] : null); return true;
         }
 
-        Writer.WriteLine($"未知子命令或缺少参数: {string.Join(' ', args)}");
+        Writer.WriteLine($"未知子命令: {string.Join(' ', args)}");
         return true;
     }
 
@@ -402,12 +400,22 @@ public class MCPCommand : CommandBase
     /// 连接指定的 MCP 客户端
     /// </summary>
     /// <param name="clientName">客户端名称</param>
-    private async Task ConnectAsync(string clientName)
+    private async Task ConnectAsync(string? clientName)
     {
         if (string.IsNullOrEmpty(clientName))
         {
-            Writer.WriteError("用法: mcp connect <name>");
-            return;
+            var clients = _mcpRegistry.GetAll();
+            if (clients.Count == 0)
+            {
+                Writer.WriteError("暂无 MCP 客户端");
+                return;
+            }
+
+            var chosen = Ui.Choose("选择要连接的 MCP 客户端",
+                clients.Select(c => $"{c.Name} - {c.Description}").ToList());
+            if (chosen is null) return;
+
+            clientName = clients[chosen.Value].Name;
         }
 
         var client = _mcpRegistry.Get(clientName);
@@ -429,12 +437,22 @@ public class MCPCommand : CommandBase
     /// 列出指定客户端的可用工具
     /// </summary>
     /// <param name="clientName">客户端名称</param>
-    private async Task ListToolsAsync(string clientName)
+    private async Task ListToolsAsync(string? clientName)
     {
         if (string.IsNullOrEmpty(clientName))
         {
-            Writer.WriteError("用法: mcp tools <name>");
-            return;
+            var clients = _mcpRegistry.GetAll();
+            if (clients.Count == 0)
+            {
+                Writer.WriteError("暂无 MCP 客户端");
+                return;
+            }
+
+            var chosen = Ui.Choose("选择要查看工具的 MCP 客户端",
+                clients.Select(c => $"{c.Name} - {c.Description}").ToList());
+            if (chosen is null) return;
+
+            clientName = clients[chosen.Value].Name;
         }
 
         var client = _mcpRegistry.Get(clientName);

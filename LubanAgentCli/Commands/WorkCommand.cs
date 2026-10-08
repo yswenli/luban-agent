@@ -165,13 +165,22 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task NewWorkspace(string[] args)
     {
+        string? path = null;
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /work -new <路径>");
-            return;
+            var values = Ui.ShowForm("创建新工作区", new[]
+            {
+                new FormField("工作区路径")
+            });
+            if (values is null) return;
+
+            path = values[0].Trim();
+        }
+        else
+        {
+            path = args[1];
         }
 
-        var path = args[1];
         if (!Directory.Exists(path))
         {
             Writer.WriteError($"目录不存在: {path}");
@@ -196,18 +205,31 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task SwitchWorkspace(string[] args)
     {
+        string? keyword = null;
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /work -switch <名称或路径>");
-            return;
-        }
+            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            if (allWorkspaces.Count == 0)
+            {
+                Writer.WriteError("暂无工作区，请先使用 /work -new 创建");
+                return;
+            }
 
-        var keyword = args[1];
+            var chosen = Ui.Choose("选择要切换的工作区",
+                allWorkspaces.Select(w => w.Name).ToList());
+            if (chosen is null) return;
+
+            keyword = allWorkspaces[chosen.Value].Name;
+        }
+        else
+        {
+            keyword = args[1];
+        }
 
         // 优先精确匹配名称，避免模糊匹配误切
         DbWorkspace? target = null;
-        var allWorkspaces = await _workspaceRepo.GetAllAsync();
-        target = allWorkspaces.FirstOrDefault(w =>
+        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
+        target = allWorkspacesList.FirstOrDefault(w =>
             string.Equals(w.Name, keyword, StringComparison.OrdinalIgnoreCase));
 
         // 精确匹配失败时尝试按路径匹配
@@ -216,7 +238,7 @@ public class WorkCommand : CommandBase
             try
             {
                 var fullPath = Path.GetFullPath(keyword);
-                target = allWorkspaces.FirstOrDefault(w =>
+                target = allWorkspacesList.FirstOrDefault(w =>
                     string.Equals(w.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
             }
             catch
@@ -261,18 +283,31 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task DeleteWorkspace(string[] args)
     {
+        string? keyword = null;
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /work -delete <名称或路径>");
-            return;
-        }
+            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            if (allWorkspaces.Count == 0)
+            {
+                Writer.WriteError("暂无工作区");
+                return;
+            }
 
-        var keyword = args[1];
+            var chosen = Ui.Choose("选择要删除的工作区",
+                allWorkspaces.Select(w => w.Name).ToList());
+            if (chosen is null) return;
+
+            keyword = allWorkspaces[chosen.Value].Name;
+        }
+        else
+        {
+            keyword = args[1];
+        }
 
         // 优先精确匹配名称，避免模糊匹配误删
         DbWorkspace? target = null;
-        var allWorkspaces = await _workspaceRepo.GetAllAsync();
-        target = allWorkspaces.FirstOrDefault(w =>
+        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
+        target = allWorkspacesList.FirstOrDefault(w =>
             string.Equals(w.Name, keyword, StringComparison.OrdinalIgnoreCase));
 
         // 精确匹配失败时尝试按路径匹配
@@ -281,7 +316,7 @@ public class WorkCommand : CommandBase
             try
             {
                 var fullPath = Path.GetFullPath(keyword);
-                target = allWorkspaces.FirstOrDefault(w =>
+                target = allWorkspacesList.FirstOrDefault(w =>
                     string.Equals(w.RootPath, fullPath, StringComparison.OrdinalIgnoreCase));
             }
             catch

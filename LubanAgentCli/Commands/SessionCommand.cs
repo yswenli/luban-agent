@@ -167,7 +167,18 @@ public class SessionCommand : CommandBase
     {
         if (string.IsNullOrWhiteSpace(title))
         {
-            Writer.WriteError("用法: /session new <标题>");
+            var values = Ui.ShowForm("创建新会话", new[]
+            {
+                new FormField("会话标题")
+            });
+            if (values is null) return;
+
+            title = values[0].Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            Writer.WriteError("会话标题不能为空");
             return;
         }
 
@@ -181,12 +192,6 @@ public class SessionCommand : CommandBase
     /// <param name="identifier">会话标识</param>
     private async Task SwitchSessionAsync(string? identifier)
     {
-        if (string.IsNullOrWhiteSpace(identifier))
-        {
-            Writer.WriteError("用法: /session switch <编号|标题|会话ID>");
-            return;
-        }
-
         var wsId = WorkspaceManager.Current?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
@@ -198,6 +203,23 @@ public class SessionCommand : CommandBase
         if (sessions.Count == 0)
         {
             Writer.WriteError("当前工作区没有会话");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            var chosen = Ui.Choose("选择要切换的会话",
+                sessions.Select((s, i) =>
+                {
+                    var isCurrent = _sessionManager.CurrentSession?.SessionId == s.SessionId;
+                    var marker = isCurrent ? " (当前)" : "";
+                    return $"{i + 1}. {s.Title ?? "未命名"}{marker}";
+                }).ToList());
+            if (chosen is null) return;
+
+            var session = sessions[chosen.Value];
+            await _sessionManager.SetCurrentSessionAsync(session.SessionId);
+            Writer.WriteSuccess($"已切换到会话: {session.Title}（下一轮对话自动加载该会话历史）");
             return;
         }
 

@@ -23,6 +23,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCore.Utils;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -35,13 +36,21 @@ public partial class ToolCallCard : UserControl
 {
     private static readonly string[] Frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
+    // 关闭非 ASCII 转义，避免参数中的中文显示为 \uXXXX
+    private static readonly JsonSerializerOptions ArgumentsJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private Border? _accentBar;
     private TextBlock? _statusIcon;
     private TextBlock? _toolIcon;
     private TextBlock? _toolNameText;
     private TextBlock? _stateText;
     private TextBox? _argumentsText;
-    private Expander? _argumentsExpander;
+    private Grid? _argumentsSection;
+    private TextBlock? _argumentsChevron;
     private Border? _resultSummaryBorder;
     private TextBlock? _resultSummaryText;
     private Button? _copyButton;
@@ -63,7 +72,8 @@ public partial class ToolCallCard : UserControl
         _toolNameText = this.FindControl<TextBlock>("ToolNameText");
         _stateText = this.FindControl<TextBlock>("StateText");
         _argumentsText = this.FindControl<TextBox>("ArgumentsText");
-        _argumentsExpander = this.FindControl<Expander>("ArgumentsExpander");
+        _argumentsSection = this.FindControl<Grid>("ArgumentsSection");
+        _argumentsChevron = this.FindControl<TextBlock>("ArgumentsChevron");
         _resultSummaryBorder = this.FindControl<Border>("ResultSummaryBorder");
         _resultSummaryText = this.FindControl<TextBlock>("ResultSummaryText");
         _copyButton = this.FindControl<Button>("CopyButton");
@@ -98,16 +108,12 @@ public partial class ToolCallCard : UserControl
         var hasArgs = item.Arguments.Count > 0;
         if (hasArgs && _argumentsText != null)
         {
-            var json = JsonSerializer.Serialize(item.Arguments, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-            _argumentsText.Text = json;
+            _argumentsText.Text = JsonSerializer.Serialize(item.Arguments, ArgumentsJsonOptions);
         }
 
-        // 无参数时隐藏折叠区，避免出现空 Expander
-        if (_argumentsExpander != null)
-            _argumentsExpander.IsVisible = hasArgs;
+        // 无参数时隐藏折叠区，避免出现空的「查看参数」标题行
+        if (_argumentsSection != null)
+            _argumentsSection.IsVisible = hasArgs;
 
         if (_copyButton != null)
             _copyButton.IsVisible = hasArgs;
@@ -210,6 +216,19 @@ public partial class ToolCallCard : UserControl
 
         _resultSummaryText.Text = summary;
         _resultSummaryBorder.IsVisible = true;
+    }
+
+    /// <summary>
+    /// 「查看参数」标题行点击：切换参数文本显隐并翻转箭头。
+    /// </summary>
+    private void OnArgumentsToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (_argumentsText is null) return;
+
+        var expand = !_argumentsText.IsVisible;
+        _argumentsText.IsVisible = expand;
+        if (_argumentsChevron != null)
+            _argumentsChevron.Text = expand ? "▾" : "▸";
     }
 
     /// <summary>

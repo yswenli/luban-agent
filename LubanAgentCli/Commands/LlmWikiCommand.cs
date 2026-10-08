@@ -202,20 +202,32 @@ internal sealed class LlmWikiCommand : CommandBase
     /// </summary>
     private async Task NewWorkspace(string[] args)
     {
+        string? path = null;
+        string? name = null;
+
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /llmwiki -new <路径> [名称]（名称默认 llmwiki）");
-            return;
+            var values = Ui.ShowForm("创建 LLM Wiki 知识库", new[]
+            {
+                new FormField("知识库路径"),
+                new FormField("知识库名称（可选，默认 llmwiki）", Required: false)
+            });
+            if (values is null) return;
+
+            path = values[0].Trim();
+            name = string.IsNullOrWhiteSpace(values[1]) ? null : values[1].Trim();
+        }
+        else
+        {
+            path = args[1];
+            name = args.Length > 2 ? args[2] : null;
         }
 
-        var path = args[1];
         if (!Directory.Exists(path))
         {
             Writer.WriteError($"目录不存在: {path}");
             return;
         }
-
-        var name = args.Length > 2 ? args[2] : null;
 
         try
         {
@@ -336,7 +348,18 @@ internal sealed class LlmWikiCommand : CommandBase
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            Writer.WriteError("用法: /llmwiki -search <查询内容> [--wiki|--raw]");
+            var values = Ui.ShowForm("检索知识库", new[]
+            {
+                new FormField("查询内容")
+            });
+            if (values is null) return;
+
+            query = values[0].Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            Writer.WriteError("查询内容不能为空");
             return;
         }
 
@@ -406,17 +429,32 @@ internal sealed class LlmWikiCommand : CommandBase
     /// </summary>
     private async Task DeleteWorkspace(string[] args)
     {
+        string? keyword = null;
         if (args.Length < 2)
         {
-            Writer.WriteError("用法: /llmwiki -delete <名称或路径>");
-            return;
+            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            var wikiWorkspaces = allWorkspaces.Where(w => w.Type == WorkspaceTypes.LlmWiki).ToList();
+            if (wikiWorkspaces.Count == 0)
+            {
+                Writer.WriteError("暂无 LLM Wiki 知识库");
+                return;
+            }
+
+            var chosen = Ui.Choose("选择要删除的 LLM Wiki 知识库",
+                wikiWorkspaces.Select(w => w.Name).ToList());
+            if (chosen is null) return;
+
+            keyword = wikiWorkspaces[chosen.Value].Name;
+        }
+        else
+        {
+            keyword = args[1];
         }
 
-        var keyword = args[1];
-        var allWorkspaces = await _workspaceRepo.GetAllAsync();
+        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
 
         // 优先精确匹配名称
-        var target = allWorkspaces.FirstOrDefault(w =>
+        var target = allWorkspacesList.FirstOrDefault(w =>
             string.Equals(w.Name, keyword, StringComparison.OrdinalIgnoreCase) && w.Type == WorkspaceTypes.LlmWiki);
 
         // 精确匹配失败时尝试按路径匹配
@@ -425,7 +463,7 @@ internal sealed class LlmWikiCommand : CommandBase
             try
             {
                 var fullPath = Path.GetFullPath(keyword);
-                target = allWorkspaces.FirstOrDefault(w =>
+                target = allWorkspacesList.FirstOrDefault(w =>
                     string.Equals(w.RootPath, fullPath, StringComparison.OrdinalIgnoreCase) && w.Type == WorkspaceTypes.LlmWiki);
             }
             catch

@@ -25,8 +25,11 @@ namespace LubanAgentCli.App.Models.Blocks;
 /// </summary>
 internal static class TextMeasure
 {
+    /// <summary>制表符展开宽度（列）。</summary>
+    private const int TabWidth = 4;
+
     /// <summary>
-    /// 计算文本的显示列宽。
+    /// 计算文本的显示列宽。控制字符（宽度为负，如 \n、\r、\t）按 0 列计，避免记账出现负值。
     /// </summary>
     public static int MeasureColumns(string text)
     {
@@ -35,9 +38,53 @@ internal static class TextMeasure
         var columns = 0;
         foreach (var rune in text.EnumerateRunes())
         {
-            columns += rune.GetColumns();
+            columns += GetCellWidth(rune);
         }
         return columns;
+    }
+
+    /// <summary>
+    /// 统一换行符后按逻辑行拆分文本。
+    /// </summary>
+    /// <param name="text">原始文本。</param>
+    /// <returns>逻辑行数组；空文本返回单个空行。</returns>
+    public static string[] SplitLines(string? text)
+        => string.IsNullOrEmpty(text)
+            ? [string.Empty]
+            : text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+    /// <summary>
+    /// 先按逻辑行（\n）拆分，再对每行按显示列宽折行，返回最终显示行文本集合。
+    /// 制表符展开为空格以保留缩进；控制字符按 0 列计。
+    /// 供 Block 的 Layout 与 Render 共用，保证账面行数与实际渲染行数一致。
+    /// </summary>
+    /// <param name="text">原始文本。</param>
+    /// <param name="maxWidth">单行最大显示列宽。</param>
+    /// <returns>折行后的显示行文本列表。</returns>
+    public static List<string> WrapTextByLines(string? text, int maxWidth)
+    {
+        var result = new List<string>();
+        if (maxWidth <= 0) maxWidth = 1;
+
+        foreach (var rawLine in SplitLines(text))
+        {
+            var line = rawLine.Replace("\t", new string(' ', TabWidth));
+            if (line.Length == 0)
+            {
+                result.Add(string.Empty);
+                continue;
+            }
+
+            var offset = 0;
+            while (offset < line.Length)
+            {
+                var take = TakeByColumns(line, offset, maxWidth);
+                result.Add(line.Substring(offset, take));
+                offset += take;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -112,7 +159,7 @@ internal static class TextMeasure
         while (runeIndex < text.Length)
         {
             var rune = Rune.GetRuneAt(text, runeIndex);
-            var runeWidth = rune.GetColumns();
+            var runeWidth = GetCellWidth(rune);
 
             if (columns + runeWidth > maxWidth)
             {
@@ -124,7 +171,22 @@ internal static class TextMeasure
             runeIndex += rune.Utf16SequenceLength;
         }
 
+        if (chars == 0 && runeIndex < text.Length)
+        {
+            // 宽度不足以容纳单个字符（如 maxWidth=1 遇 CJK）时仍前进一个字符，避免调用方死循环
+            chars = Rune.GetRuneAt(text, runeIndex).Utf16SequenceLength;
+        }
+
         return chars;
+    }
+
+    /// <summary>
+    /// 单字符显示列宽；控制字符（负值）统一按 0 列计。
+    /// </summary>
+    private static int GetCellWidth(Rune rune)
+    {
+        var width = rune.GetColumns();
+        return width < 0 ? 0 : width;
     }
 
     private static List<TextSegment> SliceByColumns(

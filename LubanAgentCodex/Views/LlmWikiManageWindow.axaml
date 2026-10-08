@@ -1,32 +1,153 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:LubanAgentCodex.Views.Controls"
+        xmlns:local="using:LubanAgentCodex.Views"
         x:Class="LubanAgentCodex.Views.LlmWikiManageWindow"
         Title="LLM Wiki 知识库管理"
-        Width="600"
-        Height="400"
-        WindowStartupLocation="CenterOwner">
+        Width="640"
+        Height="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}">
 
-    <Grid RowDefinitions="Auto,*">
-        <StackPanel Grid.Row="0" Name="ToolBar" Orientation="Horizontal" Spacing="8" Margin="16,16,16,8">
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- 操作工具栏：仅列表视图可见 -->
+        <StackPanel Grid.Row="0" Name="ToolBar" Orientation="Horizontal" Spacing="8" Margin="16,16,16,8" HorizontalAlignment="Left">
             <Button Name="CreateButton" Content="+ 创建知识库" />
             <Button Name="IndexButton" Content="索引" IsEnabled="False" />
             <Button Name="SearchButton" Content="搜索" IsEnabled="False" />
             <Button Name="DeleteButton" Content="删除" IsEnabled="False" />
             <Button Name="WikiRebuildButton" Content="重建 Wiki 索引" IsEnabled="False" />
             <Button Name="WikiLintButton" Content="Wiki Lint" IsEnabled="False" />
-            <Button Name="BackButton" Content="← 返回列表" IsVisible="False" />
         </StackPanel>
 
-        <!-- 知识库列表（默认显示） -->
-        <ListBox Grid.Row="1" Name="LlmWikiListBox" Margin="16,0,16,16" />
+        <!-- 视图标题行：列表态显示「知识库」，搜索结果态显示命中数并提供返回 -->
+        <Grid Grid.Row="1" Name="ViewHeader" Margin="16,0,16,8" ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0"
+                       Name="ViewTitleText"
+                       Text="知识库"
+                       FontWeight="Bold"
+                       FontSize="13"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+            <Button Grid.Column="1"
+                    Name="BackButton"
+                    Content="← 返回列表"
+                    IsVisible="False" />
+        </Grid>
 
-        <!-- 搜索结果列表（默认隐藏，与 LlmWikiListBox 同位置叠加） -->
-        <ListBox Grid.Row="1" Name="ResultListBox" Margin="16,0,16,16" IsVisible="False" />
+        <Panel Grid.Row="2">
+            <!-- 空态提示 -->
+            <TextBlock Name="EmptyHint"
+                       Text="暂无知识库，点击「+ 创建知识库」新建"
+                       IsVisible="False"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextTertiaryBrush}"
+                       FontSize="13" />
+
+            <!-- 知识库列表（默认显示） -->
+            <ListBox Name="LlmWikiListBox" Margin="16,0,16,16"
+                     Background="{DynamicResource SidebarBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}"
+                     BorderThickness="1"
+                     CornerRadius="8">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="local:LlmWikiItem">
+                        <Border Padding="12,8" Margin="4,2" CornerRadius="4">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="📚"
+                                           FontSize="18"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,10,0" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="13"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding RootPath}"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               FontSize="11"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right">
+                                    <TextBlock Text="{Binding Status}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Text="{Binding CountText}"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right"
+                                               Margin="0,4,0,0" />
+                                    <TextBlock Text="✓ 当前"
+                                               Foreground="{DynamicResource InfoBrush}"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right"
+                                               IsVisible="{Binding IsCurrentVisible}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- 搜索结果列表（默认隐藏，与 LlmWikiListBox 同位置叠加） -->
+            <ListBox Name="ResultListBox" Margin="16,0,16,16" IsVisible="False"
+                     Background="{DynamicResource SidebarBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}"
+                     BorderThickness="1"
+                     CornerRadius="8">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="local:SearchResultItem">
+                        <Border Padding="12,8" Margin="4,2" CornerRadius="4">
+                            <StackPanel>
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding FilePath}"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="12.5"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding ScoreText}"
+                                               Foreground="{DynamicResource InfoBrush}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,12,0" />
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding LineRange}"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                                <TextBlock Text="{Binding SymbolName}"
+                                           Foreground="{DynamicResource InfoBrush}"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,4,0,0" />
+                                <TextBlock Text="{Binding Content}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="11.5"
+                                           TextWrapping="Wrap"
+                                           MaxLines="3"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Panel>
 
         <!-- 忙碌遮罩：索引/重建/lint 等长耗时任务期间全程覆盖，不可中断 -->
         <controls:BusyOverlay Grid.Row="0"
-                              Grid.RowSpan="2"
+                              Grid.RowSpan="3"
                               Name="BusyOverlay" />
     </Grid>
 

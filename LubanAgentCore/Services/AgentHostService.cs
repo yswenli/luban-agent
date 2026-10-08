@@ -266,13 +266,9 @@ public class AgentHostService
                     // 转为进度事件供 UI 实时反馈（否则此阶段内容区长时间空白）
                     if (content is OrchestrationProgressContent progress)
                     {
-                        yield return new OrchestrationProgressEvent(
-                            progress.EventType,
-                            progress.NodeId,
-                            progress.Message,
-                            progress.NodeResult?.Elapsed.TotalSeconds,
-                            progress.NodeResult?.Error,
-                            progress.Activity);
+                        yield return OrchestrationProgressEvent.Create(
+                            progress.EventType, progress.NodeId, progress.Message,
+                            progress.ElapsedMs, progress.NodeResult, progress.Activity);
                         continue;
                     }
 

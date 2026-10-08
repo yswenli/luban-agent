@@ -294,7 +294,8 @@ luban-agent/
 │   └── Utils/                # Utilities
 │
 ├── LubanAgentCli/            # Command-line TUI (Terminal.Gui v2 · net10.0)
-│   ├── App/                  # TUI application layer (bootstrap + DI + theme)
+│   ├── App/                  # TUI application layer (bootstrap + DI + theming)
+│   │   └── Dialogs/          # Popup components (BaseDialog base + 5 subclasses)
 │   ├── Views/                # View layer (pure rendering)
 │   ├── ViewModels/           # MVVM ViewModel layer
 │   ├── Models/               # Block document model

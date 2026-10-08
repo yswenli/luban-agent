@@ -18,7 +18,9 @@ using LubanAgentCli.App.Services;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Infrastructure;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Orchestration;
 using LuBan.AIAgent.Retrieval;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LubanAgentCli.App;
 
@@ -53,6 +55,12 @@ internal static class StartupRunner
             {
                 // TUI 特定：注册 TitleService
                 services.AddSingleton<TitleService>();
+
+                // TUI 特定：编排进度出口。AddLuBanAgent 已注册 no-op 默认实现，
+                // 这里替换为 TUI 实现（ConversationViewModel 订阅其事件）。
+                services.AddSingleton<TuiOrchestrationProgressSink>();
+                services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
+                    sp => sp.GetRequiredService<TuiOrchestrationProgressSink>()));
             });
     }
 

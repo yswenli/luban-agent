@@ -62,7 +62,8 @@ public static class ToolDisplayNames
         ["SearchCodeAsync"] = "代码检索",
         ["GetIndexStatsAsync"] = "获取索引统计",
         // Orchestration
-        ["OrchestrateAsync"] = "编排任务",
+        ["plan_task"] = "规划任务",
+        ["run_orchestration"] = "执行编排",
         // Context
         ["CompactContextAsync"] = "压缩上下文",
     };
@@ -121,7 +122,8 @@ public static class ToolDisplayNames
         ["SearchCodeAsync"] = "🔍",
         ["GetIndexStatsAsync"] = "📊",
         // Orchestration
-        ["OrchestrateAsync"] = "🧩",
+        ["plan_task"] = "🧩",
+        ["run_orchestration"] = "🚀",
         // Context
         ["CompactContextAsync"] = "📦",
     };

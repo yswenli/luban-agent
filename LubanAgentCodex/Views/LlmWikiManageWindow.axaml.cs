@@ -14,6 +14,9 @@
 *描述：LLM Wiki 知识库管理窗口，用于管理 LLM Wiki 知识库
 *
 *****************************************************************************/
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using LubanAgentCodex.Views.Controls;
@@ -46,6 +49,8 @@ public partial class LlmWikiManageWindow : Window
     private Button? _wikiLintButton;
     private BusyOverlay? _busyOverlay;
     private StackPanel? _toolBar;
+    private TextBlock? _viewTitleText;
+    private TextBlock? _emptyHint;
 
     public LlmWikiManageWindow(IServiceProvider services)
     {
@@ -80,6 +85,8 @@ public partial class LlmWikiManageWindow : Window
 
         _busyOverlay = this.FindControl<BusyOverlay>("BusyOverlay");
         _toolBar = this.FindControl<StackPanel>("ToolBar");
+        _viewTitleText = this.FindControl<TextBlock>("ViewTitleText");
+        _emptyHint = this.FindControl<TextBlock>("EmptyHint");
     }
 
     /// <summary>
@@ -152,7 +159,6 @@ public partial class LlmWikiManageWindow : Window
             return;
         }
 
-        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
             var ws = (await _workspaceManager.GetUserWorkspacesAsync())
@@ -160,7 +166,6 @@ public partial class LlmWikiManageWindow : Window
             if (ws == null) return;
 
             await _workspaceManager.EnsureAuthorizedAsync(ws);
-            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
             var dlg = new RenameDialog("") { DialogTitle = "索引文件匹配模式", Watermark = "留空索引全部文件" };
             var glob = await dlg.ShowDialog<string?>(this);
@@ -183,12 +188,13 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.IndexEmbedStatus(fileCount));
-            var report = await Task.Run(() => retrieval.IndexDirectoryAsync(ws.RootPath, globPattern, force: false));
+            var report = await Task.Run(() => retrieval.IndexDirectoryAsync(ws.RootPath, globPattern, force: false, workspaceId: item.WorkspaceId));
             HideBusy();
             var summary = $"索引完成：扫描 {report.ScannedFiles}，新增 {report.NewFiles}，更新 {report.UpdatedFiles}，跳过 {report.SkippedFiles}，切块 {report.TotalChunks}";
             if (report.Errors.Count > 0) summary += $"；{report.Errors.Count} 个文件失败（{string.Join("；", report.Errors.Take(3))}）";
             if (report.Warnings.Count > 0) summary += $"；{report.Warnings.Count} 个文件内容被截断";
             await Dialogs.ShowInfoAsync(this, summary);
+            _ = RefreshStatsAsync();
         }
         catch (Exception ex)
         {
@@ -199,7 +205,6 @@ public partial class LlmWikiManageWindow : Window
         finally
         {
             HideBusy();
-            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
 
@@ -213,14 +218,11 @@ public partial class LlmWikiManageWindow : Window
             return;
         }
 
-        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
             var ws = (await _workspaceManager.GetUserWorkspacesAsync())
                 .FirstOrDefault(w => w.WorkspaceId == item.WorkspaceId);
             if (ws == null) return;
-
-            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
             var dlg = new RenameDialog("") { DialogTitle = "搜索查询", Watermark = "输入检索关键词" };
             var query = await dlg.ShowDialog<string?>(this);
@@ -228,7 +230,7 @@ public partial class LlmWikiManageWindow : Window
 
             // 与 /llmwiki -search 一致：wiki 优先，无相关内容时回落原始资料
             var results = await wiki.SearchAsync(query!, includeRaw: true, workspaceId: item.WorkspaceId);
-            ShowSearchResults(results);
+            ShowSearchResults(item, results);
             if (results.Count == 0)
                 await Dialogs.ShowInfoAsync(this, "未找到相关文档");
         }
@@ -236,10 +238,6 @@ public partial class LlmWikiManageWindow : Window
         {
             Logger.Error("LlmWikiManageWindow.OnSearch 异常", ex);
             await Dialogs.ShowErrorAsync(this, ex.Message);
-        }
-        finally
-        {
-            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
 
@@ -253,7 +251,6 @@ public partial class LlmWikiManageWindow : Window
             return;
         }
 
-        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
             var ws = (await _workspaceManager.GetUserWorkspacesAsync())
@@ -261,7 +258,6 @@ public partial class LlmWikiManageWindow : Window
             if (ws == null) return;
 
             await _workspaceManager.EnsureAuthorizedAsync(ws);
-            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
             // 两段式提示：先统计 wiki 页面数，再提示正在重建向量索引；全程遮罩覆盖。
             ShowBusy(RetrievalIndexPlanner.WikiScanStatus);
@@ -275,10 +271,11 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在重建向量索引"));
-            var report = await Task.Run(() => wiki.RebuildIndexAsync());
+            var report = await Task.Run(() => wiki.RebuildIndexAsync(workspaceId: item.WorkspaceId));
             HideBusy();
             await Dialogs.ShowInfoAsync(this,
                 $"重建完成（{item.Name}）：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
+            _ = RefreshStatsAsync();
         }
         catch (Exception ex)
         {
@@ -289,7 +286,6 @@ public partial class LlmWikiManageWindow : Window
         finally
         {
             HideBusy();
-            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
 
@@ -303,7 +299,6 @@ public partial class LlmWikiManageWindow : Window
             return;
         }
 
-        var previous = _workspaceManager.CurrentWorkspace;
         try
         {
             var ws = (await _workspaceManager.GetUserWorkspacesAsync())
@@ -311,7 +306,6 @@ public partial class LlmWikiManageWindow : Window
             if (ws == null) return;
 
             await _workspaceManager.EnsureAuthorizedAsync(ws);
-            await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
 
             // 两段式提示：先统计 wiki 页面数，再提示正在执行 lint；全程遮罩覆盖。
             ShowBusy(RetrievalIndexPlanner.WikiScanStatus);
@@ -325,7 +319,7 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在执行 lint（孤儿页/死链/未收录）"));
-            var report = await Task.Run(() => wiki.LintAsync());
+            var report = await Task.Run(() => wiki.LintAsync(workspaceId: item.WorkspaceId));
             HideBusy();
             var text = report.Findings.Count == 0
                 ? $"（{item.Name}）共 {report.PageCount} 页，未发现问题。"
@@ -342,31 +336,54 @@ public partial class LlmWikiManageWindow : Window
         finally
         {
             HideBusy();
-            if (previous != null) await _workspaceManager.SetCurrentAsync(previous.WorkspaceId);
         }
     }
 
-    private void ShowSearchResults(IReadOnlyList<RetrievalResult> results)
+    private void ShowSearchResults(LlmWikiItem item, IReadOnlyList<RetrievalResult> results)
     {
         if (_resultListBox == null || _llmWikiListBox == null || _backButton == null) return;
+
+        if (_toolBar != null) _toolBar.IsVisible = false;
         _llmWikiListBox.IsVisible = false;
-        _resultListBox.IsVisible = true;
+        _resultListBox.IsVisible = results.Count > 0;
         _backButton.IsVisible = true;
+        if (_viewTitleText != null) _viewTitleText.Text = $"搜索结果 · {results.Count} 条（{item.Name}）";
+
         _resultListBox.ItemsSource = results.Select(r => new SearchResultItem
         {
             FilePath = r.FilePath,
             SymbolName = string.IsNullOrEmpty(r.SymbolName) ? "-" : r.SymbolName!,
             LineRange = $"L{r.StartLine}-{r.EndLine}",
+            ScoreText = r.Score.ToString("F2"),
             Content = r.Content.Length > 200 ? r.Content[..200] + "…" : r.Content
         }).ToList();
+
+        ShowEmptyHint(results.Count == 0, "未找到相关文档");
+    }
+
+    private void ShowEmptyHint(bool show, string text)
+    {
+        if (_emptyHint == null) return;
+        if (show) _emptyHint.Text = text;
+        _emptyHint.IsVisible = show;
     }
 
     private async void OnBack(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        await ShowListViewAsync();
+    }
+
+    /// <summary>
+    /// 切回知识库列表视图：隐藏搜索结果与返回按钮、恢复工具栏，并刷新列表与统计。
+    /// </summary>
+    private async Task ShowListViewAsync()
+    {
         if (_resultListBox == null || _llmWikiListBox == null || _backButton == null) return;
+        if (_toolBar != null) _toolBar.IsVisible = true;
         _resultListBox.IsVisible = false;
         _llmWikiListBox.IsVisible = true;
         _backButton.IsVisible = false;
+        if (_viewTitleText != null) _viewTitleText.Text = "知识库";
         await LoadLlmWikiWorkspacesAsync();
     }
 
@@ -378,15 +395,18 @@ public partial class LlmWikiManageWindow : Window
         {
             var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
             var llmWikiWorkspaces = workspaces.Where(w => w.Type == WorkspaceTypes.LlmWiki).ToList();
-            _llmWikiListBox.ItemsSource = llmWikiWorkspaces.Select(w => new LlmWikiItem
+            var currentId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
+            var items = new ObservableCollection<LlmWikiItem>(llmWikiWorkspaces.Select(w => new LlmWikiItem
             {
                 WorkspaceId = w.WorkspaceId,
                 Name = w.Name,
                 RootPath = w.RootPath,
-                FileCount = "-",
-                ChunkCount = "-",
-                Status = "已创建"
-            }).ToList();
+                Status = w.IsAuthorized ? "已授权" : "未授权",
+                IsCurrent = string.Equals(w.WorkspaceId, currentId, StringComparison.OrdinalIgnoreCase)
+            }));
+            _llmWikiListBox.ItemsSource = items;
+            ShowEmptyHint(items.Count == 0, "暂无知识库，点击「+ 创建知识库」新建");
+            await LoadStatsAsync(items);
         }
         catch (Exception ex)
         {
@@ -396,6 +416,47 @@ public partial class LlmWikiManageWindow : Window
                 new() { Name = "加载失败", Status = ex.Message }
             };
         }
+    }
+
+    /// <summary>
+    /// 后台逐个查询每个知识库的文件/切块数，回填列表项（列表先显示占位「…」，避免打开窗口卡顿）。
+    /// </summary>
+    private async Task LoadStatsAsync(IEnumerable<LlmWikiItem> items)
+    {
+        var list = items.ToList();
+        if (list.Count == 0) return;
+
+        var retrieval = _services.GetService<IRetrievalService>();
+        if (retrieval == null)
+        {
+            foreach (var it in list) it.CountText = "未索引";
+            return;
+        }
+
+        foreach (var it in list)
+        {
+            try
+            {
+                var stats = await Task.Run(() => retrieval.GetStatsAsync(it.WorkspaceId));
+                it.CountText = stats.TotalFiles == 0
+                    ? "未索引"
+                    : $"已索引 {stats.TotalFiles} 文件 · {stats.TotalChunks} 切块";
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"LlmWiki 统计查询失败（{it.Name}）", ex);
+                it.CountText = "统计失败";
+            }
+        }
+    }
+
+    /// <summary>
+    /// 索引/重建后刷新当前列表的统计数字。
+    /// </summary>
+    private async Task RefreshStatsAsync()
+    {
+        if (_llmWikiListBox?.ItemsSource is ObservableCollection<LlmWikiItem> items)
+            await LoadStatsAsync(items);
     }
 
     private async void OnDelete(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -418,7 +479,7 @@ public partial class LlmWikiManageWindow : Window
             await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
             await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId);
 
-            LoadLlmWikiWorkspaces();
+            await ShowListViewAsync();
             await Dialogs.ShowInfoAsync(this, "已删除 LLM Wiki 知识库");
         }
         catch (Exception ex)
@@ -437,22 +498,48 @@ public partial class LlmWikiManageWindow : Window
         if (_wikiRebuildButton != null) _wikiRebuildButton.IsEnabled = hasSelection;
         if (_wikiLintButton != null) _wikiLintButton.IsEnabled = hasSelection;
     }
+}
 
-    private class LlmWikiItem
+/// <summary>
+/// LLM Wiki 列表项
+/// </summary>
+public class LlmWikiItem : INotifyPropertyChanged
+{
+    private string _countText = "…";
+
+    public string WorkspaceId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string RootPath { get; set; } = "";
+    public string Status { get; set; } = "";
+    public bool IsCurrent { get; set; }
+    public bool IsCurrentVisible => IsCurrent;
+
+    /// <summary>文件/切块统计文案，异步加载后回填。</summary>
+    public string CountText
     {
-        public string WorkspaceId { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string RootPath { get; set; } = "";
-        public string FileCount { get; set; } = "";
-        public string ChunkCount { get; set; } = "";
-        public string Status { get; set; } = "";
+        get => _countText;
+        set
+        {
+            if (_countText == value) return;
+            _countText = value;
+            OnPropertyChanged();
+        }
     }
 
-    private class SearchResultItem
-    {
-        public string FilePath { get; set; } = "";
-        public string SymbolName { get; set; } = "";
-        public string LineRange { get; set; } = "";
-        public string Content { get; set; } = "";
-    }
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>
+/// 搜索结果列表项
+/// </summary>
+public class SearchResultItem
+{
+    public string FilePath { get; set; } = "";
+    public string SymbolName { get; set; } = "";
+    public string LineRange { get; set; } = "";
+    public string ScoreText { get; set; } = "";
+    public string Content { get; set; } = "";
 }

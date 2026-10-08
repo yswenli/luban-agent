@@ -319,7 +319,7 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ### 场景五：复合任务自动编排
 
-AI 会自动识别复合任务并启用 DAG 编排：
+模型判断输入为复合任务时，会先调用 `plan_task` 生成任务图谱，再调用 `run_orchestration` 执行 DAG 编排：
 
 ```
 你: 调研 LuBan-Framework 和 Luban-Agent 两个项目，对比它们的优缺点，生成一份对比报告
@@ -433,7 +433,6 @@ LubanAgentCodex/
 │       ├── AssistantMessageItem.cs
 │       ├── UserMessageItem.cs
 │       ├── ToolCallItem.cs
-│       ├── ToolConfirmItem.cs
 │       └── ThinkingMessageItem.cs
 ├── Views/
 │   ├── MainWindow.axaml(.cs)   # 主窗口
@@ -454,7 +453,6 @@ LubanAgentCodex/
 │       ├── AssistantMessageView# AI 消息
 │       ├── ThinkingMessageView # 思考过程
 │       ├── ToolCallCard        # 工具调用卡片
-│       ├── ConfirmCard         # 确认卡片
 │       └── SystemMessageView   # 系统消息
 ```
 
@@ -476,18 +474,10 @@ LubanAgentCodex/
     },
     "Orchestration": {
       "Enabled": true,
-      "PlannerType": "Composite",
-      "AutoDetect": true,
-      "MaxParallelism": 3,
+      "PlannerReasoningEffort": "None",
+      "MaxParallelism": 5,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 300,
-      "HeuristicFilter": {
-        "Enabled": true,
-        "MinLength": 8,
-        "MaxLength": 200,
-        "RequireKeyword": true,
-        "Keywords": [ "和", "同时", "然后", "并且", "另外", "还有", "分析并", "搜索并" ]
-      }
+      "DefaultNodeTimeoutSeconds": 300
     }
   }
 }
@@ -503,19 +493,25 @@ LubanAgentCodex/
 
 ### 危险操作确认
 
-对于危险操作（写入文件、执行脚本、删除数据等），系统会在执行前请求用户确认：
+对于危险操作（写入文件、执行脚本、删除数据等），系统会在执行前弹出**模态确认对话框**：
 
 ```
 你: 帮我写一个文件到 C:\temp\test.txt
 
-⚠️ 需要确认
-工具: WriteFileAsync
-参数:
-  path: C:\temp\test.txt
-  content: 文件内容...
+┌─ 工具确认 ───────────────────────────────┐
+│ ⚠ 需要确认是否执行该工具                   │
+│ WriteFileAsync                            │
+│ {                                         │
+│   "path": "C:\\temp\\test.txt",            │
+│   "content": "文件内容..."                  │
+│ }                                         │
+│        [✗ 拒绝] [本轮全部允许] [✓ 允许]     │
+└───────────────────────────────────────────┘
 
-[✓ 允许] [ 本轮全允许] [✗ 拒绝]
+消息流留痕：已允许 写入文件
 ```
+
+对话框为应用模态窗口：选择前主窗口不可交互，Esc 或终止会话等同「拒绝」。
 
 **需要确认的操作包括**：
 - 📝 **文件系统**: 写入文件、删除文件、创建/删除目录

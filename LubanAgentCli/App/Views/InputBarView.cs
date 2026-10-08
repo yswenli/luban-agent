@@ -477,9 +477,12 @@ internal sealed class InputBarView : View
         }
         if (_history.Count == 0) return false;
 
-        var docLine = _editor.Document.GetLineByOffset(_editor.CaretOffset);
+        var document = _editor.Document;
+        if (document is null) return false;
+
+        var docLine = document.GetLineByOffset(_editor.CaretOffset);
         var line = docLine.LineNumber;
-        var lineCount = _editor.Document.LineCount;
+        var lineCount = document.LineCount;
 
         if (Infrastructure.TuiDiag.Enabled)
         {

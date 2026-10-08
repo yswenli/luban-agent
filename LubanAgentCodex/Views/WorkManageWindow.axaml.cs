@@ -74,7 +74,7 @@ public partial class WorkManageWindow : Window
             Name = w.Name,
             RootPath = w.RootPath,
             Status = w.WorkspaceId == currentId ? "✓ 当前" : "",
-            IsAuthorized = w.IsAuthorized ? "✓" : "✗"
+            AuthorizedText = w.IsAuthorized ? "已授权" : "未授权"
         }).ToList();
     }
 
@@ -188,14 +188,17 @@ public partial class WorkManageWindow : Window
         if (_deleteButton != null) _deleteButton.IsEnabled = hasSelection;
         if (_authorizeButton != null) _authorizeButton.IsEnabled = hasSelection;
     }
+}
 
-    private class WorkspaceItem
-    {
-        public string WorkspaceId { get; set; } = "";
-        public string TypeIcon { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string RootPath { get; set; } = "";
-        public string Status { get; set; } = "";
-        public string IsAuthorized { get; set; } = "";
-    }
+/// <summary>
+/// 工作区列表项
+/// </summary>
+public class WorkspaceItem
+{
+    public string WorkspaceId { get; set; } = "";
+    public string TypeIcon { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string RootPath { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string AuthorizedText { get; set; } = "";
 }
