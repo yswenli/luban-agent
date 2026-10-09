@@ -26,7 +26,11 @@ using Microsoft.Extensions.Options;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.A2A;
+using LuBan.AIAgent.A2A.Abstractions;
 using LuBan.AIAgent.Sessions;
+using LubanAgentA2A.Configuration;
+using LubanAgentA2A.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.ViewModels;
@@ -656,6 +660,10 @@ public partial class MainWindowViewModel : ObservableObject
                 ShowLlmWikiManager(args);
                 break;
 
+            case "/a2a":
+                await ExecuteA2ACommandAsync(args);
+                break;
+
             default:
                 Messages.Add(new SystemMessageItem
                 {
@@ -672,6 +680,7 @@ public partial class MainWindowViewModel : ObservableObject
     private static string[] ExpandSubCommandAliases(string cmd, string[] parts)
     {
         var isLlmWiki = cmd is "/llmwiki" or "/lw" or "/rag" or "/rg" or "/wiki" or "/wk";
+        var isA2A = cmd == "/a2a";
         var result = new string[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {
@@ -681,9 +690,9 @@ public partial class MainWindowViewModel : ObservableObject
                 "-a" => "-add",
                 "-u" => "-update",
                 "-d" => "-delete",
-                "-s" => isLlmWiki ? "-search" : "-switch",
+                "-s" => isA2A ? "-server" : (isLlmWiki ? "-search" : "-switch"),
                 "-n" => "-new",
-                "-c" => "-clear",
+                "-c" => isA2A ? "-client" : "-clear",
                 "-t" => "-tools",
                 "-i" => isLlmWiki ? "-index" : parts[i],
                 _ => parts[i]
@@ -755,6 +764,342 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var window = new LlmWikiManageWindow(Services);
         window.Show();
+    }
+
+    /// <summary>
+    /// 执行 /a2a 命令（A2A 协作管理：状态/服务端/客户端/启停）。
+    /// </summary>
+    private async Task ExecuteA2ACommandAsync(string[] args)
+    {
+        var sub = args.Length > 0 ? args[0].ToLowerInvariant() : "-list";
+
+        switch (sub)
+        {
+            case "-list":
+            case "-l":
+                ShowA2AStatus();
+                break;
+
+            case "-server":
+            case "-s":
+                ShowA2AServer();
+                break;
+
+            case "-client":
+            case "-c":
+                HandleA2AClient(args);
+                break;
+
+            case "-start":
+                await StartA2AAsync();
+                break;
+
+            case "-stop":
+                await StopA2AAsync();
+                break;
+
+            default:
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = $"未知子命令: {sub}\n用法: /a2a [-list | -server | -client | -start | -stop]",
+                    IsError = true
+                });
+                break;
+        }
+    }
+
+    /// <summary>当前工作区根路径。</summary>
+    private string? A2AWorkspaceRoot
+        => Services.GetService<IWorkspaceManager>()?.CurrentWorkspace?.RootPath;
+
+    /// <summary>追加系统消息。</summary>
+    private void AddA2AMessage(string content, bool isError = false)
+        => Messages.Add(new SystemMessageItem { Content = content, IsError = isError });
+
+    /// <summary>显示 A2A 状态与服务端/客户端概览。</summary>
+    private void ShowA2AStatus()
+    {
+        var enabled = Services.GetService<IOptions<A2AOptions>>()?.Value.Enabled ?? false;
+        var lifecycle = Services.GetService<IA2ALifecycle>();
+        var state = Services.GetService<A2ARuntimeState>();
+        var serverHost = Services.GetService<IA2AServerHost>();
+        var root = A2AWorkspaceRoot;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("A2A 协作状态");
+        sb.AppendLine($"  总开关(Enabled): {(enabled ? "已启用" : "已禁用")}");
+        sb.AppendLine($"  运行状态: {(lifecycle?.IsRunning == true ? "运行中" : "未启动")}");
+        sb.AppendLine($"  本地 Agent 名: {state?.LocalAgentName ?? "luban-agent"}");
+        sb.AppendLine($"  服务端端点: {(string.IsNullOrWhiteSpace(serverHost?.Endpoint) ? "-" : serverHost!.Endpoint)}");
+        sb.AppendLine($"  工作区: {(string.IsNullOrWhiteSpace(root) ? "(未选择)" : root)}");
+
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            AddA2AMessage(sb.ToString().TrimEnd());
+            return;
+        }
+
+        if (!enabled)
+        {
+            sb.AppendLine("提示: A2A 未启用，需在 appsettings.json 的 LuBanAgent:Agent2Agent:Enabled 设为 true");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("服务端 (server.json)");
+        var server = A2AWorkspaceConfigStore.LoadServer(root);
+        if (server is null)
+        {
+            sb.AppendLine("  未配置（可执行 /a2a -server 创建）");
+        }
+        else
+        {
+            sb.AppendLine($"  Host: {server.Host ?? "-"}  Port: {server.Port?.ToString() ?? "-"}  Path: {server.Path ?? "-"}");
+            sb.AppendLine($"  RequireApiKey: {server.RequireApiKey?.ToString() ?? "-"}  AgentName: {server.AgentName ?? "-"}");
+            sb.AppendLine($"  ApiKeys: {(server.ApiKeys is { Count: > 0 } ? $"已配置 {server.ApiKeys.Count} 个" : "未配置")}");
+        }
+
+        sb.AppendLine();
+        var clients = A2AWorkspaceConfigStore.LoadClients(root);
+        sb.AppendLine($"客户端 ({clients.Count})");
+        if (clients.Count == 0)
+        {
+            sb.AppendLine("  未配置（可执行 /a2a -client -add <name> <endpoint> [apiKey] 新增）");
+        }
+        else
+        {
+            foreach (var (file, cfg) in clients)
+            {
+                var name = string.IsNullOrWhiteSpace(cfg.Name) ? Path.GetFileNameWithoutExtension(file) : cfg.Name;
+                var keyHint = string.IsNullOrEmpty(cfg.ApiKey) ? "" : " (apiKey=***)";
+                var subAgentHint = cfg.RegisterAsSubAgent == true ? " [subagent]" : "";
+                sb.AppendLine($"  - {name}: {cfg.Endpoint ?? "-"}{keyHint}{subAgentHint}");
+            }
+        }
+
+        AddA2AMessage(sb.ToString().TrimEnd());
+    }
+
+    /// <summary>查看或首次创建服务端配置。</summary>
+    private void ShowA2AServer()
+    {
+        var root = A2AWorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            AddA2AMessage("当前未选择工作区", isError: true);
+            return;
+        }
+
+        if (A2AWorkspaceConfigStore.ServerExists(root))
+        {
+            var server = A2AWorkspaceConfigStore.LoadServer(root);
+            if (server is null)
+            {
+                AddA2AMessage("server.json 无法解析，请检查文件内容", isError: true);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("服务端配置 (server.json)");
+            sb.AppendLine($"  Host: {server.Host ?? "-"}");
+            sb.AppendLine($"  Port: {server.Port?.ToString() ?? "-"}");
+            sb.AppendLine($"  Path: {server.Path ?? "-"}");
+            sb.AppendLine($"  RequireApiKey: {server.RequireApiKey?.ToString() ?? "-"}");
+            sb.AppendLine($"  AgentName: {server.AgentName ?? "-"}");
+            sb.AppendLine($"  ApiKeys: {(server.ApiKeys is { Count: > 0 } ? $"已配置 {server.ApiKeys.Count} 个" : "未配置")}");
+            AddA2AMessage(sb.ToString().TrimEnd());
+            return;
+        }
+
+        var apiKey = Guid.NewGuid().ToString("N");
+        A2AWorkspaceConfigStore.SaveServer(root, new A2AWorkspaceFile
+        {
+            Host = "127.0.0.1",
+            Port = 0,
+            Path = "/a2a",
+            RequireApiKey = true,
+            ApiKeys = new List<string> { apiKey },
+            AgentName = "luban-agent",
+            AgentVersion = "1.0.0",
+        });
+
+        AddA2AMessage(
+            $"已创建服务端配置: {Path.Combine(A2AWorkspaceConfigStore.ResolveDir(root), A2AWorkspaceConfigStore.ServerFileName)}\n" +
+            $"  API Key: {apiKey}\n" +
+            "API Key 为明文，请勿提交到版本库；建议将 .luban-agent/a2a/ 加入 .gitignore\n" +
+            "执行 /a2a -stop 再 /a2a -start（或重启）后生效");
+    }
+
+    /// <summary>处理客户端子命令。</summary>
+    private void HandleA2AClient(string[] args)
+    {
+        var root = A2AWorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            AddA2AMessage("当前未选择工作区", isError: true);
+            return;
+        }
+
+        if (args.Length < 2)
+        {
+            OpenSettings(SettingsTabKind.A2A);
+            return;
+        }
+
+        var action = args[1].ToLowerInvariant();
+        switch (action)
+        {
+            case "-add":
+            case "-a":
+                AddA2AClient(root, args);
+                break;
+            case "-delete":
+            case "-del":
+            case "-d":
+                DeleteA2AClient(root, args);
+                break;
+            case "-list":
+            case "-l":
+                ListA2AClients(root);
+                break;
+            default:
+                OpenSettings(SettingsTabKind.A2A);
+                break;
+        }
+    }
+
+    /// <summary>列出客户端配置。</summary>
+    private void ListA2AClients(string root)
+    {
+        var clients = A2AWorkspaceConfigStore.LoadClients(root);
+        var sb = new StringBuilder();
+        sb.AppendLine($"客户端 ({clients.Count})");
+        if (clients.Count == 0)
+        {
+            sb.AppendLine("  未配置（可执行 /a2a -client -add <name> <endpoint> [apiKey] 新增）");
+        }
+        else
+        {
+            foreach (var (file, cfg) in clients)
+            {
+                var name = string.IsNullOrWhiteSpace(cfg.Name) ? Path.GetFileNameWithoutExtension(file) : cfg.Name;
+                var keyHint = string.IsNullOrEmpty(cfg.ApiKey) ? "" : " (apiKey=***)";
+                var subAgentHint = cfg.RegisterAsSubAgent == true ? " [subagent]" : "";
+                sb.AppendLine($"  - {name}: {cfg.Endpoint ?? "-"}{keyHint}{subAgentHint}");
+            }
+        }
+        AddA2AMessage(sb.ToString().TrimEnd());
+    }
+
+    /// <summary>新增客户端配置；缺参时打开 A2A 设置页。</summary>
+    private void AddA2AClient(string root, string[] args)
+    {
+        if (args.Length < 4)
+        {
+            OpenSettings(SettingsTabKind.A2A);
+            return;
+        }
+
+        var name = args[2];
+        var endpoint = args[3];
+        var apiKey = args.Length >= 5 ? args[4] : "";
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(endpoint))
+        {
+            AddA2AMessage("名称与端点不能为空", isError: true);
+            return;
+        }
+
+        var fileName = A2AWorkspaceConfigStore.BuildClientFileName(name);
+        var filePath = Path.Combine(A2AWorkspaceConfigStore.ResolveDir(root), fileName);
+        if (File.Exists(filePath))
+        {
+            AddA2AMessage($"客户端 '{name}' 已存在，请先在设置页或删除后重试", isError: true);
+            return;
+        }
+
+        A2AWorkspaceConfigStore.SaveClient(root, fileName, new A2AWorkspaceFile
+        {
+            Name = name,
+            Endpoint = endpoint,
+            ApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
+            RegisterAsSubAgent = false,
+        });
+        AddA2AMessage($"已保存客户端配置: {fileName}\n执行 /a2a -stop 再 /a2a -start（或重启）后生效");
+    }
+
+    /// <summary>删除客户端配置；缺参时打开 A2A 设置页。</summary>
+    private void DeleteA2AClient(string root, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            OpenSettings(SettingsTabKind.A2A);
+            return;
+        }
+
+        var keyword = args[2];
+        var clients = A2AWorkspaceConfigStore.LoadClients(root);
+        var match = clients.FirstOrDefault(c =>
+            string.Equals(c.Config.Name, keyword, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(c.FileName, keyword, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(c.FileName, A2AWorkspaceConfigStore.BuildClientFileName(keyword), StringComparison.OrdinalIgnoreCase));
+        if (match.FileName is null)
+        {
+            AddA2AMessage($"找不到客户端: {keyword}", isError: true);
+            return;
+        }
+
+        A2AWorkspaceConfigStore.DeleteFile(root, match.FileName);
+        AddA2AMessage($"已删除客户端配置: {match.FileName}");
+    }
+
+    /// <summary>启动 A2A 运行时。</summary>
+    private async Task StartA2AAsync()
+    {
+        var root = A2AWorkspaceRoot;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            AddA2AMessage("当前未选择工作区", isError: true);
+            return;
+        }
+
+        var lifecycle = Services.GetService<IA2ALifecycle>();
+        if (lifecycle is null)
+        {
+            AddA2AMessage("A2A 未注册", isError: true);
+            return;
+        }
+
+        try
+        {
+            await lifecycle.StartAsync(root);
+            AddA2AMessage(lifecycle.IsRunning
+                ? "A2A 已启动"
+                : "A2A 启动完成（未启用或未配置角色，当前未运行）");
+        }
+        catch (Exception ex)
+        {
+            AddA2AMessage($"启动 A2A 失败: {ex.Message}", isError: true);
+        }
+    }
+
+    /// <summary>停止 A2A 运行时。</summary>
+    private async Task StopA2AAsync()
+    {
+        var lifecycle = Services.GetService<IA2ALifecycle>();
+        if (lifecycle is null)
+        {
+            AddA2AMessage("A2A 未注册", isError: true);
+            return;
+        }
+
+        try
+        {
+            await lifecycle.StopAsync();
+            AddA2AMessage("A2A 已停止");
+        }
+        catch (Exception ex)
+        {
+            AddA2AMessage($"停止 A2A 失败: {ex.Message}", isError: true);
+        }
     }
 
     private void ShowHelp()

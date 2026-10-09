@@ -15,7 +15,10 @@
 *统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
+using LuBan.AIAgent.A2A;
+using LuBan.AIAgent.A2A.Abstractions;
 using LuBan.AIAgent.Wiki;
+using LubanAgentA2A.Runtime;
 using LubanAgentCli.App.Models;
 using LubanAgentCore.Commands;
 
@@ -101,6 +104,7 @@ internal sealed class CommandViewModel
             case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
             case "/llmwiki":  case "/lw": case "/rag": case "/rg": case "/wiki": case "/wk":
                                   ExecuteManagementCommand<LlmWikiCommand>(parts); return true;
+            case "/a2a":                        ExecuteManagementCommand<A2ACommand>(parts); return true;
             case "/init":                        ExecuteManagementCommand<InitCommand>(parts); return true;
 
             // ── Agent 对话（默认激活）──
@@ -269,6 +273,12 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<ILuBanAgentFactory>(), _writer, _ui,
                 _conversationVm),
+            nameof(A2ACommand) => (TCommand)(object)new A2ACommand(configManager, configuration,
+                _services.GetRequiredService<IWorkspaceManager>(),
+                _services.GetRequiredService<IA2ALifecycle>(),
+                _services.GetRequiredService<A2ARuntimeState>(),
+                _services.GetRequiredService<IA2AServerHost>(),
+                _services.GetRequiredService<IOptions<A2AOptions>>(), _writer, _ui),
             _ => null
         };
     }
@@ -279,6 +289,7 @@ internal sealed class CommandViewModel
         if (parts.Length < 2) return parts;
 
         var isLlmWiki = IsLlmWikiCommand(cmd);
+        var isA2A = cmd == "/a2a";
 
         var result = new string[parts.Length];
         result[0] = parts[0];
@@ -288,9 +299,10 @@ internal sealed class CommandViewModel
             result[i] = parts[i] switch
             {
                 "-l" => "-list", "-a" => "-add", "-u" => "-update", "-d" => "-delete",
-                "-s" => isLlmWiki ? "-search" : "-switch",
+                "-s" => isA2A ? "-server" : (isLlmWiki ? "-search" : "-switch"),
                 "-i" when isLlmWiki => "-index",
-                "-n" => "-new", "-c" => "-clear", "-t" => "-tools",
+                "-c" => isA2A ? "-client" : "-clear",
+                "-n" => "-new", "-t" => "-tools",
                 _ => parts[i]
             };
         }

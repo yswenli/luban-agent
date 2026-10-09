@@ -342,6 +342,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 | `/stats` | `/st` | 会话与 Token 统计 |
 | `/work` | `/w` | 工作区管理 |
 | `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki 知识库管理 |
+| `/a2a` | — | A2A 协作管理（状态/服务端/客户端/启停） |
 | `/init <描述文本>` | — | 初始化工作区 AGENTS.md |
 
 ### 子命令简写
@@ -353,9 +354,9 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
 | `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
 | `-d` | `-days` | Stats（统计天数） |
-| `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`） |
+| `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`，`/a2a` 中 `-s` 为 `-server`） |
 | `-n` | `-new` | Session/Work/LLM Wiki |
-| `-c` | `-clear` | Session |
+| `-c` | `-clear` | Session（注：`/a2a` 中 `-c` 为 `-client`） |
 | `-c` | `-connect` | MCP |
 | `-t` | `-tools` | MCP |
 | `-i` | `-index` | LLM Wiki（索引文件） |

@@ -16,6 +16,8 @@
 *调用位置：StartupDialog 关闭之后、RootView 创建之前（CLI 侧主导，向导不再处理工作区）
 *
 *****************************************************************************/
+using LubanAgentA2A.Runtime;
+
 namespace LubanAgentCli.App;
 
 /// <summary>
@@ -68,7 +70,36 @@ internal static class StartupWorkspaceResolver
         // 设置为当前工作区（内部恢复最近活跃会话，无则新建“新会话”）
         await workspaceManager.SetCurrentAsync(target.WorkspaceId);
 
+        // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
+        await TryStartA2AAsync(services, target.RootPath, notices);
+
         return true;
+    }
+
+    /// <summary>
+    /// 启动 A2A 运行时。未启用 A2A 时为 no-op；失败仅提示，不阻断进入工作区。
+    /// </summary>
+    private static async Task TryStartA2AAsync(IServiceProvider services, string workspaceRoot, List<string> notices)
+    {
+        var lifecycle = services.GetService<IA2ALifecycle>();
+        if (lifecycle is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await lifecycle.StartAsync(workspaceRoot);
+            if (lifecycle.IsRunning)
+            {
+                notices.Add("A2A 已启动");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("启动 A2A 失败", ex);
+            notices.Add($"A2A 启动失败: {ex.Message}");
+        }
     }
 
     /// <summary>

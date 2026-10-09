@@ -50,6 +50,7 @@ public static class DatabaseInitializer
         EnsureWorkspaceIdColumns();
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureAttachmentsColumn();
+        EnsureA2ATaskTable();
         var dbPath = GetDatabasePath();
 
         return messages;
@@ -266,6 +267,22 @@ public static class DatabaseInitializer
         {
             Logger.Error("清理旧版 RAG 工作区记录失败", ex);
             messages.Add($"清理旧版 RAG 工作区记录失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 确保 A2A 任务表存在。
+    /// 现有数据库超过阈值时会跳过 CodeFirst 建表，故此处显式建表（幂等）。
+    /// </summary>
+    private static void EnsureA2ATaskTable()
+    {
+        try
+        {
+            new A2ATaskRepository().Context.CodeFirst.InitTables<DbA2ATask>();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("初始化 A2A 任务表失败", ex);
         }
     }
 

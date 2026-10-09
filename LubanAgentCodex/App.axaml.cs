@@ -18,6 +18,8 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using LubanAgentA2A;
+using LubanAgentA2A.Runtime;
 using LubanAgentCodex.Views;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
@@ -102,6 +104,9 @@ public class App : Application
                 splash.SetStatus("正在初始化核心服务…");
                 _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager, services =>
                 {
+                    // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后触发）
+                    services.AddLubanAgentA2A(configuration);
+
                     // 编排进度出口：框架默认注册 no-op，此处替换为可订阅的宿主实现（供主窗口实时渲染）
                     services.AddSingleton<HostOrchestrationProgressSink>();
                     services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
@@ -133,6 +138,17 @@ public class App : Application
                 }
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);
+
+                // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
+                splash.SetStatus("正在启动 A2A…");
+                try
+                {
+                    await _services.GetRequiredService<IA2ALifecycle>().StartAsync(target.RootPath);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("启动 A2A 失败", ex);
+                }
 
                 // 6) 构建并显示主窗口
                 splash.SetStatus("正在构建主界面…");

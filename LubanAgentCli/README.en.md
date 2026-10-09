@@ -343,6 +343,7 @@ Limits: up to **5** attachments per message; images require a vision-capable mod
 | `/stats` | `/st` | Session & Token Statistics |
 | `/work` | `/w` | Workspace Management |
 | `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki knowledge base management |
+| `/a2a` | — | A2A collaboration management (status/server/client/start-stop) |
 
 ---
 

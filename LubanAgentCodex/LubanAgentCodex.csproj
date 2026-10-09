@@ -38,5 +38,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+    <ProjectReference Include="..\LubanAgentA2A\LubanAgentA2A.csproj" />
   </ItemGroup>
 </Project>

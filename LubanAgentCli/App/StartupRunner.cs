@@ -14,6 +14,7 @@
 *描述：封装应用初始化逻辑，供启动向导调用
 *
 *****************************************************************************/
+using LubanAgentA2A;
 using LubanAgentCli.App.Services;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Infrastructure;
@@ -53,6 +54,9 @@ internal static class StartupRunner
             modelManager,
             services =>
             {
+                // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后由 StartupDialog 触发）
+                services.AddLubanAgentA2A(configuration);
+
                 // TUI 特定：注册 TitleService
                 services.AddSingleton<TitleService>();
 

@@ -27,6 +27,7 @@ using LuBan.AIAgent;
 using LuBan.AIAgent.Configuration;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Services;
+using LubanAgentA2A.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
 using System.Text.Json;
@@ -46,6 +47,9 @@ public enum SettingsTabKind
 
     /// <summary>MCP 服务（mcps/&lt;name&gt;.json）</summary>
     Mcp,
+
+    /// <summary>A2A 协作（.luban-agent/a2a/server.json + client.&lt;name&gt;.json）</summary>
+    A2A,
 
     /// <summary>供应商（全局 config.json）</summary>
     Provider,
@@ -233,9 +237,14 @@ public partial class SettingsWindow : Window
         {
             SettingsTabKind.Skill => dirs.skills,
             SettingsTabKind.Rule => dirs.rules,
+            SettingsTabKind.A2A => CurrentA2ADir() ?? "",
             _ => dirs.mcps,
         };
     }
+
+    /// <summary>当前工作区的 A2A 配置目录；未选工作区时为 null。</summary>
+    private string? CurrentA2ADir()
+        => IsGlobal || _selectedWorkspace == null ? null : A2AWorkspaceConfigStore.ResolveDir(_selectedWorkspace.RootPath);
 
     // ---------------- 左栏：分类导航 ----------------
 
@@ -275,6 +284,7 @@ public partial class SettingsWindow : Window
         AddItem("技能", SettingsTabKind.Skill);
         AddItem("规则", SettingsTabKind.Rule);
         AddItem("MCP 服务", SettingsTabKind.Mcp);
+        AddItem("A2A 协作", SettingsTabKind.A2A);
         AddGroup("供应商与模型");
         AddItem("供应商", SettingsTabKind.Provider);
         AddItem("模型", SettingsTabKind.Model);
@@ -382,6 +392,34 @@ public partial class SettingsWindow : Window
     {
         if (_itemList == null) return;
 
+        // A2A 类：服务端（server.json，若存在）+ 各客户端文件
+        if (_tab == SettingsTabKind.A2A)
+        {
+            var list = new List<A2AListItem>();
+            if (!IsGlobal && _selectedWorkspace != null)
+            {
+                var root = _selectedWorkspace.RootPath;
+                if (A2AWorkspaceConfigStore.ServerExists(root))
+                {
+                    list.Add(new A2AListItem { Key = "server", Display = "服务端   server.json" });
+                }
+                foreach (var (fileName, cfg) in A2AWorkspaceConfigStore.LoadClients(root))
+                {
+                    var name = string.IsNullOrWhiteSpace(cfg.Name)
+                        ? Path.GetFileNameWithoutExtension(fileName)
+                        : cfg.Name!;
+                    list.Add(new A2AListItem { Key = fileName, Display = $"客户端   {name}" });
+                }
+            }
+            _itemList.ItemsSource = list;
+            var first = list.FirstOrDefault();
+            var match = _selectedItemKey != null ? list.FirstOrDefault(x => x.Key == _selectedItemKey) : null;
+            _itemList.SelectedItem = match ?? first;
+            _selectedItemKey = (match ?? first)?.Key;
+            UpdateActionBar();
+            return;
+        }
+
         // 供应商类：对象列表（含脱敏 ApiKey 与默认标记）
         if (_tab == SettingsTabKind.Provider)
         {
@@ -442,6 +480,7 @@ public partial class SettingsWindow : Window
         if (_itemList?.SelectedItem == null) return null;
         if (_tab == SettingsTabKind.Provider && _itemList.SelectedItem is ProviderListItem pi) return pi.Name;
         if (_tab == SettingsTabKind.Model && _itemList.SelectedItem is ModelListItem mi) return mi.Key;
+        if (_tab == SettingsTabKind.A2A && _itemList.SelectedItem is A2AListItem ai) return ai.Key;
         return _itemList.SelectedItem as string;
     }
 
@@ -458,6 +497,38 @@ public partial class SettingsWindow : Window
 
     private void NewItem()
     {
+        // A2A：服务端文件（若不存在）或新客户端文件
+        if (_tab == SettingsTabKind.A2A)
+        {
+            if (IsGlobal || _selectedWorkspace == null)
+            {
+                SetHint("A2A 配置仅作用于工作区，请先在顶栏选择一个工作区。", true);
+                return;
+            }
+
+            var root = _selectedWorkspace.RootPath;
+            if (!A2AWorkspaceConfigStore.ServerExists(root))
+            {
+                A2AWorkspaceConfigStore.SaveServer(root, new A2AWorkspaceFile { Host = "127.0.0.1", Port = 0, Path = "/a2a", RequireApiKey = true, ApiKeys = new List<string>(), AllowedWebhookDomains = new List<string>() });
+                _selectedItemKey = "server";
+                RefreshItems();
+                BuildEditor();
+                SetHint("已新建服务端配置 server.json，请填写后点击「保存」。", false);
+                return;
+            }
+
+            var i = 1;
+            var fileName = A2AWorkspaceConfigStore.BuildClientFileName("remote");
+            while (File.Exists(Path.Combine(A2AWorkspaceConfigStore.ResolveDir(root), fileName)))
+                fileName = A2AWorkspaceConfigStore.BuildClientFileName($"remote{i++}");
+            A2AWorkspaceConfigStore.SaveClient(root, fileName, new A2AWorkspaceFile { Mode = "client", Name = Path.GetFileNameWithoutExtension(fileName) });
+            _selectedItemKey = fileName;
+            RefreshItems();
+            BuildEditor();
+            SetHint("已新建客户端配置，请填写 Name / Endpoint 后点击「保存」。", false);
+            return;
+        }
+
         // 供应商：创建草稿（占位 Name），待编辑器填写后保存
         if (_tab == SettingsTabKind.Provider)
         {
@@ -571,6 +642,9 @@ public partial class SettingsWindow : Window
                     break;
                 case SettingsTabKind.Mcp:
                     BuildMcpEditor(host, key);
+                    break;
+                case SettingsTabKind.A2A:
+                    BuildA2AEditor(host, key);
                     break;
                 case SettingsTabKind.Provider:
                     BuildProviderEditor(host, key);
@@ -873,6 +947,89 @@ public partial class SettingsWindow : Window
         host.Children.Add(addBtn);
     }
 
+    // ---------------- A2A 编辑器 ----------------
+
+    /// <summary>
+    /// A2A 编辑器：服务端条目（server.json）与客户端条目（client.&lt;name&gt;.json）。
+    /// 角色由工作区文件是否存在决定，不使用独立开关。
+    /// </summary>
+    private void BuildA2AEditor(StackPanel host, string key)
+    {
+        if (IsGlobal || _selectedWorkspace == null)
+        {
+            host.Children.Add(new TextBlock
+            {
+                Text = "A2A 配置仅作用于工作区。请先在顶栏选择一个工作区。",
+                FontSize = 12,
+                Foreground = Brush.Parse("#8A8A8A"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 16, 0, 0),
+            });
+            return;
+        }
+
+        var root = _selectedWorkspace.RootPath;
+
+        if (key == "server")
+        {
+            var cfg = A2AWorkspaceConfigStore.LoadServer(root) ?? new A2AWorkspaceFile();
+            host.Children.Add(new TextBlock
+            {
+                Text = "服务端角色（server.json）：存在该文件即对外开放 A2A 端点。",
+                FontSize = 12,
+                Foreground = Brushes.White,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8),
+            });
+
+            SetField("Host", AddField(host, "Host（仅回环：127.0.0.1 / ::1）",
+                string.IsNullOrWhiteSpace(cfg.Host) ? "127.0.0.1" : cfg.Host));
+            SetField("Port", AddField(host, "Port（0 = 随机可用端口）", (cfg.Port ?? 0).ToString()));
+            SetField("Path", AddField(host, "Path（端点前缀）",
+                string.IsNullOrWhiteSpace(cfg.Path) ? "/a2a" : cfg.Path));
+            SetField("RequireApiKey", AddToggle(host, "要求 API Key（X-Api-Key）", cfg.RequireApiKey ?? true));
+            SetField("ApiKeys", AddField(host, "ApiKeys（一行一个）",
+                string.Join(Environment.NewLine, cfg.ApiKeys ?? new List<string>()), multiline: true, height: 80));
+            SetField("AgentName", AddField(host, "AgentName（对外名称）",
+                string.IsNullOrWhiteSpace(cfg.AgentName) ? "luban-agent" : cfg.AgentName));
+            SetField("AgentDescription", AddField(host, "AgentDescription（可选）", cfg.AgentDescription ?? ""));
+            SetField("AgentVersion", AddField(host, "AgentVersion",
+                string.IsNullOrWhiteSpace(cfg.AgentVersion) ? "1.0.0" : cfg.AgentVersion));
+            return;
+        }
+
+        // 客户端文件
+        var fallbackName = Path.GetFileNameWithoutExtension(key);
+        var client = A2AWorkspaceConfigStore.LoadClients(root)
+            .FirstOrDefault(x => string.Equals(x.FileName, key, StringComparison.OrdinalIgnoreCase)).Config
+            ?? new A2AWorkspaceFile { Mode = "client", Name = fallbackName };
+
+        host.Children.Add(new TextBlock
+        {
+            Text = $"客户端角色（{key}）：连接一个远端 A2A agent。",
+            FontSize = 12,
+            Foreground = Brushes.White,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        SetField("Name", AddField(host, "Name（唯一标识，用于编排角色路由）", client.Name ?? fallbackName));
+        SetField("Endpoint", AddField(host, "Endpoint（远端基址，如 https://host/a2a）", client.Endpoint ?? ""));
+        SetField("ApiKey", AddPasswordField(host, "ApiKey（明文，勿提交版本库）", client.ApiKey));
+        SetField("RegisterAsSubAgent", AddToggle(host, "注册为本地 SubAgent 角色（registerAsSubAgent）", client.RegisterAsSubAgent ?? false));
+        SetField("RemoteAgentName", AddField(host, "RemoteAgentName（可选）", client.RemoteAgentName ?? ""));
+        SetField("AllowAll", AddToggle(host, "AllowAll（对外身份声明）", client.AllowAll ?? false));
+
+        host.Children.Add(new TextBlock
+        {
+            Text = "安全提示：工作区 client*.json 中的 apiKey 为明文，建议将 .luban-agent/a2a/ 加入 .gitignore。",
+            FontSize = 10,
+            Foreground = Brush.Parse("#8A8A8A"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+        });
+    }
+
     // ---------------- 编辑器字段辅助 ----------------
 
     private void SetField(string key, Control control) => _editorFields[key] = control;
@@ -1136,6 +1293,9 @@ public partial class SettingsWindow : Window
                 case SettingsTabKind.Mcp:
                     await SaveMcpAsync();
                     break;
+                case SettingsTabKind.A2A:
+                    await SaveA2AAsync();
+                    break;
                 case SettingsTabKind.Provider:
                     await SaveProviderAsync();
                     break;
@@ -1283,6 +1443,92 @@ public partial class SettingsWindow : Window
         SetSavedHint();
     }
 
+    private async Task SaveA2AAsync()
+    {
+        if (IsGlobal || _selectedWorkspace == null)
+        {
+            SetHint("A2A 配置仅作用于工作区。", true);
+            return;
+        }
+
+        var root = _selectedWorkspace.RootPath;
+        var key = _selectedItemKey ?? "";
+
+        if (key == "server")
+        {
+            var apiKeys = GetText("ApiKeys")
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .ToList();
+
+            _ = int.TryParse(GetText("Port").Trim(), out var port);
+
+            var cfg = A2AWorkspaceConfigStore.LoadServer(root) ?? new A2AWorkspaceFile();
+            cfg.Mode = "server";
+            cfg.Host = string.IsNullOrWhiteSpace(GetText("Host")) ? "127.0.0.1" : GetText("Host").Trim();
+            cfg.Port = port;
+            cfg.Path = string.IsNullOrWhiteSpace(GetText("Path")) ? "/a2a" : GetText("Path").Trim();
+            cfg.RequireApiKey = GetToggle("RequireApiKey");
+            cfg.ApiKeys = apiKeys;
+            cfg.AgentName = GetText("AgentName").Trim();
+            cfg.AgentDescription = GetText("AgentDescription").Trim();
+            cfg.AgentVersion = string.IsNullOrWhiteSpace(GetText("AgentVersion")) ? "1.0.0" : GetText("AgentVersion").Trim();
+
+            A2AWorkspaceConfigStore.SaveServer(root, cfg);
+            _selectedItemKey = "server";
+            RefreshItems();
+            BuildEditor();
+            SetSavedHint();
+            return;
+        }
+
+        // 客户端文件
+        var name = GetText("Name").Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            SetHint("客户端的 Name 不能为空。", true);
+            return;
+        }
+        var endpoint = GetText("Endpoint").Trim();
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            SetHint("客户端的 Endpoint 不能为空。", true);
+            return;
+        }
+
+        var oldFile = key;
+        var targetFile = A2AWorkspaceConfigStore.BuildClientFileName(name);
+        var dir = A2AWorkspaceConfigStore.ResolveDir(root);
+        if (!string.IsNullOrEmpty(oldFile) && !string.Equals(oldFile, targetFile, StringComparison.OrdinalIgnoreCase)
+            && File.Exists(Path.Combine(dir, targetFile)))
+        {
+            SetHint($"已存在同名客户端文件 {targetFile}，请更换 Name。", true);
+            return;
+        }
+
+        var client = A2AWorkspaceConfigStore.LoadClients(root)
+            .FirstOrDefault(x => string.Equals(x.FileName, key, StringComparison.OrdinalIgnoreCase)).Config
+            ?? new A2AWorkspaceFile();
+        client.Mode = "client";
+        client.Name = name;
+        client.Endpoint = endpoint;
+        client.ApiKey = string.IsNullOrWhiteSpace(GetText("ApiKey")) ? null : GetText("ApiKey").Trim();
+        client.RegisterAsSubAgent = GetToggle("RegisterAsSubAgent");
+        client.RemoteAgentName = string.IsNullOrWhiteSpace(GetText("RemoteAgentName")) ? null : GetText("RemoteAgentName").Trim();
+        client.AllowAll = GetToggle("AllowAll");
+
+        A2AWorkspaceConfigStore.SaveClient(root, targetFile, client);
+        if (!string.IsNullOrEmpty(oldFile) && !string.Equals(oldFile, targetFile, StringComparison.OrdinalIgnoreCase))
+            A2AWorkspaceConfigStore.DeleteFile(root, oldFile);
+
+        _selectedItemKey = targetFile;
+        RefreshItems();
+        BuildEditor();
+        SetSavedHint();
+        await Task.CompletedTask;
+    }
+
     private async Task SaveProviderAsync()
     {
         if (_configManager == null) { SetHint("配置管理器不可用，无法保存。", true); return; }
@@ -1322,6 +1568,34 @@ public partial class SettingsWindow : Window
     {
         var key = _selectedItemKey;
         if (string.IsNullOrEmpty(key)) return;
+
+        if (_tab == SettingsTabKind.A2A)
+        {
+            if (IsGlobal || _selectedWorkspace == null) return;
+            var root = _selectedWorkspace.RootPath;
+            var isServer = key == "server";
+            var ok = await Dialogs.ShowConfirmAsync(this, "确认删除",
+                isServer ? "确定删除服务端配置 server.json 吗？" : $"确定删除客户端配置 {key} 吗？",
+                "删除后该角色将不再启用，且不可恢复。",
+                "确定删除", danger: true);
+            if (!ok) return;
+
+            try
+            {
+                A2AWorkspaceConfigStore.DeleteFile(root, isServer ? "server.json" : key);
+            }
+            catch (Exception ex)
+            {
+                SetHint($"删除失败：{ex.Message}", true);
+                return;
+            }
+
+            _selectedItemKey = null;
+            RefreshItems();
+            BuildEditor();
+            SetHint("已删除该 A2A 配置。", false);
+            return;
+        }
 
         if (_tab == SettingsTabKind.Provider)
         {
@@ -1412,6 +1686,7 @@ public partial class SettingsWindow : Window
     private bool CanApply()
     {
         if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model) return true;
+        if (_tab == SettingsTabKind.A2A) return false;
         if (IsGlobal) return true;
 
         try
@@ -1474,6 +1749,13 @@ public partial class SettingsWindow : Window
     }
 
     private class ModelListItem
+    {
+        public string Key { get; set; } = "";
+        public string Display { get; set; } = "";
+        public override string ToString() => Display;
+    }
+
+    private class A2AListItem
     {
         public string Key { get; set; } = "";
         public string Display { get; set; } = "";
