@@ -75,7 +75,7 @@
 
 | 现状 | 位置 | 目标 |
 |------|------|------|
-| `WorkspaceManager._current` / `Current` | `WorkspaceManager.cs:165,203` | `ISessionContext.Current`（移除 static） |
+| `WorkspaceManager._current` / `Current` | `WorkspaceManager.cs:165,203` | `IWorkspaceContext.Current`（移除 static） |
 | `_knownRoots` 静态缓存 | `WorkspaceManager.cs:189,196,667` | `IWorkspaceContext`（不再跨用户泄漏） |
 | `IsWithinWorkspace`(static) | `WorkspaceManager.cs:217`；回调 `ToolConfirmationContextExtensions.cs:56` | `ISessionContext.IsWithinEffectiveRoot()` |
 | `TempDirectory.Resolver` 静态 | 框架 `LuBan.Common\IO\TempDirectory.cs:29`；写 `WorkspaceManager.cs:174` | `ResolveTempDirectory()`（scoped/AsyncLocal） |
