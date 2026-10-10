@@ -53,6 +53,9 @@ public partial class MainWindowViewModel : ObservableObject
     private SessionViewModel? _currentSession;
     private static readonly ObservableCollection<MessageItemBase> EmptyMessages = new();
 
+    // 有待处理工具确认的会话（非当前会话在侧栏挂待确认徽标）
+    private readonly HashSet<string> _pendingConfirmations = new(StringComparer.Ordinal);
+
     private readonly List<string> _pendingAttachmentPaths = new();
     private int _attachmentVersion;
     private Task _attachmentRefreshTask = Task.CompletedTask;
@@ -452,6 +455,11 @@ public partial class MainWindowViewModel : ObservableObject
     public event EventHandler<SessionRunningChangedEventArgs>? SessionRunningChanged;
 
     /// <summary>
+    /// 会话待确认状态变化，供侧栏更新待确认徽标。
+    /// </summary>
+    public event EventHandler<SessionConfirmationEventArgs>? SessionConfirmationPendingChanged;
+
+    /// <summary>
     /// 取当前会话对应的会话 ViewModel 并设为当前选中；无当前会话时返回 null。
     /// </summary>
     private SessionViewModel? EnsureCurrentSession()
@@ -472,7 +480,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            session = new SessionViewModel(sessionId, _agentHost, _orchestrationSink, () => PermissionMode);
+            session = new SessionViewModel(
+                sessionId,
+                _agentHost,
+                _orchestrationSink,
+                () => PermissionMode,
+                id => string.Equals(_currentSession?.SessionId, id, StringComparison.Ordinal),
+                (s, pending) => SetConfirmationPending(s.SessionId, pending));
             session.PropertyChanged += OnSessionPropertyChanged;
             _sessions[sessionId] = session;
         }
@@ -484,6 +498,22 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public bool IsSessionRunning(string sessionId)
         => _sessions.TryGetValue(sessionId, out var session) && session.IsRunning;
+
+    /// <summary>
+    /// 查询指定会话是否有待处理工具确认（供侧栏重建列表时恢复徽标）。
+    /// </summary>
+    public bool IsSessionConfirmationPending(string sessionId)
+        => _pendingConfirmations.Contains(sessionId);
+
+    /// <summary>
+    /// 更新会话待确认状态并通知侧栏。
+    /// </summary>
+    private void SetConfirmationPending(string sessionId, bool pending)
+    {
+        var changed = pending ? _pendingConfirmations.Add(sessionId) : _pendingConfirmations.Remove(sessionId);
+        if (changed)
+            SessionConfirmationPendingChanged?.Invoke(this, new SessionConfirmationEventArgs(sessionId, pending));
+    }
 
     /// <summary>
     /// 切换当前选中会话：转发消息集合与运行状态，并通知视图重新绑定消息流。
@@ -1343,4 +1373,31 @@ public sealed class SessionRunningChangedEventArgs : EventArgs
     /// 是否正在运行。
     /// </summary>
     public bool IsRunning { get; }
+}
+
+/// <summary>
+/// 会话待确认状态变化事件参数。
+/// </summary>
+public sealed class SessionConfirmationEventArgs : EventArgs
+{
+    /// <summary>
+    /// 创建事件参数。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="pending">是否有待处理确认。</param>
+    public SessionConfirmationEventArgs(string sessionId, bool pending)
+    {
+        SessionId = sessionId;
+        Pending = pending;
+    }
+
+    /// <summary>
+    /// 会话标识。
+    /// </summary>
+    public string SessionId { get; }
+
+    /// <summary>
+    /// 是否有待处理确认。
+    /// </summary>
+    public bool Pending { get; }
 }

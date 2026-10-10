@@ -42,11 +42,18 @@ public partial class Sidebar : UserControl
 
     // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
     private readonly Dictionary<string, Border> _sessionRunningBadges = new(StringComparer.Ordinal);
+    // 会话待确认徽标：sessionId → 圆点控件
+    private readonly Dictionary<string, Border> _sessionPendingBadges = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 会话运行状态查询（由主窗口注入，用于重建列表时恢复徽标）。
     /// </summary>
     public Func<string, bool>? SessionRunningProvider { get; set; }
+
+    /// <summary>
+    /// 会话待确认状态查询（由主窗口注入，用于重建列表时恢复徽标）。
+    /// </summary>
+    public Func<string, bool>? SessionPendingConfirmProvider { get; set; }
 
     /// <summary>
     /// 工作区选择事件
@@ -210,6 +217,7 @@ public partial class Sidebar : UserControl
 
         _workspacePanel.Children.Clear();
         _sessionRunningBadges.Clear();
+        _sessionPendingBadges.Clear();
         _workspacePanel.Children.Add(BuildNewWorkspaceButton());
 
         var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
@@ -409,12 +417,26 @@ public partial class Sidebar : UserControl
                     IsVisible = isRunning,
                 };
 
+                // 待确认徽标：橙色，提示该后台会话有工具确认在等待用户聚焦
+                var pendingBadge = new Border
+                {
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(4),
+                    Background = Brush.Parse("#FF9800"),
+                    Margin = new Thickness(4, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsVisible = SessionPendingConfirmProvider?.Invoke(session.SessionId) ?? false,
+                };
+
                 sessStack.Children.Add(sessIcon);
                 sessStack.Children.Add(sessName);
                 sessStack.Children.Add(runningBadge);
+                sessStack.Children.Add(pendingBadge);
                 sessRow.Child = sessStack;
 
                 _sessionRunningBadges[session.SessionId] = runningBadge;
+                _sessionPendingBadges[session.SessionId] = pendingBadge;
 
                 // 会话右键菜单
                 var sessFlyout = new MenuFlyout();
@@ -495,6 +517,17 @@ public partial class Sidebar : UserControl
     {
         if (_sessionRunningBadges.TryGetValue(sessionId, out var badge))
             badge.IsVisible = isRunning;
+    }
+
+    /// <summary>
+    /// 更新指定会话的待确认徽标显示（由主窗口在会话待确认状态变化时调用）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="pending">是否有待处理确认。</param>
+    public void UpdateSessionPendingConfirm(string sessionId, bool pending)
+    {
+        if (_sessionPendingBadges.TryGetValue(sessionId, out var badge))
+            badge.IsVisible = pending;
     }
 
     /// <summary>
@@ -822,6 +855,7 @@ public class SessionItem
     public string SessionId { get; set; } = "";
     public string Title { get; set; } = "";
     public bool IsRunning { get; set; }
+    public bool HasPendingConfirm { get; set; }
 }
 
     /// <summary>

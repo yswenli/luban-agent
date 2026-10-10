@@ -171,6 +171,7 @@ public partial class MainWindow : Window
             {
                 // 先注入运行状态查询，确保随后的 LoadWorkspaces 重建列表时能恢复运行徽标
                 _sidebar.SessionRunningProvider = _viewModel.IsSessionRunning;
+                _sidebar.SessionPendingConfirmProvider = _viewModel.IsSessionConfirmationPending;
                 _sidebar.SetServiceProvider(services);
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
@@ -180,6 +181,8 @@ public partial class MainWindow : Window
 
                 // 会话运行状态变化（含后台会话）实时更新侧栏徽标
                 _viewModel.SessionRunningChanged += (s, e) => _sidebar?.UpdateSessionRunning(e.SessionId, e.IsRunning);
+                // 会话待确认状态变化实时更新侧栏徽标
+                _viewModel.SessionConfirmationPendingChanged += (s, e) => _sidebar?.UpdateSessionPendingConfirm(e.SessionId, e.Pending);
             }
 
             // 订阅后台知识库任务：终态时向显示区插系统消息（仅首次订阅）
