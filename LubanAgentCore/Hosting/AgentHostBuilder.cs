@@ -110,6 +110,7 @@ public static class AgentHostBuilder
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
         services.AddSingleton<ISessionManager, SessionManager>();
+        services.AddSingleton<SessionRuntimeManager>();
         services.AddSingleton<AttachmentService>();
         services.AddSingleton<IAgentsMdInitializer, AgentsMdInitializer>();
 
@@ -143,7 +144,12 @@ public static class AgentHostBuilder
         // 调用额外的服务配置委托
         configureServices?.Invoke(services);
 
-        var sp = services.BuildServiceProvider();
+        var sp = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            // 会话/工作区上下文均为 scoped；开启校验以在启动期暴露 captive dependency（单例误捕获 scoped）
+            ValidateScopes = true,
+            ValidateOnBuild = true
+        });
 
         Logger.SetLogger(sp.GetRequiredService<ILoggerFactory>());
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
