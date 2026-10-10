@@ -102,13 +102,24 @@ public sealed class A2ARuntimeLifecycle : IA2ALifecycle
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_state.IsStarted)
+            var normalizedRoot = NormalizeRoot(workspaceRoot);
+
+            // 已按同一工作区启动：幂等短路。工作区变化时先停旧运行时，再按新根重建，
+            // 避免换工作区后沿用旧根与旧角色（本地 agent 名 / 工作区角色 / 远端执行器）。
+            if (_state.IsStarted && string.Equals(_state.WorkspaceRoot, normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
+            if (_state.IsStarted)
+            {
+                _logger?.LogInformation("A2A 工作区已变化，重建运行时：{Old} → {New}", _state.WorkspaceRoot, normalizedRoot);
+                await StopCoreAsync(ct).ConfigureAwait(false);
+            }
+
             var effective = Agent2AgentConfigResolver.Resolve(_baseline.Value, workspaceRoot);
             _state.Update(effective);
+            _state.SetWorkspaceRoot(normalizedRoot);
 
             if (!effective.Enabled)
             {
@@ -156,21 +167,50 @@ public sealed class A2ARuntimeLifecycle : IA2ALifecycle
                 return;
             }
 
-            await _serverHost.StopAsync(ct).ConfigureAwait(false);
-
-            foreach (var client in _clients)
-            {
-                client.Dispose();
-            }
-            _clients.Clear();
-
-            _state.ClearRemoteExecutors();
-            _state.SetStarted(false);
-            _logger?.LogInformation("A2A 已停止。");
+            await StopCoreAsync(ct).ConfigureAwait(false);
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 停止服务端/客户端并复位运行时状态。调用方须已持有 <see cref="_gate"/>，
+    /// 以便 <see cref="StartAsync"/> 在锁内安全重建。
+    /// </summary>
+    private async Task StopCoreAsync(CancellationToken ct)
+    {
+        await _serverHost.StopAsync(ct).ConfigureAwait(false);
+
+        foreach (var client in _clients)
+        {
+            client.Dispose();
+        }
+        _clients.Clear();
+
+        _state.ClearRemoteExecutors();
+        _state.SetWorkspaceRoot(null);
+        _state.SetStarted(false);
+        _logger?.LogInformation("A2A 已停止。");
+    }
+
+    /// <summary>
+    /// 规范化工作区根：空白返回 null；否则取绝对路径，用于跨调用比较。
+    /// </summary>
+    private static string? NormalizeRoot(string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            return null;
+        }
+        try
+        {
+            return Path.GetFullPath(workspaceRoot);
+        }
+        catch
+        {
+            return workspaceRoot;
         }
     }
 

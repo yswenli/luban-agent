@@ -55,6 +55,9 @@ public sealed class InProcessSubAgentExecutor : ISubAgentExecutor
 
         var message = SubAgentA2ABridge.BuildMessage(spec);
 
+        // 子代理「全放行但守硬约束」作用域：EnterSubAgentScope 以 AsyncLocal 承载（见框架
+        // ToolConfirmationContext.SubAgentScopeDepth/SubAgentAllowAllInScope），仅作用于本次异步流，
+        // 不同会话各自独立、并行不串扰，故此处无需按会话实例化。
         using (ToolConfirmationContext.EnterSubAgentScope(allowAll: true))
         {
             await foreach (var evt in SubAgentA2ABridge

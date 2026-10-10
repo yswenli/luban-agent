@@ -40,6 +40,9 @@ public sealed class A2ARuntimeState
     /// <summary>是否已启动。</summary>
     public bool IsStarted { get; private set; }
 
+    /// <summary>启动时使用的工作区根（已规范化）；未启动为空。用于判定换工作区后是否需重建。</summary>
+    public string? WorkspaceRoot { get; private set; }
+
     /// <summary>远端执行器映射的实时只读视图（键为角色名）。</summary>
     public IReadOnlyDictionary<string, ISubAgentExecutor> RemoteExecutors => _remoteExecutors;
 
@@ -78,5 +81,12 @@ public sealed class A2ARuntimeState
     public void SetStarted(bool started)
     {
         IsStarted = started;
+    }
+
+    /// <summary>记录本次启动使用的工作区根（已规范化）。停止时清空。</summary>
+    /// <param name="workspaceRoot">规范化的工作区根路径；null 表示无工作区。</param>
+    public void SetWorkspaceRoot(string? workspaceRoot)
+    {
+        WorkspaceRoot = workspaceRoot;
     }
 }
