@@ -100,6 +100,12 @@ public static class AgentHostBuilder
 
         services.AddLuBanAgent(configuration);
 
+        // 用户/工作区/会话上下文（会话级作用域；P0 由会话作用域承载工作区级）
+        services.AddSingleton<IUserContext>(new UserContext(Environment.UserName));
+        services.AddScoped<SessionContextState>();
+        services.AddScoped<ISessionContext, SessionContext>();
+        services.AddScoped<IWorkspaceContext, WorkspaceContext>();
+
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 

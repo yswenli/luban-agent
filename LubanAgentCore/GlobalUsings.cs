@@ -18,6 +18,7 @@ global using LuBan.Orm.Models;
 
 global using LubanAgentCore.Agents;
 global using LubanAgentCore.Configuration;
+global using LubanAgentCore.Context;
 global using LubanAgentCore.Entities;
 global using LubanAgentCore.Infrastructure;
 global using LubanAgentCore.Models;
