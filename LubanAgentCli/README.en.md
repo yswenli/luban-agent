@@ -58,7 +58,7 @@ This isn't science fiction—this is **LuBan Agent**.
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 | 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
 
-> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
+> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem", "log"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
 ### 🎯 Skill System
 Nine core built-in skills, plug and play:

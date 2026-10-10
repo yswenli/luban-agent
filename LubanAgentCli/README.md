@@ -58,7 +58,7 @@
 | 📚 **Wiki 知识库工具** | 读写/删除 wiki 页面、向量搜索、健康检查（opt-in，需显式启用） |
 | 📜 **大日志分析工具** | 大日志文件聚合概览、正则检索、按行切片，恒定内存（默认启用） |
 
-> **编排说明**：Git 工具默认不进入编排子代理的工具组（`Orchestration.DefaultToolGroups=["filesystem"]`），如需让子代理执行 Git 操作，请在 DAG 节点中显式指定 `toolGroups`。
+> **编排说明**：Git 工具默认不进入编排子代理的工具组（`Orchestration.DefaultToolGroups=["filesystem", "log"]`），如需让子代理执行 Git 操作，请在 DAG 节点中显式指定 `toolGroups`。
 
 ### 🎯 Skill 系统
 内置九大核心技能，即插即用：

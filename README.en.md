@@ -52,11 +52,12 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 11 Built-in Tool Groups
+### 🛠️ 12 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
-| 📁 **FileSystem Tools** | Read, write, list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
+| 📁 **FileSystem Tools** | Read, write, edit (single/multi/replace-all), list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
+| 🌿 **Git Tools** | Status, diff, log, branch, stage, commit, merge, rebase, push — 26 fine-grained tools in total |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
 | 🌍 **Web Tools** | Send HTTP requests to fetch web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |

@@ -71,6 +71,10 @@ public static class ToolDisplayNames
         ["GitReset"] = "Git 重置",
         ["GitRebase"] = "Git 变基",
         ["GitClean"] = "Git 清理",
+        // Log
+        ["LogStats"] = "日志概览",
+        ["LogGrep"] = "日志检索",
+        ["LogSlice"] = "日志切片",
         // MCP 资源
         ["mcp_list_resources"] = "列出 MCP 资源",
         ["mcp_read_resource"] = "读取 MCP 资源",
@@ -162,6 +166,10 @@ public static class ToolDisplayNames
         ["GitReset"] = "🌿",
         ["GitRebase"] = "🌿",
         ["GitClean"] = "🌿",
+        // Log
+        ["LogStats"] = "📜",
+        ["LogGrep"] = "📜",
+        ["LogSlice"] = "📜",
         // MCP 资源
         ["mcp_list_resources"] = "📦",
         ["mcp_read_resource"] = "📦",
