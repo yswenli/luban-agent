@@ -45,6 +45,8 @@ public static class DatabaseInitializer
         TrySkipInitIfDbExistsAndLarge(messages);
         LuBanOrm.Init();
 
+        EnsureSqlitePragmas();
+
         EnsureIsCompactedColumn();
         EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
@@ -158,6 +160,25 @@ public static class DatabaseInitializer
                 }
             }
             config.ConnectionString = string.Join(";", parts);
+        }
+    }
+
+    /// <summary>
+    /// 设置 SQLite 并发相关的 PRAGMA：WAL 日志模式与 busy_timeout。
+    /// WAL 提升读写并发（写不阻塞读），busy_timeout 让写冲突时短暂重试而非立即报错。
+    /// journal_mode 持久化于数据库文件；busy_timeout 为连接级，此处设置当前连接。
+    /// </summary>
+    private static void EnsureSqlitePragmas()
+    {
+        try
+        {
+            var context = new SessionRepository().Context;
+            context.Ado.ExecuteCommand("PRAGMA journal_mode=WAL");
+            context.Ado.ExecuteCommand("PRAGMA busy_timeout=5000");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("设置 SQLite PRAGMA（WAL/busy_timeout）失败", ex);
         }
     }
 
