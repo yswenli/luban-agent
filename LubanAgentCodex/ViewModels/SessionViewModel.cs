@@ -36,6 +36,8 @@ public partial class SessionViewModel : ObservableObject
     private readonly AgentHostService _agentHost;
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
     private readonly Func<ToolPermissionMode> _permissionModeProvider;
+    private readonly Func<string, bool> _isCurrentProvider;
+    private readonly Action<SessionViewModel, bool>? _pendingConfirmationReporter;
 
     private CancellationTokenSource? _cts;
     private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
@@ -55,16 +57,22 @@ public partial class SessionViewModel : ObservableObject
     /// <param name="agentHost">Agent 宿主服务（按 sessionId 路由）。</param>
     /// <param name="orchestrationSink">编排进度出口（可空）。</param>
     /// <param name="permissionModeProvider">权限模式提供者（读取宿主当前模式）。</param>
+    /// <param name="isCurrentProvider">判断该会话是否为当前选中会话（用于工具确认按会话归属）。</param>
+    /// <param name="pendingConfirmationReporter">待确认状态上报（参数：会话、是否待确认），用于侧栏徽标。</param>
     public SessionViewModel(
         string sessionId,
         AgentHostService agentHost,
         HostOrchestrationProgressSink? orchestrationSink,
-        Func<ToolPermissionMode> permissionModeProvider)
+        Func<ToolPermissionMode> permissionModeProvider,
+        Func<string, bool> isCurrentProvider,
+        Action<SessionViewModel, bool>? pendingConfirmationReporter = null)
     {
         SessionId = sessionId;
         _agentHost = agentHost;
         _orchestrationSink = orchestrationSink;
         _permissionModeProvider = permissionModeProvider;
+        _isCurrentProvider = isCurrentProvider;
+        _pendingConfirmationReporter = pendingConfirmationReporter;
     }
 
     /// <summary>
@@ -518,10 +526,43 @@ public partial class SessionViewModel : ObservableObject
 
     private ConfirmResult ConfirmCallback(string toolName, IReadOnlyDictionary<string, object?> args)
     {
+        var ct = _cts?.Token ?? CancellationToken.None;
+
+        // 非当前选中会话：先在侧栏挂待确认徽标，并阻塞等待用户切到本会话再弹窗，
+        // 避免后台会话的确认模态打断当前会话，或两个会话的确认模态互相堆叠。
+        var deferred = !_isCurrentProvider(SessionId);
+        if (deferred)
+            _pendingConfirmationReporter?.Invoke(this, true);
+
+        try
+        {
+            while (!_isCurrentProvider(SessionId))
+            {
+                ct.ThrowIfCancellationRequested();
+                Thread.Sleep(50);
+            }
+
+            return ShowConfirmDialog(toolName, args, ct);
+        }
+        finally
+        {
+            if (deferred)
+                _pendingConfirmationReporter?.Invoke(this, false);
+        }
+    }
+
+    /// <summary>
+    /// 在 UI 线程弹出工具确认模态并等待用户选择（阻塞调用线程）。
+    /// </summary>
+    /// <param name="toolName">待确认的工具名。</param>
+    /// <param name="args">工具参数。</param>
+    /// <param name="ct">取消令牌；取消时提前唤醒。</param>
+    /// <returns>用户选择结果。</returns>
+    private ConfirmResult ShowConfirmDialog(string toolName, IReadOnlyDictionary<string, object?> args, CancellationToken ct)
+    {
         using var done = new ManualResetEventSlim(false);
         var result = ConfirmResult.Deny;
 
-        var ct = _cts?.Token ?? CancellationToken.None;
         using var ctr = ct.CanBeCanceled ? ct.Register(() => done.Set()) : default;
 
         // 工具确认改为模态对话框：在 UI 线程弹出并等待选择，agent 线程阻塞在 done 上
