@@ -59,7 +59,7 @@ This is not science fiction, this is **LuBan Agent Codex**.
 | 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
 | 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
 
-> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
+> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups; specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
 ### 🎯 Skill System
 Built-in nine core skills, plug and play:
