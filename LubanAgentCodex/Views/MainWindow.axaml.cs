@@ -169,12 +169,17 @@ public partial class MainWindow : Window
             // 绑定侧边栏并订阅其事件（仅首次）
             if (_sidebar != null)
             {
+                // 先注入运行状态查询，确保随后的 LoadWorkspaces 重建列表时能恢复运行徽标
+                _sidebar.SessionRunningProvider = _viewModel.IsSessionRunning;
                 _sidebar.SetServiceProvider(services);
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
                 _sidebar.LlmWikiInitRequested += OnLlmWikiInitRequested;
                 _sidebar.AgentsMdInitRequested += OnAgentsMdInitRequested;
                 _sidebar.SettingsRequested += OnSettingsRequested;
+
+                // 会话运行状态变化（含后台会话）实时更新侧栏徽标
+                _viewModel.SessionRunningChanged += (s, e) => _sidebar?.UpdateSessionRunning(e.SessionId, e.IsRunning);
             }
 
             // 订阅后台知识库任务：终态时向显示区插系统消息（仅首次订阅）

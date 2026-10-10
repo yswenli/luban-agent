@@ -447,6 +447,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
+    /// 任意会话运行状态变化（含后台非当前会话），供侧栏更新运行徽标。
+    /// </summary>
+    public event EventHandler<SessionRunningChangedEventArgs>? SessionRunningChanged;
+
+    /// <summary>
     /// 取当前会话对应的会话 ViewModel 并设为当前选中；无当前会话时返回 null。
     /// </summary>
     private SessionViewModel? EnsureCurrentSession()
@@ -468,10 +473,17 @@ public partial class MainWindowViewModel : ObservableObject
         if (!_sessions.TryGetValue(sessionId, out var session))
         {
             session = new SessionViewModel(sessionId, _agentHost, _orchestrationSink, () => PermissionMode);
+            session.PropertyChanged += OnSessionPropertyChanged;
             _sessions[sessionId] = session;
         }
         return session;
     }
+
+    /// <summary>
+    /// 查询指定会话是否正在运行（供侧栏重建列表时恢复徽标）。
+    /// </summary>
+    public bool IsSessionRunning(string sessionId)
+        => _sessions.TryGetValue(sessionId, out var session) && session.IsRunning;
 
     /// <summary>
     /// 切换当前选中会话：转发消息集合与运行状态，并通知视图重新绑定消息流。
@@ -481,21 +493,22 @@ public partial class MainWindowViewModel : ObservableObject
         if (ReferenceEquals(_currentSession, session))
             return;
 
-        if (_currentSession is not null)
-            _currentSession.PropertyChanged -= OnCurrentSessionPropertyChanged;
-
         _currentSession = session;
-        _currentSession.PropertyChanged += OnCurrentSessionPropertyChanged;
 
         OnPropertyChanged(nameof(CurrentSession));
         OnPropertyChanged(nameof(Messages));
         OnPropertyChanged(nameof(IsRunning));
     }
 
-    private void OnCurrentSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SessionViewModel.IsRunning))
+        if (e.PropertyName != nameof(SessionViewModel.IsRunning) || sender is not SessionViewModel session)
+            return;
+
+        if (ReferenceEquals(session, _currentSession))
             OnPropertyChanged(nameof(IsRunning));
+
+        SessionRunningChanged?.Invoke(this, new SessionRunningChangedEventArgs(session.SessionId, session.IsRunning));
     }
 
     /// <summary>
@@ -1303,4 +1316,31 @@ public partial class MainWindowViewModel : ObservableObject
         _currentSession?.Clear();
         ClearPendingAttachments();
     }
+}
+
+/// <summary>
+/// 会话运行状态变化事件参数。
+/// </summary>
+public sealed class SessionRunningChangedEventArgs : EventArgs
+{
+    /// <summary>
+    /// 创建事件参数。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="isRunning">是否正在运行。</param>
+    public SessionRunningChangedEventArgs(string sessionId, bool isRunning)
+    {
+        SessionId = sessionId;
+        IsRunning = isRunning;
+    }
+
+    /// <summary>
+    /// 会话标识。
+    /// </summary>
+    public string SessionId { get; }
+
+    /// <summary>
+    /// 是否正在运行。
+    /// </summary>
+    public bool IsRunning { get; }
 }

@@ -40,6 +40,14 @@ public partial class Sidebar : UserControl
     private SessionRepository? _sessionRepo;
     private IServiceProvider? _services;
 
+    // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
+    private readonly Dictionary<string, Border> _sessionRunningBadges = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 会话运行状态查询（由主窗口注入，用于重建列表时恢复徽标）。
+    /// </summary>
+    public Func<string, bool>? SessionRunningProvider { get; set; }
+
     /// <summary>
     /// 工作区选择事件
     /// </summary>
@@ -201,6 +209,7 @@ public partial class Sidebar : UserControl
             return;
 
         _workspacePanel.Children.Clear();
+        _sessionRunningBadges.Clear();
         _workspacePanel.Children.Add(BuildNewWorkspaceButton());
 
         var workspaces = await _workspaceManager.GetUserWorkspacesAsync();
@@ -388,9 +397,24 @@ public partial class Sidebar : UserControl
                     MaxWidth = 200,
                 };
 
+                var isRunning = SessionRunningProvider?.Invoke(session.SessionId) ?? false;
+                var runningBadge = new Border
+                {
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius = new CornerRadius(4),
+                    Background = Brush.Parse("#4CAF50"),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsVisible = isRunning,
+                };
+
                 sessStack.Children.Add(sessIcon);
                 sessStack.Children.Add(sessName);
+                sessStack.Children.Add(runningBadge);
                 sessRow.Child = sessStack;
+
+                _sessionRunningBadges[session.SessionId] = runningBadge;
 
                 // 会话右键菜单
                 var sessFlyout = new MenuFlyout();
@@ -453,12 +477,24 @@ public partial class Sidebar : UserControl
                     {
                         SessionId = sessionCopy.SessionId,
                         Title = sessionCopy.Title ?? "新会话",
+                        IsRunning = SessionRunningProvider?.Invoke(sessionCopy.SessionId) ?? false,
                     });
                 };
 
                 _workspacePanel.Children.Add(sessRow);
             }
         }
+    }
+
+    /// <summary>
+    /// 更新指定会话的运行徽标显示（由主窗口在会话运行状态变化时调用）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="isRunning">是否正在运行。</param>
+    public void UpdateSessionRunning(string sessionId, bool isRunning)
+    {
+        if (_sessionRunningBadges.TryGetValue(sessionId, out var badge))
+            badge.IsVisible = isRunning;
     }
 
     /// <summary>
@@ -785,6 +821,7 @@ public class SessionItem
 {
     public string SessionId { get; set; } = "";
     public string Title { get; set; } = "";
+    public bool IsRunning { get; set; }
 }
 
     /// <summary>
