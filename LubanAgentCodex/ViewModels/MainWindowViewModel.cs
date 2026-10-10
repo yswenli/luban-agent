@@ -283,7 +283,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <param name="services">服务提供者</param>
     public MainWindowViewModel(IServiceProvider services)
     {
-        _agentHost = new AgentHostService(services);
+        _agentHost = services.GetRequiredService<AgentHostService>();
         _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as HostOrchestrationProgressSink;
         CommandCatalog = services.GetRequiredService<ICommandCatalog>();
 

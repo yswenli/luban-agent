@@ -111,6 +111,7 @@ public static class AgentHostBuilder
 
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<SessionRuntimeManager>();
+        services.AddSingleton<AgentHostService>();
         services.AddSingleton<AttachmentService>();
         services.AddSingleton<IAgentsMdInitializer, AgentsMdInitializer>();
 

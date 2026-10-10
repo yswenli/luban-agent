@@ -35,7 +35,8 @@ public static class ToolConfirmationContextExtensions
     /// <param name="mode">本轮权限模式。</param>
     /// <param name="cancellationToken">取消令牌（Esc 中断时拒绝后续工具调用）。</param>
     /// <param name="confirmCallback">确认回调；仅在需要人工确认时被框架调用，返回用户的三态/授权选择。</param>
-    /// <param name="workspaceManager">工作区管理器实例；用于装配「路径是否在工作区内」检查器，避免静态全局状态。</param>
+    /// <param name="workspaceManager">工作区管理器实例；无会话上下文时的回退「路径是否在工作区内」检查器来源。</param>
+    /// <param name="sessionContext">会话上下文；提供时以该会话的 EffectiveRoot/AllowedRoots 做会话级路径检查（含 worktree）。</param>
     /// <param name="onPlannedAction">Plan 模式计划项回调，宿主用于收集或即时展示。</param>
     /// <param name="onUserDenied">用户明确拒绝工具调用时的回调；宿主应在此取消本轮令牌以终止对话（非 Esc 取消才会触发）。</param>
     /// <remarks>
@@ -49,13 +50,16 @@ public static class ToolConfirmationContextExtensions
         ToolPermissionMode mode,
         CancellationToken cancellationToken,
         Func<string, IReadOnlyDictionary<string, object?>, ConfirmResult>? confirmCallback,
-        IWorkspaceManager workspaceManager,
+        IWorkspaceManager? workspaceManager = null,
+        ISessionContext? sessionContext = null,
         Action<string, IReadOnlyDictionary<string, object?>>? onPlannedAction = null,
         Action<string, IReadOnlyDictionary<string, object?>>? onUserDenied = null)
     {
         context.Mode = mode;
         context.CancellationToken = cancellationToken;
-        context.WorkspacePathChecker = workspaceManager.IsWithinWorkspace;
+        context.WorkspacePathChecker = sessionContext is not null
+            ? sessionContext.IsWithinEffectiveRoot
+            : workspaceManager is not null ? workspaceManager.IsWithinWorkspace : null;
         context.Callback = confirmCallback is null
             ? null
             : (toolName, args) => Task.FromResult(confirmCallback(toolName, args));

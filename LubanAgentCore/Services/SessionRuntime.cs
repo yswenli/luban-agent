@@ -38,6 +38,15 @@ public sealed class SessionRuntime : IAsyncDisposable
     /// <summary>会话作用域内的上下文（由本会话 scope 的 <see cref="SessionContextState"/> 派生）。</summary>
     public ISessionContext SessionContext { get; }
 
+    /// <summary>会话作用域的服务提供者（用于在会话 scope 内解析 scoped 服务）。</summary>
+    public IServiceProvider Services => _scope.ServiceProvider;
+
+    /// <summary>本会话当前缓存的 Agent 实例（无状态路由器在会话 scope 内构建）。</summary>
+    public LuBanAgent? Agent { get; set; }
+
+    /// <summary>本会话 Agent 绑定的工作区（用于切换工作区后重建）。</summary>
+    public WorkspaceInfo? Workspace { get; set; }
+
     /// <summary>当前是否正在执行某个回合。</summary>
     public bool IsRunning => Volatile.Read(ref _running) == 1;
 
