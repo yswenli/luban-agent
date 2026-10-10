@@ -42,16 +42,19 @@ This isn't science fiction—this is **LuBan Agent**.
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 8 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
-| 📁 **FileSystem Tools** | Read, write, list directories with secure path restrictions |
+| 📁 **FileSystem Tools** | Read, write, edit (single/multi/replace-all), list directories with secure path restrictions |
+| 🌿 **Git Tools** | Status, diff, log, branch, stage, commit, merge, rebase, push — 26 fine-grained tools in total |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
 | 🌍 **Web Tools** | Send HTTP requests to fetch web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |
 | 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
 | 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
+
+> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
 ### 🎯 Skill System
 Nine core built-in skills, plug and play:
@@ -855,7 +858,7 @@ Available tools for github:
 - 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines new" prompt
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
-- 🛠️ **7 Built-in Tool Groups** cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, and local memory
+- 🛠️ **8 Built-in Tool Groups** cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, and local memory
 - ⚠️ **ToolConfirmationService** uses inline InlineChoiceBlock for tool confirmation (allow/deny/allow all this turn)
 - 🔒 **FileSystemToolOptions.AllowedRoots** restricts file access scope to prevent unauthorized Agent operations
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution

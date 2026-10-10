@@ -47,16 +47,19 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 8 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
-| 📁 **File System Tools** | Read, write, list directories, with safe path restrictions |
+| 📁 **File System Tools** | Read, write, edit (single/multi/replace-all), list directories, with safe path restrictions |
+| 🌿 **Git Tools** | Status, diff, log, branch, stage, commit, merge, rebase, push — 26 fine-grained tools in total |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
 | 🌍 **Web Tools** | Send HTTP requests to get web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents, search relevant fragments by semantics |
 | 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
 | 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
+
+> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
 ### 🎯 Skill System
 Built-in nine core skills, plug and play:
@@ -637,7 +640,7 @@ github available tools:
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **7 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, and local memory
+- 🛠️ **8 Built-in Tool Groups**: Cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, and local memory
 - ⚠️ **Dangerous Operation Confirmation**: Automatically requires user confirmation for write, delete, execute and other dangerous operations
 - 🔒 **Path Authorization**: After workspace authorization, AI Agent can access root directory and its subdirectories
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix
