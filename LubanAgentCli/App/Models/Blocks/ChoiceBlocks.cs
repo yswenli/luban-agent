@@ -45,7 +45,8 @@ public static class ChoiceBlocks
             [
                 new ChoiceOption('Y', "允许", ConfirmResult.Allow),
                 new ChoiceOption('N', "拒绝", ConfirmResult.Deny),
-                new ChoiceOption('A', "本轮全部允许", ConfirmResult.AllowAll, "后续同类工具免确认"),
+                new ChoiceOption('A', "本轮全部允许", ConfirmResult.AllowAll, "后续同类工具本轮免确认"),
+                new ChoiceOption('S', "本会话全部允许", ConfirmResult.AllowSession, "本会话同类工具免确认"),
             ],
             opt => onResolve((ConfirmResult)opt.Value));
     }

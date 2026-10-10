@@ -52,16 +52,19 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 10 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
-| 📁 **FileSystem Tools** | Read, write, list directories with secure path restrictions |
+| 📁 **FileSystem Tools** | Read, write, list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
-| 🗄️ **Database Tools** | Execute SQL via ADO.NET direct connections (MySQL/PostgreSQL/SQL Server/SQLite), with dynamic connection string support |
-| 🔴 **Redis Tools** | Execute Redis commands via redis-cli |
 | 🌍 **Web Tools** | Send HTTP requests to fetch web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents and search by semantic similarity |
+| 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
+| 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
+| 🔌 **MCP External Tools** | Connect external MCP servers and merge their tools into the Agent toolset |
+| 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents in parallel/serial |
+| 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 
 ### 🎯 Skill System
 - Nine core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery), plug and play
@@ -75,8 +78,8 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - **Lightweight persistence**: sessions store only paths and metadata (no base64); history replays rebuild from disk or show placeholders. Codex renders thumbnails in the attachment bar and message area, click to view full size
 
 ### 🛡️ Security & Rule Engine
-- **Path Access Rules**: Restrict filesystem access scope, prevent unauthorized operations
-- **Dangerous Operation Confirmation**: Automatically request user confirmation before write, delete, or execute operations
+- **Path Access Rules**: Paths inside the workspace are allowed directly; paths outside the workspace are allowed after user confirmation
+- **Dangerous Operation Confirmation**: Require user confirmation before out-of-workspace access, write, delete, or execute operations, with this-time/turn/session grant tiers
 - **Custom Rules**: Support wildcard matching for flexible tool behavior control
 
 ### 💾 Session Persistence
@@ -102,7 +105,7 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 - **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
 - **LLM Wiki Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated
-- **Path Authorization Management**: Workspace authorization integrates with PathGuard; only authorized workspace root directories are accessible
+- **Path Authorization Management**: Paths inside the workspace are allowed directly; paths outside the workspace are allowed after user confirmation, with grants remembered per path root (this-time/this-turn/this-session tiers)
 
 ---
 
@@ -185,7 +188,7 @@ Then select a model and start your first Agent conversation:
 
 You: Show me what directories are on drive D
 
-[Calling tool]: list_directory
+[Calling tool]: ListDirectoryAsync
   Parameter path: D:\
 [Tool result]: Program Files, Users, Windows, ...
 
@@ -394,7 +397,7 @@ User configurations (Providers, custom Skills, rules, etc.) are automatically sa
 
 - 🖥️ **Two Clients, One Core**: CLI suits terminal lovers and server environments; Codex suits GUI users—configuration and sessions are fully shared
 - ⌨️ **CLI Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+O` add attachments
-- 🛡️ **Four Permission Modes**: Default / Plan / AcceptEdits / BypassPermissions, with automatic confirmation for dangerous operations
+- 🛡️ **Four Permission Modes**: Default / Plan / AcceptEdits / BypassPermissions — in-workspace operations need no confirmation, while out-of-workspace and sensitive operations require user confirmation (this-time/turn/session grant tiers)
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution, and SubAgents inherit workspace long-term memory
 - 📂 **Workspace Isolation**: Each workspace has its own session history and config directory (`.luban-agent/`), with a host-stable workspace ID that shares long-term memory

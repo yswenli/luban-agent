@@ -757,20 +757,19 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     /// <summary>
     /// 人工确认回调：阻塞 agent 线程，等待用户在 TUI 内联选择块上作出决定。
+    /// 授权记忆（本轮/本会话）由框架 ToolConfirmationService 依据返回值处理，此处仅回传选择。
     /// </summary>
     /// <param name="toolName">工具名称。</param>
     /// <param name="args">工具参数。</param>
-    /// <returns>用户是否允许执行。</returns>
-    private bool ConfirmTool(string toolName, IReadOnlyDictionary<string, object?> args)
+    /// <returns>用户的选择结果。</returns>
+    private ConfirmResult ConfirmTool(string toolName, IReadOnlyDictionary<string, object?> args)
     {
         if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm enter: {toolName}");
-
-        var context = _services.GetRequiredService<ToolConfirmationContext>();
 
         // 同步确认：用 ManualResetEventSlim 阻塞 agent 线程，
         // 同时在 UI 线程显示 InlineChoiceBlock
         using var done = new ManualResetEventSlim(false);
-        var result = false;
+        var result = ConfirmResult.Deny;
 
         // 注册取消令牌回调：ESC 时 Set 信号以提前解除阻塞
         var ct = _currentCts?.Token ?? default;
@@ -783,7 +782,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         _dispatcher.Invoke(() =>
         {
             // 运行已作废（Esc/新对话）：不弹确认块，避免旧运行干扰新对话；
-            // 必须唤醒等待（结果保持 false），否则无限等待会永久挂起
+            // 必须唤醒等待（结果保持 Deny），否则无限等待会永久挂起
             if (_currentRunSeq != Volatile.Read(ref _activeRunSeq))
             {
                 done.Set();
@@ -792,11 +791,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
             var confirmBlock = ChoiceBlocks.Confirm(toolName, args, cr =>
             {
-                result = cr == ConfirmResult.Allow || cr == ConfirmResult.AllowAll;
-                if (cr == ConfirmResult.AllowAll)
-                {
-                    context.AllowThisTurn(toolName);
-                }
+                result = cr;
                 PendingChoice = null;
                 done.Set();
             });

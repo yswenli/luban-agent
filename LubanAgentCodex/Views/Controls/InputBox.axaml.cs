@@ -467,7 +467,7 @@ public partial class InputBox : UserControl
             if (bitmap == null) return;
 
             var tempPath = LuBan.Common.IO.TempDirectory.GetTempFilePath("clipboard-", ".png");
-            bitmap.Save(tempPath);
+            bitmap.Save(tempPath, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
             ImagePasted?.Invoke(this, tempPath);
         }
         catch (Exception ex)

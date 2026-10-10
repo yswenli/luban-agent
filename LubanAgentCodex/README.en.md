@@ -47,16 +47,19 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 7 Built-in Tool Groups
+### 🛠️ 10 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
-| 📁 **File System Tools** | Read, write, list directories, with safe path restrictions |
+| 📁 **File System Tools** | Read, write, list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
 | 🌍 **Web Tools** | Send HTTP requests to get web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents, search relevant fragments by semantics |
 | 🗜️ **Context Compaction Tools** | Compact the current session's conversation history to free token budget (LLM-invocable) |
 | 🧠 **Local Memory Tools** | Store, query, and manage long-term memory |
+| 🔌 **MCP External Tools** | Connect external MCP servers and merge their tools into the Agent toolset |
+| 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents in parallel/serial |
+| 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 
 ### 🎯 Skill System
 Built-in nine core skills, plug and play:
@@ -80,8 +83,8 @@ Built-in nine core skills, plug and play:
 - **Async processing**: attachments are preprocessed on a background thread so large images don't freeze the UI; failed attachments are dropped individually with a notice
 
 ### 🛡️ Security & Rule Engine
-- **Path access rules**: Restrict file system access scope, prevent unauthorized operations
-- **Dangerous operation confirmation**: Automatically require user confirmation before writing, deleting, executing scripts
+- **Path access rules**: Paths inside the workspace are allowed directly; paths outside the workspace are allowed after confirmation
+- **Dangerous operation confirmation**: Require user confirmation before out-of-workspace access, writing, deleting, or executing scripts, with this-time/turn/session grant tiers
 - **Custom rules**: Support wildcard matching, flexibly control tool behavior
 
 ### 💾 Session Persistence
@@ -110,7 +113,7 @@ Built-in nine core skills, plug and play:
 - **Temporary file management**: Scripts, screenshots, intermediate files generated at runtime uniformly stored in `.luban-agent/temp/`, supports automatic cleanup of expired files
 - **LLM Wiki Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A
 - **Vector storage isolation**: Index data from different workspaces completely isolated, no cross-reading
-- **Path authorization management**: Workspace authorization integrated with PathGuard, only authorized workspace root directories accessible
+- **Path authorization management**: Paths inside the workspace are allowed directly; paths outside the workspace are allowed after user confirmation, with grants remembered per path root (this-time/this-turn/this-session tiers)
 
 ---
 
@@ -331,11 +334,11 @@ This is a complex task, needs to be decomposed into multiple subtasks for parall
 ✓ Planning complete: Generated 4-node task graph
 
 ▶ Starting node execution: research-luban
-  [SubAgent] Calling web_search to search LuBan framework features...
+  [SubAgent] Calling FetchUrlAsync to fetch LuBan framework docs...
 ✓ Node complete: research-luban
 
 ▶ Starting node execution: research-langchain
-  [SubAgent] Calling web_search to search LangChain framework features...
+  [SubAgent] Calling FetchUrlAsync to fetch LangChain framework docs...
 ✓ Node complete: research-langchain
 ── Layer 1 execution complete (parallel) ──
 
@@ -411,6 +414,124 @@ Content: Workspace configuration requires...
 # 5. Direct Q&A (automatic retrieval augmentation)
 You: How to create a workspace?
 🤖 According to knowledge base documents, creating workspace uses /work -new command...
+```
+
+### Scenario 8: Safely Reading Files Outside the Workspace (Three-tier Authorization)
+
+By default only paths inside the workspace are allowed without confirmation. When the Agent needs to reference material outside the workspace, it pops up a **modal confirmation dialog**, and you decide how wide to open the scope:
+
+```
+You: Take a look at D:\Shared\api-spec.md and implement the matching client
+
+┌─ Tool Confirmation ──────────────────────────────────┐
+│ ⚠ Confirm whether to run this tool                    │
+│ ReadFileAsync                                        │
+│ { "path": "D:\\Shared\\api-spec.md" }                │
+│   [✗ Deny] [Allow All This Turn] [Allow All This Session] [✓ Allow] │
+└──────────────────────────────────────────────────────┘
+
+(choose "Allow All This Session")
+
+Message stream: Allowed Read File
+✓ Granted this-session access to D:\Shared
+📄 Read api-spec.md (216 lines)
+🤖 Sure — generating the client per the interface contract...
+```
+
+| Tier | Scope | Memory |
+|------|-------|--------|
+| `✓ Allow` | this call only | not remembered |
+| `Allow all this turn` | same-type tools within this turn | expires after each turn |
+| `Allow all this session` | same-type tools for the whole session | remembered per path root (file → parent dir, dir → itself) |
+
+> If the grant root lands on a drive root (e.g. `D:\`) it is not remembered, preventing one grant from opening an entire disk. The main window is non-interactive until you choose; Esc or ending the session equals "Deny".
+
+### Scenario 9: Plan Mode — Read First, Produce a Plan, Change Nothing
+
+In Plan mode the Agent only **reads** context to produce a plan; every write is recorded as a planned item and never executed:
+
+```
+> /mode plan
+✓ Permission mode switched: plan
+
+You: Refactor the src/Logging module
+
+🔍 [Plan] Reading context...
+   ReadFileAsync      src\Logging\Logger.cs    ✓ read-only, allowed
+   ListDirectoryAsync src\Logging\             ✓ read-only, allowed
+   WriteFileAsync     src\Logging\Logger.cs    ⏸ recorded as planned (Plan mode does not execute)
+
+🤖 Plan:
+   1. Extract an ILogger interface
+   2. Switch file writes to async batched flush
+   3. Add unit tests
+   Switch back to default mode to execute after you confirm.
+```
+
+### Scenario 10: Deletes Always Ask — Authorization Is Never "Permanent"
+
+Delete-class tools (`DeleteFileAsync` / `DeleteDirectoryAsync` / `DeletePageAsync`) intentionally **never remember** authorization; even if you pick "allow all this turn/session", the next delete still pops up a confirmation:
+
+```
+You: Clean up the temp directory
+
+┌─ Tool Confirmation ──────────────────────────────────┐
+│ ⚠ Confirm whether to run this tool                    │
+│ DeleteDirectoryAsync                                 │
+│ { "path": ".luban-agent\\temp" }                     │
+│   [✗ Deny] [Allow All This Turn] [Allow All This Session] [✓ Allow] │
+└──────────────────────────────────────────────────────┘
+
+(choose "Allow All This Turn")
+
+✓ Deleted .luban-agent\temp
+ℹ Delete operations do not remember authorization; the next delete will confirm again
+```
+
+### Scenario 11: Four Permission Modes, One-key Cycling
+
+Switch among the four modes with `/mode` or `Shift+Tab`:
+
+```
+> /mode
+Current permission mode: default
+Available modes: default / plan / accept-edits / bypass (use Shift+Tab to cycle)
+
+> /mode accept-edits
+✓ Permission mode switched: accept-edits
+```
+
+| Mode | Behavior |
+|------|----------|
+| `default` | In-workspace/authorized scope is confirmation-free; out-of-workspace paths, deletes, script execution, etc. require confirmation |
+| `plan` | Read-only tools within authorized scope are allowed to produce a plan; everything else is only recorded as planned items |
+| `accept-edits` | Edit-class operations within authorized scope (with a path, non-delete) are confirmation-free; scripts and deletes still confirm |
+| `bypass` | Skip all tool confirmations (requires a second confirmation when switching; use with caution) |
+
+### Scenario 12: Plug in External MCP Tools to Extend Capabilities On Demand
+
+Beyond built-in tools, you can bring external MCP server tools into the Agent toolset via the **MCP management window** or the `/mcp` command:
+
+```
+> /mcp -list
+Status     Type   Name         Description
+[connected] builtin filesystem  Built-in filesystem MCP client
+
+> /mcp -add                       # interactive form for name / command / args
+✓ External MCP server 'github' added
+  Use /mcp connect github to connect
+
+> /mcp -connect github
+Connecting github...
+✓ Connected
+
+> /mcp -tools github
+  - list_repos: list repositories
+  - create_issue: create an issue
+  ...
+
+You: Create a bug issue in the luban-agent repo
+🤖 [MCP tool call] github.create_issue ...
 ```
 
 ---
@@ -493,29 +614,33 @@ User configuration (Provider, custom Skills, rules, etc.) automatically saved lo
 
 ### Dangerous Operation Confirmation
 
-For dangerous operations (writing files, executing scripts, deleting data, etc.), the system shows a **modal confirmation dialog** before execution:
+For sensitive operations (out-of-workspace path access, writing files, executing scripts, deleting data, etc.), the system shows a **modal confirmation dialog** before execution; in-workspace paths are allowed directly:
 
 ```
 You: Help me write a file to C:\temp\test.txt
 
-┌─ Tool Confirmation ──────────────────────┐
-│ ⚠ Confirm whether to run this tool        │
-│ WriteFileAsync                            │
-│ {                                         │
-│   "path": "C:\\temp\\test.txt",            │
-│   "content": "File content..."             │
-│ }                                         │
-│        [✗ Deny] [Allow All This Round] [✓ Allow] │
-└───────────────────────────────────────────┘
+┌─ Tool Confirmation ──────────────────────────────────┐
+│ ⚠ Confirm whether to run this tool                    │
+│ WriteFileAsync                                        │
+│ {                                                     │
+│   "path": "C:\\temp\\test.txt",                        │
+│   "content": "File content..."                         │
+│ }                                                     │
+│   [✗ Deny] [Allow All This Turn] [Allow All This Session] [✓ Allow] │
+└───────────────────────────────────────────────────────┘
 
 Message stream record: Allowed 写入文件
 ```
 
 The dialog is an application-modal window: the main window is not interactive until you choose; Esc or aborting the session is treated as "Deny".
 
+**Grant tiers**: `✓ Allow` allows this call only; `Allow All This Turn` is remembered for this turn (reset each turn); `Allow All This Session` is remembered for this session (process lifetime). Grants are remembered per path root (parent directory for files, the directory itself for directories); when the grant root resolves to a drive root (e.g. `D:\`), it is not remembered.
+
 **Operations requiring confirmation**:
-- 📝 **File System**: Write files, delete files, create/delete directories
+- 📝 **File System**: read/write/copy/move for out-of-workspace paths, and all delete operations (deletion is never remembered and always confirms)
 - 🔧 **Script Execution**: Execute Shell, Lua, Python scripts
+
+Read-only and normal edit operations inside the workspace need no confirmation; in Plan mode only in-workspace read-only tools are allowed directly.
 
 ### Session Management
 
@@ -637,9 +762,9 @@ github available tools:
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **7 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, and local memory
-- ⚠️ **Dangerous Operation Confirmation**: Automatically requires user confirmation for write, delete, execute and other dangerous operations
-- 🔒 **Path Authorization**: After workspace authorization, AI Agent can access root directory and its subdirectories
+- 🛠️ **10 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, and the LLM Wiki knowledge base (opt-in)
+- ⚠️ **Dangerous Operation Confirmation**: Requires user confirmation for out-of-workspace path access and sensitive operations (write, delete, execute), with this-time/turn/session grant tiers
+- 🔒 **Path Authorization**: In-workspace paths need no confirmation; out-of-workspace paths are allowed after confirmation, with grants remembered per path root
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix
 - 📂 **Workspace Isolation**: Each workspace has independent session history and configuration directory
 

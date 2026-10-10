@@ -1682,6 +1682,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             ConfirmResult.Allow => $"已允许 {action}",
             ConfirmResult.AllowAll => $"已允许 {action}（本轮全部允许）",
+            ConfirmResult.AllowSession => $"已允许 {action}（本会话全部允许）",
             _ => $"已拒绝 {action}"
         };
     }

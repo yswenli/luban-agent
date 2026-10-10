@@ -53,7 +53,7 @@ public static class Dialogs
     }
 
     /// <summary>
-    /// 工具执行确认对话框：工具名 + 参数(JSON) + 允许 / 本轮全部允许 / 拒绝
+    /// 工具执行确认对话框：工具名 + 参数(JSON) + 拒绝 / 本轮全部允许 / 本会话全部允许 / 允许
     /// </summary>
     /// <param name="owner">所属窗口；为空时退化为非模态展示（仍等待选择）</param>
     /// <param name="toolName">待确认的工具名</param>
@@ -69,7 +69,7 @@ public static class Dialogs
         var dlg = new Window
         {
             Title = "工具确认",
-            Width = 520,
+            Width = 660,
             Height = hasArgs ? 372 : 216,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
@@ -152,13 +152,17 @@ public static class Dialogs
         deny.Classes.Add("dlgDanger");
         var allowAll = new Button { Content = "本轮全部允许", MinWidth = 124 };
         allowAll.Classes.Add("dlgGhost");
+        var allowSession = new Button { Content = "本会话全部允许", MinWidth = 124 };
+        allowSession.Classes.Add("dlgGhost");
         var allow = new Button { Content = "✓ 允许" };
         allow.Classes.Add("dlgPrimary");
         deny.Click += (s, e) => { chosen = ConfirmResult.Deny; dlg.Close(ConfirmResult.Deny); };
         allowAll.Click += (s, e) => { chosen = ConfirmResult.AllowAll; dlg.Close(ConfirmResult.AllowAll); };
+        allowSession.Click += (s, e) => { chosen = ConfirmResult.AllowSession; dlg.Close(ConfirmResult.AllowSession); };
         allow.Click += (s, e) => { chosen = ConfirmResult.Allow; dlg.Close(ConfirmResult.Allow); };
         buttons.Children.Add(deny);
         buttons.Children.Add(allowAll);
+        buttons.Children.Add(allowSession);
         buttons.Children.Add(allow);
 
         var grid = new Grid

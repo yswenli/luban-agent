@@ -19,6 +19,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-		<PackageReference Include="LuBan.AIAgent" Version="2026.10.9.1" />
+		<!-- TEMP-LOCAL-VERIFY: 本地联调临时改为 ProjectReference，提交前必须还原为 PackageReference -->
+		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 	</ItemGroup>
 </Project>

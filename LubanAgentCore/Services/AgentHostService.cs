@@ -237,17 +237,11 @@ public class AgentHostService
         var context = _services.GetRequiredService<ToolConfirmationContext>();
 
         // 统一装配（与 CLI 共用 ConfigureForTurn）：模式策略由框架分发，
-        // 回调仅在需要人工确认时被调用；ConfirmResult → bool 在此适配
+        // 回调仅在需要人工确认时被调用；授权记忆（本轮/本会话）由框架依据返回值处理
         context.ConfigureForTurn(
             permissionMode,
             ct,
-            (toolName, args) =>
-            {
-                var result = confirmHandler(toolName, args);
-                if (result == ConfirmResult.AllowAll)
-                    context.AllowThisTurn(toolName);
-                return result != ConfirmResult.Deny;
-            },
+            confirmHandler,
             onPlannedAction,
             onUserDenied);
 
