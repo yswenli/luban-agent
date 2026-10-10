@@ -109,9 +109,10 @@ public static class AgentHostBuilder
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
-        // worktree 协调：会话级（git 封装依赖单例 ProcessRunner，状态依赖会话作用域）
-        services.AddScoped<GitProcess>();
+        // worktree 协调：git 封装无状态（单例，依赖单例 ProcessRunner），协调器按会话作用域
+        services.AddSingleton<GitProcess>();
         services.AddScoped<IWorktreeCoordinator, WorktreeSessionManager>();
+        services.AddSingleton<WorktreeReconciler>();
 
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<SessionRuntimeManager>();

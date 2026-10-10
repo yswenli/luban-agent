@@ -139,6 +139,18 @@ public class App : Application
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);
 
+                // worktree 启动对账：登记与磁盘不一致时记录提示（不阻塞启动）
+                try
+                {
+                    var reconcileMessages = await _services.GetRequiredService<WorktreeReconciler>().RunAsync();
+                    foreach (var message in reconcileMessages)
+                        Logger.Warn("worktree 对账: " + message);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("worktree 启动对账失败", ex);
+                }
+
                 // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
                 splash.SetStatus("正在启动 A2A…");
                 try

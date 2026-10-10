@@ -70,6 +70,18 @@ internal static class StartupWorkspaceResolver
         // 设置为当前工作区（内部恢复最近活跃会话，无则新建“新会话”）
         await workspaceManager.SetCurrentAsync(target.WorkspaceId);
 
+        // worktree 启动对账：登记与磁盘不一致时以启动提示呈现（不阻塞进入工作区）
+        try
+        {
+            var reconcileMessages = await services.GetRequiredService<WorktreeReconciler>().RunAsync();
+            foreach (var message in reconcileMessages)
+                notices.Add("worktree 对账: " + message);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("worktree 启动对账失败", ex);
+        }
+
         // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
         await TryStartA2AAsync(services, target.RootPath, notices);
 
