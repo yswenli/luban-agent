@@ -53,6 +53,7 @@ public static class DatabaseInitializer
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureAttachmentsColumn();
         EnsureA2ATaskTable();
+        EnsureWorktreeSessionTable();
         var dbPath = GetDatabasePath();
 
         return messages;
@@ -304,6 +305,22 @@ public static class DatabaseInitializer
         catch (Exception ex)
         {
             Logger.Error("初始化 A2A 任务表失败", ex);
+        }
+    }
+
+    /// <summary>
+    /// 确保 worktree 会话表存在。
+    /// 现有数据库超过阈值时会跳过 CodeFirst 建表，故此处显式建表（幂等）。
+    /// </summary>
+    private static void EnsureWorktreeSessionTable()
+    {
+        try
+        {
+            new WorktreeSessionRepository().Context.CodeFirst.InitTables<DbWorktreeSession>();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("初始化 worktree 会话表失败", ex);
         }
     }
 
