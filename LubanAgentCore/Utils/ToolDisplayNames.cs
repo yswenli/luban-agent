@@ -58,7 +58,7 @@ public static class ToolDisplayNames
         ["GitRevertAsync"] = "Git 回滚",
         ["GitRestoreAsync"] = "Git 恢复",
         ["GitMergeAsync"] = "Git 合并",
-        ["GitStashAsync"] = "Git 暂存",
+        ["GitStashAsync"] = "Git 储藏",
         ["GitInitAsync"] = "Git 初始化",
         ["GitCloneAsync"] = "Git 克隆",
         ["GitFetchAsync"] = "Git 拉取远端",
