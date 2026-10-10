@@ -58,6 +58,7 @@ public partial class MainWindowViewModel : ObservableObject
     private FlushThrottle? _throttle;
     private AssistantMessageItem? _currentAssistant;
     private ThinkingMessageItem? _currentThinking;
+    private int _currentThinkingRound; // 当前思考块所属的 LLM 轮次号（0=未标注）
     private readonly List<OrchestrationNodeItem> _runningNodes = new();
     private readonly List<string> _pendingAttachmentPaths = new();
     private int _attachmentVersion;
@@ -1387,14 +1388,17 @@ public partial class MainWindowViewModel : ObservableObject
 
             case ThinkingDeltaEvent t:
                 // 思考内容作为独立消息项显示。
-                // 若已输出过正文、当前又产生新的思考，则收尾旧思考块并另起一块，
-                // 使"思考→输出→再思考"按发生顺序交错显示，而非堆积在顶部单块。
-                if (_currentThinking == null || _currentThinking.IsComplete || _currentAssistant != null)
+                // 一个思考块 = 一次 LLM 请求/回复：同一轮内正文夹在思考中间也并入同一块，
+                // 仅当进入下一轮（工具调用后再思考，LlmRound 变化）或当前块已收尾时才另起一块，
+                // 使"思考→工具→思考"跨轮按发生顺序交错，而单轮内不再被正文误切。
+                if (_currentThinking == null || _currentThinking.IsComplete
+                    || (t.LlmRound > 0 && t.LlmRound != _currentThinkingRound))
                 {
                     FlushPending();
                     if (_currentThinking != null)
                         _currentThinking.IsComplete = true;
                     _currentThinking = new ThinkingMessageItem();
+                    _currentThinkingRound = t.LlmRound;
                     Messages.Add(_currentThinking);
                 }
                 _pendingThinking.Append(t.Delta);

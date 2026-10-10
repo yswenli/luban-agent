@@ -20,7 +20,15 @@ namespace LubanAgentCore.Models;
 /// <summary>
 /// 流式事件基类
 /// </summary>
-public abstract record StreamEvent;
+public abstract record StreamEvent
+{
+    /// <summary>
+    /// 产生该事件的 LLM 请求/回复轮次（从 1 开始，按“一次 LLM 请求/回复”计）。
+    /// 由框架在 <c>LuBanAgent.RunStreamingAsync</c> 中以工具结果边界计算后标注；0 表示未标注。
+    /// UI 据此把同一轮的思考内容归并到同一思考块。
+    /// </summary>
+    public int LlmRound { get; init; }
+}
 
 /// <summary>
 /// 文本增量事件

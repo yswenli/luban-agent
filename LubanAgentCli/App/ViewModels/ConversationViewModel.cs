@@ -102,6 +102,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     // 必须是字段而非闭包局部变量——节流器跨会话复用，闭包会把上一会话的状态泄漏到下一会话）
     private ThinkingBlock? _thinkingBlock;
     private bool _thinkingCompleted;
+    private int _currentThinkingRound; // 当前思考块所属的 LLM 轮次号（0=未标注）
     private ActionSpinnerBlock? _currentSpinner;
 
     /// <summary>
@@ -853,6 +854,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         // 重置当前会话的流式状态（字段级，供跨会话复用的节流回调使用）
         _thinkingBlock = null;
         _thinkingCompleted = false;
+        _currentThinkingRound = 0;
         _currentSpinner = null;
         _runningToolBlocks.Clear();
         // 上一轮若异常退出可能残留未收尾的节点块：先停掉动画再清空，避免 Timer 泄漏
@@ -903,6 +905,13 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
                 if (update.Contents is null) continue;
 
+                // 框架已在每个更新上标注 LLM 轮次号（工具结果边界 +1）：据此把同一轮回复的思考归并到同一思考块
+                var llmRound = update.AdditionalProperties is { } roundProps
+                    && roundProps.TryGetValue(LuBanAgent.LlmRoundKey, out var roundValue)
+                    && roundValue is int r
+                        ? r
+                        : 0;
+
                 if (!firstToken)
                 {
                     firstToken = true;
@@ -927,6 +936,14 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                     // ─── 思考过程（仅过滤 null/空串，保留换行等空白 token）───
                     if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {
+                        // 进入新一轮 LLM 回复（LlmRound 变化）→ 收尾上一轮思考块：
+                        // 同一轮内正文夹在思考中间时不再封块（见 FlushPendingTokens），跨轮仍按顺序另起新块。
+                        if (llmRound > 0 && llmRound != _currentThinkingRound)
+                        {
+                            CloseThinkingBlock();
+                            _currentThinkingRound = llmRound;
+                        }
+
                         // 首次思考 → 插入 spinner
                         _dispatcher.Invoke(() =>
                         {
@@ -1341,17 +1358,16 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
             if (answer.Length > 0)
             {
+                // 正文出现仅标记思考块“已完成”（停指示），但不清空引用：
+                // 同一轮内紧随其后的思考仍并入同一块；思考块只在轮次边界
+                // （下一轮思考 / 工具调用 / 流结束，见 CloseThinkingBlock）才收尾另起，
+                // 避免“思考→正文→思考”在单轮内被误切成多块。
                 if (_thinkingBlock is not null && !_thinkingCompleted)
                 {
                     _thinkingCompleted = true;
                     _thinkingBlock.MarkComplete();
                     _doc.NotifyBlockChanged(_thinkingBlock);
                 }
-
-                // 一轮回复产出后关闭当前思考块：后续若再出现思考（工具调用后的第二轮 CoT）
-                // 将创建新的思考块并追加到当前位置，实现“思考→工具→思考→输出”的顺序交织，
-                // 而不是把所有思考堆在对话开头。
-                _thinkingBlock = null;
 
                 _doc.AppendToAnswerBlock(answer);
                 _doc.RelayoutLastBlock();

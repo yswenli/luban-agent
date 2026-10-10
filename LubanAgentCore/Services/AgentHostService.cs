@@ -254,6 +254,13 @@ public class AgentHostService
             {
                 if (update.Contents is null) continue;
 
+                // 框架已在每个更新上标注 LLM 轮次号（工具结果边界 +1）：UI 据此按“同一轮回复”归并思考块
+                var llmRound = update.AdditionalProperties is { } roundProps
+                    && roundProps.TryGetValue(LuBanAgent.LlmRoundKey, out var roundValue)
+                    && roundValue is int r
+                        ? r
+                        : 0;
+
                 foreach (var content in update.Contents)
                 {
                     // 编排进度：规划与节点执行均为长耗时非流式过程，
@@ -262,14 +269,15 @@ public class AgentHostService
                     {
                         yield return OrchestrationProgressEvent.Create(
                             progress.EventType, progress.NodeId, progress.Message,
-                            progress.ElapsedMs, progress.NodeResult, progress.Activity);
+                            progress.ElapsedMs, progress.NodeResult, progress.Activity)
+                            with { LlmRound = llmRound };
                         continue;
                     }
 
                     // 思考过程
                     if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                     {
-                        yield return new ThinkingDeltaEvent(reasoning.Text);
+                        yield return new ThinkingDeltaEvent(reasoning.Text) { LlmRound = llmRound };
                         continue;
                     }
 
@@ -282,7 +290,7 @@ public class AgentHostService
                         yield return new ToolCallStartedEvent(
                             functionCall.Name,
                             functionCall.CallId,
-                            args);
+                            args) { LlmRound = llmRound };
                         continue;
                     }
 
@@ -293,18 +301,18 @@ public class AgentHostService
                         {
                             yield return new ToolCallFailedEvent(
                                 functionResult.CallId,
-                                functionResult.Exception.Message);
+                                functionResult.Exception.Message) { LlmRound = llmRound };
                         }
                         else if (ToolResult.IsUserCancelled(functionResult.Result))
                         {
                             // 拒绝与取消在结果层不可区分：用中性文案，宿主聊天流已分别提示
-                            yield return new ToolCallFailedEvent(functionResult.CallId, "工具调用被拒绝或已取消");
+                            yield return new ToolCallFailedEvent(functionResult.CallId, "工具调用被拒绝或已取消") { LlmRound = llmRound };
                         }
                         else
                         {
                             yield return new ToolCallCompletedEvent(
                                 functionResult.CallId,
-                                SummarizeResult(functionResult.Result));
+                                SummarizeResult(functionResult.Result)) { LlmRound = llmRound };
                         }
                         continue;
                     }
@@ -312,14 +320,14 @@ public class AgentHostService
                     // 正文回复
                     if (content is TextContent text && !string.IsNullOrEmpty(text.Text))
                     {
-                        yield return new TextDeltaEvent(text.Text);
+                        yield return new TextDeltaEvent(text.Text) { LlmRound = llmRound };
                         continue;
                     }
 
                     // 错误
                     if (content is ErrorContent error)
                     {
-                        yield return new ErrorEvent(error.Message);
+                        yield return new ErrorEvent(error.Message) { LlmRound = llmRound };
                         continue;
                     }
 
