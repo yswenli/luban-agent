@@ -54,10 +54,12 @@
 
 > Codex 为单窗口应用，**不需要每窗口容器**；所需的是在**唯一容器**内为每个会话建立嵌套 `IServiceScope`。scope 释放随 `SessionRuntime` 卸载（§4）。
 
+> **复审修订（2026-10-10）— L2 已降级：** 复核确认 Microsoft.Extensions.DependencyInjection **不存在父子/嵌套 scope**——`IServiceScopeFactory`（单例）恒从 root 派生**兄弟** scope，故上图中「L3 嵌套于 L2、共享工作区级服务」无法用原生 DI 实现。经决策采用**降级路线**：取消 L2 工作区级 scope，工作区级服务（`RuleEngine`/`SkillRegistry`/`MCPRegistry`/`ToolPluginRegistry` 等）**直接改为 session-scoped**（每会话一份），复用 P0 的单层会话 scope（root → session）。代价：同一工作区多会话各自加载一份注册表，放弃跨会话共享。下文 §3.1 图、§3.2 `IWorkspaceContext`、§3.3 规则 5、§3.4 注册表行、§9 P1 中的「per-workspace / L2 / 嵌套」表述均按此降级理解。
+
 ### 3.2 上下文契约（新增，放框架 `Abstractions` 供跨仓共用，agent 实现）
 
 - `IUserContext`（root/keyed）：`UserId`。
-- `IWorkspaceContext`（workspace-scoped）：`WorkspaceInfo Current`、`WorkspaceRoot`、按工作区已加载的规则/技能/MCP/检索。
+- `IWorkspaceContext`（原 workspace-scoped，**L2 已降级**）：`WorkspaceInfo Current`、`WorkspaceRoot`、按工作区已加载的规则/技能/MCP/检索。降级后由**会话 scope** 承载（每个会话解析出所属工作区上下文，不跨会话共享实例）。
 - `ISessionContext`（session-scoped）：
   - `SessionInfo Current`
   - `string EffectiveRoot`（有活动 worktree 即 worktree 路径，否则工作区根）
@@ -73,7 +75,7 @@
 2. 停止改写单例 `IOptions<LuBanAgentOptions>.WorkspaceRoot` / `AllowedRoots`；新增 scoped `WorkspaceSessionOptions`，承载二者。
 3. `TempDirectory.Resolver` 静态全局 → 上下文方法 `ResolveTempDirectory()`（按会话、AsyncLocal 按轮设，兼容子代理）；`LuBan.Common` 内 `TempDirectory` 的静态入口改为经上下文解析。
 4. **工具确认 + 插件链整体 scoped**：`ToolConfirmationContext` / `IToolConfirmationService` / `ToolPluginRegistry` / 全部 `ILuBanToolPlugin`（含外部插件）从 singleton 改 scoped——若仅改上下文而插件仍单例，注入会形成 captive dependency（root provider 静默解析，等价单例），隔离失效。
-5. 框架注册表 `RuleEngine`/`SkillRegistry`/`MCPRegistry`（P1）与 `PathGuard`（P0）从 singleton 改 scoped；`PathGuard` 不再读全局 `IOptions.AllowedRoots`，改读 `ISessionContext.AllowedRoots`。
+5. 框架注册表 `RuleEngine`/`SkillRegistry`/`MCPRegistry`（P1）与 `PathGuard`（P0）从 singleton 改 scoped；**L2 降级后三者均为 session-scoped（每会话一份，非 per-workspace 共享）**。`PathGuard` 不再读全局 `IOptions.AllowedRoots`，改读 `ISessionContext.AllowedRoots`。
 6. 插件的工作区根解析（`Func<string?> workspaceRootProvider = () => options.Value.WorkspaceRoot`）改为经 `ISessionContext.EffectiveRoot`。
 7. 非 DI 静态读者（`SessionManager`、`SqliteVectorStore`、`WorkspaceWikiContext`、框架 `SessionChatHistoryProvider`）改为注入 scoped 上下文/依赖，不再读静态。
 8. 宿主启用 `ValidateScopes`（至少开发环境），使任何遗留 captive dependency 在启动/解析时**显式抛错**而非静默降级。
@@ -92,7 +94,7 @@
 | 工具确认 + 插件链 singleton | `LuBanAgentExtensions.cs:48-59,63,103-104`；外部插件 `:191-193` | 全部 scoped（消除 captive） | P0 |
 | `SessionManager._currentSession` | `SessionManager.cs:32,50`；`SessionChatHistoryProvider.cs:74,157` | session-scoped `ISessionContext.Current`；按会话显式传 `sessionId` | P0 |
 | `IOrchestrationProgressSink`（TryAddSingleton） | `LuBanAgentExtensions.cs:119`；Codex 覆盖 `:111-113` | session-scoped，隔离并发事件 | P0 |
-| 框架注册表 singleton + `LoadFromWorkspace` | `LuBanAgentExtensions.cs:66-86` | scoped per-workspace | P1 |
+| 框架注册表 singleton + `LoadFromWorkspace` | `LuBanAgentExtensions.cs:66-86` | scoped（**L2 降级：per-session**，非 per-workspace） | P1 |
 | `ProviderHelper` / `ModelCapabilityRegistry` static | `ProviderHelper.cs:27-53` / `ModelCapabilityRegistry.cs:26-27` | per-user keyed | P2 |
 
 ---
@@ -235,9 +237,10 @@
 
 **边界**：同一工作区多会话**并发**安全；跨工作区可自由切换查看，但**同时运行**留到 P1（P0 跨工作区并发回合退化为串行/临时锁保护）。
 
-### P1 — framework per-workspace 作用域（交付：跨工作区并发，需再发布 framework 包）
-- framework：`RuleEngine`/`SkillRegistry`/`MCPRegistry` singleton→scoped（per-workspace；`PathGuard` 已在 P0 完成）。
-- agent：`WorkspaceManager` 彻底去静态、workspace scope 管理、移除「每轮重载」临时规避。
+### P1 — 工作区级服务去全局化（交付：跨工作区并发，需再发布 framework 包）
+> **L2 已降级（复审修订）：** 因 MS.DI 无嵌套 scope，P1 不再建「工作区级 scope」。`RuleEngine`/`SkillRegistry`/`MCPRegistry` 改为 **session-scoped**（每会话一份）；跨工作区并发由「每会话独立 scope」自然达成。代价：同工作区多会话重复加载注册表。
+- framework：`RuleEngine`/`SkillRegistry`/`MCPRegistry` singleton→scoped（**session-scoped**；并同步把注入它们的 `ContextInjectBuilder` 改 scoped，避免 captive；`PathGuard` 已在 P0 完成）。
+- agent：`WorkspaceManager` 彻底去静态；工作区级服务改由会话 scope 承载（不引入 workspace scope）；移除「每轮重载」临时规避。
 
 ### P2 — CLI 后台并发 + 收尾
 - CLI：会话切换视图 + 后台消息泵，支持后台会话运行。

@@ -12,7 +12,7 @@
 - framework: `D:\WorkBench\Walle\luban\luban-framework`
 - agent: `D:\WorkBench\Walle\luban\luban-agent`
 
-**前置:** P0、P1 完成。开发期 agent 对框架走 `ProjectReference`（提交 `de822af`），本计划 Phase I–M **不发布中间包**；Task I2 仅递增版本号占位。全部验收后由 **Phase N** 统一发包并还原 PackageReference。
+**前置:** P0、P1 完成。开发期 agent 对框架走 `ProjectReference`（提交 `de822af`）。经复审修正：P2 **不修改 framework**（per-user keyed 全部落在 agent），无“递增框架版本号”步骤，Phase I–M **不发布中间包**。全部验收后由 **Phase N** 统一发包 P0/P1 的框架改动并还原 PackageReference。
 
 **依赖顺序:** I（框架 keyed）→ J（agent per-user）→ K（CLI 并发）→ L（清理/调优）→ M（验证）。
 
@@ -20,109 +20,111 @@
 
 ## File Structure
 
-### framework `luban-framework`
-- Modify `LuBan.AIAgent/Providers/ProviderHelper.cs` — 缓存按 userId keyed
-- Modify `LuBan.AIAgent/Models/ModelCapabilityRegistry.cs` — 缓存按 userId/租户 keyed
-- Test `LuBan.XTestProject/AIAgent/PerUserCacheTests.cs`
+> **修正（复审）：** `ProviderHelper`/`ModelCapabilityRegistry` **不在 framework**，实际是 agent 的 `LubanAgentCore/Configuration/` 下的 **static class**（`ProviderHelper.cs:25`、`ModelCapabilityRegistry.cs:24`），数据来自全局 `appsettings`。故 P2 的 per-user keyed 全部落在 **agent**，本阶段**不改 framework**。
 
 ### agent `luban-agent`
+- Modify `LubanAgentCore/Configuration/ProviderHelper.cs` — 可变缓存抽为实例并按 userId keyed
+- Modify `LubanAgentCore/Configuration/ModelCapabilityRegistry.cs` — 可变缓存抽为实例并按 userId keyed
 - Modify `LubanAgentCore/Hosting/AgentHostBuilder.cs` — keyed 注册、清理剩余单例
 - Modify `LubanAgentCore/Services/SessionManager.cs` — 剩余静态/`CurrentSession` 清理
-- Modify `LubanAgentCore/Agents/WorkspaceManager.cs` — 剩余静态清理（若 P1 未覆盖）
+- Modify `LubanAgentCore/Services/WorkspaceManager.cs` — 剩余静态清理（若 P1 未覆盖）
 - Modify `LubanAgentCli/Views/RootView.cs`、`LubanAgentCli/ViewModels/ConversationViewModel.cs` — per-session 视图与后台消息泵
 - Test/冒烟
 
+> **范围提醒：** `ProviderHelper` 全仓约 66 处调用（`ConfigManager`、CLI `ModelCommand`/`ProviderCommand`/`StartupDialog`、Codex `App.axaml.cs`/`SettingsWindow`/`InputBox`）。**不可变预设表**（`_models`/`_displayNames`/`_defaultBaseUrls`/`_providerConfigs`）保持 static；**仅可变状态**（`_fetchedModels`、`_capabilities`/`_persist`）抽为实例 keyed，以控制改动面。
+
 ---
 
-## Phase I — framework：per-user keyed 缓存
+## Phase I — agent：per-user keyed 缓存（ProviderHelper / ModelCapabilityRegistry 实例化）
 
-### Task I1: `ProviderHelper` 缓存 keyed
+> **验证方式：** agent 无自动化测试项目，本 Phase 以「构建 + Task M2 冒烟」为准。若需 TDD，可先建最小测试工程（非本计划强制）。
+
+**决策记录：** 采纳“转为实例并按 `userId` 注册”。仅抽取**可变状态**为实例；不可变预设表保留 static，控制 66 处调用面的改动。
+
+### Task I1: `ProviderHelper` 可变缓存抽为实例 + keyed
 
 **Files:**
-- Modify: `luban-framework/LuBan.AIAgent/Providers/ProviderHelper.cs`
-- Test: `luban-framework/LuBan.XTestProject/AIAgent/PerUserCacheTests.cs`
+- Create `luban-agent/LubanAgentCore/Configuration/ProviderCache.cs` — 持有 `_fetchedModels` 的实例缓存
+- Modify `luban-agent/LubanAgentCore/Configuration/ProviderHelper.cs`
+- Modify `luban-agent/LubanAgentCore/Hosting/AgentHostBuilder.cs` — keyed 注册
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 抽 `ProviderCache`（实例）**
 
 ```csharp
-using LuBan.AIAgent.Providers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+namespace LubanAgentCore.Configuration;
 
-namespace LuBan.UnitTestProject.AIAgent;
-
-[TestClass]
-public class PerUserCacheTests
+/// <summary>按用户隔离的 Provider 可变缓存（刷新得到的模型列表）。</summary>
+public sealed class ProviderCache
 {
-    [TestMethod]
-    public void ProviderCache_IsolatedPerUser()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddKeyedSingleton<ProviderCache>("userA");
-        services.AddKeyedSingleton<ProviderCache>("userB");
-        using var sp = services.BuildServiceProvider();
-        Assert.AreNotSame(sp.GetRequiredKeyedService<ProviderCache>("userA"),
-                          sp.GetRequiredKeyedService<ProviderCache>("userB"));
-        Assert.AreSame(sp.GetRequiredKeyedService<ProviderCache>("userA"),
-                       sp.GetRequiredKeyedService<ProviderCache>("userA"));
-    }
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<string>> _fetchedModels
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<string> GetFetched(string providerKey)
+        => _fetchedModels.TryGetValue(providerKey, out var v) ? v : Array.Empty<string>();
+
+    public void SetFetched(string providerKey, List<string> models) => _fetchedModels[providerKey] = models;
 }
 ```
 
-> 若 `ProviderHelper` 内缓存非独立类型，测试改为断言两 userId 解析出的 provider 实例不同。
+- [ ] **Step 2: `ProviderHelper` 改用缓存访问器**
 
-- [ ] **Step 2: 运行确认失败**
+不可变预设（`_models`/`_displayNames`/`_defaultBaseUrls`/`_providerConfigs`）保持 static。把 `GetModels`/`RefreshModelsAsync`（`:216-290`）中对 `_fetchedModels` 的读写改为经 `ProviderCache`。调用点通过注入的 `IServiceProvider` + `IUserContext.UserId` 解析 `sp.GetRequiredKeyedService<ProviderCache>(userId)`；或在 `ProviderHelper` 增加一个实例门面 `ProviderService`，由调用点注入使用。
 
-Run: `dotnet test luban-framework/LuBan.XTestProject/LuBan.UnitTestProject.csproj --filter "FullyQualifiedName~PerUserCacheTests"`
-Expected: FAIL（当前共享）。
+- [ ] **Step 3: keyed 注册**
 
-- [ ] **Step 3: 改 keyed 注册与取用**
+`AgentHostBuilder.cs` 装配处按当前 `IUserContext.UserId` 注册并解析：
+```csharp
+var userId = sp.GetRequiredService<IUserContext>().UserId ?? "default";
+services.AddKeyedSingleton<ProviderCache>(userId);
+// 解析：sp.GetRequiredKeyedService<ProviderCache>(userId)
+```
 
-把当前共享缓存改为按 `userId` keyed（`AddKeyedSingleton` + `GetRequiredKeyedService`），`ProviderHelper` 取用时传入当前 `userId`。
+- [ ] **Step 4: 构建**
 
-- [ ] **Step 4: 运行确认通过**
-
-Run: `dotnet test luban-framework/LuBan.XTestProject/LuBan.UnitTestProject.csproj --filter "FullyQualifiedName~PerUserCacheTests"`
-Expected: PASS。
+Run: `dotnet build luban-agent/LubanAgentCore/LubanAgentCore.csproj`
+Expected: BUILD 成功（编译报错即列出需改的 66 处调用点）。
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git -C luban-framework add LuBan.AIAgent/Providers/ProviderHelper.cs LuBan.XTestProject/AIAgent/PerUserCacheTests.cs
-git -C luban-framework commit -m "provider 缓存按 userId 隔离"
+git -C luban-agent add LubanAgentCore
+git -C luban-agent commit -m "feat: provider 可变缓存转为按 userId keyed 实例"
 ```
 
 ---
 
-### Task I2: `ModelCapabilityRegistry` 缓存 keyed + 递增版本
+### Task I2: `ModelCapabilityRegistry` 可变缓存抽为实例 + keyed
 
 **Files:**
-- Modify: `luban-framework/LuBan.AIAgent/Models/ModelCapabilityRegistry.cs`
-- Modify: `luban-framework/LuBan.AIAgent/LuBan.AIAgent.csproj:12`
+- Create `luban-agent/LubanAgentCore/Configuration/ModelCapabilityCache.cs`
+- Modify `luban-agent/LubanAgentCore/Configuration/ModelCapabilityRegistry.cs`
+- Modify `luban-agent/LubanAgentCore/Configuration/ConfigManager.cs`、`ModelCapability.cs`（调用点，共 8 处）
 
-- [ ] **Step 1: 缓存按 userId/租户 keyed**（同 I1 模式）。
+- [ ] **Step 1: 抽 `ModelCapabilityCache`（实例）**
 
-- [ ] **Step 2: 回归**
+把 `ModelCapabilityRegistry` 的 `_capabilities` 与 `_persist`（`:26-27`）搬入实例类 `ModelCapabilityCache`；`Initialize`（`:34`）改实例方法。
 
-Run: `dotnet test luban-framework/LuBan.XTestProject/LuBan.UnitTestProject.csproj --filter "FullyQualifiedName~Provider|FullyQualifiedName~ModelCapability"`
-Expected: PASS（环境依赖失败需甄别）。
+- [ ] **Step 2: 调用点改按 userId 解析 keyed 实例**
 
-- [ ] **Step 3: 递增版本号（不发布）**
+`ConfigManager`/`ModelCapability`（`ModelCapabilityRegistry.TryGet`/`Set` 等 8 处调用）改为经注入的 keyed `ModelCapabilityCache`（key=`IUserContext.UserId`）。
 
-- [ ] **Step 4: 构建确认可编译**
+- [ ] **Step 3: keyed 注册**
 
-Run: `dotnet build luban-agent/LubanAgent.slnx`
-Expected: BUILD 成功（经项目引用直接编译框架源码）。
+`services.AddKeyedSingleton<ModelCapabilityCache>(userId);`
+
+- [ ] **Step 4: 构建**
+
+Run: `dotnet build luban-agent/LubanAgentCore/LubanAgentCore.csproj`
+Expected: BUILD 成功。
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git -C luban-framework add LuBan.AIAgent/Models/ModelCapabilityRegistry.cs LuBan.AIAgent/LuBan.AIAgent.csproj
-git -C luban-framework commit -m "模型能力缓存按 userId 隔离并递增版本"
+git -C luban-agent add LubanAgentCore
+git -C luban-agent commit -m "feat: 模型能力缓存转为按 userId keyed 实例"
 ```
 
-> 不发布。最终发包与还原见 Phase N。
+> 本 Phase 不再改动 framework，故无“递增框架版本号”步骤；P0/P1 的框架改动仍由 Phase N 统一发包。
 
 ---
 
@@ -312,10 +314,12 @@ git -C luban-agent commit -m "chore: 验收后框架引用还原为 PackageRefer
 - **Spec 覆盖**：§9 P2（CLI 后台并发、per-user keyed、清理剩余静态、空闲卸载调优）→I/J/K/L；§11 验收→M2；开发期项目引用策略→N（发包+还原）。
 - **占位符**：`<final>` 为 N1 人工发布的版本号，属预期占位，非 TBD。
 - **类型一致性**：keyed 注册与取用 API 一致；CLI 队列/VM 与 P0 `SessionRuntimeManager` 命名一致。
+- **复审修正**：Phase I 原写 framework 路径有误，已改为 agent `LubanAgentCore/Configuration/`；`ProviderHelper`/`ModelCapabilityRegistry` 为 static class，改为「可变状态抽实例 + keyed」，不可变预设保持 static。
 
 ## 已知风险
 
 - CLI 并发须确认 Terminal.Gui 主循环线程安全（更新经 `Application.Invoke` 或队列泵）。
 - keyed 依赖解析需在正确的用户上下文（会话/工作区）内进行，避免解析到错误 userId。
+- **`ProviderHelper` 调用面大（约 66 处）**：仅抽可变状态，若直接把整个 static 类实例化将波及其它 CLI 命令与 Codex 视图；优先用「实例门面 + keyed cache」降低改动面。`ProviderHelper.Initialize`（现由 `ConfigManager` 调用）需改为对每个 userId 的 `ProviderCache` 初始化。
 - **还原为 PackageReference 后必须依赖已发布的最终包**：N2 构建前确认 N1 已发布成功，否则会出现包版本解析失败。
 - 若三阶段期间还改了 `LuBan.DI`/`LuBan.Threading`/`LuBan.Logging`/`LuBan.Orm` 源码，N1 需一并发包并统一版本号，避免混版。

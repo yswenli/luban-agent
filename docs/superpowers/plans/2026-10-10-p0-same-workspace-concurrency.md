@@ -45,7 +45,7 @@
 - Modify `LubanAgentCore/Hosting/AgentHostBuilder.cs:57-118,140` — 注册上下文、Runtime、ValidateScopes、AgentHostService
 - Modify `LubanAgentCore/Services/SessionManager.cs:32,50` — 去 `_currentSession` 静态
 - Modify `LubanAgentCore/Services/WorkspaceManager.cs:146,165,174,203,217,360,396,404,622-647` — 去静态/CWD/options 改写
-- Modify `LubanAgentCore/Services/AgentHostService.cs:23-55,241` — per-session
+- Modify `LubanAgentCore/Services/AgentHostService.cs:23-55,241` — 改无状态路由器（按 sessionId 路由到 SessionRuntime）
 - Create `LubanAgentCore/Agents/...` 或 `Context/AgentContext.cs` — 门面
 - Modify `LubanAgentA2A/Executor/InProcessSubAgentExecutor.cs:44,58` — 去静态确认作用域
 - Modify `LubanAgentCodex/App.axaml.cs:105-158` / `ViewModels/MainWindowViewModel.cs` — 多会话 UI
@@ -228,7 +228,7 @@ public class ScopedPluginChainTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddLuBanAgent(config);
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
     }
 
     [TestMethod]
@@ -285,6 +285,8 @@ services.AddScoped<ILuBanToolPlugin, MCP.MCPToolPlugin>();
 services.AddScoped<ILuBanToolPlugin, Tools.Context.CompactContextToolPlugin>();
 services.AddScoped<ILuBanToolPlugin, Tools.Wiki.WikiToolPlugin>();
 services.AddScoped<ILuBanToolPlugin, Tools.Log.LogToolPlugin>();
+// 条件注册（:142-145，Orchestration.Enabled=true 时）也必须同步改为 scoped，勿遗漏
+// if (orchestrationEnabled) services.AddScoped<ILuBanToolPlugin, Tools.Orchestration.OrchestrationToolPlugin>();
 
 LoadExternalPlugins(services, configuration);
 
@@ -295,9 +297,11 @@ services.AddScoped<ToolPluginRegistry>();
 services.AddScoped<ToolConfirmationContext>();
 services.AddScoped<IToolConfirmationService, ToolConfirmationService>();
 ```
-同时把 `LoadExternalPlugins`（`:191-193`）的 `services.AddSingleton(typeof(ILuBanToolPlugin), type)` 改为 `AddScoped`。
+同时把 `LoadExternalPlugins`（`:191-193`）的 `services.AddSingleton(typeof(ILuBanToolPlugin), type)` 改为 `AddScoped`；把 `:144` 的 `services.AddSingleton<ILuBanToolPlugin, Tools.Orchestration.OrchestrationToolPlugin>();` 改为 `AddScoped`。
 
 > 注意：`PathGuard`（Task A3）与 `IWorktreeCoordinator` 此时也应为 scoped；若本步后 `ValidateScopes` 因其它单例注入 scoped 抛错，先记录，由 A3–A6 逐步消除。
+
+> **前置校验开关**：`ToolConfirmationContext`（`:103`）与 `ContextInjectBuilder`（`:125`）为单例，会把 scoped 依赖 captive。A2 起即在测试辅助 `Build()` 开启 `new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }`，让 captive 在最早阶段暴露；若暴露既有非本任务范围的 captive，记录并最小改动消除。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -461,14 +465,31 @@ Expected: FAIL（`Push`/`StaticTempDirectoryProvider` 不存在）。
 public interface ITempDirectoryProvider
 {
     string GetTempDir();
-    string GetTempFilePath(string prefix, string extension);
+    string GetTempFilePath(string? prefix = null, string? extension = null);
 }
 
-public sealed class StaticTempDirectoryProvider(string dir) : ITempDirectoryProvider
+public sealed class StaticTempDirectoryProvider(string? dir) : ITempDirectoryProvider
 {
-    public string GetTempDir() => dir;
-    public string GetTempFilePath(string prefix, string extension)
-        => System.IO.Path.Combine(dir, $"{prefix}_{DateTime.Now:yyyyMMddHHmmss}_{Guid.NewGuid():N}"[..(prefix.Length + 1 + 14 + 1 + 8)] + extension);
+    public string GetTempDir()
+    {
+        if (string.IsNullOrEmpty(dir)) return Path.GetTempPath();
+        try
+        {
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            return dir!;
+        }
+        catch { return Path.GetTempPath(); } // 自定义目录不可用时回退系统临时目录
+    }
+
+    public string GetTempFilePath(string? prefix = null, string? extension = null)
+        => TempDirectory.BuildTempFilePath(GetTempDir(), prefix, extension);
+}
+
+internal sealed class DefaultTempDirectoryProvider : ITempDirectoryProvider
+{
+    public string GetTempDir() => Path.GetTempPath();
+    public string GetTempFilePath(string? prefix = null, string? extension = null)
+        => TempDirectory.BuildTempFilePath(GetTempDir(), prefix, extension);
 }
 
 public static class TempDirectory
@@ -486,7 +507,45 @@ public static class TempDirectory
     }
 
     public static string GetTempDir() => Current.GetTempDir();
-    public static string GetTempFilePath(string prefix, string extension) => Current.GetTempFilePath(prefix, extension);
+
+    // 保留旧签名与默认值语义（prefix 空→temp，extension 空→.tmp，时间戳含毫秒）
+    public static string GetTempFilePath(string? prefix = null, string? extension = null)
+        => Current.GetTempFilePath(prefix, extension);
+
+    /// <summary>仅清理自定义目录（非系统临时目录），保留原 IsFileInUse 并发保护。</summary>
+    public static void Cleanup(TimeSpan maxAge)
+    {
+        var dir = Current.GetTempDir();
+        if (string.Equals(
+                Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+            return; // 系统临时目录不清理
+        if (!Directory.Exists(dir)) return;
+        var cutoff = DateTime.Now - maxAge;
+        foreach (var file in Directory.EnumerateFiles(dir))
+        {
+            try
+            {
+                if (File.GetLastWriteTime(file) >= cutoff) continue;
+                if (IsFileInUse(file)) continue;
+                File.Delete(file);
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>生成 {prefix}_{yyyyMMddHHmmssfff}_{8位guid}{ext} 路径（不创建文件）。</summary>
+    internal static string BuildTempFilePath(string dir, string? prefix, string? extension)
+    {
+        var safePrefix = string.IsNullOrWhiteSpace(prefix) ? "temp" : prefix;
+        var ext = string.IsNullOrWhiteSpace(extension) ? ".tmp" : extension;
+        var stamp = DateTime.Now.ToString("yyyyMMddHHmmssfff");
+        var shortId = Guid.NewGuid().ToString("N").Substring(0, 8);
+        return Path.Combine(dir, $"{safePrefix}_{stamp}_{shortId}{ext}");
+    }
+
+    private static bool IsFileInUse(string filePath) { /* 原实现照搬 */ }
 
     private sealed class Restore(Action action) : IDisposable
     {
@@ -495,16 +554,21 @@ public static class TempDirectory
     }
 }
 ```
-`DefaultTempDirectoryProvider` 保留原静态实现（原 `GetTempDir`/`GetTempFilePath` 逻辑搬入）。删除旧的 `public static Func<string?>? Resolver`（或其 `get/set` 改为转发 `_current` 以兼容：`set => _current.Value = value is null ? null : new StaticTempDirectoryProvider(value())`）。
+`DefaultTempDirectoryProvider`/`StaticTempDirectoryProvider` 复用原 `GetTempDir` 的“回退系统临时目录”逻辑；`Cleanup` 与 `IsFileInUse` 从原实现照搬（仅把目录来源由 `Resolver` 改为 `Current`）。**删除旧的 `public static Func<string?>? Resolver`**（不再提供进程级全局解析器）。
 
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `dotnet test luban-framework/LuBan.XTestProject/LuBan.UnitTestProject.csproj --filter "FullyQualifiedName~TempDirectoryScopeTests"`
 Expected: PASS。
 
-- [ ] **Step 5: 修复 `WorkspaceManager.cs:174` 的 `TempDirectory.Resolver` 写入（编译断点）**
+- [ ] **Step 5: 修复 `WorkspaceManager.cs:174` 的 `TempDirectory.Resolver` 写入（编译断点，跨仓库）**
 
-该处写入 `Resolver` 的代码删除；改由 agent 在 `SessionRuntime` 每轮 `TempDirectory.Push(...)`（见 Task B4）。若本步不能立即删除，暂改为 `TempDirectory.Resolver = () => ...` 兼容 setter。
+framework 删除 `Resolver` 后，agent `WorkspaceManager` 静态构造（`:172-183`）会编译失败（ProjectReference 直接编译框架源码）。删除该静态构造中对 `TempDirectory.Resolver` 的赋值；临时目录改由 agent 在 `SessionRuntime` 每轮 `TempDirectory.Push(...)`（见 Task B4）。本步含一笔 agent 提交：
+
+```bash
+git -C luban-agent add LubanAgentCore/Services/WorkspaceManager.cs
+git -C luban-agent commit -m "refactor: 移除 TempDirectory 全局解析器写入（改按会话作用域 Push）"
+```
 
 - [ ] **Step 6: 提交**
 
@@ -515,11 +579,15 @@ git -C luban-framework commit -m "TempDirectory 支持按作用域 Push 覆盖"
 
 ---
 
-### Task A5: `SessionChatHistoryProvider` 依赖会话上下文
+### Task A5: 框架内 `CurrentSession` 消费点改依赖会话上下文
 
 **Files:**
 - Modify: `luban-framework/LuBan.AIAgent/Sessions/SessionChatHistoryProvider.cs:26-32,74,157`
+- Modify: `luban-framework/LuBan.AIAgent/LuBanAgent.cs:176`（遗漏点：`_sessionManager?.CurrentSession`）
+- Modify: `luban-framework/LuBan.AIAgent/Tools/Context/CompactContextToolPlugin.cs:127`（遗漏点：`_sessionManager.CurrentSession?.SessionId`）
 - Test: `luban-framework/LuBan.XTestProject/AIAgent/SessionHistoryScopeTests.cs`
+
+> 说明：A5 必须覆盖框架内**全部** `ISessionManager.CurrentSession` 消费点，避免 P0 去静态后仍有会话串写。`ISessionManager.CurrentSession`（`ISessionManager.cs:123`）可保留于接口，但不再被这三处读取。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -552,6 +620,12 @@ Expected: FAIL。
 
 在 `SessionChatHistoryProvider` 构造注入 `ISessionContext sessionContext`，删除对 `_sessionManager.CurrentSession` 的依赖（保留 `ISessionManager` 仅用于其它需要的方法；若无其它用途则一并移除）。把 `:74`、`:157` 的 `_sessionManager.CurrentSession?.SessionId` 改为 `_sessionContext.SessionId`。
 
+同样处理另两处：
+- `LuBanAgent.cs:176`：`_sessionManager?.CurrentSession` 改为经注入/已有的 `ISessionContext`（`LuBanAgent` 为 scoped，可注入）。
+- `CompactContextToolPlugin.cs:127`：`_sessionManager.CurrentSession?.SessionId` 改为 `ISessionContext.SessionId`（该插件 A2 已改 scoped，可注入 `ISessionContext`）。
+
+把提交的 `git add` 一并包含这两个文件（Step 5 提交命令同步补全）。
+
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `dotnet test luban-framework/LuBan.XTestProject/LuBan.UnitTestProject.csproj --filter "FullyQualifiedName~SessionHistoryScopeTests"`
@@ -560,8 +634,8 @@ Expected: PASS。
 - [ ] **Step 5: 提交**
 
 ```bash
-git -C luban-framework add LuBan.AIAgent/Sessions/SessionChatHistoryProvider.cs LuBan.XTestProject/AIAgent/SessionHistoryScopeTests.cs
-git -C luban-framework commit -m "会话历史提供者改为依赖会话上下文"
+git -C luban-framework add LuBan.AIAgent/Sessions/SessionChatHistoryProvider.cs LuBan.AIAgent/LuBanAgent.cs LuBan.AIAgent/Tools/Context/CompactContextToolPlugin.cs LuBan.XTestProject/AIAgent/SessionHistoryScopeTests.cs
+git -C luban-framework commit -m "框架内当前会话消费点改为依赖会话上下文"
 ```
 
 ---
@@ -898,7 +972,7 @@ git -C luban-agent commit -m "refactor: SessionManager 去除当前会话静态�
 
 - [ ] **Step 3: 删除 `IOptions` 改写**
 
-删除 `:404`（写 `WorkspaceRoot`）、`:622-647`（写 `AllowedRoots`）与 `:174`（写 `TempDirectory.Resolver`）。三者改由 `SessionRuntime` 在进入会话/轮次时写入 `SessionContextState` 与 `TempDirectory.Push(...)`。
+删除 `:404`（写 `WorkspaceRoot`）、`:622-647`（写 `AllowedRoots`）。二者改由 `SessionRuntime` 在进入会话/轮次时写入 `SessionContextState`；`:174` 的 `TempDirectory.Resolver` 写入已在 **A4 Step 5** 删除（此处勿重复）。
 
 - [ ] **Step 4: `IsWithinWorkspace`(static) 改实例/上下文**
 
@@ -984,7 +1058,17 @@ public sealed class SessionRuntime : IAsyncDisposable
     }
 }
 ```
-`RuntimeTurn` 定义为 `sealed class RuntimeTurn { public string Text; public Action<ISessionContext, CancellationToken>? RunAsync; ... }`——实际运行委托由 `AgentHostService` 提供（调用 `_agent.RunStreamingAsync` 并把事件推入该会话事件流）。
+`RuntimeTurn` 定义（委托须为 `Func<...Task>` 才能 `await`，且需携带本轮 `CancellationToken`）：
+
+```csharp
+public sealed class RuntimeTurn
+{
+    public required string Text { get; init; }
+    public required Func<ISessionContext, CancellationToken, Task> RunAsync { get; init; }
+    public CancellationToken CancellationToken { get; init; }
+}
+```
+实际运行委托由 `AgentHostService` 提供（调用 `_agent.RunStreamingAsync` 并把事件推入该会话事件流）；`ProcessLoopAsync` 中 `await turn.RunAsync(SessionContext, turn.CancellationToken)` 与上述签名一致。
 
 - [ ] **Step 2: 新增 `SessionRuntimeManager`**
 
@@ -1047,19 +1131,23 @@ git -C luban-agent commit -m "feat: 新增会话运行时与运行时管理器�
 
 ---
 
-### Task B5: `AgentHostService` per-session 并纳入 DI
+### Task B5: `AgentHostService` 改为无状态路由器并纳入 DI
 
 **Files:**
 - Modify: `luban-agent/LubanAgentCore/Services/AgentHostService.cs:23-55,241`
 - Modify: `luban-agent/LubanAgentCore/Hosting/AgentHostBuilder.cs`（注册）
+- Modify: `luban-agent/LubanAgentCodex/ViewModels/MainWindowViewModel.cs:286`（改从 DI 取用）
 
-- [ ] **Step 1: 改造为 per-session**
+**生命周期决策（消除原自相矛盾）：** `AgentHostService` 保持 **Singleton**，但**不再持有任何 per-session 状态**——它是无状态路由器，内部持有 `SessionRuntimeManager`（singleton），把 `RunStreamingAsync(sessionId, text, ...)` 路由到对应 `SessionRuntime` 排队执行；每会话运行态全部在 `SessionRuntime` 的会话 scope 内。
 
-`AgentHostService` 不再持有单一 `_agent`；改为在指定会话的 `SessionRuntime`/`ISessionScope` 上按需构建 `LuBanAgent`（经 scoped `ILuBanAgentFactory`）。`RunStreamingAsync` 接收 `sessionId`，经由 `SessionRuntime.EnqueueAsync` 串行执行；每轮 `ConfigureForTurn` 作用于该会话的 scoped `ToolConfirmationContext`（`AgentHostService.cs:241`）。
+- [ ] **Step 1: 改造为无状态路由器**
 
-- [ ] **Step 2: 注册到 DI**
+`AgentHostService` 删除单一 `_agent` 字段与 `Reset()` 重建语义；`RunStreamingAsync` 接收 `sessionId`，`SessionRuntime` 经 `SessionRuntimeManager.Get(sessionId)` 取用，经 `SessionRuntime.EnqueueAsync` 串行执行；每轮 `ConfigureForTurn` 作用于该会话 scope 解析出的 scoped `ToolConfirmationContext`（`AgentHostService.cs:241`）。
 
-`AgentHostBuilder.cs`：`services.AddSingleton<AgentHostService>();`（或在会话 scope 内 scoped，取决于 UI 取法；与 Task D 保持一致）。修 `SettingsWindow.axaml.cs:1673` 取用路径。
+- [ ] **Step 2: 注册到 DI 并修取用路径**
+
+`AgentHostBuilder.cs`：`services.AddSingleton<AgentHostService>();`。
+`MainWindowViewModel.cs:286` 的 `new AgentHostService(services)` 改为构造注入或 `services.GetRequiredService<AgentHostService>()`；`SettingsWindow.axaml.cs:1673` 的 `GetRequiredService<AgentHostService>()` 随之可用。
 
 - [ ] **Step 3: 构建**
 
