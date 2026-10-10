@@ -42,6 +42,7 @@ public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
     private MessageStream? _messageStream;
+    private System.Collections.ObjectModel.ObservableCollection<MessageItemBase>? _boundMessages;
     private InputBox? _inputBox;
     private Sidebar? _sidebar;
     private FooterBar? _footerBar;
@@ -87,12 +88,8 @@ public partial class MainWindow : Window
             // 初始化页脚数据提供者
             _footerDataProvider = new LubanAgentCodex.Services.FooterDataProvider(services);
 
-            // 绑定消息流
-            if (_messageStream != null)
-            {
-                _messageStream.SetMessages(_viewModel.Messages);
-                _viewModel.Messages.CollectionChanged += OnMessagesChanged;
-            }
+            // 绑定消息流（会话切换时 Messages 引用变化，经 PropertyChanged 重绑）
+            BindMessageStream();
 
             // 绑定输入框
             if (_inputBox != null)
@@ -150,6 +147,11 @@ public partial class MainWindow : Window
                     {
                         _inputBox.IsRunning = _viewModel.IsRunning;
                     }
+                    else if (e.PropertyName == nameof(MainWindowViewModel.Messages))
+                    {
+                        // 切换会话：Messages 引用变化，重新绑定消息流并订阅新集合
+                        BindMessageStream();
+                    }
                     else if (e.PropertyName == nameof(MainWindowViewModel.IsSwitchingSession)
                         || e.PropertyName == nameof(MainWindowViewModel.BusyOverlayVisible)
                         || e.PropertyName == nameof(MainWindowViewModel.BusyOverlayText))
@@ -187,6 +189,28 @@ public partial class MainWindow : Window
 
         // 更新页脚
         UpdateFooter();
+    }
+
+    /// <summary>
+    /// 绑定/重绑消息流到 ViewModel 当前的 Messages 集合。
+    /// 切换会话时 Messages 引用变化，需退订旧集合并订阅新集合，避免消息投递到已切走的会话。
+    /// </summary>
+    private void BindMessageStream()
+    {
+        if (_messageStream == null) return;
+
+        var messages = _viewModel?.Messages;
+        if (ReferenceEquals(_boundMessages, messages)) return;
+
+        if (_boundMessages != null)
+            _boundMessages.CollectionChanged -= OnMessagesChanged;
+
+        _boundMessages = messages;
+
+        if (_boundMessages == null) return;
+
+        _messageStream.SetMessages(_boundMessages);
+        _boundMessages.CollectionChanged += OnMessagesChanged;
     }
 
     /// <summary>

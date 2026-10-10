@@ -44,22 +44,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// 编排进度出口（DI 单例）。编排由工具调用触发、执行在工具内部，进度不经对话流，
-    /// 故每轮 ConsumeStreamAsync 期间订阅其事件、结束后退订。
+    /// 由各 <see cref="SessionViewModel"/> 在运行期间自行订阅/退订。
     /// </summary>
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
 
-    private CancellationTokenSource? _cts;
-    private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
+    // 每会话运行态：键为 sessionId，值为该会话独立的 ViewModel（消息流 + 运行态）
+    private readonly Dictionary<string, SessionViewModel> _sessions = new(StringComparer.Ordinal);
+    private SessionViewModel? _currentSession;
+    private static readonly ObservableCollection<MessageItemBase> EmptyMessages = new();
 
-    // 本轮是否因用户拒绝工具确认而终止：用于取消收尾时区分「已拒绝，本轮终止」与「已取消」
-    private volatile bool _deniedByUser;
-    private readonly StringBuilder _pendingText = new();
-    private readonly StringBuilder _pendingThinking = new();
-    private FlushThrottle? _throttle;
-    private AssistantMessageItem? _currentAssistant;
-    private ThinkingMessageItem? _currentThinking;
-    private int _currentThinkingRound; // 当前思考块所属的 LLM 轮次号（0=未标注）
-    private readonly List<OrchestrationNodeItem> _runningNodes = new();
     private readonly List<string> _pendingAttachmentPaths = new();
     private int _attachmentVersion;
     private Task _attachmentRefreshTask = Task.CompletedTask;
@@ -243,10 +236,14 @@ public partial class MainWindowViewModel : ObservableObject
     private string _inputText = "";
 
     /// <summary>
-    /// 是否正在运行
+    /// 当前会话是否正在运行（转发自 <see cref="CurrentSession"/>；切换会话时同步通知）
     /// </summary>
-    [ObservableProperty]
-    private bool _isRunning;
+    public bool IsRunning => _currentSession?.IsRunning ?? false;
+
+    /// <summary>
+    /// 当前选中会话（其消息流即 <see cref="Messages"/>）
+    /// </summary>
+    public SessionViewModel? CurrentSession => _currentSession;
 
     /// <summary>
     /// 是否正在切换会话（用于显示中央加载提示）
@@ -273,9 +270,9 @@ public partial class MainWindowViewModel : ObservableObject
     private ToolPermissionMode _permissionMode = ToolPermissionMode.Default;
 
     /// <summary>
-    /// 消息集合
+    /// 当前会话的消息集合（转发；切换会话时触发 <c>PropertyChanged</c> 供视图重新绑定）
     /// </summary>
-    public ObservableCollection<MessageItemBase> Messages { get; } = new();
+    public ObservableCollection<MessageItemBase> Messages => _currentSession?.Messages ?? EmptyMessages;
 
     /// <summary>
     /// 构造函数
@@ -302,7 +299,14 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task SendAsync()
     {
-        if (IsRunning || (string.IsNullOrWhiteSpace(InputText) && _pendingAttachmentPaths.Count == 0))
+        var session = EnsureCurrentSession();
+        if (session is null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "未设置当前会话", IsError = true });
+            return;
+        }
+
+        if (session.IsRunning || (string.IsNullOrWhiteSpace(InputText) && _pendingAttachmentPaths.Count == 0))
             return;
 
         var input = InputText.Trim();
@@ -357,86 +361,19 @@ public partial class MainWindowViewModel : ObservableObject
         PendingAttachments = Array.Empty<AttachmentDisplayInfo>();
         AttachmentsChanged?.Invoke(this, EventArgs.Empty);
 
-        IsRunning = true;
         InputText = "";
 
-        // 添加用户消息
-        Messages.Add(new UserMessageItem { Content = input, Attachments = displayInfos });
-
-        // 注意：不预创建 AssistantMessageItem，正文项在首个 TextDeltaEvent 到达时懒创建，
-        // 确保它排在思考内容/工具卡片之后（修复显示顺序错乱）
-
-        // 新一轮开始：清除上一轮的拒绝终止标志
-        _deniedByUser = false;
-
-        _cts = new CancellationTokenSource();
-        var runSeq = Interlocked.Increment(ref _activeRunSeq); // 本次对话运行序号；取消/新对话将使其失效
-
-        // 新回合开始：清空上一回合遗留的运行中节点（节点卡片保留在消息流中作为历史）
-        _runningNodes.Clear();
-
-        // 初始化节流器：回调投递到 UI 线程执行，与事件处理天然串行
-        _throttle ??= new FlushThrottle(
-            () => Dispatcher.UIThread.Post(FlushPending),
-            TimeSpan.FromMilliseconds(50));
-
-        try
-        {
-            // 关键：消费循环放后台线程，避免确认回调阻塞 UI 线程导致死锁；
-            // 事件本身全部投递到 UI 线程按序处理（Dispatcher 队列 FIFO 保序）
-            await Task.Run(() => ConsumeStreamAsync(input, sendingPaths, _cts.Token, runSeq));
-        }
-        catch (OperationCanceledException)
-        {
-            Messages.Add(new SystemMessageItem { Content = _deniedByUser ? "已拒绝，本轮终止" : "已取消" });
-        }
-        catch (AgentApiException apiEx)
-        {
-            // 框架已完成错误分类：只渲染友好文案，原始异常进日志
-            Messages.Add(new SystemMessageItem
-            {
-                Content = apiEx.Error.FriendlyMessage,
-                IsError = true
-            });
-        }
-        catch (Exception ex)
-        {
-            Messages.Add(new SystemMessageItem
-            {
-                Content = $"错误: {ex.Message}",
-                IsError = true
-            });
-        }
-        finally
-        {
-            // 收尾同样投递到 UI 线程，排在所有已投递事件之后执行
-            Dispatcher.UIThread.Post(() =>
-            {
-                FlushPending();
-                CompleteCurrentItems();
-                // 回合收尾：把仍标记为运行中的节点落定为结束态，避免卡片一直显示"运行中"
-                foreach (var node in _runningNodes)
-                {
-                    node.IsComplete = true;
-                }
-                _runningNodes.Clear();
-                IsRunning = false;
-            });
-            var cts = _cts;
-            _cts = null;
-            cts?.Dispose();
-        }
+        // 交由该会话独立运行：切换显示不影响其后台继续推进
+        await session.SendAsync(input, sendingPaths, displayInfos);
     }
 
     /// <summary>
     /// 初始化工作区 AGENTS.md：把生成提示词投入聊天流，落盘后追加校验提示。
-    /// 复用与 <see cref="SendAsync"/> 相同的运行态装配（IsRunning / 取消 / 节流）。
+    /// 复用会话 ViewModel 的运行态装配（IsRunning / 取消 / 节流）。
     /// </summary>
     /// <param name="options">表单收集的生成选项</param>
     public async Task RunInitAgentsMdAsync(AgentsMdOptions options)
     {
-        if (IsRunning) return;
-
         var initializer = Services.GetRequiredService<IAgentsMdInitializer>();
         var workspaceManager = Services.GetRequiredService<IWorkspaceManager>();
         var workspace = workspaceManager.CurrentWorkspace;
@@ -445,6 +382,9 @@ public partial class MainWindowViewModel : ObservableObject
             Messages.Add(new SystemMessageItem { Content = "未设置当前工作区", IsError = true });
             return;
         }
+
+        var session = EnsureCurrentSession();
+        if (session is null || session.IsRunning) return;
 
         if (!_agentHost.IsInitialized)
         {
@@ -475,17 +415,9 @@ public partial class MainWindowViewModel : ObservableObject
             Content = $"初始化工作区 AGENTS.md：{options.AgentName}（{options.AgentScene}，{options.OutputMode}）"
         });
 
-        IsRunning = true;
-        _cts = new CancellationTokenSource();
-        var runSeq = Interlocked.Increment(ref _activeRunSeq);
-        _runningNodes.Clear();
-        _throttle ??= new FlushThrottle(
-            () => Dispatcher.UIThread.Post(FlushPending),
-            TimeSpan.FromMilliseconds(50));
-
         try
         {
-            var text = await Task.Run(() => ConsumeStreamAsync(prompt, Array.Empty<string>(), _cts.Token, runSeq));
+            var text = await session.RunPromptAsync(prompt);
 
             var markdown = initializer.Normalize(text);
             if (string.IsNullOrWhiteSpace(markdown))
@@ -495,7 +427,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             var targetPath = initializer.GetTargetPath(workspace);
-            await initializer.WriteAsync(workspace, markdown, _cts.Token);
+            await initializer.WriteAsync(workspace, markdown, CancellationToken.None);
 
             Messages.Add(new SystemMessageItem { Content = $"已生成 {targetPath}" });
             Messages.Add(new SystemMessageItem { Content = initializer.BuildVerificationPrompt(targetPath) });
@@ -512,23 +444,58 @@ public partial class MainWindowViewModel : ObservableObject
             var message = ex is AgentApiException apiEx ? apiEx.Error.FriendlyMessage : ex.Message;
             Messages.Add(new SystemMessageItem { Content = $"错误: {message}", IsError = true });
         }
-        finally
+    }
+
+    /// <summary>
+    /// 取当前会话对应的会话 ViewModel 并设为当前选中；无当前会话时返回 null。
+    /// </summary>
+    private SessionViewModel? EnsureCurrentSession()
+    {
+        var sessionId = Services.GetService<ISessionManager>()?.CurrentSession?.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        var session = GetOrCreateSession(sessionId);
+        SetCurrentSession(session);
+        return session;
+    }
+
+    /// <summary>
+    /// 按 sessionId 获取或创建会话 ViewModel。
+    /// </summary>
+    private SessionViewModel GetOrCreateSession(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
         {
-            Dispatcher.UIThread.Post(() =>
-            {
-                FlushPending();
-                CompleteCurrentItems();
-                foreach (var node in _runningNodes)
-                {
-                    node.IsComplete = true;
-                }
-                _runningNodes.Clear();
-                IsRunning = false;
-            });
-            var cts = _cts;
-            _cts = null;
-            cts?.Dispose();
+            session = new SessionViewModel(sessionId, _agentHost, _orchestrationSink, () => PermissionMode);
+            _sessions[sessionId] = session;
         }
+        return session;
+    }
+
+    /// <summary>
+    /// 切换当前选中会话：转发消息集合与运行状态，并通知视图重新绑定消息流。
+    /// </summary>
+    private void SetCurrentSession(SessionViewModel session)
+    {
+        if (ReferenceEquals(_currentSession, session))
+            return;
+
+        if (_currentSession is not null)
+            _currentSession.PropertyChanged -= OnCurrentSessionPropertyChanged;
+
+        _currentSession = session;
+        _currentSession.PropertyChanged += OnCurrentSessionPropertyChanged;
+
+        OnPropertyChanged(nameof(CurrentSession));
+        OnPropertyChanged(nameof(Messages));
+        OnPropertyChanged(nameof(IsRunning));
+    }
+
+    private void OnCurrentSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SessionViewModel.IsRunning))
+            OnPropertyChanged(nameof(IsRunning));
     }
 
     /// <summary>
@@ -537,11 +504,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Cancel()
     {
-        if (_cts == null)
-            return;
-        // 失效当前运行序号：丢弃取消后迟到的旧事件（避免下次输入仍执行上次对话）
-        Interlocked.Increment(ref _activeRunSeq);
-        _cts.Cancel();
+        // 仅取消当前会话；其他会话若在后台运行则继续
+        _currentSession?.Cancel();
     }
 
     /// <summary>
@@ -1281,332 +1245,34 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 后台消费流式事件：只负责转发，全部事件按到达顺序投递到 UI 线程
-    /// </summary>
-    /// <returns>本回合累积的正文文本（供 AGENTS.md 等需要拿到完整输出的场景复用）</returns>
-    private async Task<string> ConsumeStreamAsync(
-        string input, IReadOnlyList<string> attachmentPaths, CancellationToken ct, int runSeq)
-    {
-        var plannedCount = 0;
-        var sb = new StringBuilder();
-
-        // 编排进度出口：执行在工具内部、不经对话流，故本轮订阅、结束退订；
-        // 迟到事件按运行序号丢弃（可能来自并行节点线程，需编组到 UI 线程）
-        Action<OrchestrationProgressEvent>? onProgress = _orchestrationSink is null
-            ? null
-            : p => Dispatcher.UIThread.Post(() =>
-            {
-                if (runSeq != _activeRunSeq) return;
-                HandleOrchestrationProgress(p);
-            });
-        if (_orchestrationSink is not null && onProgress is not null)
-            _orchestrationSink.Progress += onProgress;
-
-        try
-        {
-            await foreach (var evt in _agentHost.RunStreamingAsync(
-                input,
-                attachmentPaths,
-                ConfirmCallback,
-                PermissionMode,
-                onPlannedAction: (tool, args) =>
-                {
-                    if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
-                    Interlocked.Increment(ref plannedCount);
-                    var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
-                    Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
-                },
-                onUserDenied: (tool, args) =>
-                {
-                    // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
-                    if (runSeq != _activeRunSeq) return;
-                    _deniedByUser = true;
-                    _cts?.Cancel();
-                },
-                ct: ct))
-            {
-                var e = evt;
-                if (e is TextDeltaEvent delta)
-                    sb.Append(delta.Delta);
-                Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
-            }
-
-            if (runSeq == _activeRunSeq)
-                ReportPlannedActions(Volatile.Read(ref plannedCount));
-
-            return sb.ToString();
-        }
-        finally
-        {
-            if (_orchestrationSink is not null && onProgress is not null)
-                _orchestrationSink.Progress -= onProgress;
-        }
-    }
-
-    /// <summary>
-    /// Plan 模式回合结束汇总：本轮计划项均未执行，提示切换模式后重新发起。
-    /// </summary>
-    /// <param name="plannedCount">本轮收集到的计划项数量。</param>
-    private void ReportPlannedActions(int plannedCount)
-    {
-        if (PermissionMode != ToolPermissionMode.Plan || plannedCount <= 0)
-        {
-            return;
-        }
-
-        Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem
-        {
-            Content = $"📋 Plan 模式：本轮记录 {plannedCount} 个计划项，均未执行。"
-                + "切换到 default / accept-edits 后重新发送即可执行。"
-        }));
-    }
-
-    /// <summary>
-    /// UI 线程上串行处理流式事件，保证消息流显示顺序：
-    /// 思考 → 工具调用 → 工具结果 → ... → 最终正文
-    /// </summary>
-    private void HandleStreamEvent(StreamEvent evt, int runSeq)
-    {
-        // 运行序号防护：取消或新对话发起后，迟到的旧事件一律丢弃，
-        // 避免"按 Esc 取消后，下次输入仍继续执行上次对话"。
-        if (runSeq != _activeRunSeq)
-            return;
-
-        switch (evt)
-        {
-            case TextDeltaEvent t:
-                // 正文项懒创建：首个文本到达时才插入，确保排在思考/工具之后
-                if (_currentAssistant == null || _currentAssistant.IsComplete)
-                {
-                    FlushPending();
-                    _currentAssistant = new AssistantMessageItem();
-                    Messages.Add(_currentAssistant);
-                }
-                _pendingText.Append(t.Delta);
-                _throttle?.Schedule();
-                break;
-
-            case ThinkingDeltaEvent t:
-                // 思考内容作为独立消息项显示。
-                // 一个思考块 = 一次 LLM 请求/回复：同一轮内正文夹在思考中间也并入同一块，
-                // 仅当进入下一轮（工具调用后再思考，LlmRound 变化）或当前块已收尾时才另起一块，
-                // 使"思考→工具→思考"跨轮按发生顺序交错，而单轮内不再被正文误切。
-                if (_currentThinking == null || _currentThinking.IsComplete
-                    || (t.LlmRound > 0 && t.LlmRound != _currentThinkingRound))
-                {
-                    FlushPending();
-                    if (_currentThinking != null)
-                        _currentThinking.IsComplete = true;
-                    _currentThinking = new ThinkingMessageItem();
-                    _currentThinkingRound = t.LlmRound;
-                    Messages.Add(_currentThinking);
-                }
-                _pendingThinking.Append(t.Delta);
-                _throttle?.Schedule();
-                break;
-
-            case ToolCallStartedEvent tc:
-                FlushPending();
-                CompleteCurrentItems();
-                Messages.Add(new ToolCallItem
-                {
-                    ToolName = tc.Name,
-                    CallId = tc.CallId,
-                    Arguments = tc.Arguments,
-                    State = ToolCallState.Running
-                });
-                break;
-
-            case ToolCallCompletedEvent tcc:
-                UpdateToolCallState(tcc.CallId, ToolCallState.Done, null, tcc.ResultSummary);
-                break;
-
-            case ToolCallFailedEvent tcf:
-                UpdateToolCallState(tcf.CallId, ToolCallState.Failed, tcf.Error, null);
-                break;
-
-            case ErrorEvent e:
-                Messages.Add(new SystemMessageItem { Content = e.Message, IsError = true });
-                break;
-
-            case OrchestrationProgressEvent p:
-                HandleOrchestrationProgress(p);
-                break;
-        }
-    }
-
-    /// <summary>
-    /// 处理编排进度事件：节点级事件渲染为可点击的节点卡片（点击查看子代理详情），
-    /// 其余事件追加一行系统提示，让规划/反思等长耗时阶段有实时反馈。
-    /// （渲染口径与 CLI 的 HandleOrchestrationProgress 对齐）
-    /// </summary>
-    /// <param name="progress">编排进度事件。</param>
-    private void HandleOrchestrationProgress(OrchestrationProgressEvent progress)
-    {
-        // 节点开始：插入节点卡片，后续活动/完成事件按 NodeId 回填
-        if (progress.EventType == ProgressEventType.NodeStarted)
-        {
-            var nodeBlock = new OrchestrationNodeItem
-            {
-                NodeId = progress.NodeId ?? "",
-                Description = progress.Message ?? progress.NodeId ?? "子任务"
-            };
-            _runningNodes.Add(nodeBlock);
-            Messages.Add(nodeBlock);
-            return;
-        }
-
-        // 节点活动：把子代理想法/工具调用/结果追加到对应节点卡片
-        if (progress.EventType == ProgressEventType.NodeActivity)
-        {
-            if (progress.Activity is null)
-                return;
-            FindNode(progress.NodeId)?.AppendActivity(progress.Activity);
-            return;
-        }
-
-        // 节点结束：收尾节点卡片（命中则不再追加系统提示行）
-        if (progress.EventType is ProgressEventType.NodeCompleted or ProgressEventType.NodeFailed or ProgressEventType.NodeSkipped)
-        {
-            var nodeBlock = FindNode(progress.NodeId);
-            if (nodeBlock != null)
-            {
-                nodeBlock.ElapsedSeconds = progress.ElapsedSeconds.GetValueOrDefault();
-                if (progress.EventType == ProgressEventType.NodeFailed)
-                {
-                    nodeBlock.IsFailed = true;
-                    nodeBlock.Error = progress.Error;
-                }
-                else if (progress.EventType == ProgressEventType.NodeSkipped)
-                {
-                    nodeBlock.IsSkipped = true;
-                }
-                else
-                {
-                    nodeBlock.IsComplete = true;
-                }
-                _runningNodes.Remove(nodeBlock);
-                return;
-            }
-        }
-
-        var text = progress.EventType switch
-        {
-            ProgressEventType.PlanningStarted => $"⏳ {progress.Message ?? "正在规划任务…"}",
-            ProgressEventType.PlanningCompleted => $"▸ {progress.Message ?? "任务图谱已生成"}",
-            ProgressEventType.NodeStarted => $"▶ 开始执行: {progress.Message ?? progress.NodeId}",
-            ProgressEventType.NodeCompleted => $"✓ {progress.Message ?? progress.NodeId} · {progress.ElapsedSeconds.GetValueOrDefault():F1}s",
-            ProgressEventType.NodeFailed => $"✗ {progress.Message ?? progress.NodeId} · {progress.Error ?? "失败"}",
-            ProgressEventType.NodeSkipped => $"− {progress.Message ?? progress.NodeId} · 已跳过（前驱失败）",
-            ProgressEventType.ReflectionStarted => $"↻ {progress.Message ?? "反思重规划"}",
-            _ => null
-        };
-
-        if (text is null)
-            return;
-
-        Messages.Add(new SystemMessageItem
-        {
-            Content = text,
-            IsError = progress.EventType == ProgressEventType.NodeFailed
-        });
-    }
-
-    /// <summary>
-    /// 按节点标识查找运行中的节点卡片；未提供 NodeId 时退化为最近一个未结束的节点
-    /// </summary>
-    /// <param name="nodeId">节点标识。</param>
-    /// <returns>节点卡片，未命中返回 null。</returns>
-    private OrchestrationNodeItem? FindNode(string? nodeId)
-    {
-        if (!string.IsNullOrEmpty(nodeId))
-            return _runningNodes.FirstOrDefault(n => string.Equals(n.NodeId, nodeId, StringComparison.Ordinal));
-
-        return _runningNodes.LastOrDefault(n => !n.IsComplete && !n.IsFailed);
-    }
-
-    /// <summary>
-    /// 结束当前思考/正文消息项（仅 UI 线程调用）
-    /// </summary>
-    private void CompleteCurrentItems()
-    {
-        if (_currentThinking != null)
-        {
-            _currentThinking.IsComplete = true;
-            _currentThinking = null;
-        }
-        if (_currentAssistant != null)
-        {
-            _currentAssistant.IsComplete = true;
-            _currentAssistant = null;
-        }
-    }
-
-    /// <summary>
-    /// 更新工具调用卡片状态（仅 UI 线程调用）
-    /// </summary>
-    private void UpdateToolCallState(string callId, ToolCallState state, string? error, string? resultSummary)
-    {
-        for (var i = Messages.Count - 1; i >= 0; i--)
-        {
-            if (Messages[i] is ToolCallItem tool && tool.CallId == callId)
-            {
-                // 必须先写错误信息/结果摘要再改状态：ToolCallCard 只订阅 State，
-                // State 的 setter 会同步触发渲染，若此时 ErrorMessage/ResultSummary 尚未赋值，
-                // 卡片会永远显示兜底文案「工具执行失败」而丢掉真实原因/结果摘要。
-                tool.ErrorMessage = error;
-                tool.ResultSummary = resultSummary;
-                tool.State = state;
-                break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 刷新待显示的增量（仅 UI 线程调用，直接同步追加，顺序确定）
-    /// </summary>
-    private void FlushPending()
-    {
-        if (_pendingText.Length > 0)
-        {
-            var text = _pendingText.ToString();
-            _pendingText.Clear();
-            _currentAssistant?.AppendDelta(text);
-        }
-
-        if (_pendingThinking.Length > 0)
-        {
-            var thinking = _pendingThinking.ToString();
-            _pendingThinking.Clear();
-            _currentThinking?.AppendDelta(thinking);
-        }
-    }
-
-    /// <summary>
-    /// 加载会话历史
+    /// 加载会话历史：切换当前会话并展示其消息流。
+    /// 已存在的会话 ViewModel 保留其内存消息（避免清空后台运行中的会话），仅在首次创建时从存储回填。
     /// </summary>
     /// <param name="sessionId">会话ID</param>
     public async Task LoadSessionHistoryAsync(string sessionId)
     {
-        if (IsRunning) return;
-
         IsSwitchingSession = true;
         try
         {
             var sessionManager = _agentHost.Services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
             await sessionManager.SetCurrentSessionAsync(sessionId);
 
-            Messages.Clear();
-
             // 切换会话：丢弃上一会话遗留的待发附件
             ClearPendingAttachments();
+
+            var isNew = !_sessions.ContainsKey(sessionId);
+            var session = GetOrCreateSession(sessionId);
+            SetCurrentSession(session);
+
+            if (!isNew)
+                return;
 
             var messages = await sessionManager.GetLatestMessagesAsync(sessionId, 50);
             foreach (var msg in messages.OrderBy(m => m.CreatedAt))
             {
                 if (msg.Role == "user")
                 {
-                    Messages.Add(new UserMessageItem
+                    session.Messages.Add(new UserMessageItem
                     {
                         Content = msg.Content,
                         Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
@@ -1614,7 +1280,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
                 else if (msg.Role == "assistant")
                 {
-                    Messages.Add(new AssistantMessageItem
+                    session.Messages.Add(new AssistantMessageItem
                     {
                         Content = msg.Content,
                         Thinking = msg.Thinking ?? "",
@@ -1630,64 +1296,11 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 清空消息流
+    /// 清空当前会话消息流
     /// </summary>
     public void ClearMessages()
     {
-        Messages.Clear();
-        _runningNodes.Clear();
+        _currentSession?.Clear();
         ClearPendingAttachments();
-    }
-
-    private ConfirmResult ConfirmCallback(string toolName, IReadOnlyDictionary<string, object?> args)
-    {
-        using var done = new ManualResetEventSlim(false);
-        var result = ConfirmResult.Deny;
-
-        var ct = _cts?.Token ?? CancellationToken.None;
-        using var ctr = ct.CanBeCanceled ? ct.Register(() => done.Set()) : default;
-
-        // 工具确认改为模态对话框：在 UI 线程弹出并等待选择，agent 线程阻塞在 done 上
-        Dispatcher.UIThread.Post(async () =>
-        {
-            try
-            {
-                var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-                result = await Dialogs.ShowToolConfirmAsync(owner, toolName, args, ct);
-                Messages.Add(new SystemMessageItem { Content = FormatConfirmRecord(toolName, result) });
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn($"工具确认对话框异常，按拒绝处理: {ex.Message}");
-                result = ConfirmResult.Deny;
-            }
-            finally
-            {
-                done.Set();
-            }
-        });
-
-        // 无限期等待用户响应；Esc/终止时经 ct 注册提前唤醒（ct 可取消时抛 OCE，由 SendAsync 收尾）
-        if (ct.CanBeCanceled)
-            done.Wait(ct);
-        else
-            done.Wait();
-
-        return result;
-    }
-
-    /// <summary>
-    /// 确认结果在消息流留痕，如「已允许 执行命令」
-    /// </summary>
-    private static string FormatConfirmRecord(string toolName, ConfirmResult result)
-    {
-        var action = ToolDisplayNames.GetAction(toolName);
-        return result switch
-        {
-            ConfirmResult.Allow => $"已允许 {action}",
-            ConfirmResult.AllowAll => $"已允许 {action}（本轮全部允许）",
-            ConfirmResult.AllowSession => $"已允许 {action}（本会话全部允许）",
-            _ => $"已拒绝 {action}"
-        };
     }
 }
