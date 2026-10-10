@@ -42,7 +42,7 @@ This isn't science fiction—this is **LuBan Agent**.
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 10 Built-in Tool Groups
+### 🛠️ 11 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
@@ -55,6 +55,7 @@ This isn't science fiction—this is **LuBan Agent**.
 | 🔌 **MCP External Tools** | Connect external MCP servers and merge their tools into the Agent toolset |
 | 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents to run in parallel/serial |
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
+| 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
 
 ### 🎯 Skill System
 Nine core built-in skills, plug and play:
@@ -974,7 +975,7 @@ Available tools for github:
 - 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines new" prompt
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
-- 🛠️ **10 Built-in Tool Groups** cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, and the LLM Wiki knowledge base (opt-in)
+- 🛠️ **11 Built-in Tool Groups** cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, the LLM Wiki knowledge base (opt-in), and large log analysis
 - ⚠️ **ToolConfirmationService** requires confirmation for out-of-workspace path access and sensitive operations (write, delete, execute), with this-time/turn/session grant tiers (inline InlineChoiceBlock, Y/N/A/S)
 - 🔒 **FileSystemToolOptions.AllowedRoots** together with workspace roots forms the trusted scope; operations inside it need no confirmation
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution
