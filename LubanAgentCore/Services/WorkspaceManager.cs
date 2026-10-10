@@ -166,23 +166,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private static readonly object _currentLock = new();
 
     /// <summary>
-    /// 静态构造：将临时文件统一重定向到当前工作区的 .luban-agent/temp 目录。
-    /// 工作区不存在时回退到系统临时目录。
-    /// </summary>
-    static WorkspaceManager()
-    {
-        TempDirectory.Resolver = () =>
-        {
-            var ws = Current;
-            if (!string.IsNullOrEmpty(ws?.RootPath) && !string.IsNullOrEmpty(ws?.ConfigPath))
-            {
-                return Path.Combine(ws.RootPath, ws.ConfigPath, "temp");
-            }
-            return null;
-        };
-    }
-
-    /// <summary>
     /// 已知工作区根路径缓存（工作区ID → 根路径），用于同步解析非当前工作区。
     /// 在 <see cref="ToWorkspaceInfo"/>（创建/切换/列举工作区）时写入。
     /// </summary>
