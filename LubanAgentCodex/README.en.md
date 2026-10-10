@@ -47,11 +47,12 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 11 Built-in Tool Groups
+### 🛠️ 12 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
-| 📁 **File System Tools** | Read, write, list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
+| 📁 **File System Tools** | Read, write, edit (single/multi/replace-all), list, search, copy, move, delete; allowed directly inside the workspace, paths outside require confirmation |
+| 🌿 **Git Tools** | Status, diff, log, branch, stage, commit, merge, rebase, push — 26 fine-grained tools in total |
 | 🔧 **Script Execution Tools** | Execute Shell, Lua, Python scripts |
 | 🌍 **Web Tools** | Send HTTP requests to get web content |
 | 🔍 **Semantic Retrieval Tools** | Index local code/documents, search relevant fragments by semantics |
@@ -61,6 +62,8 @@ This is not science fiction, this is **LuBan Agent Codex**.
 | 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents in parallel/serial |
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 | 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
+
+> **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups; specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
 ### 🎯 Skill System
 Built-in nine core skills, plug and play:
@@ -763,7 +766,7 @@ github available tools:
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **11 Built-in Tool Groups**: Cover browser automation, file operations, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, the LLM Wiki knowledge base (opt-in), and large log analysis
+- 🛠️ **12 Built-in Tool Groups**: Cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, the LLM Wiki knowledge base (opt-in), and large log analysis
 - ⚠️ **Dangerous Operation Confirmation**: Requires user confirmation for out-of-workspace path access and sensitive operations (write, delete, execute), with this-time/turn/session grant tiers
 - 🔒 **Path Authorization**: In-workspace paths need no confirmation; out-of-workspace paths are allowed after confirmation, with grants remembered per path root
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix

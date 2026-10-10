@@ -11,7 +11,9 @@
 *创建人：yswenli
 *创建时间：2026/9/14
 *描述：框架工具方法名到中文动作名的映射，CLI/GUI 双端共用。
-*精确匹配优先；未命中时去掉 Async 后缀回退，仍无结果则返回原名。
+*      运行时工具名经 Microsoft.Extensions.AI 的 AIFunctionFactory 注册后
+*      会被剥离 async 方法的 Async 后缀（如 ReadFileAsync → ReadFile），
+*      故查表前统一先剥离尾部 Async；未命中则返回原名。
 *
 *****************************************************************************/
 namespace LubanAgentCore.Utils;
@@ -22,120 +24,194 @@ namespace LubanAgentCore.Utils;
 /// </summary>
 public static class ToolDisplayNames
 {
+    private const string AsyncSuffix = "Async";
+
     private static readonly Dictionary<string, string> Map = new(StringComparer.Ordinal)
     {
         // FileSystem
-        ["ReadFileAsync"] = "读取文件",
-        ["WriteFileAsync"] = "写入文件",
-        ["ListDirectoryAsync"] = "浏览目录",
-        ["GetWorkspaceOverviewAsync"] = "检索工作区",
-        ["DeleteFileAsync"] = "删除文件",
-        ["DeleteDirectoryAsync"] = "删除目录",
-        ["SearchFilesAsync"] = "搜索文件",
-        ["GrepAsync"] = "全仓搜索",
-        ["CreateDirectoryAsync"] = "创建目录",
-        ["CopyFileAsync"] = "复制文件",
-        ["MoveFileAsync"] = "移动文件",
-        ["GetFileInfoAsync"] = "获取文件信息",
+        ["ReadFile"] = "读取文件",
+        ["WriteFile"] = "写入文件",
+        ["ListDirectory"] = "浏览目录",
+        ["GetWorkspaceOverview"] = "检索工作区",
+        ["DeleteFile"] = "删除文件",
+        ["DeleteDirectory"] = "删除目录",
+        ["SearchFiles"] = "搜索文件",
+        ["Grep"] = "全仓搜索",
+        ["CreateDirectory"] = "创建目录",
+        ["CopyFile"] = "复制文件",
+        ["MoveFile"] = "移动文件",
+        ["GetFileInfo"] = "获取文件信息",
+        // FileSystem（Edit）
+        ["EditFile"] = "编辑文件",
+        ["MultiEditFile"] = "批量编辑",
+        // Git
+        ["GitStatus"] = "Git 状态",
+        ["GitDiff"] = "Git 差异",
+        ["GitLog"] = "Git 日志",
+        ["GitShow"] = "Git 查看",
+        ["GitBranchList"] = "列出分支",
+        ["GitRemoteList"] = "列出远端",
+        ["GitBlame"] = "Git 追溯",
+        ["GitStashList"] = "列出暂存",
+        ["GitAdd"] = "Git 暂存",
+        ["GitCommit"] = "Git 提交",
+        ["GitCheckout"] = "Git 检出",
+        ["GitSwitch"] = "Git 切换",
+        ["GitBranchCreate"] = "创建分支",
+        ["GitCherryPick"] = "Git 拣选",
+        ["GitRevert"] = "Git 回滚",
+        ["GitRestore"] = "Git 恢复",
+        ["GitMerge"] = "Git 合并",
+        ["GitStash"] = "Git 储藏",
+        ["GitInit"] = "Git 初始化",
+        ["GitClone"] = "Git 克隆",
+        ["GitFetch"] = "Git 拉取远端",
+        ["GitPull"] = "Git 拉取",
+        ["GitPush"] = "Git 推送",
+        ["GitReset"] = "Git 重置",
+        ["GitRebase"] = "Git 变基",
+        ["GitClean"] = "Git 清理",
+        // MCP 资源
+        ["mcp_list_resources"] = "列出 MCP 资源",
+        ["mcp_read_resource"] = "读取 MCP 资源",
         // LocalMemory
-        ["SaveAsync"] = "保存记忆",
-        ["SearchAsync"] = "搜索记忆",
-        ["ListAsync"] = "列出记忆",
-        ["DeleteAsync"] = "删除记忆",
+        ["Save"] = "保存记忆",
+        ["Search"] = "搜索记忆",
+        ["List"] = "列出记忆",
+        ["Delete"] = "删除记忆",
         // Browser
-        ["NavigateAsync"] = "打开网页",
-        ["ClickAsync"] = "点击元素",
-        ["TypeTextAsync"] = "输入文本",
-        ["ScreenshotAsync"] = "页面截图",
-        ["GetContentAsync"] = "获取页面内容",
-        ["WaitForSelectorAsync"] = "等待元素",
-        ["GetCurrentUrlAsync"] = "获取页面地址",
+        ["Navigate"] = "打开网页",
+        ["Click"] = "点击元素",
+        ["TypeText"] = "输入文本",
+        ["Screenshot"] = "页面截图",
+        ["GetContent"] = "获取页面内容",
+        ["WaitForSelector"] = "等待元素",
+        ["GetCurrentUrl"] = "获取页面地址",
         // Web
-        ["FetchUrlAsync"] = "抓取网页",
+        ["FetchUrl"] = "抓取网页",
         // Script
-        ["RunShellAsync"] = "执行命令",
-        ["RunLuaAsync"] = "执行 Lua",
-        ["RunPythonAsync"] = "执行 Python",
+        ["RunShell"] = "执行命令",
+        ["RunLua"] = "执行 Lua",
+        ["RunPython"] = "执行 Python",
         // Retrieval
-        ["IndexDirectoryAsync"] = "索引目录",
-        ["IndexContentAsync"] = "索引内容",
-        ["SearchCodeAsync"] = "代码检索",
-        ["GetIndexStatsAsync"] = "获取索引统计",
+        ["IndexDirectory"] = "索引目录",
+        ["IndexContent"] = "索引内容",
+        ["SearchCode"] = "代码检索",
+        ["GetIndexStats"] = "获取索引统计",
         // Orchestration
         ["plan_task"] = "规划任务",
         ["run_orchestration"] = "执行编排",
         // Context
-        ["CompactContextAsync"] = "压缩上下文",
+        ["CompactContext"] = "压缩上下文",
     };
 
     /// <summary>
     /// 返回工具的中文动作名；未命中时回退到去掉 Async 后缀的方法名或原名。
     /// </summary>
-    /// <param name="toolName">框架工具方法名（如 GrepAsync）。</param>
+    /// <param name="toolName">运行时工具名（如 Grep；兼容带 Async 后缀的方法名如 GrepAsync）。</param>
     /// <returns>中文动作名（如"全仓搜索"）。</returns>
     public static string GetAction(string toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName)) return "执行工具";
-        if (Map.TryGetValue(toolName, out var action)) return action;
-        return toolName.EndsWith("Async", StringComparison.Ordinal)
-            ? toolName[..^5]
-            : toolName;
+        var normalized = Normalize(toolName);
+        return Map.TryGetValue(normalized, out var action) ? action : normalized;
     }
 
     private static readonly Dictionary<string, string> IconMap = new(StringComparer.Ordinal)
     {
         // FileSystem
-        ["ReadFileAsync"] = "📄",
-        ["WriteFileAsync"] = "✏️",
-        ["ListDirectoryAsync"] = "📂",
-        ["GetWorkspaceOverviewAsync"] = "🗂️",
-        ["DeleteFileAsync"] = "🗑️",
-        ["DeleteDirectoryAsync"] = "🗑️",
-        ["SearchFilesAsync"] = "🔎",
-        ["GrepAsync"] = "🔎",
-        ["CreateDirectoryAsync"] = "📁",
-        ["CopyFileAsync"] = "📤",
-        ["MoveFileAsync"] = "📦",
-        ["GetFileInfoAsync"] = "ℹ️",
+        ["ReadFile"] = "📄",
+        ["WriteFile"] = "✏️",
+        ["ListDirectory"] = "📂",
+        ["GetWorkspaceOverview"] = "🗂️",
+        ["DeleteFile"] = "🗑️",
+        ["DeleteDirectory"] = "🗑️",
+        ["SearchFiles"] = "🔎",
+        ["Grep"] = "🔎",
+        ["CreateDirectory"] = "📁",
+        ["CopyFile"] = "📤",
+        ["MoveFile"] = "📦",
+        ["GetFileInfo"] = "ℹ️",
+        // FileSystem（Edit）
+        ["EditFile"] = "✏️",
+        ["MultiEditFile"] = "🛠️",
+        // Git
+        ["GitStatus"] = "🌿",
+        ["GitDiff"] = "🌿",
+        ["GitLog"] = "🌿",
+        ["GitShow"] = "🌿",
+        ["GitBranchList"] = "🌿",
+        ["GitRemoteList"] = "🌿",
+        ["GitBlame"] = "🌿",
+        ["GitStashList"] = "🌿",
+        ["GitAdd"] = "🌿",
+        ["GitCommit"] = "🌿",
+        ["GitCheckout"] = "🌿",
+        ["GitSwitch"] = "🌿",
+        ["GitBranchCreate"] = "🌿",
+        ["GitCherryPick"] = "🌿",
+        ["GitRevert"] = "🌿",
+        ["GitRestore"] = "🌿",
+        ["GitMerge"] = "🌿",
+        ["GitStash"] = "🌿",
+        ["GitInit"] = "🌿",
+        ["GitClone"] = "🌿",
+        ["GitFetch"] = "🌿",
+        ["GitPull"] = "🌿",
+        ["GitPush"] = "🌿",
+        ["GitReset"] = "🌿",
+        ["GitRebase"] = "🌿",
+        ["GitClean"] = "🌿",
+        // MCP 资源
+        ["mcp_list_resources"] = "📦",
+        ["mcp_read_resource"] = "📦",
         // LocalMemory
-        ["SaveAsync"] = "💾",
-        ["SearchAsync"] = "🧠",
-        ["ListAsync"] = "📋",
-        ["DeleteAsync"] = "🗑️",
+        ["Save"] = "💾",
+        ["Search"] = "🧠",
+        ["List"] = "📋",
+        ["Delete"] = "🗑️",
         // Browser
-        ["NavigateAsync"] = "🌐",
-        ["ClickAsync"] = "🖱️",
-        ["TypeTextAsync"] = "⌨️",
-        ["ScreenshotAsync"] = "📸",
-        ["GetContentAsync"] = "📄",
-        ["WaitForSelectorAsync"] = "⏱️",
-        ["GetCurrentUrlAsync"] = "🔗",
+        ["Navigate"] = "🌐",
+        ["Click"] = "🖱️",
+        ["TypeText"] = "⌨️",
+        ["Screenshot"] = "📸",
+        ["GetContent"] = "📄",
+        ["WaitForSelector"] = "⏱️",
+        ["GetCurrentUrl"] = "🔗",
         // Web
-        ["FetchUrlAsync"] = "🕷️",
+        ["FetchUrl"] = "🕷️",
         // Script
-        ["RunShellAsync"] = "⚙️",
-        ["RunLuaAsync"] = "📜",
-        ["RunPythonAsync"] = "🐍",
+        ["RunShell"] = "⚙️",
+        ["RunLua"] = "📜",
+        ["RunPython"] = "🐍",
         // Retrieval
-        ["IndexDirectoryAsync"] = "📚",
-        ["IndexContentAsync"] = "📝",
-        ["SearchCodeAsync"] = "🔍",
-        ["GetIndexStatsAsync"] = "📊",
+        ["IndexDirectory"] = "📚",
+        ["IndexContent"] = "📝",
+        ["SearchCode"] = "🔍",
+        ["GetIndexStats"] = "📊",
         // Orchestration
         ["plan_task"] = "🧩",
         ["run_orchestration"] = "🚀",
         // Context
-        ["CompactContextAsync"] = "📦",
+        ["CompactContext"] = "📦",
     };
 
     /// <summary>
     /// 返回工具对应的 emoji 图标；未命中时返回 🔧。
     /// </summary>
-    /// <param name="toolName">框架工具方法名（如 GrepAsync）。</param>
+    /// <param name="toolName">运行时工具名（如 Grep；兼容带 Async 后缀的方法名如 GrepAsync）。</param>
     /// <returns>emoji 图标（如"🔎"）。</returns>
     public static string GetIcon(string toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName)) return "🔧";
-        return IconMap.TryGetValue(toolName, out var icon) ? icon : "🔧";
+        return IconMap.TryGetValue(Normalize(toolName), out var icon) ? icon : "🔧";
     }
+
+    /// <summary>
+    /// 剥离尾部 Async 后缀，使带/不带后缀的工具名都能命中映射表。
+    /// </summary>
+    private static string Normalize(string toolName)
+        => toolName.EndsWith(AsyncSuffix, StringComparison.Ordinal)
+            ? toolName[..^AsyncSuffix.Length]
+            : toolName;
 }
