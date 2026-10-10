@@ -19,7 +19,8 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-		<!-- TEMP-LOCAL-VERIFY: 本地联调临时改为 ProjectReference，提交前必须还原为 PackageReference -->
+		<!-- TEMP-LOCAL-VERIFY: P0/P1/P2 开发期框架走项目引用，避免反复发本 nupkg；
+		     三阶段全部验收后统一发最终版本包并还原为 PackageReference（见 P2 计划 Phase N） -->
 		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 	</ItemGroup>
 </Project>

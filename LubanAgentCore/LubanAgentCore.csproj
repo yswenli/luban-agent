@@ -6,13 +6,14 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="LuBan.Common" Version="2026.10.9.1" />
-		<PackageReference Include="LuBan.DI" Version="2026.10.9.1" />
-		<PackageReference Include="LuBan.Threading" Version="2026.10.9.1" />
-		<PackageReference Include="LuBan.Logging" Version="2026.10.9.1" />
-		<PackageReference Include="LuBan.Orm" Version="2026.10.9.1" />
-		<!-- TEMP-LOCAL-VERIFY: 本地联调临时改为 ProjectReference，提交前必须还原为 PackageReference -->
+		<!-- TEMP-LOCAL-VERIFY: P0/P1/P2 开发期框架一律走项目引用，避免反复发本 nupkg；
+		     三阶段全部验收后统一发最终版本包并还原为 PackageReference（见 P2 计划 Phase N） -->
 		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+		<ProjectReference Include="..\..\luban-framework\LuBan.Common\LuBan.Common.csproj" />
+		<ProjectReference Include="..\..\luban-framework\LuBan.DI\LuBan.DI.csproj" />
+		<ProjectReference Include="..\..\luban-framework\LuBan.Threading\LuBan.Threading.csproj" />
+		<ProjectReference Include="..\..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
+		<ProjectReference Include="..\..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
