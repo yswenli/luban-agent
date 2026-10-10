@@ -138,6 +138,18 @@ public interface IWorkspaceManager
     /// <param name="name">新的显示名</param>
     /// <returns>是否执行了重命名；工作区ID 或名称为空白时返回 false。</returns>
     Task<bool> RenameWorkspaceAsync(string workspaceId, string name);
+
+    /// <summary>
+    /// 按工作区ID取已加载过的根路径；未知或空ID返回 null（同步，供 wiki 等同步接口使用）。
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    string? GetKnownRootPath(string? workspaceId);
+
+    /// <summary>
+    /// 判断路径是否在当前工作区根目录内（供工具确认回调判断是否需要人工确认）。
+    /// </summary>
+    /// <param name="path">要检查的路径</param>
+    bool IsWithinWorkspace(string path);
 }
 
 /// <summary>
@@ -153,43 +165,27 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly WorkspaceRepository _repo;
     private readonly SessionRepository _sessionRepo;
     private readonly ISessionManager _sessionManager;
-    private readonly IOptions<LuBanAgentOptions> _options;
     private readonly IEnumerable<ISkill> _builtinSkills;
     private readonly IEnumerable<IRule> _builtinRules;
 
-    /// <summary>
-    /// 工作区注入的 PathGuard roots（仅记录工作区注入部分，避免误删全局 roots）
-    /// </summary>
-    private readonly HashSet<string> _injectedRoots = new(StringComparer.OrdinalIgnoreCase);
-
-    private static WorkspaceInfo? _current;
-    private static readonly object _currentLock = new();
+    /// <summary>当前工作区（实例级；由宿主按需切换，不再作为静态全局状态）。</summary>
+    private WorkspaceInfo? _current;
+    private readonly object _currentLock = new();
 
     /// <summary>
     /// 已知工作区根路径缓存（工作区ID → 根路径），用于同步解析非当前工作区。
     /// 在 <see cref="ToWorkspaceInfo"/>（创建/切换/列举工作区）时写入。
     /// </summary>
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _knownRoots =
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _knownRoots =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 按工作区ID取已加载过的根路径；未知或空ID返回 null。
     /// 供 <see cref="Agents.WorkspaceWikiContext.WorkspaceRootFor"/> 这类同步接口使用（避免 sync-over-async）。
     /// </summary>
-    public static string? GetKnownRootPath(string? workspaceId)
+    public string? GetKnownRootPath(string? workspaceId)
         => string.IsNullOrEmpty(workspaceId) ? null
             : _knownRoots.TryGetValue(workspaceId, out var root) ? root : null;
-
-    /// <summary>
-    /// 当前工作区（静态访问，供非 DI 组件如 SqliteVectorStore、SessionManager 使用）
-    /// </summary>
-    public static WorkspaceInfo? Current
-    {
-        get
-        {
-            lock (_currentLock) return _current;
-        }
-    }
 
     /// <summary>
     /// 判断路径是否在当前工作区根目录内。
@@ -197,9 +193,10 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     /// <param name="path">要检查的路径。</param>
     /// <returns>若当前存在工作区且路径在其根目录子树内返回 true，否则返回 false。</returns>
-    public static bool IsWithinWorkspace(string path)
+    public bool IsWithinWorkspace(string path)
     {
-        var ws = Current;
+        WorkspaceInfo? ws;
+        lock (_currentLock) ws = _current;
         if (ws == null || string.IsNullOrEmpty(ws.RootPath) || string.IsNullOrEmpty(path))
             return false;
 
@@ -252,7 +249,13 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// <summary>
     /// 当前工作区
     /// </summary>
-    public WorkspaceInfo? CurrentWorkspace => Current;
+    public WorkspaceInfo? CurrentWorkspace
+    {
+        get
+        {
+            lock (_currentLock) return _current;
+        }
+    }
 
     /// <summary>当前工作区变更时触发（参数为新工作区）。</summary>
     public event Action<WorkspaceInfo>? CurrentWorkspaceChanged;
@@ -264,14 +267,12 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         WorkspaceRepository repo,
         SessionRepository sessionRepo,
         ISessionManager sessionManager,
-        IOptions<LuBanAgentOptions> options,
         IEnumerable<ISkill> builtinSkills,
         IEnumerable<IRule> builtinRules)
     {
         _repo = repo;
         _sessionRepo = sessionRepo;
         _sessionManager = sessionManager;
-        _options = options;
         _builtinSkills = builtinSkills;
         _builtinRules = builtinRules;
     }
@@ -319,14 +320,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     public async Task SwitchWorkspaceAsync(string workspaceId)
     {
-        // 1. 移除上一工作区的 RootPath（仅工作区注入部分，保留全局配置）
-        WorkspaceInfo? previous;
-        lock (_currentLock) previous = _current;
-
-        if (previous != null && previous.IsAuthorized)
-            RemoveWorkspaceRootFromPathGuard(previous.RootPath);
-
-        // 2. 加载新工作区
+        // 1. 加载新工作区（工作区根不再注入进程级 PathGuard/工作目录，
+        //    改由每会话的 ISessionContext 承载，避免全局静态状态被并发会话串改）
         var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
         if (ws == null) throw new InvalidOperationException($"工作区不存在: {workspaceId}");
 
@@ -334,16 +329,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         lock (_currentLock) _current = newCurrent;
         CurrentWorkspaceChanged?.Invoke(newCurrent);
 
-        // 3. 注入新工作区的 RootPath（如果已授权）
-        if (newCurrent.IsAuthorized)
-            AddWorkspaceRootToPathGuard(newCurrent.RootPath);
-
-        // 4. 设置进程当前工作目录为工作区根目录
-        //    使 PathGuard 的相对路径解析、脚本工具的默认 workingDirectory 都指向工作区
-        SetCurrentDirectory(newCurrent.RootPath);
-
-        // 5. 恢复最近活跃会话；无会话时自动创建“新会话”。
-        //    SessionChatHistoryProvider 依赖 CurrentSession 持久化对话与恢复历史，置空会导致每轮对话孤立。
+        // 3. 恢复最近活跃会话；无会话时自动创建“新会话”。
         //    失败兜底：宁可无会话（可见、可恢复），也不能保留上一工作区会话（静默串写数据）。
         try
         {
@@ -351,7 +337,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             if (latest != null)
                 await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
             else
-                await _sessionManager.CreateSessionAsync(userId: "default", title: "新会话");
+                await _sessionManager.CreateSessionAsync(userId: "default", title: "新会话", workspaceId: workspaceId);
         }
         catch (Exception ex)
         {
@@ -364,27 +350,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         // 7. 更新 LastActiveAt
         await _repo.UpdateLastActiveAtAsync(workspaceId);
-    }
-
-    /// <summary>
-    /// 设置进程当前工作目录（使相对路径和脚本默认工作目录指向工作区根目录），
-    /// 同时把工作区根目录写入 <see cref="LuBanAgentOptions.WorkspaceRoot"/>，
-    /// 供编排子系统向子代理注入路径上下文（子代理不继承父 Agent 的系统提示词）。
-    /// </summary>
-    private void SetCurrentDirectory(string rootPath)
-    {
-        try
-        {
-            if (Directory.Exists(rootPath))
-                Directory.SetCurrentDirectory(rootPath);
-        }
-        catch
-        {
-            // 工作目录设置失败不阻断工作区切换，仅影响相对路径解析
-        }
-
-        // 无论 SetCurrentDirectory 是否成功都显式记录工作区根，避免子代理拿到过期/错误路径
-        _options.Value.WorkspaceRoot = rootPath;
     }
 
     /// <summary>
@@ -428,8 +393,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             }
         }
 
-        AddWorkspaceRootToPathGuard(workspace.RootPath);
-        SetCurrentDirectory(workspace.RootPath);
         return true;
     }
 
@@ -499,9 +462,6 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
 
         if (target != null && target.WorkspaceId == workspaceId)
         {
-            if (target.IsAuthorized)
-                RemoveWorkspaceRootFromPathGuard(target.RootPath);
-
             lock (_currentLock) _current = null;
             _sessionManager.ClearCurrentSession();
         }
@@ -596,55 +556,9 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 将工作区根目录加入 PathGuard 允许列表，并记录到 _injectedRoots
-    /// </summary>
-    private void AddWorkspaceRootToPathGuard(string rootPath)
-    {
-        var normalized = NormalizeRoot(rootPath);
-
-        var roots = _options.Value.Tools.FileSystem.AllowedRoots ?? new List<string>();
-        if (!roots.Any(r => string.Equals(r, normalized, StringComparison.OrdinalIgnoreCase)))
-        {
-            roots = new List<string>(roots) { normalized };
-            _options.Value.Tools.FileSystem.AllowedRoots = roots;
-        }
-        _injectedRoots.Add(normalized);
-    }
-
-    /// <summary>
-    /// 从 PathGuard 允许列表移除工作区根目录（仅移除工作区注入部分，保留全局配置的 roots）
-    /// </summary>
-    private void RemoveWorkspaceRootFromPathGuard(string rootPath)
-    {
-        var normalized = NormalizeRoot(rootPath);
-
-        if (!_injectedRoots.Contains(normalized))
-        {
-            // 非工作区注入的 root（来自全局配置），不移除
-            return;
-        }
-        _injectedRoots.Remove(normalized);
-
-        var roots = _options.Value.Tools.FileSystem.AllowedRoots ?? new List<string>();
-        roots = roots.Where(r => !string.Equals(r, normalized, StringComparison.OrdinalIgnoreCase)).ToList();
-        _options.Value.Tools.FileSystem.AllowedRoots = roots;
-    }
-
-    /// <summary>
-    /// 规范化根目录路径（末尾加分隔符）
-    /// </summary>
-    private static string NormalizeRoot(string rootPath)
-    {
-        var normalized = Path.GetFullPath(rootPath);
-        if (!normalized.EndsWith(Path.DirectorySeparatorChar))
-            normalized += Path.DirectorySeparatorChar;
-        return normalized;
-    }
-
-    /// <summary>
     /// 转换为 WorkspaceInfo
     /// </summary>
-    private static WorkspaceInfo ToWorkspaceInfo(DbWorkspace ws)
+    private WorkspaceInfo ToWorkspaceInfo(DbWorkspace ws)
     {
         if (!string.IsNullOrEmpty(ws.WorkspaceId) && !string.IsNullOrEmpty(ws.RootPath))
             _knownRoots[ws.WorkspaceId] = ws.RootPath;

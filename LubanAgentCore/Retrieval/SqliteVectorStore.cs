@@ -11,26 +11,33 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/7/27
-*描述：SQLite 向量存储实现，通过 WorkspaceManager.Current 实现工作区隔离
+*描述：SQLite 向量存储实现，通过 WorkspaceManager 实例实现工作区隔离
 *
 *****************************************************************************/
 namespace LubanAgentCore.Retrieval;
 
 /// <summary>
-/// SQLite 向量存储实现，通过 WorkspaceManager.Current 实现工作区隔离
+/// SQLite 向量存储实现，通过 <see cref="IWorkspaceManager"/> 实现工作区隔离
 /// </summary>
 public class SqliteVectorStore : IVectorStore
 {
     private readonly LlmWikiFileRepository _files = new();
     private readonly LlmWikiChunkRepository _chunks = new();
+    private readonly IWorkspaceManager _workspaceManager;
     // 写操作信号量，确保并发写入时的数据一致性
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     /// <summary>
-    /// 解析工作区ID：显式传入优先；未传时回退当前工作区（静态访问器，避免 DI 循环依赖；空字符串表示无工作区上下文）
+    /// 创建 SQLite 向量存储。
     /// </summary>
-    private static string ResolveWorkspaceId(string? workspaceId)
-        => workspaceId ?? (WorkspaceManager.Current?.WorkspaceId ?? "");
+    /// <param name="workspaceManager">工作区管理器（单例实例；用于未显式传入 workspaceId 时回退当前工作区）。</param>
+    public SqliteVectorStore(IWorkspaceManager workspaceManager) => _workspaceManager = workspaceManager;
+
+    /// <summary>
+    /// 解析工作区ID：显式传入优先；未传时回退当前工作区（空字符串表示无工作区上下文）
+    /// </summary>
+    private string ResolveWorkspaceId(string? workspaceId)
+        => workspaceId ?? (_workspaceManager.CurrentWorkspace?.WorkspaceId ?? "");
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<IndexedFile>> GetFilesAsync(string? pathPrefix = null, string? workspaceId = null)

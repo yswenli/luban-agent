@@ -724,6 +724,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             PermissionMode,
             _currentCts?.Token ?? default,
             confirmCallback: ConfirmTool,
+            workspaceManager: _services.GetRequiredService<IWorkspaceManager>(),
             onPlannedAction: (tool, args) =>
             {
                 // 运行已作废（Esc/新对话）：丢弃计划项，避免污染新对话

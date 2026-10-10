@@ -242,6 +242,7 @@ public class AgentHostService
             permissionMode,
             ct,
             confirmHandler,
+            _services.GetRequiredService<IWorkspaceManager>(),
             onPlannedAction,
             onUserDenied);
 

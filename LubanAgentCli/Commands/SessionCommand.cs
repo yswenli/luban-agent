@@ -24,6 +24,7 @@ public class SessionCommand : CommandBase
     private readonly ISessionManager _sessionManager;
     private readonly SessionRepository _sessionRepo;
     private readonly SessionMessageRepository _messageRepo;
+    private readonly IWorkspaceManager _workspaceManager;
 
     /// <summary>
     /// 命令名称
@@ -43,15 +44,17 @@ public class SessionCommand : CommandBase
     /// <param name="sessionManager">会话管理器</param>
     /// <param name="sessionRepo">会话仓储</param>
     /// <param name="messageRepo">会话消息仓储</param>
+    /// <param name="workspaceManager">工作区管理器（提供当前工作区ID）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo,
-        ITuiOutputWriter writer, ITuiUiService ui)
+        IWorkspaceManager workspaceManager, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;
         _messageRepo = messageRepo;
+        _workspaceManager = workspaceManager;
     }
 
     /// <summary>
@@ -111,7 +114,7 @@ public class SessionCommand : CommandBase
     /// </summary>
     private async Task ListSessionsAsync()
     {
-        var wsId = WorkspaceManager.Current?.WorkspaceId;
+        var wsId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
             Writer.WriteError("请先使用 /work -switch 切换到工作区");
@@ -192,7 +195,7 @@ public class SessionCommand : CommandBase
     /// <param name="identifier">会话标识</param>
     private async Task SwitchSessionAsync(string? identifier)
     {
-        var wsId = WorkspaceManager.Current?.WorkspaceId;
+        var wsId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
             Writer.WriteError("请先使用 /work -switch 切换到工作区");
@@ -268,7 +271,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        await _sessionManager.ClearAllSessionsAsync();
+        await _sessionManager.ClearAllSessionsAsync(_workspaceManager.CurrentWorkspace?.WorkspaceId);
         Writer.WriteSuccess("已删除全部会话数据");
     }
 }

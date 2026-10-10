@@ -35,8 +35,8 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// 创建 SessionManager 实例
     /// </summary>
     /// <remarks>
-    /// 工作区绑定通过 <see cref="WorkspaceManager.Current"/> 静态访问器在
-    /// <see cref="CreateSessionAsync"/> 中完成，无需构造函数注入。
+    /// 工作区绑定由调用方在 <see cref="CreateSessionAsync"/> 中显式传入 workspaceId，
+    /// 不再依赖全局「当前工作区」静态访问器。
     /// </remarks>
     public SessionManager()
     {
@@ -53,9 +53,9 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     public event Action<string>? CurrentSessionChanged;
 
     /// <summary>
-    /// 创建新会话（自动绑定当前工作区，若存在）
+    /// 创建新会话（绑定调用方显式指定的工作区）
     /// </summary>
-    public async Task<SessionInfo> CreateSessionAsync(string? userId = null, string? title = null)
+    public async Task<SessionInfo> CreateSessionAsync(string? userId = null, string? title = null, string? workspaceId = null)
     {
         var sessionId = Guid.NewGuid().ToString("N");
         var session = new DbSession
@@ -67,8 +67,8 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
             // 同步 UpdateTime，避免 GetLatestSessionAsync 排序时多个 NULL 并列的不确定性
             UpdateTime = DateTime.Now,
             IsDelete = false,
-            // 绑定当前工作区（通过 WorkspaceManager 静态访问器，避免循环依赖）
-            WorkspaceId = WorkspaceManager.Current?.WorkspaceId
+            // 绑定调用方显式传入的工作区，避免依赖全局静态状态被并发会话串改
+            WorkspaceId = workspaceId
         };
 
         await _sessionRepo.InsertAsync(session);
@@ -99,11 +99,10 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     }
 
     /// <summary>
-    /// 获取所有会话（当前工作区）
+    /// 获取所有会话（指定工作区）
     /// </summary>
-    public async Task<IEnumerable<SessionInfo>> GetAllSessionsAsync()
+    public async Task<IEnumerable<SessionInfo>> GetAllSessionsAsync(string? workspaceId = null)
     {
-        var workspaceId = WorkspaceManager.Current?.WorkspaceId;
         if (string.IsNullOrEmpty(workspaceId))
             return Enumerable.Empty<SessionInfo>();
 
@@ -250,7 +249,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// <summary>
     /// 物理删除全部会话及消息数据
     /// </summary>
-    public async Task ClearAllSessionsAsync()
+    public async Task ClearAllSessionsAsync(string? workspaceId = null)
     {
         await _messageRepo.DeleteAllAsync();
         await _sessionRepo.DeleteAllAsync();
@@ -258,9 +257,9 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
 
         // 保持"有当前工作区必有当前会话"不变量：清空后立即重建“新会话”，
         // 否则对话持久化前提（CurrentSession 非空）被破坏，每轮对话再次孤立
-        if (WorkspaceManager.Current is not null)
+        if (!string.IsNullOrEmpty(workspaceId))
         {
-            await CreateSessionAsync(userId: "default", title: "新会话");
+            await CreateSessionAsync(userId: "default", title: "新会话", workspaceId: workspaceId);
         }
     }
 

@@ -37,6 +37,7 @@ internal sealed class RootView : Runnable
     private readonly ConversationViewModel _vm;
     private readonly CommandViewModel _commandVm;
     private readonly AgentViewViewModel _agentVm;
+    private readonly IWorkspaceManager _workspaceManager;
     private readonly ConversationView _conversation;
     private readonly FooterView _footer;
     private readonly InputBarView _inputBar;
@@ -80,6 +81,7 @@ internal sealed class RootView : Runnable
         _dispatcher = dispatcher;
         _ui = ui;
         _doc = new ConversationDocument();
+        _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
 
         // 自动重试进度提示：框架回调运行在调用线程，需编组到 UI 线程
         services.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.OnApiRetry = notice =>
@@ -532,7 +534,7 @@ internal sealed class RootView : Runnable
             && !string.IsNullOrWhiteSpace(info.ArtifactPath))
         {
             var artifact = info.ArtifactPath!;
-            var root = WorkspaceManager.GetKnownRootPath(info.WorkspaceId);
+            var root = _workspaceManager.GetKnownRootPath(info.WorkspaceId);
             var rel = string.IsNullOrWhiteSpace(root)
                 ? artifact
                 : Path.GetRelativePath(root, artifact).Replace('\\', '/');

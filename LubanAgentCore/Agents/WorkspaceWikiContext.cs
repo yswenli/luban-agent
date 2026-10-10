@@ -11,18 +11,18 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/20
-*描述：基于 WorkspaceManager.Current 的 wiki 工作区上下文实现
+*描述：基于 WorkspaceManager 实例的 wiki 工作区上下文实现
 *
 *****************************************************************************/
 using LuBan.AIAgent.Wiki;
 
 namespace LubanAgentCore.Agents;
 
-/// <summary>基于 <see cref="WorkspaceManager.Current"/> 的 wiki 上下文。</summary>
-public sealed class WorkspaceWikiContext : IWikiContext
+/// <summary>基于 <see cref="IWorkspaceManager"/> 实例的 wiki 上下文。</summary>
+public sealed class WorkspaceWikiContext(IWorkspaceManager workspaceManager) : IWikiContext
 {
     /// <inheritdoc />
-    public string? WorkspaceRoot => WorkspaceManager.Current?.RootPath;
+    public string? WorkspaceRoot => workspaceManager.CurrentWorkspace?.RootPath;
 
     /// <inheritdoc />
     /// <remarks>
@@ -31,10 +31,10 @@ public sealed class WorkspaceWikiContext : IWikiContext
     /// </remarks>
     public string? WorkspaceRootFor(string? workspaceId)
     {
-        var current = WorkspaceManager.Current;
+        var current = workspaceManager.CurrentWorkspace;
         if (string.IsNullOrEmpty(workspaceId)) return current?.RootPath;
         if (current != null && string.Equals(current.WorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase))
             return current.RootPath;
-        return WorkspaceManager.GetKnownRootPath(workspaceId) ?? current?.RootPath;
+        return workspaceManager.GetKnownRootPath(workspaceId) ?? current?.RootPath;
     }
 }

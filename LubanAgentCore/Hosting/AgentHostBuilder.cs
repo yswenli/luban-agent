@@ -121,7 +121,7 @@ public static class AgentHostBuilder
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
         services.AddSingleton<ICommandCatalog, CommandCatalog>();
         services.AddSingleton<IWorkspaceContextProvider>(
-            new DelegateWorkspaceContextProvider(() => WorkspaceManager.Current?.WorkspaceId));
+            sp => new DelegateWorkspaceContextProvider(() => sp.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId));
 
         if (embedder != null)
         {

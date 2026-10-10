@@ -23,6 +23,7 @@ public class StatsCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
     private readonly SessionRepository _sessionRepo;
+    private readonly IWorkspaceManager _workspaceManager;
 
     /// <summary>
     /// 命令名称
@@ -41,14 +42,16 @@ public class StatsCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="sessionManager">会话管理器</param>
     /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="workspaceManager">工作区管理器（提供当前工作区ID）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public StatsCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo,
-        ITuiOutputWriter writer, ITuiUiService ui)
+        IWorkspaceManager workspaceManager, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;
+        _workspaceManager = workspaceManager;
     }
 
     /// <summary>
@@ -95,7 +98,7 @@ public class StatsCommand : CommandBase
     /// <param name="allWorkspaces">是否跨工作区统计</param>
     private async Task ShowStatsAsync(int? days, bool allWorkspaces)
     {
-        var wsId = WorkspaceManager.Current?.WorkspaceId;
+        var wsId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
 
         // --all 或无工作区上下文时统计全部；否则按当前工作区过滤
         if (allWorkspaces || string.IsNullOrEmpty(wsId))
