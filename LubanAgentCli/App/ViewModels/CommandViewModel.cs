@@ -245,8 +245,8 @@ internal sealed class CommandViewModel
 
         return typeof(TCommand).Name switch
         {
-            nameof(ProviderCommand) => new ProviderCommand(configManager, configuration, _writer, _ui) as TCommand,
-            nameof(ModelCommand) => new ModelCommand(configManager, configuration, _writer, _ui) as TCommand,
+            nameof(ProviderCommand) => new ProviderCommand(configManager, configuration, _writer, _ui, _services) as TCommand,
+            nameof(ModelCommand) => new ModelCommand(configManager, configuration, _writer, _ui, _services) as TCommand,
             nameof(SkillCommand) => (TCommand)(object)new SkillCommand(configManager, configuration,
                 _services.GetRequiredService<SkillRegistry>(), _writer, _ui, _spinner),
             nameof(RuleCommand) => (TCommand)(object)new RuleCommand(configManager, configuration,

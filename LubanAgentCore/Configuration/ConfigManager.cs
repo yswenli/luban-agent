@@ -26,6 +26,8 @@ public class ConfigManager : IAppConfigReader
 {
     private readonly string _configPath;
     private AppConfig _config = new();
+    private IServiceProvider? _services;
+    private readonly ProviderCache _fallbackProviderCache = new();
 
     List<ProviderConfigData> IAppConfigReader.Providers =>
         _config.Providers.Select(p => new ProviderConfigData
@@ -88,6 +90,12 @@ public class ConfigManager : IAppConfigReader
     /// 是否已选中模型
     /// </summary>
     public bool HasSelectedModel => !string.IsNullOrEmpty(SelectedModel);
+
+    /// <summary>
+    /// 附加服务提供者，用于解析按用户隔离的实例级服务（如 Provider 缓存）
+    /// </summary>
+    /// <param name="services">服务提供者</param>
+    public void AttachServices(IServiceProvider services) => _services = services;
 
     /// <summary>
     /// 创建 ConfigManager 实例
@@ -518,7 +526,9 @@ public class ConfigManager : IAppConfigReader
     {
         var provider = GetProvider(providerName);
         if (provider == null) return new List<string>();
-        var models = ProviderHelper.GetModels(providerName);
+        var models = _services != null
+            ? _services.GetProviderService().GetModels(providerName)
+            : ProviderHelper.GetModels(providerName, _fallbackProviderCache);
         var allModels = new List<string>(models);
         foreach (var custom in provider.CustomModels)
         {

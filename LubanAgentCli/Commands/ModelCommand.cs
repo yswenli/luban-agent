@@ -20,6 +20,8 @@ namespace LubanAgentCli.Commands;
 /// </summary>
 public class ModelCommand : CommandBase
 {
+    private readonly ProviderService _providerService;
+
     /// <summary>
     /// 命令名称
     /// </summary>
@@ -37,10 +39,12 @@ public class ModelCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
+    /// <param name="services">服务提供者（用于解析按用户隔离的 Provider 缓存）</param>
     public ModelCommand(ConfigManager configManager, IConfiguration configuration,
-        ITuiOutputWriter writer, ITuiUiService ui)
+        ITuiOutputWriter writer, ITuiUiService ui, IServiceProvider services)
         : base(configManager, configuration, writer, ui)
     {
+        _providerService = services.GetProviderService();
     }
 
     /// <summary>
@@ -132,7 +136,7 @@ public class ModelCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderHelper.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+                await _providerService.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -145,7 +149,7 @@ public class ModelCommand : CommandBase
         }
 
         // 显示该 Provider 的模型列表
-        var allModels = ProviderHelper.GetAllModels(providerName, selectedProvider.CustomModels);
+        var allModels = _providerService.GetAllModels(providerName, selectedProvider.CustomModels);
 
         if (allModels.Count == 0)
         {
@@ -250,7 +254,7 @@ public class ModelCommand : CommandBase
         try
         {
             var provider = ConfigManager.GetProvider(providerName);
-            var existing = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
+            var existing = _providerService.GetAllModels(providerName, provider?.CustomModels);
             if (existing.Contains(modelName))
             {
                 Writer.WriteInfo($"模型 '{modelName}' 已存在于 {ProviderHelper.GetDisplayName(providerName)}");
@@ -454,7 +458,7 @@ public class ModelCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderHelper.RefreshModelsAsync(selectedProvider.Name, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+                await _providerService.RefreshModelsAsync(selectedProvider.Name, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -466,7 +470,7 @@ public class ModelCommand : CommandBase
             }
         }
 
-        var allModels = ProviderHelper.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
+        var allModels = _providerService.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
 
         if (allModels.Count > 0)
         {

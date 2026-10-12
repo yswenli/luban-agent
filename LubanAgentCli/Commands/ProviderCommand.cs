@@ -31,6 +31,8 @@ namespace LubanAgentCli.Commands;
 /// </remarks>
 public class ProviderCommand : CommandBase
 {
+    private readonly ProviderService _providerService;
+
     /// <summary>
     /// 命令名称
     /// </summary>
@@ -48,10 +50,12 @@ public class ProviderCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
+    /// <param name="services">服务提供者（用于解析按用户隔离的 Provider 缓存）</param>
     public ProviderCommand(ConfigManager configManager, IConfiguration configuration,
-        ITuiOutputWriter writer, ITuiUiService ui)
+        ITuiOutputWriter writer, ITuiUiService ui, IServiceProvider services)
         : base(configManager, configuration, writer, ui)
     {
+        _providerService = services.GetProviderService();
     }
 
     /// <summary>
@@ -200,7 +204,7 @@ public class ProviderCommand : CommandBase
             ConfigManager.AddProvider(providerName, apiKey, baseUrl);
 
             var displayName = GetProviderDisplayName(providerName);
-            var models = ProviderHelper.GetModels(providerName);
+            var models = _providerService.GetModels(providerName);
 
             Writer.WriteSuccess($"Provider '{displayName}' 已添加并保存");
 
@@ -390,7 +394,7 @@ public class ProviderCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderHelper.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+                await _providerService.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -403,7 +407,7 @@ public class ProviderCommand : CommandBase
         }
 
         // 步骤 3：选择 Model
-        var allModels = ProviderHelper.GetAllModels(providerName, selectedProvider.CustomModels);
+        var allModels = _providerService.GetAllModels(providerName, selectedProvider.CustomModels);
 
         if (allModels.Count == 0)
         {
@@ -500,7 +504,7 @@ public class ProviderCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await ProviderHelper.RefreshModelsAsync(providerName, provider.ApiKey, provider.BaseUrl, cts.Token);
+                await _providerService.RefreshModelsAsync(providerName, provider.ApiKey, provider.BaseUrl, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -512,7 +516,7 @@ public class ProviderCommand : CommandBase
             }
         }
 
-        var allModels = ProviderHelper.GetAllModels(providerName, provider?.CustomModels);
+        var allModels = _providerService.GetAllModels(providerName, provider?.CustomModels);
 
         // 如果 Provider 没有预定义模型，让用户手动输入模型名称
         if (allModels.Count == 0)

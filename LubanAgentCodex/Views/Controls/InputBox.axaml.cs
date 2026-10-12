@@ -41,6 +41,7 @@ public partial class InputBox : UserControl
     private ComboBox? _modelCombo;
     private ItemsControl? _attachmentBar;
     private ConfigManager? _configManager;
+    private ProviderService? _providerService;
     private bool _suppressSelectionChanged;
 
     private Popup? _completionPopup;
@@ -98,6 +99,7 @@ public partial class InputBox : UserControl
     public void SetServiceProvider(IServiceProvider services)
     {
         _configManager = services.GetRequiredService<ConfigManager>();
+        _providerService = services.GetProviderService();
         _commandCatalog = services.GetService<ICommandCatalog>();
         LoadModels();
         RefreshModels();
@@ -106,7 +108,7 @@ public partial class InputBox : UserControl
     /// <summary>
     /// 加载可用模型列表。
     /// 始终保证当前选中模型出现在下拉项中并处于选中状态；
-    /// 同时纳入各 Provider 通过远程刷新获取的模型（ProviderHelper._fetchedModels 缓存）。
+    /// 同时纳入各 Provider 通过远程刷新获取的模型（按用户隔离的 Provider 缓存）。
     /// </summary>
     private void LoadModels()
     {
@@ -156,7 +158,7 @@ public partial class InputBox : UserControl
     /// </summary>
     private void RefreshModels()
     {
-        if (_configManager == null || _modelCombo == null) return;
+        if (_configManager == null || _providerService == null || _modelCombo == null) return;
 
         _ = Task.Run(async () =>
         {
@@ -170,7 +172,7 @@ public partial class InputBox : UserControl
 
                 try
                 {
-                    await ProviderHelper.RefreshModelsAsync(
+                    await _providerService.RefreshModelsAsync(
                         provider.Name,
                         provider.ApiKey ?? string.Empty,
                         provider.BaseUrl);

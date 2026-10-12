@@ -101,10 +101,16 @@ public static class AgentHostBuilder
         services.AddLuBanAgent(configuration);
 
         // 用户/工作区/会话上下文（会话级作用域；P0 由会话作用域承载工作区级）
+        var userId = Environment.UserName ?? "default";
         services.AddSingleton<IUserContext>(new UserContext(Environment.UserName));
         services.AddScoped<SessionContextState>();
         services.AddScoped<ISessionContext, SessionContext>();
         services.AddScoped<IWorkspaceContext, WorkspaceContext>();
+
+        // Provider 可变状态（刷新得到的模型列表）按用户隔离，keyed 注册；门面实例同样 keyed
+        services.AddKeyedSingleton<ProviderCache>(userId);
+        services.AddKeyedSingleton<ProviderService>(userId,
+            (sp, key) => new ProviderService(sp.GetRequiredKeyedService<ProviderCache>(key!)));
 
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
@@ -164,6 +170,9 @@ public static class AgentHostBuilder
 
         Logger.SetLogger(sp.GetRequiredService<ILoggerFactory>());
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
+
+        // 容器构建后回填 ConfigManager，使其能解析 keyed 的按用户实例级服务
+        configManager.AttachServices(sp);
 
         return sp;
     }

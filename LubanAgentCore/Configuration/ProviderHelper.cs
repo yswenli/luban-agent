@@ -13,7 +13,6 @@
 *描述：Provider 辅助工具，提供显示名称、端点、模型等查询与刷新能力
 *
 *****************************************************************************/
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
@@ -26,8 +25,6 @@ public static class ProviderHelper
 {
     private static Dictionary<string, ExtendedProviderInfo> _providerConfigs = new();
     private static bool _initialized = false;
-
-    private static readonly ConcurrentDictionary<string, List<string>> _fetchedModels = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly Dictionary<string, string> _defaultBaseUrls = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -212,19 +209,17 @@ public static class ProviderHelper
     /// 获取 Provider 的模型列表（内置预设模型与刷新获取的模型）
     /// </summary>
     /// <param name="providerName">Provider 名称</param>
+    /// <param name="cache">当前用户的可变缓存</param>
     /// <returns>模型名称列表</returns>
-    public static List<string> GetModels(string providerName)
+    public static List<string> GetModels(string providerName, ProviderCache cache)
     {
         var key = providerName.ToLowerInvariant();
         var models = _models.TryGetValue(key, out var predefined) ? predefined.ToList() : new List<string>();
 
-        if (_fetchedModels.TryGetValue(key, out var fetched))
+        foreach (var model in cache.GetFetched(key))
         {
-            foreach (var model in fetched)
-            {
-                if (!models.Contains(model, StringComparer.OrdinalIgnoreCase))
-                    models.Add(model);
-            }
+            if (!models.Contains(model, StringComparer.OrdinalIgnoreCase))
+                models.Add(model);
         }
 
         return models;
@@ -234,11 +229,12 @@ public static class ProviderHelper
     /// 获取 Provider 的全部模型（内置预设、刷新获取及用户自定义模型），并去重
     /// </summary>
     /// <param name="providerName">Provider 名称</param>
+    /// <param name="cache">当前用户的可变缓存</param>
     /// <param name="customModels">用户自定义模型列表，可省略</param>
     /// <returns>去重后的完整模型名称列表</returns>
-    public static List<string> GetAllModels(string providerName, List<string>? customModels = null)
+    public static List<string> GetAllModels(string providerName, ProviderCache cache, List<string>? customModels = null)
     {
-        var models = new HashSet<string>(GetModels(providerName));
+        var models = new HashSet<string>(GetModels(providerName, cache));
         if (customModels != null)
         {
             foreach (var model in customModels)
@@ -262,10 +258,11 @@ public static class ProviderHelper
     /// </summary>
     /// <param name="providerName">Provider 名称</param>
     /// <param name="apiKey">API 密钥</param>
+    /// <param name="cache">当前用户的可变缓存</param>
     /// <param name="baseUrl">API 基础地址，为空时使用默认地址</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>刷新后的模型名称列表</returns>
-    public static async Task<List<string>> RefreshModelsAsync(string providerName, string apiKey, string? baseUrl = null, CancellationToken cancellationToken = default)
+    public static async Task<List<string>> RefreshModelsAsync(string providerName, string apiKey, ProviderCache cache, string? baseUrl = null, CancellationToken cancellationToken = default)
     {
         var key = providerName.ToLowerInvariant();
 
@@ -274,18 +271,18 @@ public static class ProviderHelper
         else if (_defaultBaseUrls.TryGetValue(key, out var defaultUrl))
             baseUrl = defaultUrl;
         else
-            return GetModels(providerName);
+            return GetModels(providerName, cache);
 
         try
         {
             var models = await FetchModelsFromEndpointAsync(apiKey, baseUrl, cancellationToken).ConfigureAwait(false);
-            _fetchedModels[key] = models;
-            return GetModels(providerName);
+            cache.SetFetched(key, models);
+            return GetModels(providerName, cache);
         }
         catch (Exception ex)
         {
             Logger.Warn($"从 /v1/models 刷新 {providerName} 模型列表失败: {ex.Message}");
-            return GetModels(providerName);
+            return GetModels(providerName, cache);
         }
     }
 
