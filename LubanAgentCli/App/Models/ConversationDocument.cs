@@ -25,17 +25,23 @@ namespace LubanAgentCli.App.Models;
 /// </summary>
 public sealed class ConversationDocument
 {
+    // 单会话文档保留的 Block 上限：超出的最旧 Block 被裁剪（数据库仍保留全量），
+    // 避免长会话把 Block 与渲染行无界累积在内存中。
+    private const int MaxBlocks = 200;
+
     private readonly List<Block> _blocks = new();
+    private IReadOnlyList<Block>? _blocksSnapshot;
     private int _layoutWidth;
 
     /// <summary>
-    /// Block 列表（只读）。
+    /// Block 列表（只读快照）。结构变化时重建，未变化时复用同一实例，
+    /// 避免每帧 <c>Blocks[i]</c>/<c>Blocks.Count</c> 反复分配整表快照。
     /// </summary>
     public IReadOnlyList<Block> Blocks
     {
         get
         {
-            lock (_lock) return _blocks.ToList().AsReadOnly();
+            lock (_lock) return _blocksSnapshot ??= _blocks.ToArray();
         }
     }
 
@@ -106,7 +112,12 @@ public sealed class ConversationDocument
     {
         lock (_lock)
         {
+            foreach (var block in _blocks)
+            {
+                block.OnRemoved();
+            }
             _blocks.Clear();
+            _blocksSnapshot = null;
             TotalLines = 0;
         }
         _scrollOffset = 0;
@@ -129,7 +140,9 @@ public sealed class ConversationDocument
         lock (_lock)
         {
             _blocks.Add(block);
+            _blocksSnapshot = null;
             TotalLines += block.LineCount;
+            TrimExcessLocked();
         }
 
         if (AutoScroll)
@@ -163,10 +176,12 @@ public sealed class ConversationDocument
             {
                 ab = new AssistantMessageBlock();
                 _blocks.Add(ab);
+                _blocksSnapshot = null;
                 // 暂不 Layout，等 RelayoutLastBlock 时一起做；
                 // 但初始 LineCount（默认 1）必须先记账，否则 RelayoutLastBlock
                 // 的 TotalLines - oldLineCount 会使账本永久少 1 行
                 TotalLines += ab.LineCount;
+                TrimExcessLocked();
             }
         }
 
@@ -219,6 +234,14 @@ public sealed class ConversationDocument
 
         lock (_lock)
         {
+            // Block 可能已被 TrimExcessLocked 裁剪出文档：此时它仍可能被
+            // 自身的后台更新（如 Spinner/OrchestrationNode 动画）回调，
+            // 直接忽略可避免 TotalLines 账本按已移除 Block 漂移。
+            if (!_blocks.Contains(block))
+            {
+                return;
+            }
+
             var oldLineCount = block.LineCount;
             block.Layout(_layoutWidth);
             TotalLines = TotalLines - oldLineCount + block.LineCount;
@@ -403,6 +426,36 @@ public sealed class ConversationDocument
         ClampScroll();
         var handler = BlocksChanged;
         handler?.Invoke();
+    }
+
+    /// <summary>
+    /// 超出 <see cref="MaxBlocks"/> 时从最旧端裁剪 Block 并同步行数账本。
+    /// 必须在持有 <see cref="_lock"/> 时调用（由 AppendBlock/AppendToAnswerBlock 触发）。
+    /// </summary>
+    private void TrimExcessLocked()
+    {
+        if (_blocks.Count <= MaxBlocks)
+        {
+            return;
+        }
+
+        var removedLines = 0;
+        while (_blocks.Count > MaxBlocks)
+        {
+            var oldest = _blocks[0];
+            removedLines += oldest.LineCount;
+            _blocks.RemoveAt(0);
+            oldest.OnRemoved();
+        }
+
+        _blocksSnapshot = null;
+        TotalLines -= removedLines;
+
+        // 未自动跟随时，保持视口内相对位置（内容整体上移了 removedLines 行）。
+        if (!AutoScroll)
+        {
+            _scrollOffset = Math.Max(0, _scrollOffset - removedLines);
+        }
     }
 
     /// <summary>

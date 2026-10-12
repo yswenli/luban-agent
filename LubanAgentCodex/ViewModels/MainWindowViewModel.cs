@@ -50,6 +50,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     // 每会话运行态：键为 sessionId，值为该会话独立的 ViewModel（消息流 + 运行态）
     private readonly Dictionary<string, SessionViewModel> _sessions = new(StringComparer.Ordinal);
+
+    // 会话 ViewModel 的最近使用顺序（队首最新）：会话切换/创建时刷新，超上限时从队尾驱逐空闲会话，
+    // 防止访问过的会话 ViewModel 只增不减导致内存无界累积。
+    private readonly LinkedList<string> _sessionLru = new();
+    private const int MaxCachedSessions = 10;
+
     private SessionViewModel? _currentSession;
     private static readonly ObservableCollection<MessageItemBase> EmptyMessages = new();
 
@@ -489,8 +495,52 @@ public partial class MainWindowViewModel : ObservableObject
                 (s, pending) => SetConfirmationPending(s.SessionId, pending));
             session.PropertyChanged += OnSessionPropertyChanged;
             _sessions[sessionId] = session;
+            TouchSession(sessionId);
+            EvictIdleSessions();
         }
         return session;
+    }
+
+    /// <summary>
+    /// 刷新会话的最近使用位置（队首为最新）。
+    /// </summary>
+    private void TouchSession(string sessionId)
+    {
+        var node = _sessionLru.Find(sessionId);
+        if (node != null)
+            _sessionLru.Remove(node);
+        _sessionLru.AddFirst(sessionId);
+    }
+
+    /// <summary>
+    /// 超出缓存上限时从队尾驱逐空闲（非当前、未运行）会话：退订事件并释放资源。
+    /// 被驱逐的会话再次访问时会重建并从存储回填历史，故对用户无感知。
+    /// </summary>
+    private void EvictIdleSessions()
+    {
+        while (_sessions.Count > MaxCachedSessions)
+        {
+            SessionViewModel? victim = null;
+            for (var node = _sessionLru.Last; node != null; node = node.Previous)
+            {
+                if (_sessions.TryGetValue(node.Value, out var candidate)
+                    && !ReferenceEquals(candidate, _currentSession)
+                    && !candidate.IsRunning)
+                {
+                    victim = candidate;
+                    break;
+                }
+            }
+
+            if (victim == null)
+                return; // 剩余全是当前/运行中的会话，暂不驱逐
+
+            _sessions.Remove(victim.SessionId);
+            _sessionLru.Remove(victim.SessionId);
+            _pendingConfirmations.Remove(victim.SessionId);
+            victim.PropertyChanged -= OnSessionPropertyChanged;
+            victim.Dispose();
+        }
     }
 
     /// <summary>
@@ -524,6 +574,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _currentSession = session;
+        TouchSession(session.SessionId);
 
         OnPropertyChanged(nameof(CurrentSession));
         OnPropertyChanged(nameof(Messages));

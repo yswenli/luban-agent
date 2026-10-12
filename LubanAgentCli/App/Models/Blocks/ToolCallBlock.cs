@@ -151,6 +151,13 @@ public sealed class ToolCallBlock : Block
         NotifyChanged();
     }
 
+    /// <inheritdoc/>
+    public override void OnRemoved()
+    {
+        base.OnRemoved();
+        StopAnimation();
+    }
+
     private void StartAnimation()
     {
         _animationTimer = new Timer(_ =>

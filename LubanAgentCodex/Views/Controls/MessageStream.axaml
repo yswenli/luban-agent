@@ -4,11 +4,38 @@
              xmlns:controls="using:LubanAgentCodex.Views.Controls"
              x:Class="LubanAgentCodex.Views.Controls.MessageStream">
 
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vm:UserMessageItem">
+            <controls:UserMessageView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:AssistantMessageItem">
+            <controls:AssistantMessageView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:ThinkingMessageItem">
+            <controls:ThinkingMessageView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:ToolCallItem">
+            <controls:ToolCallCard />
+        </DataTemplate>
+        <DataTemplate DataType="vm:OrchestrationNodeItem">
+            <controls:OrchestrationNodeCard />
+        </DataTemplate>
+        <DataTemplate DataType="vm:SystemMessageItem">
+            <controls:SystemMessageView />
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
     <ScrollViewer Name="Scroller"
                   HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
         <ItemsControl Name="MessagesItems"
-                      Margin="16" />
+                      Margin="16">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
     </ScrollViewer>
 
 </UserControl>

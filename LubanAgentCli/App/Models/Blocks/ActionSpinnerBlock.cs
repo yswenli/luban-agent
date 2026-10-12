@@ -78,6 +78,12 @@ public sealed class ActionSpinnerBlock : Block
         NotifyChanged();
     }
 
+    public override void OnRemoved()
+    {
+        base.OnRemoved();
+        StopAnimation();
+    }
+
     private void StartAnimation()
     {
         _animationTimer = new Timer(_ =>

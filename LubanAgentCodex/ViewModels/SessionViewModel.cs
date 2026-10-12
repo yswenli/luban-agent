@@ -33,6 +33,10 @@ namespace LubanAgentCodex.ViewModels;
 /// </summary>
 public partial class SessionViewModel : ObservableObject
 {
+    // 单会话消息流保留上限：超出的最旧消息被裁剪（数据库仍保留全量），
+    // 避免长会话把消息项与视觉元素无界累积在内存中。
+    private const int MaxMessageCount = 50;
+
     private readonly AgentHostService _agentHost;
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
     private readonly Func<ToolPermissionMode> _permissionModeProvider;
@@ -78,6 +82,11 @@ public partial class SessionViewModel : ObservableObject
         _permissionModeProvider = permissionModeProvider;
         _isCurrentProvider = isCurrentProvider;
         _pendingConfirmationReporter = pendingConfirmationReporter;
+
+        _messages.KeepPredicate = item =>
+            ReferenceEquals(item, _currentAssistant)
+            || ReferenceEquals(item, _currentThinking)
+            || _runningNodes.Contains(item);
     }
 
     /// <summary>
@@ -86,9 +95,11 @@ public partial class SessionViewModel : ObservableObject
     public string SessionId { get; }
 
     /// <summary>
-    /// 消息集合（本会话独立）
+    /// 消息集合（本会话独立，超出上限时裁剪最旧项；运行中的项受保护不被裁剪）
     /// </summary>
-    public ObservableCollection<MessageItemBase> Messages { get; } = new();
+    public ObservableCollection<MessageItemBase> Messages => _messages;
+
+    private readonly BoundedMessageCollection _messages = new(MaxMessageCount);
 
     /// <summary>
     /// 本会话是否正在运行
@@ -612,5 +623,20 @@ public partial class SessionViewModel : ObservableObject
             ConfirmResult.AllowSession => $"已允许 {action}（本会话全部允许）",
             _ => $"已拒绝 {action}"
         };
+    }
+
+    /// <summary>
+    /// 释放会话资源：停止并释放流式节流器、取消并释放运行令牌。
+    /// 由宿主在驱逐会话时调用。
+    /// </summary>
+    public void Dispose()
+    {
+        _throttle?.Dispose();
+        _throttle = null;
+
+        var cts = _cts;
+        _cts = null;
+        cts?.Cancel();
+        cts?.Dispose();
     }
 }

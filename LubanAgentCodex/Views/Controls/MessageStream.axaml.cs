@@ -16,7 +16,6 @@
 *****************************************************************************/
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using LubanAgentCodex.ViewModels.Messages;
 using System.Collections.ObjectModel;
@@ -25,7 +24,8 @@ using System.Collections.Specialized;
 namespace LubanAgentCodex.Views.Controls;
 
 /// <summary>
-/// 消息流控件
+/// 消息流控件：基于虚拟化 <see cref="ItemsControl"/> 按消息类型套用 <c>DataTemplate</c>，
+/// 只保留视口内可见项的视觉元素，避免长会话把整条消息流全部实例化到可视树。
 /// </summary>
 public partial class MessageStream : UserControl
 {
@@ -52,7 +52,8 @@ public partial class MessageStream : UserControl
     }
 
     /// <summary>
-    /// 设置消息集合
+    /// 设置消息集合。控件本身不再手工创建子控件，改由 <see cref="ItemsControl"/> 依据
+    /// <c>DataTemplate</c> 与虚拟化面板生成，只负责订阅变化以驱动自动滚动。
     /// </summary>
     public void SetMessages(ObservableCollection<MessageItemBase> messages)
     {
@@ -64,48 +65,14 @@ public partial class MessageStream : UserControl
         _messages = messages;
         _messages.CollectionChanged += OnMessagesChanged;
 
-        // 初始加载
-        UpdateItemsControl();
+        if (_messagesItems != null)
+        {
+            _messagesItems.ItemsSource = messages;
+        }
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (_messagesItems == null) return;
-
-        switch (e.Action)
-        {
-            case NotifyCollectionChangedAction.Add:
-                // 新增项：只添加新控件
-                if (e.NewItems != null)
-                {
-                    foreach (var item in e.NewItems)
-                    {
-                        if (item is MessageItemBase msg)
-                        {
-                            var control = CreateControlForMessage(msg);
-                            if (control != null)
-                            {
-                                _messagesItems.Items.Add(control);
-                            }
-                        }
-                    }
-                }
-                break;
-
-            case NotifyCollectionChangedAction.Remove:
-                // 移除项：根据索引移除
-                if (e.OldStartingIndex >= 0 && e.OldStartingIndex < _messagesItems.Items.Count)
-                {
-                    _messagesItems.Items.RemoveAt(e.OldStartingIndex);
-                }
-                break;
-
-            case NotifyCollectionChangedAction.Reset:
-                // 清空：重新加载
-                UpdateItemsControl();
-                break;
-        }
-
         if (_scroller != null && _autoScroll)
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -113,36 +80,6 @@ public partial class MessageStream : UserControl
                 _scroller.ScrollToEnd();
             }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
-    }
-
-    private void UpdateItemsControl()
-    {
-        if (_messagesItems == null || _messages == null) return;
-
-        _messagesItems.Items.Clear();
-
-        foreach (var msg in _messages)
-        {
-            var control = CreateControlForMessage(msg);
-            if (control != null)
-            {
-                _messagesItems.Items.Add(control);
-            }
-        }
-    }
-
-    private Control? CreateControlForMessage(MessageItemBase message)
-    {
-        return message switch
-        {
-            UserMessageItem => new UserMessageView { DataContext = message },
-            AssistantMessageItem => new AssistantMessageView { DataContext = message },
-            ThinkingMessageItem => new ThinkingMessageView { DataContext = message },
-            ToolCallItem tool => new ToolCallCard { DataContext = tool },
-            OrchestrationNodeItem node => new OrchestrationNodeCard { DataContext = node },
-            SystemMessageItem => new SystemMessageView { DataContext = message },
-            _ => null
-        };
     }
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)

@@ -85,6 +85,14 @@ public abstract class Block
         IsComplete = true;
         Duration = DateTime.UtcNow - StartedAtUtc;
     }
+
+    /// <summary>
+    /// Block 被移出文档（裁剪或清空）时调用。子类覆写以停止动画定时器、释放资源，
+    /// 避免已不在文档中的 Block 继续持有定时器与对象图。
+    /// </summary>
+    public virtual void OnRemoved()
+    {
+    }
 }
 
 /// <summary>
