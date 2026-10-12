@@ -275,10 +275,8 @@ public class AgentHostService
         var modelName = configManager.SelectedModel
             ?? throw new InvalidOperationException("未选择模型");
 
-        // 加载工作区级组件
-        skillRegistry.LoadFromWorkspace(workspace.RootPath);
-        mcpRegistry.LoadFromWorkspace(workspace.RootPath);
-        ruleEngine.LoadFromWorkspace(workspace.RootPath);
+        // 工作区级组件（规则/技能/MCP）由 AgentProfile.CreateAgentAsync 在会话 scope 内统一装载。
+        // 注册表已改为 scoped（每会话一份），无需在进入会话时重复装载到进程级注册表。
 
         // 选择 Profile
         AgentProfile profile = workspace.Type == WorkspaceTypes.LlmWiki
