@@ -31,8 +31,8 @@ namespace LubanAgentCli.App.Views;
 /// </summary>
 internal sealed class ConversationView : View
 {
-    private readonly ConversationDocument _doc;
-    private readonly ConversationViewModel _vm;
+    private ConversationDocument _doc;
+    private ConversationViewModel _vm;
     private readonly FlushThrottle _throttle;
     private readonly List<RenderLine> _renderBuffer = new(256);
     private bool _dirty = true;
@@ -78,6 +78,33 @@ internal sealed class ConversationView : View
     /// 所关联的会话文档模型。
     /// </summary>
     public ConversationDocument Document => _doc;
+
+    /// <summary>
+    /// 重绑到另一个会话的文档与视图模型（会话切换时调用，仅切换显示，不影响后台运行）。
+    /// </summary>
+    /// <param name="doc">目标会话文档模型。</param>
+    /// <param name="vm">目标会话视图模型。</param>
+    public void Rebind(ConversationDocument doc, ConversationViewModel vm)
+    {
+        if (ReferenceEquals(_doc, doc)) return;
+
+        _doc.BlocksChanged -= OnDocChanged;
+        _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _vm = vm ?? throw new ArgumentNullException(nameof(vm));
+        _doc.BlocksChanged += OnDocChanged;
+
+        // 复位渲染与选择状态，避免残留上一会话的选中区域/滚动缓存
+        _selectionStart = null;
+        _selectionEnd = null;
+        _selectedText = null;
+        _isDragging = false;
+        _justDragged = false;
+        _dragStartPos = null;
+        _lastRenderedScrollOffset = -1;
+        _lastRenderedViewportHeight = 0;
+        _dirty = true;
+        SetNeedsDraw();
+    }
 
     /// <summary>
     /// 追加用户消息到文档并立即刷新。

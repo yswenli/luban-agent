@@ -37,6 +37,7 @@ internal sealed class CommandViewModel
     private readonly ITuiUiService _ui;
     private readonly TuiOutputWriter _writer;
     private readonly ICommandCatalog _catalog;
+    private readonly SpinnerService _spinner;
 
     /// <summary>
     /// 请求退出应用时触发。
@@ -51,17 +52,20 @@ internal sealed class CommandViewModel
     /// <param name="services">根级 DI 容器。</param>
     /// <param name="dispatcher">UI 线程调度器。</param>
     /// <param name="ui">TUI 模态交互服务。</param>
+    /// <param name="spinner">本会话加载指示器。</param>
     public CommandViewModel(
         ConversationDocument doc,
         ConversationViewModel? conversationVm,
         IServiceProvider services,
         IUiDispatcher dispatcher,
-        ITuiUiService ui)
+        ITuiUiService ui,
+        SpinnerService spinner)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _conversationVm = conversationVm;
         _services = services;
         _ui = ui ?? throw new ArgumentNullException(nameof(ui));
+        _spinner = spinner ?? throw new ArgumentNullException(nameof(spinner));
         _writer = new TuiOutputWriter(_doc, dispatcher);
         _catalog = services.GetRequiredService<ICommandCatalog>();
     }
@@ -244,7 +248,7 @@ internal sealed class CommandViewModel
             nameof(ProviderCommand) => new ProviderCommand(configManager, configuration, _writer, _ui) as TCommand,
             nameof(ModelCommand) => new ModelCommand(configManager, configuration, _writer, _ui) as TCommand,
             nameof(SkillCommand) => (TCommand)(object)new SkillCommand(configManager, configuration,
-                _services.GetRequiredService<SkillRegistry>(), _writer, _ui),
+                _services.GetRequiredService<SkillRegistry>(), _writer, _ui, _spinner),
             nameof(RuleCommand) => (TCommand)(object)new RuleCommand(configManager, configuration,
                 _services.GetRequiredService<RuleEngine>(), _writer, _ui),
             nameof(MCPCommand) => (TCommand)(object)new MCPCommand(configManager, configuration,
@@ -273,7 +277,7 @@ internal sealed class CommandViewModel
             nameof(InitCommand) => (TCommand)(object)new InitCommand(configManager, configuration,
                 _services.GetRequiredService<IAgentsMdInitializer>(),
                 _services.GetRequiredService<IWorkspaceManager>(),
-                _services.GetRequiredService<ILuBanAgentFactory>(), _writer, _ui,
+                _services.GetRequiredService<ILuBanAgentFactory>(), _spinner, _writer, _ui,
                 _conversationVm),
             nameof(A2ACommand) => (TCommand)(object)new A2ACommand(configManager, configuration,
                 _services.GetRequiredService<IWorkspaceManager>(),

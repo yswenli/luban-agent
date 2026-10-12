@@ -19,42 +19,43 @@ namespace LubanAgentCore.Services;
 
 /// <summary>
 /// 加载指示器服务。使用 PeriodicTimer 实现高精度定时。
+/// <para>每个会话持有独立实例，避免多会话后台运行时互相干扰。</para>
 /// </summary>
-internal static class SpinnerService
+public sealed class SpinnerService : IDisposable
 {
     private static readonly string[] Frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
-    private static PeriodicTimer? _timer;
-    private static CancellationTokenSource? _cts;
-    private static int _frameIndex;
-    private static string _status = string.Empty;
-    private static readonly object _lock = new();
-    private static bool _running;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+    private int _frameIndex;
+    private string _status = string.Empty;
+    private readonly object _lock = new();
+    private bool _running;
 
     /// <summary>当 spinner 状态或帧变更时触发（UI 订阅以重绘）。</summary>
-    public static event Action? Changed;
+    public event Action? Changed;
 
     /// <summary>当前是否在运行（仅在 TUI 模式下生效）。</summary>
-    public static bool IsRunning
+    public bool IsRunning
     {
         get { lock (_lock) return _running; }
     }
 
     /// <summary>当前帧字符。</summary>
-    public static string CurrentFrame
+    public string CurrentFrame
     {
         get { lock (_lock) return Frames[_frameIndex % Frames.Length]; }
     }
 
     /// <summary>当前状态文本。</summary>
-    public static string Status
+    public string Status
     {
         get { lock (_lock) return _status; }
     }
 
     /// <summary>
-    /// 在 TUI 模式下启动全局 spinner 服务；非 TUI 模式将不启动。
+    /// 在 TUI 模式下启动本实例的 spinner 服务；非 TUI 模式将不启动。
     /// </summary>
-    public static void Start(string? initialStatus = null)
+    public void Start(string? initialStatus = null)
     {
         if (!TerminalGuiApp.CanRunInteractive()) return;
 
@@ -72,7 +73,7 @@ internal static class SpinnerService
         Changed?.Invoke();
     }
 
-    private static async Task RunAsync(CancellationToken ct)
+    private async Task RunAsync(CancellationToken ct)
     {
         try
         {
@@ -88,7 +89,7 @@ internal static class SpinnerService
     }
 
     /// <summary>停止并清理。</summary>
-    public static void Stop()
+    public void Stop()
     {
         lock (_lock)
         {
@@ -107,7 +108,7 @@ internal static class SpinnerService
     }
 
     /// <summary>更新状态文本（会触发 Changed 并在下一帧可见）。</summary>
-    public static void UpdateStatus(string status)
+    public void UpdateStatus(string status)
     {
         lock (_lock)
         {
@@ -116,7 +117,7 @@ internal static class SpinnerService
         Changed?.Invoke();
     }
 
-    private static void Tick()
+    private void Tick()
     {
         lock (_lock)
         {
@@ -125,4 +126,7 @@ internal static class SpinnerService
         }
         Changed?.Invoke();
     }
+
+    /// <summary>释放实例。</summary>
+    public void Dispose() => Stop();
 }

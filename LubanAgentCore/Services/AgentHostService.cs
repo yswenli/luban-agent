@@ -60,7 +60,18 @@ public class AgentHostService
     /// </summary>
     public void Reset()
     {
-        var runtime = CurrentRuntime;
+        if (CurrentSessionId is { Length: > 0 } id)
+            Reset(id);
+    }
+
+    /// <summary>
+    /// 重置指定会话的 Agent（置空缓存），下次对话时按最新配置（如切换后的模型）重建。
+    /// 不影响其它会话，可用于后台会话的按 sessionId 重置。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    public void Reset(string sessionId)
+    {
+        var runtime = _runtimes.Get(sessionId);
         if (runtime is null) return;
         if (runtime.Agent is IDisposable oldAgent)
         {
@@ -80,6 +91,16 @@ public class AgentHostService
         var sessionId = CurrentSessionId
             ?? throw new InvalidOperationException("未设置当前会话");
 
+        await InitializeAsync(sessionId, ct);
+    }
+
+    /// <summary>
+    /// 初始化指定会话的 Agent（在首次对话前调用）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="ct">取消令牌。</param>
+    public async Task InitializeAsync(string sessionId, CancellationToken ct = default)
+    {
         await EnsureRuntimeAsync(sessionId, ct);
     }
 

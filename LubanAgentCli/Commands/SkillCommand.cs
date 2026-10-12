@@ -19,6 +19,7 @@ namespace LubanAgentCli.Commands;
 public class SkillCommand : CommandBase
 {
     private readonly SkillRegistry _skillRegistry;
+    private readonly SpinnerService _spinner;
 
     /// <summary>
     /// 命令名称
@@ -38,11 +39,13 @@ public class SkillCommand : CommandBase
     /// <param name="skillRegistry">Skill 注册表</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
+    /// <param name="spinner">会话级加载指示器</param>
     public SkillCommand(ConfigManager configManager, IConfiguration configuration, SkillRegistry skillRegistry,
-        ITuiOutputWriter writer, ITuiUiService ui)
+        ITuiOutputWriter writer, ITuiUiService ui, SpinnerService spinner)
         : base(configManager, configuration, writer, ui)
     {
         _skillRegistry = skillRegistry;
+        _spinner = spinner ?? throw new ArgumentNullException(nameof(spinner));
     }
 
     /// <summary>
@@ -457,14 +460,14 @@ public class SkillCommand : CommandBase
                 Agent = agent,
                 ServiceProvider = serviceProvider,
                 Log = msg => Writer.WriteInfo($"  {msg}"),
-                UpdateStatus = SpinnerService.UpdateStatus
+                UpdateStatus = _spinner.UpdateStatus
             };
 
             Writer.WriteLine();
             Writer.WriteLine($"执行 Skill: {skill.Name}");
             Writer.WriteLine();
 
-            SpinnerService.Start($"正在执行 {skill.Name}...");
+            _spinner.Start($"正在执行 {skill.Name}...");
             try
             {
                 var result = await skill.ExecuteAsync(context, input);
@@ -481,7 +484,7 @@ public class SkillCommand : CommandBase
             }
             finally
             {
-                SpinnerService.Stop();
+                _spinner.Stop();
             }
 
             Writer.WriteLine();

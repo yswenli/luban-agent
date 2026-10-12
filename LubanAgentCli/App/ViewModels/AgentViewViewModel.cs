@@ -26,7 +26,7 @@ namespace LubanAgentCli.App.ViewModels;
 internal sealed class AgentViewViewModel
 {
     private readonly TaskRegistry _registry;
-    private readonly ConversationDocument _doc;
+    private ConversationDocument _doc;
 
     /// <summary>是否显示任务视图（Tab 切换，默认显示对话视图）。</summary>
     public bool IsTaskViewActive { get; private set; }
@@ -44,6 +44,16 @@ internal sealed class AgentViewViewModel
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         _registry.TasksChanged += RefreshTaskView;
+    }
+
+    /// <summary>
+    /// 重绑到活动会话的文档（会话切换时调用，任务视图若处于激活态则刷新到新文档）。
+    /// </summary>
+    /// <param name="doc">目标会话文档模型。</param>
+    public void Rebind(ConversationDocument doc)
+    {
+        _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        if (IsTaskViewActive) RefreshTaskView();
     }
 
     /// <summary>

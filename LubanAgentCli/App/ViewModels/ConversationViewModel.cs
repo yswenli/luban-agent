@@ -11,97 +11,67 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：管理 Agent 生命周期、流式 token 追加与 Block 文档更新；通过 IUiDispatcher
-*编组跨线程操作到 UI 线程
+*描述：单个会话的 ViewModel：绑定固定 sessionId，经 AgentHostService 按会话路由流式对话，
+*消费 UI 无关的 StreamEvent 序列并编排为 Block 文档；所有 UI 更新通过 IUiDispatcher
+*编组到 UI 线程
 *
 *****************************************************************************/
-using LuBan.AIAgent.Attachments;
 using LuBan.AIAgent.Orchestration;
 
 using LubanAgentCli.App.Services;
 
-using LubanAgentCore.Context;
-
 namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
-/// 会话 ViewModel。负责创建 Agent、运行流式对话循环、将 AI 更新编排为 Block 追加。
-/// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，
-/// 本类不直接持有 View 引用。
+/// 会话 ViewModel。每个活动会话持有独立实例，绑定固定 <c>sessionId</c>，
+/// 经 <see cref="AgentHostService"/> 按会话路由执行流式对话（会话隔离、后台并发互不干扰），
+/// 消费 UI 无关的 <see cref="StreamEvent"/> 序列并编排为 Block 追加到本会话文档。
+/// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，本类不直接持有 View 引用。
 /// </summary>
 internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTrigger
 {
+    private readonly string _sessionId;
     private readonly IServiceProvider _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly ConversationDocument _doc;
     private readonly ConfigManager _configManager;
     private readonly TitleService _titleService;
-    private readonly SessionManager? _sessionManager;
     private readonly ISessionManager _iSessionManager;
+    private readonly IWorkspaceManager _workspaceManager;
+    private readonly AgentHostService _agentHost;
+    private readonly SpinnerService _spinner;
 
-    /// <summary>
-    /// TUI 编排进度出口（DI 单例）。编排由工具调用触发、执行在 FunctionInvokingChatClient 内部，
-    /// 进度不经本轮对话流，故每轮 RunStreamingAsync 期间订阅其事件、结束后退订。
-    /// </summary>
-    private readonly TuiOrchestrationProgressSink? _orchestrationSink;
-
-    private LuBanAgent? _agent;
-    private ILuBanAgentFactory? _agentFactory;
-    private AgentProfile? _profile;
-    private RuleEngine? _ruleEngine;
-    private ToolPluginRegistry? _pluginRegistry;
-    private SkillRegistry? _skillRegistry;
-    private MCPRegistry? _mcpRegistry;
-    private WorkspaceInfo? _workspace;
-    private string? _modelName;
-
-    // 上下文同步：防重入信号量 + 运行中延迟同步标志 + 突发合并调度标志
-    private readonly SemaphoreSlim _syncGate = new(1, 1);
-    private volatile bool _pendingSync;
-    // 突发合并：避免同一同步突发（如切工作区先后触发工作区变更+会话变更两次事件）重复清文档/重载历史
-    private int _syncScheduled;
-
-    // 强制重建请求：工作区上下文文件（AGENTS.md）变更后置位，下一次同步无条件重建 Agent，
-    // 使新内容进入系统提示词
-    private int _pendingForceReload;
-    // 保留视图请求：上下文文件变更（如 /init 落盘）时置位，重建 Agent 但不清文档、不重载历史，
-    // 避免刚输出的生成结果被清屏
-    private int _pendingKeepView;
-
-    // 已加载到文档的会话标识：用于避免会话历史被重复加载（如初始化前已切换过工作区/会话）
-    private string? _loadedSessionId;
-
-    // 由 DI 解析并缓存的引用，用于事件订阅/退订与页脚刷新
-    private readonly WorkspaceManager? _workspaceManager;
+    // 由 DI 解析并缓存的页脚引用（会话切换/初始化时刷新状态栏）
     private FooterView? _footerView;
     private FooterDataProvider? _footerProvider;
 
     private CancellationTokenSource? _currentCts;
 
     // 运行序号 + 取消覆盖机制（参考 Codex MainWindowViewModel 的 _activeRunSeq）：
-    // 每次发起对话自增；取消(Esc)或新对话会作废旧序号，使旧运行的迟到事件/挂起任务被丢弃，
-    // 避免“Esc 取消后，下次输入仍执行上次对话”。
+    // 每次发起对话自增；取消(Esc)或新对话会作废旧序号，使旧运行的迟到事件/挂起任务被丢弃。
     private int _activeRunSeq;
     private int _currentRunSeq;
     private bool _cancelRequested;
 
-    // 本轮是否因用户拒绝工具确认而终止：用于 OCE 收尾时区分「已拒绝，本轮终止」与「任务已取消」
+    // 本轮是否因用户拒绝工具确认而终止：用于收尾时区分「已拒绝，本轮终止」与「任务已取消」
     private volatile bool _deniedByUser;
 
-    // 终止文案是否已输出：拒绝钩子与 OCE 分支都可能尝试提示，用 Interlocked 保证只显示一次
+    // 终止文案是否已输出：拒绝钩子与取消分支都可能尝试提示，用 Interlocked 保证只显示一次
     private int _denialMessageShown;
 
     // Plan 模式下本轮收集的计划项数量（回合结束时汇总提示，工具均不执行）
     private int _plannedCount;
 
-    // 流式 token 合批缓冲：agent 线程追加、节流冲刷时取出，替代逐 token Invoke 洪峰
+    // 待重建 Agent（模型切换 / AGENTS.md 变更）；运行中置位、本轮结束后消费
+    private volatile bool _pendingAgentReset;
+
+    // 流式 token 合批缓冲：消费线程追加、节流冲刷时取出，替代逐 token Invoke 洪峰
     private readonly object _streamLock = new();
     private readonly StringBuilder _pendingThinking = new();
     private readonly StringBuilder _pendingAnswer = new();
     private FlushThrottle? _streamThrottle;
 
-    // 当前会话的流式状态（每次 RunStreamingAsync 开始重置；
-    // 必须是字段而非闭包局部变量——节流器跨会话复用，闭包会把上一会话的状态泄漏到下一会话）
+    // 当前会话的流式状态（每次 ConsumeStreamAsync 开始重置）
     private ThinkingBlock? _thinkingBlock;
     private bool _thinkingCompleted;
     private int _currentThinkingRound; // 当前思考块所属的 LLM 轮次号（0=未标注）
@@ -109,17 +79,13 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     /// <summary>
     /// 本轮正在执行的工具块（按调用先后顺序）。同一轮可能出现多个工具调用，
-    /// 结果需按 CallId 精确匹配，故用列表而非单槽字段。
-    /// 仅在 UI 线程（_dispatcher.Invoke 内部）读写。
+    /// 结果需按 CallId 精确匹配，故用列表而非单槽字段。仅在 UI 线程读写。
     /// </summary>
     private readonly List<ToolCallBlock> _runningToolBlocks = new();
 
     /// <summary>
     /// 本轮正在执行的编排节点块（按启动先后顺序）。同层节点可并行执行，
-    /// 每个节点各自占一行独立动画，结束后由对应完成/失败事件按 NodeId 就地收尾。
-    /// 用列表而非字典：NodeId 可能为空或重复（重规划），字典键覆盖会丢失旧块
-    /// 使其动画 Timer 永久运行。
-    /// 仅在 UI 线程（_dispatcher.Invoke 内部）读写。
+    /// 结束后由对应完成/失败事件按 NodeId 就地收尾。仅在 UI 线程读写。
     /// </summary>
     private readonly List<OrchestrationNodeBlock> _runningNodeBlocks = new();
 
@@ -128,6 +94,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     /// <summary>权限模式变更事件（订阅者更新页脚等 UI）。</summary>
     public event Action<ToolPermissionMode>? PermissionModeChanged;
+
+    /// <summary>本会话标题（初始化后可用，供多会话视图展示）。</summary>
+    public string SessionTitle { get; private set; } = string.Empty;
+
+    /// <summary>本会话绑定的会话标识。</summary>
+    public string SessionId => _sessionId;
 
     /// <summary>
     /// 循环切换到下一权限模式（Default → Plan → AcceptEdits → BypassPermissions → Default）。
@@ -175,8 +147,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     /// <summary>
     /// 当前挂起的确认块（工具确认 / 权限模式二次确认）。非空时，焦点会被切换到会话区，
-    /// 由会话区把按键转发给确认块（agent 阻塞等待期间确认块本身收不到键，必须由会话区转发）。
-    /// 置空即表示确认已结束。设置时会触发 <see cref="PendingChoiceChanged"/>，供 RootView 切换焦点。
+    /// 由会话区把按键转发给确认块。置空即表示确认已结束。设置时触发 <see cref="PendingChoiceChanged"/>。
     /// </summary>
     private InlineChoiceBlock? _pendingChoice;
 
@@ -204,61 +175,55 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// <summary>
     /// 初始化会话 ViewModel。
     /// </summary>
-    /// <param name="services">根级 DI 容器，用于解析 Agent 依赖。</param>
+    /// <param name="sessionId">绑定的会话标识。</param>
+    /// <param name="services">根级 DI 容器，用于解析全局服务。</param>
     /// <param name="dispatcher">UI 线程调度器。</param>
     /// <param name="doc">会话文档模型。</param>
+    /// <param name="spinner">会话级加载指示器。</param>
     public ConversationViewModel(
+        string sessionId,
         IServiceProvider services,
         IUiDispatcher dispatcher,
-        ConversationDocument doc)
+        ConversationDocument doc,
+        SpinnerService spinner)
     {
+        _sessionId = sessionId ?? throw new ArgumentNullException(nameof(sessionId));
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _spinner = spinner ?? throw new ArgumentNullException(nameof(spinner));
         _configManager = services.GetRequiredService<ConfigManager>();
         _titleService = services.GetRequiredService<TitleService>();
-        _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as TuiOrchestrationProgressSink;
-
         _iSessionManager = services.GetRequiredService<ISessionManager>();
-        if (_iSessionManager is SessionManager sm)
-        {
-            _sessionManager = sm;
-            sm.CurrentSessionChanged += OnCurrentSessionChanged;
-        }
+        _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        _agentHost = services.GetRequiredService<AgentHostService>();
 
-        _workspaceManager = services.GetRequiredService<IWorkspaceManager>() as WorkspaceManager;
-        if (_workspaceManager is not null)
-        {
-            _workspaceManager.CurrentWorkspaceChanged += OnCurrentWorkspaceChanged;
-        }
         _configManager.SelectedModelChanged += OnSelectedModelChanged;
-    }
-
-    private void OnCurrentSessionChanged(string sessionId)
-    {
-        RequestSync();
-    }
-
-    private void OnCurrentWorkspaceChanged(WorkspaceInfo ws)
-    {
-        // 强制重建：切换/重新加载工作区时必须重新读取该工作区的 AGENTS.md 注入系统提示词
-        RequestSync(forceReload: true);
     }
 
     private void OnSelectedModelChanged(string? model)
     {
-        RequestSync();
+        // 模型切换：置空该会话 Agent 缓存，下次对话按最新模型重建；运行中延迟到本轮结束
+        if (IsRunning)
+        {
+            _pendingAgentReset = true;
+            return;
+        }
+        _agentHost.Reset(_sessionId);
     }
 
     /// <summary>
     /// 请求重载 Agent 上下文（<see cref="IAgentContextReloadTrigger"/> 实现）。
     /// 用于 AGENTS.md 落盘后让新内容进入系统提示词；运行中会被延迟到本轮结束后执行。
-    /// 重建 Agent 但保留当前会话视图（不清文档、不重载历史），避免刚输出的结果被清屏。
     /// </summary>
     public void RequestReload()
     {
-        Interlocked.Exchange(ref _pendingKeepView, 1);
-        RequestSync(forceReload: true);
+        if (IsRunning)
+        {
+            _pendingAgentReset = true;
+            return;
+        }
+        _agentHost.Reset(_sessionId);
     }
 
     /// <summary>
@@ -271,214 +236,76 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 同步当前运行上下文（工作区/模型/会话）到 UI 与 Agent。
-    /// 在以下场景调用：首次初始化、切换工作区、切换模型、切换会话。
-    /// 会按需重建 Agent、清空并重建会话文档、加载当前会话历史、刷新状态栏。
-    /// </summary>
-    /// <param name="clearDoc">是否清空会话文档（切换上下文时应清空；首次初始化保留启动横幅）。</param>
-    private async Task SyncContextAsync(bool clearDoc = true)
-    {
-        // Agent 运行中不可重建：标记待同步，待本轮结束后再执行，避免破坏运行中的 Agent 状态
-        // （强制重载标志保持置位，本轮结束后的同步会再次读取到）
-        if (IsRunning)
-        {
-            _pendingSync = true;
-            return;
-        }
-
-        // 消费强制重载请求：AGENTS.md 等上下文文件变更后必须重建 Agent 才能生效
-        var forceReload = Interlocked.Exchange(ref _pendingForceReload, 0) == 1;
-        // 消费保留视图请求：仅在上下文文件变更路径置位，重建 Agent 但不打断当前会话视图
-        var keepView = Interlocked.Exchange(ref _pendingKeepView, 0) == 1;
-
-        // 调用方（InitializeAsync / RequestSync）负责持有 _syncGate；此处不再自行加锁，避免同一线程重入死锁
-        {
-            var wsMgr = _services.GetRequiredService<IWorkspaceManager>();
-            var ws = wsMgr.CurrentWorkspace;
-            var model = _configManager.SelectedModel;
-            var session = _iSessionManager.CurrentSession;
-
-            // CLI 不走 SessionRuntimeManager，需在 UI scope 上手动填充会话上下文状态，
-            // 否则框架插件解析 ISessionContext.EffectiveRoot 时会抛「会话未设置工作区根或 worktree」。
-            SyncSessionContextState(ws, session);
-
-            // 仅当工作区或模型发生变化时才重建 Agent，避免无谓重建；
-            // 强制重载（上下文文件变更）时无条件重建
-            var needRebuild = forceReload
-                || _agent is null
-                || _workspace?.WorkspaceId != ws?.WorkspaceId
-                || _modelName != model;
-
-            // 保留视图请求不重载历史、不清文档：保持当前会话视图，仅替换 Agent
-            var resetDoc = clearDoc && !keepView;
-
-            _dispatcher.Invoke(() =>
-            {
-                if (resetDoc) _doc.Clear();
-            });
-
-            if (needRebuild)
-            {
-                await RebuildAgentCoreAsync();
-            }
-
-            _titleService.SetWorkspace(ws?.Name ?? "-");
-            _titleService.SetModel(model ?? "-");
-            _titleService.SetSessionTitle(session?.Title ?? "新会话");
-
-            if (_footerProvider is not null)
-            {
-                _footerProvider.WorkspaceName = ws?.Name ?? "-";
-                _footerProvider.ModelName = model ?? "-";
-                _footerProvider.SessionTitle = session?.Title ?? "新会话";
-            }
-
-            if (session is not null)
-            {
-                // 仅在首次加载、会话切换或强制刷新(clearDoc)时重载历史，避免重复加载
-                if (resetDoc || _loadedSessionId != session.SessionId)
-                {
-                    await LoadHistoryAsync(session.SessionId);
-                    _loadedSessionId = session.SessionId;
-                }
-            }
-            else
-            {
-                _loadedSessionId = null;
-            }
-
-            _dispatcher.Invoke(() =>
-            {
-                // 仅首次初始化（不清空文档）时追加一条状态行；切换场景由状态栏常驻显示
-                if (!clearDoc)
-                {
-                    _doc.AppendBlock(new SystemBlock(
-                        $"模型: {model ?? "-"}  |  工作区: {ws?.Name ?? "-"}  |  会话: {session?.Title ?? "新会话"}",
-                        foreground: BlockColors.Success));
-                }
-                _footerView?.SetNeedsDraw();
-            });
-        }
-    }
-
-    /// <summary>
-    /// 将当前工作区/会话写入 UI scope 的会话上下文状态，供框架插件解析有效工作区根。
-    /// CLI 的 Agent 在 UI 生命周期 scope 内创建，不经由 SessionRuntimeManager，
-    /// 故需在此手动同步；同一 scope 内插件捕获的是同一 <see cref="SessionContextState"/> 实例。
-    /// </summary>
-    private void SyncSessionContextState(WorkspaceInfo? ws, SessionInfo? session)
-    {
-        var state = _services.GetService<SessionContextState>();
-        if (state is null) return;
-
-        state.SessionId = session?.SessionId;
-        state.WorkspaceId = ws?.WorkspaceId;
-        state.WorkspaceRoot = ws?.RootPath;
-
-        state.AllowedRoots.Clear();
-        if (!string.IsNullOrWhiteSpace(ws?.RootPath))
-            state.AllowedRoots.Add(ws.RootPath);
-    }
-
-    /// <summary>
-    /// 重建 Agent 核心：释放旧实例并基于当前工作区/模型创建新实例。
-    /// 不触碰文档与历史，仅替换 _agent 与 _workspace/_modelName。
-    /// 调用方需保证当前不在流式对话中途（或已自行保证安全）。
-    /// </summary>
-    private async Task RebuildAgentCoreAsync()
-    {
-        var wsMgr = _services.GetRequiredService<IWorkspaceManager>();
-        var ws = wsMgr.CurrentWorkspace;
-        var model = _configManager.SelectedModel;
-        if (ws is null)
-            throw new InvalidOperationException("未设置当前工作区");
-        if (string.IsNullOrEmpty(model))
-            throw new InvalidOperationException("未选择模型（SelectedModel 为 null）");
-
-        _agentFactory ??= _services.GetRequiredService<ILuBanAgentFactory>();
-        _ruleEngine ??= _services.GetRequiredService<RuleEngine>();
-        _pluginRegistry ??= _services.GetRequiredService<ToolPluginRegistry>();
-        _skillRegistry ??= _services.GetRequiredService<SkillRegistry>();
-        _mcpRegistry ??= _services.GetRequiredService<MCPRegistry>();
-
-        _workspace = ws;
-        _modelName = model;
-        _profile = ws.Type == WorkspaceTypes.LlmWiki ? new LlmWikiAgentProfile(ws) : new NormalAgentProfile();
-        var newAgent = await _profile.CreateAgentAsync(
-            _agentFactory, _modelName, _workspace,
-            _ruleEngine, _pluginRegistry, _skillRegistry, _mcpRegistry);
-        // 释放旧 Agent 实例，避免重建时连接/句柄等资源泄漏
-        if (_agent is IDisposable oldAgent)
-        {
-            try { oldAgent.Dispose(); }
-            catch (Exception ex) { Logger.Warn($"释放旧 Agent 失败: {ex.Message}"); }
-        }
-        _agent = newAgent;
-    }
-
-    /// <summary>
-    /// 初始化 Agent（首次对话前调用一次）。
-    /// 统一走 <see cref="SyncContextAsync"/> 构建 Agent 与加载会话，并保留启动横幅（不清空文档）。
+    /// 初始化本会话：解析会话自身绑定的工作区、预热 Agent、加载历史并刷新状态栏/页脚。
+    /// 首次对话前调用一次（由 RootView 的会话槽位保证）。
     /// </summary>
     public async Task InitializeAsync()
     {
-        // 启动加载工作区时无条件重建 Agent，确保读取该工作区的 AGENTS.md 注入系统提示词
-        Interlocked.Exchange(ref _pendingForceReload, 1);
-
-        await _syncGate.WaitAsync();
-        try
+        // 无会话（未选择工作区时的占位槽位）：给出提示并跳过 Agent 预热
+        if (string.IsNullOrEmpty(_sessionId))
         {
-            await SyncContextAsync(clearDoc: false);
-        }
-        finally
-        {
-            _syncGate.Release();
-        }
-    }
-
-    /// <summary>
-    /// 请求一次上下文同步，并合并同一突发内的多次事件
-    /// （例如切换工作区会依次触发“工作区变更”与“当前会话变更”两个事件）。
-    /// 通过 20ms 去抖 + 单次调度，把多次事件合并为一次清文档/重载历史，
-    /// 既避免重复渲染，也保证读取到突发结束后的最终状态。
-    /// </summary>
-    private void RequestSync(bool forceReload = false)
-    {
-        if (forceReload)
-        {
-            Interlocked.Exchange(ref _pendingForceReload, 1);
-        }
-
-        // 已有同步在排队/执行中：本次事件的状态变更会在那一次执行时被读取，无需重复调度
-        if (Interlocked.Exchange(ref _syncScheduled, 1) == 1)
-        {
+            _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                "尚未进入任何会话。请先用 /w -n <路径> 创建工作区，或 /session -new 新建会话。",
+                foreground: BlockColors.Accent)));
             return;
         }
 
-        _ = Task.Run(async () =>
+        var session = await GetSessionAsync(_sessionId);
+        var ws = await ResolveWorkspaceAsync(session);
+        var model = _configManager.SelectedModel;
+        var title = session?.Title ?? "新会话";
+        SessionTitle = title;
+
+        // 预热：按本会话自身绑定的工作区构建 Agent（失败向上抛出，由 RootView 提示）
+        await _agentHost.InitializeAsync(_sessionId);
+
+        _titleService.SetWorkspace(ws?.Name ?? "-");
+        _titleService.SetModel(model ?? "-");
+        _titleService.SetSessionTitle(title);
+
+        if (_footerProvider is not null)
         {
-            try
-            {
-                await Task.Delay(20);
-                await _syncGate.WaitAsync();
-                try
-                {
-                    await SyncContextAsync();
-                }
-                finally
-                {
-                    _syncGate.Release();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("同步上下文失败", ex);
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _syncScheduled, 0);
-            }
+            _footerProvider.WorkspaceName = ws?.Name ?? "-";
+            _footerProvider.ModelName = model ?? "-";
+            _footerProvider.SessionTitle = title;
+        }
+
+        if (!string.IsNullOrEmpty(_sessionId))
+        {
+            await LoadHistoryAsync(_sessionId);
+        }
+
+        _dispatcher.Invoke(() =>
+        {
+            _doc.AppendBlock(new SystemBlock(
+                $"模型: {model ?? "-"}  |  工作区: {ws?.Name ?? "-"}  |  会话: {title}",
+                foreground: BlockColors.Success));
+            _footerView?.SetNeedsDraw();
         });
+    }
+
+    /// <summary>
+    /// 取会话实体（用于标题/工作区解析）。
+    /// </summary>
+    private async Task<DbSession?> GetSessionAsync(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return null;
+        var repo = _services.GetRequiredService<SessionRepository>();
+        return await repo.GetBySessionIdAsync(sessionId);
+    }
+
+    /// <summary>
+    /// 解析会话自身绑定的工作区；未绑定或已删除时回退到当前工作区。
+    /// </summary>
+    private async Task<WorkspaceInfo?> ResolveWorkspaceAsync(DbSession? session)
+    {
+        var workspaceId = session?.WorkspaceId;
+        if (!string.IsNullOrWhiteSpace(workspaceId))
+        {
+            var ws = await _workspaceManager.GetWorkspaceAsync(workspaceId!);
+            if (ws is not null) return ws;
+        }
+        return _workspaceManager.CurrentWorkspace;
     }
 
     /// <summary>
@@ -532,22 +359,20 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 处理用户输入。启动 agent 流式对话，所有输出以 Block 形式追加到文档。
+    /// 处理用户输入。经 <see cref="AgentHostService"/> 启动本会话流式对话，输出以 Block 形式追加到文档。
     /// </summary>
     /// <param name="input">用户输入文本。</param>
-    /// <param name="attachmentPaths">附件文件路径。</param>
-    public async Task ProcessInputAsync(string input, IReadOnlyList<string>? attachmentPaths = null)
+    /// <param name="attachments">附件草稿（含路径与文件名）。</param>
+    public async Task ProcessInputAsync(string input, IReadOnlyList<AttachmentDraft>? attachments = null)
     {
+        attachments ??= Array.Empty<AttachmentDraft>();
+
         // 允许在“已请求取消（Esc）”时覆盖旧的挂起运行；否则运行中直接返回，避免并发跑两条对话。
-        // 参考 Codex 的 _activeRunSeq 机制：Esc 后旧运行被作废，新输入可干净地开启新一轮。
         if (IsRunning && !_cancelRequested) return;
-        var hasAttachments = attachmentPaths is { Count: > 0 };
-        if (string.IsNullOrWhiteSpace(input) && !hasAttachments) return;
-        if (_agent is null) throw new InvalidOperationException("Agent 未初始化");
+        if (string.IsNullOrWhiteSpace(input) && attachments.Count == 0) return;
 
         // 作废旧运行并开启新一轮：捕获本次运行序号，供流处理中丢弃迟到事件
         if (_cancelRequested) _cancelRequested = false;
-        // 新一轮开始：清除上一轮的拒绝终止标志与文案去重标记
         _deniedByUser = false;
         Interlocked.Exchange(ref _denialMessageShown, 0);
         var runSeq = Interlocked.Increment(ref _activeRunSeq);
@@ -557,75 +382,31 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         TuiDiag.AgentRunning = true;
         _currentCts = new CancellationTokenSource();
 
-        // 忙碌指示：页脚 spinner 动画（参考 Claude Code 的 waiting 提示），流式结束时停止
-        SpinnerService.Start("AI 正在思考… (Esc 取消)");
-
-        // 未授权工作区：提交任务前主动弹授权确认（MessageBox 模态，键盘可达）。
-        // 授权后工作区根目录加入 PathGuard，文件类工具即可访问，避免"未授权 + 文件操作"无限挂起。
-        // 若用户拒绝，仍继续运行（闲聊不受影响）；需要文件的任务由框架报错而非静默挂起。
-        var wsMgr = _workspaceManager ?? _services.GetService<IWorkspaceManager>() as WorkspaceManager;
-        if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag-Phase] PI: auth-check start authorized={wsMgr?.CurrentWorkspace?.IsAuthorized}");
-        if (wsMgr is not null)
-        {
-            var ws = wsMgr.CurrentWorkspace;
-            if (ws is not null && !ws.IsAuthorized)
-            {
-                try
-                {
-                    var authorized = await wsMgr.EnsureAuthorizedAsync(ws);
-                    if (!authorized)
-                    {
-                        _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                            "⚠ 当前工作区未授权，涉及文件的操作可能受限。可执行 /work -authorize 授权后重试。",
-                            foreground: BlockColors.Accent)));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn("工作区授权检查失败", ex);
-                }
-            }
-        }
+        _spinner.Start("AI 正在思考… (Esc 取消)");
 
         try
         {
-            // 设置权限模式与确认回调
-            SetupConfirmationContext();
+            // 工作区授权检查（基于本会话自身绑定的工作区）
+            var session = await GetSessionAsync(_sessionId);
+            var ws = await ResolveWorkspaceAsync(session);
+            await EnsureAuthorizedWithNoticeAsync(ws);
 
-            // 处理附件：失败或不支持时提示并终止本轮（不发送）
+            // 附件预检：含图片且当前模型不支持视觉 → 前置报错，不发送
             var modelId = _configManager.SelectedModel ?? "";
-            var service = _services.GetRequiredService<AttachmentService>();
-            IReadOnlyList<ProcessedAttachment> processed = Array.Empty<ProcessedAttachment>();
-            if (hasAttachments)
+            if (HasUnsupportedImage(modelId, attachments))
             {
-                try
-                {
-                    processed = await service.ProcessAsync(attachmentPaths!, generateThumbnails: false, ct: _currentCts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                        $"附件处理失败: {ex.Message}", foreground: BlockColors.Failure)));
-                    return;
-                }
-
-                if (!service.CanAttach(modelId, processed))
-                {
-                    _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                        service.GetUnsupportedMessage(modelId, processed), foreground: BlockColors.Failure)));
-                    return;
-                }
+                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                    $"当前模型 {modelId} 不支持图片附件，请切换支持视觉的模型或移除图片。",
+                    foreground: BlockColors.Failure)));
+                return;
             }
 
-            // 追加用户消息
+            // 追加用户消息（显示信息由草稿轻量构造，完整处理交由 AgentHostService）
             _dispatcher.Invoke(() => _doc.AppendBlock(
-                new UserMessageBlock(input, AttachmentService.ToDisplayInfos(processed))));
+                new UserMessageBlock(input, BuildDisplayInfos(attachments))));
 
-            await RunStreamingAsync(input, processed, _currentCts.Token, runSeq);
+            var attachmentPaths = attachments.Select(a => a.Path).ToList();
+            await ConsumeStreamAsync(input, attachmentPaths, _currentCts.Token, runSeq);
         }
         catch (OperationCanceledException)
         {
@@ -638,7 +419,6 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         }
         catch (AgentApiException apiEx)
         {
-            // 框架已完成错误分类：只渲染友好文案，原始异常进日志
             Logger.Error("Agent 对话异常", apiEx, apiEx.Error.Category.ToString());
             _dispatcher.Invoke(() =>
                 _doc.AppendBlock(new SystemBlock(apiEx.Error.FriendlyMessage, foreground: BlockColors.Failure)));
@@ -651,47 +431,111 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         }
         finally
         {
-            // 仅当本次运行仍是“当前活动运行”时才复位全局态；
-            // 若已被取消/被新运行覆盖（_activeRunSeq 已变化），则不复位，避免误伤新运行。
-            // 注意：旧运行若仍挂起在后台，其 _currentCts 已被新运行覆写，此处不可 Dispose。
+            // 仅当本次运行仍是“当前活动运行”时才复位全局态；否则不复位，避免误伤新运行。
             if (runSeq == Volatile.Read(ref _activeRunSeq))
             {
                 IsRunning = false;
                 TuiDiag.AgentRunning = false;
-                SpinnerService.Stop();
+                _spinner.Stop();
                 _currentCts?.Dispose();
                 _currentCts = null;
                 ReportPlannedActions();
-                ResetConfirmationContext();
 
-                // 运行期间发生的上下文切换（工作区/模型/会话）被延迟，
-                // 本轮结束后再触发一次同步，避免破坏运行中的 Agent 状态
-                if (_pendingSync)
+                // 运行期间发生的模型切换 / 上下文重载被延迟，本轮结束后按最新配置重建 Agent
+                if (_pendingAgentReset)
                 {
-                    _pendingSync = false;
-                    RequestSync();
+                    _pendingAgentReset = false;
+                    _agentHost.Reset(_sessionId);
                 }
             }
         }
     }
 
     /// <summary>
-    /// 取消当前对话（Esc）。参考 Codex：先作废当前运行序号（使迟到事件/挂起任务被丢弃），
-    /// 再取消令牌；并标记 _cancelRequested，使随后到来的新输入可干净地覆盖旧的挂起运行。
+    /// 未授权工作区：提交任务前主动弹授权确认；拒绝时提示但继续运行（闲聊不受影响）。
+    /// </summary>
+    private async Task EnsureAuthorizedWithNoticeAsync(WorkspaceInfo? ws)
+    {
+        if (ws is null || ws.IsAuthorized) return;
+        try
+        {
+            var authorized = await _workspaceManager.EnsureAuthorizedAsync(ws);
+            if (!authorized)
+            {
+                _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+                    "⚠ 当前工作区未授权，涉及文件的操作可能受限。可执行 /work -authorize 授权后重试。",
+                    foreground: BlockColors.Accent)));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("工作区授权检查失败", ex);
+        }
+    }
+
+    // ────────────── 附件显示轻量构造 ──────────────
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+
+    private static bool IsImagePath(string path)
+        => ImageExtensions.Contains(Path.GetExtension(path));
+
+    private bool HasUnsupportedImage(string modelId, IReadOnlyList<AttachmentDraft> attachments)
+        => attachments.Any(a => IsImagePath(a.Path)) && !ModelCapability.SupportsVision(modelId);
+
+    private static IReadOnlyList<AttachmentDisplayInfo> BuildDisplayInfos(IReadOnlyList<AttachmentDraft> attachments)
+    {
+        if (attachments.Count == 0) return Array.Empty<AttachmentDisplayInfo>();
+
+        var list = new List<AttachmentDisplayInfo>(attachments.Count);
+        foreach (var a in attachments)
+        {
+            long size = 0;
+            try
+            {
+                var fi = new FileInfo(a.Path);
+                if (fi.Exists) size = fi.Length;
+            }
+            catch
+            {
+                // 文件不存在/不可访问时体积记为 0，不阻断发送（真实处理由 AgentHostService 完成）
+            }
+
+            var isImage = IsImagePath(a.Path);
+            list.Add(new AttachmentDisplayInfo(
+                a.FileName, GuessMediaType(a.Path), size, null, isImage, null, a.Path));
+        }
+        return list;
+    }
+
+    private static string GuessMediaType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".bmp" => "image/bmp",
+        ".webp" => "image/webp",
+        ".pdf" => "application/pdf",
+        ".md" => "text/markdown",
+        ".json" => "application/json",
+        ".txt" or ".cs" or ".log" => "text/plain",
+        _ => "application/octet-stream"
+    };
+
+    /// <summary>
+    /// 取消当前对话（Esc）。先作废当前运行序号（使迟到事件/挂起任务被丢弃），再取消令牌；
+    /// 并标记 _cancelRequested，使随后到来的新输入可干净地覆盖旧的挂起运行。
     /// </summary>
     public void Cancel()
     {
         _cancelRequested = true;
         Interlocked.Increment(ref _activeRunSeq); // 作废当前运行：其迟到事件/append 将被丢弃
 
-        // 立即复位"运行中"全局态。Cancel() 由 UI 线程按键处理（RootView.OnKeyDown）调用，
-        // 标量字段直接写即可；若等到旧运行的 finally 复位则永远等不到 ——
-        // _activeRunSeq 已被递增，旧运行被判定为 stale 而跳过复位，
-        // 会导致 IsRunning 永久 true（后续输入全进待执行队列且无活动运行去 DrainQueue）。
         var cancelledSeq = _currentRunSeq;
         IsRunning = false;
         TuiDiag.AgentRunning = false;
-        SpinnerService.Stop();
+        _spinner.Stop();
 
         // 先摘除引用再取消：在途旧运行仍持有该 Token（ConfirmTool 曾 ct.Register），
         // 故此处只置空不 Dispose，避免 "已释放的 CancellationTokenSource" 异常。
@@ -706,10 +550,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             Logger.Warn("取消当前任务令牌失败", ex);
         }
 
-        ResetConfirmationContext();
-
         // 收尾 UI 状态：完成 spinner/工具块动画，避免动画 Timer 永久运行（一直显示"正在…"）。
-        // 用取消时的 runSeq 兜底：若新一轮已抢先启动，则不复位，避免误伤新运行。
         _dispatcher.Invoke(() =>
         {
             if (_currentRunSeq != cancelledSeq) return;
@@ -725,10 +566,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             }
             _runningToolBlocks.Clear();
 
-// 编排节点块同理：取消后不再有完成事件，就地收尾避免动画泄漏
-                foreach (var pending in _runningNodeBlocks)
-                    pending.MarkFailed("已取消", null, null);
-                _runningNodeBlocks.Clear();
+            foreach (var pending in _runningNodeBlocks)
+                pending.MarkFailed("已取消", null, null);
+            _runningNodeBlocks.Clear();
 
             _doc.RelayoutLastBlock();
             _doc.MarkLastComplete();
@@ -736,55 +576,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 设置工具确认上下文（每轮对话开始前调用）。
-    /// 模式策略由框架统一分发，此处只装配回调：Bypass 全放行、
-    /// Plan 仅记录计划项且不执行、AcceptEdits 放行编辑类、Default 逐项确认。
-    /// </summary>
-    private void SetupConfirmationContext()
-    {
-        var context = _services.GetRequiredService<ToolConfirmationContext>();
-        Interlocked.Exchange(ref _plannedCount, 0);
-
-        context.ConfigureForTurn(
-            PermissionMode,
-            _currentCts?.Token ?? default,
-            confirmCallback: ConfirmTool,
-            workspaceManager: _services.GetRequiredService<IWorkspaceManager>(),
-            onPlannedAction: (tool, args) =>
-            {
-                // 运行已作废（Esc/新对话）：丢弃计划项，避免污染新对话
-                if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
-
-                Interlocked.Increment(ref _plannedCount);
-                _dispatcher.Invoke(() =>
-                    _doc.AppendBlock(new SystemBlock(
-                        $"  📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}",
-                        foreground: BlockColors.Thinking)));
-            },
-            onUserDenied: (tool, args) =>
-            {
-                // 运行已作废（Esc/新对话）：旧运行的拒绝不提示、不终止新运行
-                if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
-
-                // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
-                _deniedByUser = true;
-                Logger.Warn($"用户拒绝工具调用，终止本轮: {tool}");
-
-                // 直接落终止文案：Cancel() 会使流循环判定 stale 并 break，OCE 分支不一定触发；
-                // 用 Interlocked 保证与 OCE 路径只显示一次
-                if (Interlocked.Exchange(ref _denialMessageShown, 1) == 0)
-                {
-                    _dispatcher.Invoke(() => _doc.AppendBlock(
-                        new SystemBlock("已拒绝，本轮终止", foreground: BlockColors.Failure)));
-                }
-
-                Cancel();
-            });
-    }
-
-    /// <summary>
-    /// 人工确认回调：阻塞 agent 线程，等待用户在 TUI 内联选择块上作出决定。
+    /// 人工确认回调：阻塞宿主回合线程，等待用户在 TUI 内联选择块上作出决定。
     /// 授权记忆（本轮/本会话）由框架 ToolConfirmationService 依据返回值处理，此处仅回传选择。
+    /// 后台会话照常在自己的文档弹出确认块并阻塞，不打扰当前视图。
     /// </summary>
     /// <param name="toolName">工具名称。</param>
     /// <param name="args">工具参数。</param>
@@ -793,12 +587,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     {
         if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm enter: {toolName}");
 
-        // 同步确认：用 ManualResetEventSlim 阻塞 agent 线程，
-        // 同时在 UI 线程显示 InlineChoiceBlock
         using var done = new ManualResetEventSlim(false);
         var result = ConfirmResult.Deny;
 
-        // 注册取消令牌回调：ESC 时 Set 信号以提前解除阻塞
         var ct = _currentCts?.Token ?? default;
         CancellationTokenRegistration ctr = default;
         if (ct.CanBeCanceled)
@@ -808,8 +599,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
         _dispatcher.Invoke(() =>
         {
-            // 运行已作废（Esc/新对话）：不弹确认块，避免旧运行干扰新对话；
-            // 必须唤醒等待（结果保持 Deny），否则无限等待会永久挂起
+            // 运行已作废（Esc/新对话）：不弹确认块；必须唤醒等待（结果保持 Deny），否则无限挂起
             if (_currentRunSeq != Volatile.Read(ref _activeRunSeq))
             {
                 done.Set();
@@ -841,10 +631,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     private void ReportPlannedActions()
     {
         var count = Volatile.Read(ref _plannedCount);
-        if (PermissionMode != ToolPermissionMode.Plan || count == 0)
-        {
-            return;
-        }
+        if (PermissionMode != ToolPermissionMode.Plan || count == 0) return;
 
         _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
             $"📋 Plan 模式：本轮记录 {count} 个计划项，均未执行。"
@@ -853,28 +640,11 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 清理确认上下文（每轮对话结束后调用）。
+    /// 运行流式对话循环——消费 <see cref="AgentHostService"/> 输出的 <see cref="StreamEvent"/> 序列并转换为 Block。
+    /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
     /// </summary>
-    private void ResetConfirmationContext()
+    private async Task ConsumeStreamAsync(string input, IReadOnlyList<string> attachmentPaths, CancellationToken ct, int runSeq)
     {
-        _services.GetRequiredService<ToolConfirmationContext>().Reset();
-    }
-
-    /// <summary>
-    /// 运行流式对话循环——将 agent 输出内容转换为 Block 追加。
-    /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程，
-    /// 避免逐 token Invoke 洪峰压垮主循环；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
-    /// </summary>
-    private async Task RunStreamingAsync(string input, IReadOnlyList<ProcessedAttachment> attachments, CancellationToken ct, int runSeq)
-    {
-        if (_agent is null) return;
-
-        var probeModelId = _configManager.SelectedModel ?? "";
-        var probe = VisionCapabilityProbe.Create(probeModelId, attachments.Any(a => a.Info.Kind == AttachmentKind.Image));
-        var probeCompleted = false;
-        Exception? probeError = null;
-
-        // 记录本次运行序号：供下方 _dispatcher.Invoke 与 FlushPendingTokens 判断是否已被作废
         _currentRunSeq = runSeq;
 
         // 重置当前会话的流式状态（字段级，供跨会话复用的节流回调使用）
@@ -887,11 +657,11 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         foreach (var pending in _runningNodeBlocks)
             pending.MarkFailed("已中断", null, null);
         _runningNodeBlocks.Clear();
+        Interlocked.Exchange(ref _plannedCount, 0);
 
         _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
 
         // 立即反馈：提交后立刻插入 spinner，避免 planner/编排等非流式阶段长时间"死屏"
-        // （首个思考/正文 token 到达时复用本块，不会再新建）
         _dispatcher.Invoke(() =>
         {
             if (_currentSpinner is null)
@@ -911,17 +681,19 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             });
         }
 
-        if (_orchestrationSink is not null)
-            _orchestrationSink.Progress += OnOrchestrationSinkProgress;
-
         try
         {
-            await foreach (var update in (attachments.Count == 0
-                ? _agent.RunStreamingAsync(input, ct)
-                : _agent.RunStreamingAsync(input, attachments, ct)))
+            await foreach (var evt in _agentHost.RunStreamingAsync(
+                input,
+                attachmentPaths,
+                ConfirmTool,
+                PermissionMode,
+                onPlannedAction: OnPlannedAction,
+                onUserDenied: OnUserDenied,
+                sessionId: _sessionId,
+                ct: ct))
             {
-                // 运行已被取消/被新对话覆盖：停止消费流，丢弃后续（迟到的旧事件）。
-                // 参考 Codex 的 runSeq 防护，避免“Esc 取消后，旧运行的输出仍追加到文档/被误判为活跃”。
+                // 运行已被取消/被新对话覆盖：停止消费流，丢弃后续（迟到的旧事件）
                 if (runSeq != Volatile.Read(ref _activeRunSeq))
                 {
                     if (TuiDiag.Enabled)
@@ -929,190 +701,22 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                     break;
                 }
 
-                if (update.Contents is null) continue;
-
-                // 框架已在每个更新上标注 LLM 轮次号（工具结果边界 +1）：据此把同一轮回复的思考归并到同一思考块
-                var llmRound = update.AdditionalProperties is { } roundProps
-                    && roundProps.TryGetValue(LuBanAgent.LlmRoundKey, out var roundValue)
-                    && roundValue is int r
-                        ? r
-                        : 0;
-
                 if (!firstToken)
                 {
                     firstToken = true;
-                    if (TuiDiag.Enabled) Logger.Warn("[TuiDiag-Phase] PI: first stream update received");
+                    if (TuiDiag.Enabled) Logger.Warn("[TuiDiag-Phase] PI: first stream event received");
                 }
 
-                // 边界取证：记录框架每次 yield 的内容类型（定位"只产出 reasoning 就结束"类问题）
                 if (TuiDiag.Enabled)
-                {
-                    Logger.Warn($"[TuiDiag] update: {string.Join(",", update.Contents.Select(c => c.GetType().Name))}");
-                }
+                    Logger.Warn($"[TuiDiag] event: {evt.GetType().Name}");
 
-                foreach (var content in update.Contents)
-                {
-                    // ─── 编排进度（规划/节点开始/节点完成等）：逐行追加系统提示 ───
-                    if (content is OrchestrationProgressContent progress)
-                    {
-                        HandleOrchestrationProgress(progress);
-                        continue;
-                    }
-
-                    // ─── 思考过程（仅过滤 null/空串，保留换行等空白 token）───
-                    if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
-                    {
-                        // 进入新一轮 LLM 回复（LlmRound 变化）→ 收尾上一轮思考块：
-                        // 同一轮内正文夹在思考中间时不再封块（见 FlushPendingTokens），跨轮仍按顺序另起新块。
-                        if (llmRound > 0 && llmRound != _currentThinkingRound)
-                        {
-                            CloseThinkingBlock();
-                            _currentThinkingRound = llmRound;
-                        }
-
-                        // 首次思考 → 插入 spinner
-                        _dispatcher.Invoke(() =>
-                        {
-                            if (_currentSpinner is null)
-                            {
-                                _currentSpinner = new ActionSpinnerBlock("AI 正在思考…", _doc, _dispatcher);
-                                _doc.AppendBlock(_currentSpinner);
-                            }
-                        });
-
-                        lock (_streamLock) _pendingThinking.Append(reasoning.Text);
-                        _streamThrottle.Schedule();
-                        continue;
-                    }
-
-                    // ─── 工具调用 ───
-                    if (content is FunctionCallContent functionCall)
-                    {
-                        CloseThinkingBlock();
-
-                        _dispatcher.Invoke(() =>
-                        {
-                            // 完成上一个 spinner（思考阶段）
-                            if (_currentSpinner is not null)
-                            {
-                                _currentSpinner.MarkComplete();
-                                _currentSpinner = null;
-                            }
-
-                            var toolBlock = new ToolCallBlock(functionCall.Name, functionCall.CallId, _doc, _dispatcher);
-                            _doc.AppendBlock(toolBlock);
-                            _runningToolBlocks.Add(toolBlock);
-                        });
-                        continue;
-                    }
-
-                    // ─── 工具结果：不显示返回内容（参考 Claude Code），仅失败时提示一行 ───
-                    if (content is FunctionResultContent functionResult)
-                    {
-                        // 用户拒绝/取消：不是异常，但也不应显示为"完成"；
-                        // 结果可能是原始 ToolResult，也可能是工厂序列化后的 JsonElement，用框架辅助统一识别
-                        var userCancelled = functionResult.Exception is null
-                            && ToolResult.IsUserCancelled(functionResult.Result);
-
-                        if (functionResult.Exception is not null)
-                        {
-                            CloseThinkingBlock();
-                            _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
-                                $"❌ 工具执行失败: {functionResult.Exception.Message}",
-                                foreground: BlockColors.Failure)));
-                        }
-
-                        _dispatcher.Invoke(() =>
-                        {
-                            // 同一轮可能有多个工具调用：框架会先连续产出多个 FunctionCall，再产出各自结果，
-                            // 故按 CallId 精确匹配；结果不带 CallId 时才退化为「最早的未完成块」。
-                            // 带 CallId 但匹配不到时不猜（留给 finally 统一按"流中断"收尾），避免错配。
-                            var target = !string.IsNullOrEmpty(functionResult.CallId)
-                                ? _runningToolBlocks.FirstOrDefault(b => string.Equals(b.CallId, functionResult.CallId, StringComparison.Ordinal))
-                                : _runningToolBlocks.FirstOrDefault(b => !b.IsComplete);
-
-                            if (target is not null)
-                            {
-                                if (functionResult.Exception is not null)
-                                    target.MarkFailed(functionResult.Exception.Message);
-                                else if (userCancelled)
-                                {
-                                    if (_deniedByUser)
-                                        target.MarkDeniedByUser();
-                                    else
-                                        target.MarkCancelled();
-                                }
-                                else
-                                    target.MarkComplete();
-                                _runningToolBlocks.Remove(target);
-                            }
-                        });
-                        continue;
-                    }
-
-                    // ─── 正文回复（仅过滤 null/空串，保留换行等空白 token）───
-                    if (content is TextContent text && !string.IsNullOrEmpty(text.Text))
-                    {
-                        // 首次正文 → 插入 spinner
-                        _dispatcher.Invoke(() =>
-                        {
-                            if (_currentSpinner is null)
-                            {
-                                _currentSpinner = new ActionSpinnerBlock("正在生成回复…", _doc, _dispatcher);
-                                _doc.AppendBlock(_currentSpinner);
-                            }
-                        });
-
-                        lock (_streamLock) _pendingAnswer.Append(text.Text);
-                        _streamThrottle.Schedule();
-                        continue;
-                    }
-
-                    // ─── 流内错误（provider 返回的错误内容，不能静默丢弃）───
-                    if (content is ErrorContent error)
-                    {
-                        probe.Observe(error.Message);
-                        CloseThinkingBlock();
-                        Logger.Warn($"[TuiDiag] ErrorContent: {error.Message}");
-                        _dispatcher.Invoke(() => _doc.AppendBlock(
-                            new SystemBlock($"错误: {error.Message}", foreground: BlockColors.Failure)));
-                        continue;
-                    }
-
-                    // ─── UsageContent：token 使用统计，无需渲染，静默跳过 ───
-                    if (content is UsageContent)
-                    {
-                        continue;
-                    }
-
-                    // ─── 其余内容类型：诊断模式下记录 ───
-                    if (TuiDiag.Enabled)
-                    {
-                        Logger.Warn($"[TuiDiag] unhandled content: {content.GetType().Name}");
-                    }
-                }
+                HandleStreamEvent(evt);
             }
 
-            if (TuiDiag.Enabled)
-            {
-                Logger.Warn("[TuiDiag] stream completed normally");
-            }
-
-            // 仅当本轮仍是活动运行时才算正常完成（Esc/新对话导致的 break 不算）
-            probeCompleted = runSeq == Volatile.Read(ref _activeRunSeq);
-        }
-        catch (Exception ex)
-        {
-            probeError = ex;
-            throw;
+            if (TuiDiag.Enabled) Logger.Warn("[TuiDiag] stream completed normally");
         }
         finally
         {
-            if (_orchestrationSink is not null)
-                _orchestrationSink.Progress -= OnOrchestrationSinkProgress;
-
-            probe.Complete(probeError, probeCompleted);
-
             // 仅当仍是当前活动运行才操作文档；否则（已被取消/覆盖）跳过，避免污染新运行
             var stale = _currentRunSeq != Volatile.Read(ref _activeRunSeq);
             if (!stale)
@@ -1120,22 +724,16 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 // 取消/异常路径也冲刷剩余 token，保证已产出内容不丢失；并关闭最后的思考块
                 CloseThinkingBlock();
 
-                // 完成最后一个 spinner（无论正常完成还是异常/取消）
                 _dispatcher.Invoke(() =>
                 {
-                    if (_currentSpinner is not null)
-                    {
-                        _currentSpinner.MarkComplete();
-                        _currentSpinner = null;
-                    }
+                    CompleteSpinner();
 
-                    // 若流结束时仍有工具块在执行（流中断/取消/结果缺失），全部标记失败：
-                    // 既避免误显"完成"，也避免残留块的动画 Timer 永久运行（一直显示"正在…"）。
+                    // 流结束时仍有工具块在执行（流中断/取消/结果缺失），全部标记失败：
+                    // 既避免误显"完成"，也避免残留块的动画 Timer 永久运行。
                     foreach (var pending in _runningToolBlocks)
                         pending.MarkFailed("流中断");
                     _runningToolBlocks.Clear();
 
-                    // 编排节点块同理：流中断时未能收到完成事件，需就地收尾，避免动画泄漏
                     foreach (var pending in _runningNodeBlocks)
                         pending.MarkFailed("流中断", null, null);
                     _runningNodeBlocks.Clear();
@@ -1147,34 +745,174 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             }
             else if (TuiDiag.Enabled)
             {
-                Logger.Warn($"[TuiDiag] RunStreaming finally stale: current={_currentRunSeq} active={Volatile.Read(ref _activeRunSeq)} —— 跳过文档清理");
+                Logger.Warn($"[TuiDiag] ConsumeStream finally stale: current={_currentRunSeq} active={Volatile.Read(ref _activeRunSeq)} —— 跳过文档清理");
             }
         }
     }
 
     /// <summary>
-    /// 编排进度出口回调（可能来自并行节点线程）。交给统一处理器，其内部自行编组到 UI 线程
-    /// 并做运行序号校验。
+    /// Plan 模式回调：上报一个未执行的计划项。
     /// </summary>
-    /// <param name="progress">编排进度事件。</param>
-    private void OnOrchestrationSinkProgress(OrchestrationProgressContent progress)
-        => HandleOrchestrationProgress(progress);
+    private void OnPlannedAction(string tool, IReadOnlyDictionary<string, object?> args)
+    {
+        if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+        Interlocked.Increment(ref _plannedCount);
+        _dispatcher.Invoke(() => _doc.AppendBlock(new SystemBlock(
+            $"  📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}",
+            foreground: BlockColors.Thinking)));
+    }
+
+    /// <summary>
+    /// 用户明确拒绝工具调用回调：标记并立即终止本轮。
+    /// </summary>
+    private void OnUserDenied(string tool, IReadOnlyDictionary<string, object?> args)
+    {
+        if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
+
+        _deniedByUser = true;
+        Logger.Warn($"用户拒绝工具调用，终止本轮: {tool}");
+
+        if (Interlocked.Exchange(ref _denialMessageShown, 1) == 0)
+        {
+            _dispatcher.Invoke(() => _doc.AppendBlock(
+                new SystemBlock("已拒绝，本轮终止", foreground: BlockColors.Failure)));
+        }
+
+        Cancel();
+    }
+
+    /// <summary>
+    /// 处理单个流式事件，转换为 Block 追加。
+    /// </summary>
+    private void HandleStreamEvent(StreamEvent evt)
+    {
+        switch (evt)
+        {
+            // ─── 思考过程（跨轮边界收尾上一轮思考块）───
+            case ThinkingDeltaEvent t:
+                if (t.LlmRound > 0 && t.LlmRound != _currentThinkingRound)
+                {
+                    CloseThinkingBlock();
+                    _currentThinkingRound = t.LlmRound;
+                }
+                EnsureSpinnerOnUi("AI 正在思考…");
+                lock (_streamLock) _pendingThinking.Append(t.Delta);
+                _streamThrottle!.Schedule();
+                break;
+
+            // ─── 正文回复 ───
+            case TextDeltaEvent t:
+                EnsureSpinnerOnUi("正在生成回复…");
+                lock (_streamLock) _pendingAnswer.Append(t.Delta);
+                _streamThrottle!.Schedule();
+                break;
+
+            // ─── 工具调用 ───
+            case ToolCallStartedEvent tc:
+                CloseThinkingBlock();
+                _dispatcher.Invoke(() =>
+                {
+                    CompleteSpinner();
+                    var toolBlock = new ToolCallBlock(tc.Name, tc.CallId, _doc, _dispatcher);
+                    _doc.AppendBlock(toolBlock);
+                    _runningToolBlocks.Add(toolBlock);
+                });
+                break;
+
+            // ─── 工具结果 ───
+            case ToolCallCompletedEvent tcc:
+                _dispatcher.Invoke(() => ResolveToolBlock(tcc.CallId, ToolOutcome.Completed, null));
+                break;
+
+            case ToolCallFailedEvent tcf:
+                _dispatcher.Invoke(() =>
+                {
+                    if (_deniedByUser)
+                    {
+                        ResolveToolBlock(tcf.CallId, ToolOutcome.Denied, null);
+                    }
+                    else if (tcf.Error == "工具调用被拒绝或已取消")
+                    {
+                        ResolveToolBlock(tcf.CallId, ToolOutcome.Cancelled, null);
+                    }
+                    else
+                    {
+                        ResolveToolBlock(tcf.CallId, ToolOutcome.Failed, tcf.Error);
+                        _doc.AppendBlock(new SystemBlock(
+                            $"❌ 工具执行失败: {tcf.Error}", foreground: BlockColors.Failure));
+                    }
+                });
+                break;
+
+            // ─── 流内错误 ───
+            case ErrorEvent e:
+                CloseThinkingBlock();
+                Logger.Warn($"[TuiDiag] ErrorEvent: {e.Message}");
+                _dispatcher.Invoke(() => _doc.AppendBlock(
+                    new SystemBlock($"错误: {e.Message}", foreground: BlockColors.Failure)));
+                break;
+
+            // ─── 编排进度（本会话流内事件，天然按会话隔离）───
+            case OrchestrationProgressEvent p:
+                HandleOrchestrationProgress(p);
+                break;
+
+            // ─── 附件已加入 / 其余事件：无需渲染 ───
+        }
+    }
+
+    private enum ToolOutcome { Completed, Failed, Denied, Cancelled }
+
+    /// <summary>
+    /// 按 CallId 匹配运行中的工具块并收尾。须在 UI 线程调用。
+    /// </summary>
+    private void ResolveToolBlock(string? callId, ToolOutcome outcome, string? error)
+    {
+        var target = !string.IsNullOrEmpty(callId)
+            ? _runningToolBlocks.FirstOrDefault(b => string.Equals(b.CallId, callId, StringComparison.Ordinal))
+            : _runningToolBlocks.FirstOrDefault(b => !b.IsComplete);
+
+        if (target is null) return;
+
+        switch (outcome)
+        {
+            case ToolOutcome.Failed: target.MarkFailed(error); break;
+            case ToolOutcome.Denied: target.MarkDeniedByUser(); break;
+            case ToolOutcome.Cancelled: target.MarkCancelled(); break;
+            default: target.MarkComplete(); break;
+        }
+        _runningToolBlocks.Remove(target);
+    }
+
+    /// <summary>
+    /// 若尚无 spinner 则在 UI 线程插入一个（避免 planner/编排等非流式阶段死屏）。
+    /// </summary>
+    private void EnsureSpinnerOnUi(string description)
+    {
+        if (_currentSpinner is not null) return;
+        _dispatcher.Invoke(() =>
+        {
+            if (_currentSpinner is null)
+            {
+                _currentSpinner = new ActionSpinnerBlock(description, _doc, _dispatcher);
+                _doc.AppendBlock(_currentSpinner);
+            }
+        });
+    }
 
     /// <summary>
     /// 处理编排进度事件：逐行追加系统提示，让规划/节点执行等长耗时阶段有实时反馈。
-    /// 规划阶段复用等待中的 spinner 并切换文案；节点执行阶段每节点一条独立动画行
-    /// （参考 opencode 的 subagent 展示），由对应完成/失败事件就地收尾。
+    /// 规划阶段复用等待中的 spinner 并切换文案；节点执行阶段每节点一条独立动画行，
+    /// 由对应完成/失败事件就地收尾。
     /// </summary>
-    /// <param name="progress">编排进度事件。</param>
-    private void HandleOrchestrationProgress(OrchestrationProgressContent progress)
+    private void HandleOrchestrationProgress(OrchestrationProgressEvent progress)
     {
         _dispatcher.Invoke(() =>
         {
             // 运行已作废（Esc/新对话）：丢弃迟到进度，避免污染新对话
             if (_currentRunSeq != Volatile.Read(ref _activeRunSeq)) return;
 
-            // 规划阶段：复用等待中的动画 spinner，只切换阶段文案，
-            // 用持续动画覆盖 planner 数十秒的"黑盒"（而非直接收尾成静态行）。
+            // 规划阶段：复用等待中的动画 spinner，只切换阶段文案
             if (progress.EventType == ProgressEventType.PlanningStarted)
             {
                 if (_currentSpinner is null)
@@ -1189,8 +927,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 return;
             }
 
-            // 节点内部活动（思考/正文/工具调用/结果）：路由到对应运行中的节点块。
-            // 必须置于下面的按 EventType 的文案分支之前，否则会被当成未知事件走 spinner 收尾逻辑。
+            // 节点内部活动：路由到对应运行中的节点块
             if (progress.EventType == ProgressEventType.NodeActivity)
             {
                 if (progress.Activity is null) return;
@@ -1221,18 +958,17 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             {
                 CompleteSpinner();
 
-                // 按 NodeId 精确匹配；NodeId 缺失时退化为「最早的未完成块」，绝不猜错配
                 var target = !string.IsNullOrEmpty(progress.NodeId)
                     ? _runningNodeBlocks.FirstOrDefault(b => string.Equals(b.NodeId, progress.NodeId, StringComparison.Ordinal))
                     : _runningNodeBlocks.FirstOrDefault(b => !b.IsComplete);
 
                 if (target is not null)
                 {
-                    var elapsed = progress.NodeResult?.Elapsed.TotalSeconds;
+                    var elapsed = progress.ElapsedSeconds;
                     switch (progress.EventType)
                     {
                         case ProgressEventType.NodeFailed:
-                            target.MarkFailed(progress.NodeResult?.Error ?? progress.Message ?? "失败", elapsed, progress.Message);
+                            target.MarkFailed(progress.Error ?? progress.Message ?? "失败", elapsed, progress.Message);
                             break;
                         case ProgressEventType.NodeSkipped:
                             target.MarkSkipped(progress.Message);
@@ -1250,8 +986,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 return;
             }
 
-            // 反思重规划：复用等待中的动画 spinner 并切换文案，覆盖反思阶段的静默期
-            // （反思超时默认无限期，可在 Orchestration 配置）
+            // 反思重规划：复用等待中的动画 spinner 并切换文案
             if (progress.EventType == ProgressEventType.ReflectionStarted)
             {
                 var description = progress.Message ?? "正在反思重规划…";
@@ -1273,9 +1008,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 _ => null
             };
 
-            // 已进入规划完成阶段：收尾等待中的 spinner
             CompleteSpinner();
-
             if (text is null) return;
 
             _doc.AppendBlock(new SystemBlock(text, foreground: BlockColors.System));
@@ -1283,21 +1016,18 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 为未匹配到活动动画行的节点追加单行摘要（如因前驱失败被跳过、取消、未发 NodeStarted）。
-    /// 依据 <see cref="NodeResult.Status"/> 区分成功/跳过/取消/失败，避免把"跳过"误显为绿勾。
+    /// 为未匹配到活动动画行的节点追加单行摘要。依据 EventType 区分成功/跳过/失败。
     /// 须在 UI 线程调用。
     /// </summary>
-    /// <param name="progress">节点完成/失败进度事件。</param>
-    private void AppendNodeSummary(OrchestrationProgressContent progress)
+    private void AppendNodeSummary(OrchestrationProgressEvent progress)
     {
         var name = progress.Message ?? progress.NodeId ?? "子任务";
-        var elapsed = progress.NodeResult?.Elapsed.TotalSeconds;
+        var elapsed = progress.ElapsedSeconds;
 
-        var (text, color) = progress.NodeResult?.Status switch
+        var (text, color) = progress.EventType switch
         {
-            TaskNodeStatus.Skipped => ($"− {name} · 已跳过", BlockColors.System),
-            TaskNodeStatus.Cancelled => ($"− {name} · 已取消", BlockColors.System),
-            TaskNodeStatus.Failed => ($"✗ {name} · {progress.NodeResult?.Error ?? "失败"}", BlockColors.Failure),
+            ProgressEventType.NodeSkipped => ($"− {name} · 已跳过", BlockColors.System),
+            ProgressEventType.NodeFailed => ($"✗ {name} · {progress.Error ?? "失败"}", BlockColors.Failure),
             _ => ($"✓ {name} · {elapsed.GetValueOrDefault():F1}s", BlockColors.Success)
         };
 
@@ -1317,7 +1047,6 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// <summary>
     /// 关闭当前思考块：先冲刷缓冲的思考 token，再将思考块标记为完成并置空，
     /// 使下一轮思考（工具调用后的第二轮 CoT）能创建新块并追加到当前位置，实现顺序交织。
-    /// 在工具调用 / 工具结果(失败) / 流内错误 / 流结束等“思考阶段边界”处调用。
     /// </summary>
     private void CloseThinkingBlock()
     {
@@ -1337,7 +1066,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     /// <summary>
     /// 将缓冲的思考/正文 token 一次性编组到 UI 线程追加。
-    /// 实例方法（非闭包）：节流器跨会话复用，会话状态通过字段访问，避免上一会话的状态泄漏。
+    /// 实例方法（非闭包）：会话状态通过字段访问，避免跨会话状态泄漏。
     /// </summary>
     private void FlushPendingTokens()
     {
@@ -1369,7 +1098,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         _dispatcher.Invoke(() =>
         {
             using var invokeScope = TuiDiag.Measure("StreamFlush.Invoke", thresholdMs: 0);
-            
+
             if (thinking.Length > 0)
             {
                 if (_thinkingBlock is null)
@@ -1385,9 +1114,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             if (answer.Length > 0)
             {
                 // 正文出现仅标记思考块“已完成”（停指示），但不清空引用：
-                // 同一轮内紧随其后的思考仍并入同一块；思考块只在轮次边界
-                // （下一轮思考 / 工具调用 / 流结束，见 CloseThinkingBlock）才收尾另起，
-                // 避免“思考→正文→思考”在单轮内被误切成多块。
+                // 同一轮内紧随其后的思考仍并入同一块；思考块只在轮次边界才收尾另起。
                 if (_thinkingBlock is not null && !_thinkingCompleted)
                 {
                     _thinkingCompleted = true;
@@ -1406,15 +1133,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// </summary>
     public void Dispose()
     {
-        if (_sessionManager is not null)
-        {
-            _sessionManager.CurrentSessionChanged -= OnCurrentSessionChanged;
-        }
-        if (_workspaceManager is not null)
-        {
-            _workspaceManager.CurrentWorkspaceChanged -= OnCurrentWorkspaceChanged;
-        }
         _configManager.SelectedModelChanged -= OnSelectedModelChanged;
-        _syncGate.Dispose();
+        _streamThrottle?.Dispose();
+        _streamThrottle = null;
+        _currentCts?.Cancel();
+        _currentCts?.Dispose();
+        _currentCts = null;
+        _spinner.Dispose();
     }
 }

@@ -608,7 +608,8 @@ internal sealed class LlmWikiCommand : CommandBase
         Writer.WriteInfo($"开始 ingest：汇总 {merged} 个源文件 → {relTemp}");
         try
         {
-            await _conversation.ProcessInputAsync(instruction, new List<string> { tempPath });
+            await _conversation.ProcessInputAsync(instruction,
+                new[] { new AttachmentDraft(tempPath, Path.GetFileName(tempPath)) });
         }
         catch (Exception ex)
         {

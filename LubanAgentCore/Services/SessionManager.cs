@@ -74,6 +74,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         await _sessionRepo.InsertAsync(session);
 
         _currentSession = ToSessionInfo(session);
+        CurrentSessionChanged?.Invoke(sessionId);
         return _currentSession;
     }
 

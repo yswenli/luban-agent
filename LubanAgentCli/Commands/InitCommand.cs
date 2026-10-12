@@ -25,6 +25,7 @@ public class InitCommand : CommandBase
     private readonly IAgentsMdInitializer _initializer;
     private readonly IWorkspaceManager _workspaceManager;
     private readonly ILuBanAgentFactory _agentFactory;
+    private readonly SpinnerService _spinner;
     private readonly IAgentContextReloadTrigger? _reloadTrigger;
 
     /// <summary>
@@ -45,6 +46,7 @@ public class InitCommand : CommandBase
     /// <param name="initializer">AGENTS.md 初始化服务</param>
     /// <param name="workspaceManager">工作区管理器</param>
     /// <param name="agentFactory">Agent 工厂（取自根容器，携带工作区 AllowedRoots）</param>
+    /// <param name="spinner">会话级加载指示器</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     /// <param name="reloadTrigger">宿主上下文重载触发器（可选），落盘后触发 Agent 重建以应用新 AGENTS.md</param>
@@ -54,6 +56,7 @@ public class InitCommand : CommandBase
         IAgentsMdInitializer initializer,
         IWorkspaceManager workspaceManager,
         ILuBanAgentFactory agentFactory,
+        SpinnerService spinner,
         ITuiOutputWriter writer,
         ITuiUiService ui,
         IAgentContextReloadTrigger? reloadTrigger = null)
@@ -62,6 +65,7 @@ public class InitCommand : CommandBase
         _initializer = initializer ?? throw new ArgumentNullException(nameof(initializer));
         _workspaceManager = workspaceManager ?? throw new ArgumentNullException(nameof(workspaceManager));
         _agentFactory = agentFactory ?? throw new ArgumentNullException(nameof(agentFactory));
+        _spinner = spinner ?? throw new ArgumentNullException(nameof(spinner));
         _reloadTrigger = reloadTrigger;
     }
 
@@ -146,7 +150,7 @@ public class InitCommand : CommandBase
             var prompt = _initializer.BuildPrompt(options);
 
             Writer.WriteLine();
-            SpinnerService.Start("正在生成 AGENTS.md...");
+            _spinner.Start("正在生成 AGENTS.md...");
             string rawOutput;
             try
             {
@@ -156,7 +160,7 @@ public class InitCommand : CommandBase
             }
             finally
             {
-                SpinnerService.Stop();
+                _spinner.Stop();
             }
 
             var markdown = _initializer.Normalize(rawOutput);
