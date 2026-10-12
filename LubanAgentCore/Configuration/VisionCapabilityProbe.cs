@@ -7,11 +7,13 @@ namespace LubanAgentCore.Configuration;
 public sealed class VisionCapabilityProbe
 {
     private readonly string _modelId;
+    private readonly ModelCapabilityCache _cache;
     private bool _imageUnsupported;
 
-    private VisionCapabilityProbe(string modelId)
+    private VisionCapabilityProbe(string modelId, ModelCapabilityCache cache)
     {
         _modelId = modelId;
+        _cache = cache;
     }
 
     /// <summary>本轮是否需要探测（有图片且能力记录未知）。</summary>
@@ -22,8 +24,12 @@ public sealed class VisionCapabilityProbe
     /// </summary>
     /// <param name="modelId">模型标识（providerName:modelName）。</param>
     /// <param name="hasImage">本轮是否包含图片附件。</param>
-    public static VisionCapabilityProbe Create(string modelId, bool hasImage)
-        => new(modelId) { IsProbing = hasImage && ModelCapability.TryGetVision(modelId) is null };
+    /// <param name="cache">按用户隔离的能力缓存实例。</param>
+    public static VisionCapabilityProbe Create(string modelId, bool hasImage, ModelCapabilityCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        return new(modelId, cache) { IsProbing = hasImage && ModelCapability.TryGetVision(modelId, cache) is null };
+    }
 
     /// <summary>观察一条错误文案；命中图片不支持关键词时标记。</summary>
     public void Observe(string? text)
@@ -46,8 +52,8 @@ public sealed class VisionCapabilityProbe
             Observe(ModelCapability.CollectRawErrorText(error));
 
         if (_imageUnsupported)
-            ModelCapability.SetVision(_modelId, false);
+            ModelCapability.SetVision(_modelId, false, _cache);
         else if (completed && error is null)
-            ModelCapability.SetVision(_modelId, true);
+            ModelCapability.SetVision(_modelId, true, _cache);
     }
 }

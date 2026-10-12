@@ -440,7 +440,7 @@ public partial class MainWindow : Window
         if (_inputBox == null || _viewModel == null) return;
 
         var modelId = _viewModel.Services.GetService<ConfigManager>()?.SelectedModel ?? "";
-        var supportsVision = ModelCapability.SupportsVision(modelId);
+        var supportsVision = _viewModel.Services.GetModelCapabilityService().SupportsVision(modelId);
         var atCap = _viewModel.PendingAttachments.Count >= AttachmentService.MaxAttachmentsPerMessage;
 
         if (atCap)

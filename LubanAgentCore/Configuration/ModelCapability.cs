@@ -9,7 +9,7 @@ namespace LubanAgentCore.Configuration;
 /// <param name="SupportsToolCalling">是否支持工具调用。</param>
 public record ModelInfo(string Id, bool SupportsVision, bool SupportsToolCalling = true);
 
-/// <summary>模型能力查询入口（多模态能力由 <see cref="ModelCapabilityRegistry"/> 动态登记）。</summary>
+/// <summary>模型能力查询入口（多模态可变状态由 <see cref="ModelCapabilityCache"/> 按用户承载）。</summary>
 public static class ModelCapability
 {
     private static readonly string[] ImageUnsupportedKeywords =
@@ -21,19 +21,38 @@ public static class ModelCapability
     /// <summary>
     /// 判断模型是否支持视觉。无记录时乐观放行（true），由 LLM 实际调用结果回填。
     /// </summary>
-    public static bool SupportsVision(string modelId)
-        => ModelCapabilityRegistry.TryGet(modelId) ?? true;
+    /// <param name="modelId">模型标识（providerName:modelName）。</param>
+    /// <param name="cache">按用户隔离的能力缓存实例。</param>
+    public static bool SupportsVision(string modelId, ModelCapabilityCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        return cache.TryGet(modelId) ?? true;
+    }
 
     /// <summary>查询模型视觉能力登记记录；无记录返回 null（未知）。</summary>
-    public static bool? TryGetVision(string modelId) => ModelCapabilityRegistry.TryGet(modelId);
+    /// <param name="modelId">模型标识（providerName:modelName）。</param>
+    /// <param name="cache">按用户隔离的能力缓存实例。</param>
+    public static bool? TryGetVision(string modelId, ModelCapabilityCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        return cache.TryGet(modelId);
+    }
 
     /// <summary>登记模型视觉能力并持久化。</summary>
-    public static void SetVision(string modelId, bool supportsVision)
-        => ModelCapabilityRegistry.Set(modelId, supportsVision);
+    /// <param name="modelId">模型标识（providerName:modelName）。</param>
+    /// <param name="supportsVision">是否支持图片输入。</param>
+    /// <param name="cache">按用户隔离的能力缓存实例。</param>
+    public static void SetVision(string modelId, bool supportsVision, ModelCapabilityCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        cache.Set(modelId, supportsVision);
+    }
 
     /// <summary>获取模型能力信息（未知模型返回默认能力）。</summary>
-    public static ModelInfo GetModelInfo(string modelId)
-        => new(modelId, SupportsVision(modelId));
+    /// <param name="modelId">模型标识（providerName:modelName）。</param>
+    /// <param name="cache">按用户隔离的能力缓存实例。</param>
+    public static ModelInfo GetModelInfo(string modelId, ModelCapabilityCache cache)
+        => new(modelId, SupportsVision(modelId, cache));
 
     /// <summary>
     /// 判断错误文本是否表示「模型不支持图片输入」。

@@ -112,6 +112,11 @@ public static class AgentHostBuilder
         services.AddKeyedSingleton<ProviderService>(userId,
             (sp, key) => new ProviderService(sp.GetRequiredKeyedService<ProviderCache>(key!)));
 
+        // 模型多模态能力登记（可变状态）按用户隔离，keyed 注册；门面实例同样 keyed
+        services.AddKeyedSingleton<ModelCapabilityCache>(userId);
+        services.AddKeyedSingleton<ModelCapabilityService>(userId,
+            (sp, key) => new ModelCapabilityService(sp.GetRequiredKeyedService<ModelCapabilityCache>(key!)));
+
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
@@ -173,6 +178,10 @@ public static class AgentHostBuilder
 
         // 容器构建后回填 ConfigManager，使其能解析 keyed 的按用户实例级服务
         configManager.AttachServices(sp);
+
+        // 用全局配置初始化按用户的能力登记表，并注册持久化回调
+        sp.GetRequiredKeyedService<ModelCapabilityCache>(userId)
+            .Initialize(configManager.ModelCapabilities, configManager.PersistModelCapability);
 
         return sp;
     }

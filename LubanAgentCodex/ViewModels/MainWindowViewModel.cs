@@ -134,7 +134,7 @@ public partial class MainWindowViewModel : ObservableObject
         var paths = _pendingAttachmentPaths.ToList();
 
         var modelId = Services.GetService<ConfigManager>()?.SelectedModel ?? "";
-        var supportsVision = ModelCapability.SupportsVision(modelId);
+        var supportsVision = Services.GetModelCapabilityService().SupportsVision(modelId);
 
         var infos = new List<AttachmentDisplayInfo>(paths.Count);
         var valid = new List<string>(paths.Count);
@@ -335,7 +335,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (PendingAttachments.Any(a => a.IsImage))
         {
             var modelId = Services.GetRequiredService<ConfigManager>().SelectedModel ?? "";
-            if (!ModelCapability.SupportsVision(modelId))
+            if (!Services.GetModelCapabilityService().SupportsVision(modelId))
             {
                 Messages.Add(new SystemMessageItem
                 {

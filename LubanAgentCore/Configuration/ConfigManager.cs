@@ -139,11 +139,19 @@ public class ConfigManager : IAppConfigReader
             Logger.Error("ConfigManager.Load 加载配置失败", ex, _configPath);
             _config = new AppConfig();
         }
-
-        ModelCapabilityRegistry.Initialize(_config.ModelCapabilities, PersistModelCapability);
     }
 
-    private void PersistModelCapability(string modelId, bool supportsVision)
+    /// <summary>
+    /// 已登记的模型多模态能力记录（键为 "provider:model" 小写归一化，值为是否支持图片输入）。
+    /// </summary>
+    public IReadOnlyDictionary<string, bool> ModelCapabilities => _config.ModelCapabilities;
+
+    /// <summary>
+    /// 持久化模型能力记录（更新内存配置并保存到磁盘）。
+    /// </summary>
+    /// <param name="modelId">模型标识（已归一化为小写）。</param>
+    /// <param name="supportsVision">是否支持图片输入。</param>
+    public void PersistModelCapability(string modelId, bool supportsVision)
     {
         _config.ModelCapabilities[modelId] = supportsVision;
         try

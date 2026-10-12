@@ -22,4 +22,20 @@ public static class UserScopedServiceExtensions
     /// <returns>Provider 门面实例</returns>
     public static ProviderService GetProviderService(this IServiceProvider services)
         => services.GetRequiredKeyedService<ProviderService>(services.ResolveUserKey());
+
+    /// <summary>
+    /// 解析当前用户的模型能力门面 <see cref="ModelCapabilityService"/> 实例。
+    /// </summary>
+    /// <param name="services">服务提供者</param>
+    /// <returns>模型能力门面实例</returns>
+    public static ModelCapabilityService GetModelCapabilityService(this IServiceProvider services)
+        => services.GetRequiredKeyedService<ModelCapabilityService>(services.ResolveUserKey());
+
+    /// <summary>
+    /// 解析当前用户的模型能力缓存 <see cref="ModelCapabilityCache"/> 实例。
+    /// </summary>
+    /// <param name="services">服务提供者</param>
+    /// <returns>模型能力缓存实例</returns>
+    public static ModelCapabilityCache GetModelCapabilityCache(this IServiceProvider services)
+        => services.GetRequiredKeyedService<ModelCapabilityCache>(services.ResolveUserKey());
 }

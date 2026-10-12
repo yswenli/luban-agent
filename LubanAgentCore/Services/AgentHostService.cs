@@ -232,7 +232,7 @@ public class AgentHostService
         var runtime = await EnsureRuntimeAsync(sid, ct);
 
         var hasImage = processed.Any(a => a.Info.Kind == AttachmentKind.Image);
-        var probe = VisionCapabilityProbe.Create(modelId, hasImage);
+        var probe = VisionCapabilityProbe.Create(modelId, hasImage, _services.GetModelCapabilityCache());
 
         if (!probe.IsProbing)
         {

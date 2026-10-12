@@ -23,14 +23,17 @@ public sealed class AttachmentService
         { ',', ';', ':', '，', '。', '；', '：', '、', ')', ']', '}', '！', '？', '!', '?' };
 
     private readonly IAttachmentProcessor _processor;
+    private readonly IServiceProvider _services;
     private readonly IWorkspaceManager? _workspace;
 
     /// <summary>构造。</summary>
     /// <param name="processor">单文件处理器。</param>
+    /// <param name="services">服务提供者，用于按用户解析模型能力（keyed）。</param>
     /// <param name="workspace">工作区管理器，用于相对路径解析（可为 null）。</param>
-    public AttachmentService(IAttachmentProcessor processor, IWorkspaceManager? workspace = null)
+    public AttachmentService(IAttachmentProcessor processor, IServiceProvider services, IWorkspaceManager? workspace = null)
     {
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
+        _services = services ?? throw new ArgumentNullException(nameof(services));
         _workspace = workspace;
     }
 
@@ -129,7 +132,7 @@ public sealed class AttachmentService
     public bool CanAttach(string modelId, IReadOnlyList<ProcessedAttachment> attachments)
     {
         var hasImage = attachments.Any(a => a.Info.Kind == AttachmentKind.Image);
-        return !hasImage || ModelCapability.SupportsVision(modelId);
+        return !hasImage || _services.GetModelCapabilityService().SupportsVision(modelId);
     }
 
     /// <summary>不支持时的提示。</summary>

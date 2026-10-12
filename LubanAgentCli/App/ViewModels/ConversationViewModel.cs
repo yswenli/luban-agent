@@ -482,7 +482,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         => ImageExtensions.Contains(Path.GetExtension(path));
 
     private bool HasUnsupportedImage(string modelId, IReadOnlyList<AttachmentDraft> attachments)
-        => attachments.Any(a => IsImagePath(a.Path)) && !ModelCapability.SupportsVision(modelId);
+        => attachments.Any(a => IsImagePath(a.Path)) && !_services.GetModelCapabilityService().SupportsVision(modelId);
 
     private static IReadOnlyList<AttachmentDisplayInfo> BuildDisplayInfos(IReadOnlyList<AttachmentDraft> attachments)
     {
