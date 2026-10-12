@@ -77,13 +77,56 @@ public class AgentHostService
     /// <param name="ct">取消令牌。</param>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        var workspace = _services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace
-            ?? throw new InvalidOperationException("未设置当前工作区");
         var sessionId = CurrentSessionId
             ?? throw new InvalidOperationException("未设置当前会话");
 
-        var runtime = _runtimes.GetOrCreate(sessionId, workspace.WorkspaceId, workspace.RootPath);
+        await EnsureRuntimeAsync(sessionId, ct);
+    }
+
+    /// <summary>
+    /// 取（或创建）指定会话的运行时，并确保其 Agent 已按该会话自身绑定的工作区构建。
+    /// </summary>
+    /// <remarks>
+    /// 工作区来源为会话自身绑定的 <c>DbSession.WorkspaceId</c>（见 <see cref="ResolveSessionWorkspaceAsync"/>），
+    /// 而非进程级“当前工作区”，避免跨工作区串扰。
+    /// </remarks>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task<SessionRuntime> EnsureRuntimeAsync(string sessionId, CancellationToken ct)
+    {
+        var runtime = _runtimes.Get(sessionId);
+        if (runtime?.Agent is not null)
+            return runtime;
+
+        var workspace = await ResolveSessionWorkspaceAsync(sessionId, ct);
+        runtime = _runtimes.GetOrCreate(sessionId, workspace.WorkspaceId, workspace.RootPath);
         await EnsureAgentAsync(runtime, workspace, ct);
+        return runtime;
+    }
+
+    /// <summary>
+    /// 解析指定会话自身绑定的工作区；历史会话未绑定工作区时回退到当前工作区。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="ct">取消令牌。</param>
+    private async Task<WorkspaceInfo> ResolveSessionWorkspaceAsync(string sessionId, CancellationToken ct)
+    {
+        var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
+
+        var sessionRepo = _services.GetRequiredService<SessionRepository>();
+        var dbSession = await sessionRepo.GetBySessionIdAsync(sessionId);
+        var workspaceId = dbSession?.WorkspaceId;
+
+        if (!string.IsNullOrWhiteSpace(workspaceId))
+        {
+            var ws = await workspaceManager.GetWorkspaceAsync(workspaceId);
+            if (ws is not null)
+                return ws;
+        }
+
+        // 历史会话未绑定工作区（WorkspaceId 为空）或工作区已被删除：回退到当前工作区
+        return workspaceManager.CurrentWorkspace
+            ?? throw new InvalidOperationException("未设置当前工作区");
     }
 
     /// <summary>
@@ -125,8 +168,6 @@ public class AgentHostService
         string? sessionId = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var workspace = _services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace
-            ?? throw new InvalidOperationException("未设置当前工作区");
         var sid = sessionId ?? CurrentSessionId
             ?? throw new InvalidOperationException("未设置当前会话");
 
@@ -167,7 +208,7 @@ public class AgentHostService
                 yield return new AttachmentAddedEvent(a.Info.FileName, a.Info.MediaType, a.Info.FileSize);
         }
 
-        var runtime = _runtimes.GetOrCreate(sid, workspace.WorkspaceId, workspace.RootPath);
+        var runtime = await EnsureRuntimeAsync(sid, ct);
 
         var hasImage = processed.Any(a => a.Info.Kind == AttachmentKind.Image);
         var probe = VisionCapabilityProbe.Create(modelId, hasImage);
@@ -310,13 +351,8 @@ public class AgentHostService
     {
         var sp = runtime.Services;
 
-        // 确保 Agent 与当前工作区匹配：切换工作区后必须重新初始化，
-        // 否则会复用上一工作区的 Profile（如普通工作区），
-        // 导致 LLM Wiki 知识库不加载检索工具组/LLM Wiki 系统提示词，表现与常规工作区无异。
-        var currentWorkspace = _services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace;
-        if (currentWorkspace is not null && runtime.Workspace?.WorkspaceId != currentWorkspace.WorkspaceId)
-            await EnsureAgentAsync(runtime, currentWorkspace, ct);
-
+        // Agent 已由 EnsureRuntimeAsync 按本会话自身绑定的工作区构建；
+        // 运行时绑定即权威来源，不再按进程级“当前工作区”重建（避免跨工作区串扰）。
         var agent = runtime.Agent
             ?? throw new InvalidOperationException("Agent 初始化失败，请先调用 InitializeAsync");
 

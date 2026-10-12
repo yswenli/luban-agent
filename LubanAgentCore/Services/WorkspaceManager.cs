@@ -102,6 +102,13 @@ public interface IWorkspaceManager
     Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync(string? userId = null);
 
     /// <summary>
+    /// 按工作区ID获取工作区信息（用于按会话自身绑定的工作区解析，避免依赖进程级“当前工作区”）。
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <returns>工作区信息；不存在或ID为空时返回 null。</returns>
+    Task<WorkspaceInfo?> GetWorkspaceAsync(string workspaceId);
+
+    /// <summary>
     /// 确保工作区已授权
     /// </summary>
     /// <param name="workspace">工作区信息</param>
@@ -431,6 +438,18 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         else
             list = await _repo.GetUserWorkspacesAsync(userId);
         return list.Select(ToWorkspaceInfo);
+    }
+
+    /// <summary>
+    /// 按工作区ID获取工作区信息（用于按会话自身绑定的工作区解析，避免依赖进程级“当前工作区”）。
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <returns>工作区信息；不存在或ID为空时返回 null。</returns>
+    public async Task<WorkspaceInfo?> GetWorkspaceAsync(string workspaceId)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return null;
+        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
+        return ws is null ? null : ToWorkspaceInfo(ws);
     }
 
     /// <summary>
