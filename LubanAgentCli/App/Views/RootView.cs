@@ -164,8 +164,8 @@ internal sealed class RootView : Runnable
         var completionPopup = _inputBar.CompletionPopup;
         completionPopup.X = 2;
         completionPopup.Y = Pos.Func(_ => _inputBar.Frame.Y - completionPopup.VisibleRows);
-        completionPopup.Width = 30;
-        completionPopup.Height = 10;
+        completionPopup.Width = 55;
+        completionPopup.Height = 20;
         Add(completionPopup);
 
         _inputBar.CompletionStateChanged += () =>
