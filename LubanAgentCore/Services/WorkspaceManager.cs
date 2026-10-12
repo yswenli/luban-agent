@@ -165,8 +165,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly WorkspaceRepository _repo;
     private readonly SessionRepository _sessionRepo;
     private readonly ISessionManager _sessionManager;
-    private readonly IEnumerable<ISkill> _builtinSkills;
-    private readonly IEnumerable<IRule> _builtinRules;
+    private readonly BuiltinSkillCatalog _builtinSkills;
+    private readonly BuiltinRuleCatalog _builtinRules;
 
     /// <summary>当前工作区（实例级；由宿主按需切换，不再作为静态全局状态）。</summary>
     private WorkspaceInfo? _current;
@@ -267,8 +267,8 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         WorkspaceRepository repo,
         SessionRepository sessionRepo,
         ISessionManager sessionManager,
-        IEnumerable<ISkill> builtinSkills,
-        IEnumerable<IRule> builtinRules)
+        BuiltinSkillCatalog builtinSkills,
+        BuiltinRuleCatalog builtinRules)
     {
         _repo = repo;
         _sessionRepo = sessionRepo;
@@ -581,7 +581,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     private void WriteBuiltinSkills(string skillsDir)
     {
-        foreach (var skill in _builtinSkills)
+        foreach (var skill in _builtinSkills.All)
         {
             try
             {
@@ -606,7 +606,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     /// </summary>
     private void WriteBuiltinRules(string rulesDir)
     {
-        foreach (var rule in _builtinRules)
+        foreach (var rule in _builtinRules.All)
         {
             try
             {

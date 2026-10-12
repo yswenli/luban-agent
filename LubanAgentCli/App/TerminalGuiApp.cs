@@ -166,8 +166,11 @@ internal sealed class TerminalGuiApp : IDisposable
             };
             _titleService.TitleChanged += _titleChangedHandler;
 
-            // 阶段二：启动成功后进入主界面，传入 OnUnhandledException 保持主循环在普通异常下存活。
-            using var root = new RootView(Services, Dispatcher, ui, startup.Notices);
+            // 阶段二：启动成功后进入主界面。CLI 的命令/视图在构造期一次性解析并长期持有 scoped 服务，
+            // 故建一个与 UI 同生命周期的 scope，把它的 ServiceProvider 作为「根」传入 RootView；
+            // 退出时随 using 一并释放（singleton 仍由根部 Services 持有，不受影响）。
+            using var uiScope = Services.CreateScope();
+            using var root = new RootView(uiScope.ServiceProvider, Dispatcher, ui, startup.Notices);
             application.Run(root, OnUnhandledException);
         }
         finally

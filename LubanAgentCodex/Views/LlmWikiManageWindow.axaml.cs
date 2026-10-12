@@ -38,6 +38,10 @@ public partial class LlmWikiManageWindow : Window
 {
     private readonly IServiceProvider _services;
     private readonly IWorkspaceManager _workspaceManager;
+    // 窗口级作用域：wiki/检索为 scoped（工作区/会话隔离），窗口生命周期内复用一份，关闭时释放
+    private readonly IServiceScope _scope;
+    private readonly IRetrievalService? _retrieval;
+    private readonly IWikiService? _wiki;
     private ListBox? _llmWikiListBox;
     private ListBox? _resultListBox;
     private Button? _createButton;
@@ -56,6 +60,10 @@ public partial class LlmWikiManageWindow : Window
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        _scope = services.CreateScope();
+        _retrieval = _scope.ServiceProvider.GetService<IRetrievalService>();
+        _wiki = _scope.ServiceProvider.GetService<IWikiService>();
+        Closed += (_, _) => _scope.Dispose();
         InitializeComponent();
         LoadLlmWikiWorkspaces();
     }
@@ -152,7 +160,7 @@ public partial class LlmWikiManageWindow : Window
     private async void OnIndex(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var retrieval = _services.GetService<IRetrievalService>();
+        var retrieval = _retrieval;
         if (retrieval == null)
         {
             await Dialogs.ShowInfoAsync(this, "嵌入模型未就绪，无法索引");
@@ -211,7 +219,7 @@ public partial class LlmWikiManageWindow : Window
     private async void OnSearch(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _services.GetService<IWikiService>();
+        var wiki = _wiki;
         if (wiki == null)
         {
             await Dialogs.ShowInfoAsync(this, "嵌入模型未就绪，无法搜索");
@@ -244,7 +252,7 @@ public partial class LlmWikiManageWindow : Window
     private async void OnWikiRebuildClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _services.GetService<IWikiService>();
+        var wiki = _wiki;
         if (wiki == null)
         {
             await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法重建索引");
@@ -292,7 +300,7 @@ public partial class LlmWikiManageWindow : Window
     private async void OnWikiLintClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _services.GetService<IWikiService>();
+        var wiki = _wiki;
         if (wiki == null)
         {
             await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法执行 lint");
@@ -426,7 +434,7 @@ public partial class LlmWikiManageWindow : Window
         var list = items.ToList();
         if (list.Count == 0) return;
 
-        var retrieval = _services.GetService<IRetrievalService>();
+        var retrieval = _retrieval;
         if (retrieval == null)
         {
             foreach (var it in list) it.CountText = "未索引";

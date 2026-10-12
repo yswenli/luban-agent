@@ -24,6 +24,7 @@ public class SqliteVectorStore : IVectorStore
     private readonly LlmWikiFileRepository _files = new();
     private readonly LlmWikiChunkRepository _chunks = new();
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly IWorkspaceContext? _workspaceContext;
     // 写操作信号量，确保并发写入时的数据一致性
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
@@ -31,13 +32,20 @@ public class SqliteVectorStore : IVectorStore
     /// 创建 SQLite 向量存储。
     /// </summary>
     /// <param name="workspaceManager">工作区管理器（单例实例；用于未显式传入 workspaceId 时回退当前工作区）。</param>
-    public SqliteVectorStore(IWorkspaceManager workspaceManager) => _workspaceManager = workspaceManager;
+    /// <param name="workspaceContext">会话级工作区上下文（优先于全局当前工作区，避免跨会话串扰）。</param>
+    public SqliteVectorStore(IWorkspaceManager workspaceManager, IWorkspaceContext? workspaceContext = null)
+    {
+        _workspaceManager = workspaceManager;
+        _workspaceContext = workspaceContext;
+    }
 
     /// <summary>
-    /// 解析工作区ID：显式传入优先；未传时回退当前工作区（空字符串表示无工作区上下文）
+    /// 解析工作区ID：显式传入优先；其次本会话绑定的工作区；最后回退全局当前工作区（空字符串表示无工作区上下文）
     /// </summary>
     private string ResolveWorkspaceId(string? workspaceId)
-        => workspaceId ?? (_workspaceManager.CurrentWorkspace?.WorkspaceId ?? "");
+        => workspaceId
+           ?? _workspaceContext?.WorkspaceId
+           ?? (_workspaceManager.CurrentWorkspace?.WorkspaceId ?? "");
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<IndexedFile>> GetFilesAsync(string? pathPrefix = null, string? workspaceId = null)

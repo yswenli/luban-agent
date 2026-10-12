@@ -689,7 +689,8 @@ public partial class MainWindow : Window
                         await workspaceManager.EnsureAuthorizedAsync(llmWikiWs);
                         await workspaceManager.SetCurrentAsync(llmWikiWs.WorkspaceId);
 
-                        var retrieval = vm.Services.GetService<IRetrievalService>();
+                        using var retrievalScope = vm.Services.CreateScope();
+                        var retrieval = retrievalScope.ServiceProvider.GetService<IRetrievalService>();
                         if (retrieval == null)
                         {
                             await Dialogs.ShowInfoAsync(this,

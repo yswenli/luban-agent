@@ -133,17 +133,21 @@ public static class AgentHostBuilder
 
         if (embedder != null)
         {
-            services.AddSingleton<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(embedder);
-            services.AddSingleton<IVectorStore, SqliteVectorStore>();
-            services.AddSingleton<IRetrievalService>(sp => new RetrievalService(
+            // 嵌入器本身单例（ONNX 会话昂贵），用串行装饰器包一层供多会话共享，避免并发同时推理
+            services.AddSingleton<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(
+                new SerializingEmbeddingGenerator(embedder));
+            // 工作区内容相关服务按会话作用域：每会话一份，避免跨会话/跨工作区串扰
+            services.AddScoped<IVectorStore, SqliteVectorStore>();
+            services.AddScoped<IRetrievalService>(sp => new RetrievalService(
                 sp.GetRequiredService<IVectorStore>(),
                 sp.GetRequiredService<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(),
                 sp.GetRequiredService<IOptions<LuBanAgentOptions>>()));
-            services.AddSingleton<IWikiContext, WorkspaceWikiContext>();
-            services.AddSingleton<IWikiService>(sp => new WikiService(
+            services.AddScoped<IWikiContext, WorkspaceWikiContext>();
+            services.AddScoped<IWikiService>(sp => new WikiService(
                 sp.GetRequiredService<IRetrievalService>(),
                 sp.GetRequiredService<IWikiContext>(),
                 sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Tools.Wiki));
+            // 知识任务为应用级全局表（跨工作区统计/串行写库）：保持单例，任务体内部自建 scope 解析 scoped 服务
             services.AddSingleton<KnowledgeTaskService>();
             if (modelManager != null) services.AddSingleton(modelManager);
         }

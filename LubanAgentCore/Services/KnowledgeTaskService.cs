@@ -87,8 +87,7 @@ public sealed record KnowledgeTaskInfo(
 public sealed class KnowledgeTaskService
 {
     private const string TempConfigDir = ".luban-agent";
-    private readonly IRetrievalService _retrieval;
-    private readonly IWikiService _wiki;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     private readonly ConcurrentDictionary<string, KnowledgeTaskInfo> _tasks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancelSources = new(StringComparer.Ordinal);
@@ -99,10 +98,13 @@ public sealed class KnowledgeTaskService
     public event Action<KnowledgeTaskInfo>? Updated;
 
     /// <summary>创建服务实例</summary>
-    public KnowledgeTaskService(IRetrievalService retrieval, IWikiService wiki)
+    /// <param name="scopeFactory">
+    /// 根级作用域工厂。本服务为应用级单例（全局任务表 + 跨任务串行写库门），
+    /// 任务体内部自建 scope 解析 scoped 的检索/wiki 服务，避免 captive dependency。
+    /// </param>
+    public KnowledgeTaskService(IServiceScopeFactory scopeFactory)
     {
-        _retrieval = retrieval;
-        _wiki = wiki;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>全部任务快照（按开始时间倒序）</summary>
@@ -119,6 +121,9 @@ public sealed class KnowledgeTaskService
         var label = $"索引工作区「{Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}」";
         return Start(KnowledgeTaskKind.Index, workspaceId, root, label, async (id, ct) =>
         {
+            using var scope = _scopeFactory.CreateScope();
+            var retrieval = scope.ServiceProvider.GetRequiredService<IRetrievalService>();
+
             var progress = new ThrottledProgress(p => Mutate(id, t => t with
             {
                 Done = p.Done,
@@ -133,7 +138,7 @@ public sealed class KnowledgeTaskService
                 }
             }), TimeSpan.FromMilliseconds(500));
 
-            var report = await _retrieval.IndexDirectoryAsync(root, glob, false, progress, ct, workspaceId);
+            var report = await retrieval.IndexDirectoryAsync(root, glob, false, progress, ct, workspaceId);
             return (FormatIndexReport(report), (string?)null);
         });
     }
@@ -144,8 +149,11 @@ public sealed class KnowledgeTaskService
     public KnowledgeTaskInfo StartWikiRebuild(string workspaceId, string root)
         => Start(KnowledgeTaskKind.WikiRebuild, workspaceId, root, "重建 wiki 索引", async (id, ct) =>
         {
+            using var scope = _scopeFactory.CreateScope();
+            var wiki = scope.ServiceProvider.GetRequiredService<IWikiService>();
+
             Mutate(id, t => t with { Detail = "正在逐页重建 wiki 向量索引…" });
-            var report = await _wiki.RebuildIndexAsync(ct, workspaceId);
+            var report = await wiki.RebuildIndexAsync(ct, workspaceId);
             return (FormatIndexReport(report), (string?)null);
         });
 

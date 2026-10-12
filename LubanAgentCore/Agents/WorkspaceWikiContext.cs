@@ -18,23 +18,24 @@ using LuBan.AIAgent.Wiki;
 
 namespace LubanAgentCore.Agents;
 
-/// <summary>基于 <see cref="IWorkspaceManager"/> 实例的 wiki 上下文。</summary>
-public sealed class WorkspaceWikiContext(IWorkspaceManager workspaceManager) : IWikiContext
+/// <summary>会话感知的 wiki 上下文：默认取本会话绑定的工作区根，避免跨会话串扰。</summary>
+public sealed class WorkspaceWikiContext(
+    IWorkspaceContext workspaceContext,
+    IWorkspaceManager workspaceManager) : IWikiContext
 {
     /// <inheritdoc />
-    public string? WorkspaceRoot => workspaceManager.CurrentWorkspace?.RootPath;
+    public string? WorkspaceRoot => workspaceContext.RootPath;
 
     /// <inheritdoc />
     /// <remarks>
-    /// 显式指定 workspaceId 时优先解析该工作区的根（命中已加载缓存），
-    /// 未指定或未命中时回退当前工作区根。后台任务因此不依赖「当前工作区」。
+    /// 未指定 workspaceId 或指定为本会话工作区时返回会话根；
+    /// 显式指定其他工作区时优先命中已加载缓存，未命中回退会话根（后台任务不依赖「当前工作区」）。
     /// </remarks>
     public string? WorkspaceRootFor(string? workspaceId)
     {
-        var current = workspaceManager.CurrentWorkspace;
-        if (string.IsNullOrEmpty(workspaceId)) return current?.RootPath;
-        if (current != null && string.Equals(current.WorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase))
-            return current.RootPath;
-        return workspaceManager.GetKnownRootPath(workspaceId) ?? current?.RootPath;
+        if (string.IsNullOrEmpty(workspaceId)) return workspaceContext.RootPath;
+        if (string.Equals(workspaceContext.WorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase))
+            return workspaceContext.RootPath;
+        return workspaceManager.GetKnownRootPath(workspaceId) ?? workspaceContext.RootPath;
     }
 }

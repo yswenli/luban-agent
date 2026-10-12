@@ -123,15 +123,15 @@ public interface IAgentsMdInitializer
 /// </summary>
 public class AgentsMdInitializer : IAgentsMdInitializer
 {
-    private readonly SkillRegistry _skillRegistry;
+    private readonly BuiltinSkillCatalog _skillCatalog;
 
     /// <summary>
     /// 构造函数
     /// </summary>
-    /// <param name="skillRegistry">Skill 注册表</param>
-    public AgentsMdInitializer(SkillRegistry skillRegistry)
+    /// <param name="skillCatalog">内置 Skill 目录（单例；仅读取内置 agents-md-generator）</param>
+    public AgentsMdInitializer(BuiltinSkillCatalog skillCatalog)
     {
-        _skillRegistry = skillRegistry;
+        _skillCatalog = skillCatalog;
     }
 
     /// <inheritdoc/>
@@ -169,7 +169,7 @@ public class AgentsMdInitializer : IAgentsMdInitializer
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var skill = _skillRegistry.Get(SkillId)
+        var skill = _skillCatalog.Get(SkillId)
             ?? throw new InvalidOperationException($"内置 Skill {SkillId} 未注册");
 
         var input = BuildSkillInput(options);

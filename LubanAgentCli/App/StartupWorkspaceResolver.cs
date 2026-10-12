@@ -200,7 +200,8 @@ internal static class StartupWorkspaceResolver
             return;
         }
 
-        var agentFactory = services.GetRequiredService<ILuBanAgentFactory>();
+        using var scope = services.CreateScope();
+        var agentFactory = scope.ServiceProvider.GetRequiredService<ILuBanAgentFactory>();
         var model = configManager.SelectedModel!;
 
         try
