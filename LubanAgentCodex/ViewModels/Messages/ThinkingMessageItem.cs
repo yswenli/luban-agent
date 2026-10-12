@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.Text;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 
@@ -23,10 +24,26 @@ namespace LubanAgentCodex.ViewModels.Messages;
 /// </summary>
 public partial class ThinkingMessageItem : MessageItemBase
 {
+    // 流式思考字符串由 StringBuilder 累积，避免 `Content += delta` 的 O(n²) 分配与全文重排。
+    private readonly StringBuilder _contentBuilder = new();
+    private string _content = "";
+
     /// <summary>
     /// 思考内容
     /// </summary>
-    [ObservableProperty] private string _content = "";
+    public string Content
+    {
+        get => _content;
+        set
+        {
+            var v = value ?? "";
+            if (string.Equals(_content, v, StringComparison.Ordinal)) return;
+            _content = v;
+            _contentBuilder.Clear();
+            _contentBuilder.Append(v);
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>
     /// 是否已完成
@@ -48,7 +65,9 @@ public partial class ThinkingMessageItem : MessageItemBase
     /// </summary>
     public void AppendDelta(string delta)
     {
-        Content += delta;
+        if (string.IsNullOrEmpty(delta)) return;
+        _contentBuilder.Append(delta);
+        _content = _contentBuilder.ToString();
         OnPropertyChanged(nameof(Content));
     }
 

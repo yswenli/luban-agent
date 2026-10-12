@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Orchestration.Models;
+using System.Text;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 
@@ -75,10 +76,25 @@ public partial class NodeActivityDisplayItem : ObservableObject
     /// </summary>
     public bool Mergeable { get; init; }
 
+    private readonly StringBuilder _contentBuilder = new();
+    private string _content = "";
+
     /// <summary>
     /// 活动内容
     /// </summary>
-    [ObservableProperty] private string _content = "";
+    public string Content
+    {
+        get => _content;
+        set
+        {
+            var v = value ?? "";
+            if (string.Equals(_content, v, StringComparison.Ordinal)) return;
+            _content = v;
+            _contentBuilder.Clear();
+            _contentBuilder.Append(v);
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>
     /// 追加增量内容（流式合并）
@@ -86,7 +102,10 @@ public partial class NodeActivityDisplayItem : ObservableObject
     /// <param name="delta">增量文本。</param>
     public void AppendContent(string delta)
     {
-        Content += delta;
+        if (string.IsNullOrEmpty(delta)) return;
+        _contentBuilder.Append(delta);
+        _content = _contentBuilder.ToString();
+        OnPropertyChanged(nameof(Content));
     }
 
     /// <summary>

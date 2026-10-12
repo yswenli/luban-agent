@@ -60,6 +60,19 @@ public partial class NodeDetailWindow : Window
         item.Activities.CollectionChanged += OnActivitiesChanged;
     }
 
+    /// <summary>
+    /// 窗口关闭时退订节点活动事件：item 由消息流长期持有，若不退订会把已关闭的窗口一直挂在 item 上。
+    /// </summary>
+    protected override void OnClosed(System.EventArgs e)
+    {
+        if (_item != null)
+        {
+            _item.Activities.CollectionChanged -= OnActivitiesChanged;
+            _item = null;
+        }
+        base.OnClosed(e);
+    }
+
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);

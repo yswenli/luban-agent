@@ -42,6 +42,11 @@ public partial class SessionViewModel : ObservableObject
     private CancellationTokenSource? _cts;
     private int _activeRunSeq; // 运行序号：每次发起对话自增，用于丢弃取消/新对话后迟到的旧事件
     private volatile bool _deniedByUser;
+
+    // 流式冲刷间隔：过密会导致 TextBox 频繁全文重排（流式长文本下呈 O(n²) 渲染开销），
+    // 100ms 兼顾流畅度与 UI 线程压力。
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(100);
+
     private readonly StringBuilder _pendingText = new();
     private readonly StringBuilder _pendingThinking = new();
     private FlushThrottle? _throttle;
@@ -113,7 +118,7 @@ public partial class SessionViewModel : ObservableObject
         _runningNodes.Clear();
         _throttle ??= new FlushThrottle(
             () => Dispatcher.UIThread.Post(FlushPending),
-            TimeSpan.FromMilliseconds(50));
+            FlushInterval);
 
         IsRunning = true;
 
@@ -164,7 +169,7 @@ public partial class SessionViewModel : ObservableObject
         _runningNodes.Clear();
         _throttle ??= new FlushThrottle(
             () => Dispatcher.UIThread.Post(FlushPending),
-            TimeSpan.FromMilliseconds(50));
+            FlushInterval);
 
         IsRunning = true;
         try

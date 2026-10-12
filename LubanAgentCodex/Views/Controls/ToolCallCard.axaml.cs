@@ -23,6 +23,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCore.Utils;
+using System.ComponentModel;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -55,6 +56,7 @@ public partial class ToolCallCard : UserControl
     private TextBlock? _resultSummaryText;
     private Button? _copyButton;
     private ToolCallItem? _boundItem;
+    private PropertyChangedEventHandler? _itemHandler;
     private DispatcherTimer? _timer;
     private int _frameIndex;
 
@@ -90,13 +92,27 @@ public partial class ToolCallCard : UserControl
         base.OnDataContextChanged(e);
 
         if (DataContext is ToolCallItem item)
-        {
             BindItem(item);
+        else
+        {
+            StopTimer();
+            UnbindItem();
         }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // 卡片在虚拟化场景会被回收复用：重新挂到可视树时按当前 DataContext 重订阅
+        if (_boundItem is null && DataContext is ToolCallItem item)
+            BindItem(item);
     }
 
     private void BindItem(ToolCallItem item)
     {
+        // 先退订旧 item：卡片在虚拟化/重建场景会被复用，避免事件处理器持续强引用卡片导致泄漏
+        UnbindItem();
+
         _boundItem = item;
 
         if (_toolIcon != null)
@@ -120,11 +136,20 @@ public partial class ToolCallCard : UserControl
 
         UpdateState();
 
-        item.PropertyChanged += (s, e) =>
+        _itemHandler = (s, e) =>
         {
             if (e.PropertyName == nameof(ToolCallItem.State))
                 UpdateState();
         };
+        item.PropertyChanged += _itemHandler;
+    }
+
+    private void UnbindItem()
+    {
+        if (_boundItem != null && _itemHandler != null)
+            _boundItem.PropertyChanged -= _itemHandler;
+        _itemHandler = null;
+        _boundItem = null;
     }
 
     private void UpdateState()
@@ -267,5 +292,6 @@ public partial class ToolCallCard : UserControl
     {
         base.OnDetachedFromVisualTree(e);
         StopTimer();
+        UnbindItem();
     }
 }

@@ -27,7 +27,7 @@
         </Border>
 
         <!-- 主要内容 -->
-        <TextBox Text="{Binding Content}"
+        <TextBox Text="{Binding Content, Mode=OneWay}"
                  IsReadOnly="True"
                  Background="Transparent"
                  BorderThickness="0"

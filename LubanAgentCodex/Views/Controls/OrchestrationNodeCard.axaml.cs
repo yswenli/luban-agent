@@ -19,6 +19,7 @@ using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using LubanAgentCodex.ViewModels.Messages;
+using System.ComponentModel;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -30,6 +31,7 @@ public partial class OrchestrationNodeCard : UserControl
     private Border? _rootBorder;
     private Border? _accentBar;
     private OrchestrationNodeItem? _boundItem;
+    private PropertyChangedEventHandler? _itemHandler;
 
     public OrchestrationNodeCard()
     {
@@ -52,20 +54,49 @@ public partial class OrchestrationNodeCard : UserControl
     {
         base.OnDataContextChanged(e);
 
+        UnbindItem();
+
         if (DataContext is OrchestrationNodeItem item)
+            BindItem(item);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // 卡片在虚拟化场景会被回收复用：重新挂到可视树时按当前 DataContext 重订阅
+        if (_boundItem is null && DataContext is OrchestrationNodeItem item)
+            BindItem(item);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        // item 由消息流长期持有，退订避免已移除的卡片被 item 事件持续强引用
+        UnbindItem();
+    }
+
+    private void BindItem(OrchestrationNodeItem item)
+    {
+        _boundItem = item;
+        UpdateAccent();
+        _itemHandler = (s, args) =>
         {
-            _boundItem = item;
-            UpdateAccent();
-            item.PropertyChanged += (s, args) =>
+            if (args.PropertyName is nameof(OrchestrationNodeItem.IsFailed)
+                or nameof(OrchestrationNodeItem.IsComplete)
+                or nameof(OrchestrationNodeItem.IsSkipped))
             {
-                if (args.PropertyName is nameof(OrchestrationNodeItem.IsFailed)
-                    or nameof(OrchestrationNodeItem.IsComplete)
-                    or nameof(OrchestrationNodeItem.IsSkipped))
-                {
-                    UpdateAccent();
-                }
-            };
-        }
+                UpdateAccent();
+            }
+        };
+        item.PropertyChanged += _itemHandler;
+    }
+
+    private void UnbindItem()
+    {
+        if (_boundItem != null && _itemHandler != null)
+            _boundItem.PropertyChanged -= _itemHandler;
+        _itemHandler = null;
+        _boundItem = null;
     }
 
     /// <summary>
