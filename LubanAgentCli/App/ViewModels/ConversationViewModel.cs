@@ -20,6 +20,8 @@ using LuBan.AIAgent.Orchestration;
 
 using LubanAgentCli.App.Services;
 
+using LubanAgentCore.Context;
+
 namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
@@ -296,6 +298,10 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
             var model = _configManager.SelectedModel;
             var session = _iSessionManager.CurrentSession;
 
+            // CLI 不走 SessionRuntimeManager，需在 UI scope 上手动填充会话上下文状态，
+            // 否则框架插件解析 ISessionContext.EffectiveRoot 时会抛「会话未设置工作区根或 worktree」。
+            SyncSessionContextState(ws, session);
+
             // 仅当工作区或模型发生变化时才重建 Agent，避免无谓重建；
             // 强制重载（上下文文件变更）时无条件重建
             var needRebuild = forceReload
@@ -353,6 +359,25 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 _footerView?.SetNeedsDraw();
             });
         }
+    }
+
+    /// <summary>
+    /// 将当前工作区/会话写入 UI scope 的会话上下文状态，供框架插件解析有效工作区根。
+    /// CLI 的 Agent 在 UI 生命周期 scope 内创建，不经由 SessionRuntimeManager，
+    /// 故需在此手动同步；同一 scope 内插件捕获的是同一 <see cref="SessionContextState"/> 实例。
+    /// </summary>
+    private void SyncSessionContextState(WorkspaceInfo? ws, SessionInfo? session)
+    {
+        var state = _services.GetService<SessionContextState>();
+        if (state is null) return;
+
+        state.SessionId = session?.SessionId;
+        state.WorkspaceId = ws?.WorkspaceId;
+        state.WorkspaceRoot = ws?.RootPath;
+
+        state.AllowedRoots.Clear();
+        if (!string.IsNullOrWhiteSpace(ws?.RootPath))
+            state.AllowedRoots.Add(ws.RootPath);
     }
 
     /// <summary>
