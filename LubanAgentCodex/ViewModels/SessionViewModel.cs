@@ -532,7 +532,7 @@ public partial class SessionViewModel : ObservableObject
         // 避免后台会话的确认模态打断当前会话，或两个会话的确认模态互相堆叠。
         var deferred = !_isCurrentProvider(SessionId);
         if (deferred)
-            _pendingConfirmationReporter?.Invoke(this, true);
+            Dispatcher.UIThread.Post(() => _pendingConfirmationReporter?.Invoke(this, true));
 
         try
         {
@@ -547,7 +547,7 @@ public partial class SessionViewModel : ObservableObject
         finally
         {
             if (deferred)
-                _pendingConfirmationReporter?.Invoke(this, false);
+                Dispatcher.UIThread.Post(() => _pendingConfirmationReporter?.Invoke(this, false));
         }
     }
 
