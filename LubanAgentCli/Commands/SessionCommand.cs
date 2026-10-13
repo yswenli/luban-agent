@@ -25,6 +25,7 @@ public class SessionCommand : CommandBase
     private readonly SessionRepository _sessionRepo;
     private readonly SessionMessageRepository _messageRepo;
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly string _userId;
 
     /// <summary>
     /// 命令名称
@@ -45,16 +46,18 @@ public class SessionCommand : CommandBase
     /// <param name="sessionRepo">会话仓储</param>
     /// <param name="messageRepo">会话消息仓储</param>
     /// <param name="workspaceManager">工作区管理器（提供当前工作区ID）</param>
+    /// <param name="userContext">当前用户上下文</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo,
-        IWorkspaceManager workspaceManager, ITuiOutputWriter writer, ITuiUiService ui)
+        IWorkspaceManager workspaceManager, IUserContext userContext, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;
         _messageRepo = messageRepo;
         _workspaceManager = workspaceManager;
+        _userId = userContext.ResolveUserKey();
     }
 
     /// <summary>
@@ -121,7 +124,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId, _userId);
 
         if (sessions.Count == 0)
         {
@@ -202,7 +205,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId);
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId, _userId);
         if (sessions.Count == 0)
         {
             Writer.WriteError("当前工作区没有会话");

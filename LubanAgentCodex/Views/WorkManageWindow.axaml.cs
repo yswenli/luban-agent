@@ -127,10 +127,11 @@ public partial class WorkManageWindow : Window
             var wikiChunkRepo = new LlmWikiChunkRepository();
             var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
 
-            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId);
+            var userId = _services.ResolveUserKey();
+            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId, userId);
             await wikiFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
             await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId);
+            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId && w.UserId == userId);
 
             if (_workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId)
                 await Dialogs.ShowInfoAsync(this, "当前工作区已删除，请切换到其他工作区");

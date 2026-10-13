@@ -292,7 +292,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     {
         if (string.IsNullOrEmpty(sessionId)) return null;
         var repo = _services.GetRequiredService<SessionRepository>();
-        return await repo.GetBySessionIdAsync(sessionId);
+        return await repo.GetBySessionIdAsync(sessionId, _services.ResolveUserKey());
     }
 
     /// <summary>

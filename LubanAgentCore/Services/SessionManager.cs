@@ -90,7 +90,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<SessionInfo?> GetSessionAsync(string sessionId)
     {
-        var session = await _sessionRepo.GetBySessionIdAsync(sessionId);
+        var session = await _sessionRepo.GetBySessionIdAsync(sessionId, _userId);
         if (session == null)
             return null;
 
@@ -114,7 +114,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         if (string.IsNullOrEmpty(workspaceId))
             return Enumerable.Empty<SessionInfo>();
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(workspaceId);
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(workspaceId, _userId);
         return sessions.Select(ToSessionInfo);
     }
 
@@ -123,7 +123,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task UpdateSessionTitleAsync(string sessionId, string title)
     {
-        await _sessionRepo.UpdateTitleAsync(sessionId, title);
+        await _sessionRepo.UpdateTitleAsync(sessionId, title, _userId);
 
         if (_currentSession?.SessionId == sessionId)
         {
@@ -136,7 +136,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task DeleteSessionAsync(string sessionId)
     {
-        await _sessionRepo.SoftDeleteAsync(sessionId);
+        await _sessionRepo.SoftDeleteAsync(sessionId, _userId);
         await _messageRepo.ClearMessagesAsync(sessionId);
 
         if (_currentSession?.SessionId == sessionId)
@@ -169,7 +169,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         if (role == "summary")
         {
             // 摘要消息：token 计入，消息数不计
-            await _sessionRepo.IncrementTokenCountAsync(sessionId, tokens ?? 0);
+            await _sessionRepo.IncrementTokenCountAsync(sessionId, tokens ?? 0, _userId);
             if (_currentSession?.SessionId == sessionId)
             {
                 _currentSession.TotalTokens += tokens ?? 0;
@@ -177,7 +177,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         }
         else
         {
-            await _sessionRepo.IncrementMessageCountAsync(sessionId, tokens ?? 0);
+            await _sessionRepo.IncrementMessageCountAsync(sessionId, tokens ?? 0, _userId);
             if (_currentSession?.SessionId == sessionId)
             {
                 _currentSession.MessageCount++;
@@ -259,8 +259,10 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task ClearAllSessionsAsync(string? workspaceId = null)
     {
-        await _messageRepo.DeleteAllAsync();
-        await _sessionRepo.DeleteAllAsync();
+        // 仅清理当前用户数据：先取该用户全部会话ID（含软删），级联物理删消息，再物理删会话
+        var sessionIds = await _sessionRepo.GetSessionIdsAsync(_userId);
+        await _messageRepo.DeleteBySessionIdsAsync(sessionIds);
+        await _sessionRepo.DeleteAllAsync(_userId);
         _currentSession = null;
 
         // 保持"有当前工作区必有当前会话"不变量：清空后立即重建“新会话”，
@@ -277,7 +279,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     public async Task<GlobalSessionStats> GetGlobalStatsAsync(int? days = null)
     {
         var since = days.HasValue ? DateTime.Now.AddDays(-days.Value) : (DateTime?)null;
-        var (sessions, messages, tokens, earliest) = await _sessionRepo.GetGlobalStatsAsync(since);
+        var (sessions, messages, tokens, earliest) = await _sessionRepo.GetGlobalStatsAsync(since, _userId);
 
         var spanDays = days ?? (earliest.HasValue
             ? Math.Max(1, (int)(DateTime.Now - earliest.Value).TotalDays + 1)

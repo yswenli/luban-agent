@@ -36,6 +36,7 @@ internal sealed class LlmWikiCommand : CommandBase
 {
     private readonly IWorkspaceManager _workspaceManager;
     private readonly WorkspaceRepository _workspaceRepo;
+    private readonly string _userId;
     private readonly IRetrievalService _retrievalService;
     private readonly IWikiService _wiki;
     private readonly LlmWikiFileRepository _wikiFileRepo;
@@ -59,6 +60,7 @@ internal sealed class LlmWikiCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="workspaceManager">工作区管理器</param>
     /// <param name="workspaceRepo">工作区仓储</param>
+    /// <param name="userContext">当前用户上下文</param>
     /// <param name="retrievalService">检索服务</param>
     /// <param name="wiki">wiki 知识库服务</param>
     /// <param name="wikiFileRepo">LLM Wiki 文件仓储</param>
@@ -71,6 +73,7 @@ internal sealed class LlmWikiCommand : CommandBase
         IConfiguration configuration,
         IWorkspaceManager workspaceManager,
         WorkspaceRepository workspaceRepo,
+        IUserContext userContext,
         IRetrievalService retrievalService,
         IWikiService wiki,
         LlmWikiFileRepository wikiFileRepo,
@@ -82,6 +85,7 @@ internal sealed class LlmWikiCommand : CommandBase
     {
         _workspaceManager = workspaceManager;
         _workspaceRepo = workspaceRepo;
+        _userId = userContext.ResolveUserKey();
         _retrievalService = retrievalService;
         _wiki = wiki;
         _wikiFileRepo = wikiFileRepo;
@@ -432,7 +436,7 @@ internal sealed class LlmWikiCommand : CommandBase
         string? keyword = null;
         if (args.Length < 2)
         {
-            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            var allWorkspaces = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
             var wikiWorkspaces = allWorkspaces.Where(w => w.Type == WorkspaceTypes.LlmWiki).ToList();
             if (wikiWorkspaces.Count == 0)
             {
@@ -451,7 +455,7 @@ internal sealed class LlmWikiCommand : CommandBase
             keyword = args[1];
         }
 
-        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
+        var allWorkspacesList = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
 
         // 优先精确匹配名称
         var target = allWorkspacesList.FirstOrDefault(w =>

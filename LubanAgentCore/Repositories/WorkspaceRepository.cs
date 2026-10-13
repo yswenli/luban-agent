@@ -33,31 +33,31 @@ public class WorkspaceRepository : BaseRepository<DbWorkspace>
     }
 
     /// <summary>
-    /// 按根路径查找未删除的工作区
+    /// 按根路径查找当前用户未删除的工作区（同路径跨用户各持一行，故须按用户过滤）
     /// </summary>
-    public async Task<DbWorkspace?> GetByRootPathAsync(string rootPath)
+    public async Task<DbWorkspace?> GetByRootPathAsync(string rootPath, string userId)
     {
         // 归一化后再比较：库中 RootPath 已由 WorkspaceManager 归一化写入，
         // 此处同步归一化入参，避免尾斜杠/大小写差异导致漏命中而重复建工作区
         var normalized = WorkspaceIdGenerator.Normalize(rootPath);
-        return await GetFirstAsync(w => w.RootPath == normalized && !w.IsDelete);
+        return await GetFirstAsync(w => w.RootPath == normalized && w.UserId == userId && !w.IsDelete);
     }
 
     /// <summary>
-    /// 按工作区ID查找
+    /// 按工作区ID查找当前用户的工作区
     /// </summary>
-    public async Task<DbWorkspace?> GetByWorkspaceIdAsync(string workspaceId)
+    public async Task<DbWorkspace?> GetByWorkspaceIdAsync(string workspaceId, string userId)
     {
-        return await GetFirstAsync(w => w.WorkspaceId == workspaceId && !w.IsDelete);
+        return await GetFirstAsync(w => w.WorkspaceId == workspaceId && w.UserId == userId && !w.IsDelete);
     }
 
     /// <summary>
-    /// 按名称模糊查找
+    /// 在当前用户工作区内按名称模糊查找
     /// </summary>
-    public async Task<List<DbWorkspace>> SearchByNameAsync(string name)
+    public async Task<List<DbWorkspace>> SearchByNameAsync(string name, string userId)
     {
         return await AsQueryable()
-            .Where(w => w.Name.Contains(name) && !w.IsDelete)
+            .Where(w => w.Name.Contains(name) && w.UserId == userId && !w.IsDelete)
             .OrderByDescending(w => w.LastActiveAt)
             .ToListAsync();
     }
@@ -74,32 +74,21 @@ public class WorkspaceRepository : BaseRepository<DbWorkspace>
     }
 
     /// <summary>
-    /// 获取所有未删除的工作区
-    /// </summary>
-    public async Task<List<DbWorkspace>> GetAllAsync()
-    {
-        return await AsQueryable()
-            .Where(w => !w.IsDelete)
-            .OrderByDescending(w => w.LastActiveAt)
-            .ToListAsync();
-    }
-
-    /// <summary>
     /// 更新授权状态
     /// </summary>
-    public async Task UpdateAuthorizationAsync(string workspaceId, bool authorized)
+    public async Task UpdateAuthorizationAsync(string workspaceId, bool authorized, string userId)
     {
         await UpdateAsync(w => new DbWorkspace { IsAuthorized = authorized, UpdateTime = DateTime.Now },
-            w => w.WorkspaceId == workspaceId);
+            w => w.WorkspaceId == workspaceId && w.UserId == userId);
     }
 
     /// <summary>
     /// 更新最后活跃时间
     /// </summary>
-    public async Task UpdateLastActiveAtAsync(string workspaceId)
+    public async Task UpdateLastActiveAtAsync(string workspaceId, string userId)
     {
         await UpdateAsync(w => new DbWorkspace { LastActiveAt = DateTime.Now, UpdateTime = DateTime.Now },
-            w => w.WorkspaceId == workspaceId);
+            w => w.WorkspaceId == workspaceId && w.UserId == userId);
     }
 
     /// <summary>
@@ -107,9 +96,10 @@ public class WorkspaceRepository : BaseRepository<DbWorkspace>
     /// </summary>
     /// <param name="workspaceId">工作区ID</param>
     /// <param name="name">新的显示名</param>
-    public async Task UpdateNameAsync(string workspaceId, string name)
+    /// <param name="userId">所属用户</param>
+    public async Task UpdateNameAsync(string workspaceId, string name, string userId)
     {
         await UpdateAsync(w => new DbWorkspace { Name = name, UpdateTime = DateTime.Now },
-            w => w.WorkspaceId == workspaceId);
+            w => w.WorkspaceId == workspaceId && w.UserId == userId);
     }
 }

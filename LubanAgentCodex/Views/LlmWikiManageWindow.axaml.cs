@@ -483,10 +483,11 @@ public partial class LlmWikiManageWindow : Window
             var wikiChunkRepo = new LlmWikiChunkRepository();
             var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
 
-            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId);
+            var userId = _services.ResolveUserKey();
+            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId, userId);
             await wikiFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
             await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId);
+            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId && w.UserId == userId);
 
             await ShowListViewAsync();
             await Dialogs.ShowInfoAsync(this, "已删除 LLM Wiki 知识库");

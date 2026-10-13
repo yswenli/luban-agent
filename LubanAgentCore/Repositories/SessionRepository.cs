@@ -31,11 +31,11 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
-    /// 根据会话ID获取会话
+    /// 根据会话ID和所属用户获取会话（跨用户不可见）
     /// </summary>
-    public async Task<DbSession?> GetBySessionIdAsync(string sessionId)
+    public async Task<DbSession?> GetBySessionIdAsync(string sessionId, string userId)
     {
-        return await GetFirstAsync(s => s.SessionId == sessionId && !s.IsDelete);
+        return await GetFirstAsync(s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
     }
 
     /// <summary>
@@ -50,77 +50,88 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
-    /// 更新会话标题
+    /// 获取用户全部会话ID（含软删除，用于级联清理消息）
     /// </summary>
-    public async Task UpdateTitleAsync(string sessionId, string title)
+    public async Task<List<string>> GetSessionIdsAsync(string userId)
     {
-        await UpdateAsync(s => new DbSession { Title = title }, s => s.SessionId == sessionId);
+        return await AsQueryable()
+            .Where(s => s.UserId == userId)
+            .Select(s => s.SessionId)
+            .ToListAsync();
     }
 
     /// <summary>
-    /// 软删除会话
+    /// 更新会话标题（限所属用户）
     /// </summary>
-    public async Task SoftDeleteAsync(string sessionId)
+    public async Task UpdateTitleAsync(string sessionId, string title, string userId)
     {
-        await LogicDeleteAsync(s => s.SessionId == sessionId);
+        await UpdateAsync(s => new DbSession { Title = title }, s => s.SessionId == sessionId && s.UserId == userId);
     }
 
     /// <summary>
-    /// 增加消息计数
+    /// 软删除会话（限所属用户）
     /// </summary>
-    public async Task IncrementMessageCountAsync(string sessionId, int tokens = 0)
+    public async Task SoftDeleteAsync(string sessionId, string userId)
+    {
+        await LogicDeleteAsync(s => s.SessionId == sessionId && s.UserId == userId);
+    }
+
+    /// <summary>
+    /// 增加消息计数（限所属用户）
+    /// </summary>
+    public async Task IncrementMessageCountAsync(string sessionId, int tokens, string userId)
     {
         await Context.Updateable<DbSession>()
             .SetColumns(s => s.MessageCount == s.MessageCount + 1)
             .SetColumns(s => s.TotalTokens == s.TotalTokens + tokens)
             .SetColumns(s => s.UpdateTime == DateTime.Now)
-            .Where(s => s.SessionId == sessionId)
+            .Where(s => s.SessionId == sessionId && s.UserId == userId)
             .ExecuteCommandAsync();
     }
 
     /// <summary>
-    /// 物理删除全部会话
+    /// 物理删除指定用户的全部会话
     /// </summary>
-    public async Task DeleteAllAsync()
+    public async Task DeleteAllAsync(string userId)
     {
-        await Context.Deleteable<DbSession>().ExecuteCommandAsync();
+        await Context.Deleteable<DbSession>().Where(s => s.UserId == userId).ExecuteCommandAsync();
     }
 
     /// <summary>
-    /// 仅累加 Token（用于摘要消息：token 计入，消息数不计）
+    /// 仅累加 Token（用于摘要消息：token 计入，消息数不计；限所属用户）
     /// </summary>
-    public async Task IncrementTokenCountAsync(string sessionId, int tokens)
+    public async Task IncrementTokenCountAsync(string sessionId, int tokens, string userId)
     {
         await Context.Updateable<DbSession>()
             .SetColumns(s => s.TotalTokens == s.TotalTokens + tokens)
             .SetColumns(s => s.UpdateTime == DateTime.Now)
-            .Where(s => s.SessionId == sessionId)
+            .Where(s => s.SessionId == sessionId && s.UserId == userId)
             .ExecuteCommandAsync();
     }
 
     /// <summary>
-    /// 获取工作区下的所有会话
+    /// 获取工作区下当前用户的所有会话
     /// </summary>
-    public async Task<List<DbSession>> GetByWorkspaceAsync(string workspaceId)
+    public async Task<List<DbSession>> GetByWorkspaceAsync(string workspaceId, string userId)
     {
         // 如果工作区ID为空，返回空列表，避免查询所有工作区的会话
         if (string.IsNullOrEmpty(workspaceId))
             return new List<DbSession>();
 
         return await AsQueryable()
-            .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
+            .Where(s => s.WorkspaceId == workspaceId && s.UserId == userId && !s.IsDelete)
             .OrderByDescending(s => s.UpdateTime)
             .ToListAsync();
     }
 
     /// <summary>
-    /// 获取工作区最近活跃会话
+    /// 获取工作区下当前用户的最近活跃会话
     /// </summary>
-    public async Task<DbSession?> GetLatestSessionAsync(string workspaceId)
+    public async Task<DbSession?> GetLatestSessionAsync(string workspaceId, string userId)
     {
         // 无会话时返回 null（而非 FirstAsync 抛异常），调用方据此创建默认会话
         var list = await AsQueryable()
-            .Where(s => s.WorkspaceId == workspaceId && !s.IsDelete)
+            .Where(s => s.WorkspaceId == workspaceId && s.UserId == userId && !s.IsDelete)
             .OrderByDescending(s => s.UpdateTime)
             .Take(1)
             .ToListAsync();
@@ -128,29 +139,29 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
-    /// 按标题和工作区查找会话
+    /// 按标题和工作区查找当前用户的会话
     /// </summary>
-    public async Task<DbSession?> GetByTitleAndWorkspaceAsync(string title, string workspaceId)
+    public async Task<DbSession?> GetByTitleAndWorkspaceAsync(string title, string workspaceId, string userId)
     {
         return await GetFirstAsync(s =>
             s.Title != null && s.Title.Contains(title) &&
-            s.WorkspaceId == workspaceId && !s.IsDelete);
+            s.WorkspaceId == workspaceId && s.UserId == userId && !s.IsDelete);
     }
 
     /// <summary>
-    /// 软删除工作区下的所有会话
+    /// 软删除工作区下当前用户的所有会话
     /// </summary>
-    public async Task SoftDeleteByWorkspaceAsync(string workspaceId)
+    public async Task SoftDeleteByWorkspaceAsync(string workspaceId, string userId)
     {
-        await LogicDeleteAsync(s => s.WorkspaceId == workspaceId);
+        await LogicDeleteAsync(s => s.WorkspaceId == workspaceId && s.UserId == userId);
     }
 
     /// <summary>
-    /// 全局聚合统计
+    /// 当前用户的全局聚合统计
     /// </summary>
-    public async Task<(int sessions, int messages, long tokens, DateTime? earliest)> GetGlobalStatsAsync(DateTime? since)
+    public async Task<(int sessions, int messages, long tokens, DateTime? earliest)> GetGlobalStatsAsync(DateTime? since, string userId)
     {
-        var query = AsQueryable().Where(s => !s.IsDelete);
+        var query = AsQueryable().Where(s => s.UserId == userId && !s.IsDelete);
         if (since.HasValue)
             query = query.Where(s => s.CreateTime >= since.Value);
 
@@ -306,10 +317,15 @@ public class SessionMessageRepository : BaseRepository<DbSessionMessage>
     }
 
     /// <summary>
-    /// 物理删除全部消息
+    /// 按会话ID集合物理删除消息（限当前用户的会话集合）
     /// </summary>
-    public async Task DeleteAllAsync()
+    public async Task DeleteBySessionIdsAsync(IEnumerable<string> sessionIds)
     {
-        await Context.Deleteable<DbSessionMessage>().ExecuteCommandAsync();
+        var ids = sessionIds.ToList();
+        if (ids.Count == 0) return;
+
+        await Context.Deleteable<DbSessionMessage>()
+            .Where(m => ids.Contains(m.SessionId))
+            .ExecuteCommandAsync();
     }
 }

@@ -24,6 +24,7 @@ public class StatsCommand : CommandBase
     private readonly ISessionManager _sessionManager;
     private readonly SessionRepository _sessionRepo;
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly string _userId;
 
     /// <summary>
     /// 命令名称
@@ -43,15 +44,17 @@ public class StatsCommand : CommandBase
     /// <param name="sessionManager">会话管理器</param>
     /// <param name="sessionRepo">会话仓储</param>
     /// <param name="workspaceManager">工作区管理器（提供当前工作区ID）</param>
+    /// <param name="userContext">当前用户上下文</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public StatsCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo,
-        IWorkspaceManager workspaceManager, ITuiOutputWriter writer, ITuiUiService ui)
+        IWorkspaceManager workspaceManager, IUserContext userContext, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessionManager = sessionManager;
         _sessionRepo = sessionRepo;
         _workspaceManager = workspaceManager;
+        _userId = userContext.ResolveUserKey();
     }
 
     /// <summary>
@@ -116,7 +119,7 @@ public class StatsCommand : CommandBase
         else
         {
             // 按当前工作区统计
-            var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId!);
+            var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId!, _userId);
             var since = days.HasValue ? DateTime.Now.AddDays(-days.Value) : (DateTime?)null;
             var filtered = since.HasValue
                 ? sessions.Where(s => s.CreateTime >= since.Value).ToList()

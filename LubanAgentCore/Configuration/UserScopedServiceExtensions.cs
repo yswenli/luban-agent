@@ -10,9 +10,11 @@ public static class UserScopedServiceExtensions
 {
     /// <summary>解析当前用户标识；缺失时回退为本地默认用户。</summary>
     public static string ResolveUserKey(this IServiceProvider services)
-        => services.GetRequiredService<IUserContext>().UserId is { Length: > 0 } id
-            ? id
-            : LocalUserDefaults.DefaultUserId;
+        => services.GetRequiredService<IUserContext>().ResolveUserKey();
+
+    /// <summary>解析用户标识；缺失时回退为本地默认用户。</summary>
+    public static string ResolveUserKey(this IUserContext userContext)
+        => userContext.UserId is { Length: > 0 } id ? id : LocalUserDefaults.DefaultUserId;
 
     /// <summary>
     /// 创建根派生作用域并回填指定用户身份。

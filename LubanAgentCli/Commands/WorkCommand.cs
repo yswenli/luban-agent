@@ -24,6 +24,7 @@ public class WorkCommand : CommandBase
     private readonly IWorkspaceManager _workspaceManager;
     private readonly WorkspaceRepository _workspaceRepo;
     private readonly SessionRepository _sessionRepo;
+    private readonly string _userId;
 
     /// <summary>
     /// 命令名称
@@ -43,6 +44,7 @@ public class WorkCommand : CommandBase
     /// <param name="workspaceManager">工作区管理器</param>
     /// <param name="workspaceRepo">工作区仓储</param>
     /// <param name="sessionRepo">会话仓储</param>
+    /// <param name="userContext">当前用户上下文</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public WorkCommand(
@@ -51,6 +53,7 @@ public class WorkCommand : CommandBase
         IWorkspaceManager workspaceManager,
         WorkspaceRepository workspaceRepo,
         SessionRepository sessionRepo,
+        IUserContext userContext,
         ITuiOutputWriter writer,
         ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
@@ -58,6 +61,7 @@ public class WorkCommand : CommandBase
         _workspaceManager = workspaceManager;
         _workspaceRepo = workspaceRepo;
         _sessionRepo = sessionRepo;
+        _userId = userContext.ResolveUserKey();
     }
 
     /// <summary>
@@ -134,7 +138,7 @@ public class WorkCommand : CommandBase
         var rows = new List<IReadOnlyList<string>>();
         foreach (var ws in workspaces)
         {
-            var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
+            var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId, _userId);
             var isCurrent = current?.WorkspaceId == ws.WorkspaceId;
             var marker = isCurrent ? "* " : "  ";
             rows.Add(new[]
@@ -188,7 +192,7 @@ public class WorkCommand : CommandBase
         }
 
         var fullPath = Path.GetFullPath(path);
-        var existing = await _workspaceRepo.GetByRootPathAsync(fullPath);
+        var existing = await _workspaceRepo.GetByRootPathAsync(fullPath, _userId);
         if (existing != null)
         {
             Writer.WriteError($"工作区已存在: {existing.Name} ({existing.RootPath})");
@@ -208,7 +212,7 @@ public class WorkCommand : CommandBase
         string? keyword = null;
         if (args.Length < 2)
         {
-            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            var allWorkspaces = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
             if (allWorkspaces.Count == 0)
             {
                 Writer.WriteError("暂无工作区，请先使用 /work -new 创建");
@@ -228,7 +232,7 @@ public class WorkCommand : CommandBase
 
         // 优先精确匹配名称，避免模糊匹配误切
         DbWorkspace? target = null;
-        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
+        var allWorkspacesList = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
         target = allWorkspacesList.FirstOrDefault(w =>
             string.Equals(w.Name, keyword, StringComparison.OrdinalIgnoreCase));
 
@@ -250,7 +254,7 @@ public class WorkCommand : CommandBase
         // 仍找不到，最后使用模糊匹配（仅当唯一匹配时才切换）
         if (target == null)
         {
-            var fuzzyMatches = await _workspaceRepo.SearchByNameAsync(keyword);
+            var fuzzyMatches = await _workspaceRepo.SearchByNameAsync(keyword, _userId);
             if (fuzzyMatches.Count == 1)
             {
                 target = fuzzyMatches[0];
@@ -286,7 +290,7 @@ public class WorkCommand : CommandBase
         string? keyword = null;
         if (args.Length < 2)
         {
-            var allWorkspaces = await _workspaceRepo.GetAllAsync();
+            var allWorkspaces = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
             if (allWorkspaces.Count == 0)
             {
                 Writer.WriteError("暂无工作区");
@@ -306,7 +310,7 @@ public class WorkCommand : CommandBase
 
         // 优先精确匹配名称，避免模糊匹配误删
         DbWorkspace? target = null;
-        var allWorkspacesList = await _workspaceRepo.GetAllAsync();
+        var allWorkspacesList = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
         target = allWorkspacesList.FirstOrDefault(w =>
             string.Equals(w.Name, keyword, StringComparison.OrdinalIgnoreCase));
 
@@ -328,7 +332,7 @@ public class WorkCommand : CommandBase
         // 仍找不到，最后使用模糊匹配（仅当唯一匹配时才删除）
         if (target == null)
         {
-            var fuzzyMatches = await _workspaceRepo.SearchByNameAsync(keyword);
+            var fuzzyMatches = await _workspaceRepo.SearchByNameAsync(keyword, _userId);
             if (fuzzyMatches.Count == 1)
             {
                 target = fuzzyMatches[0];
@@ -377,7 +381,7 @@ public class WorkCommand : CommandBase
             return;
         }
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
+        var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId, _userId);
         Writer.WriteHeader($"工作区: {ws.Name}");
         Writer.WriteInfo($"  类型: {(ws.Type == WorkspaceTypes.LlmWiki ? "LLM Wiki" : "普通")}");
         Writer.WriteInfo($"  根目录: {ws.RootPath}");

@@ -376,7 +376,7 @@ public partial class Sidebar : UserControl
             _workspacePanel.Children.Add(wsRow);
 
             // 加载该工作区的会话
-            var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId);
+            var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId, _services!.ResolveUserKey());
             foreach (var session in sessions.OrderByDescending(s => s.UpdateTime))
             {
                 var sessRow = new Border
@@ -474,7 +474,7 @@ public partial class Sidebar : UserControl
                         if (result == true)
                         {
                             var sessionRepo = _services!.GetRequiredService<SessionRepository>();
-                            await sessionRepo.SoftDeleteAsync(sessionCopy.SessionId);
+                            await sessionRepo.SoftDeleteAsync(sessionCopy.SessionId, _services!.ResolveUserKey());
                             LoadWorkspaces(); // 刷新列表
                         }
                     }
@@ -653,7 +653,7 @@ public partial class Sidebar : UserControl
             var result = await dialog.ShowDialog<string?>(parentWindow);
             if (!string.IsNullOrWhiteSpace(result) && result != session.Title)
             {
-                await _sessionRepo.UpdateTitleAsync(session.SessionId, result);
+                await _sessionRepo.UpdateTitleAsync(session.SessionId, result, _services!.ResolveUserKey());
                 LoadWorkspaces();
             }
         }

@@ -141,7 +141,7 @@ public class AgentHostService
         var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
 
         var sessionRepo = _services.GetRequiredService<SessionRepository>();
-        var dbSession = await sessionRepo.GetBySessionIdAsync(sessionId);
+        var dbSession = await sessionRepo.GetBySessionIdAsync(sessionId, CurrentUserId);
         var workspaceId = dbSession?.WorkspaceId;
 
         if (!string.IsNullOrWhiteSpace(workspaceId))

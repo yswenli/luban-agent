@@ -301,7 +301,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         var fullPath = WorkspaceIdGenerator.Normalize(rootPath);
 
         // 内部唯一性校验（防止绕过 WorkCommand 的调用方造成重复）
-        var existing = await _repo.GetByRootPathAsync(fullPath);
+        var existing = await _repo.GetByRootPathAsync(fullPath, _userId);
         if (existing != null)
         {
             throw new InvalidOperationException($"工作区已存在: {existing.Name} ({existing.RootPath})");
@@ -337,7 +337,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     {
         // 1. 加载新工作区（工作区根不再注入进程级 PathGuard/工作目录，
         //    改由每会话的 ISessionContext 承载，避免全局静态状态被并发会话串改）
-        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
+        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId, _userId);
         if (ws == null) throw new InvalidOperationException($"工作区不存在: {workspaceId}");
 
         var newCurrent = ToWorkspaceInfo(ws);
@@ -348,7 +348,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         //    失败兜底：宁可无会话（可见、可恢复），也不能保留上一工作区会话（静默串写数据）。
         try
         {
-            var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId);
+            var latest = await _sessionRepo.GetLatestSessionAsync(workspaceId, _userId);
             if (latest != null)
                 await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
             else
@@ -364,7 +364,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         await EnsureConfigDirectoryAsync(newCurrent);
 
         // 7. 更新 LastActiveAt
-        await _repo.UpdateLastActiveAtAsync(workspaceId);
+        await _repo.UpdateLastActiveAtAsync(workspaceId, _userId);
     }
 
     /// <summary>
@@ -397,7 +397,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             return false;
         }
 
-        await _repo.UpdateAuthorizationAsync(workspace.WorkspaceId, true);
+        await _repo.UpdateAuthorizationAsync(workspace.WorkspaceId, true, _userId);
         workspace.IsAuthorized = true;
 
         lock (_currentLock)
@@ -452,7 +452,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     public async Task<WorkspaceInfo?> GetWorkspaceAsync(string workspaceId)
     {
         if (string.IsNullOrWhiteSpace(workspaceId)) return null;
-        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId);
+        var ws = await _repo.GetByWorkspaceIdAsync(workspaceId, _userId);
         return ws is null ? null : ToWorkspaceInfo(ws);
     }
 
@@ -473,10 +473,10 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         var wikiFileRepo = new LlmWikiFileRepository();
         var wikiChunkRepo = new LlmWikiChunkRepository();
 
-        await _sessionRepo.SoftDeleteByWorkspaceAsync(workspaceId);
+        await _sessionRepo.SoftDeleteByWorkspaceAsync(workspaceId, _userId);
         await wikiFileRepo.DeleteByWorkspaceAsync(workspaceId);
         await wikiChunkRepo.DeleteByWorkspaceAsync(workspaceId);
-        await _repo.LogicDeleteAsync(w => w.WorkspaceId == workspaceId);
+        await _repo.LogicDeleteAsync(w => w.WorkspaceId == workspaceId && w.UserId == _userId);
 
         // 若删除的正是当前工作区：移除其注入的 PathGuard 根目录，并清空当前引用与会话，
         // 避免后续操作仍然指向一个已被逻辑删除的工作区。
@@ -507,7 +507,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
         if (string.IsNullOrWhiteSpace(workspaceId)) return false;
         if (string.IsNullOrWhiteSpace(name)) return false;
 
-        await _repo.UpdateNameAsync(workspaceId, name.Trim());
+        await _repo.UpdateNameAsync(workspaceId, name.Trim(), _userId);
 
         WorkspaceInfo? target;
         lock (_currentLock) target = _current;
