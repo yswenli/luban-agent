@@ -24,7 +24,7 @@ class Program
     /// <summary>
     /// 程序主入口
     /// </summary>
-    static int Main(string[] args)
+    static async Task<int> Main(string[] args)
     {
         if (!TerminalGuiApp.CanRunInteractive())
         {
@@ -32,7 +32,7 @@ class Program
             return 1;
         }
 
-        using var app = new TerminalGuiApp();
+        await using var app = new TerminalGuiApp();
         app.Run(args);
         return 0;
     }

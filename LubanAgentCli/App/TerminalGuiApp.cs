@@ -26,7 +26,7 @@ namespace LubanAgentCli.App;
 /// （<c>Application.Create().Init()</c>，而非已过时的静态 Application），
 /// 保证任何异常路径下终端都能恢复正常状态（退出备用屏幕、恢复光标与回显）。
 /// </summary>
-internal sealed class TerminalGuiApp : IDisposable
+internal sealed class TerminalGuiApp : IAsyncDisposable
 {
     private TitleService? _titleService;
     private Action<string>? _titleChangedHandler;
@@ -56,7 +56,12 @@ internal sealed class TerminalGuiApp : IDisposable
     /// <summary>
     /// 释放资源。
     /// </summary>
-    public void Dispose()
+    /// <remarks>
+    /// 根容器内注册了仅实现 <see cref="IAsyncDisposable"/> 的单例（如
+    /// <c>SessionRuntimeManager</c>），MS.DI 要求必须异步释放，否则同步
+    /// <c>Dispose()</c> 会抛 <see cref="InvalidOperationException"/>。
+    /// </remarks>
+    public async ValueTask DisposeAsync()
     {
 #if !PUBLISH_AOT
         _fastInput?.Dispose();
@@ -68,7 +73,11 @@ internal sealed class TerminalGuiApp : IDisposable
             _titleService.TitleChanged -= _titleChangedHandler;
         }
 
-        if (Services is IDisposable disposable)
+        if (Services is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync();
+        }
+        else if (Services is IDisposable disposable)
         {
             disposable.Dispose();
         }
