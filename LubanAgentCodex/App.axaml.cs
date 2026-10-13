@@ -43,7 +43,7 @@ namespace LubanAgentCodex;
 /// </summary>
 public class App : Application
 {
-    private IServiceProvider? _services;
+    private AgentHostServices? _services;
 
     /// <summary>
     /// 初始化应用程序

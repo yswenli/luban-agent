@@ -5,7 +5,7 @@
 *文件名： UserContext
 *版本号： V1.0.0.0
 *创建时间：2026/10/10
-*描述：用户作用域上下文（root）
+*描述：用户作用域上下文（Scoped 只读视图，身份来自 UserContextState）
 *
 *****************************************************************************/
 using LuBan.AIAgent.Abstractions;
@@ -13,10 +13,10 @@ using LuBan.AIAgent.Abstractions;
 namespace LubanAgentCore.Context;
 
 /// <summary>
-/// 用户作用域上下文（root）。
+/// 用户作用域上下文（Scoped 只读视图），身份来自可写的 <see cref="UserContextState"/>。
 /// </summary>
-public sealed class UserContext(string? userId) : IUserContext
+public sealed class UserContext(UserContextState state) : IUserContext
 {
     /// <inheritdoc />
-    public string? UserId { get; } = userId;
+    public string? UserId => state.UserId;
 }

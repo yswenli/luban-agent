@@ -65,7 +65,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
                 while (await reader.ReadAsync())
                     existing.Add(reader.GetString(1));
             }
-            foreach (var col in new[] { "WorkspaceId", "ContentHash", "ExpiresAt" })
+            foreach (var col in new[] { "WorkspaceId", "ContentHash", "ExpiresAt", "UserId" })
             {
                 if (!existing.Contains(col))
                 {
@@ -74,6 +74,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
                     {
                         "WorkspaceId" => "ALTER TABLE LocalMemory ADD COLUMN WorkspaceId TEXT",
                         "ContentHash" => "ALTER TABLE LocalMemory ADD COLUMN ContentHash TEXT",
+                        "UserId" => "ALTER TABLE LocalMemory ADD COLUMN UserId TEXT",
                         _ => "ALTER TABLE LocalMemory ADD COLUMN ExpiresAt TEXT"
                     };
                     await alter.ExecuteNonQueryAsync();
@@ -102,22 +103,27 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = """
+                UPDATE LocalMemory SET UserId = @uid
+                WHERE UserId IS NULL OR UserId = '' OR UserId = 'default';
                 CREATE INDEX IF NOT EXISTS idx_localmemory_category ON LocalMemory(Category);
                 CREATE INDEX IF NOT EXISTS idx_localmemory_updated ON LocalMemory(UpdatedAt DESC);
                 CREATE INDEX IF NOT EXISTS idx_localmemory_ws_hash ON LocalMemory(WorkspaceId, ContentHash);
+                CREATE INDEX IF NOT EXISTS idx_localmemory_user_ws_hash ON LocalMemory(UserId, WorkspaceId, ContentHash);
                 """;
+            cmd.Parameters.AddWithValue("@uid", LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId);
             await cmd.ExecuteNonQueryAsync();
         }
     }
 
     /// <summary>
-    /// 新增或更新一条记忆记录（按 WorkspaceId 与 ContentHash 判断是否已存在），并保存其向量数据
+    /// 新增或更新一条记忆记录（按 UserId/WorkspaceId 与 ContentHash 判断是否已存在），并保存其向量数据
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="entry">记忆条目</param>
     /// <param name="vectorBytes">向量字节数据</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>已持久化的记忆条目（更新时返回合并后的条目）</returns>
-    public async Task<MemoryEntry> UpsertAsync(MemoryEntry entry, byte[] vectorBytes, CancellationToken cancellationToken = default)
+    public async Task<MemoryEntry> UpsertAsync(string userId, MemoryEntry entry, byte[] vectorBytes, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(entry);
@@ -132,7 +138,8 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
             MemoryEntry? existing = null;
             using (var find = conn.CreateCommand())
             {
-                find.CommandText = "SELECT Id, CreatedAt, Content, Category FROM LocalMemory WHERE WorkspaceId IS @ws AND ContentHash = @hash";
+                find.CommandText = "SELECT Id, CreatedAt, Content, Category FROM LocalMemory WHERE UserId = @uid AND WorkspaceId IS @ws AND ContentHash = @hash";
+                find.Parameters.AddWithValue("@uid", userId);
                 find.Parameters.AddWithValue("@ws", (object?)entry.WorkspaceId ?? DBNull.Value);
                 find.Parameters.AddWithValue("@hash", entry.ContentHash);
                 using var reader = await find.ExecuteReaderAsync(cancellationToken);
@@ -152,7 +159,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
                 update.CommandText = """
                     UPDATE LocalMemory
                     SET Content = @content, Category = @category, UpdatedAt = @updatedAt,
-                        ExpiresAt = @expiresAt, VectorDimension = @dimension, Vector = @vector
+                        ExpiresAt = @expiresAt, VectorDimension = @dimension, Vector = @vector, UserId = @uid
                     WHERE Id = @id
                     """;
                 update.Parameters.AddWithValue("@content", entry.Content);
@@ -161,6 +168,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
                 update.Parameters.AddWithValue("@expiresAt", (object?)entry.ExpiresAt?.ToString("O") ?? DBNull.Value);
                 update.Parameters.AddWithValue("@dimension", entry.VectorDimension);
                 update.Parameters.AddWithValue("@vector", vectorBytes);
+                update.Parameters.AddWithValue("@uid", userId);
                 update.Parameters.AddWithValue("@id", existing.Id);
                 await update.ExecuteNonQueryAsync(cancellationToken);
 
@@ -171,13 +179,14 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
                 existing.VectorDimension = entry.VectorDimension;
                 existing.WorkspaceId = entry.WorkspaceId;
                 existing.ContentHash = entry.ContentHash;
+                existing.UserId = userId;
                 return existing;
             }
 
             using var insert = conn.CreateCommand();
             insert.CommandText = """
-                INSERT INTO LocalMemory (Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, Vector, WorkspaceId, ContentHash, ExpiresAt)
-                VALUES (@id, @content, @category, @createdAt, @updatedAt, @dimension, @vector, @ws, @hash, @expiresAt)
+                INSERT INTO LocalMemory (Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, Vector, WorkspaceId, ContentHash, ExpiresAt, UserId)
+                VALUES (@id, @content, @category, @createdAt, @updatedAt, @dimension, @vector, @ws, @hash, @expiresAt, @uid)
                 """;
             insert.Parameters.AddWithValue("@id", entry.Id);
             insert.Parameters.AddWithValue("@content", entry.Content);
@@ -189,7 +198,9 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
             insert.Parameters.AddWithValue("@ws", (object?)entry.WorkspaceId ?? DBNull.Value);
             insert.Parameters.AddWithValue("@hash", entry.ContentHash);
             insert.Parameters.AddWithValue("@expiresAt", (object?)entry.ExpiresAt?.ToString("O") ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@uid", userId);
             await insert.ExecuteNonQueryAsync(cancellationToken);
+            entry.UserId = userId;
             return entry;
         }
         finally
@@ -199,12 +210,13 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     }
 
     /// <summary>
-    /// 按主键删除记忆记录
+    /// 按主键删除记忆记录（限定当前用户）
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="id">记忆主键</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>删除成功时返回 true，记录不存在时返回 false</returns>
-    public async Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _gate.WaitAsync(cancellationToken);
@@ -213,8 +225,9 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
             using var conn = CreateConnection();
             await conn.OpenAsync(cancellationToken);
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM LocalMemory WHERE Id = @id";
+            cmd.CommandText = "DELETE FROM LocalMemory WHERE Id = @id AND UserId = @uid";
             cmd.Parameters.AddWithValue("@id", id);
+            cmd.Parameters.AddWithValue("@uid", userId);
             var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
@@ -225,11 +238,12 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     }
 
     /// <summary>
-    /// 删除所有已过期的记忆记录
+    /// 删除当前用户所有已过期的记忆记录
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>被删除的记录数</returns>
-    public async Task<int> DeleteExpiredAsync(CancellationToken cancellationToken = default)
+    public async Task<int> DeleteExpiredAsync(string userId, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _gate.WaitAsync(cancellationToken);
@@ -238,7 +252,8 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
             using var conn = CreateConnection();
             await conn.OpenAsync(cancellationToken);
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM LocalMemory WHERE ExpiresAt IS NOT NULL AND ExpiresAt < @now";
+            cmd.CommandText = "DELETE FROM LocalMemory WHERE UserId = @uid AND ExpiresAt IS NOT NULL AND ExpiresAt < @now";
+            cmd.Parameters.AddWithValue("@uid", userId);
             cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
             return await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -251,20 +266,21 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// <summary>
     /// 按分类与工作空间查询未过期的记忆记录，按更新时间倒序返回
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="category">分类，为空时不过滤</param>
     /// <param name="workspaceId">工作空间标识</param>
     /// <param name="limit">返回的最大条数，默认 100</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>记忆条目列表</returns>
-    public async Task<IReadOnlyList<MemoryEntry>> ListAsync(string? category = null, string? workspaceId = null, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MemoryEntry>> ListAsync(string userId, string? category = null, string? workspaceId = null, int limit = 100, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var results = new List<MemoryEntry>();
         using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = BuildSelect("SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt FROM LocalMemory", category, workspaceId, includeAllWorkspaces: false, orderLimit: true);
-        AddFilterParams(cmd, category, workspaceId);
+        cmd.CommandText = BuildSelect("SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt, UserId FROM LocalMemory", userId, category, workspaceId, includeAllWorkspaces: false, orderLimit: true);
+        AddFilterParams(cmd, userId, category, workspaceId);
         cmd.Parameters.AddWithValue("@limit", limit);
 
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -276,20 +292,21 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// <summary>
     /// 加载全部未过期的记忆记录及其向量数据
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="category">分类，为空时不过滤</param>
     /// <param name="workspaceId">工作空间标识</param>
     /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>记忆条目与其向量数据的元组列表</returns>
-    public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadAllAsync(string? category = null, string? workspaceId = null, bool includeAllWorkspaces = false, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadAllAsync(string userId, string? category = null, string? workspaceId = null, bool includeAllWorkspaces = false, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var results = new List<(MemoryEntry, byte[])>();
         using var conn = CreateConnection();
         await conn.OpenAsync(cancellationToken);
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = BuildSelect("SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt, Vector FROM LocalMemory", category, workspaceId, includeAllWorkspaces, orderLimit: false);
-        AddFilterParams(cmd, category, workspaceId);
+        cmd.CommandText = BuildSelect("SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt, UserId, Vector FROM LocalMemory", userId, category, workspaceId, includeAllWorkspaces, orderLimit: false);
+        AddFilterParams(cmd, userId, category, workspaceId);
 
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -304,11 +321,12 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// <summary>
     /// 按主键列表批量加载记忆记录及其向量数据
     /// </summary>
+    /// <param name="userId">归属用户标识</param>
     /// <param name="ids">记忆主键集合</param>
     /// <param name="workspaceId">工作空间标识</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>记忆条目与其向量数据的元组列表</returns>
-    public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadByIdsAsync(IEnumerable<string> ids, string? workspaceId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(MemoryEntry Entry, byte[] VectorBytes)>> LoadByIdsAsync(string userId, IEnumerable<string> ids, string? workspaceId, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var idList = ids.Distinct().ToList();
@@ -319,11 +337,11 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         await conn.OpenAsync(cancellationToken);
         using var cmd = conn.CreateCommand();
         var placeholders = string.Join(",", idList.Select((_, i) => $"@id{i}"));
-        var where = BuildWhere(category: null, workspaceId, includeAllWorkspaces: false);
-        cmd.CommandText = $"SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt, Vector FROM LocalMemory WHERE Id IN ({placeholders}){where}";
+        var where = BuildWhere(userId, category: null, workspaceId, includeAllWorkspaces: false);
+        cmd.CommandText = $"SELECT Id, Content, Category, CreatedAt, UpdatedAt, VectorDimension, WorkspaceId, ContentHash, ExpiresAt, UserId, Vector FROM LocalMemory WHERE Id IN ({placeholders}){where}";
         for (var i = 0; i < idList.Count; i++)
             cmd.Parameters.AddWithValue($"@id{i}", idList[i]);
-        AddFilterParams(cmd, category: null, workspaceId);
+        AddFilterParams(cmd, userId, category: null, workspaceId);
 
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -339,28 +357,31 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// 构建 SELECT 查询语句，附加过滤条件与排序分页
     /// </summary>
     /// <param name="columns">查询的列</param>
+    /// <param name="userId">归属用户过滤条件</param>
     /// <param name="category">分类过滤条件</param>
     /// <param name="workspaceId">工作空间过滤条件</param>
     /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
     /// <param name="orderLimit">是否追加按更新时间倒序并限制条数</param>
     /// <returns>构建完成的 SELECT 语句</returns>
-    private static string BuildSelect(string columns, string? category, string? workspaceId, bool includeAllWorkspaces, bool orderLimit)
+    private static string BuildSelect(string columns, string userId, string? category, string? workspaceId, bool includeAllWorkspaces, bool orderLimit)
     {
-        var where = BuildWhere(category, workspaceId, includeAllWorkspaces);
+        var where = BuildWhere(userId, category, workspaceId, includeAllWorkspaces);
         var suffix = orderLimit ? " ORDER BY UpdatedAt DESC LIMIT @limit" : "";
         return $"{columns} WHERE 1=1{where}{suffix}";
     }
 
     /// <summary>
-    /// 构建 WHERE 过滤条件（分类、工作空间、过期时间）
+    /// 构建 WHERE 过滤条件（用户、分类、工作空间、过期时间）
     /// </summary>
+    /// <param name="userId">归属用户过滤条件</param>
     /// <param name="category">分类过滤条件</param>
     /// <param name="workspaceId">工作空间过滤条件</param>
     /// <param name="includeAllWorkspaces">是否包含全部工作空间的数据</param>
     /// <returns>WHERE 条件子句</returns>
-    private static string BuildWhere(string? category, string? workspaceId, bool includeAllWorkspaces)
+    private static string BuildWhere(string userId, string? category, string? workspaceId, bool includeAllWorkspaces)
     {
         var sb = new System.Text.StringBuilder();
+        sb.Append(" AND UserId = @uid");
         if (category != null)
             sb.Append(" AND Category = @category");
         if (!includeAllWorkspaces)
@@ -378,10 +399,12 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
     /// 为过滤条件绑定 SQL 参数
     /// </summary>
     /// <param name="cmd">SQLite 命令</param>
+    /// <param name="userId">归属用户过滤条件</param>
     /// <param name="category">分类过滤条件</param>
     /// <param name="workspaceId">工作空间过滤条件</param>
-    private static void AddFilterParams(SqliteCommand cmd, string? category, string? workspaceId)
+    private static void AddFilterParams(SqliteCommand cmd, string userId, string? category, string? workspaceId)
     {
+        cmd.Parameters.AddWithValue("@uid", userId);
         if (category != null)
             cmd.Parameters.AddWithValue("@category", category);
         if (category != MemoryCategories.Global)
@@ -409,6 +432,7 @@ public class SqliteLocalMemoryStore : ILocalMemoryStore, IDisposable
         entry.ContentHash = reader.IsDBNull(7) ? "" : reader.GetString(7);
         entry.ExpiresAt = reader.IsDBNull(8) ? null
             : DateTime.ParseExact(reader.GetString(8), "O", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+        entry.UserId = reader.IsDBNull(9) ? null : reader.GetString(9);
         return entry;
     }
 

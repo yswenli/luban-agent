@@ -89,21 +89,22 @@ public partial class MessageStream : UserControl
     {
         if (_scroller == null) return;
 
-        // 内容尺寸变化（流式追加正文/思考、追加节点活动、项被裁剪）会改变 extent，
-        // 但这不是用户滚动。若此时按位置重算距底距离，会把"贴底"误判成"上滚"
-        // 从而永久关闭自动滚动，因此这里保持原意图：贴底时继续滚到最新。
-        if (e.ExtentDelta.Y != 0 && e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0)
+        // 内容/尺寸变化（流式追加正文/思考、项裁剪、窗口缩放）不是用户滚动：
+        // 保持原"贴底"意图并继续追底，避免按位置重算把贴底误判成上滚而永久关闭自动滚动。
+        if (e.ExtentDelta.Y != 0 || e.ViewportDelta.Y != 0)
         {
             if (_autoScroll)
                 ScheduleScrollToEnd();
             return;
         }
 
+        // 纯位移变化才是用户滚动：按实际位置更新意图；向下滚且原本贴底时继续追底。
         var offset = _scroller.Offset.Y;
         var extent = _scroller.Extent.Height;
         var viewport = _scroller.Viewport.Height;
+        var atBottom = (extent - offset - viewport) < 50;
 
-        _autoScroll = (extent - offset - viewport) < 50;
+        _autoScroll = atBottom || (e.OffsetDelta.Y > 0 && _autoScroll);
     }
 
     /// <summary>

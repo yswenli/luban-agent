@@ -134,6 +134,11 @@ public sealed class InternalSubAgentHandlerAdapter : IA2AHandler, Sdk.IAgentHand
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
 
+        // 严格身份回填：root 派生 scope 不带身份，从 A2A 消息元数据取用户并写入；
+        // 缺失时回退本机默认用户（本地单用户）。
+        var userId = ResolveUserId(message);
+        services.GetRequiredService<LubanAgentCore.Context.UserContextState>().UserId = userId;
+
         LuBanAgent agent;
         string prompt;
         try
@@ -340,6 +345,20 @@ public sealed class InternalSubAgentHandlerAdapter : IA2AHandler, Sdk.IAgentHand
 
     private static string ExtractText(A2AMessage message)
         => message.Parts?.FirstOrDefault(p => !string.IsNullOrEmpty(p.Text))?.Text ?? string.Empty;
+
+    /// <summary>
+    /// 从 A2A 消息解析用户标识：优先 <c>Metadata["userId"]</c>，缺失回退本机默认用户。
+    /// </summary>
+    private static string ResolveUserId(A2AMessage message)
+    {
+        if (message.Metadata is { Count: > 0 } meta
+            && meta.TryGetValue("userId", out var uid)
+            && !string.IsNullOrWhiteSpace(uid))
+        {
+            return uid.Trim();
+        }
+        return LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId;
+    }
 
     private static Sdk.Message BuildMessage(string text)
         => new() { Role = Sdk.Role.Agent, Parts = new List<Sdk.Part> { new Sdk.Part { Text = text } } };

@@ -39,7 +39,7 @@ internal static class StartupRunner
     /// <summary>
     /// 构建服务容器。
     /// </summary>
-    public static IServiceProvider BuildServiceProvider(
+    public static AgentHostServices BuildServiceProvider(
         IConfiguration configuration,
         OnnxEmbeddingGenerator? embedder,
         ModelManager? modelManager)

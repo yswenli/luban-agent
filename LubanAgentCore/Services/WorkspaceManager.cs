@@ -96,10 +96,9 @@ public interface IWorkspaceManager
     Task SwitchWorkspaceAsync(string workspaceId);
 
     /// <summary>
-    /// 获取用户的所有工作区
+    /// 获取当前用户的全部工作区
     /// </summary>
-    /// <param name="userId">用户ID，null 表示获取全部</param>
-    Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync(string? userId = null);
+    Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync();
 
     /// <summary>
     /// 按工作区ID获取工作区信息（用于按会话自身绑定的工作区解析，避免依赖进程级“当前工作区”）。
@@ -174,6 +173,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly ISessionManager _sessionManager;
     private readonly BuiltinSkillCatalog _builtinSkills;
     private readonly BuiltinRuleCatalog _builtinRules;
+    private readonly string _userId;
 
     /// <summary>当前工作区（实例级；由宿主按需切换，不再作为静态全局状态）。</summary>
     /// <remarks>
@@ -272,15 +272,18 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     public event Action<WorkspaceInfo>? CurrentWorkspaceChanged;
 
     /// <summary>
-    /// 创建 WorkspaceManager 实例
+    /// 创建 WorkspaceManager 实例（绑定用户）
     /// </summary>
+    /// <param name="userId">归属用户标识。</param>
     public WorkspaceManager(
+        string userId,
         WorkspaceRepository repo,
         SessionRepository sessionRepo,
         ISessionManager sessionManager,
         BuiltinSkillCatalog builtinSkills,
         BuiltinRuleCatalog builtinRules)
     {
+        _userId = string.IsNullOrWhiteSpace(userId) ? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId : userId;
         _repo = repo;
         _sessionRepo = sessionRepo;
         _sessionManager = sessionManager;
@@ -316,6 +319,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
                 : name,
             RootPath = fullPath,
             Type = type,
+            UserId = _userId,
             IsAuthorized = false,
             ConfigPath = ".luban-agent",
             CreateTime = DateTime.Now,
@@ -348,7 +352,7 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
             if (latest != null)
                 await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
             else
-                await _sessionManager.CreateSessionAsync(userId: "default", title: "新会话", workspaceId: workspaceId);
+                await _sessionManager.CreateSessionAsync(title: "新会话", workspaceId: workspaceId);
         }
         catch (Exception ex)
         {
@@ -432,15 +436,11 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     }
 
     /// <summary>
-    /// 获取用户的所有工作区（userId 为 null 时获取全部）
+    /// 获取当前用户的全部工作区
     /// </summary>
-    public async Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync(string? userId = null)
+    public async Task<IEnumerable<WorkspaceInfo>> GetUserWorkspacesAsync()
     {
-        List<DbWorkspace> list;
-        if (string.IsNullOrEmpty(userId))
-            list = await _repo.GetAllAsync();
-        else
-            list = await _repo.GetUserWorkspacesAsync(userId);
+        var list = await _repo.GetUserWorkspacesAsync(_userId);
         return list.Select(ToWorkspaceInfo);
     }
 

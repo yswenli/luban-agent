@@ -185,7 +185,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        var session = await _sessionManager.CreateSessionAsync(userId: "default", title: title);
+        var session = await _sessionManager.CreateSessionAsync(title: title);
         Writer.WriteSuccess($"已创建并切换到新会话: {session.Title}");
     }
 

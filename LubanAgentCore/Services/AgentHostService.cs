@@ -35,13 +35,19 @@ public class AgentHostService
     /// <summary>
     /// 创建 Agent 宿主服务。
     /// </summary>
-    /// <param name="services">根级服务提供者。</param>
-    /// <param name="runtimes">会话运行时管理器。</param>
+    /// <param name="services">当前（用户）作用域服务提供者。</param>
+    /// <param name="runtimes">会话运行时管理器（root 单例）。</param>
     public AgentHostService(IServiceProvider services, SessionRuntimeManager runtimes)
     {
         _services = services;
         _runtimes = runtimes;
     }
+
+    /// <summary>当前用户标识（缺失时回退本地默认用户）。</summary>
+    private string CurrentUserId
+        => _services.GetService<LuBan.AIAgent.Abstractions.IUserContext>()?.UserId is { Length: > 0 } id
+            ? id
+            : LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId;
 
     /// <summary>当前活动会话标识（来自全局会话管理器）。</summary>
     private string? CurrentSessionId
@@ -120,7 +126,7 @@ public class AgentHostService
             return runtime;
 
         var workspace = await ResolveSessionWorkspaceAsync(sessionId, ct);
-        runtime = _runtimes.GetOrCreate(sessionId, workspace.WorkspaceId, workspace.RootPath);
+        runtime = _runtimes.GetOrCreate(sessionId, CurrentUserId, workspace.WorkspaceId, workspace.RootPath);
         await EnsureAgentAsync(runtime, workspace, ct);
         return runtime;
     }

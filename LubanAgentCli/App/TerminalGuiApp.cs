@@ -17,6 +17,7 @@
 using System.Runtime.InteropServices;
 using LubanAgentCli.App.Services;
 using LubanAgentCli.Infrastructure;
+using LubanAgentCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCli.App;
@@ -51,7 +52,7 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
     /// <summary>
     /// 依赖注入容器。由启动向导初始化完成后设置。
     /// </summary>
-    public IServiceProvider? Services { get; private set; }
+    public AgentHostServices? Services { get; private set; }
 
     /// <summary>
     /// 释放资源。
@@ -73,13 +74,10 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
             _titleService.TitleChanged -= _titleChangedHandler;
         }
 
-        if (Services is IAsyncDisposable asyncDisposable)
+        if (Services is not null)
         {
-            await asyncDisposable.DisposeAsync();
-        }
-        else if (Services is IDisposable disposable)
-        {
-            disposable.Dispose();
+            await Services.DisposeAsync();
+            Services = null;
         }
 
         if (_timerPeriodRaised && OperatingSystem.IsWindows())

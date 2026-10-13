@@ -57,23 +57,29 @@ public sealed class SessionRuntimeManager : IAsyncDisposable
     /// 取（或创建）指定会话的运行时。首次调用时创建独立 scope 并填充会话上下文。
     /// </summary>
     /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户标识（用于回填会话 scope 身份）。</param>
     /// <param name="workspaceId">工作区标识。</param>
     /// <param name="workspaceRoot">工作区根路径。</param>
-    public SessionRuntime GetOrCreate(string sessionId, string workspaceId, string workspaceRoot)
+    public SessionRuntime GetOrCreate(string sessionId, string userId, string workspaceId, string workspaceRoot)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new ArgumentException("会话标识不能为空", nameof(sessionId));
 
-        return _runtimes.GetOrAdd(sessionId, id => CreateRuntime(id, workspaceId, workspaceRoot));
+        return _runtimes.GetOrAdd(sessionId, id => CreateRuntime(id, userId, workspaceId, workspaceRoot));
     }
 
     /// <summary>取已存在的会话运行时；不存在返回 null。</summary>
     /// <param name="sessionId">会话标识。</param>
     public SessionRuntime? Get(string sessionId) => _runtimes.GetValueOrDefault(sessionId);
 
-    private SessionRuntime CreateRuntime(string sessionId, string workspaceId, string workspaceRoot)
+    private SessionRuntime CreateRuntime(string sessionId, string userId, string workspaceId, string workspaceRoot)
     {
         var scope = _root.CreateScope();
+
+        // root 派生 scope 不带身份，必须显式回填用户身份，否则按用户隔离的服务会落到默认用户
+        scope.ServiceProvider.GetRequiredService<LubanAgentCore.Context.UserContextState>().UserId =
+            string.IsNullOrWhiteSpace(userId) ? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId : userId;
+
         var state = scope.ServiceProvider.GetRequiredService<SessionContextState>();
         state.SessionId = sessionId;
         state.WorkspaceId = workspaceId;

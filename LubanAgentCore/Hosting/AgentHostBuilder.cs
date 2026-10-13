@@ -42,7 +42,7 @@ public static class AgentHostBuilder
     /// <param name="embedder">嵌入生成器（可选）</param>
     /// <param name="modelManager">模型管理器（可选）</param>
     /// <param name="configureServices">额外的服务配置委托（可选）</param>
-    public static IServiceProvider BuildServiceProvider(
+    public static AgentHostServices BuildServiceProvider(
         IConfiguration configuration,
         OnnxEmbeddingGenerator? embedder = null,
         ModelManager? modelManager = null,
@@ -51,46 +51,19 @@ public static class AgentHostBuilder
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
 
-        var configPath = ConfigManager.GetDefaultConfigPath();
-        var configManager = new ConfigManager(configPath);
-        configManager.Load();
-        services.AddSingleton(configManager);
-        services.AddSingleton<IAppConfigReader>(configManager);
-
         services.AddLogging(builder => builder.AddLuBanFileLogger());
 
-        services.AddScoped<Microsoft.Extensions.AI.IChatClient>(sp =>
-        {
-            var cm = sp.GetRequiredService<ConfigManager>();
-            var opts = sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
-            return LuBan.AIAgent.Errors.ChatClientResilience.Wrap(
-                new RequestDumpChatClient(cm.CreateChatClient()), opts);
-        });
-
-        services.AddSingleton<IProviderRouter>(sp =>
-        {
-            var cm = sp.GetRequiredService<ConfigManager>();
-            var providers = new Dictionary<string, (OpenAI.OpenAIClient, OpenAI.OpenAIClientOptions?)>();
-            foreach (var p in cm.Providers)
-            {
-                if (!string.IsNullOrEmpty(p.ApiKey))
-                {
-                    var clientOptions = new OpenAI.OpenAIClientOptions
-                    {
-                        // 禁用 SDK 内置重试，由 ResilientChatClient 统一重试（与 ConfigManager.CreateChatClient 一致）
-                        RetryPolicy = new System.ClientModel.Primitives.ClientRetryPolicy(0)
-                    };
-                    if (p.NetworkTimeoutSeconds.HasValue)
-                        clientOptions.NetworkTimeout = TimeSpan.FromSeconds(p.NetworkTimeoutSeconds.Value);
-                    if (!string.IsNullOrEmpty(p.BaseUrl))
-                        clientOptions.Endpoint = new Uri(p.BaseUrl);
-                    var credential = new System.ClientModel.ApiKeyCredential(p.ApiKey);
-                    var openAIClient = new OpenAI.OpenAIClient(credential, clientOptions);
-                    providers[p.Name] = (openAIClient, clientOptions);
-                }
-            }
-            return new LuBanChatClient(providers);
-        });
+        // ── root：身份无关的进程级单例 ─────────────────────────────────
+        services.AddSingleton<SessionRepository>();
+        services.AddSingleton<SessionMessageRepository>();
+        services.AddSingleton<WorkspaceRepository>();
+        services.AddSingleton<LlmWikiFileRepository>();
+        services.AddSingleton<LlmWikiChunkRepository>();
+        services.AddSingleton<WorktreeSessionRepository>();
+        services.AddSingleton<GitProcess>();
+        services.AddSingleton<SessionRuntimeManager>();
+        services.AddSingleton<UserContextRegistry>();
+        services.AddSingleton<ICommandCatalog, CommandCatalog>();
 
         services.AddSingleton<ILocalMemoryStore>(sp =>
         {
@@ -100,54 +73,57 @@ public static class AgentHostBuilder
 
         services.AddLuBanAgent(configuration);
 
-        // 用户/工作区/会话上下文（会话级作用域；P0 由会话作用域承载工作区级）
-        var userId = Environment.UserName ?? "default";
-        services.AddSingleton<IUserContext>(new UserContext(Environment.UserName));
+        // ── user scope：身份与用户级服务 ──────────────────────────────
+        services.AddScoped<UserContextState>();
+        services.AddScoped<LuBan.AIAgent.Abstractions.IUserContext>(sp =>
+            new UserContext(sp.GetRequiredService<UserContextState>()));
         services.AddScoped<SessionContextState>();
         services.AddScoped<ISessionContext, SessionContext>();
         services.AddScoped<IWorkspaceContext, WorkspaceContext>();
 
-        // Provider 可变状态（刷新得到的模型列表）按用户隔离，keyed 注册；门面实例同样 keyed
-        services.AddKeyedSingleton<ProviderCache>(userId);
-        services.AddKeyedSingleton<ProviderService>(userId,
-            (sp, key) => new ProviderService(sp.GetRequiredKeyedService<ProviderCache>(key!)));
+        services.AddScoped<Microsoft.Extensions.AI.IChatClient>(sp =>
+        {
+            var cm = sp.GetRequiredService<ConfigManager>();
+            var opts = sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value;
+            return LuBan.AIAgent.Errors.ChatClientResilience.Wrap(
+                new RequestDumpChatClient(cm.CreateChatClient()), opts);
+        });
 
-        // 模型多模态能力登记（可变状态）按用户隔离，keyed 注册；门面实例同样 keyed
-        services.AddKeyedSingleton<ModelCapabilityCache>(userId);
-        services.AddKeyedSingleton<ModelCapabilityService>(userId,
-            (sp, key) => new ModelCapabilityService(sp.GetRequiredKeyedService<ModelCapabilityCache>(key!)));
+        // 按用户隔离的 shared state：Scoped 门面转发到 UserContextRegistry 的 per-user 桶
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).Config);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).ProviderCache);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).ProviderService);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).ModelCapabilityCache);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).ModelCapabilityService);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).ProviderRouter);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).SessionManager);
+        services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
+            .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).WorkspaceManager);
+        services.AddScoped<IAppConfigReader>(sp => sp.GetRequiredService<ConfigManager>());
 
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
 
-        // worktree 协调：git 封装无状态（单例，依赖单例 ProcessRunner），协调器按会话作用域
-        services.AddSingleton<GitProcess>();
         services.AddScoped<IWorktreeCoordinator, WorktreeSessionManager>();
-        services.AddSingleton<WorktreeReconciler>();
+        services.AddScoped<WorktreeReconciler>();
+        services.AddScoped<AgentHostService>();
+        services.AddScoped<AttachmentService>();
+        services.AddScoped<IAgentsMdInitializer, AgentsMdInitializer>();
 
-        services.AddSingleton<ISessionManager, SessionManager>();
-        services.AddSingleton<SessionRuntimeManager>();
-        services.AddSingleton<AgentHostService>();
-        services.AddSingleton<AttachmentService>();
-        services.AddSingleton<IAgentsMdInitializer, AgentsMdInitializer>();
-
-        services.AddSingleton<SessionRepository>();
-        services.AddSingleton<SessionMessageRepository>();
-        services.AddSingleton<WorkspaceRepository>();
-        services.AddSingleton<LlmWikiFileRepository>();
-        services.AddSingleton<LlmWikiChunkRepository>();
-        services.AddSingleton<WorktreeSessionRepository>();
-        services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
-        services.AddSingleton<ICommandCatalog, CommandCatalog>();
-        services.AddSingleton<IWorkspaceContextProvider>(
-            sp => new DelegateWorkspaceContextProvider(() => sp.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId));
+        services.AddScoped<IWorkspaceContextProvider>(sp =>
+            new DelegateWorkspaceContextProvider(() => sp.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId));
 
         if (embedder != null)
         {
-            // 嵌入器本身单例（ONNX 会话昂贵），用串行装饰器包一层供多会话共享，避免并发同时推理
             services.AddSingleton<Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>>(
                 new SerializingEmbeddingGenerator(embedder));
-            // 工作区内容相关服务按会话作用域：每会话一份，避免跨会话/跨工作区串扰
             services.AddScoped<IVectorStore, SqliteVectorStore>();
             services.AddScoped<IRetrievalService>(sp => new RetrievalService(
                 sp.GetRequiredService<IVectorStore>(),
@@ -158,32 +134,29 @@ public static class AgentHostBuilder
                 sp.GetRequiredService<IRetrievalService>(),
                 sp.GetRequiredService<IWikiContext>(),
                 sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value.Tools.Wiki));
-            // 知识任务为应用级全局表（跨工作区统计/串行写库）：保持单例，任务体内部自建 scope 解析 scoped 服务
             services.AddSingleton<KnowledgeTaskService>();
             if (modelManager != null) services.AddSingleton(modelManager);
         }
 
-        // 调用额外的服务配置委托
         configureServices?.Invoke(services);
 
-        var sp = services.BuildServiceProvider(new ServiceProviderOptions
+        var root = services.BuildServiceProvider(new ServiceProviderOptions
         {
-            // 会话/工作区上下文均为 scoped；开启校验以在启动期暴露 captive dependency（单例误捕获 scoped）
             ValidateScopes = true,
             ValidateOnBuild = true
         });
 
-        Logger.SetLogger(sp.GetRequiredService<ILoggerFactory>());
+        Logger.SetLogger(root.GetRequiredService<ILoggerFactory>());
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
 
-        // 容器构建后回填 ConfigManager，使其能解析 keyed 的按用户实例级服务
-        configManager.AttachServices(sp);
+        // 历史单用户数据归属归一化（会话/工作区 UserId: null/''/'default' → 默认用户）
+        LegacyUserDataMigrator.Migrate();
 
-        // 用全局配置初始化按用户的能力登记表，并注册持久化回调
-        sp.GetRequiredKeyedService<ModelCapabilityCache>(userId)
-            .Initialize(configManager.ModelCapabilities, configManager.PersistModelCapability);
+        // 进程常驻用户作用域：CLI/Codex 单用户身份在此绑定；session scope 由 SessionRuntimeManager 从 root 派生并回填身份
+        var userScope = root.CreateScope();
+        userScope.ServiceProvider.GetRequiredService<UserContextState>().UserId = LocalUserDefaults.DefaultUserId;
 
-        return sp;
+        return new AgentHostServices(root, userScope);
     }
 
     /// <summary>

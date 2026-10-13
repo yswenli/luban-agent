@@ -1,41 +1,27 @@
+using LuBan.AIAgent.Abstractions;
+using LubanAgentCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCore.Configuration;
 
-/// <summary>
-/// 按当前用户解析 keyed 注册的实例级服务的辅助扩展方法。
-/// </summary>
+/// <summary>按当前用户解析 Scoped 门面服务的辅助扩展。</summary>
 public static class UserScopedServiceExtensions
 {
-    /// <summary>
-    /// 解析当前用户标识，作为 keyed 服务的键；缺失时回退为 <c>default</c>。
-    /// </summary>
-    /// <param name="services">服务提供者</param>
-    /// <returns>当前用户键</returns>
+    /// <summary>解析当前用户标识；缺失时回退为本地默认用户。</summary>
     public static string ResolveUserKey(this IServiceProvider services)
-        => services.GetRequiredService<IUserContext>().UserId ?? "default";
+        => services.GetRequiredService<IUserContext>().UserId is { Length: > 0 } id
+            ? id
+            : LocalUserDefaults.DefaultUserId;
 
-    /// <summary>
-    /// 解析当前用户的 <see cref="ProviderService"/> 实例。
-    /// </summary>
-    /// <param name="services">服务提供者</param>
-    /// <returns>Provider 门面实例</returns>
+    /// <summary>解析当前用户的 <see cref="ProviderService"/>。</summary>
     public static ProviderService GetProviderService(this IServiceProvider services)
-        => services.GetRequiredKeyedService<ProviderService>(services.ResolveUserKey());
+        => services.GetRequiredService<ProviderService>();
 
-    /// <summary>
-    /// 解析当前用户的模型能力门面 <see cref="ModelCapabilityService"/> 实例。
-    /// </summary>
-    /// <param name="services">服务提供者</param>
-    /// <returns>模型能力门面实例</returns>
+    /// <summary>解析当前用户的 <see cref="ModelCapabilityService"/>。</summary>
     public static ModelCapabilityService GetModelCapabilityService(this IServiceProvider services)
-        => services.GetRequiredKeyedService<ModelCapabilityService>(services.ResolveUserKey());
+        => services.GetRequiredService<ModelCapabilityService>();
 
-    /// <summary>
-    /// 解析当前用户的模型能力缓存 <see cref="ModelCapabilityCache"/> 实例。
-    /// </summary>
-    /// <param name="services">服务提供者</param>
-    /// <returns>模型能力缓存实例</returns>
+    /// <summary>解析当前用户的 <see cref="ModelCapabilityCache"/>。</summary>
     public static ModelCapabilityCache GetModelCapabilityCache(this IServiceProvider services)
-        => services.GetRequiredKeyedService<ModelCapabilityCache>(services.ResolveUserKey());
+        => services.GetRequiredService<ModelCapabilityCache>();
 }

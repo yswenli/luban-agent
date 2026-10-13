@@ -72,7 +72,7 @@ public sealed class WorktreeReconciler
         IEnumerable<WorkspaceInfo> workspaceList;
         try
         {
-            workspaceList = await _workspaces.GetUserWorkspacesAsync(null).ConfigureAwait(false);
+            workspaceList = await _workspaces.GetUserWorkspacesAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {

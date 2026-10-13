@@ -562,7 +562,7 @@ public partial class MainWindow : Window
                 if (current == null)
                 {
                     // 异常兜底：当前会话缺失则新建
-                    current = await sessionManager.CreateSessionAsync(userId: "default", title: "知识库对话");
+                    current = await sessionManager.CreateSessionAsync(title: "知识库对话");
                 }
                 await _viewModel!.LoadSessionHistoryAsync(current.SessionId);
             }

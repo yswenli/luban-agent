@@ -26,13 +26,28 @@ global using Avalonia.Threading;
 // CommunityToolkit
 global using CommunityToolkit.Mvvm.ComponentModel;
 global using CommunityToolkit.Mvvm.Input;
+
+global using LuBan.AIAgent.A2A;
+global using LuBan.AIAgent.A2A.Abstractions;
 // LuBan
 global using LuBan.AIAgent.Abstractions;
+global using LuBan.AIAgent.Configuration;
+global using LuBan.AIAgent.Errors;
 global using LuBan.AIAgent.MCP;
+global using LuBan.AIAgent.Orchestration;
 global using LuBan.AIAgent.Orchestration.Models;
 global using LuBan.AIAgent.Rules;
+global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Orm;
+
+global using LubanAgentA2A.Configuration;
+global using LubanAgentA2A.Runtime;
+
+global using LubanAgentCodex.ViewModels.Messages;
+global using LubanAgentCodex.Views;
+
+global using LubanAgentCore.Commands;
 // LubanAgentCore
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Hosting;
@@ -42,6 +57,7 @@ global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Services;
 // Microsoft
 global using Microsoft.Extensions.DependencyInjection;
+global using Microsoft.Extensions.Options;
 // .NET
 global using System;
 global using System.Collections.Generic;

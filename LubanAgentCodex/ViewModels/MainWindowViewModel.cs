@@ -14,24 +14,7 @@
 *描述：主窗口 ViewModel，管理消息流、会话和 Agent 交互
 *
 *****************************************************************************/
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
-using LubanAgentCore.Commands;
-using LubanAgentCore.Services;
-using LubanAgentCore.Utils;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Errors;
-using LuBan.AIAgent.Orchestration;
-using Microsoft.Extensions.Options;
-using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCodex.Views;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.A2A;
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.Sessions;
-using LubanAgentA2A.Configuration;
-using LubanAgentA2A.Runtime;
-using Microsoft.Extensions.DependencyInjection;
+
 
 namespace LubanAgentCodex.ViewModels;
 
@@ -1281,7 +1264,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (args.Length == 0 || args[0] == "-list" || args[0] == "list")
         {
             // 列出所有会话
-            var sessions = await sessionManager.GetUserSessionsAsync("");
+            var sessions = await sessionManager.GetUserSessionsAsync();
             var sb = new StringBuilder();
             sb.AppendLine("会话列表:");
 

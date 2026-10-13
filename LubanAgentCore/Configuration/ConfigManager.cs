@@ -26,8 +26,7 @@ public class ConfigManager : IAppConfigReader
 {
     private readonly string _configPath;
     private AppConfig _config = new();
-    private IServiceProvider? _services;
-    private readonly ProviderCache _fallbackProviderCache = new();
+    private readonly ProviderService? _providerService;
 
     List<ProviderConfigData> IAppConfigReader.Providers =>
         _config.Providers.Select(p => new ProviderConfigData
@@ -92,18 +91,14 @@ public class ConfigManager : IAppConfigReader
     public bool HasSelectedModel => !string.IsNullOrEmpty(SelectedModel);
 
     /// <summary>
-    /// 附加服务提供者，用于解析按用户隔离的实例级服务（如 Provider 缓存）
-    /// </summary>
-    /// <param name="services">服务提供者</param>
-    public void AttachServices(IServiceProvider services) => _services = services;
-
-    /// <summary>
     /// 创建 ConfigManager 实例
     /// </summary>
     /// <param name="configPath">配置文件路径</param>
-    public ConfigManager(string configPath)
+    /// <param name="providerService">Provider 门面（可为 null，此时模型列表使用本地回退缓存）</param>
+    public ConfigManager(string configPath, ProviderService? providerService = null)
     {
         _configPath = configPath ?? throw new ArgumentNullException(nameof(configPath));
+        _providerService = providerService;
     }
 
     /// <summary>
@@ -534,9 +529,9 @@ public class ConfigManager : IAppConfigReader
     {
         var provider = GetProvider(providerName);
         if (provider == null) return new List<string>();
-        var models = _services != null
-            ? _services.GetProviderService().GetModels(providerName)
-            : ProviderHelper.GetModels(providerName, _fallbackProviderCache);
+        var models = _providerService is not null
+            ? _providerService.GetModels(providerName)
+            : ProviderHelper.GetModels(providerName, new ProviderCache());
         var allModels = new List<string>(models);
         foreach (var custom in provider.CustomModels)
         {
@@ -584,12 +579,37 @@ public class ConfigManager : IAppConfigReader
     }
 
     /// <summary>
-    /// 获取默认配置文件路径
+    /// 获取配置文件路径。userId 为空时返回历史单用户路径（向后兼容 CommandBase 轻量路径）；
+    /// 非空时返回该用户的独立配置文件路径，并在首次访问时从历史单用户配置迁移。
     /// </summary>
-    /// <returns>本地应用数据目录下的默认配置文件路径</returns>
-    public static string GetDefaultConfigPath()
+    /// <param name="userId">用户标识；为空时用历史路径。</param>
+    public static string GetDefaultConfigPath(string? userId = null)
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(appDataPath, "LuBan", "AIAgent", "config.json");
+        var root = Path.Combine(appDataPath, "LuBan", "AIAgent");
+        if (string.IsNullOrWhiteSpace(userId))
+            return Path.Combine(root, "config.json");
+
+        var target = Path.Combine(root, "users", userId, "config.json");
+        MigrateLegacyConfig(root, target);
+        return target;
+    }
+
+    /// <summary>旧单用户配置存在且用户配置不存在时，复制一份作为初始配置。</summary>
+    private static void MigrateLegacyConfig(string root, string target)
+    {
+        try
+        {
+            var legacy = Path.Combine(root, "config.json");
+            if (File.Exists(target) || !File.Exists(legacy)) return;
+            var dir = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            File.Copy(legacy, target);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"迁移旧配置失败: {ex.Message}");
+        }
     }
 }

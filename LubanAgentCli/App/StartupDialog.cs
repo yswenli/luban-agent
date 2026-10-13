@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LubanAgentCli.App.Dialogs;
+using LubanAgentCore.Hosting;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
@@ -37,7 +38,7 @@ internal class StartupDialog : Dialogs.BaseDialog
     /// <summary>
     /// 初始化完成后的服务容器。
     /// </summary>
-    public IServiceProvider? Services { get; private set; }
+    public AgentHostServices? Services { get; private set; }
 
     /// <summary>
     /// 启动提示集合。

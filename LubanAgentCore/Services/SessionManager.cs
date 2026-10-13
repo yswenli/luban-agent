@@ -25,6 +25,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
 {
     private readonly SessionRepository _sessionRepo;
     private readonly SessionMessageRepository _messageRepo;
+    private readonly string _userId;
 
     /// <summary>
     /// 当前活动会话（进程级「活动会话」指针）。
@@ -36,14 +37,16 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     private SessionInfo? _currentSession;
 
     /// <summary>
-    /// 创建 SessionManager 实例
+    /// 创建 SessionManager 实例（绑定用户）。
     /// </summary>
+    /// <param name="userId">归属用户标识。</param>
     /// <remarks>
     /// 工作区绑定由调用方在 <see cref="CreateSessionAsync"/> 中显式传入 workspaceId，
     /// 不再依赖全局「当前工作区」静态访问器。
     /// </remarks>
-    public SessionManager()
+    public SessionManager(string userId)
     {
+        _userId = string.IsNullOrWhiteSpace(userId) ? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId : userId;
         _sessionRepo = new SessionRepository();
         _messageRepo = new SessionMessageRepository();
     }
@@ -57,15 +60,15 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     public event Action<string>? CurrentSessionChanged;
 
     /// <summary>
-    /// 创建新会话（绑定调用方显式指定的工作区）
+    /// 创建新会话（归属当前绑定用户，绑定调用方显式指定的工作区）
     /// </summary>
-    public async Task<SessionInfo> CreateSessionAsync(string? userId = null, string? title = null, string? workspaceId = null)
+    public async Task<SessionInfo> CreateSessionAsync(string? title = null, string? workspaceId = null)
     {
         var sessionId = Guid.NewGuid().ToString("N");
         var session = new DbSession
         {
             SessionId = sessionId,
-            UserId = userId,
+            UserId = _userId,
             Title = title ?? "新对话",
             CreateTime = DateTime.Now,
             // 同步 UpdateTime，避免 GetLatestSessionAsync 排序时多个 NULL 并列的不确定性
@@ -95,11 +98,11 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     }
 
     /// <summary>
-    /// 获取用户的所有会话
+    /// 获取当前用户的所有会话
     /// </summary>
-    public async Task<IEnumerable<SessionInfo>> GetUserSessionsAsync(string userId)
+    public async Task<IEnumerable<SessionInfo>> GetUserSessionsAsync()
     {
-        var sessions = await _sessionRepo.GetUserSessionsAsync(userId);
+        var sessions = await _sessionRepo.GetUserSessionsAsync(_userId);
         return sessions.Select(ToSessionInfo);
     }
 
@@ -264,7 +267,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
         // 否则对话持久化前提（CurrentSession 非空）被破坏，每轮对话再次孤立
         if (!string.IsNullOrEmpty(workspaceId))
         {
-            await CreateSessionAsync(userId: "default", title: "新会话", workspaceId: workspaceId);
+            await CreateSessionAsync(title: "新会话", workspaceId: workspaceId);
         }
     }
 
