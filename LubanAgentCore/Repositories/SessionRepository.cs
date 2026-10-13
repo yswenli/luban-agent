@@ -39,12 +39,16 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
-    /// 判断指定用户是否存在该会话（含软删除；用于消息读取前的归属校验）
+    /// 判断指定用户是否拥有该会话（含软删除；用于消息读写的越权防护）。
     /// </summary>
+    /// <remarks>
+    /// 含软删除是刻意的：删除会话为“先软删会话行、再物理清消息”，清理前的归属校验在软删后仍须成立。
+    /// <c>ai_session.SessionId</c> 建有唯一索引，故命中索引后过滤 <c>UserId</c>（UserId 无独立索引亦可）。
+    /// </remarks>
     public async Task<bool> ExistsForUserAsync(string sessionId, string userId)
     {
         if (string.IsNullOrEmpty(sessionId)) return false;
-        return await AsQueryable().AnyAsync(s => s.SessionId == sessionId && s.UserId == userId);
+        return await AnyAsync(s => s.SessionId == sessionId && s.UserId == userId);
     }
 
     /// <summary>

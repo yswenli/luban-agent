@@ -136,6 +136,13 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task DeleteSessionAsync(string sessionId)
     {
+        // 越权防护：非本用户会话直接拒绝，避免“会话行不匹配未软删、消息却被物理清空”
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+        {
+            Logger.Warn($"删除会话被拒：会话不属于当前用户或不存在。sessionId={sessionId}, userId={_userId}");
+            return;
+        }
+
         await _sessionRepo.SoftDeleteAsync(sessionId, _userId);
         await _messageRepo.ClearMessagesAsync(sessionId);
 
@@ -150,6 +157,24 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null, string? attachments = null, string? toolCalls = null)
     {
+        // 越权防护：拒绝向非本用户会话写入。计数更新虽已按 userId 过滤，但消息行本身无用户列，
+        // 若不前置拦截会向他人会话落库孤儿消息。命中时返回未持久化的消息（Id=0），不抛异常以保持框架运行链路稳定。
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+        {
+            Logger.Warn($"写入会话消息被拒：会话不属于当前用户或不存在。sessionId={sessionId}, userId={_userId}, role={role}");
+            return new SessionMessage
+            {
+                SessionId = sessionId,
+                Role = role,
+                Content = content,
+                Thinking = thinking,
+                Attachments = attachments,
+                ToolCalls = toolCalls,
+                Tokens = tokens,
+                CreatedAt = DateTime.Now
+            };
+        }
+
         var message = new DbSessionMessage
         {
             SessionId = sessionId,
@@ -217,6 +242,13 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task ClearMessagesAsync(string sessionId)
     {
+        // 越权防护：非本用户会话拒绝清除，消息表按 sessionId 物理删除且无用户列
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+        {
+            Logger.Warn($"清除会话消息被拒：会话不属于当前用户或不存在。sessionId={sessionId}, userId={_userId}");
+            return;
+        }
+
         await _messageRepo.ClearMessagesAsync(sessionId);
 
         if (_currentSession?.SessionId == sessionId)
@@ -323,6 +355,13 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task MarkMessagesCompactedAsync(string sessionId, IEnumerable<long> messageIds)
     {
+        // 越权防护：非本用户会话拒绝标记，避免篡改他人消息的压缩状态
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+        {
+            Logger.Warn($"标记消息压缩被拒：会话不属于当前用户或不存在。sessionId={sessionId}, userId={_userId}");
+            return;
+        }
+
         await _messageRepo.MarkCompactedAsync(sessionId, messageIds);
     }
 
