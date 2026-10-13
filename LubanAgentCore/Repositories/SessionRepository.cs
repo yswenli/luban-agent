@@ -39,6 +39,15 @@ public class SessionRepository : BaseRepository<DbSession>
     }
 
     /// <summary>
+    /// 判断指定用户是否存在该会话（含软删除；用于消息读取前的归属校验）
+    /// </summary>
+    public async Task<bool> ExistsForUserAsync(string sessionId, string userId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return false;
+        return await AsQueryable().AnyAsync(s => s.SessionId == sessionId && s.UserId == userId);
+    }
+
+    /// <summary>
     /// 获取用户的所有会话
     /// </summary>
     public async Task<List<DbSession>> GetUserSessionsAsync(string userId)

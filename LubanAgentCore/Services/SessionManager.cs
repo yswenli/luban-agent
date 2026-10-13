@@ -193,6 +193,9 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<IEnumerable<SessionMessage>> GetMessagesAsync(string sessionId, int? limit = null)
     {
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+            return Enumerable.Empty<SessionMessage>();
+
         var messages = await _messageRepo.GetSessionMessagesAsync(sessionId, limit);
         return messages.Select(ToSessionMessage);
     }
@@ -202,6 +205,9 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<IEnumerable<SessionMessage>> GetLatestMessagesAsync(string sessionId, int count)
     {
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+            return Enumerable.Empty<SessionMessage>();
+
         var messages = await _messageRepo.GetLatestMessagesAsync(sessionId, count);
         return messages.Select(ToSessionMessage);
     }
@@ -225,6 +231,11 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<SessionStats> GetSessionStatsAsync(string sessionId)
     {
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+        {
+            return new SessionStats();
+        }
+
         var (total, userMsgs, assistantMsgs, totalTokens) = await _messageRepo.GetStatsAsync(sessionId);
 
         return new SessionStats
@@ -300,6 +311,9 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     /// </summary>
     public async Task<IEnumerable<SessionMessage>> GetActiveMessagesAsync(string sessionId)
     {
+        if (!await _sessionRepo.ExistsForUserAsync(sessionId, _userId))
+            return Enumerable.Empty<SessionMessage>();
+
         var messages = await _messageRepo.GetActiveMessagesAsync(sessionId);
         return messages.Select(ToSessionMessage);
     }
