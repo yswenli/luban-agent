@@ -27,6 +27,7 @@ public partial class NodeDetailWindow : Window
 {
     private ScrollViewer? _activityScroller;
     private bool _autoScroll = true;
+    private bool _scrollScheduled;
     private OrchestrationNodeItem? _item;
 
     /// <summary>
@@ -58,6 +59,10 @@ public partial class NodeDetailWindow : Window
         _item = item;
         DataContext = item;
         item.Activities.CollectionChanged += OnActivitiesChanged;
+
+        // 绑定新节点后回到最新活动并恢复"贴底"意图。
+        _autoScroll = true;
+        ScheduleScrollToEnd();
     }
 
     /// <summary>
@@ -96,20 +101,45 @@ public partial class NodeDetailWindow : Window
 
     private void OnActivitiesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (_activityScroller == null || !_autoScroll)
-            return;
-
-        Dispatcher.UIThread.Post(() => _activityScroller.ScrollToEnd(), DispatcherPriority.Loaded);
+        if (_autoScroll)
+            ScheduleScrollToEnd();
     }
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_activityScroller == null) return;
 
+        // 内容尺寸变化（流式追加活动文本）不是用户滚动：保持原意图，贴底时继续滚到最新，
+        // 否则按位置重算会把 extent 增长误判为上滚而永久关闭自动滚动。
+        if (e.ExtentDelta.Y != 0 && e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0)
+        {
+            if (_autoScroll)
+                ScheduleScrollToEnd();
+            return;
+        }
+
         var offset = _activityScroller.Offset.Y;
         var extent = _activityScroller.Extent.Height;
         var viewport = _activityScroller.Viewport.Height;
 
         _autoScroll = (extent - offset - viewport) < 50;
+    }
+
+    /// <summary>
+    /// 布局完成后把视图滚到底：虚拟化面板先完成测量 extent 才稳定，故在 Loaded 优先级投递。
+    /// 同一帧内的多次请求合并为一次；执行时复检 <see cref="_autoScroll"/>，
+    /// 避免投递后用户已上滚仍被拉回底部。
+    /// </summary>
+    private void ScheduleScrollToEnd()
+    {
+        if (_activityScroller == null || _scrollScheduled) return;
+
+        _scrollScheduled = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _scrollScheduled = false;
+            if (_autoScroll)
+                _activityScroller?.ScrollToEnd();
+        }, DispatcherPriority.Loaded);
     }
 }

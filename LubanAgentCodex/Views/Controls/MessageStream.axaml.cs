@@ -32,6 +32,7 @@ public partial class MessageStream : UserControl
     private ScrollViewer? _scroller;
     private ItemsControl? _messagesItems;
     private bool _autoScroll = true;
+    private bool _scrollScheduled;
     private ObservableCollection<MessageItemBase>? _messages;
 
     public MessageStream()
@@ -69,16 +70,18 @@ public partial class MessageStream : UserControl
         {
             _messagesItems.ItemsSource = messages;
         }
+
+        // 切换会话/重新绑定后回到最新位置，并恢复"贴底"意图，
+        // 否则上一会话用户上滚留下的 _autoScroll=false 会让新会话停在历史处。
+        _autoScroll = true;
+        ScheduleScrollToEnd();
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (_scroller != null && _autoScroll)
+        if (_autoScroll)
         {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                _scroller.ScrollToEnd();
-            }, Avalonia.Threading.DispatcherPriority.Loaded);
+            ScheduleScrollToEnd();
         }
     }
 
@@ -86,10 +89,38 @@ public partial class MessageStream : UserControl
     {
         if (_scroller == null) return;
 
+        // 内容尺寸变化（流式追加正文/思考、追加节点活动、项被裁剪）会改变 extent，
+        // 但这不是用户滚动。若此时按位置重算距底距离，会把"贴底"误判成"上滚"
+        // 从而永久关闭自动滚动，因此这里保持原意图：贴底时继续滚到最新。
+        if (e.ExtentDelta.Y != 0 && e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0)
+        {
+            if (_autoScroll)
+                ScheduleScrollToEnd();
+            return;
+        }
+
         var offset = _scroller.Offset.Y;
         var extent = _scroller.Extent.Height;
         var viewport = _scroller.Viewport.Height;
 
         _autoScroll = (extent - offset - viewport) < 50;
+    }
+
+    /// <summary>
+    /// 布局完成后把视图滚到底：虚拟化面板先完成测量 extent 才稳定，故在 Loaded 优先级投递。
+    /// 同一帧内的多次请求合并为一次；执行时复检 <see cref="_autoScroll"/>，
+    /// 避免投递后用户已上滚仍被拉回底部。
+    /// </summary>
+    private void ScheduleScrollToEnd()
+    {
+        if (_scroller == null || _scrollScheduled) return;
+
+        _scrollScheduled = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _scrollScheduled = false;
+            if (_autoScroll)
+                _scroller?.ScrollToEnd();
+        }, DispatcherPriority.Loaded);
     }
 }
