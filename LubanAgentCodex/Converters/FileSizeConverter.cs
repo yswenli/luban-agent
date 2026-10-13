@@ -14,6 +14,7 @@
 *描述：把字节数格式化为 B / KB / MB 文本，供附件预览条显示。
 *
 *****************************************************************************/
+using LuBan.Common.IO;
 using Avalonia.Data.Converters;
 using System.Globalization;
 
@@ -30,14 +31,11 @@ public sealed class FileSizeConverter : IValueConverter
     /// <inheritdoc />
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is not long size || size < 0)
+        // 非 long 返回空串（保留原契约）；负值由 FormatFileSize 归一为 "0B"。
+        if (value is not long size)
             return string.Empty;
 
-        if (size < 1024)
-            return $"{size} B";
-        if (size < 1024 * 1024)
-            return $"{size / 1024.0:F1} KB";
-        return $"{size / 1024.0 / 1024.0:F1} MB";
+        return FileUtil.FormatFileSize(size);
     }
 
     /// <inheritdoc />
