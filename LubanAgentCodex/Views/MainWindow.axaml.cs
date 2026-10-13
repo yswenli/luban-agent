@@ -23,6 +23,7 @@ using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views.Controls;
 using LuBan.AIAgent.Configuration;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
@@ -689,7 +690,8 @@ public partial class MainWindow : Window
                         await workspaceManager.EnsureAuthorizedAsync(llmWikiWs);
                         await workspaceManager.SetCurrentAsync(llmWikiWs.WorkspaceId);
 
-                        using var retrievalScope = vm.Services.CreateScope();
+                        // 检索 scope 为 root 派生，需回填当前用户身份
+                        using var retrievalScope = vm.Services.CreateUserScope(vm.Services.ResolveUserKey());
                         var retrieval = retrievalScope.ServiceProvider.GetService<IRetrievalService>();
                         if (retrieval == null)
                         {
@@ -723,7 +725,7 @@ public partial class MainWindow : Window
 
                         var tasks = vm.Services.GetService<KnowledgeTaskService>();
                         if (tasks != null)
-                            tasks.StartIndex(llmWikiWs.WorkspaceId, path);
+                            tasks.StartIndex(llmWikiWs.WorkspaceId, path, null, llmWikiWs.UserId);
                         else
                             await Dialogs.ShowInfoAsync(this,
                                 "知识库已创建，但后台任务服务未就绪，请使用 /llmwiki -index 手动建立索引。");

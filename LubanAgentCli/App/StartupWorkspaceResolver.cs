@@ -18,6 +18,7 @@
 *****************************************************************************/
 using LubanAgentA2A.Runtime;
 
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Context;
 
 namespace LubanAgentCli.App;
@@ -202,11 +203,12 @@ internal static class StartupWorkspaceResolver
             return;
         }
 
-        using var scope = services.CreateScope();
+        // 该独立 scope 的会话上下文状态无人填充，需手动写入工作区根，
+        // 否则框架插件解析 EffectiveRoot 时会抛「会话未设置工作区根或 worktree」；
+        // 同时回填用户身份（root 派生 scope 不继承调用方身份）。
+        using var scope = services.CreateUserScope(services.ResolveUserKey());
         var agentFactory = scope.ServiceProvider.GetRequiredService<ILuBanAgentFactory>();
 
-        // 该独立 scope 的会话上下文状态无人填充，需手动写入工作区根，
-        // 否则框架插件解析 EffectiveRoot 时会抛「会话未设置工作区根或 worktree」。
         if (scope.ServiceProvider.GetService<SessionContextState>() is { } state)
         {
             state.WorkspaceId = workspace.WorkspaceId;

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using LubanAgentCore.Agents;
 using LubanAgentCore.Commands;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Repositories;
 
 namespace LubanAgentCore.Hosting;
@@ -153,8 +154,7 @@ public static class AgentHostBuilder
         LegacyUserDataMigrator.Migrate();
 
         // 进程常驻用户作用域：CLI/Codex 单用户身份在此绑定；session scope 由 SessionRuntimeManager 从 root 派生并回填身份
-        var userScope = root.CreateScope();
-        userScope.ServiceProvider.GetRequiredService<UserContextState>().UserId = LocalUserDefaults.DefaultUserId;
+        var userScope = root.CreateUserScope(LocalUserDefaults.DefaultUserId);
 
         return new AgentHostServices(root, userScope);
     }
@@ -167,12 +167,11 @@ public static class AgentHostBuilder
         try
         {
             var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
-            var workspaceRepo = sp.GetRequiredService<WorkspaceRepository>();
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
 
-            // 启动默认进入最近活跃的工作区（GetAllAsync 已按 LastActiveAt DESC 排序）。
-            // 仅在库中没有任何工作区时，才以当前目录隐式创建工作区，保证首次启动可用。
-            var existing = (await workspaceRepo.GetAllAsync()).FirstOrDefault();
+            // 启动默认进入当前用户最近活跃的工作区（GetUserWorkspacesAsync 已按 LastActiveAt DESC 排序）。
+            // 仅在当前用户没有任何工作区时，才以当前目录隐式创建工作区，保证首次启动可用。
+            var existing = (await workspaceManager.GetUserWorkspacesAsync()).FirstOrDefault();
             string workspaceId;
             if (existing == null)
             {

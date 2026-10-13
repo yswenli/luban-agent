@@ -17,6 +17,7 @@
 using LuBan.AIAgent.Wiki;
 using LuBan.AIAgent.Wiki.Extractors;
 
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Retrieval;
 
 using System.Collections.Concurrent;
@@ -116,12 +117,16 @@ public sealed class KnowledgeTaskService
         => _tasks.TryGetValue(taskId, out var info) ? info : null;
 
     /// <summary>启动工作区文件索引（后台）。<paramref name="glob"/> 为 null 时按默认过滤。</summary>
-    public KnowledgeTaskInfo StartIndex(string workspaceId, string root, string? glob = null)
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="root">工作区根目录</param>
+    /// <param name="glob">文件匹配模式（可空）</param>
+    /// <param name="userId">触发方用户标识（用于后台 scope 回填身份，可空回退默认用户）</param>
+    public KnowledgeTaskInfo StartIndex(string workspaceId, string root, string? glob = null, string? userId = null)
     {
         var label = $"索引工作区「{Path.GetFileName(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}」";
         return Start(KnowledgeTaskKind.Index, workspaceId, root, label, async (id, ct) =>
         {
-            using var scope = _scopeFactory.CreateScope();
+            using var scope = _scopeFactory.CreateUserScope(userId);
             var retrieval = scope.ServiceProvider.GetRequiredService<IRetrievalService>();
 
             var progress = new ThrottledProgress(p => Mutate(id, t => t with
@@ -146,10 +151,13 @@ public sealed class KnowledgeTaskService
     /// <summary>
     /// 启动 wiki 重建（后台，逐页排除 log.md）。
     /// </summary>
-    public KnowledgeTaskInfo StartWikiRebuild(string workspaceId, string root)
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="root">工作区根目录</param>
+    /// <param name="userId">触发方用户标识（用于后台 scope 回填身份，可空回退默认用户）</param>
+    public KnowledgeTaskInfo StartWikiRebuild(string workspaceId, string root, string? userId = null)
         => Start(KnowledgeTaskKind.WikiRebuild, workspaceId, root, "重建 wiki 索引", async (id, ct) =>
         {
-            using var scope = _scopeFactory.CreateScope();
+            using var scope = _scopeFactory.CreateUserScope(userId);
             var wiki = scope.ServiceProvider.GetRequiredService<IWikiService>();
 
             Mutate(id, t => t with { Detail = "正在逐页重建 wiki 向量索引…" });

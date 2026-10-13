@@ -22,6 +22,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
@@ -611,10 +612,12 @@ public partial class Sidebar : UserControl
         if (_sessionRepo == null) return;
         try
         {
+            // 会话归属当前用户：直接插入仓储时仍需显式带上用户，否则新建会话按默认用户落库、当前用户列表查不到
+            var userId = _services?.ResolveUserKey() ?? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId;
             var newSession = new DbSession
             {
                 SessionId = Guid.NewGuid().ToString("N"),
-                UserId = "default",
+                UserId = userId,
                 Title = "新对话",
                 CreateTime = DateTime.Now,
                 UpdateTime = DateTime.Now,

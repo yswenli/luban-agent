@@ -21,6 +21,7 @@ using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using LubanAgentCodex.Views.Controls;
 using LuBan.AIAgent.Configuration;
+using LubanAgentCore.Configuration;
 using LubanAgentCore.Retrieval;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
@@ -60,7 +61,7 @@ public partial class LlmWikiManageWindow : Window
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
-        _scope = services.CreateScope();
+        _scope = services.CreateUserScope(services.ResolveUserKey());
         _retrieval = _scope.ServiceProvider.GetService<IRetrievalService>();
         _wiki = _scope.ServiceProvider.GetService<IWikiService>();
         Closed += (_, _) => _scope.Dispose();

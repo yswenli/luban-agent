@@ -15,6 +15,9 @@
 *
 *****************************************************************************/
 using System.Collections.Concurrent;
+
+using LubanAgentCore.Configuration;
+
 using Microsoft.Extensions.Configuration;
 
 namespace LubanAgentCore.Services;
@@ -74,11 +77,8 @@ public sealed class SessionRuntimeManager : IAsyncDisposable
 
     private SessionRuntime CreateRuntime(string sessionId, string userId, string workspaceId, string workspaceRoot)
     {
-        var scope = _root.CreateScope();
-
         // root 派生 scope 不带身份，必须显式回填用户身份，否则按用户隔离的服务会落到默认用户
-        scope.ServiceProvider.GetRequiredService<LubanAgentCore.Context.UserContextState>().UserId =
-            string.IsNullOrWhiteSpace(userId) ? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId : userId;
+        var scope = _root.CreateUserScope(userId);
 
         var state = scope.ServiceProvider.GetRequiredService<SessionContextState>();
         state.SessionId = sessionId;

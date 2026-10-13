@@ -1286,7 +1286,7 @@ public partial class MainWindowViewModel : ObservableObject
         else if (args[0] == "-new" || args[0] == "new")
         {
             var title = args.Length > 1 ? string.Join(' ', args.Skip(1)) : "新会话";
-            var session = await sessionManager.CreateSessionAsync(null, title);
+            var session = await sessionManager.CreateSessionAsync(title);
             await sessionManager.SetCurrentSessionAsync(session.SessionId);
             Messages.Add(new SystemMessageItem { Content = $"已创建并切换到会话: {title}" });
         }

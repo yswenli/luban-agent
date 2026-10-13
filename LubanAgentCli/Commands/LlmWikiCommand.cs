@@ -272,7 +272,7 @@ internal sealed class LlmWikiCommand : CommandBase
         // 后台模式：必需部分（校验/授权）同步完成即返回，索引进后台并由 Updated 事件反馈
         if (!wait && _knowledgeTasks != null)
         {
-            var task = _knowledgeTasks.StartIndex(workspace.WorkspaceId, workspace.RootPath, glob);
+            var task = _knowledgeTasks.StartIndex(workspace.WorkspaceId, workspace.RootPath, glob, workspace.UserId);
             Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
             Writer.WriteInfo("如需同步等待，请使用 /llmwiki -index --wait");
             return;
@@ -711,7 +711,7 @@ internal sealed class LlmWikiCommand : CommandBase
 
         if (!wait && _knowledgeTasks != null)
         {
-            var task = _knowledgeTasks.StartWikiRebuild(workspace.WorkspaceId, workspace.RootPath);
+            var task = _knowledgeTasks.StartWikiRebuild(workspace.WorkspaceId, workspace.RootPath, workspace.UserId);
             Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
             Writer.WriteInfo("如需同步等待，请使用 /llmwiki -rebuild --wait");
             return;
