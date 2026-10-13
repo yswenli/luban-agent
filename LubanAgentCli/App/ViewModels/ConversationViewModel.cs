@@ -17,6 +17,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Orchestration;
+using LuBan.Common.IO;
 
 using LubanAgentCli.App.Services;
 
@@ -475,14 +476,8 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
 
     // ────────────── 附件显示轻量构造 ──────────────
 
-    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
-    { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
-
-    private static bool IsImagePath(string path)
-        => ImageExtensions.Contains(Path.GetExtension(path));
-
     private bool HasUnsupportedImage(string modelId, IReadOnlyList<AttachmentDraft> attachments)
-        => attachments.Any(a => IsImagePath(a.Path)) && !_services.GetModelCapabilityService().SupportsVision(modelId);
+        => attachments.Any(a => MediaTypeUtil.IsImage(a.Path)) && !_services.GetModelCapabilityService().SupportsVision(modelId);
 
     private static IReadOnlyList<AttachmentDisplayInfo> BuildDisplayInfos(IReadOnlyList<AttachmentDraft> attachments)
     {
@@ -502,26 +497,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
                 // 文件不存在/不可访问时体积记为 0，不阻断发送（真实处理由 AgentHostService 完成）
             }
 
-            var isImage = IsImagePath(a.Path);
+            var isImage = MediaTypeUtil.IsImage(a.Path);
             list.Add(new AttachmentDisplayInfo(
-                a.FileName, GuessMediaType(a.Path), size, null, isImage, null, a.Path));
+                a.FileName, MediaTypeUtil.ResolveMediaType(a.Path, "application/octet-stream"), size, null, isImage, null, a.Path));
         }
         return list;
     }
-
-    private static string GuessMediaType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".png" => "image/png",
-        ".jpg" or ".jpeg" => "image/jpeg",
-        ".gif" => "image/gif",
-        ".bmp" => "image/bmp",
-        ".webp" => "image/webp",
-        ".pdf" => "application/pdf",
-        ".md" => "text/markdown",
-        ".json" => "application/json",
-        ".txt" or ".cs" or ".log" => "text/plain",
-        _ => "application/octet-stream"
-    };
 
     /// <summary>
     /// 取消当前对话（Esc）。先作废当前运行序号（使迟到事件/挂起任务被丢弃），再取消令牌；
