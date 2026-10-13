@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 
 namespace LubanAgentCore.Services;
 
@@ -25,9 +26,15 @@ namespace LubanAgentCore.Services;
 /// </summary>
 public sealed class SessionRuntimeManager : IAsyncDisposable
 {
-    private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
+    /// <summary>空闲卸载阈值配置键（分钟）。</summary>
+    private const string IdleUnloadMinutesKey = "LuBanAgent:Session:IdleUnloadMinutes";
+
+    /// <summary>空闲卸载默认阈值（分钟）。</summary>
+    private const int DefaultIdleUnloadMinutes = 30;
+
     private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
 
+    private readonly TimeSpan IdleTimeout;
     private readonly IServiceProvider _root;
     private readonly ConcurrentDictionary<string, SessionRuntime> _runtimes = new();
     private readonly Timer _sweeper;
@@ -37,9 +44,12 @@ public sealed class SessionRuntimeManager : IAsyncDisposable
     /// 创建会话运行时管理器。
     /// </summary>
     /// <param name="root">根级 DI 容器（用于派生会话级 scope）。</param>
-    public SessionRuntimeManager(IServiceProvider root)
+    /// <param name="configuration">配置（提供空闲卸载阈值，默认 30 分钟）。</param>
+    public SessionRuntimeManager(IServiceProvider root, IConfiguration configuration)
     {
         _root = root;
+        var minutes = configuration.GetValue<int?>(IdleUnloadMinutesKey) ?? DefaultIdleUnloadMinutes;
+        IdleTimeout = TimeSpan.FromMinutes(minutes > 0 ? minutes : DefaultIdleUnloadMinutes);
         _sweeper = new Timer(_ => SweepIdle(), null, SweepInterval, SweepInterval);
     }
 
