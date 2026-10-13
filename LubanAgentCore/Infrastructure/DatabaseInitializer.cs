@@ -24,6 +24,9 @@ public static class DatabaseInitializer
     /// <summary>
     /// 初始化标志位，0=未初始化，1=已初始化
     /// </summary>
+    /// <remarks>
+    /// 进程级全局资源（数据库 schema）的一次性初始化守卫，与用户无关，保留 static。
+    /// </remarks>
     private static int _initialized;
 
     /// <summary>

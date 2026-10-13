@@ -176,6 +176,10 @@ public class WorkspaceManager : IWorkspaceManager, ISingleton
     private readonly BuiltinRuleCatalog _builtinRules;
 
     /// <summary>当前工作区（实例级；由宿主按需切换，不再作为静态全局状态）。</summary>
+    /// <remarks>
+    /// 进程级「活动工作区」指针：单用户宿主下供 UI/命令标记当前选中工作区，
+    /// 不承载跨用户业务数据；可变的 per-user 缓存已由 keyed 服务承载，故保留于单例。
+    /// </remarks>
     private WorkspaceInfo? _current;
     private readonly object _currentLock = new();
 

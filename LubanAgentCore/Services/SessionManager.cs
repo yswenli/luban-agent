@@ -27,8 +27,12 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
     private readonly SessionMessageRepository _messageRepo;
 
     /// <summary>
-    /// 当前活动会话
+    /// 当前活动会话（进程级「活动会话」指针）。
     /// </summary>
+    /// <remarks>
+    /// 单用户宿主下仅供 UI 标记当前选中会话（CLI 活动槽位、Codex 页脚/侧栏），
+    /// 不承载跨用户/会话的业务数据，故随单例保留，不再下沉作用域。
+    /// </remarks>
     private SessionInfo? _currentSession;
 
     /// <summary>

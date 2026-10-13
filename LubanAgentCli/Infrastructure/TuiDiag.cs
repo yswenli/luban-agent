@@ -30,6 +30,7 @@ internal static class TuiDiag
     public static bool Enabled { get; set; }
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
+    // 以下均为进程级诊断计数/标志：单进程 TUI 的性能度量，与用户/会话无关，保留 static。
     private static long _lastTickMs = -1;
     private static readonly ConcurrentDictionary<string, Stat> _stats = new(StringComparer.Ordinal);
 

@@ -19,6 +19,7 @@ internal partial class ConfigJsonContext : JsonSerializerContext
 
 internal static class ConfigJsonOptions
 {
+    // 进程级惰性缓存：JsonSerializerOptions 不可变且与用户无关，保留 static 以避免重复构造。
     private static JsonSerializerOptions? _pretty;
 
     public static JsonSerializerOptions Pretty =>
