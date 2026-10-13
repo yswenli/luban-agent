@@ -14,6 +14,7 @@
 *描述：用户输入消息，不可折叠，单行或多行文本 + 淡蓝白粗体 `>` 前缀
 *
 *****************************************************************************/
+using LuBan.Common.IO;
 using LubanAgentCore.Models;
 using Terminal.Gui.Drawing;
 
@@ -71,9 +72,7 @@ public sealed class UserMessageBlock : Block
         foreach (var a in Attachments)
         {
             var icon = a.IsImage ? "🖼" : "📄";
-            var size = a.FileSize < 1024 ? $"{a.FileSize}B"
-                : a.FileSize < 1024 * 1024 ? $"{a.FileSize / 1024.0:F1}KB"
-                : $"{a.FileSize / 1024.0 / 1024.0:F1}MB";
+            var size = FileUtil.FormatFileSize(a.FileSize);
             var dim = a.IsImage && !string.IsNullOrEmpty(a.PixelSize) ? $" ({a.PixelSize})" : "";
             var label = $"  [{icon} {a.FileName}{dim} {size}]";
             lines.Add(RenderLine.Single(
