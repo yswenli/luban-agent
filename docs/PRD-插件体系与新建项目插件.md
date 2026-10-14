@@ -1,11 +1,11 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.4（端约束 + Agent 操作记录）
+- **版本**：v0.5（插件专属 Skill 设计）
 - **日期**：2026-10-14
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
-- **修订说明**：v0.2 经多 agent 评审结合**云效 Codeup / Flow** 与 **PAT** 真实能力及现有代码深度修订；v0.3 明确**架构分层**（框架 `LuBan.AIAgent` 定义插件/生命周期/管理/基础插件，解决方案实现具体插件，宿主 `LubanAgentCodex` 操作）；v0.4 补充两点业务与体验约束：①新项目**必须含后端与管理后台，移动端按需可选**（端选择由 Step1 决定、贯穿克隆/建库/编译/建流水线）；②向导界面在表单/进度基础上**实时展示 Agent 操作记录**，让用户直观感知过程并据结果就地调整重试。
+- **修订说明**：v0.2 经多 agent 评审结合**云效 Codeup / Flow** 与 **PAT** 真实能力及现有代码深度修订；v0.3 明确**架构分层**（框架 `LuBan.AIAgent` 定义插件/生命周期/管理/基础插件，解决方案实现具体插件，宿主 `LubanAgentCodex` 操作）；v0.4 补充两点业务与体验约束：①新项目**必须含后端与管理后台，移动端按需可选**（端选择由 Step1 决定、贯穿克隆/建库/编译/建流水线）；②向导界面在表单/进度基础上**实时展示 Agent 操作记录**，让用户直观感知过程并据结果就地调整重试；v0.5 新增**插件专属 Skill 设计（§4.10）**：框架契约支持插件贡献 Skill（`IPlugin.ContributeSkills()` / `IPluginHost.RegisterSkill()` / `SkillDefinition`），「新建项目」插件提供主 skill `newproject.create` + 4 个原子 skill，与向导共享 `INewProjectService` 后端，既可由左侧栏向导触发、也可由 Agent 在聊天以自然语言触发。
 
 ---
 
@@ -121,6 +121,7 @@
 | `targetApp` | string | 宿主标识，如 `LubanAgentCodex` |
 | `minHostVersion` | string | 最低宿主版本 |
 | `uiContributions` | array | 侧栏条目：`{ id, label, icon, panelType }`（`panelType` 对应契约 `IPluginPanel` 实现） |
+| `skills` | array | 插件贡献的专属 Skill 定义（见 §4.10）：`{ id, name, description, entry }`，加载时由 `PluginManager` 注册进 `SkillRegistry`，使插件既可由向导触发、也可由 Agent 在聊天中以自然语言触发 |
 | `permissions` | array | 权限声明：`filesystem`/`network`/`git`/`database`/`process`/`credential` 及范围 |
 | `dependencies` | array | 依赖插件 id 列表（仅校验存在性） |
 
@@ -137,6 +138,9 @@
   "minHostVersion": "2026.10.0",
   "uiContributions": [
     { "id": "newproject.main", "label": "新建项目", "icon": "project", "panelType": "WizardPanel" }
+  ],
+  "skills": [
+    { "id": "newproject.create", "name": "新建项目", "description": "向导式/对话式创建后端与管理后台（移动端可选）项目，含克隆模板、建库、编译、建流水线", "entry": "skills/newproject.create.md" }
   ],
   "permissions": [
     { "type": "filesystem", "scope": "workspace" },
@@ -169,6 +173,8 @@ public interface IPlugin
     string Id { get; }
     Task InitializeAsync(IPluginHost host, CancellationToken ct = default);
     Task ShutdownAsync(CancellationToken ct = default);
+    /// <summary>贡献给宿主 SkillRegistry 的专属 Skill 定义（详见 §4.10）。</summary>
+    IEnumerable<SkillDefinition> ContributeSkills();
 }
 
 /// <summary>宿主向插件暴露的能力（契约优先，Avalonia 无关）。</summary>
@@ -180,6 +186,7 @@ public interface IPluginHost
     void RegisterPanel(string contributionId, Func<IPluginPanel> factory);
     void RegisterSidebarEntry(PluginSidebarEntry entry);
     void RegisterCommand(PluginCommandDescriptor descriptor); // 可选：向 ICommandCatalog 贡献命令
+    void RegisterSkill(SkillDefinition def);                 // 可选：向 SkillRegistry 贡献专属 Skill（见 §4.10）
 }
 
 /// <summary>插件面板契约；Avalonia UserControl 实现此接口即可被宿主挂载。</summary>
@@ -198,6 +205,16 @@ public class PluginSidebarEntry
 }
 
 public class PluginManifest { /* 与 plugin.json 字段一一对应（见 §3.2） */ }
+
+/// <summary>插件贡献的专属 Skill 定义；加载时由 PluginManager 注册进 LuBan.AIAgent.Skills.SkillRegistry。</summary>
+public class SkillDefinition
+{
+    public string Id { get; set; } = "";                              // 如 newproject.create
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Entry { get; set; } = "";                          // 插件包内 SKILL.md 相对路径
+    public IReadOnlyList<string> Permissions { get; set; } = Array.Empty<string>(); // 默认继承插件 permissions
+}
 
 /// <summary>插件生命周期状态（框架统一管理，对应 §3.5 / 附录状态机）。</summary>
 public enum PluginState { Installed, Enabled, Disabled, Error }
@@ -384,10 +401,10 @@ sequenceDiagram
 | **Skills** | `.luban-agent/skills/*/SKILL.md` + `SkillRegistry`(`LuBan.AIAgent.Skills`) | 让 LLM 执行某类提示词任务 | 纯提示词，无 UI、无代码执行 |
 | **Commands** | 斜杠命令：`ICommandCatalog`/`CommandCatalog`/`SlashCommandDefinition`(`LubanAgentCore.Commands`) | 快捷文本指令 | 文本交互，无持久 UI 面板 |
 | **Rules** | `.luban-agent` 规则 + `RuleEngine`(`LuBan.AIAgent.Rules`) | 约束 Agent 行为 | 配置型，无 UI 面板 |
-| **Plugins** | 宿主扩展：`IPlugin` + `IPluginPanel` + ALC | 工具型/向导型（UI + 代码 + 外部集成） | 三者不取代，插件可**调用** skills、可**可选**贡献 commands |
+| **Plugins** | 宿主扩展：`IPlugin` + `IPluginPanel` + ALC | 工具型/向导型（UI + 代码 + 外部集成） | 三者不取代，插件可**调用** skills、可**贡献** skills 与 commands（详见 §4.10） |
 
 - **不变原则**：插件不取代 skills/commands/rules（见 §1.4 非目标）。
-- **开放扩展点**：插件在 `InitializeAsync` 中可调用 `IPluginHost.RegisterCommand(...)` 向 `ICommandCatalog` 贡献新斜杠命令（如 `/newproject`），但这是**增强**而非替代——命令元数据仍由宿主 catalog 统一分发（`MainWindowViewModel.ExecuteCommandAsync` 已按 catalog 路由）。
+- **开放扩展点**：插件在 `InitializeAsync` 中可调用 `IPluginHost.RegisterCommand(...)` 向 `ICommandCatalog` 贡献新斜杠命令（如 `/newproject`），亦可调用 `IPluginHost.RegisterSkill(...)` 向 `SkillRegistry` 贡献专属 Skill（如 `newproject.create`，见 §4.10）；二者均为**增强**而非替代——命令/技能元数据仍由宿主对应 catalog 统一分发与路由。
 - **调用方向**：插件面板内可触发 Agent 执行 skill；插件后端逻辑可复用 `IWorkspaceManager`/`ConfigManager` 等核心服务。
 
 ### 3.9 代码挂载点索引（基于现有真实文件）
@@ -535,6 +552,8 @@ ProjectSpec {
 5. 权限越界操作（如访问白名单外域名）被宿主拦截并记录。
 6. 未配置 PAT 或 PAT 权限不足时，向导能在 Step 2 / Step 5 前给出明确拦截与修复指引；PAT 不出现在日志、配置文件或数据库中。
 7. 向导在执行过程中**实时展示 Agent 操作记录**（时间线、状态、输入参数与结果摘要），用户可在失败步骤就地调整参数并重试；PAT 明文不出现于操作记录中。
+8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject.create` 完成同等五步流程；`newproject.*` 系列 skill 在 `SkillRegistry` 中可见、可触发、卸载时注销。
+9. 向导与 `newproject.*` skill 共享同一 `INewProjectService`，改动后端逻辑对两条入口同时生效，无逻辑分叉。
 
 ### 4.9 个人访问令牌（PAT）规范（新增）
 
@@ -557,14 +576,61 @@ ProjectSpec {
 
 ---
 
+### 4.10 插件专属 Skill 设计（新增）
+
+> 设计目标：让「新建项目」插件**既可由左侧栏向导触发，也可由 Agent 在聊天中以自然语言触发**，且两类入口共享同一套后端逻辑，避免重复实现。插件通过框架新增的「贡献 Skill」能力，把自身能力登记进宿主 `SkillRegistry`（`LuBan.AIAgent.Skills`）。
+
+**4.10.1 契约层支持（框架 `LuBan.AIAgent/Plugins/`）**
+- `IPlugin` 新增 `IEnumerable<SkillDefinition> ContributeSkills();`；`IPluginHost` 新增 `void RegisterSkill(SkillDefinition def);`（见 §3.4）。
+- 新增 `SkillDefinition`（见 §3.4）：含 `Id` / `Name` / `Description` / `Entry`（插件包内 SKILL.md 相对路径）/ `Permissions`（默认继承插件 `permissions`）。
+- `PluginManager.LoadAllAsync` 在加载插件后，遍历 `ContributeSkills()`，调用 `SkillRegistry.Register(...)` 完成注册；卸载时反向注销。注册入口同样受 §3.8 权限与 §4.9 PAT 约束。
+
+**4.10.2 共享后端服务（关键）**
+插件对外暴露 `INewProjectService`（实现于 `LubanAgent.Plugin.NewProject`），封装五步原子能力；**向导面板与专属 Skill 均调用此服务**，互不重复：
+```csharp
+public interface INewProjectService
+{
+    Task<ProjectSpec> CloneTemplateAsync(ProjectSpec spec, CancellationToken ct);          // Step2 克隆所选端模板
+    Task<ProjectSpec> SetupDatabaseAsync(ProjectSpec spec, CancellationToken ct);          // Step3 配置+建库
+    Task<BuildResult> BuildAsync(ProjectSpec spec, CancellationToken ct);                  // Step4 编译
+    Task<PipelineResult> CreatePipelinesAsync(ProjectSpec spec, CancellationToken ct);     // Step5 建流水线
+}
+```
+> 该服务在 `InitializeAsync` 中注册到 `IPluginHost.Services`（DI）；向导与 Skill 通过 `host.Services.GetRequiredService<INewProjectService>()` 获得同一实例。
+
+**4.10.3 主 Skill：`newproject.create`**
+- **触发方式**：聊天输入「新建一个项目，缩写 xxx，要后端和管理后台」等自然语言，Agent 解析后调用该 skill。
+- **SKILL.md 要点**：引导 Agent 收集 `projectName` / `abbreviation` / `ends`（后端、管理端必选，移动端可选），逐步调用 `INewProjectService` 四步能力，必要时唤起向导面板（`RegisterPanel` / `PluginPanelRequested`）由用户补填。
+- **输入**：`ProjectSpec`（含端选择约束）；**输出**：新建项目本地路径、数据库状态、流水线 ID 列表。
+- **与向导关系**：主 skill 是向导的「对话式入口」；二者最终都落到 `INewProjectService`，结果一致。
+
+**4.10.4 原子 Skill（可选，供编排 / 单步调用）**
+| Skill Id | 对应步骤 | 能力 | 典型调用场景 |
+|----------|----------|------|--------------|
+| `newproject.clone-template` | Step 2 | 克隆所选端模板 | 单独补克隆某端 |
+| `newproject.setup-db` | Step 3 | 配置 + 建库 | 仅重建数据库 |
+| `newproject.build` | Step 4 | 编译检查 | 仅重新编译 |
+| `newproject.create-pipeline` | Step 5 | 建流水线 | 仅补建流水线 |
+
+> 原子 skill 与「Agent 操作记录区」（§4.6）天然契合：每一步执行都在操作记录区留下时间线条目，用户可就单步失败就地调整重试。
+
+**4.10.5 清单与注册示例（见 §3.2 `skills` 字段）**
+- `plugin.json` 的 `skills` 指向包内 SKILL.md：`{ "id": "newproject.create", "name": "新建项目", "entry": "skills/newproject.create.md" }`。
+- 加载时由 `PluginManager` 注册进 `SkillRegistry`；用户在聊天中即可自然语言触发，左侧栏向导入口仍保留。
+
+**4.10.6 验收补充**
+见 §4.8 第 8、9 条：聊天自然语言可触发 `newproject.create` 完成同等五步、卸载时注销；向导与 skill 共享 `INewProjectService` 无逻辑分叉。
+
+---
+
 ## 5. 里程碑概览（仅规划，不在本文档实现）
 
 | 里程碑 | 内容 | 关键交付物 / 对应文件 |
 |--------|------|----------------------|
-| **M1** | 框架层插件模块 + `plugin.json` schema | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`；随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
+| **M1** | 框架层插件模块 + `plugin.json` schema | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`，加载时由 `PluginManager` 注册进 `SkillRegistry`）；随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
 | **M2** | codex 插件管理器与侧栏 | `PluginManageWindow`（参照 `SkillManageWindow` 模式：列表/明细/安装/启停/卸载）；`Sidebar` 新增插件条目区 + `PluginPanelRequested` 事件；`MainWindow` 内容区 `PluginHost` 挂载点 + 面板切换。 |
 | **M3** | 权限 / 凭据安全 | 网络白名单（`codeup.aliyun.com`/`flow.aliyun.com`/`*.aliyuncs.com`）与进程白名单（`dotnet`/`git`）静态校验；`CredentialStore`（Windows Credential Manager / DPAPI，绝不入 DB）；PAT 取用时序落地（§3.7）。 |
-| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，含云效 Codeup/Flow 集成客户端） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；集成客户端：① git 克隆（`https://oauth2:<token>@codeup.aliyun.com/...`）② Codeup REST（`api/v3` + `Private-Token` 头）③ Flow `CreatePipeline` OpenAPI（`devops 2021-06-25`）。完整 5 步向导（§4.3）。 |
+| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，含云效 Codeup/Flow 集成客户端） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外暴露 `INewProjectService` 作为向导与 Skill 的**共享后端**；贡献专属 Skill `newproject.create` 及 4 个原子 Skill（§4.10），与向导共用 `INewProjectService`；集成客户端：① git 克隆（`https://oauth2:<token>@codeup.aliyun.com/...`）② Codeup REST（`api/v3` + `Private-Token` 头）③ Flow `CreatePipeline` OpenAPI（`devops 2021-06-25`）。完整 5 步向导（§4.3）。 |
 | **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、5 步全流程、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
 
 ---
