@@ -1,11 +1,12 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.6（云效连接器 + 专属 MCP）
+- **版本**：v0.7（初始化阶段 + 评审 P0/P1 修订）
 - **日期**：2026-10-14
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
 - **修订说明**：v0.2 经多 agent 评审结合**云效 Codeup / Flow** 与 **PAT** 真实能力及现有代码深度修订；v0.3 明确**架构分层**（框架 `LuBan.AIAgent` 定义插件/生命周期/管理/基础插件，解决方案实现具体插件，宿主 `LubanAgentCodex` 操作）；v0.4 补充两点业务与体验约束：①新项目**必须含后端与管理后台，移动端按需可选**（端选择由 Step1 决定、贯穿克隆/建库/编译/建流水线）；②向导界面在表单/进度基础上**实时展示 Agent 操作记录**，让用户直观感知过程并据结果就地调整重试；v0.5 新增**插件专属 Skill 设计（§4.10）**：框架契约支持插件贡献 Skill（`IPlugin.ContributeSkills()` / `IPluginHost.RegisterSkill()` / `SkillDefinition`），「新建项目」插件提供主 skill `newproject.create` + 4 个原子 skill，与向导共享 `INewProjectService` 后端，既可由左侧栏向导触发、也可由 Agent 在聊天以自然语言触发；v0.6 新增**云效连接器与专属 MCP 设计（§3.10 / §4.11）**：框架层新增 `Connectors/AliyunDevOps`（YunxiaoConnector/CodeupClient/FlowClient + PAT 取用），并用进程内 `YunxiaoMCPClient : IMCPClient` 包装暴露 8 个 `mcp_yunxiao_*` 工具；插件 `INewProjectService` 直连连接器（C#），`newproject.*` skill 云效步骤委托 MCP 工具；`plugin.json` 增 `mcpServers` 字段使 MCP 生命周期随插件启停；M1/M4 增连接器与 MCP、新增 M6 联调。
+- **修订说明（v0.7）**：①新增**初始化阶段（§4.3 Step 2）**——用户填完 Step 1（含新增字段「项目介绍」「本地目录」）并点「下一步」后，自动初始化 **工作区 / 会话（SessionContext）/ 项目级 Agent / `yunxiao` MCP 客户端 / `newproject.*` Skill**（经新增的 `SkillRegistry.RegisterPluginSkill` 与 `MCPRegistry.RegisterPluginClient`，随 M1 落地），再进入克隆；向导由 5 步扩展为 **6 步**，同步刷新流程图、ProjectSpec、步骤条、验收与里程碑。②修订深度评审发现的 P0/P1：补全动态注册 API（`SkillRegistry`/`MCPRegistry` 当前为静态只读，需扩展）、统一生命周期为 4 态（移除 §2.5 多余的 `Running`）、修正 skill 云效路径表述（§4.10.3 与 §4.10.7/§4.11.4 矛盾）、明确克隆归属（§3.10 复用 `GitToolPlugin`，§4.11.2 由 `CodeupClient.CopyToLocalAsync` 内部复用）、补定义 `PluginCommandDescriptor`、统一 `PluginRegistry`→`PluginManager` 与 `Scan`→`ScanAsync` 命名。③澄清「建库」语义（§1.4 指目标数据库构建，见 Step 4；新建项目推送至云效代码库为可选写路径，见 §4.4）。
 
 ---
 
@@ -49,7 +50,7 @@
 - 不做运行时热重载（卸载通过重建 `AssemblyLoadContext` 实现，需重新加载而非即时替换）。
 - 不替代 skills / commands（三者边界见 §3.8）。
 - 首版不实现插件间依赖图的自动解析与安装（仅声明 `dependencies` 并由宿主做存在性校验）。
-- 首版不实现与云效的**深度双向同步**（如流水线状态回写、仓库 Webhook 自动注册、分支保护策略下发等），仅完成单向的「模板克隆 → 新项目建库 → 编译 → 创建流水线」。
+- 首版不实现与云效的**深度双向同步**（如流水线状态回写、仓库 Webhook 自动注册、分支保护策略下发等），仅完成单向的「模板克隆 → 新项目建库 → 编译 → 创建流水线」（其中「建库」指**目标数据库构建**，见 Step 4；将新项目代码推送至云效代码库为可选写路径，见 §4.4 / §4.9.2）。
 - 首版不托管云效凭据的**生命周期管理**（令牌生成、到期轮换由用户在云效控制台与 codex 设置中操作，插件仅负责安全存储与取用）。
 
 ---
@@ -74,7 +75,7 @@
 每个插件在独立的 `AssemblyLoadContext`（ALC）中加载，互不共享类型与静态状态，单个插件崩溃不影响宿主与其他插件，且可被单独卸载。
 
 ### 2.5 生命周期
-`安装(Installed) → 启用(Enabled) → 运行(Running) → 禁用(Disabled) → 卸载(Uninstalled)`。状态需可持久化，重启后恢复。
+`安装(Installed) → 启用(Enabled) → 禁用(Disabled) → 卸载(Uninstalled)`，异常时进入 `Error`。状态需可持久化，重启后恢复（详见 §3.5 与附录状态机）。
 
 ### 2.6 安全（最小权限）
 插件在 manifest 中**声明**所需权限（文件、网络、git、数据库、进程执行、凭据）。默认拒绝，未声明即不可用；加载前静态校验，不合规直接置为 `Disabled` 并提示。
@@ -99,7 +100,7 @@
 | **解决方案层** | `luban-agent`（解决方案 `LubanAgent.slnx`） | **实现具体插件**：如「新建项目」插件项目 `LubanAgent.Plugin.NewProject`，引用 `LuBan.AIAgent`，实现 `IPlugin` / 继承 `PluginBase`，并提供 `plugin.json` | 插件程序集 + 清单（部署到宿主 `plugins/<id>/`） |
 | **宿主 / 操作层** | `luban-agent/LubanAgentCodex`（Avalonia 桌面端） | **操作插件**：加载（ALC）、管理（安装 / 启用 / 停用 / 卸载）、渲染 UI 贡献（侧栏条目 + 面板）、提供 `PluginManageWindow` | 运行时宿主，消费框架 `PluginManager` |
 
-- 框架 `LuBan.AIAgent` 已有同构模块（`Skills/`、`Rules/`、`MCP/`），插件模块 `Plugins/` 沿用同一模式：`IPlugin` / `PluginBase` 类比 `ISkill` / `SkillBase`；`PluginManager` / `PluginRegistry` 类比 `SkillRegistry`（`LuBan.AIAgent/Skills/SkillRegistry.cs`）。
+- 框架 `LuBan.AIAgent` 已有同构模块（`Skills/`、`Rules/`、`MCP/`），插件模块 `Plugins/` 沿用同一模式：`IPlugin` / `PluginBase` 类比 `ISkill` / `SkillBase`；`PluginManager`（含插件注册表）类比 `SkillRegistry`（`LuBan.AIAgent/Skills/SkillRegistry.cs`）。
 - 依赖方式：开发期 `LubanAgentCore.csproj` 已通过 `ProjectReference` 引用 `..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj`（见 `LubanAgentCore/LubanAgentCore.csproj`）；发布期按 `AGENTS.md` 改为 NuGet `LuBan.*` 包。具体插件项目同样引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`。
 - 框架当前**尚无** `Plugins/` 目录（已确认），本次为新增模块。
 
@@ -210,6 +211,15 @@ public class PluginSidebarEntry
 
 public class PluginManifest { /* 与 plugin.json 字段一一对应（见 §3.2） */ }
 
+/// <summary>插件经 IPluginHost.RegisterCommand 向 ICommandCatalog 贡献的斜杠命令描述（见 §3.8）。</summary>
+public class PluginCommandDescriptor
+{
+    public string Name { get; set; } = "";                 // 命令名，如 newproject
+    public string Description { get; set; } = "";
+    public IReadOnlyList<string> Parameters { get; set; } = Array.Empty<string>();
+    public Func<IReadOnlyDictionary<string,string>, CancellationToken, Task> Handler { get; set; } = default!;
+}
+
 /// <summary>插件贡献的专属 Skill 定义；加载时由 PluginManager 注册进 LuBan.AIAgent.Skills.SkillRegistry。</summary>
 public class SkillDefinition
 {
@@ -240,7 +250,7 @@ public static class BuiltinPluginCatalog
 
 **加载器（`LuBan.AIAgent.Plugins.PluginManager` / `PluginLoader`，位于框架，宿主无关）：**
 ```
-PluginLoader.Scan(pluginsDirs)
+PluginLoader.ScanAsync(pluginsDirs)
    └─ 逐个读取 plugin.json → 反序列化为 PluginManifest
         └─ 静态校验（manifest 合法 / 权限声明 / minHostVersion / dependencies 存在性 / credential 权限）
              └─ 为每个插件 new PluginLoadContext(id, isCollectible:true)
@@ -248,6 +258,8 @@ PluginLoader.Scan(pluginsDirs)
                        └─ LoadFromAssemblyPath(entryAssembly)
                             └─ Activator.CreateInstance<IPlugin>()
                                  └─ plugin.InitializeAsync(host) → 注册侧栏条目 + 面板工厂
+                                      └─ 遍历 ContributeSkills() → SkillRegistry.RegisterPluginSkill(def)   // 新增 API，见 §4.10.1
+                                           └─ 遍历 manifest.mcpServers → MCPRegistry.RegisterPluginClient(client)  // 新增 API，见 §4.11.3
 ```
 **ALC 关键实现要点（避免类型/资源冲突）：**
 - `PluginLoadContext` 重写 `Load(AssemblyName)`：当 `name` 属于**共享框架集**（`LuBan.AIAgent`、`LuBan.AIAgent.Plugins`、`Avalonia`、`Avalonia.Controls` 等）时，直接返回默认 ALC 中已加载的同名程序集（`Assembly.Load(name)`），**禁止插件自带副本**；其余依赖走 `AssemblyDependencyResolver` 的 `Resolve` 路径。
@@ -334,6 +346,8 @@ sequenceDiagram
         Loader->>Host: plugin.InitializeAsync(this)
         Host->>Sidebar: RegisterSidebarEntry(entry)
         Host->>Win: RegisterPanel(contributionId, factory)
+        Host->>Host: 遍历 ContributeSkills() → SkillRegistry.RegisterPluginSkill(def)
+        Host->>Host: 遍历 manifest.mcpServers → MCPRegistry.RegisterPluginClient(client)
     end
     App->>Win: mainWindow.Show()
     Note over Win,Sidebar: 用户点击侧栏「新建项目」
@@ -450,20 +464,34 @@ sequenceDiagram
 
 > 作为**首次使用云效的新人**，我希望向导能明确告知如何获取并配置个人访问令牌（PAT）及其所需权限，从而顺利跑通克隆与建流水线，而不必自行摸索鉴权。
 
-### 4.3 功能需求（5 步向导）
+### 4.3 功能需求（6 步向导）
 
-**前置条件 · PAT 预配置**
-- 用户需在 codex 设置中预先录入**云效个人访问令牌（PAT）**（详见 §4.9）。插件运行时从宿主安全凭据区按需取用，不落库明文、不回显日志。
-- 若未配置或令牌已过期，Step 2 / Step 5 应阻断并给出明确引导（见 §4.7）。
+**前置条件 · 凭据与云效组织/地域**
+- **PAT 预配置**：用户需在 codex 设置中预先录入**云效个人访问令牌（PAT）**（详见 §4.9）。插件运行时从宿主安全凭据区按需取用，不落库明文、不回显日志。
+- **云效组织与地域**：`ProjectSpec.organizationId`（云效企业/组织 ID）与 `flowRegion`（如 `cn-hangzhou`）取自 codex 设置中的云效连接配置（见 §4.5、§6 开放问题 6/7）；当前以 PAT 为统一鉴权假设，AK/SK 方案待定。
+- 若 PAT 未配置/已过期，或组织/地域缺失，应在 Step 3 / Step 6 前阻断并给出明确引导（见 §4.7）。
 
 **Step 1 · 填写项目信息**
-- 必填：项目名称、英文缩写（唯一性校验、命名规范 `[a-z][a-z0-9]*`）。
+- 必填：项目名称、英文缩写（唯一性校验、命名规范 `[a-z][a-z0-9]*`）、**项目介绍**（一句话描述项目用途，写入 `ProjectSpec.projectIntro`，并用于初始化项目级 Agent 上下文与生成 README 占位）、**本地目录**（`localPath`，通过目录选择器指定，作为 Step 2 工作区根目录，需做可写校验）。
 - 端选择：**后端、管理端为必选**；**移动端为可选**（按需勾选）。向导据此决定后续克隆、建库、编译与建流水线的范围。
 - 调用的云效能力：**无**（纯本地表单）。
-- 产出：`ProjectSpec`。
+- 产出：`ProjectSpec`（含 `projectName` / `abbreviation` / `projectIntro` / `ends` / `localPath`）。
+- 操作：点击「下一步」后**自动进入 Step 2 初始化项目脚手架**（见下），再由 Step 3 起执行实际创建。
 
-**Step 2 · 克隆模板（云效 Codeup）**
-- 按英文缩写，从**云效 Codeup 企服版模板仓库** `codeup.aliyun.com/tjc/TJCES` 克隆所选端模板（**后端、管理端必选；移动端仅在 Step 1 勾选时克隆**）到本地工作区。
+**Step 2 · 初始化项目脚手架（agent / mcp / skill / 工作区 / 会话）**
+- **触发**：用户在 Step 1 点击「下一步」后**立即自动执行**，无需额外操作；全过程实时呈现在右侧 **Agent 操作记录区**（§4.6），每条初始化动作作为首批评次记录（进行中 → 成功/失败）。
+- **依次初始化**（全部就绪后才会进入 Step 3）：
+  1. **工作区（Workspace）**：经宿主 `IWorkspaceManager` 在 `localPath` 创建/绑定本项目工作区目录，写入 `ProjectSpec` 快照（`projectName` / `abbreviation` / `projectIntro` / `ends` / `localPath`），后续步骤均在该工作区作用域内执行。
+  2. **会话（Session）**：创建项目级 `SessionContext`（或复用宿主会话机制），作为本次新建项目任务的执行载体，也是 **Agent 操作记录区的数据源**；会话与向导生命周期绑定，向导关闭/中止时一并释放。
+  3. **Skill 注册**：将插件贡献的 `newproject.*` 系列 Skill（`newproject.create` + 4 个原子 skill，见 §4.10）经新增框架 API `SkillRegistry.RegisterPluginSkill(...)` 注册进当前会话作用域的 `SkillRegistry`（M1 落地；当前 `SkillRegistry` 为静态只读，需扩展以支持插件作用域注册/注销）。
+  4. **MCP 客户端注册**：将 `yunxiao` MCP 客户端经新增框架 API `MCPRegistry.RegisterPluginClient(...)` 注册进当前会话作用域的 `MCPRegistry`（M1 落地，详见 §4.11.3），使 `mcp_yunxiao_*` 工具在后续步骤与聊天中可用。
+  5. **项目级 Agent**：基于宿主 `AgentHostServices` 构造项目级 Agent 运行上下文（project-scoped host），承载后续各步的执行与操作记录采集；向导后端 `INewProjectService` 同样在该上下文中解析（见 §4.10.2）。
+- 调用的云效能力：**无**（纯本地初始化，不触网）。
+- 产出：初始化完成的 `ProjectSpec` + 就绪的 **工作区 / 会话 / 项目级 Agent / `yunxiao` MCP 客户端 / `newproject.*` Skill** 上下文。
+- 失败处理：任一项初始化失败（如 `localPath` 不可写、会话创建异常）立即阻断并提示，已初始化的局部上下文回滚（如清理已建工作区目录），用户修正后**仅重跑本步**。
+
+**Step 3 · 克隆模板（云效 Codeup）**
+- 按英文缩写，从**云效 Codeup 企服版模板仓库** `codeup.aliyun.com/tjc/TJCES` 克隆所选端模板（**后端、管理端必选；移动端仅在 Step 1 勾选时克隆**）到 **Step 2 初始化的工作区（localPath）** 下。
 - 自动替换占位符：命名空间、项目名、缩写（保证编译通过）。
 - 鉴权（真实 PAT 用法，二选一）：
   - **方式 A（Git over HTTPS，推荐）**：`git clone https://oauth2:<PAT>@codeup.aliyun.com/tjc/TJCES.git`
@@ -471,18 +499,18 @@ sequenceDiagram
 - 调用的云效能力：**Codeup Git over HTTPS 克隆**（需 代码管理 读权限）。如需将新项目推回 Codeup，还需 代码管理 写权限（详见 §4.9.2）。
 - 产出：本地所选端代码目录。
 
-**Step 3 · 配置与数据库**
+**Step 4 · 配置与数据库**
 - 生成/修改 `appsettings.json`、连接串等配置。
 - 执行数据库构建脚本（建库 / 建表 / 种子数据）。
 - 调用的云效能力：**无**（本地配置 + 数据库连接）。
 - 产出：可连接的数据库 + 配置就绪。
 
-**Step 4 · 编译检查**
+**Step 5 · 编译检查**
 - 对所选端分别调用 `dotnet build`，汇总结果。
 - 失败可定位到工程与错误行，阻断后续步骤但保留已完成产物。
 - 调用的云效能力：**无**（本地 `dotnet build`）。
 
-**Step 5 · 创建流水线（云效 Flow）**
+**Step 6 · 创建流水线（云效 Flow）**
 - 参照**云效 Flow 企服版流水线参考页** `flow.aliyun.com/all` 的流水线定义（YAML 化），为本项目**所选端**生成流水线配置（YAML）。
 - 调用**云效 Flow OpenAPI（产品 `devops`，API 版本 `2021-06-25`）** 的 `CreatePipeline` 创建流水线（支持 YAML 化流水线，需传入 `ORGANIZATION_ID` 与 region，如 `devops.cn-hangzhou.aliyuncs.com`）。
 - 鉴权（真实 PAT 用法）：以 PAT 调用云效 OpenAPI（详见 §4.9）。
@@ -492,12 +520,13 @@ sequenceDiagram
 **向导流程图：**
 ```mermaid
 flowchart TD
-    P[前置: PAT 预配置 / codex 设置] --> A[Step1 填写项目信息]
-    A --> B[Step2 克隆模板·云效 Codeup]
-    B --> C[Step3 配置与建库]
-    C --> D[Step4 编译检查]
-    D --> E[Step5 创建流水线·云效 Flow]
-    E --> F[完成]
+    P[前置: PAT / 云效组织·地域 / codex 设置] --> A[Step1 填写项目信息]
+    A --> B[Step2 初始化脚手架: 工作区/会话/Agent/MCP/Skill]
+    B --> C[Step3 克隆模板·云效 Codeup]
+    C --> D[Step4 配置与建库]
+    D --> E[Step5 编译检查]
+    E --> F[Step6 创建流水线·云效 Flow]
+    F --> G[完成]
 ```
 
 **每步实际调用的云效能力：**
@@ -505,10 +534,11 @@ flowchart TD
 | 步骤 | 调用的云效能力 | 协议 / 接口 | 所需 PAT 权限 |
 |------|----------------|-------------|----------------|
 | Step 1 | 无 | — | — |
-| Step 2 | 云效 Codeup 克隆模板仓库 | Git over HTTPS（`oauth2:<PAT>@...`） | 代码管理·读（克隆） |
-| Step 3 | 无 | — | — |
+| Step 2 | 无（本地初始化：工作区/会话/Agent/MCP/Skill） | — | — |
+| Step 3 | 云效 Codeup 克隆模板仓库 | Git over HTTPS（`oauth2:<PAT>@...`） | 代码管理·读（克隆） |
 | Step 4 | 无 | — | — |
-| Step 5 | 云效 Flow 创建流水线 | OpenAPI `CreatePipeline`（devops 2021-06-25） | 流水线 / devops·读写 |
+| Step 5 | 无 | — | — |
+| Step 6 | 云效 Flow 创建流水线 | OpenAPI `CreatePipeline`（devops 2021-06-25） | 流水线 / devops·读写 |
 
 ### 4.4 外部系统集成
 | 系统 | 用途 | 鉴权方式（真实 PAT 用法） | 域名 / 端点 |
@@ -523,9 +553,10 @@ flowchart TD
 ProjectSpec {
   projectName: string
   abbreviation: string        // 英文缩写，唯一
+  projectIntro: string        // 项目介绍（一句话），用于初始化 Agent 上下文与 README 占位
   ends: ('mobile'|'admin'|'backend')[]   // 约束：backend、admin 必含；mobile 可选
   templateSource: 'tjc/TJCES' // 云效 Codeup 企服版模板仓库
-  localPath: string
+  localPath: string           // 本地目录（Step 1 目录选择器指定，作为工作区根）
   dbConfig: { connectionString, scripts[] }
   pipelineRef: 'flow.aliyun.com/all' // 云效 Flow 企服版流水线参考页
   credentialRef: string       // 宿主安全凭据区中 PAT 的引用标识（非令牌明文）
@@ -543,14 +574,14 @@ ProjectSpec {
 
 - **左侧栏**：插件条目「新建项目」（安装启用后由 `uiContributions` 渲染）。
 - **右侧内容区（双栏）**：
-  - **左栏 · 向导区**：步骤条（1–5）指示进度；当前步表单 / 进度条；操作按钮：上一步 / 下一步 / 完成 / 取消。
+  - **左栏 · 向导区**：步骤条（1–6）指示进度；当前步表单 / 进度条；操作按钮：上一步 / 下一步 / 完成 / 取消。
   - **右栏 · Agent 操作记录区**（核心交互区）：
     - 时间线式流式记录，随向导执行**实时追加**；
     - 每条记录：动作图标 + 动作名 + 状态徽标（进行中 / 成功 / 失败 / 跳过）+ 输入参数摘要 + 结果/输出（可折叠展开）+ 发生时间；
     - **不回显 PAT 明文**（凭据仅显示 `***`），与日志区同源脱敏；
     - 失败记录提供「查看详情 / 重试 / 调整参数」入口：用户可修改当前步相关输入（如英文缩写、模板路径、连接串、端选择）后**仅重跑该步**，已成功步骤的产物予以保留；
     - 顶部提供「清空 / 导出记录」与按状态、按步骤的过滤。
-- **设置项（前置）**：codex 设置中提供「云效 PAT」录入入口（仅写入宿主安全凭据区），并在向导 Step 2/5 前提示是否已配置。
+- **设置项（前置）**：codex 设置中提供「云效 PAT」录入入口（仅写入宿主安全凭据区），并在向导 Step 3/6 前提示是否已配置。
 
 ### 4.7 异常处理与回滚
 - 每步可独立失败并提示，不影响已成功步骤的产物。
@@ -563,16 +594,17 @@ ProjectSpec {
 
 ### 4.8 验收标准
 1. 插件安装并启用后，codex 左侧栏出现「新建项目」入口，点击右侧显示向导面板。
-2. 完整走完 5 步可：生成**后端与管理后台代码（移动端按需）**、配置就绪、数据库构建成功、`dotnet build` 通过、**云效 Flow 流水线创建成功**。
+2. 完整走完 6 步（含 Step 2 初始化项目脚手架）可：生成**后端与管理后台代码（移动端按需）**、配置就绪、数据库构建成功、`dotnet build` 通过、**云效 Flow 流水线创建成功**。
 3. 任一外部系统不可用（如 **PAT 失效 / 权限不足 / 网络不通**）时，给出明确错误与修复指引，不静默失败。
 4. 停用 / 卸载后：UI 入口消失、ALC 卸载、无文件/进程残留、状态表清理。
 5. 权限越界操作（如访问白名单外域名）被宿主拦截并记录。
-6. 未配置 PAT 或 PAT 权限不足时，向导能在 Step 2 / Step 5 前给出明确拦截与修复指引；PAT 不出现在日志、配置文件或数据库中。
+6. 未配置 PAT 或 PAT 权限不足时，向导能在 Step 3 / Step 6 前给出明确拦截与修复指引；PAT 不出现在日志、配置文件或数据库中。
 7. 向导在执行过程中**实时展示 Agent 操作记录**（时间线、状态、输入参数与结果摘要），用户可在失败步骤就地调整参数并重试；PAT 明文不出现于操作记录中。
-8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject.create` 完成同等五步流程；`newproject.*` 系列 skill 在 `SkillRegistry` 中可见、可触发、卸载时注销。
+8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject.create` 完成同等六步流程（含初始化脚手架）；`newproject.*` 系列 skill 经 `SkillRegistry.RegisterPluginSkill` 注册后可见、可触发、卸载时经 `UnregisterPluginSkill` 注销。
 9. 向导与 `newproject.*` skill 共享同一 `INewProjectService`，改动后端逻辑对两条入口同时生效，无逻辑分叉。
 10. 框架云效连接器 `YunxiaoConnector` 的 8 个操作有单元/集成测试覆盖（PAT 取用、Codeup/Flow 调用、错误映射）；连接器不缓存 PAT 明文、不回显日志。
 11. 启用插件后，Agent 工具表出现 `mcp_yunxiao_codeup_*` / `mcp_yunxiao_flow_*` 共 8 个工具，可在任意对话即席调用（查库/查流水线）并受 `IToolConfirmationService` 规划/确认；`newproject.*` skill 的云效步骤经这些工具执行且 PAT 不回显；**停用/卸载插件后 `yunxiao` MCP 客户端从 `MCPRegistry` 移除、工具消失**。
+12. Step 1 点击「下一步」后**自动执行 Step 2 初始化脚手架**：向导右侧 Agent 操作记录区实时出现「创建工作区 / 创建会话 / 注册 Skill / 注册 MCP 客户端 / 启动项目级 Agent」五条记录；完成后 `IWorkspaceManager` 中可见本项目工作区、`SkillRegistry`（会话作用域）含 `newproject.*` 技能、`MCPRegistry`（会话作用域）含 `yunxiao` 客户端；任一项失败仅回滚本步并重试，已成功步骤产物保留。
 
 ### 4.9 个人访问令牌（PAT）规范（新增）
 
@@ -602,34 +634,36 @@ ProjectSpec {
 **4.10.1 契约层支持（框架 `LuBan.AIAgent/Plugins/`）**
 - `IPlugin` 新增 `IEnumerable<SkillDefinition> ContributeSkills();`；`IPluginHost` 新增 `void RegisterSkill(SkillDefinition def);`（见 §3.4）。
 - 新增 `SkillDefinition`（见 §3.4）：含 `Id` / `Name` / `Description` / `Entry`（插件包内 SKILL.md 相对路径）/ `Permissions`（默认继承插件 `permissions`）。
-- `PluginManager.LoadAllAsync` 在加载插件后，遍历 `ContributeSkills()`，调用 `SkillRegistry.Register(...)` 完成注册；卸载时反向注销。注册入口同样受 §3.8 权限与 §4.9 PAT 约束。
+- `PluginManager.LoadAllAsync` 在加载插件后，遍历 `ContributeSkills()`，调用 **`SkillRegistry.RegisterPluginSkill(def)`** 完成注册；卸载时调用 `SkillRegistry.UnregisterPluginSkill(id)` 反向注销。
+  > **实现注意（P0）**：当前 `LuBan.AIAgent.Skills.SkillRegistry` 为静态只读（无 `Register` 方法、命令目录 `ICommandCatalog` 亦为只读），需随 M1 扩展出**插件作用域**的 `RegisterPluginSkill` / `UnregisterPluginSkill`（以及 §4.11.3 的 `MCPRegistry.RegisterPluginClient` / `UnregisterPluginClient`）。注册入口同样受 §3.8 权限与 §4.9 PAT 约束。
 
 **4.10.2 共享后端服务（关键）**
-插件对外暴露 `INewProjectService`（实现于 `LubanAgent.Plugin.NewProject`），封装五步原子能力；**向导面板与专属 Skill 均调用此服务**，互不重复：
+插件对外暴露 `INewProjectService`（实现于 `LubanAgent.Plugin.NewProject`），封装六步流程中的五个后端原子能力（Step 1 表单采集不属服务）；**向导面板与专属 Skill 均调用此服务**，互不重复：
 ```csharp
 public interface INewProjectService
 {
-    Task<ProjectSpec> CloneTemplateAsync(ProjectSpec spec, CancellationToken ct);          // Step2 克隆所选端模板
-    Task<ProjectSpec> SetupDatabaseAsync(ProjectSpec spec, CancellationToken ct);          // Step3 配置+建库
-    Task<BuildResult> BuildAsync(ProjectSpec spec, CancellationToken ct);                  // Step4 编译
-    Task<PipelineResult> CreatePipelinesAsync(ProjectSpec spec, CancellationToken ct);     // Step5 建流水线
+    Task<ProjectSpec> InitWorkspaceAsync(ProjectSpec spec, CancellationToken ct);          // Step2 初始化项目脚手架（工作区/会话/Agent/MCP/Skill）
+    Task<ProjectSpec> CloneTemplateAsync(ProjectSpec spec, CancellationToken ct);          // Step3 克隆所选端模板
+    Task<ProjectSpec> SetupDatabaseAsync(ProjectSpec spec, CancellationToken ct);          // Step4 配置+建库
+    Task<BuildResult> BuildAsync(ProjectSpec spec, CancellationToken ct);                  // Step5 编译
+    Task<PipelineResult> CreatePipelinesAsync(ProjectSpec spec, CancellationToken ct);     // Step6 建流水线
 }
 ```
 > 该服务在 `InitializeAsync` 中注册到 `IPluginHost.Services`（DI）；向导与 Skill 通过 `host.Services.GetRequiredService<INewProjectService>()` 获得同一实例。
 
 **4.10.3 主 Skill：`newproject.create`**
 - **触发方式**：聊天输入「新建一个项目，缩写 xxx，要后端和管理后台」等自然语言，Agent 解析后调用该 skill。
-- **SKILL.md 要点**：引导 Agent 收集 `projectName` / `abbreviation` / `ends`（后端、管理端必选，移动端可选），逐步调用 `INewProjectService` 四步能力，必要时唤起向导面板（`RegisterPanel` / `PluginPanelRequested`）由用户补填。
+- **SKILL.md 要点**：引导 Agent 收集 `projectName` / `abbreviation` / `projectIntro` / `ends`（后端、管理端必选，移动端可选）/ `localPath`，**本地步骤**（初始化 `InitWorkspaceAsync`、配置建库 `SetupDatabaseAsync`、编译 `BuildAsync`）直接调用 `INewProjectService`，**云效步骤**（克隆 `clone-template`、建流水线 `create-pipeline`）编排 `mcp_yunxiao_*` 工具（见 §4.10.7）；必要时唤起向导面板（`RegisterPanel` / `PluginPanelRequested`）由用户补填。
 - **输入**：`ProjectSpec`（含端选择约束）；**输出**：新建项目本地路径、数据库状态、流水线 ID 列表。
 - **与向导关系**：主 skill 是向导的「对话式入口」；二者最终都落到 `INewProjectService`，结果一致。
 
 **4.10.4 原子 Skill（可选，供编排 / 单步调用）**
 | Skill Id | 对应步骤 | 能力 | 典型调用场景 |
 |----------|----------|------|--------------|
-| `newproject.clone-template` | Step 2 | 克隆所选端模板 | 单独补克隆某端 |
-| `newproject.setup-db` | Step 3 | 配置 + 建库 | 仅重建数据库 |
-| `newproject.build` | Step 4 | 编译检查 | 仅重新编译 |
-| `newproject.create-pipeline` | Step 5 | 建流水线 | 仅补建流水线 |
+| `newproject.clone-template` | Step 3 | 克隆所选端模板 | 单独补克隆某端 |
+| `newproject.setup-db` | Step 4 | 配置 + 建库 | 仅重建数据库 |
+| `newproject.build` | Step 5 | 编译检查 | 仅重新编译 |
+| `newproject.create-pipeline` | Step 6 | 建流水线 | 仅补建流水线 |
 
 > 原子 skill 与「Agent 操作记录区」（§4.6）天然契合：每一步执行都在操作记录区留下时间线条目，用户可就单步失败就地调整重试。
 
@@ -638,7 +672,7 @@ public interface INewProjectService
 - 加载时由 `PluginManager` 注册进 `SkillRegistry`；用户在聊天中即可自然语言触发，左侧栏向导入口仍保留。
 
 **4.10.6 验收补充**
-见 §4.8 第 8、9 条：聊天自然语言可触发 `newproject.create` 完成同等五步、卸载时注销；向导与 skill 共享 `INewProjectService` 无逻辑分叉。
+见 §4.8 第 8、9、12 条：聊天自然语言可触发 `newproject.create` 完成同等六步（含初始化脚手架）、卸载时注销；向导与 skill 共享 `INewProjectService` 无逻辑分叉。
 
 **4.10.7 云效步骤委托 MCP 工具（与 §4.11 对齐）**
 `newproject.create` 与 4 个原子 skill 的**云效相关步骤不再自行实现**，改为编排 `mcp_yunxiao_*` 工具：
@@ -657,7 +691,7 @@ public interface INewProjectService
 - PAT 经 `IYunxiaoCredentialProvider` 由宿主 `CredentialStore` 按需取用（§3.7），连接器不缓存明文、不回显日志。
 
 **4.11.2 插件后端直连连接器（推荐）**
-`INewProjectService`（§4.10.2）的云效步骤**直接调用连接器 C# 方法**（非经 MCP）：Step2 克隆→`CodeupClient.CopyToLocalAsync`；Step5 建/改/跑流水线→`FlowClient.CreatePipelineAsync`/`UpdatePipelineAsync`/`RunPipelineAsync`。理由：向导为确定性流程，直连避免 JSON 序列化与工具确认开销，且连接器为单一实现、零分叉。
+`INewProjectService`（§4.10.2）的云效步骤**直接调用连接器 C# 方法**（非经 MCP）：Step3 克隆→`CodeupClient.CopyToLocalAsync`（内部复用框架 `GitToolPlugin.GitCloneAsync`，拼 `oauth2:<PAT>@` URL，见 §3.10）；Step6 建/改/跑流水线→`FlowClient.CreatePipelineAsync`/`UpdatePipelineAsync`/`RunPipelineAsync`。理由：向导为确定性流程，直连避免 JSON 序列化与工具确认开销，且连接器为单一实现、零分叉。
 
 **4.11.3 云效专属 MCP 服务器（Agent 暴露面）**
 框架内置进程内 MCP 客户端 `YunxiaoMCPClient : IMCPClient`（client 名 `yunxiao`），包装连接器暴露 8 个工具，对 Agent 名为 `mcp_yunxiao_*`，经 `MCPToolPlugin` 并入工具表并受 `IToolConfirmationService` 规划/确认：
@@ -673,7 +707,8 @@ public interface INewProjectService
 | `flow_update_pipeline` | 编辑流水线 | `pipelineId`, `organizationId`, `region`, `yaml` | `pipelineId`, `version` |
 | `flow_run_pipeline` | 运行流水线 | `pipelineId`, `organizationId`, `region`, `envVars?` | `pipelineRunId`, `runUrl` |
 
-> 插件 `plugin.json` 通过 `mcpServers:[{name:"yunxiao",transport:"inprocess"}]` 声明启用；`PluginManager` 在插件 Enabled 时把 `YunxiaoMCPClient` 注册进 `MCPRegistry`、Uninstalled 时反注册（§3.2、§3.10）。
+> 插件 `plugin.json` 通过 `mcpServers:[{name:"yunxiao",transport:"inprocess"}]` 声明启用；`PluginManager` 在插件 Enabled 时把 `YunxiaoMCPClient` 经 **`MCPRegistry.RegisterPluginClient(...)`** 注册进 `MCPRegistry`、Uninstalled 时经 **`UnregisterPluginClient(...)`** 反注册（§3.2、§3.10）。
+> **实现注意（P0）**：当前 `LuBan.AIAgent.MCP.MCPRegistry` 为静态只读（无 `Register`/`Add` 方法），需随 M1 扩展出插件作用域的 `RegisterPluginClient` / `UnregisterPluginClient`（与 `SkillRegistry.RegisterPluginSkill` 同源问题）。
 
 **4.11.4 分层调用关系**
 - 向导（UI）→ `INewProjectService` → 连接器（C# 直连）。
@@ -687,18 +722,18 @@ public interface INewProjectService
 
 | 里程碑 | 内容 | 关键交付物 / 对应文件 |
 |--------|------|----------------------|
-| **M1** | 框架层插件模块 + `plugin.json` schema + **云效连接器与 MCP** | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`，加载时由 `PluginManager` 注册进 `SkillRegistry`）；新增 **`Connectors/AliyunDevOps/`**（YunxiaoConnector/CodeupClient/FlowClient/PatCredential/IYunxiaoCredentialProvider）与进程内 **`YunxiaoMCPClient : IMCPClient`（8 tools）**；`plugin.json` schema 增加 `mcpServers` 字段。随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
+| **M1** | 框架层插件模块 + `plugin.json` schema + **云效连接器与 MCP** | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`/`PluginCommandDescriptor`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`）；**扩展 `SkillRegistry` 新增插件作用域 `RegisterPluginSkill(...)` / `UnregisterPluginSkill(id)`** 与 **`MCPRegistry` 新增 `RegisterPluginClient(...)` / `UnregisterPluginClient(name)`**（当前二者均为静态只读，需随 M1 开放动态注册），加载时由 `PluginManager` 调用完成注册/反注册；新增 **`Connectors/AliyunDevOps/`**（YunxiaoConnector/CodeupClient/FlowClient/PatCredential/IYunxiaoCredentialProvider）与进程内 **`YunxiaoMCPClient : IMCPClient`（8 tools）**；`plugin.json` schema 增加 `mcpServers` 字段。随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
 | **M2** | codex 插件管理器与侧栏 | `PluginManageWindow`（参照 `SkillManageWindow` 模式：列表/明细/安装/启停/卸载）；`Sidebar` 新增插件条目区 + `PluginPanelRequested` 事件；`MainWindow` 内容区 `PluginHost` 挂载点 + 面板切换。 |
 | **M3** | 权限 / 凭据安全 | 网络白名单（`codeup.aliyun.com`/`flow.aliyun.com`/`*.aliyuncs.com`）与进程白名单（`dotnet`/`git`）静态校验；`CredentialStore`（Windows Credential Manager / DPAPI，绝不入 DB）；PAT 取用时序落地（§3.7）。 |
-| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，复用框架云效连接器） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外暴露 `INewProjectService` 作为向导与 Skill 的**共享后端**，**云效步骤直连框架 `YunxiaoConnector`**（不自带 REST/OpenAPI 客户端）；`plugin.json` 声明 `mcpServers:["yunxiao"]`；贡献专属 Skill `newproject.create` 及 4 个原子 Skill（§4.10），云效步骤委托 `mcp_yunxiao_*`（§4.10.7/§4.11）。完整 5 步向导（§4.3）。 |
-| **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、5 步全流程、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
+| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，复用框架云效连接器） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外暴露 `INewProjectService`（含 `InitWorkspaceAsync` 等）作为向导与 Skill 的**共享后端**，**云效步骤直连框架 `YunxiaoConnector`**（不自带 REST/OpenAPI 客户端）；`plugin.json` 声明 `mcpServers:["yunxiao"]`；贡献专属 Skill `newproject.create` 及 4 个原子 Skill（§4.10），云效步骤委托 `mcp_yunxiao_*`（§4.10.7/§4.11）。完整 6 步向导（§4.3，含 Step 2 初始化项目脚手架）。 |
+| **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、6 步全流程（含 Step 2 初始化脚手架）、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
 | **M6** | 云效连接器与 MCP 联调 | 验证 `YunxiaoConnector` 8 操作（单测/集成）；Agent 可自然语言调用 `mcp_yunxiao_*` 即席查库/查流水线并受确认；插件停用后 `yunxiao` MCP 从 `MCPRegistry` 反注册、工具消失；`newproject.*` skill 云效步骤经 MCP 执行且 PAT 不回显。 |
 
 ---
 
 ## 6. 风险与开放问题
 
-1. **PAT 过期导致克隆 / 流水线失败**：云效 PAT 有到期时间，过期后 Step 2 克隆与 Step 5 创建流水线将失败。需：失败时的明确报错与重新配置引导、保留已完成产物；（可选）到期前提醒机制。
+1. **PAT 过期导致克隆 / 流水线失败**：云效 PAT 有到期时间，过期后 Step 3 克隆与 Step 6 创建流水线将失败。需：失败时的明确报错与重新配置引导、保留已完成产物；（可选）到期前提醒机制。
 2. **权限不足**：最小授权下若缺少 代码管理 写权限或 流水线 读写权限，部分步骤失败。需：在 §4.9.2 给出明确权限清单，失败时提示「缺少 XX 权限，请到云效补充」。
 3. **凭据安全**：PAT 不落库明文、存安全凭据区、不回显日志、定期轮换、泄露即删（见 §4.9.3）。
 4. **模板仓库访问权限**：企服版 `tjc/TJCES` 为受限仓库，用户需具备读权限；私有仓需管理员授权，否则克隆被拒（见 §4.7）。
