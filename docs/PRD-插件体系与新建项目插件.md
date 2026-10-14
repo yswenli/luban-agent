@@ -1,11 +1,11 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.2（评审修订稿）
+- **版本**：v0.3（架构分层修订稿）
 - **日期**：2026-10-14
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
-- **修订说明**：v0.2 经 software-company 专家团（产品经理许清楚 / 架构师高见远）多 agent 评审，结合阿里云**云效 Codeup / Flow** 与**个人访问令牌（PAT）**真实能力，以及现有 `LubanAgentCodex` / `LubanAgentCore` 代码深度修订。
+- **修订说明**：v0.2 经多 agent 评审结合**云效 Codeup / Flow** 与 **PAT** 真实能力及现有代码深度修订；v0.3 进一步明确**架构分层**：插件/生命周期/管理/基础插件定义于框架 `LuBan.AIAgent`，具体插件（如「新建项目」）作为 `LubanAgent` 解决方案项目，宿主 `LubanAgentCodex` 负责操作。
 
 ---
 
@@ -40,7 +40,7 @@
 ### 1.3 目标
 
 1. 抽象一套**通用插件设计原则**（与具体宿主解耦）。
-2. 在 `luban-agent-codex` 落地为**富插件体系**：manifest + 生命周期 + 代码执行 + UI 贡献，支持安装/启用/停用/卸载。
+2. 在 `luban-agent-codex` 落地为**富插件体系**：manifest + 生命周期 + 代码执行 + UI 贡献，支持安装/启用/停用/卸载。插件核心（契约/生命周期/管理/基础插件）定义于框架 `LuBan.AIAgent`，具体插件在 `LubanAgent` 解决方案实现（见 §3.0）。
 3. 以「**新建项目**」插件作为首个落地验证，跑通整套体系，并打通与**云效 Codeup / 云效 Flow** 的集成（模板克隆 + 流水线创建）。
 
 ### 1.4 非目标（明确不做）
@@ -65,6 +65,7 @@
 - **宿主（Host）**：提供外壳、加载器、生命周期管理与 UI 容器。
 - **契约（Contracts）**：宿主与插件共享的接口/数据模型程序集，版本稳定。
 - **插件（Plugin）**：实现契约的具体扩展，独立部署。
+- **参考实现位置**：插件核心（契约 `IPlugin`、生命周期、管理 `PluginManager`、基础插件 `PluginBase`）位于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 `LuBan.AIAgent` NuGet 包发布；具体插件项目在 `luban-agent` 解决方案内（见 §3.0）。
 
 ### 2.3 契约优先（Contract-First）
 宿主只依赖契约程序集，绝不直接依赖插件内部类型。插件升级不破坏宿主，宿主升级通过 `minHostVersion` 约束。
@@ -87,6 +88,20 @@
 ---
 
 ## 3. luban-agent 插件体系落地设计
+
+### 3.0 三层职责划分（框架 / 解决方案 / 宿主）
+
+本插件体系跨 `luban-framework` 与 `luban-agent` 两个仓库，职责按层划分，避免把框架能力下沉到应用层：
+
+| 层 | 仓库 / 工程 | 职责 | 关键产物 |
+|----|-------------|------|----------|
+| **框架层** | `luban-framework/LuBan.AIAgent`（PackageId = `LuBan.AIAgent`） | **定义插件**：插件契约 `IPlugin`、插件**生命周期**状态机、**插件管理** `PluginManager` / `PluginLoader`、**基础插件**抽象 `PluginBase` 与 `BuiltinPluginCatalog` | `LuBan.AIAgent/Plugins/*`（随框架 `GeneratePackageOnBuild` 生成 NuGet 包，供下游引用） |
+| **解决方案层** | `luban-agent`（解决方案 `LubanAgent.slnx`） | **实现具体插件**：如「新建项目」插件项目 `LubanAgent.Plugin.NewProject`，引用 `LuBan.AIAgent`，实现 `IPlugin` / 继承 `PluginBase`，并提供 `plugin.json` | 插件程序集 + 清单（部署到宿主 `plugins/<id>/`） |
+| **宿主 / 操作层** | `luban-agent/LubanAgentCodex`（Avalonia 桌面端） | **操作插件**：加载（ALC）、管理（安装 / 启用 / 停用 / 卸载）、渲染 UI 贡献（侧栏条目 + 面板）、提供 `PluginManageWindow` | 运行时宿主，消费框架 `PluginManager` |
+
+- 框架 `LuBan.AIAgent` 已有同构模块（`Skills/`、`Rules/`、`MCP/`），插件模块 `Plugins/` 沿用同一模式：`IPlugin` / `PluginBase` 类比 `ISkill` / `SkillBase`；`PluginManager` / `PluginRegistry` 类比 `SkillRegistry`（`LuBan.AIAgent/Skills/SkillRegistry.cs`）。
+- 依赖方式：开发期 `LubanAgentCore.csproj` 已通过 `ProjectReference` 引用 `..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj`（见 `LubanAgentCore/LubanAgentCore.csproj`）；发布期按 `AGENTS.md` 改为 NuGet `LuBan.*` 包。具体插件项目同样引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`。
+- 框架当前**尚无** `Plugins/` 目录（已确认），本次为新增模块。
 
 ### 3.1 宿主定位
 - **宿主**：`LubanAgentCodex`（Avalonia 桌面端，.NET 10）。
@@ -138,15 +153,15 @@
 ### 3.3 目录约定
 - **应用内置目录**：`<AppContext.BaseDirectory>/plugins/<plugin-id>/`，结构：`plugin.json` + `lib/`（程序集，含 `entryAssembly` 及其依赖）+ `assets/`（图标/模板）。
 - **用户级覆盖（开发/调试优先）**：对齐现有记忆库约定 `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)/LuBan/AIAgent/plugins/<plugin-id>/`；原 `~/.luban-agent/plugins/` 可并存作为备选。解析顺序：用户级优先，未命中回退应用内置。建议新增 `PluginLocation.ResolveDirectories()` 统一返回有序目录列表。
-- **契约程序集**：新增工程 `LubanAgent.PluginContracts`（置于**默认 ALC**），由宿主提供，插件工程引用但**不随包分发**（在 `.csproj` 中 `<Reference Include="LubanAgent.PluginContracts" Private="false" />`）。
+- **契约与插件核心（来自框架）**：`IPlugin` / `PluginBase` / `PluginManager` / `BuiltinPluginCatalog` 定义于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 NuGet 包 `LuBan.AIAgent` 发布；宿主与具体插件项目均引用该包（开发期 `ProjectReference`，发布期 NuGet），**不单独新建 agent 侧契约工程**。插件工程引用时契约程序集置于默认 ALC，不随插件包分发。
 
 ### 3.4 加载与隔离（方案 B：ALC + `IPlugin`）—— 已确认落地
 
 > 方案 B 在 .NET 10 / Avalonia 完全可行：`AssemblyLoadContext` 支持 `isCollectible:true`，配合 `AssemblyDependencyResolver` 实现按插件隔离的依赖解析；UI 控件（`UserControl`）在独立 ALC 中实例化后由宿主内容区挂载。
 
-**契约接口草图（`LubanAgent.PluginContracts`）：**
+**契约与插件核心（框架 `LuBan.AIAgent/Plugins/` 模块，参照 `Skills/` 同构）：**
 ```csharp
-namespace LubanAgent.PluginContracts;
+namespace LuBan.AIAgent.Plugins;   // 框架模块 luban-framework/LuBan.AIAgent/Plugins
 
 /// <summary>插件入口契约（每个插件入口程序集实现唯一 IPlugin）。</summary>
 public interface IPlugin
@@ -183,9 +198,26 @@ public class PluginSidebarEntry
 }
 
 public class PluginManifest { /* 与 plugin.json 字段一一对应（见 §3.2） */ }
+
+/// <summary>插件生命周期状态（框架统一管理，对应 §3.5 / 附录状态机）。</summary>
+public enum PluginState { Installed, Enabled, Disabled, Error }
+
+/// <summary>插件基础抽象（框架提供，具体插件继承以复用生命周期/注册样板）。</summary>
+public abstract class PluginBase : IPlugin
+{
+    public abstract string Id { get; }
+    public virtual Task InitializeAsync(IPluginHost host, CancellationToken ct = default) => Task.CompletedTask;
+    public virtual Task ShutdownAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>框架内置插件目录（"基础插件"）：登记随 LuBan.AIAgent 发布的内建插件。</summary>
+public static class BuiltinPluginCatalog
+{
+    public static IReadOnlyList<PluginManifest> Builtins => /* 框架内置插件清单 */;
+}
 ```
 
-**加载器（`LubanAgent.PluginHost`，宿主无关）：**
+**加载器（`LuBan.AIAgent.Plugins.PluginManager` / `PluginLoader`，位于框架，宿主无关）：**
 ```
 PluginLoader.Scan(pluginsDirs)
    └─ 逐个读取 plugin.json → 反序列化为 PluginManifest
@@ -197,7 +229,7 @@ PluginLoader.Scan(pluginsDirs)
                                  └─ plugin.InitializeAsync(host) → 注册侧栏条目 + 面板工厂
 ```
 **ALC 关键实现要点（避免类型/资源冲突）：**
-- `PluginLoadContext` 重写 `Load(AssemblyName)`：当 `name` 属于**共享框架集**（`LubanAgent.PluginContracts`、`Avalonia`、`Avalonia.Controls` 等）时，直接返回默认 ALC 中已加载的同名程序集（`Assembly.Load(name)`），**禁止插件自带副本**；其余依赖走 `AssemblyDependencyResolver` 的 `Resolve` 路径。
+- `PluginLoadContext` 重写 `Load(AssemblyName)`：当 `name` 属于**共享框架集**（`LuBan.AIAgent`、`LuBan.AIAgent.Plugins`、`Avalonia`、`Avalonia.Controls` 等）时，直接返回默认 ALC 中已加载的同名程序集（`Assembly.Load(name)`），**禁止插件自带副本**；其余依赖走 `AssemblyDependencyResolver` 的 `Resolve` 路径。
 - 卸载：`Disabled`/`Uninstalled` 时先 `plugin.ShutdownAsync()` 释放 UI 订阅/文件句柄/定时器，再 `alc.Unload()`。Collectible ALC 无文件锁，但需确保无对插件类型的强引用（含事件订阅、静态缓存）方可 GC。
 - 隔离收益：插件版本冲突、异常、资源泄漏被限制在自身 ALC 内，不污染宿主与其他插件。
 
@@ -290,6 +322,12 @@ sequenceDiagram
     Win->>Win: PluginHost.Content = panel
 ```
 
+### 3.4.1 基础插件（PluginBase / BuiltinPluginCatalog）
+
+- **`PluginBase`**：框架提供的抽象基类（位于 `LuBan.AIAgent/Plugins`），封装 `InitializeAsync` / `ShutdownAsync` 默认实现与 `IPluginHost` 持有逻辑。具体插件（如 `LubanAgent.Plugin.NewProject`）继承后只需关注业务与 UI 贡献，降低样板代码。
+- **`BuiltinPluginCatalog`**：框架级「基础插件」目录，用于登记随 `LuBan.AIAgent` 发布的内建插件；宿主启动时可选择性启用。与 `Skills/BuiltinSkillCatalog.cs` 同构。
+- **基础插件 vs 解决方案插件**：「基础插件」是框架提供的抽象 / 内建能力（定义于 `LuBan.AIAgent`）；「新建项目」等具体插件在 `LubanAgent` 解决方案内作为独立项目实现，二者通过 `IPlugin` / `PluginBase` 契约衔接。
+
 ### 3.5 生命周期管理
 - **状态**：`Installed` / `Enabled` / `Disabled` / `Error`。
 - **持久化**：状态存入 SQLite（复用 `LubanAgentCore` 现有仓储模式，新增 `PluginStateRepository`），记录 `id / version / state / installedAt / lastError`，重启后恢复。
@@ -356,11 +394,12 @@ sequenceDiagram
 | 挂载点 | 真实文件 | 改动说明 |
 |--------|----------|----------|
 | **插件引导入口** | `LubanAgentCodex/App.axaml.cs` | 在 `OnFrameworkInitializationCompleted` 中，`_services = AgentHostBuilder.BuildServiceProvider(...)` 之后、`mainWindow.Show()` 之前，调用 `_services.GetRequiredService<PluginManager>().LoadAllAsync(pluginsDirs)`；并在 `configureServices` 回调内注册 `services.AddSingleton<IPluginHost, PluginManager>()`。闪屏步骤追加 `SetStatus("加载插件…")`。 |
-| **DI 注册** | `LubanAgentCore/Hosting/AgentHostBuilder.cs` | 或经 App 的 `configureServices` 注入；`PluginManager`/`CredentialStore` 作为单例注册，保证 `Sidebar`/`MainWindow` 可解析。 |
+| **DI 注册** | `LubanAgentCore/Hosting/AgentHostBuilder.cs`（框架 `LuBan.AIAgent.Plugins.PluginManager` 经此处注入为单例） | 或经 App 的 `configureServices` 注入；宿主通过 `PluginManager`（来自框架）管理生命周期，`CredentialStore` 作为单例注册，保证 `Sidebar`/`MainWindow` 可解析。 |
 | **侧栏插件入口渲染** | `LubanAgentCodex/Views/Controls/Sidebar.axaml` + `.cs` | 新增一行放置 `PluginsListBox`；`Sidebar.cs` 仿 `LoadLlmWikiItems()` 新增 `LoadPluginEntries()`，读取 `IPluginHost` 已注册条目；新增事件 `PluginPanelRequested`（类比 `SettingsRequested`/`LlmWikiInitRequested`）。`SetServiceProvider` 内追加 `LoadPluginEntries()`。 |
 | **插件面板挂载（内容区）** | `LubanAgentCodex/Views/MainWindow.axaml` + `.cs` | `ContentRoot` 现有 `Grid(MessageStream+InputBox)` 外包一层 `ContentControl x:Name="PluginHost"`；`MainWindow.cs` 订阅 `Sidebar.PluginPanelRequested`，在 UI 线程执行 `PluginHost.Content = host.GetPanel(id)`；关闭插件时还原聊天 Grid。 |
 | **插件管理器 UI 模板** | `LubanAgentCodex/Views/SkillManageWindow.axaml(.cs)`、`MCPManageWindow`、`RuleManageWindow` | 作为 `PluginManageWindow` 的**模板**：独立 `Window` + `ListBox` + `(IServiceProvider, WorkspaceInfo)` 构造函数 + `LoadXxx()` 拉取 `PluginManager` 列表。 |
 | **核心服务桥（被插件使用）** | `LubanAgentCore/Hosting/AgentHostServices.cs`、`Context/SessionContext.cs` 等 | 插件经 `IPluginHost.Services` 解析；`SessionContext`/`WorkspaceContext`/`UserContext` 提供作用域只读视图，可在 `InitializeAsync` 时由宿主传入快照。 |
+| **具体插件项目（解决方案层）** | `LubanAgent.Plugin.NewProject/`（luban-agent 解决方案**新增**项目） | 继承框架 `PluginBase`、实现 `IPlugin`，提供 `plugin.json` 与向导面板 `WizardPanel`；构建产物部署到宿主 `plugins/<id>/`。 |
 | **命令扩展（可选）** | `LubanAgentCore/Commands/ICommandCatalog.cs`、`CommandCatalog.cs` | 插件 `RegisterCommand` 写入 catalog；`MainWindowViewModel` 的分发逻辑无需改。 |
 
 ---
@@ -515,10 +554,10 @@ ProjectSpec {
 
 | 里程碑 | 内容 | 关键交付物 / 对应文件 |
 |--------|------|----------------------|
-| **M1** | 插件契约程序集 + ALC 加载器 + `plugin.json` schema | 新建 `LubanAgent.PluginContracts`（接口与 `PluginManifest`）；新建 `LubanAgent.PluginHost`（`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`）；`AgentHostBuilder`/`App.axaml.cs` 注入 `PluginManager` 骨架。 |
+| **M1** | 框架层插件模块 + `plugin.json` schema | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`；随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
 | **M2** | codex 插件管理器与侧栏 | `PluginManageWindow`（参照 `SkillManageWindow` 模式：列表/明细/安装/启停/卸载）；`Sidebar` 新增插件条目区 + `PluginPanelRequested` 事件；`MainWindow` 内容区 `PluginHost` 挂载点 + 面板切换。 |
 | **M3** | 权限 / 凭据安全 | 网络白名单（`codeup.aliyun.com`/`flow.aliyun.com`/`*.aliyuncs.com`）与进程白名单（`dotnet`/`git`）静态校验；`CredentialStore`（Windows Credential Manager / DPAPI，绝不入 DB）；PAT 取用时序落地（§3.7）。 |
-| **M4** | 「新建项目」插件（含云效 Codeup/Flow 集成客户端） | `LubanAgent.Plugin.NewProject`（向导面板 `WizardPanel : UserControl, IPluginPanel`）；集成客户端：① git 克隆（`https://oauth2:<token>@codeup.aliyun.com/...`）② Codeup REST（`api/v3` + `Private-Token` 头）③ Flow `CreatePipeline` OpenAPI（`devops 2021-06-25`）。完整 5 步向导（§4.3）。 |
+| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，含云效 Codeup/Flow 集成客户端） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；集成客户端：① git 克隆（`https://oauth2:<token>@codeup.aliyun.com/...`）② Codeup REST（`api/v3` + `Private-Token` 头）③ Flow `CreatePipeline` OpenAPI（`devops 2021-06-25`）。完整 5 步向导（§4.3）。 |
 | **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、5 步全流程、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
 
 ---
