@@ -47,6 +47,20 @@ public sealed class SessionRuntime : IAsyncDisposable
     /// <summary>本会话 Agent 绑定的工作区（用于切换工作区后重建）。</summary>
     public WorkspaceInfo? Workspace { get; set; }
 
+    /// <summary>标记：回合结束后需重载 Agent 上下文。</summary>
+    public bool PendingReload { get; private set; }
+
+    /// <summary>请求延迟重载（回合结束后执行）。</summary>
+    public void RequestReload() => PendingReload = true;
+
+    /// <summary>消费重载标记（调用方负责重建 Agent 后复位）。</summary>
+    public bool ConsumePendingReload()
+    {
+        if (!PendingReload) return false;
+        PendingReload = false;
+        return true;
+    }
+
     /// <summary>当前是否正在执行某个回合。</summary>
     public bool IsRunning => Volatile.Read(ref _running) == 1;
 
