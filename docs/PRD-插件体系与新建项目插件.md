@@ -1,12 +1,13 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.7（初始化阶段 + 评审 P0/P1 修订）
+- **版本**：v0.8（依据云效官方 OpenAPI 文档修订 API 事实）
 - **日期**：2026-10-14
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
 - **修订说明**：v0.2 经多 agent 评审结合**云效 Codeup / Flow** 与 **PAT** 真实能力及现有代码深度修订；v0.3 明确**架构分层**（框架 `LuBan.AIAgent` 定义插件/生命周期/管理/基础插件，解决方案实现具体插件，宿主 `LubanAgentCodex` 操作）；v0.4 补充两点业务与体验约束：①新项目**必须含后端与管理后台，移动端按需可选**（端选择由 Step1 决定、贯穿克隆/建库/编译/建流水线）；②向导界面在表单/进度基础上**实时展示 Agent 操作记录**，让用户直观感知过程并据结果就地调整重试；v0.5 新增**插件专属 Skill 设计（§4.10）**：框架契约支持插件贡献 Skill（`IPlugin.ContributeSkills()` / `IPluginHost.RegisterSkill()` / `SkillDefinition`），「新建项目」插件提供主 skill `newproject.create` + 4 个原子 skill，与向导共享 `INewProjectService` 后端，既可由左侧栏向导触发、也可由 Agent 在聊天以自然语言触发；v0.6 新增**云效连接器与专属 MCP 设计（§3.10 / §4.11）**：框架层新增 `Connectors/AliyunDevOps`（YunxiaoConnector/CodeupClient/FlowClient + PAT 取用），并用进程内 `YunxiaoMCPClient : IMCPClient` 包装暴露 8 个 `mcp_yunxiao_*` 工具；插件 `INewProjectService` 直连连接器（C#），`newproject.*` skill 云效步骤委托 MCP 工具；`plugin.json` 增 `mcpServers` 字段使 MCP 生命周期随插件启停；M1/M4 增连接器与 MCP、新增 M6 联调。
 - **修订说明（v0.7）**：①新增**初始化阶段（§4.3 Step 2）**——用户填完 Step 1（含新增字段「项目介绍」「本地目录」）并点「下一步」后，自动初始化 **工作区 / 会话（SessionContext）/ 项目级 Agent / `yunxiao` MCP 客户端 / `newproject.*` Skill**（经新增的 `SkillRegistry.RegisterPluginSkill` 与 `MCPRegistry.RegisterPluginClient`，随 M1 落地），再进入克隆；向导由 5 步扩展为 **6 步**，同步刷新流程图、ProjectSpec、步骤条、验收与里程碑。②修订深度评审发现的 P0/P1：补全动态注册 API（`SkillRegistry`/`MCPRegistry` 当前为静态只读，需扩展）、统一生命周期为 4 态（移除 §2.5 多余的 `Running`）、修正 skill 云效路径表述（§4.10.3 与 §4.10.7/§4.11.4 矛盾）、明确克隆归属（§3.10 复用 `GitToolPlugin`，§4.11.2 由 `CodeupClient.CopyToLocalAsync` 内部复用）、补定义 `PluginCommandDescriptor`、统一 `PluginRegistry`→`PluginManager` 与 `Scan`→`ScanAsync` 命名。③澄清「建库」语义（§1.4 指目标数据库构建，见 Step 4；新建项目推送至云效代码库为可选写路径，见 §4.4）。
+- **修订说明（v0.8）**：**依据阿里云云效官方 OpenAPI 文档（服务接入点 / 个人访问令牌 / 错误码中心 / Codeup 仓库 4 篇 / Flow 流水线 6 篇，共 12 篇）核对并订正 API 事实错误**：①**统一接入点与鉴权**——云效 OpenAPI 接入点为 `openapi-rdc.aliyuncs.com`（中心版）/ Region版实例域名，路径 `oapi/v1/codeup/...` 与 `oapi/v1/flow/...`，鉴权统一用请求头 **`x-yunxiao-token: <PAT>`**（**弃用原假设的 `devops 2021-06-25` 产品版本与 `Private-Token` 头**）；Git 克隆/推送仍用 `https://oauth2:<PAT>@codeup.aliyun.com/...`。②**中心版 / Region版差异**——`organizationId` **仅中心版**路径必填，Region版不传；`region` 不作为参数，而是编码在接入点域中（原 §4.3 Step6「需传 ORGANIZATION_ID 与 region」表述错误，已订正）。③**订正 Codeup / Flow 各 API 路径与参数**（CreateRepository 增 `path`/`templateProject`、ListRepositories 的 `search`/`perPage`、CreatePipeline 请求体 `{name,content}` 等）。④**订正 MCP 工具入参命名**（`keyword`→`search`、`pageSize`→`perPage`、`nameKeyword`→`pipelineName`、增 `repositoryId`/中心版 `organizationId` 等），并补充 `flow_run_pipeline` 实为 **ExecutePipelineJobRun（运行单次运行实例中的单个任务，需 `pipelineRunId`+`jobId`）**，整条流水线触发 run 的创建 API 标注为待确认。⑤补充错误码映射（401/403/429/500 等）。
 
 ---
 
@@ -409,7 +410,7 @@ sequenceDiagram
     Plugin->>Git: clone https://oauth2:<token>@codeup.aliyun.com/...
     Git->>Codeup: HTTPS Basic(oauth2:token)
     Codeup-->>Git: 仓库数据
-    Note over Plugin,Codeup: Codeup REST 用 Header: Private-Token: <token> (api/v3)<br/>Flow 走 OpenAPI(devops 2021-06-25)，PAT 参与签名
+    Note over Plugin,Codeup: 云效 OpenAPI 统一接入点 openapi-rdc.aliyuncs.com<br/>REST 鉴权 Header: x-yunxiao-token: <token><br/>Git 克隆用 https://oauth2:<token>@codeup.aliyun.com/...<br/>中心版路径带 /organizations/{organizationId}，Region版不带
     Plugin->>Cred: 释放 token 引用
 ```
 
@@ -447,7 +448,7 @@ sequenceDiagram
 - **与 MCP 关系**：MCP 服务器是 Connector 的「Agent 暴露面」，1:1 包装；MCP 不重写云效逻辑（见 §4.11）。
 - **与 Skill 关系**：Skill 经 MCP 工具间接使用 Connector 的云效操作；本地步骤仍走插件后端服务（§4.10.7）。
 - **设计选择说明**：框架已有 `ILuBanToolPlugin`（如 `GitToolPlugin`，`GroupName="git"`）可作为原生工具面；但用户明确要求「专门的 MCP」，故云效操作走**独立 MCP 服务器**（`IMCPClient`）而非 `ILuBanToolPlugin`，工具以 `mcp_yunxiao_*` 暴露，任何对话中 Agent 均可即席调用（查库/查流水线），而不仅限于新建项目流程。
-- **结构（以云效为例，`LuBan.AIAgent/Connectors/AliyunDevOps/`）**：`YunxiaoConnector`（门面，聚合 Codeup+Flow、统一 PAT 取用/重试）→ `CodeupClient`（Git over HTTPS + REST `api/v3` `Private-Token`：搜索/克隆/建库/推送）+ `FlowClient`（OpenAPI `devops 2021-06-25`，PAT 签名：列表/克隆/更新/运行流水线）→ `Auth/PatCredential` + `IYunxiaoCredentialProvider`（从宿主 `CredentialStore` 按需取用，§3.7）→ `Mcp/YunxiaoMCPClient`（包装上述客户端为 8 个 MCP 工具）。
+- **结构（以云效为例，`LuBan.AIAgent/Connectors/AliyunDevOps/`）**：`YunxiaoConnector`（门面，聚合 Codeup+Flow、统一 PAT 取用/重试）→ `CodeupClient`（Git over HTTPS：`oauth2:<PAT>@` 克隆/推送；REST 走 `oapi/v1/codeup/...` + 请求头 `x-yunxiao-token`：搜索/查库/建库/更新）+ `FlowClient`（REST 走 `oapi/v1/flow/...` + 请求头 `x-yunxiao-token`：列表/查详情/建/克隆/更新/运行流水线）→ `Auth/PatCredential` + `IYunxiaoCredentialProvider`（从宿主 `CredentialStore` 按需取用，§3.7）→ `Mcp/YunxiaoMCPClient`（包装上述客户端为 8 个 MCP 工具）。中心版路径含 `/organizations/{organizationId}`，Region版不含。
 - **复用现有能力**：克隆/推送复用框架 `Tools/Git/GitToolPlugin`（`GitCloneAsync`/`GitPushAsync`），连接器仅负责拼出带 `oauth2:<PAT>@` 的 clone/push URL，避免重复实现 Git 协议细节。
 
 ---
@@ -512,7 +513,7 @@ sequenceDiagram
 
 **Step 6 · 创建流水线（云效 Flow）**
 - 参照**云效 Flow 企服版流水线参考页** `flow.aliyun.com/all` 的流水线定义（YAML 化），为本项目**所选端**生成流水线配置（YAML）。
-- 调用**云效 Flow OpenAPI（产品 `devops`，API 版本 `2021-06-25`）** 的 `CreatePipeline` 创建流水线（支持 YAML 化流水线，需传入 `ORGANIZATION_ID` 与 region，如 `devops.cn-hangzhou.aliyuncs.com`）。
+- 调用**云效 Flow OpenAPI（`POST {domain}/oapi/v1/flow/organizations/{organizationId}/pipelines`，中心版）** 的 `CreatePipeline` 创建流水线：请求体 `{ "name": "<流水线名>", "content": "<YAML 描述>" }`，返回新建流水线 id。**中心版**路径带 `organizationId`、**Region版**路径为 `/oapi/v1/flow/pipelines`（不带 organizationId）；接入点域与鉴权见 §4.4。
 - 鉴权（真实 PAT 用法）：以 PAT 调用云效 OpenAPI（详见 §4.9）。
 - 调用的云效能力：**Flow `CreatePipeline` OpenAPI**（需 流水线 / devops 模块 读写权限）。
 - 产出：云效 Flow 中已创建的本项目**所选端**流水线。
@@ -538,13 +539,13 @@ flowchart TD
 | Step 3 | 云效 Codeup 克隆模板仓库 | Git over HTTPS（`oauth2:<PAT>@...`） | 代码管理·读（克隆） |
 | Step 4 | 无 | — | — |
 | Step 5 | 无 | — | — |
-| Step 6 | 云效 Flow 创建流水线 | OpenAPI `CreatePipeline`（devops 2021-06-25） | 流水线 / devops·读写 |
+| Step 6 | 云效 Flow 创建流水线 | OpenAPI `CreatePipeline`（`POST /oapi/v1/flow/.../pipelines`，`x-yunxiao-token`） | 流水线·读写 |
 
 ### 4.4 外部系统集成
 | 系统 | 用途 | 鉴权方式（真实 PAT 用法） | 域名 / 端点 |
 |------|------|---------------------------|-------------|
-| 云效 Codeup（`codeup.aliyun.com/tjc/TJCES`） | 克隆企服版模板（**后端/管理端必选，移动端可选**）（读）；推送新项目代码/建库（写，可选） | PAT：`https://oauth2:<TOKEN>@codeup.aliyun.com/...`（Git over HTTPS）或 用户名=HTTPS克隆账号名 + 密码=PAT；REST API 请求头 `Private-Token: <TOKEN>` | `codeup.aliyun.com`（Git / REST API） |
-| 云效 Flow（`flow.aliyun.com/all` 参考页） | 参照企服版流水线定义；调用 OpenAPI `CreatePipeline` 创建本项目流水线 | PAT 调用云效 OpenAPI（产品 `devops`，版本 `2021-06-25`） | Web 参考：`flow.aliyun.com`；OpenAPI 端点：`devops.<region>.aliyuncs.com`（如 `devops.cn-hangzhou.aliyuncs.com`） |
+| 云效 Codeup（`codeup.aliyun.com/tjc/TJCES`） | 克隆企服版模板（**后端/管理端必选，移动端可选**）（Git 读）；推送新项目代码/建库（Git 写，可选）；查/建/更新代码库经 OpenAPI（写，可选） | Git：`https://oauth2:<TOKEN>@codeup.aliyun.com/...`（Git over HTTPS）；REST OpenAPI：请求头 `x-yunxiao-token: <TOKEN>`，域 `openapi-rdc.aliyuncs.com`（`oapi/v1/codeup/...`） | `codeup.aliyun.com`（Git / Web）、`openapi-rdc.aliyuncs.com`（OpenAPI 接入点；Region版为实例域名） |
+| 云效 Flow（`flow.aliyun.com/all` 参考页） | 参照企服版流水线定义；调用 OpenAPI 创建/查/克隆/更新/运行本项目流水线 | 请求头 `x-yunxiao-token: <TOKEN>`，域 `openapi-rdc.aliyuncs.com`（`oapi/v1/flow/...`）；**中心版**路径含 `/organizations/{organizationId}`，**Region版**不含 | Web 参考：`flow.aliyun.com`；OpenAPI 接入点：`openapi-rdc.aliyuncs.com`（中心版）或 Region版实例域名 |
 
 - PAT 由用户在 codex 设置中配置，插件按权限白名单取用，不落库明文，存于宿主安全凭据区。
 
@@ -616,8 +617,9 @@ ProjectSpec {
 5. （可选）查看 HTTPS 克隆账号名：个人设置 → **HTTPS 密码**，记录克隆账号用于方式 B 鉴权（用户名=克隆账号，密码=PAT）。
 
 **4.9.2 建议权限范围**
-- **代码管理（Codeup）**：代码仓库 读写、分支 读写、标签 读写、提交 读写、Webhook 读写（如需自动注册 webhook）。最小可用集：只读（克隆模板）+ 新建仓库写权限（`CreateRepository`）。
-- **流水线（Flow / devops 模块）**：流水线 读写（`CreatePipeline` 等 OpenAPI 权限）。
+- **代码管理（Codeup）**：代码仓库 **只读**（ListRepositories / GetRepository，克隆模板用）；如需推送新项目代码或建库，需 **代码仓库 读写**（CreateRepository / UpdateRepository / Git 推送）。最小可用集：只读（克隆模板）+ 新建仓库写权限。
+- **流水线（Flow）**：流水线 **读写**（CreatePipeline / UpdatePipeline / 运行等 OpenAPI 权限）。
+- **鉴权方式（统一）**：云效 OpenAPI 一律通过请求头 **`x-yunxiao-token: <PAT>`** 鉴权（非 `Private-Token`、非 AK/SK 签名），接入点域见 §4.4；Git 操作用 `https://oauth2:<PAT>@codeup.aliyun.com/...`。
 - 遵循**最小授权原则**，不使用永久令牌，按项目周期设置合理到期时间。
 
 **4.9.3 安全存储与轮换要求**
@@ -687,7 +689,7 @@ public interface INewProjectService
 
 **4.11.1 复用框架云效连接器（不重复实现）**
 「新建项目」插件**不**在插件内直接拼 REST/OpenAPI，而是复用框架级连接器 `LuBan.AIAgent.Connectors.AliyunDevOps`：
-- `YunxiaoConnector`（门面）→ `CodeupClient`（Git over HTTPS + `api/v3` `Private-Token`）、`FlowClient`（OpenAPI `devops 2021-06-25`，PAT 签名）。
+- `YunxiaoConnector`（门面）→ `CodeupClient`（Git over HTTPS：`oauth2:<PAT>@` 克隆/推送；REST 走 `oapi/v1/codeup/...` + 请求头 `x-yunxiao-token`）、`FlowClient`（REST 走 `oapi/v1/flow/...` + 请求头 `x-yunxiao-token`）。
 - PAT 经 `IYunxiaoCredentialProvider` 由宿主 `CredentialStore` 按需取用（§3.7），连接器不缓存明文、不回显日志。
 
 **4.11.2 插件后端直连连接器（推荐）**
@@ -696,16 +698,21 @@ public interface INewProjectService
 **4.11.3 云效专属 MCP 服务器（Agent 暴露面）**
 框架内置进程内 MCP 客户端 `YunxiaoMCPClient : IMCPClient`（client 名 `yunxiao`），包装连接器暴露 8 个工具，对 Agent 名为 `mcp_yunxiao_*`，经 `MCPToolPlugin` 并入工具表并受 `IToolConfirmationService` 规划/确认：
 
-| Tool（base） | 对应操作 | 入参（草拟） | 出参（草拟） |
+| Tool（base） | 对应操作 | 入参（草拟，REST 均带 `x-yunxiao-token` 头） | 出参（草拟） |
 |--------------|----------|--------------|--------------|
-| `codeup_search_repos` | 查找代码库 | `keyword?`, `organizationId?`, `page`, `pageSize` | `repos:[{id,name,httpsUrl,defaultBranch}]` |
-| `codeup_clone` | 复制代码到本地 | `repoId`/`httpsUrl`, `localPath`, `branch?` | `localPath`, `commitId` |
-| `codeup_create_repo` | 创建新代码库 | `name`, `namespace`, `visibility`, `importFrom?` | `repoId`, `httpsUrl` |
-| `codeup_push` | 上传代码到新代码库 | `localPath`, `repoId`/`remoteUrl`, `branch`, `force?` | `pushedCommit`, `remoteUrl` |
-| `flow_list_pipelines` | 查找流水线 | `organizationId`, `region`, `nameKeyword?` | `pipelines:[{id,name,status}]` |
-| `flow_clone_pipeline` | 复制流水线 | `sourcePipelineId`, `newName`, `organizationId`, `region` | `newPipelineId` |
-| `flow_update_pipeline` | 编辑流水线 | `pipelineId`, `organizationId`, `region`, `yaml` | `pipelineId`, `version` |
-| `flow_run_pipeline` | 运行流水线 | `pipelineId`, `organizationId`, `region`, `envVars?` | `pipelineRunId`, `runUrl` |
+| `codeup_search_repos` | 查找代码库（ListRepositories） | `search?`（模糊匹配路径）, `page?`, `perPage?`, `orderBy?`, `sort?`, `archived?`，**中心版必带** `organizationId` | `repos:[{id, name, pathWithNamespace, httpUrlToRepo, defaultBranch}]` |
+| `codeup_clone` | 复制代码到本地（Git） | `repoId` 或 URL 编码全路径 / `httpsUrl`（取自 GetRepository `httpUrlToRepo`）, `localPath`, `branch?`（鉴权 `oauth2:<PAT>@`） | `localPath`, `commitId` |
+| `codeup_create_repo` | 创建新代码库（CreateRepository） | `name`(必), `path`(必), `namespaceId?`, `visibility?`(private/internal), `description?`, `templateProject?`{`templateProjectId`,`templateType`,`syncAllBranches`}, **中心版必带** `organizationId` | `id`, `pathWithNamespace`, `httpUrlToRepo` |
+| `codeup_push` | 上传代码到新代码库（Git push） | `localPath`, `remoteUrl`/`repoId`, `branch`, `force?`（鉴权 `oauth2:<PAT>@`） | `pushedCommit`, `remoteUrl` |
+| `flow_list_pipelines` | 查找流水线（ListPipelines） | `pipelineName?`, `page?`, `perPage?`, `statusList?`, **中心版必带** `organizationId` | `pipelines:[{pipelineId, pipelineName, createTime}]` |
+| `flow_clone_pipeline` | 复制流水线（读源 YAML 后新建） | `sourcePipelineId`, `newName`, **中心版必带** `organizationId` | `newPipelineId` |
+| `flow_update_pipeline` | 编辑流水线（UpdatePipeline） | `pipelineId`, `name?`, `content`(YAML), **中心版必带** `organizationId` | `pipelineId` |
+| `flow_run_pipeline` | 运行流水线任务（ExecutePipelineJobRun，见注②） | `pipelineId`, `pipelineRunId`, `jobId`，**中心版必带** `organizationId` | `success: bool` |
+
+> **注① 鉴权与接入点**：所有 OpenAPI 统一用请求头 `x-yunxiao-token: <PAT>`；**中心版**路径含 `/organizations/{organizationId}`、**Region版**不含；接入点域见 §4.4。`codeup_clone` / `codeup_push` 为 **Git 操作**（非 REST），用 `https://oauth2:<PAT>@codeup.aliyun.com/...`。
+> **注② `flow_run_pipeline` 语义校正**：文档 `ExecutePipelineJobRun` 仅运行**某次运行实例（`pipelineRunId`）中的单个任务（`jobId`）**，需先经 ListPipelineRuns / GetPipelineRun 取得 `pipelineRunId`+`jobId`，并非「一键触发整条流水线」。整条流水线的「创建一次运行」API（如 `CreatePipelineRun`）**不在本次核对文档范围，M1 实现前需补确认**；本插件 Step6 建完流水线通常无需立即运行，故该工具主要供 Agent 即席排障。
+> **注③ 模板导入**：`codeup_create_repo` 支持 `templateProject`（按模板库 ID 导入），但本插件 Step3 采用「先 Git 克隆企服版模板到本地 → 改占位符 → 可选推送新库」路线（见 §4.3 Step3 / 注①），故模板导入参数暂不直接使用。
+> **注④ 错误码映射**（见官方错误码中心，统一在连接器层捕获并转译为友好提示）：`401 ExpiredTokenError/InvalidTokenError`→引导重配 PAT；`403 Forbidden/UserNotInCurrentOrganization`→提示无组织/资源权限；`429 TooManyRequests`→退避重试；`400 UnsupportedCurrentTokenType`→提示当前令牌类型不支持该 API；`500 InternalServerError`→联系云效支持。
 
 > 插件 `plugin.json` 通过 `mcpServers:[{name:"yunxiao",transport:"inprocess"}]` 声明启用；`PluginManager` 在插件 Enabled 时把 `YunxiaoMCPClient` 经 **`MCPRegistry.RegisterPluginClient(...)`** 注册进 `MCPRegistry`、Uninstalled 时经 **`UnregisterPluginClient(...)`** 反注册（§3.2、§3.10）。
 > **实现注意（P0）**：当前 `LuBan.AIAgent.MCP.MCPRegistry` 为静态只读（无 `Register`/`Add` 方法），需随 M1 扩展出插件作用域的 `RegisterPluginClient` / `UnregisterPluginClient`（与 `SkillRegistry.RegisterPluginSkill` 同源问题）。
@@ -738,8 +745,8 @@ public interface INewProjectService
 3. **凭据安全**：PAT 不落库明文、存安全凭据区、不回显日志、定期轮换、泄露即删（见 §4.9.3）。
 4. **模板仓库访问权限**：企服版 `tjc/TJCES` 为受限仓库，用户需具备读权限；私有仓需管理员授权，否则克隆被拒（见 §4.7）。
 5. **多端模板版本同步**：企服版模板升级后，新项目应基于哪版模板，需约定追溯策略（pin 版本 / 跟随最新）。
-6. **（开放问题）Flow OpenAPI 鉴权凭据类型**：Codeup 使用 PAT（Git HTTPS / `Private-Token` 头）；而 云效 Flow OpenAPI（devops 2021-06-25）官方 SDK 亦支持阿里云 AccessKey（AK/SK）。需确认本项目统一用 PAT，还是 Codeup 用 PAT + Flow 用 AK/SK，或并存；影响 codex 凭据配置表单设计。
-7. **（开放问题）Flow OpenAPI 区域与组织**：`CreatePipeline` 需指定 `ORGANIZATION_ID` 与 region 端点（如 `devops.cn-hangzhou.aliyuncs.com`），需确认所属企业与 region。
+6. **（已结论·建议 PAT）Flow OpenAPI 鉴权凭据类型**：经核对官方 OpenAPI 文档，`oapi/v1/codeup` 与 `oapi/v1/flow` 的统一鉴权方式为请求头 `x-yunxiao-token`（PAT），文档未给出 AK/SK 用法（AK/SK 多见于旧版 `devops` 接口，非本次采用的新版 OpenAPI）。**建议统一采用 PAT**，不引入 AK/SK 复杂度（与 §4.9 一致）。仅当企业合规强制 AK/SK 时，才需另行评估旧版接口并单列风险。
+7. **（待确认·中心版/Region版）Flow OpenAPI 区域与组织**：`region` 已明确**编码于接入点域**（中心版 `openapi-rdc.aliyuncs.com`；Region版为实例域名，在「组织管理后台-基本信息」获取），**不再作为每次请求的独立参数**；`organizationId` **仅中心版**路径必填（`/organizations/{organizationId}`），Region版不传。需向用户确认本企业使用的是**中心版还是 Region版**——这决定 `ProjectSpec.organizationId` 是否必收集、以及接入点域的选取（影响 Step 1 前置与 §4.4 配置）。
 8. **ALC 卸载资源释放**：事件订阅、文件句柄、定时器需在 `Shutdown()` 中严格释放，须专项测试。
 9. **插件目录位置**：首版 `luban-agent-codex/plugins/`，后续是否支持用户级覆盖待评估（见 §3.3）。
 10. **模板占位符规范**：模板改造依赖企服版模板的命名约定（命名空间/项目名占位符），需先与模板维护方对齐。
