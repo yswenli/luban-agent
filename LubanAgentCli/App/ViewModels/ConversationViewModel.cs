@@ -16,6 +16,7 @@
 *编组到 UI 线程
 *
 *****************************************************************************/
+using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Orchestration;
 using LuBan.Common.IO;
 
@@ -29,7 +30,7 @@ namespace LubanAgentCli.App.ViewModels;
 /// 消费 UI 无关的 <see cref="StreamEvent"/> 序列并编排为 Block 追加到本会话文档。
 /// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，本类不直接持有 View 引用。
 /// </summary>
-internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTrigger
+internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
 {
     private readonly string _sessionId;
     private readonly IServiceProvider _services;
@@ -200,7 +201,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     }
 
     /// <summary>
-    /// 请求重载 Agent 上下文（<see cref="IAgentContextReloadTrigger"/> 实现）。
+    /// 请求重载 Agent 上下文（<see cref="IAgentReloadTrigger"/> 实现）。
     /// 用于 AGENTS.md 落盘后让新内容进入系统提示词；运行中会被延迟到本轮结束后执行。
     /// </summary>
     public void RequestReload()

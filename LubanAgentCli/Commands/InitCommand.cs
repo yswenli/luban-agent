@@ -16,6 +16,8 @@
 *****************************************************************************/
 namespace LubanAgentCli.Commands;
 
+using LuBan.AIAgent.Abstractions;
+
 /// <summary>
 /// 初始化工作区 AGENTS.md 命令。
 /// 用法：/init &lt;描述文本&gt;
@@ -26,7 +28,7 @@ public class InitCommand : CommandBase
     private readonly IWorkspaceManager _workspaceManager;
     private readonly ILuBanAgentFactory _agentFactory;
     private readonly SpinnerService _spinner;
-    private readonly IAgentContextReloadTrigger? _reloadTrigger;
+    private readonly IAgentReloadTrigger? _reloadTrigger;
 
     /// <summary>
     /// 命令名称
@@ -59,7 +61,7 @@ public class InitCommand : CommandBase
         SpinnerService spinner,
         ITuiOutputWriter writer,
         ITuiUiService ui,
-        IAgentContextReloadTrigger? reloadTrigger = null)
+        IAgentReloadTrigger? reloadTrigger = null)
         : base(configManager, configuration, writer, ui)
     {
         _initializer = initializer ?? throw new ArgumentNullException(nameof(initializer));
