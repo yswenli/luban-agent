@@ -317,6 +317,14 @@ public class AgentHostService
                 {
                     channel.Writer.TryComplete(ex);
                 }
+                finally
+                {
+                    // 回合结束后检查 PendingReload
+                    if (runtime.ConsumePendingReload())
+                    {
+                        Reset(runtime.SessionId);
+                    }
+                }
             }
         }, ct);
 
