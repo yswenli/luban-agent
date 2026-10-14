@@ -1,4 +1,5 @@
 using LuBan.AIAgent;
+using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.LocalMemory;
 using LuBan.AIAgent.Retrieval;
@@ -13,6 +14,7 @@ using LubanAgentCore.Agents;
 using LubanAgentCore.Commands;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Repositories;
+using LubanAgentCore.Services;
 
 namespace LubanAgentCore.Hosting;
 
@@ -81,6 +83,7 @@ public static class AgentHostBuilder
         services.AddScoped<SessionContextState>();
         services.AddScoped<ISessionContext, SessionContext>();
         services.AddScoped<IWorkspaceContext, WorkspaceContext>();
+        services.AddScoped<IAgentReloadTrigger, SessionRuntimeReloadTrigger>();
 
         services.AddScoped<Microsoft.Extensions.AI.IChatClient>(sp =>
         {
