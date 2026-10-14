@@ -103,31 +103,11 @@ public class ProviderCommand : CommandBase
     /// </summary>
     /// <param name="args">未使用的参数</param>
     /// <returns>是否已处理</returns>
-    private static readonly (string Name, string DisplayName, bool NeedCustomEndpoint, bool NeedCustomApiKey, string? Warning)[] BuiltinProviders =
-    {
-        ("openai", "OpenAI", false, false, null),
-        ("azure", "Azure OpenAI", true, false, null),
-        ("deepseek", "DeepSeek", false, false, null),
-        ("kimi", "Kimi (Moonshot)", false, false, null),
-        ("glm", "智谱 GLM", false, false, null),
-        ("qwen", "通义千问", false, false, null),
-        ("doubao", "豆包", false, false, null),
-        ("claude", "Claude", false, false, "注意: Claude 使用 Anthropic Messages API，与 OpenAI 格式不同。\n如需使用 Claude，请通过第三方代理（如 one-api）转换为 OpenAI 兼容格式。"),
-        ("gemini", "Google Gemini", false, false, null),
-        ("ollama", "Ollama (本地)", true, true, null),
-        ("minimax", "MiniMax", false, false, null),
-        ("ark", "字节方舟 (火山引擎)", false, false, null),
-        ("bailian", "阿里百炼", false, false, null),
-        ("hunyuan", "腾讯混元", false, false, null),
-        ("mimo", "小米 MiMo", false, false, null),
-    };
-
     private Task<bool> ExecuteAddAsync(string[] args)
     {
-        // 选择 Provider 类型（编号菜单 → Choose 对话框）
-        var options = BuiltinProviders
+        // 选择 Provider 类型（编号菜单 → Choose 对话框）：内置预设 + 自定义，统一取自 Core.ProviderCatalog
+        var options = ProviderCatalog.All
             .Select(p => p.DisplayName)
-            .Append("自定义 OpenAI 兼容 API")
             .ToList();
         var chosen = Ui.Choose("添加 Provider", options);
         if (chosen is null) return Task.FromResult(true); // 用户取消
@@ -138,7 +118,7 @@ public class ProviderCommand : CommandBase
         string apiKey;
         string? baseUrl = null;
 
-        if (choiceIndex == BuiltinProviders.Length + 1)
+        if (choiceIndex == ProviderCatalog.All.Count)
         {
             var values = Ui.ShowForm("自定义 Provider", new[]
             {
@@ -154,36 +134,31 @@ public class ProviderCommand : CommandBase
         }
         else
         {
-            var (name, displayName, needCustomEndpoint, needCustomApiKey, warning) = BuiltinProviders[choiceIndex - 1];
-            providerName = name;
+            var preset = ProviderCatalog.Builtins[choiceIndex - 1];
+            providerName = preset.Name;
 
-            if (!string.IsNullOrEmpty(warning))
+            if (!string.IsNullOrEmpty(preset.Warning))
             {
-                Ui.Notify(displayName, warning);
+                Ui.Notify(preset.DisplayName, preset.Warning);
             }
 
-            var defaultUrl = name switch
-            {
-                "azure" => "https://your-resource.openai.azure.com",
-                "ollama" => "http://localhost:11434/v1",
-                _ => ""
-            };
+            var defaultUrl = preset.DefaultUrl;
 
             var fields = new List<FormField>
             {
-                new FormField($"{displayName} API Key", IsPassword: !needCustomApiKey)
+                new FormField($"{preset.DisplayName} API Key", IsPassword: !preset.NeedCustomApiKey)
             };
-            if (needCustomEndpoint)
+            if (preset.NeedCustomEndpoint)
             {
                 fields.Add(new FormField("API 地址", Required: false, InitialValue: defaultUrl));
             }
 
-            var values = Ui.ShowForm($"添加 {displayName}", fields);
+            var values = Ui.ShowForm($"添加 {preset.DisplayName}", fields);
             if (values is null) return Task.FromResult(true);
 
-            apiKey = needCustomApiKey ? values[0].Trim() : values[0];
+            apiKey = preset.NeedCustomApiKey ? values[0].Trim() : values[0];
 
-            if (needCustomEndpoint)
+            if (preset.NeedCustomEndpoint)
             {
                 baseUrl = string.IsNullOrWhiteSpace(values[1]) ? defaultUrl : values[1].Trim();
             }
@@ -276,7 +251,7 @@ public class ProviderCommand : CommandBase
 
         Writer.WriteLine();
         Writer.WriteLine($"更新 {displayName}:");
-        Writer.WriteLine($"  当前 API Key: {MaskApiKey(provider.ApiKey)}");
+        Writer.WriteLine($"  当前 API Key: {SecretMasker.MaskApiKey(provider.ApiKey)}");
         Writer.WriteLine($"  当前 Base URL: {provider.BaseUrl ?? "(默认)"}");
 
         // 留空保持原值：字段非必填，初始值为现值；清空则回落到现值
@@ -556,14 +531,6 @@ public class ProviderCommand : CommandBase
     }
 
     /// <summary>
-    /// 将 API Key 脱敏显示，只显示前4位和后4位
+    /// API Key 脱敏见 <see cref="SecretMasker.MaskApiKey"/>（CLI / GUI 共用）。
     /// </summary>
-    /// <param name="apiKey">原始 API Key</param>
-    /// <returns>脱敏后的字符串</returns>
-    private static string MaskApiKey(string apiKey)
-    {
-        if (string.IsNullOrEmpty(apiKey) || apiKey.Length <= 8)
-            return "****";
-        return $"{apiKey[..4]}...{apiKey[^4..]}";
-    }
 }

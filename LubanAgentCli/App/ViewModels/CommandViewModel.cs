@@ -178,14 +178,7 @@ internal sealed class CommandViewModel
             return;
         }
 
-        var mode = arg.ToLowerInvariant() switch
-        {
-            "default" => ToolPermissionMode.Default,
-            "plan" => ToolPermissionMode.Plan,
-            "accept-edits" or "acceptedits" => ToolPermissionMode.AcceptEdits,
-            "bypass" or "bypasspermissions" => ToolPermissionMode.BypassPermissions,
-            _ => (ToolPermissionMode?)null
-        };
+        var mode = PermissionModeRules.Parse(arg);
 
         if (mode is null)
         {
@@ -212,7 +205,7 @@ internal sealed class CommandViewModel
                     return;
                 }
 
-                var expandedArgs = ExpandSubCommandAliases(parts[0], parts);
+                var expandedArgs = SlashCommandAliases.Expand(parts[0], parts);
                 if (expandedArgs.Length > 1)
                 {
                     var handled = await command.ExecuteAsync(expandedArgs.Skip(1).ToArray());
@@ -293,34 +286,5 @@ internal sealed class CommandViewModel
         };
     }
 
-    /// <summary>子命令缩写展开（按命令区分歧义简写）。</summary>
-    private static string[] ExpandSubCommandAliases(string cmd, string[] parts)
-    {
-        if (parts.Length < 2) return parts;
-
-        var isLlmWiki = IsLlmWikiCommand(cmd);
-        var isA2A = cmd == "/a2a";
-
-        var result = new string[parts.Length];
-        result[0] = parts[0];
-
-        for (var i = 1; i < parts.Length; i++)
-        {
-            result[i] = parts[i] switch
-            {
-                "-l" => "-list", "-a" => "-add", "-u" => "-update", "-d" => "-delete",
-                "-s" => isA2A ? "-server" : (isLlmWiki ? "-search" : "-switch"),
-                "-i" when isLlmWiki => "-index",
-                "-c" => isA2A ? "-client" : "-clear",
-                "-n" => "-new", "-t" => "-tools",
-                _ => parts[i]
-            };
-        }
-
-        return result;
-    }
-
-    /// <summary>是否为 LLM Wiki 命令（含别名），用于区分 <c>-s</c>/<c>-i</c> 等歧义简写。</summary>
-    private static bool IsLlmWikiCommand(string cmd)
-        => cmd is "/llmwiki" or "/lw" or "/rag" or "/rg" or "/wiki" or "/wk";
+    /// <summary>子命令缩写展开见 <see cref="SlashCommandAliases.Expand"/>（CLI / GUI 共用）。</summary>
 }

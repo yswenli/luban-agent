@@ -25,7 +25,6 @@ using LubanAgentCore.Configuration;
 using LubanAgentCore.Retrieval;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
-using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -478,16 +477,8 @@ public partial class LlmWikiManageWindow : Window
                 okText: "删除", danger: true);
             if (!ok) return;
 
-            var sessionRepo = _services.GetRequiredService<SessionRepository>();
-            var wikiFileRepo = new LlmWikiFileRepository();
-            var wikiChunkRepo = new LlmWikiChunkRepository();
-            var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
-
-            var userId = _services.ResolveUserKey();
-            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId, userId);
-            await wikiFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId && w.UserId == userId);
+            // 统一走 Core 级联删除（会话软删 → LLM Wiki 索引清理 → 工作区逻辑删）。
+            await _workspaceManager.DeleteWorkspaceAsync(item.WorkspaceId);
 
             await ShowListViewAsync();
             await Dialogs.ShowInfoAsync(this, "已删除 LLM Wiki 知识库");

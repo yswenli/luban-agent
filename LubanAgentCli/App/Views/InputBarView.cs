@@ -380,7 +380,7 @@ internal sealed class InputBarView : View
         }
 
         if (_draftPaths.Contains(full, StringComparer.OrdinalIgnoreCase)) return true;
-        if (_drafts.Count >= 5) return false;
+        if (_drafts.Count >= AttachmentService.MaxAttachmentsPerMessage) return false;
         _draftPaths.Add(full);
         _drafts.Add(new AttachmentDraft(full, Path.GetFileName(full)));
         UpdateDraftHint();

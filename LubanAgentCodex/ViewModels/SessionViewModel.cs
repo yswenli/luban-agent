@@ -35,7 +35,7 @@ public partial class SessionViewModel : ObservableObject
 {
     // 单会话消息流保留上限：超出的最旧消息被裁剪（数据库仍保留全量），
     // 避免长会话把消息项与视觉元素无界累积在内存中。
-    private const int MaxMessageCount = 50;
+    private const int MaxMessageCount = UiConstants.MaxMessageCount;
 
     private readonly AgentHostService _agentHost;
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
@@ -49,7 +49,7 @@ public partial class SessionViewModel : ObservableObject
 
     // 流式冲刷间隔：过密会导致 TextBox 频繁全文重排（流式长文本下呈 O(n²) 渲染开销），
     // 100ms 兼顾流畅度与 UI 线程压力。
-    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(UiConstants.StreamFlushIntervalMs);
 
     private readonly StringBuilder _pendingText = new();
     private readonly StringBuilder _pendingThinking = new();

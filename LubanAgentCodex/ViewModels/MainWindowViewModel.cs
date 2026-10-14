@@ -597,7 +597,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var cmd = parts[0].ToLowerInvariant();
-        var args = ExpandSubCommandAliases(cmd, parts.Skip(1).ToArray());
+        var args = SlashCommandAliases.Expand(cmd, parts.Skip(1).ToArray());
 
         switch (cmd)
         {
@@ -618,14 +618,7 @@ public partial class MainWindowViewModel : ObservableObject
             case "/mode":
                 if (args.Length > 0)
                 {
-                    var mode = args[0].ToLowerInvariant() switch
-                    {
-                        "default" => ToolPermissionMode.Default,
-                        "plan" => ToolPermissionMode.Plan,
-                        "accept-edits" or "acceptedits" => ToolPermissionMode.AcceptEdits,
-                        "bypass" or "bypasspermissions" => ToolPermissionMode.BypassPermissions,
-                        _ => (ToolPermissionMode?)null
-                    };
+                    var mode = PermissionModeRules.Parse(args[0]);
 
                     if (mode.HasValue)
                     {
@@ -717,34 +710,7 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 子命令简写展开（-s 按命令区分：/work 为 -switch，/llmwiki 为 -search）
-    /// </summary>
-    private static string[] ExpandSubCommandAliases(string cmd, string[] parts)
-    {
-        var isLlmWiki = cmd is "/llmwiki" or "/lw" or "/rag" or "/rg" or "/wiki" or "/wk";
-        var isA2A = cmd == "/a2a";
-        var result = new string[parts.Length];
-        for (var i = 0; i < parts.Length; i++)
-        {
-            result[i] = parts[i] switch
-            {
-                "-l" => "-list",
-                "-a" => "-add",
-                "-u" => "-update",
-                "-d" => "-delete",
-                "-s" => isA2A ? "-server" : (isLlmWiki ? "-search" : "-switch"),
-                "-n" => "-new",
-                "-c" => isA2A ? "-client" : "-clear",
-                "-t" => "-tools",
-                "-i" => isLlmWiki ? "-index" : parts[i],
-                _ => parts[i]
-            };
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// 打开统一设置中心并定位到「供应商」页签（替代旧的 ProviderManageWindow）
+    /// 子命令简写展开见 <see cref="SlashCommandAliases.Expand"/>（CLI / GUI 共用）。
     /// </summary>
     private void ShowProviderManager(string[] args)
     {
@@ -1174,14 +1140,7 @@ public partial class MainWindowViewModel : ObservableObject
         Messages.Add(new SystemMessageItem { Content = sb.ToString() });
     }
 
-    private string GetPermissionModeDisplay(ToolPermissionMode mode) => mode switch
-    {
-        ToolPermissionMode.Default => "默认 (Default)",
-        ToolPermissionMode.Plan => "计划 (Plan)",
-        ToolPermissionMode.AcceptEdits => "接受编辑 (AcceptEdits)",
-        ToolPermissionMode.BypassPermissions => "跳过权限 (Bypass)",
-        _ => mode.ToString()
-    };
+    private string GetPermissionModeDisplay(ToolPermissionMode mode) => PermissionModeRules.ToDisplayName(mode);
 
     private async Task ExecuteModelCommandAsync(string[] args)
     {
@@ -1344,7 +1303,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (!isNew)
                 return;
 
-            var messages = await sessionManager.GetLatestMessagesAsync(sessionId, 50);
+            var messages = await sessionManager.GetLatestMessagesAsync(sessionId, UiConstants.HistoryLoadLimit);
             foreach (var msg in messages.OrderBy(m => m.CreatedAt))
             {
                 if (msg.Role == "user")

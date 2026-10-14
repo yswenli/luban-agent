@@ -16,7 +16,6 @@
 *****************************************************************************/
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
-using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +26,6 @@ namespace LubanAgentCodex.Views;
 /// </summary>
 public partial class WorkManageWindow : Window
 {
-    private readonly IServiceProvider _services;
     private readonly IWorkspaceManager _workspaceManager;
     private ListBox? _workspaceListBox;
     private Button? _addButton;
@@ -37,7 +35,6 @@ public partial class WorkManageWindow : Window
 
     public WorkManageWindow(IServiceProvider services)
     {
-        _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         InitializeComponent();
         LoadWorkspaces();
@@ -122,18 +119,13 @@ public partial class WorkManageWindow : Window
                 okText: "删除", danger: true);
             if (!ok) return;
 
-            var sessionRepo = _services.GetRequiredService<SessionRepository>();
-            var wikiFileRepo = new LlmWikiFileRepository();
-            var wikiChunkRepo = new LlmWikiChunkRepository();
-            var wsRepo = _services.GetRequiredService<WorkspaceRepository>();
+            // 统一走 Core 级联删除（会话软删 → LLM Wiki 索引清理 → 工作区逻辑删），
+            // 避免各宿主自行编排导致语义分叉或残留孤儿索引。
+            var wasCurrent = _workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId;
 
-            var userId = _services.ResolveUserKey();
-            await sessionRepo.SoftDeleteByWorkspaceAsync(item.WorkspaceId, userId);
-            await wikiFileRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wikiChunkRepo.DeleteByWorkspaceAsync(item.WorkspaceId);
-            await wsRepo.LogicDeleteAsync(w => w.WorkspaceId == item.WorkspaceId && w.UserId == userId);
+            await _workspaceManager.DeleteWorkspaceAsync(item.WorkspaceId);
 
-            if (_workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId)
+            if (wasCurrent)
                 await Dialogs.ShowInfoAsync(this, "当前工作区已删除，请切换到其他工作区");
 
             LoadWorkspaces();

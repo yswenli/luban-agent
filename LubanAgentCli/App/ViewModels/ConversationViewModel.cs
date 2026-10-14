@@ -108,14 +108,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// <returns>新的权限模式。</returns>
     public ToolPermissionMode CyclePermissionMode()
     {
-        PermissionMode = PermissionMode switch
-        {
-            ToolPermissionMode.Default => ToolPermissionMode.Plan,
-            ToolPermissionMode.Plan => ToolPermissionMode.AcceptEdits,
-            ToolPermissionMode.AcceptEdits => ToolPermissionMode.BypassPermissions,
-            ToolPermissionMode.BypassPermissions => ToolPermissionMode.Default,
-            _ => ToolPermissionMode.Default
-        };
+        PermissionMode = PermissionModeRules.Next(PermissionMode);
 
         PermissionModeChanged?.Invoke(PermissionMode);
         return PermissionMode;
@@ -134,14 +127,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// <summary>
     /// 当前权限模式的可读名称。
     /// </summary>
-    public string PermissionModeDisplay => PermissionMode switch
-    {
-        ToolPermissionMode.Default => "default",
-        ToolPermissionMode.Plan => "plan",
-        ToolPermissionMode.AcceptEdits => "accept-edits",
-        ToolPermissionMode.BypassPermissions => "bypass",
-        _ => "default"
-    };
+    public string PermissionModeDisplay => PermissionModeRules.ToKey(PermissionMode);
 
     /// <summary>当前是否正在运行 agent 对话。</summary>
     public bool IsRunning { get; private set; }
@@ -170,8 +156,8 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
     /// <summary>确认块挂起状态变化事件（RootView 订阅以切换键盘焦点）。</summary>
     public event Action? PendingChoiceChanged;
 
-    /// <summary>历史回放的消息条数限制。</summary>
-    private const int HistoryLoadLimit = 20;
+    /// <summary>历史回放的消息条数限制（与 GUI 统一，见 <see cref="UiConstants.HistoryLoadLimit"/>）。</summary>
+    private const int HistoryLoadLimit = UiConstants.HistoryLoadLimit;
 
     /// <summary>
     /// 初始化会话 ViewModel。
@@ -640,7 +626,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentContextReloadTr
         _runningNodeBlocks.Clear();
         Interlocked.Exchange(ref _plannedCount, 0);
 
-        _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(50));
+        _streamThrottle ??= new FlushThrottle(() => FlushPendingTokens(), TimeSpan.FromMilliseconds(UiConstants.StreamFlushIntervalMs));
 
         // 立即反馈：提交后立刻插入 spinner，避免 planner/编排等非流式阶段长时间"死屏"
         _dispatcher.Invoke(() =>

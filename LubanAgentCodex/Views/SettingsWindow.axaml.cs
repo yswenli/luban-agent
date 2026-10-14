@@ -95,26 +95,9 @@ public partial class SettingsWindow : Window
     /// <summary>供应商编辑器中「自定义模型」行容器，供保存时收集。</summary>
     private StackPanel? _providerCustomModelsPanel;
 
-    // 复刻 CLI BuiltinProviders（name, displayName, needCustomEndpoint, needCustomApiKey, defaultUrl）
-    private static readonly (string Name, string Display, bool NeedEndpoint, bool NeedKey, string DefaultUrl)[] Builtin =
-    {
-        ("openai", "OpenAI", false, false, ""),
-        ("azure", "Azure OpenAI", true, false, "https://your-resource.openai.azure.com"),
-        ("deepseek", "DeepSeek", false, false, ""),
-        ("kimi", "Kimi (Moonshot)", false, false, ""),
-        ("glm", "智谱 GLM", false, false, ""),
-        ("qwen", "通义千问", false, false, ""),
-        ("doubao", "豆包", false, false, ""),
-        ("claude", "Claude", false, false, ""),
-        ("gemini", "Google Gemini", false, false, ""),
-        ("ollama", "Ollama (本地)", true, true, "http://localhost:11434/v1"),
-        ("minimax", "MiniMax", false, false, ""),
-        ("ark", "字节方舟 (火山引擎)", false, false, ""),
-        ("bailian", "阿里百炼", false, false, ""),
-        ("hunyuan", "腾讯混元", false, false, ""),
-        ("mimo", "小米 MiMo", false, false, ""),
-        ("custom", "自定义 OpenAI 兼容 API", true, false, ""),
-    };
+    /// <summary>
+    /// 内置 Provider 预设见 <see cref="ProviderCatalog.All"/>（CLI / GUI 共用，含自定义项）。
+    /// </summary>
 
     /// <summary>
     /// 无参构造函数（Avalonia XAML 加载需要）
@@ -737,7 +720,7 @@ public partial class SettingsWindow : Window
         SetField("Transport", AddCombo(host, "Transport", new[] { "stdio", "http", "sse" }, cfg.Transport));
         SetField("Command", AddField(host, "Command（http/sse 时可将 URL 填在此处）", cfg.Command));
         SetField("Args", AddField(host, "Args（一行一个）",
-            string.Join(Environment.NewLine, cfg.Args), multiline: true, height: 100));
+            McpArgsParser.Format(cfg.Args), multiline: true, height: 100));
         SetField("Enabled", AddToggle(host, "启用该服务", cfg.Enabled));
 
         host.Children.Add(new TextBlock
@@ -762,7 +745,7 @@ public partial class SettingsWindow : Window
         ComboBox? typeCombo = null;
         if (isNew)
         {
-            typeCombo = AddCombo(host, "类型（内置预设，可选）", Builtin.Select(b => b.Display), Builtin[0].Display);
+            typeCombo = AddCombo(host, "类型（内置预设，可选）", ProviderCatalog.All.Select(b => b.DisplayName).ToList(), ProviderCatalog.All[0].DisplayName);
         }
 
         var nameBox = AddField(host, "Name（唯一标识，小写）", nonNullProvider.Name);
@@ -1190,11 +1173,11 @@ public partial class SettingsWindow : Window
     private void OnProviderTypeChanged(ComboBox typeCombo, TextBox nameBox, TextBox baseUrlBox)
     {
         var idx = typeCombo.SelectedIndex;
-        if (idx < 0 || idx >= Builtin.Length) return;
-        var (name, _, needEndpoint, _, defaultUrl) = Builtin[idx];
-        nameBox.Text = name;
-        nameBox.IsReadOnly = name != "custom";
-        baseUrlBox.Text = needEndpoint ? defaultUrl : TryGetDefaultEndpoint(name);
+        if (idx < 0 || idx >= ProviderCatalog.All.Count) return;
+        var preset = ProviderCatalog.All[idx];
+        nameBox.Text = preset.Name;
+        nameBox.IsReadOnly = preset.Name != "custom";
+        baseUrlBox.Text = preset.NeedCustomEndpoint ? preset.DefaultUrl : TryGetDefaultEndpoint(preset.Name);
     }
 
     private static string TryGetDefaultEndpoint(string name)
@@ -1210,11 +1193,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private static string MaskApiKey(string apiKey)
-    {
-        if (string.IsNullOrEmpty(apiKey) || apiKey.Length <= 8) return "****";
-        return $"{apiKey[..4]}...{apiKey[^4..]}";
-    }
+    private static string MaskApiKey(string apiKey) => SecretMasker.MaskApiKey(apiKey);
 
     // ---------------- 技能 Markdown 拼装 / 解析 ----------------
 
@@ -1408,11 +1387,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var args = GetText("Args")
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(s => s.Trim())
-            .Where(s => s.Length > 0)
-            .ToList();
+        var args = McpArgsParser.Parse(GetText("Args"));
 
         var cfg = new McpServerConfig
         {

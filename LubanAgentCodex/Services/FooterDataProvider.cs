@@ -17,7 +17,6 @@
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Sessions;
 using Microsoft.Extensions.DependencyInjection;
-using System.Diagnostics;
 
 namespace LubanAgentCodex.Services;
 
@@ -34,33 +33,9 @@ public class FooterDataProvider
     }
     
     /// <summary>
-    /// 获取当前 Git 分支名称
+    /// 获取当前 Git 分支名称（复用 Core 统一读取器，失败返回 "—"）
     /// </summary>
-    public string GetGitBranch()
-    {
-        try
-        {
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = "rev-parse --abbrev-ref HEAD",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            var branch = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-            return string.IsNullOrEmpty(branch) ? "unknown" : branch;
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    public string GetGitBranch() => GitBranchReader.Current;
     
     /// <summary>
     /// 获取当前会话的 Token 用量

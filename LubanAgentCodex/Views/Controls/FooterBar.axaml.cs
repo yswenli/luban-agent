@@ -52,14 +52,7 @@ public partial class FooterBar : UserControl
     {
         if (_permissionModeText == null) return;
         
-        _permissionModeText.Text = mode switch
-        {
-            ToolPermissionMode.Default => "[default]",
-            ToolPermissionMode.Plan => "[plan]",
-            ToolPermissionMode.AcceptEdits => "[accept-edits]",
-            ToolPermissionMode.BypassPermissions => "[bypass]",
-            _ => "[unknown]"
-        };
+        _permissionModeText.Text = $"[{PermissionModeRules.ToKey(mode)}]";
         
         _permissionModeText.Foreground = mode switch
         {

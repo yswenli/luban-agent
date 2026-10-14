@@ -14,7 +14,6 @@
 *描述：聚合 git 分支、token 用量、模式名称等页脚元数据
 *
 *****************************************************************************/
-using System.Diagnostics;
 using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCore.Services;
@@ -25,10 +24,7 @@ namespace LubanAgentCore.Services;
 /// </summary>
 public sealed class FooterDataProvider
 {
-    private volatile string _gitBranch = "—";
-    private DateTime _lastGitFetch = DateTime.MinValue;
-    private volatile bool _gitFetchInProgress;
-    private static readonly TimeSpan GitBranchCacheDuration = TimeSpan.FromSeconds(30);
+    private string _gitBranch = GitBranchReader.UnknownBranch;
 
     /// <summary>当前权限模式可读名称。</summary>
     public string ModeDisplay { get; set; } = "default";
@@ -50,36 +46,10 @@ public sealed class FooterDataProvider
     {
         get
         {
-            if (DateTime.Now - _lastGitFetch <= GitBranchCacheDuration)
+            var branch = GitBranchReader.Current;
+            if (!string.IsNullOrEmpty(branch))
             {
-                return _gitBranch;
-            }
-
-            if (!_gitFetchInProgress)
-            {
-                _gitFetchInProgress = true;
-                _lastGitFetch = DateTime.Now;
-
-                try
-                {
-                    Task.Run(() =>
-                    {
-                        try
-                        {
-                            var branch = TryGetGitBranch();
-                            _gitBranch = branch;
-                        }
-                        finally
-                        {
-                            _gitFetchInProgress = false;
-                        }
-                    });
-                }
-                catch
-                {
-                    _gitFetchInProgress = false;
-                    throw;
-                }
+                _gitBranch = branch;
             }
 
             return _gitBranch;
@@ -88,36 +58,4 @@ public sealed class FooterDataProvider
 
     /// <summary>后台任务数（暂返回 0，Agent View 三期接入）。</summary>
     public int BackgroundTasks => 0;
-
-    /// <summary>
-    /// 尝试通过 git 命令获取当前分支名，失败时返回"—"
-    /// </summary>
-    private static string TryGetGitBranch()
-    {
-        try
-        {
-            using var proc = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = "rev-parse --abbrev-ref HEAD",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            proc.Start();
-            var output = proc.StandardOutput.ReadToEnd().Trim();
-            proc.WaitForExit(1000);
-
-            return proc.ExitCode == 0 && !string.IsNullOrEmpty(output) ? output : "—";
-        }
-        catch
-        {
-            return "—";
-        }
-    }
 }

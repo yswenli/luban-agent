@@ -322,14 +322,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _viewModel.PermissionMode = _viewModel.PermissionMode switch
-        {
-            ToolPermissionMode.Default => ToolPermissionMode.Plan,
-            ToolPermissionMode.Plan => ToolPermissionMode.AcceptEdits,
-            ToolPermissionMode.AcceptEdits => ToolPermissionMode.BypassPermissions,
-            ToolPermissionMode.BypassPermissions => ToolPermissionMode.Default,
-            _ => ToolPermissionMode.Default
-        };
+        _viewModel.PermissionMode = PermissionModeRules.Next(_viewModel.PermissionMode);
 
         UpdateFooter();
 

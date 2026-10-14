@@ -27,15 +27,17 @@ public static class LegacyUserDataMigrator
         var uid = LocalUserDefaults.DefaultUserId;
         try
         {
-            // 表名以 SqlSugar 实体为准：DbSession→ai_session、DbWorkspace→ai_workspace
+            // 表名/列名以 SqlSugar 实体为准：DbSession→ai_session、DbWorkspace→ai_workspace；
+            // 列名受 DbSettings.EnableUnderLine 影响，实体属性 UserId 落库为下划线 user_id，
+            // 故此处原始 SQL 必须用 user_id（用 PascalCase 会报 "no such column: UserId" 而静默失败）。
             var sessionRepo = new Repositories.SessionRepository();
             sessionRepo.Context.Ado.ExecuteCommand(
-                "UPDATE ai_session SET UserId = @uid WHERE UserId IS NULL OR UserId = '' OR UserId = @legacy",
+                "UPDATE ai_session SET user_id = @uid WHERE user_id IS NULL OR user_id = '' OR user_id = @legacy",
                 new { uid, legacy = LocalUserDefaults.LegacyUserId });
 
             var workspaceRepo = new Repositories.WorkspaceRepository();
             workspaceRepo.Context.Ado.ExecuteCommand(
-                "UPDATE ai_workspace SET UserId = @uid WHERE UserId IS NULL OR UserId = '' OR UserId = @legacy",
+                "UPDATE ai_workspace SET user_id = @uid WHERE user_id IS NULL OR user_id = '' OR user_id = @legacy",
                 new { uid, legacy = LocalUserDefaults.LegacyUserId });
         }
         catch (Exception ex)

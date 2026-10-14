@@ -18,7 +18,6 @@ using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Rules;
 using LuBan.AIAgent.Skills;
 using LuBan.Common.IO;
-using LuBan.DI;
 using LubanAgentCore.Infrastructure;
 using LubanAgentCore.Repositories;
 
@@ -159,9 +158,11 @@ public interface IWorkspaceManager
 }
 
 /// <summary>
-/// 工作区管理服务，管理工作区生命周期、授权、配置加载
+/// 工作区管理服务，管理工作区生命周期、授权、配置加载。
+/// 注：实例由 <see cref="LubanAgentCore.Configuration.UserContextRegistry"/> 按用户手动构造（per-user 单例），
+/// 不走容器自动注入，故不实现任何 DI 生命周期标记。
 /// </summary>
-public class WorkspaceManager : IWorkspaceManager, ISingleton
+public class WorkspaceManager : IWorkspaceManager
 {
     /// <summary>
     /// LLM Wiki 知识库未显式指定名称时的默认显示名

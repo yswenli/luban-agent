@@ -162,7 +162,7 @@ public class MCPCommand : CommandBase
             new FormField("服务器名称"),
             new FormField("描述", Required: false),
             new FormField("启动命令 (如 npx)"),
-            new FormField("命令参数 (空格分隔，可选)", Required: false)
+            new FormField("命令参数（一行一个，可含空格）", Required: false, Multiline: true)
         });
         if (values is null) return Task.CompletedTask;
 
@@ -195,9 +195,7 @@ public class MCPCommand : CommandBase
         }
 
         var argsInput = values[3].Trim() ?? "";
-        var args = string.IsNullOrEmpty(argsInput)
-            ? new List<string>()
-            : argsInput.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        var args = McpArgsParser.Parse(argsInput);
 
         try
         {
@@ -245,7 +243,7 @@ public class MCPCommand : CommandBase
         {
             new FormField("描述", Required: false, InitialValue: selected.Description),
             new FormField("启动命令", Required: false, InitialValue: selected.Command),
-            new FormField("命令参数", Required: false, InitialValue: string.Join(' ', selected.Args))
+            new FormField("命令参数（一行一个，可含空格）", Required: false, InitialValue: McpArgsParser.Format(selected.Args), Multiline: true)
         });
         if (values is null) return Task.CompletedTask;
 
@@ -258,7 +256,7 @@ public class MCPCommand : CommandBase
         var newArgsInput = values[2].Trim();
         if (!string.IsNullOrEmpty(newArgsInput))
         {
-            selected.Args = newArgsInput.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+            selected.Args = McpArgsParser.Parse(newArgsInput);
         }
 
         try

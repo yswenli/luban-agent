@@ -10,8 +10,6 @@
 		     三阶段全部验收后统一发最终版本包并还原为 PackageReference（见 P2 计划 Phase N） -->
 		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 		<ProjectReference Include="..\..\luban-framework\LuBan.Common\LuBan.Common.csproj" />
-		<ProjectReference Include="..\..\luban-framework\LuBan.DI\LuBan.DI.csproj" />
-		<ProjectReference Include="..\..\luban-framework\LuBan.Threading\LuBan.Threading.csproj" />
 		<ProjectReference Include="..\..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
 		<ProjectReference Include="..\..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />

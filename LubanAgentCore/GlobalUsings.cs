@@ -12,7 +12,6 @@ global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Common;
 global using LuBan.Common.IO;
-global using LuBan.DI;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
