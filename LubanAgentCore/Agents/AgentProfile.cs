@@ -54,11 +54,6 @@ public abstract class AgentProfile
     public abstract string? RetrievalMode { get; }
 
     /// <summary>
-    /// 当前激活的 Skill（对话内通过 /skill -switch 切换）。
-    /// </summary>
-    public ISkill? ActiveSkill { get; set; }
-
-    /// <summary>
     /// 构建运行期工具参数覆盖。派生类可重写以定制子参数（如 Headless、Shell、Timeout），
     /// null 表示使用框架内置默认值。
     /// </summary>
@@ -83,6 +78,7 @@ public abstract class AgentProfile
     /// <param name="pluginRegistry">工具插件注册表</param>
     /// <param name="skillRegistry">Skill 注册表</param>
     /// <param name="mcpRegistry">MCP 注册表</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>LuBanAgent 实例</returns>
     public virtual async Task<LuBanAgent> CreateAgentAsync(
         ILuBanAgentFactory factory,
@@ -91,15 +87,20 @@ public abstract class AgentProfile
         RuleEngine ruleEngine,
         ToolPluginRegistry pluginRegistry,
         SkillRegistry skillRegistry,
-        MCPRegistry mcpRegistry)
+        MCPRegistry mcpRegistry,
+        CancellationToken cancellationToken = default)
     {
         // 加载工作区级别的组件（三级优先级：硬编码 > 工作区文件 > config.json）
         skillRegistry.LoadFromWorkspace(workspace.RootPath);
         mcpRegistry.LoadFromWorkspace(workspace.RootPath);
+        
+        // 连接所有外部 MCP（跳过内置）
+        await mcpRegistry.ConnectAllAsync(cancellationToken);
+        
         ruleEngine.LoadFromWorkspace(workspace.RootPath);
 
-        // 将工作区上下文和激活的 Skill 注入系统提示词
-        var fullPrompt = BuildFullPrompt(workspace, ActiveSkill, ruleEngine);
+        // 将工作区上下文注入系统提示词
+        var fullPrompt = BuildFullPrompt(workspace, ruleEngine);
 
         return await factory.CreateAsync(
             modelName: modelName,
@@ -111,9 +112,9 @@ public abstract class AgentProfile
     }
 
     /// <summary>
-    /// 构建包含工作区上下文和激活 Skill 的完整系统提示词。
+    /// 构建包含工作区上下文的完整系统提示词。
     /// </summary>
-    private string BuildFullPrompt(WorkspaceInfo workspace, ISkill? activeSkill, LuBan.AIAgent.Rules.RuleEngine ruleEngine)
+    private string BuildFullPrompt(WorkspaceInfo workspace, LuBan.AIAgent.Rules.RuleEngine ruleEngine)
     {
         var sb = new System.Text.StringBuilder(SystemPrompt);
         sb.AppendLine();
@@ -137,17 +138,9 @@ public abstract class AgentProfile
         sb.AppendLine();
         sb.AppendLine("## 长期记忆");
         sb.AppendLine("- 使用保存记忆工具（SaveAsync）把值得长期记住的信息写入记忆库，后续对话会自动召回");
-        sb.AppendLine("- 适合保存：用户偏好与习惯、明确的项目决策与约束、用户显式要求“记住”的内容");
+        sb.AppendLine("- 适合保存：用户偏好与习惯、明确的项目决策与约束、用户显式要求\"记住\"的内容");
         sb.AppendLine("- 不要保存：闲聊客套、一次性上下文、可从代码或文档直接获得的事实");
         sb.AppendLine("- category 用简短英文小写（如 fact、preference、todo、project）；跨工作区通用的用 global");
-
-        if (activeSkill != null && !string.IsNullOrEmpty(activeSkill.PromptTemplate))
-        {
-            sb.AppendLine();
-            sb.AppendLine();
-            sb.AppendLine($"## 当前激活的 Skill: {activeSkill.Name}");
-            sb.AppendLine(activeSkill.PromptTemplate);
-        }
 
         if (ruleEngine.GetRule("base-behavior") is LuBan.AIAgent.Rules.IContentRule contentRule
             && !string.IsNullOrWhiteSpace(contentRule.Content))
