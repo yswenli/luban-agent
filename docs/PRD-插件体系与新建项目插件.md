@@ -1,6 +1,6 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.10（Step6 流水线改为每端一条·克隆 TJCES 参考并替换）
+- **版本**：v0.11（新增 Step 6 推送到新代码库 · 七步 · 逐步界面草图 · 去代码化）
 - **日期**：2026-10-14
 - **作者**：luban 团队
 - **状态**：设计评审中
@@ -10,6 +10,8 @@
 - **修订说明（v0.8）**：**依据阿里云云效官方 OpenAPI 文档（服务接入点 / 个人访问令牌 / 错误码中心 / Codeup 仓库 4 篇 / Flow 流水线 6 篇，共 12 篇）核对并订正 API 事实错误**：①**统一接入点与鉴权**——云效 OpenAPI 接入点为 `openapi-rdc.aliyuncs.com`（中心版）/ Region版实例域名，路径 `oapi/v1/codeup/...` 与 `oapi/v1/flow/...`，鉴权统一用请求头 **`x-yunxiao-token: <PAT>`**（**弃用原假设的 `devops 2021-06-25` 产品版本与 `Private-Token` 头**）；Git 克隆/推送仍用 `https://oauth2:<PAT>@codeup.aliyun.com/...`。②**中心版 / Region版差异**——`organizationId` **仅中心版**路径必填，Region版不传；`region` 不作为参数，而是编码在接入点域中（原 §4.3 Step6「需传 ORGANIZATION_ID 与 region」表述错误，已订正）。③**订正 Codeup / Flow 各 API 路径与参数**（CreateRepository 增 `path`/`templateProject`、ListRepositories 的 `search`/`perPage`、CreatePipeline 请求体 `{name,content}` 等）。④**订正 MCP 工具入参命名**（`keyword`→`search`、`pageSize`→`perPage`、`nameKeyword`→`pipelineName`、增 `repositoryId`/中心版 `organizationId` 等），并补充 `flow_run_pipeline` 实为 **ExecutePipelineJobRun（运行单次运行实例中的单个任务，需 `pipelineRunId`+`jobId`）**，整条流水线触发 run 的创建 API 标注为待确认。⑤补充错误码映射（401/403/429/500 等）。
 - **修订说明（v0.9）**：**确认本企业使用云效「中心版」**（用户决策，落地 §6 开放问题 #7）。据此：①接入点固定 `openapi-rdc.aliyuncs.com`，所有 OpenAPI 路径统一带 `/organizations/{organizationId}`；②`ProjectSpec.organizationId` 由「可选」升为**必填**，并从 codex 设置中的云效连接配置读取；③`flowRegion` 在中心版下无意义（region 已隐含于中心版统一接入点），数据模型中标注为「中心版不使用，仅 Region版 预留」，无需用户填写；④§4.3 前置条件将 `organizationId` 列为必配项（缺失时阻断 Step 3/Step 6）；⑤§6 开放问题 #7 标记为已解决。
 - **修订说明（v0.10）**：**深度审查「创建流水线」步骤，对齐真实工程实践**（用户领域输入：三端通常各对应一条流水线，先据企服版 TJCES 的 3 条参考流水线定义克隆为本项目流水线，并替换名称/端口/Codeup 仓库地址/流水线参数）。据此重写 §4.3 **Step 6**：由「生成单条 YAML」改为「**每端一条、共 3 条**（mobile 仅当选），按 `GetPipeline` 拉取 TJCES 参考 YAML → 按 `ProjectSpec` 替换 → `CreatePipeline` 逐端创建」的**克隆-替换-创建**流程，并明确 4 类替换点与「流水线源仓库须指向本项目自有 Codeup 仓库」的依赖（推荐默认建新仓库并推送）。同步：§4.5 `ProjectSpec` 增 `referencePipelines`（TJCES 三端参考流水线 ID）；§4.11.2 `FlowClient` 增 `GetPipelineAsync`+`ClonePipelinesFromTemplateAsync`；§4.11.3 `flow_clone_pipeline` 工具明确「读取源 YAML→替换→创建」语义与 4 类替换；§4.10.4 / §4.10.7 的 `newproject.create-pipeline` 改为按端 ×3 克隆 TJCES 参考；§4.8 验收 #2 改为「（三端）共 3 条流水线创建成功」。
+- **修订说明（v0.11）**：①**「推送到新代码库」升级为正式步骤**——因 Step 7 流水线源仓库必须指向本项目自有仓库（v0.10 已确认为强依赖），原「可选写路径」不足以支撑 CI，故正式新增 **Step 6 · 推送到新代码库**（创建本项目专属 Codeup 仓库 + 推送代码），向导由 6 步扩展为 **7 步**（原 Step 6 建流水线顺延为 **Step 7**），并同步数据模型、`INewProjectService`、原子 Skill、验收、流程图、步骤条与里程碑。②**新增「逐步界面草图」（§4.6）**——为全部 7 步各绘制一张中文界面草图（左向导区 / 右 Agent 操作记录区），并把界面相关信息集中到该节，便于产品与非技术同事评审。③**去代码化**——移除全文的代码片段（C# / TypeScript / JSON / 类图 / 时序图 / 加载伪代码），一律改用**表格与中文说明**表达，使非开发人员也能读懂；数据模型改为字段表，服务接口改为能力表，插件清单字段改为清单表。
+- **阅读说明**：本文档面向**产品、项目管理与非技术评审者**，不含代码；实现相关细节（类型、接口、端点）以表格或名词表形式给出。
 
 ---
 
@@ -130,37 +132,21 @@
 | `permissions` | array | 权限声明：`filesystem`/`network`/`git`/`database`/`process`/`credential` 及范围 |
 | `dependencies` | array | 依赖插件 id 列表（仅校验存在性） |
 
-**示例（新建项目插件）：**
-```json
-{
-  "id": "com.tjc.newproject",
-  "name": "新建项目",
-  "version": "1.0.0",
-  "author": "luban-team",
-  "description": "向导式生成后端与管理后台（移动端可选）项目代码、配置、数据库与流水线，并实时展示 Agent 操作记录",
-  "entryAssembly": "LubanAgent.Plugin.NewProject.dll",
-  "targetApp": "LubanAgentCodex",
-  "minHostVersion": "2026.10.0",
-  "uiContributions": [
-    { "id": "newproject.main", "label": "新建项目", "icon": "project", "panelType": "WizardPanel" }
-  ],
-  "skills": [
-    { "id": "newproject.create", "name": "新建项目", "description": "向导式/对话式创建后端与管理后台（移动端可选）项目，含克隆模板、建库、编译、建流水线", "entry": "skills/newproject.create.md" }
-  ],
-  "mcpServers": [
-    { "name": "yunxiao", "transport": "inprocess", "enabled": true }
-  ],
-  "permissions": [
-    { "type": "filesystem", "scope": "workspace" },
-    { "type": "network", "hosts": ["codeup.aliyun.com", "flow.aliyun.com", "*.aliyuncs.com"] },
-    { "type": "git", "scope": "clone_push" },
-    { "type": "database", "scope": "execute" },
-    { "type": "process", "commands": ["dotnet", "git"] },
-    { "type": "credential", "stores": ["yunxiao_pat"] }
-  ],
-  "dependencies": []
-}
-```
+**「新建项目」插件的清单内容举例（用表格表达，不含代码）：**
+
+| 清单项 | 取值 |
+|--------|------|
+| 插件标识 | `com.tjc.newproject` |
+| 名称 | 新建项目 |
+| 版本 / 作者 | 1.0.0 / luban-team |
+| 说明 | 向导式生成后端与管理后台（移动端可选）项目代码、配置、数据库与流水线，并实时展示 Agent 操作记录 |
+| 入口程序集 | `LubanAgent.Plugin.NewProject.dll` |
+| 适用宿主 | LubanAgentCodex（最低版本 2026.10.0） |
+| 界面贡献 | 侧栏条目「新建项目」（图标 project，面板类型 向导面板） |
+| 贡献的技能 | `newproject.create`（新建项目）等，指向包内说明文件 |
+| 启用的 MCP | `yunxiao`（进程内） |
+| 声明的权限 | 文件系统（工作区）、网络（云效域名）、Git（克隆与推送）、数据库（执行）、进程（dotnet / git）、凭据（云效 PAT） |
+| 依赖插件 | 无 |
 
 ### 3.3 目录约定
 - **应用内置目录**：`<AppContext.BaseDirectory>/plugins/<plugin-id>/`，结构：`plugin.json` + `lib/`（程序集，含 `entryAssembly` 及其依赖）+ `assets/`（图标/模板）。
@@ -172,193 +158,50 @@
 > 方案 B 在 .NET 10 / Avalonia 完全可行：`AssemblyLoadContext` 支持 `isCollectible:true`，配合 `AssemblyDependencyResolver` 实现按插件隔离的依赖解析；UI 控件（`UserControl`）在独立 ALC 中实例化后由宿主内容区挂载。
 
 **契约与插件核心（框架 `LuBan.AIAgent/Plugins/` 模块，参照 `Skills/` 同构）：**
-```csharp
-namespace LuBan.AIAgent.Plugins;   // 框架模块 luban-framework/LuBan.AIAgent/Plugins
+**核心约定与角色（框架层定义，以下用表格表达）：**
 
-/// <summary>插件入口契约（每个插件入口程序集实现唯一 IPlugin）。</summary>
-public interface IPlugin
-{
-    string Id { get; }
-    Task InitializeAsync(IPluginHost host, CancellationToken ct = default);
-    Task ShutdownAsync(CancellationToken ct = default);
-    /// <summary>贡献给宿主 SkillRegistry 的专属 Skill 定义（详见 §4.10）。</summary>
-    IEnumerable<SkillDefinition> ContributeSkills();
-}
-
-/// <summary>宿主向插件暴露的能力（契约优先，Avalonia 无关）。</summary>
-public interface IPluginHost
-{
-    ILogger Log { get; }
-    IServiceProvider Services { get; }          // 宿主核心服务桥（WorkspaceManager/ConfigManager...）
-    IConfiguration Configuration { get; }
-    void RegisterPanel(string contributionId, Func<IPluginPanel> factory);
-    void RegisterSidebarEntry(PluginSidebarEntry entry);
-    void RegisterCommand(PluginCommandDescriptor descriptor); // 可选：向 ICommandCatalog 贡献命令
-    void RegisterSkill(SkillDefinition def);                 // 可选：向 SkillRegistry 贡献专属 Skill（见 §4.10）
-}
-
-/// <summary>插件面板契约；Avalonia UserControl 实现此接口即可被宿主挂载。</summary>
-public interface IPluginPanel
-{
-    string Title { get; }
-    void Detach();   // 卸载前由宿主调用，释放 UI 订阅/定时器
-}
-
-public class PluginSidebarEntry
-{
-    public string ContributionId { get; set; } = "";
-    public string Label { get; set; } = "";
-    public string Icon { get; set; } = "";
-    public string? PanelContributionId { get; set; } // 点击后挂载的面板贡献 id
-}
-
-public class PluginManifest { /* 与 plugin.json 字段一一对应（见 §3.2） */ }
-
-/// <summary>插件经 IPluginHost.RegisterCommand 向 ICommandCatalog 贡献的斜杠命令描述（见 §3.8）。</summary>
-public class PluginCommandDescriptor
-{
-    public string Name { get; set; } = "";                 // 命令名，如 newproject
-    public string Description { get; set; } = "";
-    public IReadOnlyList<string> Parameters { get; set; } = Array.Empty<string>();
-    public Func<IReadOnlyDictionary<string,string>, CancellationToken, Task> Handler { get; set; } = default!;
-}
-
-/// <summary>插件贡献的专属 Skill 定义；加载时由 PluginManager 注册进 LuBan.AIAgent.Skills.SkillRegistry。</summary>
-public class SkillDefinition
-{
-    public string Id { get; set; } = "";                              // 如 newproject.create
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Entry { get; set; } = "";                          // 插件包内 SKILL.md 相对路径
-    public IReadOnlyList<string> Permissions { get; set; } = Array.Empty<string>(); // 默认继承插件 permissions
-}
-
-/// <summary>插件生命周期状态（框架统一管理，对应 §3.5 / 附录状态机）。</summary>
-public enum PluginState { Installed, Enabled, Disabled, Error }
-
-/// <summary>插件基础抽象（框架提供，具体插件继承以复用生命周期/注册样板）。</summary>
-public abstract class PluginBase : IPlugin
-{
-    public abstract string Id { get; }
-    public virtual Task InitializeAsync(IPluginHost host, CancellationToken ct = default) => Task.CompletedTask;
-    public virtual Task ShutdownAsync(CancellationToken ct = default) => Task.CompletedTask;
-}
-
-/// <summary>框架内置插件目录（"基础插件"）：登记随 LuBan.AIAgent 发布的内建插件。</summary>
-public static class BuiltinPluginCatalog
-{
-    public static IReadOnlyList<PluginManifest> Builtins => /* 框架内置插件清单 */;
-}
-```
+| 约定 / 角色 | 职责 | 关键能力 |
+|-------------|------|----------|
+| 插件主程序 | 每个插件的入口 | 提供插件标识、初始化、关闭、声明要贡献的技能 |
+| 宿主能力接口 | 宿主提供给插件的「手」 | 写日志、访问宿主核心服务（工作区/配置等）、读取配置、注册面板、注册侧栏条目、注册命令、注册技能 |
+| 面板约定 | 插件提供的界面 | 标题；在卸载前由宿主调用以释放界面订阅与定时器 |
+| 侧栏条目 | 左侧栏显示的一项 | 贡献标识、标题、图标、点击后要打开的面板 |
+| 命令描述 | 插件贡献的命令 | 命令名、说明、参数列表、处理入口 |
+| 技能定义 | 插件贡献的技能描述 | 标识、名称、说明、包内说明文件路径、所需权限（默认继承插件权限） |
+| 插件清单 | 与 `plugin.json` 一一对应 | 见 §3.2 清单字段表 |
+| 生命周期状态 | 插件处于哪一档 | 已安装 / 已启用 / 已禁用 / 异常 |
+| 插件基类 | 框架的复用样板 | 提供初始化与关闭的默认实现，具体插件继承即可 |
+| 内置插件目录 | 框架自带的「基础插件」 | 登记随框架发布的内建插件清单 |
 
 **加载器（`LuBan.AIAgent.Plugins.PluginManager` / `PluginLoader`，位于框架，宿主无关）：**
-```
-PluginLoader.ScanAsync(pluginsDirs)
-   └─ 逐个读取 plugin.json → 反序列化为 PluginManifest
-        └─ 静态校验（manifest 合法 / 权限声明 / minHostVersion / dependencies 存在性 / credential 权限）
-             └─ 为每个插件 new PluginLoadContext(id, isCollectible:true)
-                  └─ AssemblyDependencyResolver 解析 lib/ 依赖
-                       └─ LoadFromAssemblyPath(entryAssembly)
-                            └─ Activator.CreateInstance<IPlugin>()
-                                 └─ plugin.InitializeAsync(host) → 注册侧栏条目 + 面板工厂
-                                      └─ 遍历 ContributeSkills() → SkillRegistry.RegisterPluginSkill(def)   // 新增 API，见 §4.10.1
-                                           └─ 遍历 manifest.mcpServers → MCPRegistry.RegisterPluginClient(client)  // 新增 API，见 §4.11.3
-```
+**加载流程（按顺序执行）：**
+1. 扫描插件目录，逐个读取清单文件；
+2. **静态校验**：清单是否合法、权限声明、最低宿主版本、依赖插件是否存在、凭据权限是否齐备；
+3. 为每个插件创建**独立且可回收的加载上下文**，并用依赖解析器加载 `lib/` 下的依赖；
+4. 加载入口程序集并创建插件主程序实例；
+5. 调用插件初始化：注册侧栏条目与面板工厂；
+6. 遍历插件声明的技能，逐个注册到宿主的技能表中；
+7. 遍历插件声明的 MCP 服务，逐个注册到宿主的 MCP 注册表中。
+> 说明：第 6、7 步依赖新增的注册能力（M1 落地）；当前技能表与 MCP 注册表为只读结构，需先扩展才支持插件作用域的注册与注销（见 §4.10.1 / §4.11.3）。
 **ALC 关键实现要点（避免类型/资源冲突）：**
 - `PluginLoadContext` 重写 `Load(AssemblyName)`：当 `name` 属于**共享框架集**（`LuBan.AIAgent`、`LuBan.AIAgent.Plugins`、`Avalonia`、`Avalonia.Controls` 等）时，直接返回默认 ALC 中已加载的同名程序集（`Assembly.Load(name)`），**禁止插件自带副本**；其余依赖走 `AssemblyDependencyResolver` 的 `Resolve` 路径。
 - 卸载：`Disabled`/`Uninstalled` 时先 `plugin.ShutdownAsync()` 释放 UI 订阅/文件句柄/定时器，再 `alc.Unload()`。Collectible ALC 无文件锁，但需确保无对插件类型的强引用（含事件订阅、静态缓存）方可 GC。
 - 隔离收益：插件版本冲突、异常、资源泄漏被限制在自身 ALC 内，不污染宿主与其他插件。
 
-**类图：**
-```mermaid
-classDiagram
-    class IPlugin {
-        <<interface>>
-        +string Id
-        +InitializeAsync(IPluginHost, CancellationToken)
-        +ShutdownAsync(CancellationToken)
-    }
-    class IPluginHost {
-        <<interface>>
-        +ILogger Log
-        +IServiceProvider Services
-        +IConfiguration Configuration
-        +RegisterPanel(string, Func~IPluginPanel~)
-        +RegisterSidebarEntry(PluginSidebarEntry)
-        +RegisterCommand(PluginCommandDescriptor)
-    }
-    class IPluginPanel {
-        <<interface>>
-        +string Title
-        +Detach()
-    }
-    class PluginManifest {
-        +string Id
-        +string Name
-        +string Version
-        +string EntryAssembly
-        +List UiContributions
-        +List Permissions
-    }
-    class PluginManager {
-        -Dictionary _entries
-        +LoadAllAsync(IEnumerable)
-        +Enable(string) / Disable(string) / Uninstall(string)
-        +GetPanel(string) IPluginPanel
-    }
-    class PluginLoader {
-        +ScanAsync(IEnumerable) List
-    }
-    class PluginLoadContext {
-        +bool IsCollectible
-        +Load(AssemblyName) Assembly
-    }
-    class NewProjectPlugin {
-        +string Id
-        +InitializeAsync(...)
-        +ShutdownAsync(...)
-    }
-    IPlugin <|.. NewProjectPlugin
-    IPluginHost <|.. PluginManager
-    IPluginPanel <|.. WizardPanel
-    PluginManager o-- PluginLoader
-    PluginLoader ..> PluginLoadContext : creates(collectible)
-    PluginManager --> IPlugin : holds
-    NewProjectPlugin ..> IPluginHost : uses(register)
-```
+**类图说明：**上文「核心约定与角色」表格已完整表达插件各组成部分及其职责，此处不再重复绘制。
 
-**加载时序：**
-```mermaid
-sequenceDiagram
-    participant App as App.axaml.cs
-    participant Splash as SplashWindow
-    participant Loader as PluginLoader
-    participant ALC as PluginLoadContext(Collectible)
-    participant Host as PluginManager(IPluginHost)
-    participant Sidebar as Sidebar
-    participant Win as MainWindow
+**加载时序（按参与方与先后顺序列出）：**
 
-    App->>Splash: SetStatus("加载插件…")
-    App->>Host: LoadAllAsync(pluginsDirs)
-    Host->>Loader: ScanAsync(dirs)
-    loop 每个 plugin.json
-        Loader->>Loader: 解析+静态校验(权限/minHostVersion/依赖/credential)
-        Loader->>ALC: new PluginLoadContext(id, isCollectible:true)
-        Loader->>ALC: LoadFromAssemblyPath(entryAssembly)
-        Loader->>ALC: Activator.CreateInstance<IPlugin>()
-        Loader->>Host: plugin.InitializeAsync(this)
-        Host->>Sidebar: RegisterSidebarEntry(entry)
-        Host->>Win: RegisterPanel(contributionId, factory)
-        Host->>Host: 遍历 ContributeSkills() → SkillRegistry.RegisterPluginSkill(def)
-        Host->>Host: 遍历 manifest.mcpServers → MCPRegistry.RegisterPluginClient(client)
-    end
-    App->>Win: mainWindow.Show()
-    Note over Win,Sidebar: 用户点击侧栏「新建项目」
-    Sidebar->>Win: PluginPanelRequested(contributionId)
-    Win->>Host: GetPanel(contributionId)
-    Host-->>Win: factory() => IPluginPanel
-    Win->>Win: PluginHost.Content = panel
-```
+| 顺序 | 谁 | 做什么 |
+|------|-----|--------|
+| 1 | 宿主启动器 | 构建插件管理器，并把它装配到宿主容器中 |
+| 2 | 插件管理器 | 扫描插件目录 → 读取并校验清单（合法性、权限、最低版本、依赖、凭据权限） |
+| 3 | 插件加载器 | 为每个插件创建**独立且可回收的加载上下文** |
+| 4 | 加载上下文 | 用依赖解析器加载 `lib/` 依赖，再加载入口程序集 |
+| 5 | 插件加载器 | 创建插件主程序实例 |
+| 6 | 插件主程序 | 初始化：向宿主注册侧栏条目与面板工厂 |
+| 7 | 插件管理器 | 把插件声明的技能注册进技能表；把声明的 MCP 服务注册进 MCP 注册表 |
+| 8 | 宿主界面 | 侧栏出现插件条目；点击后挂载对应面板 |
 
 ### 3.4.1 基础插件（PluginBase / BuiltinPluginCatalog）
 
@@ -396,25 +239,17 @@ sequenceDiagram
   - **兜底** DPAPI（`System.Security.Cryptography.ProtectedData`）将 PAT 加密后存于 `LocalApplicationData/LuBan/AIAgent/credentials/codeup.bin`（用户/机器作用域，非明文文件）；
   - 环境变量 `LUBAN_CODEUP_PAT` 作为三级兜底（CI/临时场景）。
   - 仅在插件运行时**按需取用**，用完即释放引用。
-- **PAT 取用时序（云效集成）：**
-```mermaid
-sequenceDiagram
-    participant Plugin as 新建项目插件
-    participant Cred as CredentialStore
-    participant OS as Win Credential Mgr / DPAPI
-    participant Git as git clone (Process)
-    participant Codeup as codeup.aliyun.com
+- **PAT 取用时序（云效集成，逐步说明）：**
 
-    Plugin->>Cred: GetSecretAsync("codeup:pat")
-    Cred->>OS: Read("luban-agent/codeup")
-    OS-->>Cred: plaintext token (仅驻留内存)
-    Cred-->>Plugin: token
-    Plugin->>Git: clone https://oauth2:<token>@codeup.aliyun.com/...
-    Git->>Codeup: HTTPS Basic(oauth2:token)
-    Codeup-->>Git: 仓库数据
-    Note over Plugin,Codeup: 云效 OpenAPI 统一接入点 openapi-rdc.aliyuncs.com<br/>REST 鉴权 Header: x-yunxiao-token: <token><br/>Git 克隆用 https://oauth2:<token>@codeup.aliyun.com/...<br/>中心版路径带 /organizations/{organizationId}，Region版不带
-    Plugin->>Cred: 释放 token 引用
-```
+| 顺序 | 谁 | 做什么 |
+|------|-----|--------|
+| 1 | 插件 | 向凭据服务索取令牌，传入凭据键名（如 `codeup:pat`） |
+| 2 | 凭据服务 | 向操作系统凭据区读取（优先 Windows 凭据管理器，兜底 DPAPI 加密文件，再次环境变量） |
+| 3 | 操作系统凭据区 | 返回令牌明文（**仅驻留内存，不落盘、不入库**） |
+| 4 | 插件 | 用令牌执行 Git 克隆（`https://oauth2:<令牌>@codeup.aliyun.com/...`） |
+| 5 | 云效 | 校验通过后返回仓库数据 |
+| 6 | 插件 | **立即释放令牌引用**，内存中不再保留 |
+| — | 补充说明 | 云效 OpenAPI 统一接入点为 `openapi-rdc.aliyuncs.com`；REST 调用用请求头 `x-yunxiao-token`；Git 克隆用 `oauth2:<令牌>@codeup.aliyun.com/...`；中心版路径带 `/organizations/{组织ID}` |
 
 ### 3.8 与 skills / commands / rules 的关系（共存边界）
 | 扩展点 | 机制（真实类型） | 适用场景 | 与插件边界 |
@@ -467,12 +302,12 @@ sequenceDiagram
 
 > 作为**首次使用云效的新人**，我希望向导能明确告知如何获取并配置个人访问令牌（PAT）及其所需权限，从而顺利跑通克隆与建流水线，而不必自行摸索鉴权。
 
-### 4.3 功能需求（6 步向导）
+### 4.3 功能需求（7 步向导）
 
 **前置条件 · 凭据与云效组织/地域**
 - **PAT 预配置**：用户需在 codex 设置中预先录入**云效个人访问令牌（PAT）**（详见 §4.9）。插件运行时从宿主安全凭据区按需取用，不落库明文、不回显日志。
 - **云效组织（中心版必填）**：`ProjectSpec.organizationId`（云效企业/组织 ID）取自 codex 设置中的云效连接配置（见 §4.5、§6 开放问题 #7，已确认本企业用**中心版**）；中心版所有 OpenAPI 路径均带 `/organizations/{organizationId}`，接入点固定 `openapi-rdc.aliyuncs.com`。`flowRegion` 在中心版下无需填写（region 已隐含于统一接入点，详见 §4.5）。当前以 PAT 为统一鉴权假设，AK/SK 方案待定（见 §6 #6）。
-- 若 PAT 未配置/已过期，或 `organizationId` 缺失，应在 Step 3 / Step 6 前阻断并给出明确引导（见 §4.7）。
+- 若 PAT 未配置/已过期，或 `organizationId` 缺失，应在 Step 3 / Step 6 / Step 7 前阻断并给出明确引导（见 §4.7）。
 
 **Step 1 · 填写项目信息**
 - 必填：项目名称、英文缩写（唯一性校验、命名规范 `[a-z][a-z0-9]*`）、**项目介绍**（一句话描述项目用途，写入 `ProjectSpec.projectIntro`，并用于初始化项目级 Agent 上下文与生成 README 占位）、**本地目录**（`localPath`，通过目录选择器指定，作为 Step 2 工作区根目录，需做可写校验）。
@@ -486,7 +321,7 @@ sequenceDiagram
 - **依次初始化**（全部就绪后才会进入 Step 3）：
   1. **工作区（Workspace）**：经宿主 `IWorkspaceManager` 在 `localPath` 创建/绑定本项目工作区目录，写入 `ProjectSpec` 快照（`projectName` / `abbreviation` / `projectIntro` / `ends` / `localPath`），后续步骤均在该工作区作用域内执行。
   2. **会话（Session）**：创建项目级 `SessionContext`（或复用宿主会话机制），作为本次新建项目任务的执行载体，也是 **Agent 操作记录区的数据源**；会话与向导生命周期绑定，向导关闭/中止时一并释放。
-  3. **Skill 注册**：将插件贡献的 `newproject.*` 系列 Skill（`newproject.create` + 4 个原子 skill，见 §4.10）经新增框架 API `SkillRegistry.RegisterPluginSkill(...)` 注册进当前会话作用域的 `SkillRegistry`（M1 落地；当前 `SkillRegistry` 为静态只读，需扩展以支持插件作用域注册/注销）。
+  3. **Skill 注册**：将插件贡献的 `newproject.*` 系列技能（主技能 + 5 个单步技能，见 §4.10）注册进当前会话，使其在该项目的对话中可用（详见 §4.10）。
   4. **MCP 客户端注册**：将 `yunxiao` MCP 客户端经新增框架 API `MCPRegistry.RegisterPluginClient(...)` 注册进当前会话作用域的 `MCPRegistry`（M1 落地，详见 §4.11.3），使 `mcp_yunxiao_*` 工具在后续步骤与聊天中可用。
   5. **项目级 Agent**：基于宿主 `AgentHostServices` 构造项目级 Agent 运行上下文（project-scoped host），承载后续各步的执行与操作记录采集；向导后端 `INewProjectService` 同样在该上下文中解析（见 §4.10.2）。
 - 调用的云效能力：**无**（纯本地初始化，不触网）。
@@ -513,7 +348,16 @@ sequenceDiagram
 - 失败可定位到工程与错误行，阻断后续步骤但保留已完成产物。
 - 调用的云效能力：**无**（本地 `dotnet build`）。
 
-**Step 6 · 创建流水线（云效 Flow，每端一条，共 3 条）**
+**Step 6 · 推送到新代码库（云效 Codeup）**
+- **为什么必须有这一步**：Step 7 的流水线要监听**本项目自己的代码提交**，其「代码来源」必须指向**本项目专属仓库**；若沿用企服版模板仓库，流水线会盯着错误的代码源，持续集成也就失去项目独立性。因此本步由原先的「可选」正式升级为向导的**标准步骤**。
+- **做什么**：
+  1. 在云效 Codeup 为本**项目新建专属代码仓库**：仓库名默认取项目英文缩写（可修改）；可见性可选「私有 / 组织内公开」；归属组织取自云效连接配置。
+  2. 把本地工作区中已完成**占位符替换并通过编译验证**的代码**推送**到该新仓库：逐端推送，第 1 步未勾选的端跳过。
+- **用户可调整**：新仓库名称、可见性（其余自动完成）。
+- 调用的云效能力：**Codeup 创建仓库 + Git 推送**（需 代码管理·读写 权限）。
+- 产出：本项目专属 Codeup 仓库及其地址 —— **供 Step 7 流水线用作代码来源**。
+
+**Step 7 · 创建流水线（云效 Flow，每端一条，共 3 条）**
 - **数量与来源**：三端通常各对应一条流水线（backend / admin / mobile），**共 3 条**；mobile 流水线仅在 Step 1 勾选移动端时创建。做法：**先依据企服版 TJCES 的 3 条参考流水线定义，克隆为本项目的对应流水线**，而非从零手写 YAML（参考源 ID 见 `ProjectSpec.referencePipelines`，来自插件配置，§4.5）。
 - **克隆-替换-创建流程**（对 Step 1 所选的每一个端执行）：
   1. **拉取参考定义**：经连接器 `FlowClient.GetPipelineAsync` 取企服版 TJCES 该端的流水线 YAML（`pipelineConfig.flow` / `content`；MCP 侧由 `flow_clone_pipeline` 工具封装此读取）。
@@ -522,9 +366,9 @@ sequenceDiagram
 - **必须变更的替换点**（替换规则由 `ProjectSpec` 推导，确定性、可回放）：
   - **名称**：流水线名及内部服务/应用名，`tjces-*` → `{abbreviation}-*`（如 `tjces-backend` → `demo-backend`）。
   - **端口**：后端/管理端/移动端监听端口（模板默认端口 → 本项目端口，来源于 `dbConfig`/模板约定或 Step 4 配置）。
-  - **Codeup 代码仓库地址**：流水线源 `sources[].data.repo` 由企服版 `tjces` 仓库改为**本项目在 Step 3/推送阶段创建的 Codeup 仓库地址**（见下方依赖）。
+  - **Codeup 代码仓库地址**：流水线源（`sources[].data.repo`）由企服版 `tjces` 仓库改为**本项目在 Step 6 创建的专属 Codeup 仓库地址**。
   - **流水线参数**：环境变量、构建参数、部署目标等随端与服务名同步调整。
-- **依赖说明（重要）**：流水线源仓库需指向**本项目自有仓库**。若 Step 3 之后已将新项目推送到新建的 Codeup 仓库（推荐，见 §4.4 可选写路径），则源地址为新建仓库；若未推送，源仍指向 `tjces` 模板仓（仅适合演示，CI 不具备本项目独立性）。**故推荐默认创建新 Codeup 仓库并推送**，使 Step 6 流水线源正确。
+- **依赖说明**：Step 6 已保证本项目有专属仓库且代码已推送，故 Step 7 每条流水线的代码来源均指向本项目仓库，第 1 步未勾选的端不创建对应流水线。
 - 调用的云效能力：**Flow `GetPipeline` + `CreatePipeline` OpenAPI**（需 流水线·读写权限）。
 - 产出：云效 Flow 中已创建的**本项目各端流水线**（id 列表）。
 
@@ -536,8 +380,9 @@ flowchart TD
     B --> C[Step3 克隆模板·云效 Codeup]
     C --> D[Step4 配置与建库]
     D --> E[Step5 编译检查]
-    E --> F[Step6 创建流水线·云效 Flow·按端×3]
-    F --> G[完成]
+    E --> F[Step6 推送到新代码库·云效 Codeup]
+    F --> G[Step7 创建流水线·云效 Flow·按端×3]
+    G --> H[完成]
 ```
 
 **每步实际调用的云效能力：**
@@ -549,7 +394,8 @@ flowchart TD
 | Step 3 | 云效 Codeup 克隆模板仓库 | Git over HTTPS（`oauth2:<PAT>@...`） | 代码管理·读（克隆） |
 | Step 4 | 无 | — | — |
 | Step 5 | 无 | — | — |
-| Step 6 | 云效 Flow 创建流水线（按端 ×3，先克隆替换） | OpenAPI `GetPipeline`（读 TJCES 参考 YAML）+ `CreatePipeline`（`POST /oapi/v1/flow/.../pipelines`，`x-yunxiao-token`） | 流水线·读写 |
+| Step 6 | 云效 Codeup 创建新代码库 + 推送本项目代码 | OpenAPI 创建仓库（`oapi/v1/codeup/...`，`x-yunxiao-token`）+ Git 推送（`oauth2:<PAT>@`） | 代码管理·读写 |
+| Step 7 | 云效 Flow 创建流水线（按端 ×3，先克隆替换） | OpenAPI `GetPipeline`（读 TJCES 参考 YAML）+ `CreatePipeline`（`POST /oapi/v1/flow/.../pipelines`，`x-yunxiao-token`） | 流水线·读写 |
 
 ### 4.4 外部系统集成
 | 系统 | 用途 | 鉴权方式（真实 PAT 用法） | 域名 / 端点 |
@@ -561,25 +407,28 @@ flowchart TD
 - **本设计采用云效「中心版」**：接入点固定 `openapi-rdc.aliyuncs.com`，所有 OpenAPI 路径带 `/organizations/{organizationId}`，`organizationId` 取自 codex 云效连接配置（必填）。如后续切换 Region版，仅需替换接入点域并去除路径中的 `organizationId`（见 §6 #7）。
 
 ### 4.5 数据模型
-```typescript
-ProjectSpec {
-  projectName: string
-  abbreviation: string        // 英文缩写，唯一
-  projectIntro: string        // 项目介绍（一句话），用于初始化 Agent 上下文与 README 占位
-  ends: ('mobile'|'admin'|'backend')[]   // 约束：backend、admin 必含；mobile 可选
-  templateSource: 'tjc/TJCES' // 云效 Codeup 企服版模板仓库
-  localPath: string           // 本地目录（Step 1 目录选择器指定，作为工作区根）
-  dbConfig: { connectionString, scripts[] }
-  pipelineRef: 'flow.aliyun.com/all' // 云效 Flow 企服版流水线参考页
-  referencePipelines: { backend: string, admin: string, mobile?: string } // 企服版 TJCES 三端参考流水线 ID（来自插件配置，Step2 载入；Step6 克隆源）
-  credentialRef: string       // 宿主安全凭据区中 PAT 的引用标识（非令牌明文）
-  organizationId: string      // 云效企业/组织 ID（中心版必填；所有 OpenAPI 路径 /organizations/{organizationId}）
-  flowRegion: string          // 中心版不使用（region 已隐含于统一接入点 openapi-rdc.aliyuncs.com）；仅 Region版 预留，无需用户填写
-  createdAt: datetime
-}
-```
-- 插件运行状态（当前步、日志、错误）存于宿主插件状态表，便于中断恢复。
-- `credentialRef` 仅保存凭据区键名，PAT 本身不进入本项目数据模型与数据库。
+
+新建项目全过程围绕一份「**项目档案**」推进，下表是这份档案的主要信息（去除了实现细节，只保留业务含义）：
+
+| 信息项 | 说明 | 来源 / 约束 |
+|--------|------|-------------|
+| 项目名称 | 项目的中文名称 | Step 1 用户填写 |
+| 英文缩写 | 项目代号，用于目录、仓库名、流水线名；需唯一 | Step 1 用户填写（命名规范：小写字母开头，可含数字） |
+| 项目介绍 | 一句话描述项目用途 | Step 1 用户填写；用于初始化项目助手与 README 占位 |
+| 端选择 | 后端、管理端**必选**；移动端可选 | Step 1 用户勾选，决定后续各步范围 |
+| 本地目录 | 代码落到本机的位置 | Step 1 用户选择；即工作区根目录 |
+| 模板来源 | 企服版模板仓库（`tjc/TJCES`） | 固定，插件配置 |
+| 数据库配置 | 连接串、建库脚本 | Step 4 生成/填写 |
+| 流水线参考 | 企服版流水线参考页 | 固定；Step 7 以此为模板克隆 |
+| 参考流水线清单 | 企服版三端各自的参考流水线标识（后端/管理端/移动端） | 来自插件配置，Step 2 载入；Step 7 的克隆来源 |
+| **目标代码仓库** | 本项目**专属**代码仓库：仓库名（默认取英文缩写）、可见性（私有/组织内公开）、创建后的仓库地址 | Step 6 创建；**仓库地址是 Step 7 流水线代码来源** |
+| 凭据引用 | 云效 PAT 在安全凭据区中的键名（**不含令牌明文**） | 由 codex 设置录入 |
+| 组织 ID | 云效企业/组织 ID | 中心版必填，取自 codex 云效连接配置 |
+| 地域（region） | 中心版下无意义，仅 Region版 预留 | 无需用户填写 |
+| 创建时间 | 项目创建时间 | 自动生成 |
+
+- 插件运行状态（当前步、日志、错误）另行存于宿主的插件状态记录中，便于中断后恢复。
+- 安全要点：**令牌明文不进入项目档案与任何数据库**，仅保存凭据区的键名。
 
 ### 4.6 界面（codex）
 
@@ -587,14 +436,217 @@ ProjectSpec {
 
 - **左侧栏**：插件条目「新建项目」（安装启用后由 `uiContributions` 渲染）。
 - **右侧内容区（双栏）**：
-  - **左栏 · 向导区**：步骤条（1–6）指示进度；当前步表单 / 进度条；操作按钮：上一步 / 下一步 / 完成 / 取消。
+  - **左栏 · 向导区**：步骤条（1–7）指示进度；当前步表单 / 进度条；操作按钮：上一步 / 下一步 / 完成 / 取消。
   - **右栏 · Agent 操作记录区**（核心交互区）：
     - 时间线式流式记录，随向导执行**实时追加**；
     - 每条记录：动作图标 + 动作名 + 状态徽标（进行中 / 成功 / 失败 / 跳过）+ 输入参数摘要 + 结果/输出（可折叠展开）+ 发生时间；
     - **不回显 PAT 明文**（凭据仅显示 `***`），与日志区同源脱敏；
     - 失败记录提供「查看详情 / 重试 / 调整参数」入口：用户可修改当前步相关输入（如英文缩写、模板路径、连接串、端选择）后**仅重跑该步**，已成功步骤的产物予以保留；
     - 顶部提供「清空 / 导出记录」与按状态、按步骤的过滤。
-- **设置项（前置）**：codex 设置中提供「云效 PAT」录入入口（仅写入宿主安全凭据区），并在向导 Step 3/6 前提示是否已配置。
+- **设置项（前置）**：codex 设置中提供「云效 PAT」录入入口（仅写入宿主安全凭据区），并在向导 Step 3/6/7 前提示是否已配置。
+
+#### 4.6.1 七步界面草图
+
+下面 7 张草图按步骤顺序展示界面形态：**左边是向导区**（做什么、填什么），**右边是 Agent 操作记录区**（正在做什么、成功还是失败）。草图仅为示意，用于对齐产品理解，不代表最终视觉稿。
+
+**第 1 步 · 填写项目信息** —— 用户填写项目基本资料并选择要创建哪些端，填完点「下一步」触发后续自动化。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ● 1 信息 ─ 2 初始化 ─ 3 模板 ─ 4 数据 ─ 5 编译 ─ 6 仓库 ─ 7 流水线                    │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 1 步 · 填写项目信息                    │ Agent 操作记录                 │
+│                                          │ ────────────────────────────── │
+│                                          │ ● 等待填写表单      [进行中] —  │
+│ 项目名称 *     [ 智慧门禁管理系统                   ] │ ○ 校验项目名称      [待执行] —  │
+│ 英文缩写 *     [ JNMS                               ] │ ○ 校验英文缩写      [待执行] —  │
+│ 项目介绍 *     [ 面向园区的一体化门禁               ] │ ○ 检查本地目录      [待执行] —  │
+│                 [ 与访客管理平台（多端协同）         ] │                                │
+│ 本地目录 *     [ D:\WorkBench\JNMS          ] [浏览] │                                │
+│                                          │                                │
+│ 需要创建哪些端？                           │                                │
+│  [✓] 后端（必选，默认勾选，不可取消）       │                                │
+│  [✓] 管理端（必选，默认勾选，不可取消）     │                                │
+│  [ ] 移动端（可选，勾选后才会创建）         │                                │
+│                                          │                                │
+│ 提示：带 * 为必填，端选择决定后面几步做什么。│                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [取消]                    [下一步 ▶]                │  第 1 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 2 步 · 初始化项目脚手架** —— 用户只需等待，助手自动完成环境准备；右栏实时滚动每条动作的状态与耗时。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ● 2 初始化 ─ 3 模板 ─ 4 数据 ─ 5 编译 ─ 6 仓库 ─ 7 流水线                  │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 2 步 · 初始化项目脚手架                │ Agent 操作记录                 │
+│                                          │ ────────────────────────────── │
+│ 正在为项目准备专属环境，无需操作，请稍候…  │ ✓ 准备工作区        [成功] 3秒  │
+│ 总体进度  ████████░░░░  4 / 5             │ ✓ 建立项目会话      [成功] 2秒  │
+│                                          │ ✓ 装配项目技能      [成功] 5秒  │
+│ ✓ 准备工作区      3 秒    已完成          │ ✓ 接通云效连接器    [成功] 4秒  │
+│    └ 已建好项目专属目录，用于存放本项目文件 │ ● 生成项目专用助手  [进行中] —  │
+│ ✓ 建立项目会话    2 秒    已完成          │    └ 最后一步，完成后自动继续   │
+│    └ 后面每一步都会在这个会话里进行       │                                │
+│ ✓ 装配项目技能    5 秒    已完成          │                                │
+│ ✓ 接通云效连接器  4 秒    已完成          │                                │
+│ ● 生成项目专用助手 —      进行中          │                                │
+│    └ 正在生成一个懂这个项目的专属助手     │                                │
+│                                          │                                │
+│ 提示：本步无需任何输入，全部由助手自动完成。│ 已完成 4 项 · 进行中 1 项       │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                [下一步 ▶]                 │  第 2 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 3 步 · 克隆模板** —— 用户看到模板代码按端拉取并自动改名，全程无需操作；未勾选的端会被明确跳过。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ✓ 2 初始化 ─ ● 3 模板 ─ 4 数据 ─ 5 编译 ─ 6 仓库 ─ 7 流水线                │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 3 步 · 克隆模板                        │ Agent 操作记录                 │
+│ 正在从云效代码平台的企服版模板仓库取代码   │ ────────────────────────────── │
+│                                          │ ✓ 连接云效代码平台  [成功] 2秒  │
+│ 代码来源：云效代码平台 · 企服版模板仓库   │ ✓ 读取模板清单      [成功] 3秒  │
+│ 落地位置：D:\WorkBench\JNMS               │ ✓ 拉取后端模板      [成功] 12秒 │
+│                                          │ ● 拉取管理端模板    [进行中] —  │
+│ ✓ 后端模板        12 秒   已完成          │ ○ 拉取移动端模板    [跳过] —    │
+│    └ 已放到项目目录的后端位置             │    └ 第 1 步未勾选移动端        │
+│ ✓ 管理端模板      —       进行中          │ ○ 替换项目名与缩写  [待执行] —  │
+│    └ 正在落地并改名                       │                                │
+│ ⊘ 移动端模板      —       已跳过          │                                │
+│    └ 第 1 步没有勾选移动端，这一步不处理   │                                │
+│                                          │                                │
+│ 自动替换：命名空间 / 项目名称 / 英文缩写 / 包名                                        │
+│                                          │                                │
+│ 提示：取回后会自动改成你的项目名称与缩写。 │                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                [下一步 ▶]                 │  第 3 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 4 步 · 配置与数据库** —— 用户填写数据库连接信息并可先测试连接，随后助手生成配置文件并执行建库、建表、导入初始数据。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ✓ 2 初始化 ─ ✓ 3 模板 ─ ● 4 数据 ─ 5 编译 ─ 6 仓库 ─ 7 流水线              │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 4 步 · 配置与数据库                    │ Agent 操作记录                 │
+│ 请填写数据库连接信息（仅本地开发用）      │ ────────────────────────────── │
+│                                          │ ✓ 生成配置文件      [成功] 2秒  │
+│ 主机地址 *     [ 127.0.0.1                          ] │ ● 连接数据库        [进行中] — │
+│ 端口 *         [ 3306                               ] │    └ 用你填的信息试连一次     │
+│ 用户名 *       [ root                               ] │ ○ 创建数据库        [待执行] — │
+│ 密码 *         [ ********                           ] │ ○ 创建数据表        [待执行] — │
+│ 数据库名 *     [ JNMS_DB                            ] │ ○ 导入初始数据      [待执行] — │
+│                                          │                                │
+│  [ 测试连接 ]  [ 使用默认值 ]             │                                │
+│                                          │                                │
+│ 生成与执行进度                             │                                │
+│ ✓ 生成配置文件   2 秒    已完成            │                                │
+│ ● 连接数据库     —       进行中            │                                │
+│ ○ 创建数据库     —       待执行            │                                │
+│ ○ 创建数据表     —       待执行            │                                │
+│ ○ 导入初始数据   —       待执行            │                                │
+│                                          │                                │
+│ 提示：连接串会写入配置文件，可点开查看；   │                                │
+│ 若连不上，改完信息后点「重新测试」即可。   │                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                [下一步 ▶]                 │  第 4 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 5 步 · 编译检查** —— 用户看到各端编译结果与失败定位（哪个工程、哪一行、什么原因），可查看完整错误、修好后重试。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ✓ 2 初始化 ─ ✓ 3 模板 ─ ✓ 4 数据 ─ ● 5 编译 ─ 6 仓库 ─ 7 流水线            │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 5 步 · 编译检查                        │ Agent 操作记录                 │
+│ 正在逐端编译代码，确认代码能正常构建       │ ────────────────────────────── │
+│                                          │ ✓ 准备编译环境      [成功] 5秒  │
+│ ✓ 后端            48 秒   成功            │ ✓ 编译后端          [成功] 48秒 │
+│ ✗ 管理端          32 秒   失败            │ ✗ 编译管理端        [失败] 32秒 │
+│ ⊘ 移动端          —       已跳过          │ ⊘ 编译移动端        [跳过] —    │
+│    └ 第 1 步没有勾选移动端                │ ● 汇总各端结果      [失败] —    │
+│                                          │    └ 1 个端失败，需重试         │
+│ 失败详情（管理端）                        │                                │
+│ ┌────────────────────────────────────────────┐                             │
+│ │ 所在工程：管理端 Web 工程                  │                             │
+│ │ 错误位置：第 132 行附近                    │                             │
+│ │ 原因：少了一个必填的配置项                 │                             │
+│ └────────────────────────────────────────────┘                             │
+│                                          │                                │
+│  [ 查看完整错误 ]   [ 修好后重试 ]   [ 跳过本步 ]                                      │
+│                                          │                                │
+│ 修好后点「修好后重试」，只重跑失败的那个端。│                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                [下一步 ▶]                 │  第 5 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 6 步 · 推送到新代码库** —— 用户确认新仓库名称（默认取项目英文缩写）与可见性（私有 / 组织内公开），确认后助手创建仓库并推送代码。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ✓ 2 初始化 ─ ✓ 3 模板 ─ ✓ 4 数据 ─ ✓ 5 编译 ─ ● 6 仓库 ─ 7 流水线          │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 6 步 · 推送到新代码库                  │ Agent 操作记录                 │
+│ 确认即将在云效代码平台创建的新仓库信息     │ ────────────────────────────── │
+│                                          │ ● 确认仓库信息      [进行中] —  │
+│ 新仓库名称 *   [ JNMS                               ] │ ○ 创建新仓库        [待执行] — │
+│    └ 默认取项目英文缩写，可修改            │ ○ 关联本地代码      [待执行] — │
+│ 可见性 *       (•) 私有    ( ) 组织内公开  │ ○ 推送后端代码      [待执行] — │
+│    └ 私有＝仅项目成员可见；组织内公开＝组织内可读     │ ○ 推送移动端代码    [跳过] —   │
+│ 归属组织 *     [ 企服研发组织                       ] │    └ 第 1 步未勾选移动端       │
+│                                          │                                │
+│ [✓] 我已确认仓库名称与可见性，开始推送     │                                │
+│                                          │                                │
+│ 推送进度                                   │                                │
+│ ✓ 创建新仓库     4 秒    已完成            │                                │
+│ ✓ 关联本地代码   2 秒    已完成            │                                │
+│ ● 推送后端代码   —       进行中            │                                │
+│ ○ 推送管理端代码 —       待执行            │                                │
+│ ○ 推送移动端代码 —       已跳过            │                                │
+│                                          │                                │
+│ 提示：推送完成后代码会在云端留一份备份；    │                                │
+│ 后面的流水线会监听这个仓库的提交。         │                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                [下一步 ▶]                 │  第 6 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
+
+**第 7 步 · 创建流水线** —— 用户看到要为三个端各建 1 条流水线（共 3 条），以及每条会替换的 4 项内容；全部成功后点「完成」结束向导。
+
+```
+┌───── 新建项目向导 ───────────────────────────────────────────────────────────────────┐
+│ ✓ 1 信息 ─ ✓ 2 初始化 ─ ✓ 3 模板 ─ ✓ 4 数据 ─ ✓ 5 编译 ─ ✓ 6 仓库 ─ ● 7 流水线        │
+├──────────────────────────────────────────┼────────────────────────────────┤
+│ 第 7 步 · 创建流水线                      │ Agent 操作记录                 │
+│ 正在为三个端各建一条流水线（共 3 条）     │ ────────────────────────────── │
+│                                          │ ✓ 读取参考流水线    [成功] 6秒  │
+│ 参考来源：云效代码平台 · 企服版参考流水线 │ ✓ 创建后端流水线    [成功] 8秒  │
+│                                          │ ● 创建管理端流水线  [进行中] —  │
+│ ✓ 后端流水线      端口 8080      [成功]   │ ○ 创建移动端流水线  [待执行] —  │
+│    名称 JNMS-后端流水线 · 仓库 JNMS · 参数 2 项    │ ○ 校验流水线参数    [待执行] —  │
+│ ✓ 管理端流水线    端口 8081      [成功]   │    └ 替换为本项目端口与仓库     │
+│    名称 JNMS-管理端流水线 · 仓库 JNMS · 参数 2 项  │                                │
+│ ● 移动端流水线    端口 8082      [进行中] │                                │
+│    名称 JNMS-移动端流水线 · 仓库 JNMS · 参数 1 项  │                                │
+│                                          │                                │
+│ 每条流水线会自动替换这 4 项：             │                                │
+│   ① 流水线名称    ② 服务端口              │                                │
+│   ③ 代码仓库地址  ④ 流水线参数            │                                │
+│                                          │                                │
+│ 提示：流水线建好后，代码提交就会自动构建部署。                                        │
+│ 三条都成功后，点「完成」即可结束向导。     │                                │
+├──────────────────────────────────────────┴────────────────────────────────┤
+│  [上一步]                  [完成]                   │  第 7 步 / 共 7 步  │
+└──────────────────────────────────────────┴────────────────────────────────┘
+```
 
 ### 4.7 异常处理与回滚
 - 每步可独立失败并提示，不影响已成功步骤的产物。
@@ -607,13 +659,13 @@ ProjectSpec {
 
 ### 4.8 验收标准
 1. 插件安装并启用后，codex 左侧栏出现「新建项目」入口，点击右侧显示向导面板。
-2. 完整走完 6 步（含 Step 2 初始化项目脚手架）可：生成**后端与管理后台代码（移动端按需）**、配置就绪、数据库构建成功、`dotnet build` 通过、**云效 Flow 流水线创建成功（三端各一条，共 3 条；mobile 仅当选时）**，且各流水线源仓库指向本项目自有 Codeup 仓库、名称/端口已按本项目替换。
+2. 完整走完 7 步（含 Step 2 初始化项目脚手架）可：生成**后端与管理后台代码（移动端按需）**、配置就绪、数据库构建成功、`dotnet build` 通过、**代码已推送到本项目专属 Codeup 仓库**、**云效 Flow 流水线创建成功（三端各一条，共 3 条；mobile 仅当选时）**，且各流水线源仓库指向本项目自有 Codeup 仓库、名称/端口已按本项目替换。
 3. 任一外部系统不可用（如 **PAT 失效 / 权限不足 / 网络不通**）时，给出明确错误与修复指引，不静默失败。
 4. 停用 / 卸载后：UI 入口消失、ALC 卸载、无文件/进程残留、状态表清理。
 5. 权限越界操作（如访问白名单外域名）被宿主拦截并记录。
-6. 未配置 PAT 或 PAT 权限不足时，向导能在 Step 3 / Step 6 前给出明确拦截与修复指引；PAT 不出现在日志、配置文件或数据库中。
+6. 未配置 PAT 或 PAT 权限不足时，向导能在 Step 3 / Step 6 / Step 7 前给出明确拦截与修复指引；PAT 不出现在日志、配置文件或数据库中。
 7. 向导在执行过程中**实时展示 Agent 操作记录**（时间线、状态、输入参数与结果摘要），用户可在失败步骤就地调整参数并重试；PAT 明文不出现于操作记录中。
-8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject.create` 完成同等六步流程（含初始化脚手架）；`newproject.*` 系列 skill 经 `SkillRegistry.RegisterPluginSkill` 注册后可见、可触发、卸载时经 `UnregisterPluginSkill` 注销。
+8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject.create` 完成同等七步流程（含初始化脚手架）；`newproject.*` 系列 skill 经 `SkillRegistry.RegisterPluginSkill` 注册后可见、可触发、卸载时经 `UnregisterPluginSkill` 注销。
 9. 向导与 `newproject.*` skill 共享同一 `INewProjectService`，改动后端逻辑对两条入口同时生效，无逻辑分叉。
 10. 框架云效连接器 `YunxiaoConnector` 的 8 个操作有单元/集成测试覆盖（PAT 取用、Codeup/Flow 调用、错误映射）；连接器不缓存 PAT 明文、不回显日志。
 11. 启用插件后，Agent 工具表出现 `mcp_yunxiao_codeup_*` / `mcp_yunxiao_flow_*` 共 8 个工具，可在任意对话即席调用（查库/查流水线）并受 `IToolConfirmationService` 规划/确认；`newproject.*` skill 的云效步骤经这些工具执行且 PAT 不回显；**停用/卸载插件后 `yunxiao` MCP 客户端从 `MCPRegistry` 移除、工具消失**。
@@ -652,22 +704,22 @@ ProjectSpec {
   > **实现注意（P0）**：当前 `LuBan.AIAgent.Skills.SkillRegistry` 为静态只读（无 `Register` 方法、命令目录 `ICommandCatalog` 亦为只读），需随 M1 扩展出**插件作用域**的 `RegisterPluginSkill` / `UnregisterPluginSkill`（以及 §4.11.3 的 `MCPRegistry.RegisterPluginClient` / `UnregisterPluginClient`）。注册入口同样受 §3.8 权限与 §4.9 PAT 约束。
 
 **4.10.2 共享后端服务（关键）**
-插件对外暴露 `INewProjectService`（实现于 `LubanAgent.Plugin.NewProject`），封装六步流程中的五个后端原子能力（Step 1 表单采集不属服务）；**向导面板与专属 Skill 均调用此服务**，互不重复：
-```csharp
-public interface INewProjectService
-{
-    Task<ProjectSpec> InitWorkspaceAsync(ProjectSpec spec, CancellationToken ct);          // Step2 初始化项目脚手架（工作区/会话/Agent/MCP/Skill）
-    Task<ProjectSpec> CloneTemplateAsync(ProjectSpec spec, CancellationToken ct);          // Step3 克隆所选端模板
-    Task<ProjectSpec> SetupDatabaseAsync(ProjectSpec spec, CancellationToken ct);          // Step4 配置+建库
-    Task<BuildResult> BuildAsync(ProjectSpec spec, CancellationToken ct);                  // Step5 编译
-    Task<PipelineResult> CreatePipelinesAsync(ProjectSpec spec, CancellationToken ct);     // Step6 建流水线
-}
-```
-> 该服务在 `InitializeAsync` 中注册到 `IPluginHost.Services`（DI）；向导与 Skill 通过 `host.Services.GetRequiredService<INewProjectService>()` 获得同一实例。
+插件对外提供一套「**共享能力层**」，封装七步流程中的六项后端能力（第 1 步表单采集不在此层）。**向导面板与聊天入口都调用这一层**，因此不存在两套实现、也不会逻辑分叉：
+
+| 能力 | 对应步骤 | 做什么 |
+|------|----------|--------|
+| 初始化项目环境 | Step 2 | 建工作区、建会话、装配技能、接通云效、生成项目助手 |
+| 克隆模板 | Step 3 | 拉取所选端模板代码并替换占位符 |
+| 配置与建库 | Step 4 | 生成配置、执行建库脚本 |
+| 编译检查 | Step 5 | 逐端编译并汇总结果 |
+| **推送到新代码库** | **Step 6** | **创建本项目专属代码仓库并推送代码** |
+| 创建流水线 | Step 7 | 逐端克隆参考流水线并替换后创建（按端 ×3） |
+
+> 该能力层在插件初始化时注册到宿主容器；向导与聊天取得的是**同一个实例**，改动对两条入口同时生效。
 
 **4.10.3 主 Skill：`newproject.create`**
 - **触发方式**：聊天输入「新建一个项目，缩写 xxx，要后端和管理后台」等自然语言，Agent 解析后调用该 skill。
-- **SKILL.md 要点**：引导 Agent 收集 `projectName` / `abbreviation` / `projectIntro` / `ends`（后端、管理端必选，移动端可选）/ `localPath`，**本地步骤**（初始化 `InitWorkspaceAsync`、配置建库 `SetupDatabaseAsync`、编译 `BuildAsync`）直接调用 `INewProjectService`，**云效步骤**（克隆 `clone-template`、建流水线 `create-pipeline`）编排 `mcp_yunxiao_*` 工具（见 §4.10.7）；必要时唤起向导面板（`RegisterPanel` / `PluginPanelRequested`）由用户补填。
+- **SKILL.md 要点**：引导 Agent 收集项目名称 / 英文缩写 / 项目介绍 / 端选择（后端、管理端必选，移动端可选）/ 本地目录；**本地步骤**（初始化、配置建库、编译）直接调用共享能力层，**云效步骤**（克隆模板、推送代码库、建流水线）编排 `mcp_yunxiao_*` 工具（见 §4.10.7）；必要时唤起向导面板由用户补填。
 - **输入**：`ProjectSpec`（含端选择约束）；**输出**：新建项目本地路径、数据库状态、流水线 ID 列表。
 - **与向导关系**：主 skill 是向导的「对话式入口」；二者最终都落到 `INewProjectService`，结果一致。
 
@@ -677,20 +729,22 @@ public interface INewProjectService
 | `newproject.clone-template` | Step 3 | 克隆所选端模板 | 单独补克隆某端 |
 | `newproject.setup-db` | Step 4 | 配置 + 建库 | 仅重建数据库 |
 | `newproject.build` | Step 5 | 编译检查 | 仅重新编译 |
-| `newproject.create-pipeline` | Step 6 | 克隆 TJCES 参考流水线并替换创建（按端 ×3） | 仅补建某端流水线 |
+| `newproject.push-repo` | Step 6 | 创建新代码仓库并推送代码 | 换个仓库名重新推送 / 补推某端 |
+| `newproject.create-pipeline` | Step 7 | 克隆 TJCES 参考流水线并替换创建（按端 ×3） | 仅补建某端流水线 |
 
 > 原子 skill 与「Agent 操作记录区」（§4.6）天然契合：每一步执行都在操作记录区留下时间线条目，用户可就单步失败就地调整重试。
 
 **4.10.5 清单与注册示例（见 §3.2 `skills` 字段）**
-- `plugin.json` 的 `skills` 指向包内 SKILL.md：`{ "id": "newproject.create", "name": "新建项目", "entry": "skills/newproject.create.md" }`。
-- 加载时由 `PluginManager` 注册进 `SkillRegistry`；用户在聊天中即可自然语言触发，左侧栏向导入口仍保留。
+- 插件清单中的「技能」项指向包内的说明文件，声明技能的**标识、名称与说明文件路径**（如：标识 `newproject.create`、名称「新建项目」、说明文件 `skills/newproject.create.md`）。
+- 加载时由插件管理器注册进宿主的技能表；用户在聊天中即可自然语言触发，左侧栏向导入口仍保留。
 
 **4.10.6 验收补充**
-见 §4.8 第 8、9、12 条：聊天自然语言可触发 `newproject.create` 完成同等六步（含初始化脚手架）、卸载时注销；向导与 skill 共享 `INewProjectService` 无逻辑分叉。
+见 §4.8 第 8、9、12 条：聊天自然语言可触发 `newproject.create` 完成同等七步（含初始化脚手架）、卸载时注销；向导与 skill 共享 `INewProjectService` 无逻辑分叉。
 
 **4.10.7 云效步骤委托 MCP 工具（与 §4.11 对齐）**
-`newproject.create` 与 4 个原子 skill 的**云效相关步骤不再自行实现**，改为编排 `mcp_yunxiao_*` 工具：
+`newproject.create` 与 5 个原子 skill 的**云效相关步骤不再自行实现**，改为编排 `mcp_yunxiao_*` 工具：
 - `newproject.clone-template` → `mcp_yunxiao_codeup_clone`（必要时 `codeup_search_repos` 定位模板仓）；
+- `newproject.push-repo` → `mcp_yunxiao_codeup_create_repo` + `mcp_yunxiao_codeup_push`（建新仓库并推送，产出仓库地址供 Step 7 使用）；
 - `newproject.create-pipeline` → `mcp_yunxiao_flow_clone_pipeline`（内部 `GetPipeline` 拉取 TJCES 该端参考 YAML → 替换名称/端口/Codeup 仓库地址/流水线参数 → `CreatePipeline` 逐端 ×3 创建；参考页 `flow.aliyun.com/all`）；
 - `newproject.setup-db` / `newproject.build` 为纯本地步骤，仍调用 `INewProjectService`。
 如此 Skill 与向导共享同一 `INewProjectService` 与同一连接器，云效逻辑零分叉（满足 §4.8 第 9、11 条）。
@@ -705,7 +759,7 @@ public interface INewProjectService
 - PAT 经 `IYunxiaoCredentialProvider` 由宿主 `CredentialStore` 按需取用（§3.7），连接器不缓存明文、不回显日志。
 
 **4.11.2 插件后端直连连接器（推荐）**
-`INewProjectService`（§4.10.2）的云效步骤**直接调用连接器 C# 方法**（非经 MCP）：Step3 克隆→`CodeupClient.CopyToLocalAsync`（内部复用框架 `GitToolPlugin.GitCloneAsync`，拼 `oauth2:<PAT>@` URL，见 §3.10）；Step6 创建流水线→`FlowClient.ClonePipelinesFromTemplateAsync`（内部对每个所选端：`GetPipelineAsync` 取 TJCES 该端参考 YAML → 按 `ProjectSpec` 替换名称/端口/Codeup 仓库地址/流水线参数 → `CreatePipelineAsync` 创建，产出各端流水线 id；`referencePipelines` 见 §4.5）；后续编辑/运行流水线→`UpdatePipelineAsync`/`RunPipelineAsync`。理由：向导为确定性流程，直连避免 JSON 序列化与工具确认开销，且连接器为单一实现、零分叉。
+向导的云效步骤**直接调用连接器的能力方法**（不走 MCP）：Step 3 克隆→「克隆到本地」能力（连接器内部复用框架的 Git 能力，拼 `oauth2:<PAT>@` 地址）；**Step 6 推送到新代码库→「创建代码库」+「推送」能力**；Step 7 创建流水线→「按模板克隆流水线」能力（内部：读取 TJCES 该端参考流水线定义 → 按项目档案替换名称/端口/代码仓库地址/流水线参数 → 逐端创建）。理由：向导为确定性流程，直连避免序列化与工具确认开销，且连接器为单一实现、零分叉。
 
 **4.11.3 云效专属 MCP 服务器（Agent 暴露面）**
 框架内置进程内 MCP 客户端 `YunxiaoMCPClient : IMCPClient`（client 名 `yunxiao`），包装连接器暴露 8 个工具，对 Agent 名为 `mcp_yunxiao_*`，经 `MCPToolPlugin` 并入工具表并受 `IToolConfirmationService` 规划/确认：
@@ -745,15 +799,15 @@ public interface INewProjectService
 | **M1** | 框架层插件模块 + `plugin.json` schema + **云效连接器与 MCP** | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`/`PluginCommandDescriptor`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`）；**扩展 `SkillRegistry` 新增插件作用域 `RegisterPluginSkill(...)` / `UnregisterPluginSkill(id)`** 与 **`MCPRegistry` 新增 `RegisterPluginClient(...)` / `UnregisterPluginClient(name)`**（当前二者均为静态只读，需随 M1 开放动态注册），加载时由 `PluginManager` 调用完成注册/反注册；新增 **`Connectors/AliyunDevOps/`**（YunxiaoConnector/CodeupClient/FlowClient/PatCredential/IYunxiaoCredentialProvider）与进程内 **`YunxiaoMCPClient : IMCPClient`（8 tools）**；`plugin.json` schema 增加 `mcpServers` 字段。随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
 | **M2** | codex 插件管理器与侧栏 | `PluginManageWindow`（参照 `SkillManageWindow` 模式：列表/明细/安装/启停/卸载）；`Sidebar` 新增插件条目区 + `PluginPanelRequested` 事件；`MainWindow` 内容区 `PluginHost` 挂载点 + 面板切换。 |
 | **M3** | 权限 / 凭据安全 | 网络白名单（`codeup.aliyun.com`/`flow.aliyun.com`/`*.aliyuncs.com`）与进程白名单（`dotnet`/`git`）静态校验；`CredentialStore`（Windows Credential Manager / DPAPI，绝不入 DB）；PAT 取用时序落地（§3.7）。 |
-| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，复用框架云效连接器） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外暴露 `INewProjectService`（含 `InitWorkspaceAsync` 等）作为向导与 Skill 的**共享后端**，**云效步骤直连框架 `YunxiaoConnector`**（不自带 REST/OpenAPI 客户端）；`plugin.json` 声明 `mcpServers:["yunxiao"]`；贡献专属 Skill `newproject.create` 及 4 个原子 Skill（§4.10），云效步骤委托 `mcp_yunxiao_*`（§4.10.7/§4.11）。完整 6 步向导（§4.3，含 Step 2 初始化项目脚手架）。 |
-| **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、6 步全流程（含 Step 2 初始化脚手架）、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
+| **M4** | 「新建项目」插件（LubanAgent 解决方案项目，复用框架云效连接器） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外提供 §4.10.2 的**共享能力层**（初始化 / 克隆 / 配置建库 / 编译 / 推送代码库 / 建流水线）作为向导与聊天入口的同一后端，**云效步骤直连框架 `YunxiaoConnector`**（不自带 REST/OpenAPI 客户端）；`plugin.json` 声明 `mcpServers:["yunxiao"]`；贡献专属技能 `newproject.create` 及 5 个单步技能（§4.10），云效步骤委托 `mcp_yunxiao_*`（§4.10.7/§4.11）。完整 7 步向导（§4.3，含 Step 2 初始化项目脚手架与 Step 6 推送到新代码库）。 |
+| **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、7 步全流程（含 Step 2 初始化脚手架、Step 6 推送到新代码库）、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
 | **M6** | 云效连接器与 MCP 联调 | 验证 `YunxiaoConnector` 8 操作（单测/集成）；Agent 可自然语言调用 `mcp_yunxiao_*` 即席查库/查流水线并受确认；插件停用后 `yunxiao` MCP 从 `MCPRegistry` 反注册、工具消失；`newproject.*` skill 云效步骤经 MCP 执行且 PAT 不回显。 |
 
 ---
 
 ## 6. 风险与开放问题
 
-1. **PAT 过期导致克隆 / 流水线失败**：云效 PAT 有到期时间，过期后 Step 3 克隆与 Step 6 创建流水线将失败。需：失败时的明确报错与重新配置引导、保留已完成产物；（可选）到期前提醒机制。
+1. **PAT 过期导致克隆 / 流水线失败**：云效 PAT 有到期时间，过期后 Step 3 克隆、Step 6 推送与 Step 7 创建流水线将失败。需：失败时的明确报错与重新配置引导、保留已完成产物；（可选）到期前提醒机制。
 2. **权限不足**：最小授权下若缺少 代码管理 写权限或 流水线 读写权限，部分步骤失败。需：在 §4.9.2 给出明确权限清单，失败时提示「缺少 XX 权限，请到云效补充」。
 3. **凭据安全**：PAT 不落库明文、存安全凭据区、不回显日志、定期轮换、泄露即删（见 §4.9.3）。
 4. **模板仓库访问权限**：企服版 `tjc/TJCES` 为受限仓库，用户需具备读权限；私有仓需管理员授权，否则克隆被拒（见 §4.7）。
@@ -770,13 +824,23 @@ public interface INewProjectService
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Installed
-    Installed --> Enabled: 启用
-    Enabled --> Disabled: 停用
-    Disabled --> Enabled: 启用
-    Enabled --> Error: 加载/运行异常
-    Error --> Disabled: 修复后重试
-    Disabled --> Uninstalled: 卸载
-    Installed --> Uninstalled: 卸载
-    Uninstalled --> [*]
+    [*] --> 已安装
+    已安装 --> 已启用: 启用
+    已启用 --> 已停用: 停用
+    已停用 --> 已启用: 启用
+    已启用 --> 异常: 加载或运行异常
+    异常 --> 已停用: 修复后重试
+    已停用 --> 已卸载: 卸载
+    已安装 --> 已卸载: 卸载
+    已卸载 --> [*]
 ```
+
+**状态含义一览：**
+
+| 状态 | 含义 | 常见进入原因 |
+|------|------|--------------|
+| 已安装 | 插件包已就位但未启用 | 刚放进插件目录 |
+| 已启用 | 正在生效，侧栏可见 | 用户在插件管理中启用 |
+| 已停用 | 暂时关闭，界面入口消失 | 用户主动停用，或异常后修复前的中间态 |
+| 异常 | 加载或运行出错 | 依赖缺失、兼容版本不符、运行时报错 |
+| 已卸载 | 已移除 | 用户在插件管理中卸载 |
