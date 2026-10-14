@@ -86,6 +86,9 @@ public partial class MainWindow : Window
             _viewModel = new MainWindowViewModel(services);
             DataContext = _viewModel;
 
+            // /exit、/quit：请求退出 → 调用 Close，复用已有的 OnClosing 确认流程弹出退出确认框
+            _viewModel.ExitRequested += () => Close();
+
             // 初始化页脚数据提供者
             _footerDataProvider = new LubanAgentCodex.Services.FooterDataProvider(services);
 
