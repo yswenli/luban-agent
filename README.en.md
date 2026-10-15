@@ -71,6 +71,27 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 ### 🎯 Skill System
 - Nine core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery), plug and play
 - **File-based Skills**: Define custom Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project-level or user-level directories
+- **Conversational Management**: Create, use, and manage Skills and MCP servers through natural language conversation without manual config editing
+
+### 🗣️ Conversational Skill/MCP Management
+Operate through natural language—zero learning curve:
+
+| Feature | How to Use |
+|---------|------------|
+| List Skills | "List all available Skills" |
+| Use Skill | "Use the code-review-v2 Skill" |
+| Create Skill | "Create a Skill named my-helper, described as general-purpose assistant" |
+| Create MCP | "Add an MCP server named my-api, command is node server.js" |
+
+**Features**:
+- ✅ Built-in Skills/MCPs cannot be overwritten or deleted, ensuring system stability
+- ✅ Write/delete operations require user confirmation, preventing accidental operations
+- ✅ Changes take effect automatically in the next conversation turn, no restart needed
+- ✅ Skill ID validation to prevent injection attacks
+
+**Storage Locations**:
+- Skill: `<workspace>/.luban-agent/skills/<skill-id>/SKILL.md`
+- MCP: `<workspace>/.luban-agent/mcps/<mcp-name>.json`
 
 ### 📎 Attachment Support (Images + Text Files)
 - **Two attachment kinds**: images (PNG/JPEG/GIF/WebP/BMP/TIFF/HEIC, requires a vision model) and text files (code, config, logs, etc.)

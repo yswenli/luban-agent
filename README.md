@@ -71,6 +71,27 @@
 ### 🎯 Skill 系统
 - 内置九大核心技能（头脑风暴、代码审查、文档生成、代码重构、测试生成、代码解释、调试助手、Git 提交、技能发现），即插即用
 - **文件化 Skill**：通过 SKILL.md 文件定义自定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
+- **对话式管理**：通过自然语言对话创建、使用和管理 Skill 与 MCP 服务器，无需手动编辑配置文件
+
+### 🗣️ 对话式 Skill/MCP 管理
+通过自然语言直接操作，零门槛上手：
+
+| 功能 | 操作方式 |
+|------|----------|
+| 列出 Skill | "列出所有可用的 Skill" |
+| 使用 Skill | "使用 code-review-v2 Skill" |
+| 创建 Skill | "创建一个 Skill，名称是 my-helper，描述是通用助手" |
+| 创建 MCP | "添加一个 MCP 服务器，名称是 my-api，命令是 node server.js" |
+
+**特性**：
+- ✅ 内置 Skill/MCP 不可覆盖删除，保证系统稳定
+- ✅ 写入/删除操作需用户确认，防止误操作
+- ✅ 修改后下一轮对话自动生效，无需重启
+- ✅ Skill ID 合法性校验，防止注入攻击
+
+**存储位置**：
+- Skill: `<工作区>/.luban-agent/skills/<skill-id>/SKILL.md`
+- MCP: `<工作区>/.luban-agent/mcps/<mcp-name>.json`
 
 ### 📎 附件支持（图片 + 文本文件）
 - **两种附件类型**：图片（PNG/JPEG/GIF/WebP/BMP/TIFF/HEIC，需 vision 模型）与文本文件（代码、配置、日志等）
