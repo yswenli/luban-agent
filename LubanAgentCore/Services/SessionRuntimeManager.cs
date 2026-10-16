@@ -75,6 +75,15 @@ public sealed class SessionRuntimeManager : IAsyncDisposable
     /// <param name="sessionId">会话标识。</param>
     public SessionRuntime? Get(string sessionId) => _runtimes.GetValueOrDefault(sessionId);
 
+    /// <summary>
+    /// 取当前全部会话运行时的快照。
+    /// </summary>
+    /// <remarks>
+    /// 供宿主级联操作使用（如插件停用时，把插件贡献的进程内 MCP 客户端从各会话注册表一并注销）。
+    /// 返回的是快照副本，调用期间新创建/卸载的会话不会出现在结果中。
+    /// </remarks>
+    public IReadOnlyList<SessionRuntime> GetAll() => _runtimes.Values.ToList();
+
     private SessionRuntime CreateRuntime(string sessionId, string userId, string workspaceId, string workspaceRoot)
     {
         // root 派生 scope 不带身份，必须显式回填用户身份，否则按用户隔离的服务会落到默认用户

@@ -354,6 +354,21 @@ public class AgentHostService
         // 工作区级组件（规则/技能/MCP）由 AgentProfile.CreateAgentAsync 在会话 scope 内统一装载。
         // 注册表已改为 scoped（每会话一份），无需在进入会话时重复装载到进程级注册表。
 
+        // 插件会话级贡献回放（PRD §3.11）：进程内 MCP 客户端（如 YunxiaoMCPClient）无法用
+        // 文件式 mcps/*.json 描述，且 MCPRegistry 为会话 scope 注册（每会话一份），故每次
+        // 构建 Agent 前都要把插件声明的贡献注入本会话注册表；失败不阻断会话构建。
+        foreach (var contributor in sp.GetServices<LubanAgentCore.Plugins.IPluginSessionContributor>())
+        {
+            try
+            {
+                contributor.Contribute(sp);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("插件会话级贡献回放失败", ex);
+            }
+        }
+
         // 选择 Profile
         AgentProfile profile = workspace.Type == WorkspaceTypes.LlmWiki
             ? new LlmWikiAgentProfile(workspace)
