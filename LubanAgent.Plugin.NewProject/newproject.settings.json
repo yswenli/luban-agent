@@ -1,0 +1,22 @@
+// 「新建项目」插件配置（包内默认值）。
+// 允许 // 行注释。宿主配置节点可覆盖同名项（P2 起接入）。
+// 「待 M6 真机联调填入」的占位项：Templates[].Branch、PipelineReferences[].PipelineId。
+{
+  "defaultVisibility": "internal",
+  "pushBranch": "main",
+  "repositoryNameFormat": "{code}-{end}",
+  "templates": [
+    // 后端：以 TJCES-Service 为模板（PRD §4.5）
+    { "end": "Service", "repository": "TJCES-Service", "branch": "" },
+    // 管理端：以 TJCES-Admin 为模板
+    { "end": "Admin", "repository": "TJCES-Admin", "branch": "" },
+    // 移动端：以 TJCES-Mobile 为模板（仅当 Step 1 勾选时才参与）
+    { "end": "Mobile", "repository": "TJCES-Mobile", "branch": "" }
+  ],
+  "pipelineReferences": [
+    // 企服版三端参考流水线标识（Step 7 克隆来源）
+    { "end": "Service", "pipelineId": "" },
+    { "end": "Admin", "pipelineId": "" },
+    { "end": "Mobile", "pipelineId": "" }
+  ]
+}

@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    「新建项目」插件（PRD §5 M4 / §4）。
+
+    ⚠️ 打包硬约束：插件包 lib/ 只放「插件自身程序集」，宿主程序集（LubanAgentCore 等）不得随包分发。
+    原因：PluginLoadContext 只强制共享框架集（LuBan.* / Avalonia / Microsoft.* / System.*），
+    宿主程序集若出现在 lib/ 会被加载进插件 ALC，产生第二份 Type 副本，与宿主传入的服务实例类型不一致。
+    实测依据：AssemblyDependencyResolver.ResolveAssemblyToPath 对「文件缺失」的依赖返回 null，
+    PluginLoadContext.Load 随之返回 null → 运行时回落默认 ALC → 与宿主共用同一份类型。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>LubanAgent.Plugin.NewProject</AssemblyName>
+    <RootNamespace>LubanAgent.Plugin.NewProject</RootNamespace>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <!-- 插件面板为纯代码 UI（无 XAML），关掉 Avalonia 默认 XAML 项 -->
+    <EnableDefaultAvaloniaItems>false</EnableDefaultAvaloniaItems>
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+
+    <!-- 插件包标识（= 目录名 = plugin.json 的 id）与铺包目标目录 -->
+    <PluginPackageId>com.tjces.newproject</PluginPackageId>
+    <PluginPackageDir>$(MSBuildThisFileDirectory)..\LubanAgentCodex\bin\$(Configuration)\net10.0\plugins\$(PluginPackageId)\</PluginPackageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- framework（TEMP-LOCAL-VERIFY：开发期走项目引用，与 LubanAgentCore 保持一致） -->
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+    <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束） -->
+    <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="newproject.settings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="skills\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <PluginSkillFile Include="skills\**\*.md" />
+  </ItemGroup>
+
+  <!--
+    插件包铺装：把 plugin.json + 插件自身 dll/deps.json + skills/ 铺到 codex 运行目录的 plugins/<id>/。
+    刻意不整目录复制：输出目录里还有 LubanAgentCore.dll 等宿主程序集，复制进去会破坏 ALC 类型标识。
+  -->
+  <Target Name="StagePluginPackage" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MakeDir Directories="$(PluginPackageDir)lib;$(PluginPackageDir)skills" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginPackageDir)lib" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).deps.json" DestinationFolder="$(PluginPackageDir)lib" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)plugin.json" DestinationFolder="$(PluginPackageDir)" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)newproject.settings.json" DestinationFolder="$(PluginPackageDir)" />
+    <Copy SourceFiles="@(PluginSkillFile)" DestinationFolder="$(PluginPackageDir)skills" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="插件包已铺到：$(PluginPackageDir)" />
+  </Target>
+
+</Project>

@@ -1,0 +1,80 @@
+{
+  "id": "com.tjces.newproject",
+  "name": "新建项目",
+  "version": "1.0.0",
+  "author": "Walle",
+  "description": "以 TJCES 三端模板仓新建项目：七步向导（PRD §4.3）+ 聊天式入口，共享同一 INewProjectService",
+  "entryAssembly": "LubanAgent.Plugin.NewProject.dll",
+  "targetApp": "LubanAgentCodex",
+  "minHostVersion": "2026.10.0",
+  "uiContributions": [
+    {
+      "id": "newproject-wizard",
+      "label": "新建项目",
+      "icon": "project",
+      "panelType": "LubanAgent.Plugin.NewProject.Ui.WizardPanel"
+    }
+  ],
+  "skills": [
+    {
+      "id": "newproject-create",
+      "name": "新建项目",
+      "description": "七步流程总入口：收集项目档案并逐步执行向导各步（PRD §4.10.3）",
+      "entry": "skills/newproject-create.md",
+      "category": "newproject"
+    },
+    {
+      "id": "newproject-clone-template",
+      "name": "按模板建库并克隆",
+      "description": "Step 3：以 TJCES 模板仓创建各端专属仓库并克隆到本地（PRD §4.10.4）",
+      "entry": "skills/newproject-clone-template.md",
+      "category": "newproject"
+    },
+    {
+      "id": "newproject-setup-db",
+      "name": "配置与建库",
+      "description": "Step 4：生成配置并执行建库脚本（PRD §4.10.4）",
+      "entry": "skills/newproject-setup-db.md",
+      "category": "newproject"
+    },
+    {
+      "id": "newproject-build",
+      "name": "编译检查",
+      "description": "Step 5：逐端编译并汇总结果（PRD §4.10.4）",
+      "entry": "skills/newproject-build.md",
+      "category": "newproject"
+    },
+    {
+      "id": "newproject-push-repo",
+      "name": "推送改动到自有仓库",
+      "description": "Step 6：提交并推送本地最终改动到各端专属仓库（PRD §4.10.4）",
+      "entry": "skills/newproject-push-repo.md",
+      "category": "newproject"
+    },
+    {
+      "id": "newproject-create-pipeline",
+      "name": "创建流水线",
+      "description": "Step 7：逐端克隆参考流水线并替换后创建（PRD §4.10.4）",
+      "entry": "skills/newproject-create-pipeline.md",
+      "category": "newproject"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "yunxiao",
+      "transport": "inproc",
+      "enabled": true
+    }
+  ],
+  "permissions": [
+    "filesystem:workspace",
+    "network:codeup.aliyun.com",
+    "network:flow.aliyun.com",
+    "network:*.aliyuncs.com",
+    "git:clone_push",
+    "process:dotnet",
+    "process:git",
+    "credential:yunxiao_pat"
+  ],
+  "dependencies": []
+}
