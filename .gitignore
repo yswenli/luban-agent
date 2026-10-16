@@ -3,12 +3,15 @@
 ################################################################################
 
 /.vs
-/LubanAgentCodex/bin/Debug/net10.0
-/LubanAgentCodex/obj
-/LubanAgentCore/bin/Debug/net10.0
-/LubanAgentCore/obj
 /.luban-agent
-/LubanAgentCore/bin/Release/net10.0
-/LubanAgentA2A/bin/Debug/net10.0
-/LubanAgentA2A/obj
 .worktrees/
+
+# 构建产物：按项目整体忽略（覆盖 Debug/Release、netX.Y 与 RID 子目录）
+/LubanAgentCodex/bin/
+/LubanAgentCodex/obj/
+/LubanAgentCli/bin/
+/LubanAgentCli/obj/
+/LubanAgentA2A/bin/
+/LubanAgentA2A/obj/
+/LubanAgentCore/bin/
+/LubanAgentCore/obj/
