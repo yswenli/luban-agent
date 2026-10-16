@@ -1,0 +1,39 @@
+{
+  "id": "com.demo.codex",
+  "name": "Codex 冒烟插件",
+  "version": "1.0.0",
+  "author": "Walle",
+  "description": "M2 宿主冒烟：侧栏入口 / 内容区面板 / 技能落盘 / MCP 回放 / 卸载解绑",
+  "entryAssembly": "CodexSmokePlugin.dll",
+  "minHostVersion": "2026.10.0",
+  "uiContributions": [
+    {
+      "id": "codex-hello",
+      "label": "冒烟面板",
+      "icon": "project",
+      "panelType": "CodexSmokePlugin.CodexSmokePanel"
+    }
+  ],
+  "skills": [
+    {
+      "id": "codex-hello-skill",
+      "name": "Codex 清单技能",
+      "description": "由 plugin.json 声明，内容取自插件包内 entry 文件",
+      "entry": "skills/codex-hello-skill.md"
+    },
+    {
+      "id": "codex-noentry-skill",
+      "name": "无正文技能",
+      "description": "未声明 entry，宿主退化为仅写元信息并记警告"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "yunxiao",
+      "transport": "inproc",
+      "enabled": true
+    }
+  ],
+  "permissions": [ "filesystem:workspace" ],
+  "dependencies": []
+}

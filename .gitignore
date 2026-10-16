@@ -15,3 +15,8 @@
 /LubanAgentA2A/obj/
 /LubanAgentCore/bin/
 /LubanAgentCore/obj/
+
+# 冒烟资产（smoke/plugin-system）：工程构建产物与生成的插件包
+/smoke/plugin-system/**/bin/
+/smoke/plugin-system/**/obj/
+/smoke/plugin-system/artifacts/

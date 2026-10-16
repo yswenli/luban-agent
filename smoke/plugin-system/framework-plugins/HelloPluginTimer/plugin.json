@@ -1,0 +1,34 @@
+{
+  "id": "com.demo.hello",
+  "name": "定时器冒烟插件",
+  "version": "1.0.0",
+  "author": "Walle",
+  "description": "二分定位变体：额外持有每秒 PostToUi 定时器，用于排除「定时器钉住 ALC」",
+  "entryAssembly": "HelloPlugin.dll",
+  "targetApp": "Harness",
+  "minHostVersion": "2026.10.0",
+  "uiContributions": [
+    {
+      "id": "hello",
+      "label": "冒烟",
+      "icon": "project",
+      "panelType": "HelloPluginTimer.TimerPanel"
+    }
+  ],
+  "skills": [
+    {
+      "id": "hello-manifest-skill",
+      "name": "清单技能",
+      "description": "由 plugin.json 声明"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "yunxiao",
+      "transport": "inproc",
+      "enabled": true
+    }
+  ],
+  "permissions": [ "filesystem:workspace", "network" ],
+  "dependencies": []
+}

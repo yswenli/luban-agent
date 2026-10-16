@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Harness</AssemblyName>
+    <RootNamespace>Harness</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+    <ProjectReference Include="..\framework-plugins\HelloPlugin\HelloPlugin.csproj" />
+  </ItemGroup>
+
+</Project>
