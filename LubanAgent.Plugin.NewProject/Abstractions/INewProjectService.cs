@@ -45,6 +45,18 @@ public interface INewProjectService
     event EventHandler? Changed;
 
     /// <summary>
+    /// 「归属组织」（云效组织 ID，只读展示）：取自 codex 云效连接配置；未配置时为 <c>null</c>。
+    /// </summary>
+    string? OrganizationHint { get; }
+
+    /// <summary>
+    /// 克隆冲突决策入口（PRD §4.3 Step 3 重跑幂等②）：由向导面板注入「三选一」内联选择；
+    /// 为 <c>null</c>（如聊天入口、面板未创建）时 Step 3 遇到非空目标目录<b>即中止本步</b>并给出引导文案，
+    /// 绝不静默覆盖、也不静默复用。
+    /// </summary>
+    Func<CloneConflict, Task<CloneConflictChoice>>? CloneConflictResolver { get; set; }
+
+    /// <summary>
     /// 校验 Step 1 基本信息（PRD §4.3）：必填项、缩写命名规范、端必选、本地目录可写与唯一性。
     /// </summary>
     /// <remarks>
@@ -110,7 +122,35 @@ public interface INewProjectService
     /// <summary>
     /// Step 3 · 按模板建库并克隆：以各端模板仓为模板创建专属仓库（可见性＝组织内公开），再按 HTTPS 地址克隆并替换占位符。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>重跑幂等（PRD §4.3 Step 3 / §6 #15）</b>：①建库前先按目标仓库名检索，同名已存在则跳过创建、直接复用；
+    /// ②克隆前判断目标目录是否非空，非空时经 <see cref="CloneConflictResolver"/> 让用户三选一；
+    /// ③各端创建的仓库 id / 地址即时写入档案的 <see cref="ProjectSpec.RemoteArtifacts"/>。
+    /// </para>
+    /// <para>
+    /// <b>模板 pin（PRD §6 #5）</b>：模板仓按插件配置登记的名称（或 ID）定位，pin 分支必填；
+    /// 定位不到即阻断本步——不跟随升级、不跳过、不猜测。
+    /// </para>
+    /// </remarks>
     Task<StepResult> CreateRepositoriesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 校验 Step 3 建库计划（PRD §4.3「用户确认界面」）：仓库名非空 / 合法 / 同批不重复，可见性取值合法。
+    /// </summary>
+    /// <remarks>本方法<b>只读</b>：通过校验不产生副作用；面板在「我已确认」后调用，通过后再 <see cref="ApplyRepositoryPlan"/>。</remarks>
+    /// <param name="plan">用户在确认区改过的建库计划（逐端仓库名 + 可见性）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>校验结果（错误文案；提示通常为空）。</returns>
+    Task<BasicInfoValidation> ValidateRepositoryPlanAsync(
+        IEnumerable<EndRepository> plan,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 把确认后的建库计划写回档案（仓库名 / 可见性；模板与 pin 分支以档案与插件配置为准，本地目录随新仓库名重算）。
+    /// </summary>
+    /// <param name="plan">建库计划。</param>
+    void ApplyRepositoryPlan(IEnumerable<EndRepository> plan);
 
     /// <summary>
     /// Step 4 · 配置与建库：生成配置、执行建库脚本。

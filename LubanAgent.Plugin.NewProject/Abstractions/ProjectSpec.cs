@@ -131,6 +131,9 @@ public sealed class EndRepository
     /// <summary>可见性：<c>internal</c>＝组织内公开（默认），<c>private</c>＝私有。</summary>
     public string Visibility { get; set; } = "internal";
 
+    /// <summary>云效侧仓库 id（Step 3 建库或同名复用后写入；供远端产物孤儿清单定位）。</summary>
+    public string? ExternalId { get; set; }
+
     /// <summary>云效仓库 Web 地址。</summary>
     public string WebUrl { get; set; } = string.Empty;
 
@@ -216,6 +219,39 @@ public sealed class OperationRecord
 
     /// <summary>耗时。</summary>
     public TimeSpan Duration { get; set; }
+}
+
+/// <summary>
+/// 克隆冲突处理方式（PRD §4.3 Step 3 重跑幂等②）：目标目录非空时<b>必须</b>由用户选择，不静默覆盖、也不直接失败。
+/// </summary>
+public enum CloneConflictChoice
+{
+    /// <summary>复用已克隆的本地目录（跳过克隆，其余步骤继续）。</summary>
+    Reuse = 1,
+
+    /// <summary>清空目标目录后重新克隆。</summary>
+    Reclone = 2,
+
+    /// <summary>中止本步（本地与远端产物均保持原样，用户可稍后重跑）。</summary>
+    Abort = 3
+}
+
+/// <summary>
+/// 克隆冲突：目标目录已存在且非空，交界面呈现「复用已克隆 / 清空后重克隆 / 中止」三选一。
+/// </summary>
+public sealed class CloneConflict
+{
+    /// <summary>所属端。</summary>
+    public ProjectEnd End { get; set; }
+
+    /// <summary>目标仓库名（与本地目录名一致）。</summary>
+    public string RepositoryName { get; set; } = string.Empty;
+
+    /// <summary>目标本地目录（绝对路径）。</summary>
+    public string LocalPath { get; set; } = string.Empty;
+
+    /// <summary>目录内顶层条目数（仅用于文案，不做内容判定）。</summary>
+    public int EntryCount { get; set; }
 }
 
 /// <summary>

@@ -28,9 +28,10 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// 让用户看到每一步做了什么、结果如何，并可就地在失败步骤重试。
 /// </para>
 /// <para>
-/// <b>本阶段（M4-P2）范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）与
-/// Step 2 初始化触发已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
-/// Step 3~7 的操作区在 P3 起逐步接入。面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
+/// <b>本阶段（M4-P3）范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
+/// Step 2 初始化触发、Step 3 建库确认区（逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 克隆冲突三选一）、
+/// Step 6 推送区与 Step 4-5 占位区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
+/// Step 4 / 5 / 7 的操作区在 P4~P5 接入。面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
 /// <c>PostToUi</c> 令牌（PRD §6 #22）。
 /// </para>
 /// <para>
@@ -94,6 +95,42 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly TextBlock _busyText;
     private readonly Border _resumeBanner;
     private readonly TextBlock _resumeText;
+
+    // ── Step 3 / Step 6 操作区（P3 接入）─────────────────────────────────────────
+    private Border _statusCard = null!;
+    private Border _maintenanceCard = null!;
+    private Border _step1Form = null!;
+    private Border _step3Area = null!;
+    private Border _step6Area = null!;
+    private Border _otherStepArea = null!;
+    private Border _conflictPanel = null!;
+    private StackPanel _repoRowsPanel = null!;
+
+    /// <summary>各端仓库名输入行（Step 3 确认区）。</summary>
+    private readonly List<RepoRowView> _repoRows = new();
+
+    private readonly RadioButton _visibilityInternal = new()
+    {
+        Content = "组织内公开（默认）",
+        GroupName = "newproject-visibility",
+        IsChecked = true
+    };
+
+    private readonly RadioButton _visibilityPrivate = new() { Content = "私有", GroupName = "newproject-visibility" };
+    private readonly TextBlock _orgText = new() { FontSize = 12, Foreground = PrimaryText, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _landingText = new() { FontSize = 12, Foreground = PrimaryText, TextWrapping = TextWrapping.Wrap };
+    private readonly CheckBox _confirmedCheck = new() { Content = "我已确认仓库名称与可见性（本步会在云效组织内创建真实仓库）" };
+    private readonly Button _createRepoButton = new() { Content = "创建并克隆" };
+    private readonly TextBlock _conflictText = new() { FontSize = 12, Foreground = WarningBrush, TextWrapping = TextWrapping.Wrap };
+    private readonly Button _conflictReuseButton = new() { Content = "复用已克隆" };
+    private readonly Button _conflictRecloneButton = new() { Content = "清空后重克隆" };
+    private readonly Button _conflictAbortButton = new() { Content = "中止本步" };
+    private readonly Button _pushButton = new() { Content = "提交并推送" };
+    private readonly Button _skipToPushButton = new() { Content = "跳过 Step 4/5，直接执行推送（临时入口，P4 落地后自动衔接）" };
+    private readonly TextBlock _otherStepText = new() { FontSize = 12, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
+
+    /// <summary>Step 3 运行期待决的克隆冲突三选一（面板与能力层之间的挂起点）。</summary>
+    private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
 
     /// <summary>
     /// 残留档案是否已由用户明确处置（PRD §4.7：禁止静默覆盖上一次未完成的档案）。
@@ -210,6 +247,17 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _rerunButton.Click += OnRerunClicked;
         _resetButton.Click += OnAbortCleanupClicked;
 
+        // Step 3 / Step 6（P3）：建库克隆、冲突三选一、推送
+        _createRepoButton.Click += OnCreateReposClicked;
+        _pushButton.Click += OnPushClicked;
+        _skipToPushButton.Click += OnSkipToPushClicked;
+        _conflictReuseButton.Click += OnConflictChoiceClicked;
+        _conflictRecloneButton.Click += OnConflictChoiceClicked;
+        _conflictAbortButton.Click += OnConflictChoiceClicked;
+
+        // 克隆冲突决策入口：面板在场时提供内联三选一；面板未创建（聊天入口）时能力层自行中止本步
+        _service.CloneConflictResolver = ShowCloneConflictAsync;
+
         // 三列必须显式设列号：Grid 子控件不设列号会全部落在第 0 列相互重叠（P2 冒烟缺陷）
         var left = BuildLeftColumn();
         var divider = BuildDivider();
@@ -246,6 +294,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     public void OnUnloading()
     {
         _unloaded = true;
+
+        // 清掉指向本面板的决策回调：能力层是长生命周期实例，不得在卸载后回调已卸载程序集（PRD §6 #20 / #22）
+        _service.CloneConflictResolver = null;
+        _conflictChoice?.TrySetResult(CloneConflictChoice.Abort);
+        _conflictChoice = null;
 
         if (_subscribed)
         {
@@ -335,52 +388,17 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             _stepViews.Add(new StepView(step, badge, badgeText, statusBlock));
         }
 
-        var form = new Border
+        _statusCard = Card(new StackPanel
         {
-            Margin = new Thickness(0, 8, 0, 0),
-            Padding = new Thickness(14),
-            CornerRadius = new CornerRadius(8),
-            Background = CardBackground,
-            BorderThickness = new Thickness(1),
-            BorderBrush = DividerBrush,
-            Child = new StackPanel
-            {
-                Spacing = 10,
-                Children =
-                {
-                    new TextBlock { Text = "Step 1 · 项目基本信息", FontSize = 14, Foreground = PrimaryText },
-                    new TextBlock
-                    {
-                        Text = "名称 / 缩写 / 介绍 / 端选择 / 本地目录；点「下一步」后立即自动执行 Step 2 初始化"
-                             + "（建工作区 → 授权 → 会话 → 技能 → 云效），全过程实时记录在右侧。",
-                        FontSize = 12,
-                        Foreground = MutedText,
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    new Border { Height = 1, Background = DividerBrush },
-                    LabeledField("项目名称", _nameBox),
-                    LabeledField("英文缩写", _codeBox),
-                    LabeledField("项目介绍", _introBox),
-                    LabeledField("端选择", new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Spacing = 16,
-                        Children = { _serviceCheck, _adminCheck, _mobileCheck }
-                    }),
-                    LabeledField("本地目录", BuildPathRow()),
-                    _validationText,
-                    _warningText,
-                    _busyText,
-                    new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Spacing = 8,
-                        Children = { _nextButton, _adoptButton, _rerunButton, _resetButton }
-                    },
-                    _resumeBanner
-                }
-            }
-        };
+            Spacing = 8,
+            Children = { _busyText, _validationText, _warningText, _resumeBanner }
+        });
+
+        _step1Form = BuildStep1Form();
+        _maintenanceCard = BuildMaintenanceCard();
+        _step3Area = BuildStep3Area();
+        _step6Area = BuildStep6Area();
+        _otherStepArea = BuildOtherStepArea();
 
         return new ScrollViewer
         {
@@ -402,11 +420,239 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     _stepHint,
                     new Border { Height = 1, Background = DividerBrush, Margin = new Thickness(0, 4) },
                     steps,
-                    form
+                    _statusCard,
+                    _step1Form,
+                    _maintenanceCard,
+                    _step3Area,
+                    _step6Area,
+                    _otherStepArea
                 }
             }
         };
     }
+
+    /// <summary>统一的卡片容器（背景 / 圆角 / 1px 描边）。</summary>
+    /// <param name="child">内容。</param>
+    /// <returns>卡片。</returns>
+    private static Border Card(Control child) => new()
+    {
+        Margin = new Thickness(0, 8, 0, 0),
+        Padding = new Thickness(14),
+        CornerRadius = new CornerRadius(8),
+        Background = CardBackground,
+        BorderThickness = new Thickness(1),
+        BorderBrush = DividerBrush,
+        Child = child
+    };
+
+    /// <summary>
+    /// Step 1 表单卡（状态提示与维护按钮已抽到常驻卡，切换步骤时不会一起消失）。
+    /// </summary>
+    /// <returns>表单卡。</returns>
+    private Border BuildStep1Form() => Card(new StackPanel
+    {
+        Spacing = 10,
+        Children =
+        {
+            new TextBlock { Text = "Step 1 · 项目基本信息", FontSize = 14, Foreground = PrimaryText },
+            new TextBlock
+            {
+                Text = "名称 / 缩写 / 介绍 / 端选择 / 本地目录；点「下一步」后立即自动执行 Step 2 初始化"
+                     + "（建工作区 → 授权 → 会话 → 技能 → 云效），全过程实时记录在右侧。",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            },
+            new Border { Height = 1, Background = DividerBrush },
+            LabeledField("项目名称", _nameBox),
+            LabeledField("英文缩写", _codeBox),
+            LabeledField("项目介绍", _introBox),
+            LabeledField("端选择", new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 16,
+                Children = { _serviceCheck, _adminCheck, _mobileCheck }
+            }),
+            LabeledField("本地目录", BuildPathRow()),
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _nextButton, _adoptButton }
+            }
+        }
+    });
+
+    /// <summary>
+    /// 常驻「档案与维护」卡：任何步骤下都能重跑 Step 2 或中止并清理（PRD §4.7）。
+    /// </summary>
+    /// <returns>维护卡。</returns>
+    private Border BuildMaintenanceCard() => Card(new StackPanel
+    {
+        Spacing = 8,
+        Children =
+        {
+            new TextBlock { Text = "档案与维护", FontSize = 13, Foreground = PrimaryText },
+            new TextBlock
+            {
+                Text = "「重跑 Step 2」复用同一工作区并新建执行会话；「中止并清理」注销工作区、删除已写入的技能与 MCP、"
+                     + "清空档案——本地目录与云效上的远端产物都不会被删除（PRD §4.7）。",
+                FontSize = 11,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            },
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _rerunButton, _resetButton }
+            }
+        }
+    });
+
+    /// <summary>
+    /// Step 3 操作区（PRD §4.3「用户确认界面」）：逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 建库按钮，
+    /// 以及运行期出现的克隆冲突三选一。
+    /// </summary>
+    /// <returns>操作区。</returns>
+    private Border BuildStep3Area()
+    {
+        _repoRowsPanel = new StackPanel { Spacing = 10 };
+        foreach (var end in new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile })
+        {
+            var nameBox = new TextBox { PlaceholderText = "仓库名（可改）" };
+            var templateText = new TextBlock { FontSize = 11, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
+            var panel = new StackPanel
+            {
+                Spacing = 4,
+                Children = { LabeledField($"{EndLabel(end)}端目标仓库名", nameBox), templateText }
+            };
+
+            _repoRowsPanel.Children.Add(panel);
+            _repoRows.Add(new RepoRowView(end, panel, nameBox, templateText));
+        }
+
+        _conflictPanel = new Border
+        {
+            Padding = new Thickness(12),
+            CornerRadius = new CornerRadius(6),
+            Background = PageBackground,
+            BorderThickness = new Thickness(1),
+            BorderBrush = WarningBrush,
+            IsVisible = false,
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    _conflictText,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        Children = { _conflictReuseButton, _conflictRecloneButton, _conflictAbortButton }
+                    }
+                }
+            }
+        };
+
+        return Card(new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                new TextBlock { Text = "Step 3 · 按模板建库并克隆", FontSize = 14, Foreground = PrimaryText },
+                new TextBlock
+                {
+                    Text = "以各端模板仓为模板，在云效组织内创建本项目专属仓库，再按 HTTPS 地址克隆到本地并替换占位符。"
+                         + "仓库名可在此修改（改名会重新克隆到新目录）；模板与 pin 分支由插件配置登记，不做跟随升级。",
+                    FontSize = 12,
+                    Foreground = MutedText,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new Border { Height = 1, Background = DividerBrush },
+                _repoRowsPanel,
+                LabeledField("可见性", new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 16,
+                    Children = { _visibilityInternal, _visibilityPrivate }
+                }),
+                LabeledField("归属组织", _orgText),
+                LabeledField("落地位置", _landingText),
+                _confirmedCheck,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _createRepoButton }
+                },
+                _conflictPanel
+            }
+        });
+    }
+
+    /// <summary>
+    /// Step 6 操作区：统一 main → 暂存 → 有改动则提交 → 推送到各端自有仓库（PRD §4.3 Step 6）。
+    /// </summary>
+    /// <returns>操作区。</returns>
+    private Border BuildStep6Area() => Card(new StackPanel
+    {
+        Spacing = 10,
+        Children =
+        {
+            new TextBlock { Text = "Step 6 · 推送改动到自有仓库", FontSize = 14, Foreground = PrimaryText },
+            new TextBlock
+            {
+                Text = "逐端执行：切到 main（不存在则从模板 pin 分支创建）→ git add -A → 有改动则提交 → 推送。"
+                     + "不强制推送；提交身份优先取本机 git 配置，缺失时用插件配置兜底。",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            },
+            new Border { Height = 1, Background = DividerBrush },
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _pushButton }
+            }
+        }
+    });
+
+    /// <summary>
+    /// Step 4 / 5 / 7 的占位区（P4 / P5 落地前给出明确说明，并提供临时推送入口）。
+    /// </summary>
+    /// <returns>占位区。</returns>
+    private Border BuildOtherStepArea() => Card(new StackPanel
+    {
+        Spacing = 10,
+        Children =
+        {
+            new TextBlock { Text = "后续步骤", FontSize = 14, Foreground = PrimaryText },
+            _otherStepText,
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _skipToPushButton }
+            }
+        }
+    });
+
+    /// <summary>Step 3 各端仓库名行的视觉载体。</summary>
+    private sealed record RepoRowView(ProjectEnd End, Control Root, TextBox NameBox, TextBlock TemplateText);
+
+    /// <summary>端的中文标签（与能力层文案一致）。</summary>
+    /// <param name="end">端。</param>
+    /// <returns>标签。</returns>
+    private static string EndLabel(ProjectEnd end) => end switch
+    {
+        ProjectEnd.Service => "后端",
+        ProjectEnd.Admin => "管理端",
+        ProjectEnd.Mobile => "移动端",
+        _ => end.ToString()
+    };
 
     /// <summary>
     /// 「标签 + 控件」竖向字段块。
@@ -519,6 +765,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         }
 
         SyncFormEnabled();
+        SyncStepAreas(spec, currentStep);
 
         foreach (var view in _stepViews)
         {
@@ -621,6 +868,101 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 : $"{duration.TotalSeconds:F1}s";
 
     /// <summary>
+    /// 按当前步骤切换左列的操作区：Step 1 表单 / Step 3 建库确认区 / Step 4-5-7 占位区 / Step 6 推送区。
+    /// </summary>
+    /// <remarks>
+    /// 「状态提示（校验 / 忙碌 / 残留横幅）」与「档案与维护」抽为常驻卡，故切换步骤不会连失败信息与
+    /// 中止入口一起消失（P2 的单表单结构在 P3 起不再适用）。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="currentStep">当前步骤。</param>
+    private void SyncStepAreas(ProjectSpec? spec, WizardStep currentStep)
+    {
+        var hasArchive = spec is not null;
+
+        _step1Form.IsVisible = !hasArchive || currentStep is WizardStep.BasicInfo or WizardStep.Scaffold;
+        _maintenanceCard.IsVisible = hasArchive && _resumeResolved;
+
+        _step3Area.IsVisible = hasArchive && currentStep == WizardStep.Repositories;
+        _step6Area.IsVisible = hasArchive && currentStep == WizardStep.Push;
+        _otherStepArea.IsVisible = hasArchive && currentStep is WizardStep.Database or WizardStep.Build or WizardStep.Pipeline;
+
+        if (spec is not null && _step3Area.IsVisible)
+            PopulateStep3Area(spec);
+
+        if (spec is not null && _otherStepArea.IsVisible)
+        {
+            _otherStepText.Text = currentStep switch
+            {
+                WizardStep.Database => "Step 4 · 初始化数据库：尚未实现（M4-P4）。本步将由项目助手驱动建库与建表脚本。",
+                WizardStep.Build => "Step 5 · 编译验证：尚未实现（M4-P4）。",
+                _ => "Step 7 · 创建流水线：尚未实现（M4-P5）。"
+            };
+
+            // 临时入口：P4 未落地前允许直接执行 Step 6（推送），避免向导在 Step 4 处彻底卡死
+            _skipToPushButton.IsVisible = currentStep is WizardStep.Database or WizardStep.Build;
+        }
+    }
+
+    /// <summary>
+    /// 把档案里的建库计划回填到 Step 3 确认区（逐端：仓库名输入 + 模板仓 / pin 信息）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    private void PopulateStep3Area(ProjectSpec spec)
+    {
+        foreach (var row in _repoRows)
+        {
+            var selected = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
+            row.Root.IsVisible = selected;
+            if (!selected)
+                continue;
+
+            var repository = spec.Repositories.FirstOrDefault(item => item.End == row.End);
+            var name = repository?.RepositoryName ?? string.Empty;
+            if (!row.NameBox.IsFocused && !string.Equals(row.NameBox.Text, name, StringComparison.Ordinal))
+                row.NameBox.Text = name;
+
+            if (repository is null || string.IsNullOrWhiteSpace(repository.TemplateRepository))
+            {
+                row.TemplateText.Foreground = DangerBrush;
+                row.TemplateText.Text = "模板仓：未配置（插件配置 templates[] 缺少该端对照）→ 本步会被阻断，请在插件配置中补齐。";
+                continue;
+            }
+
+            row.TemplateText.Foreground = MutedText;
+            var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
+                ? "pin 未配置（阻断：PRD §6 #5 要求登记 pin 分支后再建库）"
+                : $"pin {repository.TemplateBranch}";
+            var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
+            row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
+        }
+
+        // 可见性：档案里已有取值则回填，否则保持「组织内公开」默认
+        var visibility = spec.Repositories
+            .FirstOrDefault(item => spec.Ends.Count == 0 || spec.Ends.Contains(item.End))
+            ?.Visibility;
+        var isPrivate = string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase);
+        _visibilityInternal.IsChecked = !isPrivate;
+        _visibilityPrivate.IsChecked = isPrivate;
+
+        var organization = _service.OrganizationHint;
+        _orgText.Text = string.IsNullOrWhiteSpace(organization)
+            ? "未配置（请到 codex「设置 → 云效连接」填写组织 ID 后重跑本步）"
+            : organization!;
+        _orgText.Foreground = string.IsNullOrWhiteSpace(organization) ? DangerBrush : PrimaryText;
+
+        _landingText.Text = string.IsNullOrWhiteSpace(spec.LocalPath)
+            ? "未设置（Step 1 的本地目录为空）"
+            : string.Join("；", _repoRows.Where(view => view.Root.IsVisible).Select(view =>
+            {
+                var repository = spec.Repositories.FirstOrDefault(item => item.End == view.End);
+                return string.IsNullOrWhiteSpace(repository?.LocalPath)
+                    ? $"{EndLabel(view.End)}：—"
+                    : $"{EndLabel(view.End)}：{repository!.LocalPath}";
+            }));
+    }
+
+    /// <summary>
     /// 按当前繁忙 / 残留状态同步按钮与横幅可用性。
     /// </summary>
     private void SyncFormEnabled()
@@ -647,6 +989,17 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _rerunButton.IsVisible = hasArchive && _resumeResolved;
         _rerunButton.IsEnabled = _rerunButton.IsVisible && !_busy;
         _resetButton.IsEnabled = !_busy;
+
+        // Step 3 / Step 6 / 占位区（P3）：忙碌时只锁动作按钮；冲突三选一必须保持可点
+        // —— 它回答的正是「Step 3 正在运行」时的问题，锁掉会直接把能力层挂死到超时。
+        _createRepoButton.IsEnabled = !_busy;
+        _pushButton.IsEnabled = !_busy;
+        _skipToPushButton.IsEnabled = !_busy;
+        _confirmedCheck.IsEnabled = !_busy;
+        _visibilityInternal.IsEnabled = !_busy;
+        _visibilityPrivate.IsEnabled = !_busy;
+        foreach (var row in _repoRows)
+            row.NameBox.IsEnabled = !_busy;
     }
 
     /// <summary>切换忙碌态并给出阶段提示。</summary>
@@ -921,6 +1274,157 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             if (!_unloaded)
                 ShowErrors(new[] { $"打开目录选择器失败：{ex.Message}" });
         }
+    }
+
+    /// <summary>
+    /// Step 3「创建并克隆」（PRD §4.3 Step 3）：确认勾选 → 校验建库计划 → 回写档案 → 执行。
+    /// </summary>
+    private async void OnCreateReposClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _unloaded)
+            return;
+
+        var spec = _service.Current;
+        if (spec is null)
+        {
+            ShowErrors(new[] { "尚未建立项目档案，请先完成 Step 1。" });
+            return;
+        }
+
+        ShowErrors(Array.Empty<string>());
+
+        // 显式确认：本步会在云效组织内创建真实仓库（PRD §4.3「用户确认界面」）
+        if (_confirmedCheck.IsChecked != true)
+        {
+            ShowErrors(new[] { "请先勾选「我已确认仓库名称与可见性」：本步会在云效组织内创建真实仓库。" });
+            return;
+        }
+
+        var plan = new List<EndRepository>();
+        foreach (var row in _repoRows.Where(view => view.Root.IsVisible))
+        {
+            var current = spec.Repositories.FirstOrDefault(repository => repository.End == row.End);
+            plan.Add(new EndRepository
+            {
+                End = row.End,
+                TemplateRepository = current?.TemplateRepository ?? string.Empty,
+                TemplateBranch = current?.TemplateBranch ?? string.Empty,
+                RepositoryName = row.NameBox.Text ?? string.Empty,
+                Visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal",
+                DefaultBranch = string.IsNullOrWhiteSpace(current?.DefaultBranch) ? "main" : current!.DefaultBranch,
+                LocalPath = current?.LocalPath ?? string.Empty
+            });
+        }
+
+        SetBusy(true, "正在校验建库计划…");
+        try
+        {
+            var validation = await _service.ValidateRepositoryPlanAsync(plan).ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (!validation.IsValid)
+            {
+                ShowErrors(validation.Errors);
+                return;
+            }
+
+            _service.ApplyRepositoryPlan(plan);
+
+            SetBusy(true, "正在按模板建库并克隆（逐端：定位模板 → 建库 / 复用 → 克隆 → 替换占位符）…");
+            var result = await _service.CreateRepositoriesAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "Step 3 失败，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"Step 3 执行失败：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
+    /// <summary>Step 6「提交并推送」（PRD §4.3 Step 6）。</summary>
+    private async void OnPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
+
+    /// <summary>Step 4-5 占位区的临时入口：跳过未实现步骤直接执行 Step 6。</summary>
+    private async void OnSkipToPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
+
+    /// <summary>Step 6 执行入口（正常流程与临时入口共用）。</summary>
+    private async Task RunPushAsync()
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        ShowErrors(Array.Empty<string>());
+        SetBusy(true, "正在推送改动（逐端：整理分支 → 暂存 → 提交 → 推送）…");
+        try
+        {
+            var result = await _service.PushAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "Step 6 失败，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"Step 6 执行失败：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
+    /// <summary>
+    /// 克隆冲突三选一（PRD §4.3 Step 3）：能力层在运行中挂起等待本面板回答；
+    /// 面板未创建（聊天入口）时能力层中止本步并给出引导文案（<see cref="INewProjectService.CloneConflictResolver"/> 为 <c>null</c>）。
+    /// </summary>
+    /// <param name="conflict">冲突上下文。</param>
+    /// <returns>用户选择。</returns>
+    private Task<CloneConflictChoice> ShowCloneConflictAsync(CloneConflict conflict)
+    {
+        var completion = new TaskCompletionSource<CloneConflictChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _postToUi(() =>
+        {
+            if (_unloaded)
+            {
+                completion.TrySetResult(CloneConflictChoice.Abort);
+                return;
+            }
+
+            _conflictChoice = completion;
+            _conflictText.Text = $"{EndLabel(conflict.End)}端目标目录已存在且非空：{conflict.LocalPath}（{conflict.EntryCount} 项）。"
+                                 + $"远端仓库 {conflict.RepositoryName} 已就绪，请选择本地目录的处置方式：";
+            _conflictPanel.IsVisible = true;
+        });
+
+        return completion.Task;
+    }
+
+    /// <summary>冲突三选一按钮（复用已克隆 / 清空后重克隆 / 中止本步）。</summary>
+    private void OnConflictChoiceClicked(object? sender, RoutedEventArgs e)
+    {
+        var choice = ReferenceEquals(sender, _conflictRecloneButton)
+            ? CloneConflictChoice.Reclone
+            : ReferenceEquals(sender, _conflictAbortButton)
+                ? CloneConflictChoice.Abort
+                : CloneConflictChoice.Reuse;
+
+        _conflictPanel.IsVisible = false;
+        var completion = _conflictChoice;
+        _conflictChoice = null;
+        completion?.TrySetResult(choice);
     }
 
     /// <summary>

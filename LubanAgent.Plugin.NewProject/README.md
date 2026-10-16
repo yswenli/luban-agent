@@ -12,16 +12,17 @@
 LubanAgent.Plugin.NewProject/
 ├─ LubanAgent.Plugin.NewProject.csproj   # 含「铺包」目标（见下）
 ├─ plugin.json                           # 插件清单：侧栏条目 / 6 个技能 / yunxiao MCP / 权限
-├─ newproject.settings.json              # 模板 pin、参考流水线、命名与推送分支约定
+├─ newproject.settings.json              # 模板 pin / 分组 ID / 占位符规则 / 提交身份兜底 / 参考流水线
 ├─ NewProjectPlugin.cs                   # 插件入口（PluginBase）
 ├─ Abstractions/
 │  ├─ ProjectSpec.cs                     # 项目档案与相关模型（PRD §4.5）
 │  ├─ BasicInfoValidation.cs             # Step 1 校验结果（字段级错误 + 非阻断提示，面板与聊天入口共用）
 │  └─ INewProjectService.cs              # 共享能力层契约（PRD §4.10.2）
-├─ Configuration/NewProjectSettings.cs   # 包内配置读取（模板对照 / 参考流水线）
+├─ Configuration/NewProjectSettings.cs   # 包内配置读取（模板对照 / 占位符规则 / 参考流水线）
 ├─ Serialization/PluginJsonContext.cs    # 源生成 JSON 上下文（插件持久化的唯一入口，见下）
 ├─ Services/
-│  ├─ NewProjectService.cs               # 共享能力层实现（P3~P5 分批补齐）
+│  ├─ NewProjectService.cs               # 共享能力层实现（P4~P5 分批补齐）
+│  ├─ PlaceholderReplacer.cs             # 克隆后的占位符替换（内容 + 文件/目录名）
 │  └─ NewProjectStateStore.cs            # 档案持久化（残留检测 / 孤儿清单）
 ├─ Ui/WizardPanel.cs                     # 向导面板（UserControl + IPluginPanel，纯代码 UI）
 └─ skills/                               # 6 个技能正文（随插件包分发，落到工作区）
@@ -139,6 +140,60 @@ Step 2 由面板事件回调触发，**不在**框架自动包裹范围内，故
 技能 / MCP 声明**只**从插件清单读：`host.Services.GetService<PluginManager>()?.GetPlugin(host.PluginId)?.Manifest`，
 不在代码里复刻一份 `plugin.json`（避免两处漂移）。
 
+## Step 3 / Step 6 实现要点（P3 定案）
+
+### 前置校验（任一缺失即阻断，不做动作）
+
+| 前置 | 缺失时的行为 |
+|------|--------------|
+| 宿主注册的 `CodeupClient` | 时间线红字「云效连接器不可用」 |
+| 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `yunxiao_organization_id`） |
+| 云效 PAT | 同上（读取 `IYunxiaoCredentialProvider.GetPatAsync`） |
+| `templates[].branch`（模板 pin） | 阻断，提示「PRD §6 #5 要求先登记 pin 分支再建库」——**空 pin 不猜**，由真机联调填入 |
+
+组织 ID（F6=B）与提交身份（F5=A）、占位符规则（F3=A）全部走插件配置；模板仓定位（F1=A）
+优先用 `templates[].projectId`，未登记则按 `repository` 名在组织内检索，**找不到即阻断**，不猜测同名近似仓。
+
+### Step 3 时序（逐端串行）
+
+1. 定位模板仓（配置 ID 或按名检索）→ 空 pin 已在预检拦下；
+2. 目标仓库同名检索：**命中即复用**（重跑幂等①，不重复建库）；未命中才 `CreateRepositoryAsync`
+   带 `TemplateProject{ templateProjectId, syncAllBranches = true }` + 可选 `namespaceId`（分组）；
+3. `GetRepositoryAsync(id)` 补查 **HTTPS 克隆地址**（创建 / 列表返回都不含该字段）；
+4. 目标目录存在且非空 → `CloneConflictResolver` **内联三选一**（PRD §4.3 Step 3）：
+   - 复用已克隆 → 本端跳过克隆；
+   - 清空后重克隆 → 删目录后重克隆；
+   - 中止本步 → **远端仓库保留**（登记为孤儿产物），本地目录不动；
+   无人回答（聊天入口 / 面板未创建，resolver 为 `null`）→ 中止本步 + 引导文案；
+5. `CloneToLocalAsync(url, dir, pin)`（`git clone -b`，PRD §6 #17）；
+6. `PlaceholderReplacer.Apply`：替换**内容 + 文件/目录名**（跳过 `.git` / `bin` / `obj` / `node_modules`，4MB 上限，UTF-8 BOM 保留）；
+7. 逐端即时落库 `RemoteArtifacts`（按 `Kind + End + Name` 去重）+ `ExternalId` / `CloneUrl` / `WebUrl`，最后 `CurrentStep = Database`。
+
+> 每条产物**即时持久化**：某端失败时已成功端的账目不会丢（时间线 + 档案双份），重跑本步只补缺失。
+
+### Step 6 时序（逐端串行）
+
+1. `git rev-parse --verify --quiet refs/heads/main` → 已存在则 `checkout main`，否则 `checkout -b main`（自模板 pin 分支）；
+2. `git add -A` → `git diff --cached --quiet` 判空，无改动**跳过提交**（不产生空提交）；
+3. 有改动才提交，作者取本机 `git config user.name/user.email`，缺失时用配置 `commitAuthorName/Email` 兜底；
+4. `CodeupClient.PushAsync(cloneUrl, dir, "main")`（连接器内置鉴权 URL 与出口门禁，**不强制推送**）；
+5. 登记 `RemoteArtifactKind.Branch` 产物。
+
+面板自身拉起的 git 进程同样要过门禁：`PluginPermissionGuard.RequireGit` / `RequireProcess`
+在每次 `RunGitAsync` 前显式调用（PRD §3.7「不得借连接器之名绕过检查」）。
+
+### 面板结构（P3 起）
+
+左列从「单表单」改为「常驻状态卡 + 按 `CurrentStep` 切换的操作区」：
+
+- 常驻：校验错误 / 非阻断提示 / 忙碌文案 / 残留横幅 + 「档案与维护」（重跑 Step 2 / 中止并清理）；
+- Step 1 表单（`BasicInfo` / `Scaffold`）；
+- Step 3 确认区（`Repositories`）：逐端仓库名 / 可见性单选 / 归属组织只读 / 落地位置 / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
+- Step 4-5 占位（`Database` / `Build`，含临时「直接执行推送」入口，P4 落地后移除）；
+- Step 6 推送区（`Push`）；Step 7 占位（`Pipeline`）。
+
+> 冲突三选一即使处于「忙碌」态也**保持可点**——它回答的正是运行中提出的问题，锁掉会把能力层挂到超时。
+
 ## 构建与铺包
 
 ```powershell
@@ -177,13 +232,30 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
    工作区列表不再有该项目，**`LocalPath` 目录本身仍在**；此后同目录再「下一步」可正常走通（登记残留已清）；
 10. 停用插件 → 侧栏入口与面板消失，`.luban-agent/skills/newproject-*` 无残留。
 
+### P3 增补（Step 3 / Step 6）
+
+11. **预检阻断**：未填「云效连接」的组织 ID / PAT，或 `templates[].branch` 为空时点「创建并克隆」→
+    时间线出现对应红字（引导去设置页 / 提示先登记 pin），**不会**产生任何远端动作；
+12. **Step 3 正常路径**：填好配置后勾选「我已确认」→ 建库 → 克隆 → 占位符替换逐条进时间线；
+    复核本地目录里有仓库内容、`spec.json` 里 `repositories[].cloneUrl/webUrl/externalId` 已落、
+    `remoteArtifacts` 出现 Repository 条目；远端仓库由模板同步了分支；
+13. **Step 3 重跑幂等**：再点一次「创建并克隆」→ 时间线出现「云效已存在同名仓库，跳过创建直接复用」，
+    **不会**因重名建库失败；
+14. **克隆冲突三选一**：手工往目标目录塞一个多余文件后重跑 → 面板出现三选一；
+    选「复用已克隆」→ 跳过克隆；选「清空后重克隆」→ 目录被清空后重克隆；选「中止本步」→
+    时间线说明远端仓库保留（孤儿），本地目录未被改动；
+15. **Step 6**：从 Step 4 占位区点「直接执行推送」→ 时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」，
+    云效仓库出现 `main` 分支与首次提交；再点一次 → 无改动时显示「工作区无改动，跳过提交」，
+    推送仍成功（幂等）；
+16. 「中止并清理」在 Step 3/6 视图下同样可见可用（常驻维护卡），且不删除本地目录与远端仓库。
+
 ## 阶段进度
 
 | 批次 | 内容 | 状态 |
 |------|------|------|
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
-| P3 | Step 3 按模板建库并克隆（框架 `YunxiaoConnector` 直连）+ Step 6 推送 | 待办 |
+| P3 | Step 3 按模板建库并克隆（框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成**（构建 0 错误；真机联调待配置真实 PAT / 组织 ID / 模板 pin） |
 | P4 | Step 4 配置与建库 + Step 5 编译检查 | 待办 |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
 | P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 待办 |

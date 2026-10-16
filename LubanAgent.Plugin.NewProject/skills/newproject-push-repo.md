@@ -1,6 +1,7 @@
 # 推送改动到自有仓库（newproject-push-repo）
 
-> 「新建项目」插件原子技能 · 对应 **Step 6** · **M4-P1 骨架版**（执行脚本在 M4-P6 补齐）。
+> 「新建项目」插件原子技能 · 对应 **Step 6** · **M4-P3**（能力层已实现：`INewProjectService.PushAsync`；
+> 聊天入口在本 skill 内改为编排下面的 `mcp_yunxiao_codeup_*` 工具，二者语义一致、零分叉）
 
 ## 何时使用
 
@@ -17,14 +18,21 @@
 
 对所选**每个端**依次执行：
 
-1. 在本地目录提交本次改动（占位符替换 / 配置 / 技能文件等产生的本地变更）。
-2. `mcp_yunxiao_codeup_push`：把本地改动推送到该端专属仓库，分支统一 `<pushBranch>`（默认 `main`，PRD §6 #17）。
-3. 回写档案：该端推送状态与远端 commit；远端产物清单可按需追加 `Branch`。
+1. 统一分支：`refs/heads/<pushBranch>`（默认 `main`）已存在则切换，否则从模板 pin 分支
+   `git checkout -b <pushBranch>`（PRD §6 #17）。
+2. `git add -A`，再用 `git diff --cached --quiet` 判空；**无改动就跳过提交**（不产生空提交）。
+3. 有改动才提交，提交信息用中文、风格与 luban-agent 既有约定一致；
+   提交身份优先读本机 `git config user.name/user.email`，缺失时用插件配置 `commitAuthorName/Email` 兜底。
+4. `mcp_yunxiao_codeup_push`：把本地改动推送到该端专属仓库的 `main` 分支（**不强制推送**）。
+5. 回写档案：远端产物清单追加 `RemoteArtifactKind.Branch`（带分支链接）。
+
+> 本地 git 动作（1~3）**不走** MCP：由能力层经宿主的进程执行器拉起 `git`，且每次调用前显式过
+> `RequireGit` / `RequireProcess` 门禁（PRD §3.7）。
 
 ## 结果
 
 - 各端专属仓库的 `main` 分支上出现本项目初始提交。
-- 操作记录区可看到每端的推送动作与 commit 摘要。
+- 操作记录区可看到每端的「整理分支 → 提交改动 → 推送到自有仓库」动作与 commit 摘要。
 
 ## 失败处理
 
@@ -33,6 +41,6 @@
 | 非快进（远端已有提交） | **不自动 force**；停下让用户确认后再决定 |
 | 401 / 令牌失效 | 引导重录 PAT |
 | 网络 / 429 | 退避重试，仍失败则中断，已推送的端保留结果 |
-| 认证失败但仓库存在 | 提示检查仓库可见性与 PAT 所属用户权限 |
-
-commit message 用中文，风格与 luban-agent 既有约定一致。
+| 认证失败但仓库存在 | 提示检查仓库可见性与 PAT 所属用户权限，以及分支是否被保护 |
+| 本地目录不是 git 工作区 | 阻断并提示重跑 Step 3 完成克隆 |
+| 无改动可提交 | 跳过提交、继续推送（幂等） |

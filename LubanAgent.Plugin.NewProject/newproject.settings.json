@@ -1,17 +1,40 @@
 // 「新建项目」插件配置（包内默认值）。
 // 允许 // 行注释。宿主配置节点可覆盖同名项（P2 起接入）。
-// 「待 M6 真机联调填入」的占位项：Templates[].Branch、PipelineReferences[].PipelineId。
+//
+// 【必须由真机联调填入的三项】
+//   ① templates[].branch —— 模板 pin 分支 / 标签。**空值会让 Step 3 直接阻断**（PRD §6 #5：按登记版本
+//      定位模板、不跟随升级）；由用户确认真实值后填入，插件不猜。
+//   ② templates[].projectId —— 可选的模板仓 ID 覆盖（留空则运行期按 repository 名在组织内检索）。
+//   ③ namespaceId —— 可选的组内分组 / 命名空间 ID；留空则仓库建在组织根下。
+//   ④ pipelineReferences[].pipelineId —— Step 7 参考流水线，P5 前填入。
 {
   "defaultVisibility": "internal",
   "pushBranch": "main",
   "repositoryNameFormat": "{code}-{end}",
+
+  // 组织内分组 / 命名空间 ID（F6=B，可选）：登记后建库落在该分组下
+  "namespaceId": "",
+
+  // Step 6 提交身份兜底（F5=A）：优先读本机 git config user.name/user.email，缺失时用这里的值
+  "commitAuthorName": "LuBan Agent",
+  "commitAuthorEmail": "luban-agent@local",
+
+  // 占位符替换规则（F3=A）：字面量、区分大小写；From 为空或 To 展开后为空的规则会被丢弃。
+  // To 支持令牌：{code} 缩写原文 / {Code} 首字母大写 / {CODE} 全大写 / {name} 项目中文名。
+  // 留空则使用内置默认（TJCES / Tjces / tjces 三种大小写变体）。
+  "placeholderRules": [
+    { "from": "TJCES", "to": "{CODE}" },
+    { "from": "Tjces", "to": "{Code}" },
+    { "from": "tjces", "to": "{code}" }
+  ],
+
   "templates": [
     // 后端：以 TJCES-Service 为模板（PRD §4.5）
-    { "end": "Service", "repository": "TJCES-Service", "branch": "" },
+    { "end": "Service", "repository": "TJCES-Service", "branch": "", "projectId": "" },
     // 管理端：以 TJCES-Admin 为模板
-    { "end": "Admin", "repository": "TJCES-Admin", "branch": "" },
+    { "end": "Admin", "repository": "TJCES-Admin", "branch": "", "projectId": "" },
     // 移动端：以 TJCES-Mobile 为模板（仅当 Step 1 勾选时才参与）
-    { "end": "Mobile", "repository": "TJCES-Mobile", "branch": "" }
+    { "end": "Mobile", "repository": "TJCES-Mobile", "branch": "", "projectId": "" }
   ],
   "pipelineReferences": [
     // 企服版三端参考流水线标识（Step 7 克隆来源）
