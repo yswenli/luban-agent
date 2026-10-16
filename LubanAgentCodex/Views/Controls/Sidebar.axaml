@@ -6,7 +6,7 @@
     <Border Background="{DynamicResource SidebarBrush}"
             BorderBrush="{DynamicResource DividerBrush}"
             BorderThickness="0,0,1,0">
-        <Grid RowDefinitions="*,Auto,Auto,Auto,Auto">
+        <Grid RowDefinitions="*,Auto,Auto,Auto,Auto,Auto">
 
             <!-- 工作区 + 会话列表 -->
             <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
@@ -59,11 +59,44 @@
                 </ListBox>
             </StackPanel>
 
+            <!-- 插件贡献的侧栏入口（PRD §3.2 uiContributions）：无贡献时整块隐藏 -->
+            <StackPanel Grid.Row="3" Name="PluginSection" Margin="0,8,0,0" IsVisible="False">
+                <TextBlock Text="插件"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Margin="16,0,0,4"
+                           Foreground="{DynamicResource TextTertiaryBrush}" />
+                <ListBox Name="PluginEntryListBox"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:PluginSidebarRowModel">
+                            <Border Padding="6,4" CornerRadius="4" Cursor="Hand" BorderThickness="0">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Grid.Column="0"
+                                              Data="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H16a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"
+                                              Width="12" Height="12"
+                                              Margin="0,0,8,0"
+                                              Foreground="{DynamicResource TextSecondaryBrush}"
+                                              VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Label}"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
             <!-- 分隔线 -->
-            <Border Grid.Row="3" Height="1" Background="{DynamicResource DividerBrush}" Margin="16,8" />
+            <Border Grid.Row="4" Height="1" Background="{DynamicResource DividerBrush}" Margin="16,8" />
 
             <!-- 底部项目信息 -->
-            <Border Grid.Row="4" Padding="16" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,1,0,0">
+            <Border Grid.Row="5" Padding="16" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,1,0,0">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
                         <TextBlock Text=" LubanAgentCodex"
@@ -118,6 +151,27 @@
                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                       VerticalAlignment="Center" />
                             <TextBlock Text="设置" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <!-- 插件管理入口（应用级插件，PRD §3.9） -->
+                    <Button Name="PluginManageBtn"
+                            FontSize="12"
+                            Padding="8,6"
+                            Margin="0,8,0,0"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            Foreground="{DynamicResource TextSecondaryBrush}"
+                            Cursor="Hand"
+                            ToolTip.Tip="插件管理（安装 / 启用 / 升级 / 卸载）">
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <PathIcon Data="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H16a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"
+                                      Width="14" Height="14"
+                                      Foreground="{DynamicResource TextSecondaryBrush}"
+                                      VerticalAlignment="Center" />
+                            <TextBlock Text="插件" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>

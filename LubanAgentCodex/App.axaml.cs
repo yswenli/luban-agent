@@ -27,7 +27,9 @@ using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Orchestration;
+using LuBan.AIAgent.Plugins;
 using LuBan.Logging;
+using LubanAgentCore.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -111,6 +113,15 @@ public class App : Application
                     services.AddSingleton<HostOrchestrationProgressSink>();
                     services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
                         sp => sp.GetRequiredService<HostOrchestrationProgressSink>()));
+
+                    // 插件体系（PRD §3）：宿主实现必须为单例——框架 PluginManager 为单例并经根容器
+                    // 延迟解析 IPluginHost，其构造链不得含 scoped 服务（SkillRegistry/MCPRegistry 等
+                    // 均按会话 scope 隔离，只能经 PluginHostContext 的会话 scope 触达）。
+                    services.AddSingleton<Plugins.PluginHostRegistry>();
+                    services.AddSingleton<Plugins.PluginHostContext>();
+                    services.AddSingleton<Plugins.CodexPluginHost>();
+                    services.AddSingleton<IPluginHost>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
+                    services.AddSingleton<IPluginSessionContributor>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
                 });
 
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
@@ -138,6 +149,15 @@ public class App : Application
                 }
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);
+
+                // 插件宿主与状态登记必须在「根容器」首次创建：这些单例在构造期注入的 IServiceProvider
+                // 会被长期持有（PluginManager 延迟解析 IPluginHost、PluginHostContext 借此定位会话 scope），
+                // 若首次创建发生在用户/会话 scope，会形成 captive dependency（该 scope 释放后即不可用）。
+                _ = _services.Root.GetRequiredService<IPluginHost>();
+
+                // 插件体系启动引导：扫描 <BaseDirectory>/plugins 并恢复启用状态
+                // （放在工作区就绪之后，插件贡献的工作区级 Skill 可直接落到当前工作区）
+                await Plugins.PluginBootstrap.InitializeAsync(_services.Root, msg => splash.SetStatus(msg));
 
                 // worktree 启动对账：登记与磁盘不一致时记录提示（不阻塞启动）
                 try

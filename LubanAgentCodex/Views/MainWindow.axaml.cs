@@ -18,11 +18,13 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using LubanAgentCodex.Plugins;
 using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views.Controls;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Plugins;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Retrieval;
@@ -49,6 +51,13 @@ public partial class MainWindow : Window
     private FooterBar? _footerBar;
     private BusyOverlay? _busyOverlay;
     private Grid? _contentRoot;
+    private Grid? _chatArea;
+    private Grid? _pluginContentHost;
+    private ContentControl? _pluginPanelContent;
+    private TextBlock? _pluginPanelTitle;
+    private string? _mountedPluginEntryId;
+    private IServiceProvider? _services;
+    private CodexPluginHost? _pluginHost;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
@@ -69,6 +78,14 @@ public partial class MainWindow : Window
         _footerBar = this.FindControl<FooterBar>("FooterBar");
         _busyOverlay = this.FindControl<BusyOverlay>("BusyOverlay");
         _contentRoot = this.FindControl<Grid>("ContentRoot");
+        _chatArea = this.FindControl<Grid>("ChatArea");
+        _pluginContentHost = this.FindControl<Grid>("PluginContentHost");
+        _pluginPanelContent = this.FindControl<ContentControl>("PluginPanelContent");
+        _pluginPanelTitle = this.FindControl<TextBlock>("PluginPanelTitle");
+
+        // 插件面板「返回对话」：仅隐藏挂载区，面板实例仍由插件持有（真正解绑发生在插件注销时）
+        if (this.FindControl<Button>("PluginBackBtn") is Button backBtn)
+            backBtn.Click += (s, e) => ShowChatArea();
 
         // 订阅键盘事件
         this.KeyDown += OnKeyDown;
@@ -79,6 +96,8 @@ public partial class MainWindow : Window
     /// </summary>
     public void SetServiceProvider(IServiceProvider services)
     {
+        _services = services;
+
         // 完整初始化仅执行一次：避免重复创建 ViewModel、重复订阅事件
         // （App 会在窗口创建与工作区选择完成后各调用一次，重复订阅会导致模型切换等事件被触发多次）
         if (_viewModel == null)
@@ -182,6 +201,8 @@ public partial class MainWindow : Window
                 _sidebar.LlmWikiInitRequested += OnLlmWikiInitRequested;
                 _sidebar.AgentsMdInitRequested += OnAgentsMdInitRequested;
                 _sidebar.SettingsRequested += OnSettingsRequested;
+                _sidebar.PluginManageRequested += OnPluginManageRequested;
+                _sidebar.PluginEntrySelected += OnPluginEntrySelected;
 
                 // 会话运行状态变化（含后台会话）实时更新侧栏徽标
                 _viewModel.SessionRunningChanged += (s, e) => _sidebar?.UpdateSessionRunning(e.SessionId, e.IsRunning);
@@ -192,6 +213,11 @@ public partial class MainWindow : Window
             // 订阅后台知识库任务：终态时向显示区插系统消息（仅首次订阅）
             _knowledgeTasks = services.GetService<KnowledgeTaskService>();
             if (_knowledgeTasks != null) _knowledgeTasks.Updated += OnKnowledgeTaskUpdated;
+
+            // 插件宿主：面板注销时必须由宿主 UI 同步解绑内容区（PRD §3.12 第 2 步），
+            // 否则插件程序集被视觉树钉住，卸载会降级为 RequiresRestart
+            _pluginHost = services.GetService<CodexPluginHost>();
+            if (_pluginHost != null) _pluginHost.PanelDetaching += OnPluginPanelDetaching;
         }
         else
         {
@@ -525,6 +551,9 @@ public partial class MainWindow : Window
 
     private async void OnSessionSelected(object? sender, SessionItem item)
     {
+        // 选择会话 = 回到对话视图（插件页是内容区的一次性覆盖）
+        ShowChatArea();
+
         if (_viewModel != null)
         {
             await _viewModel.LoadSessionHistoryAsync(item.SessionId);
@@ -532,10 +561,102 @@ public partial class MainWindow : Window
         }
     }
 
+    #region 插件内容区
+
+    /// <summary>
+    /// 插件侧栏入口被选中：把该入口对应的面板挂载到内容区。
+    /// </summary>
+    private void OnPluginEntrySelected(object? sender, PluginSidebarRowModel row)
+    {
+        if (_pluginHost is null || _pluginPanelContent is null || _pluginContentHost is null) return;
+
+        IPluginPanel? panel;
+        try
+        {
+            // 面板工厂在此首次实例化（延迟创建，PRD §3.4）
+            panel = _pluginHost.GetPanel(row.Id);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"实例化插件面板失败：{row.Id}", ex);
+            AddSystemMessage($"插件面板「{row.Label}」创建失败：{ex.Message}");
+            return;
+        }
+
+        if (panel is not Control control)
+        {
+            AddSystemMessage($"插件「{row.Label}」未注册可用面板（宿主内容区需要 Avalonia 控件实现 IPluginPanel）。");
+            return;
+        }
+
+        if (!ReferenceEquals(_pluginPanelContent.Content, control))
+            _pluginPanelContent.Content = control;
+
+        if (_pluginPanelTitle is not null)
+            _pluginPanelTitle.Text = string.IsNullOrWhiteSpace(panel.Title) ? row.Label : panel.Title;
+
+        _pluginContentHost.IsVisible = true;
+        if (_chatArea is not null) _chatArea.IsVisible = false;
+
+        _mountedPluginEntryId = row.Id;
+    }
+
+    /// <summary>
+    /// 插件面板注销前的同步解绑（由插件宿主在 UI 线程调用）。
+    /// </summary>
+    private void OnPluginPanelDetaching(string entryId, IPluginPanel panel)
+    {
+        if (!string.Equals(_mountedPluginEntryId, entryId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // 必须在 UI 线程同步清空：任何残留引用都会让插件程序集无法回收
+        if (_pluginPanelContent is not null)
+            _pluginPanelContent.Content = null;
+
+        _mountedPluginEntryId = null;
+        ShowChatArea();
+    }
+
+    /// <summary>
+    /// 返回对话视图（隐藏插件面板挂载区）。
+    /// </summary>
+    private void ShowChatArea()
+    {
+        if (_pluginContentHost is not null) _pluginContentHost.IsVisible = false;
+        if (_chatArea is not null) _chatArea.IsVisible = true;
+    }
+
+    /// <summary>
+    /// 打开插件管理窗口。
+    /// </summary>
+    private void OnPluginManageRequested(object? sender, EventArgs e)
+    {
+        var services = _viewModel?.Services ?? _services;
+        if (services is null) return;
+
+        try
+        {
+            new PluginManageWindow(services).Show(this);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("打开插件管理窗口失败", ex);
+            AddSystemMessage($"打开插件管理窗口失败：{ex.Message}");
+        }
+    }
+
+    private void AddSystemMessage(string content)
+        => _viewModel?.Messages.Add(new SystemMessageItem { Content = content });
+
+    #endregion
+
     private async void OnWorkspaceSelected(object? sender, WorkspaceInfo ws)
     {
         try
         {
+            // 切换工作区 = 回到对话视图（插件页是内容区的一次性覆盖）
+            ShowChatArea();
+
             var services = _viewModel?.Services;
             if (services == null) return;
 

@@ -21,11 +21,41 @@
                               x:Name="Sidebar" />
 
             <!-- 右侧：消息流 + 输入框 -->
-            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+            <Grid Grid.Column="1" RowDefinitions="*,Auto" x:Name="ChatArea">
                 <controls:MessageStream Grid.Row="0"
                                         x:Name="MessageStream" />
                 <controls:InputBox Grid.Row="1"
                                    x:Name="InputBox" />
+            </Grid>
+
+            <!-- 插件面板挂载区（PRD §3.4）：默认隐藏，选中插件侧栏入口时覆盖聊天区 -->
+            <Grid Grid.Column="1"
+                  x:Name="PluginContentHost"
+                  RowDefinitions="Auto,*"
+                  IsVisible="False"
+                  Background="{DynamicResource BackgroundBrush}">
+                <Border Grid.Row="0"
+                        Padding="12,8"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        BorderThickness="0,0,0,1">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Name="PluginBackBtn"
+                                Content="← 返回对话"
+                                FontSize="12"
+                                Padding="8,4"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource DividerBrush}"
+                                BorderThickness="1"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                Cursor="Hand" />
+                        <TextBlock Name="PluginPanelTitle"
+                                   FontSize="13"
+                                   FontWeight="Bold"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+                </Border>
+                <ContentControl Grid.Row="1" x:Name="PluginPanelContent" />
             </Grid>
         </Grid>
 

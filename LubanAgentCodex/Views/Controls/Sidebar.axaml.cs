@@ -22,6 +22,8 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Threading;
+using LubanAgentCodex.Plugins;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Repositories;
@@ -37,9 +39,12 @@ public partial class Sidebar : UserControl
 {
     private StackPanel? _workspacePanel;
     private ListBox? _llmWikiListBox;
+    private StackPanel? _pluginSection;
+    private ListBox? _pluginEntryListBox;
     private IWorkspaceManager? _workspaceManager;
     private SessionRepository? _sessionRepo;
     private IServiceProvider? _services;
+    private CodexPluginHost? _pluginHost;
 
     // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
     private readonly Dictionary<string, Border> _sessionRunningBadges = new(StringComparer.Ordinal);
@@ -81,6 +86,16 @@ public partial class Sidebar : UserControl
     /// </summary>
     public event EventHandler? SettingsRequested;
 
+    /// <summary>
+    /// 插件管理窗口打开请求（由底部「插件」按钮触发）
+    /// </summary>
+    public event EventHandler? PluginManageRequested;
+
+    /// <summary>
+    /// 插件侧栏入口被选中（参数：该入口对应的面板注册键）。
+    /// </summary>
+    public event EventHandler<PluginSidebarRowModel>? PluginEntrySelected;
+
     public Sidebar()
     {
         InitializeComponent();
@@ -91,6 +106,8 @@ public partial class Sidebar : UserControl
         AvaloniaXamlLoader.Load(this);
         _workspacePanel = this.FindControl<StackPanel>("WorkspacePanel");
         _llmWikiListBox = this.FindControl<ListBox>("LlmWikiListBox");
+        _pluginSection = this.FindControl<StackPanel>("PluginSection");
+        _pluginEntryListBox = this.FindControl<ListBox>("PluginEntryListBox");
         if (_llmWikiListBox != null)
         {
             _llmWikiListBox.AddHandler(Button.ClickEvent, OnLlmWikiItemButtonClick);
@@ -98,13 +115,71 @@ public partial class Sidebar : UserControl
             _llmWikiListBox.AddHandler(InputElement.PointerPressedEvent, OnLlmWikiListBoxPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
         }
 
+        // 插件侧栏入口：选中即请求宿主内容区挂载对应面板
+        if (_pluginEntryListBox != null)
+            _pluginEntryListBox.SelectionChanged += OnPluginEntrySelectionChanged;
+
         // 底部「⚙ 设置」按钮：打开工作区设置中心（技能 / 规则 / MCP）
         if (this.FindControl<Button>("SettingsBtn") is Button settingsBtn)
             settingsBtn.Click += (s, e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
 
+        // 底部「插件」按钮：打开插件管理窗口
+        if (this.FindControl<Button>("PluginManageBtn") is Button pluginBtn)
+            pluginBtn.Click += (s, e) => PluginManageRequested?.Invoke(this, EventArgs.Empty);
+
         // 底部「GitHub ↗」按钮：在默认浏览器打开仓库地址
         if (this.FindControl<Button>("GitHubBtn") is Button githubBtn)
             githubBtn.Click += (s, e) => OpenGitHub();
+    }
+
+    /// <summary>
+    /// 插件侧栏入口选中：请求主窗口在内容区挂载对应面板。
+    /// </summary>
+    private void OnPluginEntrySelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_pluginEntryListBox?.SelectedItem is PluginSidebarRowModel row)
+            PluginEntrySelected?.Invoke(this, row);
+    }
+
+    /// <summary>
+    /// 刷新插件侧栏入口（订阅宿主贡献变化后自动调用）。
+    /// </summary>
+    private void RefreshPluginEntries()
+    {
+        if (_pluginEntryListBox is null || _pluginSection is null) return;
+
+        var rows = _pluginHost?.GetSidebarEntries()
+            .Select(entry => new PluginSidebarRowModel
+            {
+                Id = entry.Id,
+                Label = string.IsNullOrWhiteSpace(entry.Label) ? entry.Id : entry.Label,
+            })
+            .ToList() ?? new List<PluginSidebarRowModel>();
+
+        _pluginEntryListBox.ItemsSource = rows;
+        _pluginSection.IsVisible = rows.Count > 0;
+    }
+
+    /// <summary>
+    /// 解析插件宿主单例并订阅其侧栏贡献变化（仅订阅一次）。
+    /// </summary>
+    private void EnsurePluginHost(IServiceProvider services)
+    {
+        if (_pluginHost is null)
+        {
+            _pluginHost = services.GetService<CodexPluginHost>();
+            if (_pluginHost is not null)
+            {
+                // 贡献变更可能来自后台线程（插件卸载），统一切回 UI 线程刷新
+                _pluginHost.SidebarEntriesChanged += (_, _) =>
+                {
+                    if (Dispatcher.UIThread.CheckAccess()) RefreshPluginEntries();
+                    else Dispatcher.UIThread.Post(RefreshPluginEntries);
+                };
+            }
+        }
+
+        RefreshPluginEntries();
     }
 
     /// <summary>
@@ -193,6 +268,7 @@ public partial class Sidebar : UserControl
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _sessionRepo = services.GetRequiredService<SessionRepository>();
+        EnsurePluginHost(services);
         LoadWorkspaces();
         LoadLlmWikiItems();
     }
@@ -869,5 +945,17 @@ public class SessionItem
         public string WorkspaceId { get; set; } = "";
         public string DisplayName { get; set; } = "知识库";
         public WorkspaceInfo? Workspace { get; set; }
+    }
+
+    /// <summary>
+    /// 插件侧栏入口列表项（侧边栏「插件」分区）；<see cref="Id"/> 即面板注册键（entryId）。
+    /// </summary>
+    public class PluginSidebarRowModel
+    {
+        /// <summary>入口 / 面板标识。</summary>
+        public string Id { get; set; } = "";
+
+        /// <summary>显示标题。</summary>
+        public string Label { get; set; } = "";
     }
 
