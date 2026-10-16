@@ -27,6 +27,7 @@ using LuBan.AIAgent;
 using LuBan.AIAgent.Configuration;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Services;
+using LubanAgentCodex.Security;
 using LubanAgentA2A.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
@@ -56,6 +57,9 @@ public enum SettingsTabKind
 
     /// <summary>模型（跨供应商，全局 config.json）</summary>
     Model,
+
+    /// <summary>云效连接（外部集成：组织 ID + PAT，全局 config.json / 凭据存储）</summary>
+    Yunxiao,
 }
 
 /// <summary>
@@ -67,6 +71,9 @@ public partial class SettingsWindow : Window
     private readonly IServiceProvider? _services;
     private readonly List<WorkspaceInfo> _workspaces = new();
     private ConfigManager? _configManager;
+
+    /// <summary>云效连接配置读写门面（外部集成页；容器不可用时为 null）。</summary>
+    private YunxiaoSettingsService? _yunxiaoSettings;
 
     /// <summary>当前选中工作区；null 表示选中「★ 全局」。</summary>
     private WorkspaceInfo? _selectedWorkspace;
@@ -117,6 +124,8 @@ public partial class SettingsWindow : Window
         _services = services;
         try { _configManager = _services.GetRequiredService<ConfigManager>(); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"获取 ConfigManager 失败: {ex.Message}"); _configManager = null; }
+        try { _yunxiaoSettings = _services.GetService<YunxiaoSettingsService>(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"获取 YunxiaoSettingsService 失败: {ex.Message}"); _yunxiaoSettings = null; }
         _selectedWorkspace = currentWorkspace;
         _ = LoadAsync();
     }
@@ -271,6 +280,8 @@ public partial class SettingsWindow : Window
         AddGroup("供应商与模型");
         AddItem("供应商", SettingsTabKind.Provider);
         AddItem("模型", SettingsTabKind.Model);
+        AddGroup("外部集成");
+        AddItem("云效连接", SettingsTabKind.Yunxiao);
     }
 
     // ---------------- 顶栏：作用域 / 全局说明 ----------------
@@ -280,12 +291,14 @@ public partial class SettingsWindow : Window
         if (_topBar == null) return;
         _topBar.Children.Clear();
 
-        // 供应商 / 模型类：无作用域，显示全局说明
-        if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model)
+        // 供应商 / 模型 / 云效：无工作区作用域，显示全局说明
+        if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model || _tab == SettingsTabKind.Yunxiao)
         {
             _topBar.Children.Add(new TextBlock
             {
-                Text = "全局 config.json（供应商与模型配置不分工作区）",
+                Text = _tab == SettingsTabKind.Yunxiao
+                    ? "全局 config.json（外部集成凭据与 Provider.ApiKey 同基线，不分工作区）"
+                    : "全局 config.json（供应商与模型配置不分工作区）",
                 FontSize = 12,
                 Foreground = Brush.Parse("#8A8A8A"),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -445,6 +458,16 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        // 云效类：固定单条目（外部集成连接）
+        if (_tab == SettingsTabKind.Yunxiao)
+        {
+            _itemList.ItemsSource = new List<string> { "云效连接" };
+            _itemList.SelectedItem = "云效连接";
+            _selectedItemKey = "yunxiao";
+            UpdateActionBar();
+            return;
+        }
+
         // 工作区配置（技能 / 规则 / MCP）
         var strs = EnumerateItems();
         _itemList.ItemsSource = strs;
@@ -480,6 +503,9 @@ public partial class SettingsWindow : Window
 
     private void NewItem()
     {
+        // 云效：固定单条目，无需新建（按钮已隐藏，此处兜底）
+        if (_tab == SettingsTabKind.Yunxiao) return;
+
         // A2A：服务端文件（若不存在）或新客户端文件
         if (_tab == SettingsTabKind.A2A)
         {
@@ -634,6 +660,9 @@ public partial class SettingsWindow : Window
                     break;
                 case SettingsTabKind.Model:
                     BuildModelEditor(host, key);
+                    break;
+                case SettingsTabKind.Yunxiao:
+                    BuildYunxiaoEditor(host, key);
                     break;
             }
         }
@@ -1013,6 +1042,71 @@ public partial class SettingsWindow : Window
         });
     }
 
+    // ---------------- 云效连接编辑器（外部集成） ----------------
+
+    /// <summary>
+    /// 云效连接编辑器：组织 ID（持久化 + 运行时选项即时生效）+ PAT（写入宿主凭据存储，不回显明文）。
+    /// </summary>
+    private void BuildYunxiaoEditor(StackPanel host, string key)
+    {
+        host.Children.Add(new TextBlock
+        {
+            Text = "云效（Codeup / Flow）连接配置。凭据与 LLM ApiKey 同基线存放在全局 config.json 的 Integrations 节，"
+                 + "不会写入会话库；组织 ID 与 PAT 保存后即时生效（无需重启）。",
+            FontSize = 11,
+            Foreground = Brush.Parse("#8A8A8A"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+
+        if (_yunxiaoSettings == null)
+        {
+            host.Children.Add(new TextBlock
+            {
+                Text = "云效设置服务不可用（容器未注册 YunxiaoSettingsService）。",
+                FontSize = 12,
+                Foreground = Brushes.OrangeRed,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 12, 0, 0),
+            });
+            return;
+        }
+
+        var organizationId = _yunxiaoSettings.GetOrganizationId();
+        var hasPat = _yunxiaoSettings.HasPat();
+
+        SetField("YunxiaoOrganizationId",
+            AddField(host, "组织 ID（云效企业标识，如 60d1xxxxxx）", organizationId));
+        SetField("YunxiaoPat",
+            AddPasswordField(host, hasPat
+                ? "个人访问令牌 PAT（已配置；留空表示不修改）"
+                : "个人访问令牌 PAT（尚未配置）", ""));
+
+        host.Children.Add(new TextBlock
+        {
+            Text = "PAT 仅写入凭据存储，页面不回显明文；也可用环境变量 LUBAN_YUNXIAO_PAT 兜底。"
+                 + "插件若要在出口调用云效接口，须在清单中声明 credential: [\"yunxiao_pat\"] 与对应网络白名单（PRD §3.7）。",
+            FontSize = 10,
+            Foreground = Brush.Parse("#8A8A8A"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 10, 0, 0),
+        });
+    }
+
+    private async Task SaveYunxiaoAsync()
+    {
+        if (_yunxiaoSettings == null) { SetHint("云效设置服务不可用，无法保存。", true); return; }
+
+        var organizationId = GetText("YunxiaoOrganizationId").Trim();
+        var pat = GetText("YunxiaoPat").Trim();
+
+        // PAT 留空 = 保持原值不变（避免误清空既有令牌）
+        await _yunxiaoSettings.SaveAsync(organizationId, string.IsNullOrWhiteSpace(pat) ? null : pat);
+
+        BuildEditor();
+        SetHint("已保存。组织 ID 与 PAT 已生效（无需重启）。", false);
+    }
+
     // ---------------- 编辑器字段辅助 ----------------
 
     private void SetField(string key, Control control) => _editorFields[key] = control;
@@ -1281,6 +1375,9 @@ public partial class SettingsWindow : Window
                 case SettingsTabKind.Model:
                     SetHint("模型变更已即时保存（无需点击「保存」）。", false);
                     break;
+                case SettingsTabKind.Yunxiao:
+                    await SaveYunxiaoAsync();
+                    break;
             }
         }
         catch (Exception ex)
@@ -1544,6 +1641,9 @@ public partial class SettingsWindow : Window
         var key = _selectedItemKey;
         if (string.IsNullOrEmpty(key)) return;
 
+        // 云效：固定单条目，不可删除（按钮已隐藏，此处兜底）
+        if (_tab == SettingsTabKind.Yunxiao) return;
+
         if (_tab == SettingsTabKind.A2A)
         {
             if (IsGlobal || _selectedWorkspace == null) return;
@@ -1662,6 +1762,8 @@ public partial class SettingsWindow : Window
     {
         if (_tab == SettingsTabKind.Provider || _tab == SettingsTabKind.Model) return true;
         if (_tab == SettingsTabKind.A2A) return false;
+        // 云效：保存即写入共享选项与凭据存储、即时生效，无需「应用配置」触发工作区回放
+        if (_tab == SettingsTabKind.Yunxiao) return false;
         if (IsGlobal) return true;
 
         try
@@ -1687,6 +1789,13 @@ public partial class SettingsWindow : Window
             if (_newItemBtn != null) _newItemBtn.IsVisible = false;
             if (_deleteItemBtn != null) _deleteItemBtn.IsVisible = false;
             if (_saveBtn != null) _saveBtn.IsVisible = false;
+        }
+        else if (_tab == SettingsTabKind.Yunxiao)
+        {
+            // 云效：固定单条目，隐藏新建 / 删除，保留保存
+            if (_newItemBtn != null) _newItemBtn.IsVisible = false;
+            if (_deleteItemBtn != null) _deleteItemBtn.IsVisible = false;
+            if (_saveBtn != null) _saveBtn.IsVisible = true;
         }
         else
         {

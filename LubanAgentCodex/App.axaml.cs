@@ -26,8 +26,10 @@ using LubanAgentCore.Hosting;
 using LubanAgentCore.Retrieval;
 using LubanAgentCore.Services;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Orchestration;
 using LuBan.AIAgent.Plugins;
+using LuBan.AIAgent.Plugins.Security;
 using LuBan.Logging;
 using LubanAgentCore.Plugins;
 using Microsoft.Extensions.Configuration;
@@ -122,10 +124,31 @@ public class App : Application
                     services.AddSingleton<Plugins.CodexPluginHost>();
                     services.AddSingleton<IPluginHost>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
                     services.AddSingleton<IPluginSessionContributor>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
+
+                    // 云效集成凭据与设置（PRD §3.7 / §4.9）：
+                    // 宿主凭据存储沿用全局 config.json（与 Provider.ApiKey 同基线），覆盖框架默认只读实现；
+                    // PAT 提供者改为读凭据存储，使设置页录入后即时生效。三者皆为单例，
+                    // 供单例的云效连接器消费（CodexCredentialStore 经 UserContextRegistry 取配置，不跨 scope）。
+                    services.AddSingleton<Security.CodexCredentialStore>();
+                    services.Replace(ServiceDescriptor.Singleton<ICredentialStore>(
+                        sp => sp.GetRequiredService<Security.CodexCredentialStore>()));
+                    services.Replace(ServiceDescriptor.Singleton<IYunxiaoCredentialProvider>(
+                        sp => new Security.CodexYunxiaoCredentialProvider(sp.GetRequiredService<ICredentialStore>())));
+                    services.AddSingleton<Security.YunxiaoSettingsService>();
                 });
 
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);
+
+                // 把持久化的云效组织 ID 回填到运行时共享选项（配置节点未提供时），使本次启动即生效
+                try
+                {
+                    _services.GetRequiredService<Security.YunxiaoSettingsService>().ApplyPersistedOrganizationId();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn("回填云效组织 ID 失败", ex);
+                }
 
                 // 4) 设置工作区授权回调（GUI 自动授权）
                 var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();

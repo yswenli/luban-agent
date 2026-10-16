@@ -13,6 +13,8 @@
 *****************************************************************************/
 using LuBan.AIAgent.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Connectors.AliyunDevOps.Mcp;
+using LuBan.AIAgent.Plugins;
+using LuBan.AIAgent.Plugins.Security;
 
 namespace LubanAgentCodex.Plugins;
 
@@ -38,8 +40,14 @@ internal static class PluginMcpCatalog
     /// </summary>
     /// <param name="name">MCP 服务器名（不区分大小写）。</param>
     /// <param name="root">根级 DI 容器（解析客户端依赖）。</param>
+    /// <param name="pluginId">声明该 MCP 服务器的插件标识（用于权限环境）。</param>
+    /// <param name="permissions">插件声明的权限；为空时视为无授权（默认拒绝）。</param>
     /// <returns>客户端实例；名称不是宿主内置的进程内客户端时返回 <c>null</c>。</returns>
-    public static IMCPClient? Create(string name, IServiceProvider root)
+    public static IMCPClient? Create(
+        string name,
+        IServiceProvider root,
+        string pluginId,
+        PluginPermissions? permissions = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             return null;
@@ -56,7 +64,11 @@ internal static class PluginMcpCatalog
                         return null;
                     }
 
-                    return new YunxiaoMCPClient(connector);
+                    // 注入权限环境：该 MCP 客户端经连接器发起的请求将按插件声明判定越界（PRD §3.7）
+                    return new YunxiaoMCPClient(connector)
+                    {
+                        PermissionScope = new PluginPermissionScope(pluginId, permissions)
+                    };
                 }
                 catch (Exception ex)
                 {

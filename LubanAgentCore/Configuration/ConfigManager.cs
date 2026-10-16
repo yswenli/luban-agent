@@ -181,6 +181,42 @@ public class ConfigManager : IAppConfigReader
     }
 
     /// <summary>
+    /// 外部集成配置与凭据（云效 PAT / 组织 ID 等），键由调用方归一化。
+    /// </summary>
+    /// <remarks>
+    /// PRD §4.9.3：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线）。
+    /// </remarks>
+    public IReadOnlyDictionary<string, string> Integrations => _config.Integrations;
+
+    /// <summary>
+    /// 读取外部集成配置项。
+    /// </summary>
+    /// <param name="key">键（不归一化，由调用方负责）。</param>
+    /// <returns>配置值；不存在或为空时返回 <c>null</c>。</returns>
+    public string? GetIntegration(string key)
+        => !string.IsNullOrWhiteSpace(key) && _config.Integrations.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+
+    /// <summary>
+    /// 写入或删除外部集成配置项（立即落盘）。
+    /// </summary>
+    /// <param name="key">键。</param>
+    /// <param name="value">值；为 <c>null</c>/空时删除该键。</param>
+    public void SetIntegration(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("集成配置键不能为空", nameof(key));
+
+        if (string.IsNullOrWhiteSpace(value))
+            _config.Integrations.Remove(key);
+        else
+            _config.Integrations[key] = value;
+
+        Save();
+    }
+
+    /// <summary>
     /// 添加或更新 Provider，已存在时更新其 API Key 与 Base URL
     /// </summary>
     /// <param name="name">Provider 名称</param>

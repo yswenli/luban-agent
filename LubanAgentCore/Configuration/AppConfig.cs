@@ -67,4 +67,14 @@ public class AppConfig
     /// 值为是否支持。无记录表示未知，由 LLM 实际调用结果动态回填。
     /// </summary>
     public Dictionary<string, bool> ModelCapabilities { get; set; } = new();
+
+    /// <summary>
+    /// 外部集成配置与凭据（键为归一化键，如 <c>yunxiao_pat</c>、<c>yunxiao_organization_id</c>）。
+    /// </summary>
+    /// <remarks>
+    /// PRD §4.9.3 放宽裁决：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线），
+    /// 不引入额外加密层。本字段即该基线的落点，由 <c>CodexCredentialStore</c> 经
+    /// <c>ICredentialStore</c> 读写，供云效 PAT 与组织 ID 使用。
+    /// </remarks>
+    public Dictionary<string, string> Integrations { get; set; } = new();
 }

@@ -15,6 +15,7 @@ using System.Text;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
+using LuBan.AIAgent.Plugins.Security;
 using LuBan.AIAgent.Skills;
 using LubanAgentCore.Context;
 using LubanAgentCore.Plugins;
@@ -94,6 +95,13 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <inheritdoc />
     /// <remarks>框架经 <c>PluginHostScope</c> 按插件包装后回填真实标识，共享实现自身不持有插件身份。</remarks>
     public string PluginId => string.Empty;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 同理，共享实现自身不持有插件权限；真实权限由 <c>PluginHostScope</c> 回填，
+    /// 因此这里返回空权限（默认拒绝）以免误放行。
+    /// </remarks>
+    public PluginPermissions Permissions => new();
 
     /// <inheritdoc />
     public void Log(string message)
@@ -346,7 +354,11 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
                 {
                     if (registry.Contains(declaration.Name)) continue;
 
-                    var client = PluginMcpCatalog.Create(declaration.Name, _context.Root);
+                    var client = PluginMcpCatalog.Create(
+                        declaration.Name,
+                        _context.Root,
+                        plugin.Id,
+                        plugin.Manifest?.Permissions);
                     if (client is null) continue;
 
                     registry.RegisterPluginClient(client);
@@ -397,6 +409,10 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
         => PostToUiCore(() => SidebarEntriesChanged?.Invoke(this, EventArgs.Empty));
 
     /// <summary>把一项插件 MCP 注册进指定会话的注册表（幂等）。</summary>
+    /// <remarks>
+    /// 插件身份取自当前权限环境（<see cref="PluginHostScope.RegisterMcpServer"/> 在委派前已进入），
+    /// 使 MCP 客户端出口调用按插件声明判定越界（PRD §3.7）；无环境时按「未声明权限」处理（默认拒绝）。
+    /// </remarks>
     private void TryRegisterMcpInSession(IServiceProvider sessionServices, string name)
     {
         try
@@ -404,7 +420,12 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             var registry = sessionServices.GetService<MCPRegistry>();
             if (registry is null || registry.Contains(name)) return;
 
-            var client = PluginMcpCatalog.Create(name, _context.Root);
+            var scope = PluginScopeContext.Current;
+            var client = PluginMcpCatalog.Create(
+                name,
+                _context.Root,
+                scope?.PluginId ?? string.Empty,
+                scope?.Permissions);
             if (client is null) return;
 
             registry.RegisterPluginClient(client);
