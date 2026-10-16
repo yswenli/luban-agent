@@ -8,7 +8,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/15
-*描述：插件贡献记账表（UI 无关，可单测）：侧栏条目、面板工厂与实例、命令
+*描述：插件贡献记账表（UI 无关，可单测）：侧栏条目、面板工厂与实例、命令、技能
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins;
@@ -16,7 +16,7 @@ using LuBan.AIAgent.Plugins;
 namespace LubanAgentCodex.Plugins;
 
 /// <summary>
-/// 插件贡献记账表：保存宿主侧真实持有的插件贡献（侧栏条目 / 面板工厂与实例 / 命令）。
+/// 插件贡献记账表：保存宿主侧真实持有的插件贡献（侧栏条目 / 面板工厂与实例 / 命令 / 技能）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,6 +37,7 @@ public sealed class PluginHostRegistry
     private readonly Dictionary<string, IPluginPanel> _panelInstances = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PluginCommandDescriptor> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _skillRoots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PluginSkillRecord> _runtimeSkills = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 登记（或覆盖）一个侧栏条目。
@@ -227,8 +228,52 @@ public sealed class PluginHostRegistry
             _panelInstances.Clear();
             _commands.Clear();
             _skillRoots.Clear();
+            _runtimeSkills.Clear();
         }
     }
+
+    /// <summary>
+    /// 记录一项插件运行期贡献的技能（<c>RegisterSkill</c> / <c>ContributeSkills</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 清单声明的技能可由 <c>plugin.json</c> 随时重建，而运行期贡献的技能只存在于插件代码中，
+    /// 宿主必须记账才能在会话构建（含工作区切换）时补齐（PRD §3.11「回放」）。
+    /// 定义按值快照，避免插件复用 / 改写同一实例导致回放内容漂移。
+    /// </remarks>
+    /// <param name="definition">技能定义。</param>
+    /// <param name="sourceDirectory">来源插件目录（用于解析相对 <c>entry</c>；可为 <c>null</c>）。</param>
+    public void TrackSkill(SkillDefinition definition, string? sourceDirectory)
+    {
+        if (definition is null || string.IsNullOrWhiteSpace(definition.Id))
+            return;
+
+        lock (_gate)
+        {
+            _runtimeSkills[definition.Id] = new PluginSkillRecord(CloneDefinition(definition), sourceDirectory);
+        }
+    }
+
+    /// <summary>
+    /// 取全部已记账的运行期技能（快照；供会话构建时补齐）。
+    /// </summary>
+    public IReadOnlyList<PluginSkillRecord> GetRuntimeSkills()
+    {
+        lock (_gate)
+        {
+            return _runtimeSkills.Values.ToList();
+        }
+    }
+
+    private static SkillDefinition CloneDefinition(SkillDefinition definition) => new()
+    {
+        Id = definition.Id,
+        Name = definition.Name,
+        Description = definition.Description,
+        Entry = definition.Entry,
+        Category = definition.Category,
+        TriggerKeywords = definition.TriggerKeywords is null ? null : new List<string>(definition.TriggerKeywords),
+        Permissions = definition.Permissions
+    };
 
     /// <summary>
     /// 记录插件技能写入过的工作区根（停用时据此精确删除，避免误删同名非插件技能）。
@@ -279,6 +324,7 @@ public sealed class PluginHostRegistry
 
         lock (_gate)
         {
+            _runtimeSkills.Remove(skillId);
             return _skillRoots.Remove(skillId);
         }
     }
@@ -294,3 +340,10 @@ public sealed class PluginHostRegistry
         }
     }
 }
+
+/// <summary>
+/// 运行期贡献技能的一条记账（技能定义快照 + 来源插件目录）。
+/// </summary>
+/// <param name="Definition">技能定义快照。</param>
+/// <param name="SourceDirectory">来源插件目录（用于解析相对 <c>entry</c>；解析不出时为 <c>null</c>）。</param>
+public sealed record PluginSkillRecord(SkillDefinition Definition, string? SourceDirectory);

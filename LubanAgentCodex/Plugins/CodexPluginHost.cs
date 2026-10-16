@@ -225,14 +225,19 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             return;
         }
 
+        var sourceDirectory = ResolveSourceDirectory(definition);
+
+        // 先记账再落盘：运行期技能只存在于插件代码中，记账后才能在会话构建 / 工作区切换时补齐（PRD §3.11）
+        _registry.TrackSkill(definition, sourceDirectory);
+
         var workspaceRoot = _context.CurrentWorkspaceRoot;
         if (string.IsNullOrWhiteSpace(workspaceRoot))
         {
-            LogError($"插件技能 {definition.Id} 未落盘：当前没有活动工作区。");
+            Log($"插件技能 {definition.Id} 暂无活动工作区，将在会话构建时补齐。");
             return;
         }
 
-        if (!TryWriteSkillFile(workspaceRoot, definition, definition, ResolveSourceDirectory(definition), out var error))
+        if (!TryWriteSkillFile(workspaceRoot, definition, definition, sourceDirectory, out var error))
         {
             LogError($"插件技能 {definition.Id} 落盘失败：{error}");
             return;
@@ -331,7 +336,9 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <remarks>
     /// 会话级回放（PRD §3.11）：进程内 MCP 客户端无法用文件描述，且 <c>MCPRegistry</c> 为会话 scope，
     /// 故每次构建 Agent 前都要按当前<b>启用中</b>插件的清单重新注入；同时补齐本会话工作区缺失的
-    /// 插件技能文件（工作区切换后自愈）。全过程幂等，失败不影响会话构建。
+    /// 插件技能文件（工作区切换后自愈）。技能有两条来源：清单声明的 <c>plugin.json</c>，
+    /// 以及运行期贡献（<c>RegisterSkill</c> / <c>ContributeSkills</c>，由宿主记账），两者都只补缺失、
+    /// 不覆盖已存在文件。全过程幂等，失败不影响会话构建。
     /// </remarks>
     public void Contribute(IServiceProvider sessionServices)
     {
@@ -369,6 +376,9 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             if (!string.IsNullOrWhiteSpace(workspaceRoot))
                 EnsureManifestSkills(workspaceRoot!, plugin);
         }
+
+        if (!string.IsNullOrWhiteSpace(workspaceRoot))
+            EnsureRuntimeSkills(workspaceRoot!);
     }
 
     #endregion
@@ -500,7 +510,35 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             if (!TryWriteSkillFile(workspaceRoot, declaration, declaration, plugin.Directory, out var error))
                 LogError($"回放插件技能 {declaration.Id} 失败：{error}");
             else
+            {
+                _registry.TrackSkillRoot(declaration.Id, workspaceRoot);
                 Log($"会话回放插件技能：{declaration.Id} → {Path.Combine(workspaceRoot, ".luban-agent", "skills", declaration.Id)}");
+            }
+        }
+    }
+
+    /// <summary>补齐本进程内插件运行期贡献的技能文件（仅当文件缺失时写入）。</summary>
+    /// <remarks>
+    /// 运行期技能（<c>host.RegisterSkill</c> / <c>IPlugin.ContributeSkills()</c>）不在任何清单里，
+    /// 只存在于插件代码中；启用时若没有活动工作区，或其后切换了工作区，都必须由宿主按记账重新补齐。
+    /// </remarks>
+    private void EnsureRuntimeSkills(string workspaceRoot)
+    {
+        foreach (var record in _registry.GetRuntimeSkills())
+        {
+            var definition = record.Definition;
+            if (string.IsNullOrWhiteSpace(definition.Id)) continue;
+
+            var skillFile = Path.Combine(workspaceRoot, ".luban-agent", "skills", definition.Id, "SKILL.md");
+            if (File.Exists(skillFile)) continue;
+
+            if (!TryWriteSkillFile(workspaceRoot, definition, definition, record.SourceDirectory, out var error))
+                LogError($"回放运行期插件技能 {definition.Id} 失败：{error}");
+            else
+            {
+                _registry.TrackSkillRoot(definition.Id, workspaceRoot);
+                Log($"会话回放运行期插件技能：{definition.Id} → {Path.Combine(workspaceRoot, ".luban-agent", "skills", definition.Id)}");
+            }
         }
     }
 
