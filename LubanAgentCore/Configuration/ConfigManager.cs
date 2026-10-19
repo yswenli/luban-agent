@@ -110,19 +110,31 @@ public class ConfigManager : IAppConfigReader
     }
 
     /// <summary>
-    /// 从磁盘加载配置，加载失败时使用空配置
+    /// 从磁盘加载配置；<b>解析失败时保留磁盘原文件不动</b>（绝不用空模型覆盖用户配置）。
     /// </summary>
+    /// <remarks>
+    /// 只有两种情况允许随后迁移落盘：① 配置读取成功；② 首次运行（文件本就不存在）。
+    /// 解析失败时内存里是空模型，若照常落盘会把 Providers（ApiKey）/ Integrations（PAT）/
+    /// SelectedModel / Skills / Rules 全部抹掉。
+    /// </remarks>
     public void Load()
     {
+        var exists = File.Exists(_configPath);
+
+        // 允许落盘的唯一依据：确实读到过磁盘内容，或本来就是首次运行
+        var canPersist = !exists;
+
         try
         {
-            if (File.Exists(_configPath))
+            if (exists)
             {
                 var json = File.ReadAllText(_configPath);
                 var config = JsonSerializer.Deserialize(json, ConfigJsonOptions.Pretty.GetTypeInfo(typeof(AppConfig))) as AppConfig;
                 if (config != null)
                 {
                     _config = config;
+                    canPersist = true;
+
                     foreach (var p in _config.Providers)
                     {
                         if (!string.IsNullOrEmpty(p.Name))
@@ -135,23 +147,54 @@ public class ConfigManager : IAppConfigReader
                             _config.SelectedModel = _config.SelectedModel[..colonIdx].Trim().ToLowerInvariant() + _config.SelectedModel[colonIdx..];
                     }
                 }
+                else
+                {
+                    Logger.Warn($"ConfigManager.Load 反序列化结果为空，已忽略且不覆盖磁盘文件: {_configPath}");
+                }
             }
         }
         catch (Exception ex)
         {
-            Logger.Error("ConfigManager.Load 加载配置失败", ex, _configPath);
+            Logger.Error("ConfigManager.Load 加载配置失败（保留磁盘原文件，不落盘覆盖）", ex, _configPath);
             _config = new AppConfig();
+            canPersist = false;
         }
+
+        if (!canPersist)
+            return;
 
         // 配置迁移（Q15 凭据键泛化 + 连接器声明补种）：一次性、失败不阻断启动
         try
         {
             if (MigrateIfNeeded())
+            {
+                TryBackupOnce();
                 Save();
+            }
         }
         catch (Exception ex)
         {
             Logger.Error("ConfigManager 配置迁移失败", ex, _configPath);
+        }
+    }
+
+    /// <summary>
+    /// 迁移落盘前对既有配置做一次性备份（<c>config.json.bak</c>；已存在则不覆盖）。
+    /// </summary>
+    private void TryBackupOnce()
+    {
+        try
+        {
+            if (!File.Exists(_configPath)) return;
+
+            var backupPath = _configPath + ".bak";
+            if (File.Exists(backupPath)) return;
+
+            File.Copy(_configPath, backupPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"ConfigManager 备份配置失败（继续迁移）: {ex.Message}");
         }
     }
 
@@ -164,7 +207,7 @@ public class ConfigManager : IAppConfigReader
     /// 复制到规范键（<c>connector:&lt;实例名&gt;:token</c>）。旧键<b>保留不删</b>，供读取回退与回滚。
     /// </para>
     /// <para>
-    /// ② <b>连接器声明补种</b>：老安装的 <c>config.json</c> 无 <c>connectors</c> 节点时补一条默认声明，
+    /// ② <b>连接器声明补种</b>：老安装的 <c>config.json</c> 无该实例声明时补一条默认声明（按实例名判重），
     /// 使插件清单里的 <c>mcpServers: ["yunxiao"]</c> 仍能解析；<c>enabled=false</c> 表示「声明可用但
     /// 不默认启用」，避免连接器工具被无差别暴露给所有会话（启用仍由工作区显式开启）。
     /// </para>
@@ -190,8 +233,10 @@ public class ConfigManager : IAppConfigReader
             changed = true;
         }
 
-        // ② 连接器声明补种
-        if (_config.Connectors.Count == 0)
+        // ② 连接器声明补种：按「实例名是否已声明」判重，而非「列表是否为空」——
+        //    否则用户只要声明了别的连接器，插件清单里的 mcpServers: ["yunxiao"] 就永久解析不到。
+        if (!_config.Connectors.Any(c =>
+                string.Equals(c?.Name?.Trim(), YunxiaoConnector.DefaultName, StringComparison.OrdinalIgnoreCase)))
         {
             _config.Connectors.Add(new ConnectorConfig
             {
@@ -240,7 +285,12 @@ public class ConfigManager : IAppConfigReader
             var directory = Path.GetDirectoryName(_configPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
-            File.WriteAllText(_configPath, json);
+
+            // 原子落盘：先写临时文件再替换，避免进程中断/断电留下半截 JSON
+            // （半截文件会在下次启动解析失败，若当时仍无条件落盘就会抹掉用户配置）
+            var tempPath = _configPath + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _configPath, overwrite: true);
         }
         catch (Exception ex)
         {

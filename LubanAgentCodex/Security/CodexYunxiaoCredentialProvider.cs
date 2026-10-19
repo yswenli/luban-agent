@@ -17,7 +17,8 @@ using LuBan.AIAgent.Plugins.Security;
 namespace LubanAgentCodex.Security;
 
 /// <summary>
-/// Codex 宿主的云效 PAT 提供者：从 <see cref="ICredentialStore"/> 读 <c>yunxiao_pat</c>（PRD §3.7 / §4.9）。
+/// Codex 宿主的云效 PAT 提供者：从 <see cref="ICredentialStore"/> 按<b>连接器实例名</b>读 PAT
+/// （键 <c>connector:&lt;实例名&gt;:token</c>，默认实例即 <c>yunxiao_pat</c>；PRD §3.7 / §4.9）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -43,14 +44,22 @@ public sealed class CodexYunxiaoCredentialProvider : IYunxiaoCredentialProvider
     }
 
     /// <inheritdoc />
-    public async Task<string?> GetPatAsync(CancellationToken cancellationToken = default)
+    public Task<string?> GetPatAsync(CancellationToken cancellationToken = default)
+        => GetPatAsync(null, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<string?> GetPatAsync(string? connectorName, CancellationToken cancellationToken = default)
     {
-        var pat = await _store.GetAsync(CredentialKeys.YunxiaoPat, cancellationToken).ConfigureAwait(false);
+        // Q15：按实例名取键（默认实例的键与历史 yunxiao_pat 等价，旧键由存储层别名回退）
+        var name = string.IsNullOrWhiteSpace(connectorName) ? YunxiaoConnector.DefaultName : connectorName.Trim();
+        var key = CredentialKeys.ForConnectorToken(name);
+
+        var pat = await _store.GetAsync(key, cancellationToken).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(pat))
             return pat;
 
         // 存储实现（含配置节点）未命中时，再看环境变量兜底
-        var variable = CredentialKeys.GetEnvironmentVariableName(CredentialKeys.YunxiaoPat);
+        var variable = CredentialKeys.GetEnvironmentVariableName(key);
         var fallback = string.IsNullOrWhiteSpace(variable) ? null : Environment.GetEnvironmentVariable(variable);
         return string.IsNullOrWhiteSpace(fallback) ? null : fallback;
     }
