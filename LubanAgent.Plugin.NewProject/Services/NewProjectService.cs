@@ -42,7 +42,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </para>
 /// <para>
 /// <b>当前进度（M4-P3）</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
-/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（统一 main + 提交 + 推送）已落地；
+/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、默认 main + 提交 + 推送）已落地；
 /// Step 4 / 5 / 7 按计划在 P4~P5 分批实现（未实现的步骤返回明确的「未实现」结果，不抛异常）。
 /// </para>
 /// </remarks>
@@ -1197,7 +1197,7 @@ public sealed class NewProjectService : INewProjectService
                     return StepResult.Fail(Step, reason);
                 }
 
-                // ── 1. 统一到 main（PRD §6 #17：Step 6 统一推 main）──────────────────────
+                // ── 1. 切到目标分支（PRD §6 #17：pushBranch 优先、默认 main）────────────
                 var branchWatch = BeginOperation(Step, $"整理分支（{label}）", $"目标分支 {branch}");
                 var hasBranch = await RunGitAsync(runner, repository.LocalPath,
                     new[] { "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}" }, cancellationToken);

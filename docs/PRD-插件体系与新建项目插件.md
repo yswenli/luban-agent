@@ -1,7 +1,7 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.18（grill 第二轮 11 项决策全部定案并回写：流水线部署目标不继承企服版、远端产物孤儿与重跑幂等、重跑会话策略、分支策略、PAT 归属、中断恢复与向导单实例、插件崩溃隔离、版本升级热替换、面板占位与 UI 投递令牌；另订正 §3.12 事件引用的方向表述）
-- **日期**：2026-10-14
+- **版本**：v0.19（M4-P3 落地回写：Step 3 增加「只读预检 + 自动建代码组 + 模板 pin 运行期解析 + 等模板分支就绪 + 克隆失败清理与复用健康校验」，Step 6 目标分支改为「配置 `pushBranch` 优先、默认 `main`」；§4.5 补项目代码组 / 推送目标分支 / `cloned` 语义；§6 修订 #5/#17 并新增 #23/#24/#25；§4.11.3 MCP 工具由 8 个扩为 10 个，新增 `codeup_list_branches` / `codeup_create_group`）
+- **日期**：2026-10-19
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
@@ -15,6 +15,7 @@
 - **修订说明（v0.12）**：**明确新项目代码仓库的创建方式**（用户领域输入：应以 `TJCES-Admin` / `TJCES-Service` / `TJCES-Mobile` 三端模板仓为模板创建，可见性为**组织可见**，再用 Git 工具按仓库 HTTPS 地址克隆到本地）。据此调整：①**Step 3 由「直接克隆模板仓库到本地」改为「以对应模板仓为模板创建本项目各端专属仓库（可见性固定＝组织内公开）→ 取其 HTTPS 地址用 Git 克隆到本地」**，并给出三端模板对照表（后端←`TJCES-Service`、管理端←`TJCES-Admin`、移动端←`TJCES-Mobile`，默认仓库名 `{缩写}-Service/-Admin/-Mobile`）；②**Step 6 相应由「创建仓库并推送」调整为「把本地已改造并通过编译的最终改动提交并推送回各端自有仓库」**；③Step 7 每条流水线各自绑定**本端对应的仓库**（而非单一仓库）；④同步流程图节点、每步云效能力表、数据模型（模板对照 + 按端目标仓库）、共享能力层、原子 Skill 与 MCP 映射、`codeup_create_repo` 工具入参与注③、§4.4 集成表，并重绘第 3、6、7 步界面草图。
 - **修订说明（v0.13）**：**保留建库的「用户确认界面」**。因 v0.12 已把建库前置到 Step 3，确认界面随之**移至 Step 3**（而非留在 Step 6）：执行前展示并允许用户调整①**各端新仓库名称**（可逐端修改，默认 `{缩写}-Service/-Admin/-Mobile`）②**可见性**（默认且推荐「组织内公开＝组织可见」，可改「私有」＝仅项目成员可见）③**归属组织**（默认取自云效连接配置），需勾选「我已确认」后才开始创建与克隆；Step 6 维持纯粹的「提交 + 推送」界面。第 3 步草图已重绘为「确认区 + 执行进度」形态。
 - **修订说明（v0.14）**：**全文正确性与一致性审查**（三路并行评审：内部一致性 / 云效 API 事实 / 草图与可读性）。①**修正一处功能性缺陷**——「创建仓库」接口返回**不含 HTTPS 克隆地址**，原文档直接拿返回值克隆会失败；现明确需**再调「查询单个仓库」取 `httpUrlToRepo`** 后再用 Git 克隆，并同步订正 `codeup_create_repo` / `codeup_search_repos` 工具出参说明与注③。②**修正草图自相矛盾**——示例项目 JNMS 在第 1 步**未勾选移动端**，第 7 步却画了 3 条流水线；现改为**所选端各 1 条（本例 2 条）**并显式标出「移动端已跳过（第 1 步未勾选）」，第 3/5/6/7 步口径统一；第 5 步「下一步」改为**编译通过后才可用**（对齐「编译失败阻断后续步骤」）；第 6 步左右栏进度状态对齐并补齐「提交管理端改动」记录；步骤条 `3 模板`→`3 建库`、`6 仓库`→`6 推送`；第 3 步主按钮改为「确认并创建」；补第 2 步「全部成功后自动进入第 3 步」说明。③**订正 API 事实**——建库增 `createParentPath`（含多级分组时自动建父路径）；`flow_update_pipeline` 的 `name` 为**必填**且出参为布尔；流水线 YAML 取自 `pipelineConfig.flow` 字段；403 错误码补全为 `Forbidden.InvalidUser.UserNotInCurrentOrganization` / `Forbidden.InvalidOrganizationMember`；新增注⑥说明运行日志接口 `GetPipelineJobRunLog` 与 `UpdatePipeline` 中心版路径待联调确认。④**可读性**——§1.1 新增**名词速查表**（插件 / Skill / MCP / 连接器 / ALC / PAT / Codeup / Flow / 组织可见 等 14 条）；§4.9.1 明确 Git 鉴权的**方式 A（默认 `oauth2:<PAT>@`）与方式 B（HTTPS 克隆账号）**；英文缩写命名规范改为白话；§4.11.3 与 §3.9 标注为「开发实现附录 / 可跳过」；移除残余代码片段（`alc.Unload()`、`services.AddSingleton<...>`、`mcpServers` JSON）。⑤**口径统一**——「端 ×3」一律改为「所选端各 1 条，最多 3 条」（§4.8 验收 #2、§4.10.2、§4.10.4、§4.10.7）；全文术语「代码库」统一为「代码仓库」。
+- **修订说明（v0.19）：M4-P3 真机验收通过后的落地回写**——按 Step 3 / Step 6 真机跑通的**实际实现**订正设计（并已被真机取证）。①**Step 3**：新增「**只读预检**」子步——执行前把目标代码组、模板库命中项、pin 解析结果、逐端仓库名与落地目录摆给用户核对，**不创建任何云效资源**；**模板 pin 改为运行期解析**（`templates[].branch` 由「必填固定值」调整为**可选覆盖**：登记了就必须真实存在、不存在即阻断；留空则在模板仓现有分支中按 `develop → master → main → 模板默认分支` 取第一个存在的，并把「取到了哪个、依据是什么」回显在预检里）；**项目代码组改为自动创建**（`groupNameFormat` 默认 `{CODE}`、`groupParentId` 留空＝组织根，**先查后建、同名复用不重复建**，可见性默认 `internal`）；建库参数明确为 `namespaceId`＝代码组 ID + `templateProject{ templateProjectId, templateType=1, syncAllBranches=true }`；**建库后须轮询等 pin 分支就绪**（`syncAllBranches` 为服务端异步，真机实测建库后 10–17s 才补齐模板分支，上限 120s / 间隔 3s）；**克隆失败必须清理本次新建的目录**并把 git 原始报错摘要（已脱敏）带进失败文案；**「复用已克隆」增加健康校验**（工作树与 `.git/refs/heads/<pin>` 均可用才复用），`cloned` 语义收紧为「本地确已就绪」。②**Step 6**：目标分支由「统一推 `main`」订正为「**配置 `pushBranch` 优先、默认 `main`**；留空才退回该仓库默认分支」。③**权限**：`git` 能力白名单由扁平操作名扩为**三能力组**（`clone_push` / `commit` / `inspect`），并把门禁收敛到**唯一出口**（按 git 子命令名判定，判定前跳过 `-c` / `-C` / `--git-dir` 等前置全局选项）。④**MCP 工具由 8 个扩为 10 个**（新增 `codeup_list_branches` 查分支、`codeup_create_group` 建代码组，供聊天路径即席排障；向导路径仍直连连接器，二者共用同一实现）。⑤§4.5 补「项目代码组 / 推送目标分支 / `cloned` 语义」并把远端产物细化为三类；§6 修订 #5 / #17、新增 #23 / #24 / #25。
 - **修订说明（v0.18）：grill 第二轮，11 项决策全部按建议定案并回写正文**（三项只读代码/文档探查支撑）。①**【P0】第 7 步流水线会继承企服版部署目标**——云效 OpenAPI **无「复制/克隆流水线」接口**（复制仅控制台功能），本步实为自实现的 YAML 文本复制；而 `serviceConnection` / `machineGroup` / `runsOn` / 制品仓库 ID 在 YAML 中是字面量，照抄会导致首次 push 即部署到企服版环境。定案：替换点 4 项扩为 5 项、**部署阶段默认关闭**、展示「待人工绑定清单」、界面文案同步改写（§4.3 Step 7 / §4.6 草图 / §4.8 #13 / §6 #14）。②**远端产物孤儿与重跑幂等**——§4.7 原回滚三件套全是本地动作、零远端动作；定案为「本地自动回收、远端一律不自动删、只列清单」，并重跑时先检索同名复用（§4.3 Step 3 / Step 7、§4.5 新增「远端产物清单」、§4.7、§4.8 #14、§6 #15）。③**重跑会话策略**——`SwitchWorkspaceAsync`（`WorkspaceManager.cs:337-356`）会恢复旧会话，与 Step 2「必须新建会话」冲突；定案为区分首次/重跑，重跑复用工作区后**显式再建新会话**（§4.3 Step 2 陷阱③、§6 #16）。④**分支策略**——模板 pin 的是版本，克隆必须带 `-b`；定案 Step 3 扩展 `GitCloneAsync` 的 `-b/--branch`、Step 6 统一推 `main`、不设分支保护规则（§4.3、§6 #17）。⑤**PAT 归属**——用个人 PAT、不引入服务账号，并显式写明「云效资源归属于 PAT 持有者」（§4.9.3、§6 #18）。⑥**中断恢复**——不做断点续跑，改为残留检测 + 用户选择；向导单实例（§4.3 Step 2、§4.8 #15、§6 #19）。⑦**插件崩溃隔离**——ALC 隔离程序集不隔离线程；宿主在每个插件入口 try/catch 后置 `Error`，不做进程级隔离（§3.4、§4.8 #16、§6 #20）。⑧**版本升级热替换**——`Upgrade` 复用完整 6 步卸载流程，卸载验证未通过则**中止安装**（§3.5、§6 #21）。⑨**面板占位**——核查发现 `MainWindow.axaml` 中 `Grid.Column="1"` 的内层 Grid 是**匿名的**、且无字段持有其引用，挂载前必须先命名并加字段保存（§3.9）。⑩**UI 投递令牌**——`Dispatcher.UIThread.Post` 投递无撤销机制，定案由 `PluginBase.PostToUi` 提供卸载即失效的令牌、禁止插件直接裸投递（§3.4、§3.12、§6 #22）。⑪**§3.12 禁止项 #2 措辞订正**——真正阻止 ALC 回收的是「插件订阅宿主/单例 publisher」（host→plugin），而非宿主订阅插件控件事件。
 - **修订说明（v0.17）：决策——采用可回收 ALC 实现程序集级热卸载（不采用「停用后重启生效」的简化方案）**。据此：①**§1.4 第 2 条由「不做」改为「要做」**，撤销 v0.15 的限定语；②**§3.5「禁用 / 卸载」给出严格卸载顺序**（关闭 → 注销 UI 与事件 → 注销 Skill/MCP → 删除工作区文件 → 卸载 ALC → GC 验证）；③**新增 §3.12「ALC 热卸载设计约束」**，列出宿主侧禁止项（注册表长寿命强引用、Avalonia 全局样式与静态缓存、事件订阅、`Dispatcher.UIThread` 延续）与「卸载失败降级为提示重启」的兜底口径；④**§3.11 补充**：文件式 Skill 对 ALC 友好（不产生程序集引用），而进程内 `YunxiaoMCPClient` 实例是**唯一会阻止卸载的强引用**，必须靠注册口在卸载第一步注销；⑤§4.8 第 4 条与 §6 #8 同步更新为「真卸载 + 卸载失败降级」的双重判定。
 - **修订说明（v0.16）：§6 风险与开放问题共 13 项已逐条决策并回写正文**。①**错误提示措辞定案**——PAT 失效统一报「**个人令牌无效**」；权限类失败统一提示「**缺少 XX 权限，请到云效个人令牌页面设置**」（§4.7）。②**凭据安全按「不用太严格」放宽**——不强求 Windows 凭据管理器 / DPAPI 加密，**沿用宿主现有配置存储方式**（与现有 API Key 同基线）即可，但**日志、会话消息、操作记录中仍不得出现明文 PAT**（§4.9.3、§4.8 #6/#7/#11）。③**仅支持中心版**——移除 Region 版预留与「未来切换」表述（§4.4、§4.5、§4.3 前置）。④**模板版本 pin**——不跟随模板升级，找不到即报错阻断（§4.3 Step 3、§6 #5）。⑤**ALC 卸载增设专项测试**（§4.8 #4、M5）。⑥**插件目录固定** `luban-agent-codex/plugins/`，用户级覆盖暂不考虑（§3.3、§6 #9）。⑦**模板占位符规范不与维护方对齐**——改为「按约定扫描替换 + 第 5 步编译验证兜底」，残余风险显式记录在 §6 #10。⑧**ListPipelines 字段不足**——改用 `GetPipeline`（查询流水线详情）补充创建人与状态（§4.11.3、§6 #13）。⑨同步更正工作区根 `AGENTS.md` 中与代码相反的依赖表述。
@@ -47,7 +48,7 @@
 |------|------------|
 | **插件（Plugin）** | 一段可安装/卸载的扩展程序，能给左侧栏加入口、加面板，还能调用外部系统。本文档的「新建项目」就是这样一个插件。 |
 | **Skill（技能）** | 交给 AI 助手的一段「做事说明」。装配后助手就懂怎么做某类事，用户用自然语言即可触发。 |
-| **MCP** | 一种把外部系统能力包装成「助手可调用的工具」的标准方式。本文档用它把云效操作变成 8 个工具。 |
+| **MCP** | 一种把外部系统能力包装成「助手可调用的工具」的标准方式。本文档用它把云效操作变成 10 个工具。 |
 | **连接器（Connector）** | 封装某个外部平台（这里是云效）的鉴权与接口，供插件和 MCP 共用的内部代码库，避免重复实现。 |
 | **ALC（加载上下文）** | 插件的「独立沙箱」。每个插件一份，停用后可整体卸载回收（受 §3.12 约束：需先注销 Skill / MCP 等强引用，且失败时降级为提示重启）。 |
 | **PAT（个人访问令牌）** | 云效给个人发的「专用密码」，代替账号密码调用接口与 Git；只在创建时显示一次，存于本机安全凭据区。 |
@@ -336,7 +337,7 @@
 - **与 MCP 关系**：MCP 服务器是 Connector 的「Agent 暴露面」，1:1 包装；MCP 不重写云效逻辑（见 §4.11）。
 - **与 Skill 关系**：Skill 经 MCP 工具间接使用 Connector 的云效操作；本地步骤仍走插件后端服务（§4.10.7）。
 - **设计选择说明**：框架已有 `ILuBanToolPlugin`（如 `GitToolPlugin`，`GroupName="git"`）可作为原生工具面；但用户明确要求「专门的 MCP」，故云效操作走**独立 MCP 服务器**（`IMCPClient`）而非 `ILuBanToolPlugin`，工具以 `mcp_yunxiao_*` 暴露，任何对话中 Agent 均可即席调用（查库/查流水线），而不仅限于新建项目流程。
-- **结构（以云效为例，`LuBan.AIAgent/Connectors/AliyunDevOps/`）**：`YunxiaoConnector`（门面，聚合 Codeup+Flow、统一 PAT 取用/重试）→ `CodeupClient`（Git over HTTPS：`oauth2:<PAT>@` 克隆/推送；REST 走 `oapi/v1/codeup/...` + 请求头 `x-yunxiao-token`：搜索/查库/建库/更新）+ `FlowClient`（REST 走 `oapi/v1/flow/...` + 请求头 `x-yunxiao-token`：列表/查详情/建/克隆/更新/运行流水线）→ `Auth/PatCredential` + `IYunxiaoCredentialProvider`（从宿主 `CredentialStore` 按需取用，§3.7）→ `Mcp/YunxiaoMCPClient`（包装上述客户端为 8 个 MCP 工具）。中心版路径含 `/organizations/{organizationId}`，Region版不含。
+- **结构（以云效为例，`LuBan.AIAgent/Connectors/AliyunDevOps/`）**：`YunxiaoConnector`（门面，聚合 Codeup+Flow、统一 PAT 取用/重试）→ `CodeupClient`（Git over HTTPS：`oauth2:<PAT>@` 克隆/推送；REST 走 `oapi/v1/codeup/...` + 请求头 `x-yunxiao-token`：搜索/查库/建库/更新）+ `FlowClient`（REST 走 `oapi/v1/flow/...` + 请求头 `x-yunxiao-token`：列表/查详情/建/克隆/更新/运行流水线）→ `Auth/PatCredential` + `IYunxiaoCredentialProvider`（从宿主 `CredentialStore` 按需取用，§3.7）→ `Mcp/YunxiaoMCPClient` + `Mcp/YunxiaoToolDefinitions`（包装上述客户端为 **10 个** MCP 工具：Codeup 侧 `search_repos` / `clone` / `create_repo` / `push` / `list_branches` / `create_group`，Flow 侧 `list_pipelines` / `clone_pipeline` / `update_pipeline` / `run_pipeline`）。中心版路径含 `/organizations/{organizationId}`，Region版不含。
 - **复用现有能力**：克隆/推送复用框架 `Tools/Git/GitToolPlugin`（`GitCloneAsync`/`GitPushAsync`），连接器仅负责拼出带 `oauth2:<PAT>@` 的 clone/push URL，避免重复实现 Git 协议细节。
 
 ---
@@ -493,12 +494,21 @@
 - **用户确认界面（保留）**：执行前弹出确认区，用户可**逐端修改仓库名称**，并选择**可见性**（默认且推荐**「组织内公开」＝组织可见**，也可改为「私有」＝仅项目成员可见），以及确认**归属组织**（默认取自云效连接配置）；勾选「我已确认」后才开始创建与克隆。
 - **可见性**：默认**「组织内公开」（即组织可见）**，如用户在确认界面改为「私有」则从之；归属组织取自云效连接配置。
 - **（v0.16 定案）模板版本采用 pin 策略**：三端模板仓与三条参考流水线均**按插件配置中登记的版本/ID 定位，不跟随企服版升级**。**定位不到即报错阻断该步**（提示措辞见 §4.7），不自动改用最新版本、不跳过、不猜测。理由：新建项目必须可复现，同一批次项目应基于同一版模板；模板升级由维护方显式更新插件配置并发版，而不是让运行中的向导静默漂移。
+- **（v0.19 落地）pin 由「固定登记」改为「登记可选覆盖 + 运行期实时解析」**：`templates[].branch` 留空即视为「运行期解析」——在**模板库命中项**的分支列表中按 `develop → master → main → 模板默认分支` 取第一个存在的，并把「取到了哪个、依据是什么」写入档案 `repositories[].templateBranch`（**不落固定值**）；登记了值则必须真实存在，否则 Step 3 预检直接阻断，**不静默回退**。
 - **克隆到本地**：先调用「查询单个仓库」接口取新建仓库的 **HTTPS 克隆地址**（**创建仓库接口的返回中不含该字段，必须补查**），再用 **Git 工具**克隆到 Step 2 初始化的工作区（`localPath`）下；鉴权用 `https://oauth2:<PAT>@<仓库地址>`（Git over HTTPS；若该形式在本企业实例不可用，回退为「HTTPS 克隆账号名 + PAT 作为密码」，见 §4.9.1）。
 - **随后**自动替换占位符：命名空间、项目名、缩写（保证后续编译通过）。
 - 调用的云效能力：**Codeup 以模板创建仓库 + Git 克隆**（创建需 代码管理·读写，克隆需 读）。
 - 产出：本项目各端**专属 Codeup 仓库**（含 HTTPS 地址）+ 已克隆到本地的所选端代码目录。
-- **（v0.18 定案 · §6 #17）必须克隆指定分支**：模板 pin 的是**版本**而非「默认分支」，故克隆必须带 `-b` / `--branch` 指向插件配置中登记的分支或 tag。现役 `GitCloneAsync`（`GitToolPlugin.cs:588-600`）只接受 `url` / `directory` / `workingDirectory` / `timeoutMs`，**不支持 `-b`**，M1 必须一并扩展，否则「pin 版本」形同虚设。
+- **（v0.18 定案 · v0.19 落地 · §6 #17）必须克隆指定分支**：模板 pin 的是**版本**而非「默认分支」，故克隆必须带 `-b` / `--branch` 指向解析后的 pin 分支。**已落地**：框架 `CodeupClient.CloneToLocalAsync` 支持 `branch` 参数并返回 `GitCommandResult`（失败时给出 git 原始报错摘要，取代原先只回 `bool` 的做法）。
 - **（v0.18 定案 · §6 #15）重跑幂等**：①建库前先按仓库名检索，同名已存在则**跳过创建、直接取其 HTTPS 地址复用**；②克隆前判断目标目录，非空时给用户「**复用已克隆** / **清空后重克隆** / **中止**」三选一，不静默覆盖、也不直接失败；③各端已建仓库的 ID 与地址即时写入 `ProjectSpec` 的「远端产物清单」（§4.5）。
+- **（v0.19 落地）Step 3 实现细则（真机验证）**：
+  1. **只读预检先行**：预检把「即将使用的参数」摊开供用户核对——目标代码组（**只查不建**，报告「已存在将复用（含 ID）」或「不存在将新建（上级＝组织根）」）、逐端模板库命中项（`templateProjectId` / 全路径）、模板仓现有分支与 pin 解析结论、仓库名与落地目录。预检**不创建任何云效资源**，其读数与随后执行所用参数一致。
+  2. **模板定位走「模板库」而非普通仓库搜索**：按「查询模板代码库列表」（`templateType=1`）按名 / 按 ID 命中；配置里 `templates[].projectId` 可精确指定。**未登记为模板的仓库不得用作模板**（否则要到建库时才失败）。
+  3. **自动建项目代码组**：按 `groupNameFormat`（默认 `{CODE}`，如 `csxmy` → `CSXMY`）在组织内**先查后建**——同名即复用（不重复建、不报重名错），未命中才创建；父级取 `groupParentId`，留空＝建在组织根下；可见性沿用 `defaultVisibility`（默认 `internal`＝组织内公开）。
+  4. **建库参数**：`namespaceId`＝代码组 ID、`templateProject{ templateProjectId, templateType=1, syncAllBranches=true }`、`path`＝`repositoryNameFormat` 展开值（默认 `{code}-{end}`，如 `csxmy-Service`）；建库返回**不含 HTTPS 克隆地址**，须补查仓库详情取 `httpUrlToRepo`。
+  5. **等模板分支就绪再克隆**：`syncAllBranches` 为服务端异步（真机实测建库后 10–17s 才补齐模板分支），故建库后**轮询分支列表等 pin 分支出现**（上限 120s / 间隔 3s）；超时即失败并提示「模板分支未就绪」，**不盲目 clone**（否则必失败且留残骸）。
+  6. **克隆失败清理残骸**：只清理**本次新建**的目录——`git` 失败会在目标目录留下 `.git/HEAD = ref: refs/heads/.invalid` 的空工作树，若不清理，重跑会被误判为「已克隆」而假成功；git 原始报错摘要（含 URL 内嵌凭据，已脱敏）带进失败文案。
+  7. **复用前健康校验 + `cloned` 语义收紧**：判定「复用已克隆」时必须校验工作树与 `.git/refs/heads/<pin>` 可用，通过才算复用；**`cloned` 仅在「真克隆成功」或「经健康校验的复用」时置真**（不再无条件置真）。
 
 **Step 4 · 配置与数据库**
 - 生成/修改 `appsettings.json`、连接串等配置。
@@ -516,7 +526,8 @@
 - **做什么**：对第 1 步所选的**每一个端**逐一执行「**提交 + 推送**」，推到 Step 3 为该端创建的专属仓库：
   - 后端 → `{英文缩写}-Service` 仓库；管理端 → `{英文缩写}-Admin` 仓库；移动端 → `{英文缩写}-Mobile` 仓库（未勾选则跳过）。
 - 推送内容为本地工作区中已通过编译验证的最终代码。
-- **（v0.18 定案 · §6 #17）目标分支**：统一推送到 **`main`**；目标仓库若为空则由本插件以 `main` 为默认分支创建并推送。**不设置分支保护规则**——需管理员权限、超出 PAT 能力范围（见 §1.4 非目标）。
+- **（v0.18 定案 · v0.19 修订 · §6 #17）目标分支**：目标分支取插件配置 `pushBranch`（**默认 `main`**）；配置留空时才退回该端仓库的**默认分支**，仓库仍为空则回退 `main`。**不设置分支保护规则**——需管理员权限、超出 PAT 能力范围（见 §1.4 非目标）。
+- **（v0.19 落地）提交身份与权限门禁**：提交作者**优先读本机 `git config user.name/user.email`**，缺失才用插件配置 `commitAuthorName` / `commitAuthorEmail` 兜底；Step 6 的每次 git 调用都过宿主权限门禁——插件须在 `plugin.json` 显式声明 `git:commit`（本地暂存与提交）与 `git:inspect`（本地只读检查与切分支），**越界由宿主拦截并记录**（§3.7、§4.8 #5）。
 - 调用的云效能力：**Git 推送**（需 代码管理·读写 权限）。
 - 产出：各端专属仓库均已包含本项目改造后的代码 —— **供 Step 7 流水线用作代码来源**。
 
@@ -563,10 +574,10 @@ flowchart TD
 |------|----------------|-------------|----------------|
 | Step 1 | 无 | — | — |
 | Step 2 | 无（本地初始化：工作区/会话/Agent/MCP/Skill） | — | — |
-| Step 3 | 以 TJCES-Service/Admin/Mobile 为模板**创建本项目各端仓库**（可见性＝组织内公开），再 **Git 克隆**新仓库 HTTPS 地址到本地 | OpenAPI 创建仓库（`oapi/v1/codeup/...`，`x-yunxiao-token`，模板导入）+ Git 克隆（`oauth2:<PAT>@`） | 代码管理·读写 |
+| Step 3 | **只读预检** →（必要时）**自动建项目代码组** → 以 TJCES-Service/Admin/Mobile 为模板**创建本项目各端仓库**（可见性＝组织内公开）→ 等模板 pin 分支就绪 → **Git 克隆**新仓库 HTTPS 地址到本地（`-b <pin>`） | OpenAPI：查代码组（`/namespaces`，只读）、建代码组（`/groups`）、查模板库（`/repositories/templates`）、建仓库（`/repositories`，模板导入）、查分支（轮询 `…/repositories/{id}/branches`）、查仓库详情（补 HTTPS 地址）；Git 克隆（`oauth2:<PAT>@`） | 代码管理·读写 |
 | Step 4 | 无 | — | — |
 | Step 5 | 无 | — | — |
-| Step 6 | Git **推送**本地改动到各自专属仓库（`-Service` / `-Admin` / `-Mobile`） | Git over HTTPS（`oauth2:<PAT>@...`） | 代码管理·读写 |
+| Step 6 | Git **提交 + 推送**本地改动到各自专属仓库（`-Service` / `-Admin` / `-Mobile`），目标分支＝配置 `pushBranch`（默认 `main`） | Git：本地 `add` / `commit` + over HTTPS `push`（`oauth2:<PAT>@...`） | 代码管理·读写 |
 | Step 7 | 云效 Flow 创建流水线（**所选端各 1 条，最多 3 条**，先克隆替换） | OpenAPI `GetPipeline`（读 TJCES 参考 YAML）+ `CreatePipeline`（`POST /oapi/v1/flow/.../pipelines`，`x-yunxiao-token`） | 流水线·读写 |
 
 ### 4.4 外部系统集成
@@ -591,6 +602,9 @@ flowchart TD
 | 本地目录 | 代码落到本机的位置 | Step 1 用户选择；即工作区根目录 |
 | 模板对照 | 后端←`TJCES-Service`、管理端←`TJCES-Admin`、移动端←`TJCES-Mobile` | 固定，插件配置 |
 | **目标代码仓库（按端）** | 每个所选端各自的**专属仓库**：模板来源、仓库名（默认 `{英文缩写}-Service` / `-Admin` / `-Mobile`，可改）、可见性**默认＝组织内公开（组织可见）**，可在 Step 3 确认界面改为「私有」、创建后的 HTTPS 地址 | Step 3 创建并克隆；Step 6 推送改动；**各端仓库地址是 Step 7 对应流水线的代码来源** |
+| **项目代码组（v0.19 新增）** | 各端仓库归属的**代码组（命名空间）**：名字由 `groupNameFormat` 展开（默认 `{CODE}`，如 `csxmy` → `CSXMY`），父级取 `groupParentId`（留空＝组织根） | Step 3 预检**只读探测**、执行时**先查后建**（同名即复用，不重复建）；可见性沿用 `defaultVisibility`（默认组织内公开） |
+| **推送目标分支（v0.19 新增）** | Step 6 推送的目标分支，默认 `main` | 插件配置 `pushBranch`；留空才退回该端仓库默认分支，仓库为空时回退 `main` |
+| **本地就绪标记 `cloned`（v0.19 语义收紧）** | 该端是否「本地确已就绪」：**仅在真克隆成功、或经健康校验通过而复用时**置真 | 由 Step 3 维护；用于重跑时判定是否给出三选一（未就绪目录不被当作已克隆复用） |
 | 数据库配置 | 连接串、建库脚本 | Step 4 生成/填写 |
 | 流水线参考 | 企服版流水线参考页 | 固定；Step 7 以此为模板克隆 |
 | 参考流水线清单 | 企服版三端各自的参考流水线标识（后端/管理端/移动端） | 来自插件配置，Step 2 载入；Step 7 的克隆来源 |
@@ -598,7 +612,7 @@ flowchart TD
 | 组织 ID | 云效企业/组织 ID | 中心版必填，取自 codex 云效连接配置 |
 | 地域（region） | **本期不支持**（仅中心版，region 已隐含于统一接入点域） | 无需用户填写，数据模型中不再保留该字段 |
 | 创建时间 | 项目创建时间 | 自动生成 |
-| **远端产物清单（v0.18 新增）** | 已在云效上创建、本地删除撤不掉的产物：各端 Codeup 仓库（ID + HTTPS 地址）、已推送分支、各端 Flow 流水线（ID + 名称 + 链接） | Step 3 / 6 / 7 创建成功即写入；用于**重跑复用**与**孤儿清单**展示（见 §4.7、§6 #15） |
+| **远端产物清单（v0.18 新增 · v0.19 细化为三类）** | 已在云效上创建、本地删除撤不掉的产物，按三类记账：①**代码组**（名称 + ID）；②**代码仓库**（端 + 名称 + ID + HTTPS 地址）；③**分支**（端 + 分支名，如 Step 6 的 `main`）；另含各端 Flow 流水线（ID + 名称 + 链接） | Step 3 / 6 / 7 创建成功即写入；用于**重跑复用**与**孤儿清单**展示（见 §4.7、§6 #15） |
 
 - 插件运行状态（当前步、日志、错误）另行存于宿主的插件状态记录中，便于中断后恢复。
 - 安全要点：**令牌明文不进入项目档案与任何数据库**，仅保存凭据区的键名。
@@ -863,13 +877,15 @@ flowchart TD
 7. 向导在执行过程中**实时展示 Agent 操作记录**（时间线、状态、输入参数与结果摘要），用户可在失败步骤就地调整参数并重试；PAT 明文不出现于操作记录中。
 8. 插件启用后，除左侧栏向导入口外，聊天中输入自然语言（如「新建项目，缩写 demo，后端+管理后台」）可由 Agent 调用 `newproject-create` 完成同等七步流程（含初始化脚手架）；`newproject-*` 系列 skill 经 `SkillRegistry.RegisterPluginSkill` 注册后可见、可触发、卸载时经 `UnregisterPluginSkill` 注销。
 9. 向导与 `newproject-*` skill 共享同一 `INewProjectService`，改动后端逻辑对两条入口同时生效，无逻辑分叉。
-10. 框架云效连接器 `YunxiaoConnector` 的 8 个操作有单元/集成测试覆盖（PAT 取用、Codeup/Flow 调用、错误映射）；连接器不缓存 PAT 明文、不回显日志。
-11. 启用插件后，Agent 工具表出现 `mcp_yunxiao_codeup_*` / `mcp_yunxiao_flow_*` 共 8 个工具，可在任意对话即席调用（查库/查流水线）并受 `IToolConfirmationService` 规划/确认；`newproject-*` skill 的云效步骤经这些工具执行且 PAT 不回显；**停用/卸载插件后 `yunxiao` MCP 客户端从 `MCPRegistry` 移除、工具消失**。
+10. 框架云效连接器 `YunxiaoConnector` 的各操作有单元/集成测试覆盖（PAT 取用、Codeup 仓库读写与模板库 / 分支 / 代码组、Flow 调用、错误映射）；连接器不缓存 PAT 明文、不回显日志。**（v0.19）** MCP 工具定义另有单测覆盖（工具数量、命名无二次前缀、schema 可解析与必填项）。
+11. 启用插件后，Agent 工具表出现 `mcp_yunxiao_codeup_*` / `mcp_yunxiao_flow_*` **共 10 个**工具（v0.19 起含 `codeup_list_branches`（查分支）与 `codeup_create_group`（建代码组）），可在任意对话即席调用（查库/查分支/查流水线）并受 `IToolConfirmationService` 规划/确认；`newproject-*` skill 的云效步骤经这些工具执行且 PAT 不回显；**停用/卸载插件后 `yunxiao` MCP 客户端从 `MCPRegistry` 移除、工具消失**。
 12. Step 1 点击「下一步」后**自动执行 Step 2 初始化脚手架**：向导右侧 Agent 操作记录区实时出现「创建工作区 / 创建会话 / 注册 Skill / 注册 MCP 客户端 / 启动项目级 Agent」五条记录；完成后 `IWorkspaceManager` 中可见本项目工作区、`SkillRegistry`（**工作区**作用域）含 `newproject-*` 技能、`MCPRegistry`（**工作区**作用域）含 `yunxiao` 客户端；任一项失败仅回滚本步并重试，已成功步骤产物保留。
 13. **（v0.18）流水线部署目标不继承企服版**：Step 7 创建的每条流水线，其 YAML 中的服务连接 ID、主机组 ID、构建集群、制品仓库等资源 ID **不被静默沿用企服版值**——未能自动重绑的部署阶段**默认关闭**；向导展示「待人工绑定清单」；界面文案已改为需先在云效确认部署目标后再启用（§4.3 Step 7、§4.6 草图）。
 14. **（v0.18）重跑不死锁、远端不静默留孤儿**：①Step 2 重跑走「复用工作区 + 显式新建会话」分支，不触发 `WorkspaceManager.cs:306-309` 的「工作区已存在」异常；②Step 3 / 7 重跑时先检索同名远端资源并复用，不重复创建、不因重名失败；③克隆目标目录非空时给出三选一而非直接失败；④主动「中止并清理」后，本地产物已被回收，远端产物**以清单形式列出**（含链接），且插件**未调用任何删除远端资源的接口**。
 15. **（v0.18）向导单实例**：向导进行中再点侧栏「新建项目」入口时，入口置灰或提示「已有向导进行中」，不允许同时开两个向导（§6 #19）。
 16. **（v0.18）插件崩溃不带崩宿主**：在插件初始化或面板渲染中故意抛异常，宿主捕获后置插件为 `Error`、移除其 UI 贡献、展示错误详情，**主窗口不崩溃**（§3.4、§6 #20）。
+17. **（v0.19）Step 3 预检只读、读数与执行一致**：点击「开始创建」前的预检**不产生任何云效写操作**；预检读数（代码组「已存在将复用（含 ID）」或「不存在将新建」、模板库命中项、pin 解析结论、逐端仓库名与落地目录）与实际执行所用参数一致；模板定位只认**模板库**条目。
+18. **（v0.19）重跑幂等与「假成功」防护**：①建库后**等 pin 分支就绪**再克隆（超时即失败，不盲目 clone）；②克隆失败**清掉本次新建目录**，不留 `.git/HEAD = ref: refs/heads/.invalid` 残骸；③选「复用已克隆」须**经健康校验**（工作树 + `.git/refs/heads/<pin>` 可用）方算复用；④`cloned` 不再无条件置真；⑤重跑不重复建代码组 / 建仓库（同名复用）；⑥Step 6 目标分支＝配置 `pushBranch`（默认 `main`），重复执行时「无改动则跳过提交」但推送仍成功收尾。
 
 ### 4.9 个人访问令牌（PAT）规范（新增）
 
@@ -957,7 +973,8 @@ flowchart TD
 **4.10.7 云效步骤委托 MCP 工具（与 §4.11 对齐）**
 `newproject-create` 与 5 个原子 skill 的**云效相关步骤不再自行实现**，改为编排 `mcp_yunxiao_*` 工具：
 - `newproject-clone-template` → `mcp_yunxiao_codeup_search_repos`（定位 `TJCES-Service/Admin/Mobile` 模板仓）+ `mcp_yunxiao_codeup_create_repo`（**以该模板仓为模板**创建本项目仓库，可见性＝组织内公开）+ `mcp_yunxiao_codeup_clone`（按新建仓库的 HTTPS 地址克隆到本地）；
-- `newproject-push-repo` → `mcp_yunxiao_codeup_push`（把本地改动推送到各端专属仓库）；
+  > **（v0.19）两条入口的分工**：向导路径的「建项目代码组 / 查模板仓分支 / 等 pin 分支就绪」由 `INewProjectService` **直连连接器**完成（确定性流程、零序列化开销）；聊天路径可即席调用新增的 `mcp_yunxiao_codeup_list_branches`（查分支）/ `mcp_yunxiao_codeup_create_group`（建代码组）完成同类操作——**建代码组工具不做重名查重**，「先查后建」由编排者（或向导后端）负责。
+- `newproject-push-repo` → `mcp_yunxiao_codeup_push`（把本地改动推送到各端专属仓库，目标分支＝配置 `pushBranch`，默认 `main`）；
 - `newproject-create-pipeline` → `mcp_yunxiao_flow_clone_pipeline`（内部 `GetPipeline` 拉取 TJCES 该端参考 YAML → 替换名称/端口/Codeup 仓库地址/流水线参数 → `CreatePipeline` 逐端创建（**所选端各 1 条，最多 3 条**）；参考页 `flow.aliyun.com/all`）；
 - `newproject-setup-db` / `newproject-build` 为纯本地步骤，仍调用 `INewProjectService`。
 如此 Skill 与向导共享同一 `INewProjectService` 与同一连接器，云效逻辑零分叉（满足 §4.8 第 9、11 条）。
@@ -976,16 +993,18 @@ flowchart TD
 
 **4.11.3 云效专属 MCP 服务器（Agent 暴露面）**
 
-> **阅读提示**：本节是**开发实现附录**。产品与非技术评审者只需知道一句话——插件启用后，助手会多出 8 个云效操作能力（查仓库、建仓库、克隆、推送、查流水线、克隆流水线、改流水线、跑任务），且停用插件后这些能力会随之消失。下面的参数表供开发实现与联调使用，可直接跳过。
+> **阅读提示**：本节是**开发实现附录**。产品与非技术评审者只需知道一句话——插件启用后，助手会多出 **10 个**云效操作能力（查仓库、建仓库、克隆、推送、**查分支**、**建代码组**、查流水线、克隆流水线、改流水线、跑任务），且停用插件后这些能力会随之消失。下面的参数表供开发实现与联调使用，可直接跳过。
 
-框架内置进程内 MCP 客户端 `YunxiaoMCPClient : IMCPClient`（client 名 `yunxiao`），包装连接器暴露 8 个工具，对 Agent 名为 `mcp_yunxiao_*`，经 `MCPToolPlugin` 并入工具表并受 `IToolConfirmationService` 规划/确认：
+框架内置进程内 MCP 客户端 `YunxiaoMCPClient : IMCPClient`（client 名 `yunxiao`），包装连接器暴露 **10 个**工具（v0.19 起在原 8 个基础上新增 `codeup_list_branches` / `codeup_create_group`），对 Agent 名为 `mcp_yunxiao_*`，经 `MCPToolPlugin` 并入工具表并受 `IToolConfirmationService` 规划/确认：
 
 | Tool（base） | 对应操作 | 入参（草拟，REST 均带 `x-yunxiao-token` 头） | 出参（草拟） |
 |--------------|----------|--------------|--------------|
 | `codeup_search_repos` | 查找代码仓库（ListRepositories） | `search?`（模糊匹配路径）, `page?`, `perPage?`, `orderBy?`, `sort?`, `archived?`，**中心版必带** `organizationId` | `repos:[{id, name, path, pathWithNamespace, visibility, webUrl}]`（**HTTPS 地址与默认分支需再调「查询单个仓库」获取**） |
 | `codeup_clone` | 复制代码到本地（Git） | `repoId` 或 URL 编码全路径 / `httpsUrl`（取自 GetRepository `httpUrlToRepo`）, `localPath`, `branch?`（鉴权 `oauth2:<PAT>@`） | `localPath`, `commitId` |
-| `codeup_create_repo` | 创建新代码仓库（**以指定模板仓为模板**） | `name`(必), `path`(必), `templateProject`{`templateProjectId`(模板仓 ID，对应 TJCES-Service/Admin/Mobile), `templateType`(1 自定义模板 / 2 系统预置模板), `syncAllBranches`(**建议 true**，否则新仓可能无分支)}, `visibility`(**默认 internal＝组织内公开**，可选 `private`＝私有), `namespaceId?`(组织下的分组/命名空间，不传则建在组织根下), `createParentPath?`(`path` 含多级分组时是否自动创建父路径，建议 `true`), `description?`, **中心版必带** `organizationId` | `id`, `path`, `pathWithNamespace`, `webUrl`（**注意：返回不含 HTTPS 克隆地址，需再调「查询单个仓库」取 `httpUrlToRepo`**） |
+| `codeup_create_repo` | 创建新代码仓库（**以指定模板仓为模板**） | `name`(必), `path`(必), `templateProject`{`templateProjectId`(模板仓 ID，对应 TJCES-Service/Admin/Mobile), `templateType`(1 自定义模板 / 2 系统预置模板), `syncAllBranches`(**建议 true**，否则新仓可能无分支)}, `visibility`(**默认 internal＝组织内公开**，可选 `private`＝私有), `namespaceId?`(组织下的分组/命名空间 ID——**v0.19：由 `groupNameFormat` 在组织内「先查后建」得到，见 §4.5**；不传则建在组织根下), `createParentPath?`(`path` 含多级分组时是否自动创建父路径，建议 `true`), `description?`, **中心版必带** `organizationId` | `id`, `path`, `pathWithNamespace`, `webUrl`（**注意：返回不含 HTTPS 克隆地址，需再调「查询单个仓库」取 `httpUrlToRepo`**） |
 | `codeup_push` | 上传代码到新代码仓库（Git push） | `localPath`, `remoteUrl`/`repoId`, `branch`, `force?`（鉴权 `oauth2:<PAT>@`） | `pushedCommit`, `remoteUrl` |
+| `codeup_list_branches` | 查询分支列表（ListBranches，**v0.19 新增**） | `repositoryId`(必，整数), `page?`(默认 1), `perPage?`(默认 100), `sort?`, `search?`，**中心版必带** `organizationId` | `branches:[{name, defaultBranch, protected, webUrl, commit}]`（**返回裸数组**，总数在响应头 `x-total`） |
+| `codeup_create_group` | 创建代码组 / 命名空间（CreateNamespace，**v0.19 新增**） | `name`(必), `path`(必，通常与 `name` 相同，勿含 `/`), `parentId?`(整数，**留空＝建在组织根下**), `visibility?`(默认 `internal`), `description?`，**中心版必带** `organizationId` | `id`, `name`, `path`, `pathWithNamespace`（**本工具直接创建、不做重名查重**，见注⑧） |
 | `flow_list_pipelines` | 查找流水线（ListPipelines） | `pipelineName?`, `page?`, `perPage?`, `statusList?`, **中心版必带** `organizationId` | `pipelines:[{pipelineId, pipelineName, createTime}]`（**注意：返回体不含创建人与状态**，Step 7 界面需要这两项时须**再调 `GetPipeline`（查询流水线详情）逐条补充**，见注⑦） |
 | `flow_clone_pipeline` | 复制流水线（**读取源 YAML → 替换 → 创建**） | `sourcePipelineId`(TJCES 参考), `newName`, `substitutions`(名称/端口/repo/参数 替换表), **中心版必带** `organizationId` | `newPipelineId` |
 | `flow_update_pipeline` | 编辑流水线（UpdatePipeline） | `pipelineId`(必), `name`(**必填**——更新会一并覆盖流水线名称，须回传现有名称以免被改名), `content`(YAML，必), **中心版必带** `organizationId` | `success: bool` |
@@ -999,6 +1018,7 @@ flowchart TD
 
 > **注⑦ 列表字段不足的补偿（v0.16 定案）**：`ListPipelines` 的返回体只有 `pipelineId` / `pipelineName` / `createTime`，**没有创建人与运行状态**。第 7 步界面若需展示这两项，采用「先 `ListPipelines` 拿到 ID 列表 → 对每个 ID 调 `GetPipeline`（查询流水线详情）」的方式补充（官方文档：https://help.aliyun.com/zh/yunxiao/developer-reference/getpipeline-get-pipeline-details ）。代价是 N+1 次调用，需注意频率与超时；若列表较长，改为**仅在用户展开某条流水线时再查详情**的懒加载方式。
 > **注⑥ 运行与日志**：`flow_run_pipeline` 只运行**单个任务**；如需排查运行结果，可经「查询流水线运行实例」与「查询任务运行日志」（官方 `GetPipelineJobRunLog`）取日志。本插件建完流水线后**不自动运行**，该能力仅留给助手即席排障。另：`UpdatePipeline` 的中心版完整路径建议在 M6 联调时用实机请求确认一次（其余接口均已按中心版 `/oapi/v1/flow/organizations/{organizationId}/...` 校验）。
+> **注⑧ 新增两工具的定位与边界（v0.19）**：`codeup_list_branches` / `codeup_create_group` 直连连接器的 `ListBranchesAsync` / `CreateNamespaceAsync`，与向导路径**共用同一实现**。**边界**：①`codeup_create_group` **只创建、不做重名查重**——「先查后建」由调用方负责（向导后端 `INewProjectService` 会先查 `ListNamespacesAsync` 再决定复用/创建；聊天路径由编排方自行先查）；②`codeup_list_branches` 用于「确认模板仓可用分支」「核对新仓 pin 分支是否已同步」等排障场景，真机曾用它确认 `syncAllBranches` 的服务端异步延迟（10–17s）；③两工具均为**只读/低危写**，其中创建类操作仍受 `IToolConfirmationService` 规划/确认。
 > 插件 `plugin.json` 通过「MCP 服务」字段声明启用（服务名 `yunxiao`，进程内传输方式）；`PluginManager` 在插件 Enabled 时把 `YunxiaoMCPClient` 经 **`MCPRegistry.RegisterPluginClient(...)`** 注册进 `MCPRegistry`、Uninstalled 时经 **`UnregisterPluginClient(...)`** 反注册（§3.2、§3.10）。
 > **实现注意 · v0.15 事实更正与形态定案（原标 P0）**
 > **① 订正对现状的描述**：`LuBan.AIAgent.MCP.MCPRegistry` 同样是**实例类**（`MCPRegistry.cs:22`），持有 `ReaderWriterLockSlim`（`:24`）与 `_workspace` / `_config` 两级字典（`:25-27`），支持运行时增删；缺少的只是「注册单个客户端」的公开方法。优先级规则：`_workspace` 层优先于 `_config` 层。
@@ -1008,7 +1028,7 @@ flowchart TD
 **4.11.4 分层调用关系**
 - 向导（UI）→ `INewProjectService` → 连接器（C# 直连）。
 - `newproject-*` Skill（LLM）→ 编排：云效步骤委托 `mcp_yunxiao_*` 工具，本地步骤（占位符替换/配置/建库/编译）调用 `INewProjectService`。
-- 任意对话中 Agent 亦可即席调用 `mcp_yunxiao_*` 做查库/查流水线等操作。
+- 任意对话中 Agent 亦可即席调用 `mcp_yunxiao_*` 做查库 / 查分支 / 查流水线等操作。
 - 三者最终都收敛于同一个连接器与同一个 `INewProjectService`，云效逻辑零分叉（满足 §4.8 第 9、11 条）。
 
 ---
@@ -1017,12 +1037,12 @@ flowchart TD
 
 | 里程碑 | 内容 | 关键交付物 / 对应文件 |
 |--------|------|----------------------|
-| **M1** | 框架层插件模块 + `plugin.json` schema + **云效连接器与 MCP** | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`/`PluginCommandDescriptor`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`（**v0.17：热卸载为必做项**，须实现 §3.12 的 7 步卸载顺序、6 条禁止项检查与「GC + 弱引用断言」验证，以及卸载失败降级路径）、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`）；**v0.15 方案调整：不再从零造注册 API，改为复用 §3.11 三件套**——①Skill 侧直接复用 `SkillManageToolGroup.WriteSkillAsync`/`DeleteSkillAsync`（写 `.luban-agent/skills` → `SkillRegistry.LoadFromWorkspace()` → 即时 `AgentHostService.Reset(sessionId)`），**不再新增 `RegisterPluginSkill`/`UnregisterPluginSkill`**；②MCP 侧因文件式通道描述不了进程内 `YunxiaoMCPClient`，仍需补一个实例注册口 `MCPRegistry.RegisterPluginClient(...)`/`UnregisterPluginClient(name)`（**两者都是实例类而非静态只读**，新增方法而非推翻结构）；③注意 `IAgentReloadTrigger.RequestReload()` 在用户作用域会静默失效，UI/插件侧须走 `Reset` 或经 `SessionRuntimeManager` 定位（见 §3.11 坑①②③）；**（v0.18 追加）`GitToolPlugin.GitCloneAsync` 需扩展 `-b/--branch` 参数（§6 #17）；`PluginBase` 需提供带失效令牌的 `PostToUi`（§6 #22）；`FlowClient` 创建的流水线需默认禁用部署阶段并产出「待人工绑定清单」（§6 #14）**；加载时由 `PluginManager` 调用完成注册/反注册；新增 **`Connectors/AliyunDevOps/`**（YunxiaoConnector/CodeupClient/FlowClient/PatCredential/IYunxiaoCredentialProvider）与进程内 **`YunxiaoMCPClient : IMCPClient`（8 tools）**；`plugin.json` schema 增加 `mcpServers` 字段。随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
+| **M1** | 框架层插件模块 + `plugin.json` schema + **云效连接器与 MCP** | 在 `luban-framework/LuBan.AIAgent` **新增 `Plugins/` 模块**：契约 `IPlugin`/`IPluginHost`/`IPluginPanel`/`PluginCommandDescriptor`、生命周期枚举 `PluginState`、管理 `PluginManager`/`PluginLoader`/`PluginLoadContext(collectible)`/`ManifestValidator`（**v0.17：热卸载为必做项**，须实现 §3.12 的 7 步卸载顺序、6 条禁止项检查与「GC + 弱引用断言」验证，以及卸载失败降级路径）、基础插件 `PluginBase`/`BuiltinPluginCatalog`，以及**贡献 Skill 能力**（`SkillDefinition` + `IPlugin.ContributeSkills()` + `IPluginHost.RegisterSkill()`）；**v0.15 方案调整：不再从零造注册 API，改为复用 §3.11 三件套**——①Skill 侧直接复用 `SkillManageToolGroup.WriteSkillAsync`/`DeleteSkillAsync`（写 `.luban-agent/skills` → `SkillRegistry.LoadFromWorkspace()` → 即时 `AgentHostService.Reset(sessionId)`），**不再新增 `RegisterPluginSkill`/`UnregisterPluginSkill`**；②MCP 侧因文件式通道描述不了进程内 `YunxiaoMCPClient`，仍需补一个实例注册口 `MCPRegistry.RegisterPluginClient(...)`/`UnregisterPluginClient(name)`（**两者都是实例类而非静态只读**，新增方法而非推翻结构）；③注意 `IAgentReloadTrigger.RequestReload()` 在用户作用域会静默失效，UI/插件侧须走 `Reset` 或经 `SessionRuntimeManager` 定位（见 §3.11 坑①②③）；**（v0.18 追加）`PluginBase` 需提供带失效令牌的 `PostToUi`（§6 #22）；`FlowClient` 创建的流水线需默认禁用部署阶段并产出「待人工绑定清单」（§6 #14）**；**（v0.19 落地）带分支的克隆与结果对象由框架 `CodeupClient.CloneToLocalAsync` / `PushAsync` 提供（`GitCommandResult`，不再扩展 `GitToolPlugin.GitCloneAsync`）**；加载时由 `PluginManager` 调用完成注册/反注册；新增 **`Connectors/AliyunDevOps/`**（YunxiaoConnector/CodeupClient/FlowClient/PatCredential/IYunxiaoCredentialProvider）与进程内 **`YunxiaoMCPClient : IMCPClient`（10 tools，v0.19 起）**；`plugin.json` schema 增加 `mcpServers` 字段。随 `LuBan.AIAgent` NuGet 发布。`AgentHostBuilder` 注入 `PluginManager` 骨架。 |
 | **M2** | codex 插件管理器与侧栏 | `PluginManageWindow`（参照 `SkillManageWindow` 模式：列表/明细/安装/启停/卸载）；`Sidebar` 新增插件条目区 + `PluginPanelRequested` 事件；`MainWindow` 内容区 `PluginHost` 挂载点 + 面板切换。 |
 | **M3** | 权限 / 凭据安全 | 网络白名单（`codeup.aliyun.com`/`flow.aliyun.com`/`*.aliyuncs.com`）与进程白名单（`dotnet`/`git`）静态校验；`CredentialStore`（Windows Credential Manager / DPAPI，绝不入 DB）；PAT 取用时序落地（§3.7）。 |
 | **M4** | 「新建项目」插件（LubanAgent 解决方案项目，复用框架云效连接器） | 在 `luban-agent` 解决方案**新增项目 `LubanAgent.Plugin.NewProject`**（引用框架 `LuBan.AIAgent`，继承 `PluginBase`）；向导面板 `WizardPanel : UserControl, IPluginPanel`；对外提供 §4.10.2 的**共享能力层**（初始化 / 克隆 / 配置建库 / 编译 / 推送代码仓库 / 建流水线）作为向导与聊天入口的同一后端，**云效步骤直连框架 `YunxiaoConnector`**（不自带 REST/OpenAPI 客户端）；`plugin.json` 声明 `mcpServers:["yunxiao"]`；贡献专属技能 `newproject-create` 及 5 个单步技能（§4.10），云效步骤委托 `mcp_yunxiao_*`（§4.10.7/§4.11）。完整 7 步向导（§4.3，含 Step 2 初始化项目脚手架与 Step 6 推送到新代码仓库）。 |
 | **M5** | 联调与验收 | 按 §4.8 验收标准逐项验证：侧栏入口、7 步全流程（含 Step 2 初始化脚手架、Step 3 按模板建库并克隆、Step 6 推送改动）、Token 失效明确报错、停用/卸载无残留、越权访问被拦截。 |
-| **M6** | 云效连接器与 MCP 联调 | 验证 `YunxiaoConnector` 8 操作（单测/集成）；Agent 可自然语言调用 `mcp_yunxiao_*` 即席查库/查流水线并受确认；插件停用后 `yunxiao` MCP 从 `MCPRegistry` 反注册、工具消失；`newproject-*` skill 云效步骤经 MCP 执行且 PAT 不回显。 |
+| **M6** | 云效连接器与 MCP 联调 | 验证 `YunxiaoConnector` 各项操作（单测/集成：Codeup 仓库读写、**模板库 / 分支 / 代码组**、Flow 调用、错误映射与脱敏）；Agent 可自然语言调用 `mcp_yunxiao_*`（**10 个**）即席查库 / 查分支 / 查流水线并受确认；插件停用后 `yunxiao` MCP 从 `MCPRegistry` 反注册、工具消失；`newproject-*` skill 云效步骤经 MCP 执行且 PAT 不回显。 |
 
 ---
 
@@ -1032,7 +1052,8 @@ flowchart TD
 2. **【已定案】权限不足**：权限清单见 §4.9.2（代码管理·读写、流水线·读写）。**失败提示统一为「缺少 XX 权限，请到云效个人令牌页面设置」**（措辞已落地 §4.7）。
 3. **【已定案·放宽】凭据安全**：按「不用太严格」处理——**不强求加密存储，沿用宿主现有配置存储方式**（与现有 LLM `ApiKey` 同基线）即可；**不硬编码**；**禁止在日志 / 会话消息 / Agent 操作记录 / 工具确认弹窗中回显明文**；定期轮换、泄露即删。（已落地 §4.9.3 与 §4.8 #6/#7/#11）
 4. **【已定案】模板仓库访问权限**：归入权限类失败，**提示「缺少 `TJCES-Service` / `TJCES-Admin` / `TJCES-Mobile` 模板仓库读权限，请到云效个人令牌页面设置」**；企业私有仓需管理员授权时追加一句联系管理员。（措辞已落地 §4.7）
-5. **【已定案·pin 版本】多端模板版本同步**：**不跟随企服版模板升级**。三端模板仓与三条参考流水线一律**按插件配置中登记的版本 / ID 定位**，**找不到就报错阻断**，不自动改用最新版、不跳过、不猜测。模板升级由维护方显式更新插件配置并发版。（已落地 §4.3 Step 3 与 §4.7 的「模板 / 参考流水线不存在」分支）
+5. **【已定案·pin 版本】多端模板版本同步**：**不跟随企服版模板升级**。三端模板仓与三条参考流水线一律**按插件配置中登记的标识 / ID 定位**，**找不到就报错阻断**，不自动改用最新版、不跳过、不猜测。模板升级由维护方显式更新插件配置并发版。（已落地 §4.3 Step 3 与 §4.7 的「模板 / 参考流水线不存在」分支）
+    **（v0.19 落地修订）分支 pin 改为「登记可选覆盖 + 运行期解析」**：`templates[].branch` 为**可选**——登记了值就必须真实存在、否则预检直接阻断；**留空**则在模板仓现有分支中按 `develop → master → main → 模板默认分支` 取第一个存在的，解析结论（取到哪个 + 依据）写入档案 `repositories[].templateBranch` 并在预检中回显。理由：真机上模板仓分支命名并不统一（如只有 `develop`/`release/1`），把 pin 固化为单一字面量会让配置无法跨模板仓复用。
 6. **【已定案·统一 PAT】Flow OpenAPI 鉴权凭据类型**：经核对官方 OpenAPI 文档，`oapi/v1/codeup` 与 `oapi/v1/flow` 的统一鉴权方式为请求头 `x-yunxiao-token`（PAT），文档未给出 AK/SK 用法（AK/SK 多见于旧版 `devops` 接口，非本次采用的新版 OpenAPI）。**建议统一采用 PAT**，不引入 AK/SK 复杂度（与 §4.9 一致）。仅当企业合规强制 AK/SK 时，才需另行评估旧版接口并单列风险。
 7. **【已定案·仅中心版】Flow OpenAPI 区域与组织**：已确认本企业使用**中心版**。`region` 编码于统一接入点域 `openapi-rdc.aliyuncs.com`，不作为参数；`organizationId` **必填**且所有 OpenAPI 路径带 `/organizations/{organizationId}`；`flowRegion` 无需填写（见 §4.5）。`ProjectSpec.organizationId` 必收集（取自 codex 云效连接配置），§4.3 前置条件已据此更新。**本期仅支持中心版，Region 版不在范围内**，实现上无需保留 Region 版分支（§4.4 / §4.5 / §4.11.3 注① 已同步移除相关表述）。
 8. **【已定案·做真热卸载 + 卸载失败降级】ALC 卸载资源释放**：采用**可回收 ALC 实现程序集级热卸载，停用 / 卸载不重启宿主**（不采用「重启生效」简化方案）。配套：①§1.4 相应条目由「不做」改为「要做」；②§3.5 给出不可颠倒的 6 步卸载顺序（§3.12 含验证与降级共 7 步）；③§3.12 列出 6 条宿主侧禁止项与测试要求（含**故意制造残留引用**的反向用例）；④**卸载失败降级而非硬失败**——释放显式引用后置 `Disabled` 并提示重启、记诊断日志，**静默失败才算不通过**。
@@ -1045,12 +1066,15 @@ flowchart TD
 14. **【已定案·P0·v0.18 新增】流水线会继承企服版的部署目标**：云效 OpenAPI **没有「复制 / 克隆流水线」接口**（官方仅 Create / Get / List / Update / Delete 等，复制只是控制台功能），第 7 步的「克隆」实为自实现的 YAML 文本复制，官方不做任何资源重绑定；而 `serviceConnection`（服务连接 ID）、`machineGroup`（主机组 ID）、`runsOn`（构建集群）、制品仓库 `repo` 在 Flow YAML 中是**字面量**。**定案**：①替换点由 4 项扩为 5 项并显式枚举资源 ID；②新流水线**创建后默认禁用部署阶段**（构建阶段保留）；③向导展示「待人工绑定清单」+ 链接；④界面文案改为「部署阶段默认关闭，请先在云效确认部署目标后再启用」。**不自动重绑**（官方未提供把部署目标声明为变量的标准做法）。（已落地 §4.3 Step 7、§4.6 草图、§4.8 #13）
 15. **【已定案·v0.18 新增】远端产物孤儿与重跑幂等**：原 §4.7 回滚三件套全是**本地动作、零远端动作**，存在「回滚不对称」与「重试死锁」。**定案**：①**本地产物自动回收**、**远端产物一律不自动删除**（删远端仓库不可逆，不应由插件代劳），只列**孤儿清单**交用户手动处理；②重跑幂等——建库 / 建流水线前先按名称检索，同名**复用**；克隆目标目录非空时给「复用 / 清空重克隆 / 中止」三选一；③`ProjectSpec` 持久化**远端产物清单**，保证孤儿可观测。（已落地 §4.3 Step 3 / Step 7、§4.5、§4.7、§4.8 #14）
 16. **【已定案·v0.18 新增】重跑时的会话策略**：`SwitchWorkspaceAsync`（`WorkspaceManager.cs:337-356`）会**恢复最近会话**，与 Step 2「必须新建会话」冲突。**定案**：区分首次 / 重跑——重跑时复用工作区后**显式再 `CreateSessionAsync` 新建会话**，不使用恢复出来的旧会话（其 `AllowedRoots` 可能停留在上次失败时的状态）。（已落地 §4.3 Step 2 陷阱③）
-17. **【已定案·v0.18 新增】分支策略**：①Step 3 **必须按 pin 版本对应的分支 / tag 克隆**——现役 `GitCloneAsync`（`GitToolPlugin.cs:588-600`）不支持 `-b/--branch`，M1 必须扩展，否则 pin 版本形同虚设；②Step 6 统一推送到 **`main`**，空仓库由插件以 `main` 为默认分支创建；③**不设置分支保护规则**（需管理员权限、超出 PAT 能力范围）。（已落地 §4.3 Step 3 / Step 6、§1.4）
+17. **【已定案·v0.18 新增 · v0.19 落地修订】分支策略**：①Step 3 **必须按解析后的 pin 分支克隆**——**已落地**：框架 `CodeupClient.CloneToLocalAsync` 支持 `branch` 参数（`git clone -b <pin>`）并返回 `GitCommandResult`，不再需要扩展 `GitToolPlugin.GitCloneAsync`；且因 `syncAllBranches` 为服务端异步，克隆前须**轮询等 pin 分支就绪**（上限 120s / 间隔 3s）；②Step 6 目标分支＝配置 `pushBranch`（**默认 `main`**），留空才退回该端仓库默认分支；仓库仍为空时以 `main` 为默认分支创建并推送；③**不设置分支保护规则**（需管理员权限、超出 PAT 能力范围）。（已落地 §4.3 Step 3 / Step 6、§1.4）
 18. **【已定案·v0.18 新增】PAT 归属与交接**：**使用使用者个人 PAT**，**不引入服务账号 / 机器人账号**。文档与向导前置提示须写明「新建的云效资源归属于当前 PAT 持有者」。不引入服务账号的理由：涉及组织治理与额外凭据托管，与 #3 的放宽定案冲突。（已落地 §4.9.3）
 19. **【已定案·v0.18 新增】中断恢复与向导单实例**：**不做断点续跑**（不持久化中间态以自动接续），改为**残留检测**——重开向导时探测到同名工作区 / 同名云效资源，弹「清理后重来 / 保留并继续」，**不允许静默覆盖**。同时**向导单实例**：进行中再点入口则置灰或提示，不允许同时开两个。（已落地 §1.4、§4.3 Step 2 陷阱③、§4.8 #15）
 20. **【已定案·v0.18 新增】插件崩溃隔离边界**：ALC 隔离**程序集**、不隔离**线程**。**定案**：宿主在每个插件入口（初始化 / 面板渲染 / 命令执行 / Skill / MCP 调用）包 `try/catch`，捕获后置 `Error`、移除 UI 贡献、展示错误详情，**不让宿主崩溃**；**不做进程级隔离**。**限制**：插件自启的后台线程不在保护范围内。（已落地 §3.4、§4.8 #16）
 21. **【已定案·v0.18 新增】插件版本升级要不要热替换**：**支持热替换**——`Upgrade` = 对旧版执行 §3.5 完整 6 步卸载 → **验证通过**才装新版；**验证未通过则中止安装**并提示重启后再装。**不允许在降级态下继续加载新版本**（否则每次升级多泄漏一份程序集）。（已落地 §3.5）
 22. **【已定案·v0.18 新增】面板占位与插件 UI 投递令牌**：①`MainWindow.axaml:16-40` 中 `Grid.Column="1"` 的内层 Grid 是**匿名的**、且 `MainWindow.axaml.cs:45-51/:66-71` **无字段持有其引用**——挂载前必须先命名并加字段保存，卸载时原样还原；**直接替换 `ContentRoot` 会连侧栏一起移除、直接 `Add` 会与聊天区重叠**。②`Dispatcher.UIThread.Post` 投递**无撤销机制**，定案由 `PluginBase.PostToUi` 提供**卸载即失效**的令牌、禁止插件裸投递。（已落地 §3.9、§3.4、§3.12）
+23. **【已定案·v0.19 新增】Step 3 「只读预检 → 建组 → 建库 → 等分支就绪 → 克隆 → 健康校验」时序**：真机首轮跑出四类连锁坑，逐一固化为实现约束——①**模板分支尚未同步**（建库 API 返回 ≠ 模板分支已就绪，`syncAllBranches` 服务端异步，实测 10–17s）→ **轮询等 pin 分支出现再克隆**，超时即失败、不盲目 clone；②**git 报错被丢弃**（原实现只回 `bool`）→ 克隆/推送改返回 `GitCommandResult`，失败摘要带进文案；③**失败留下非空残骸**（`.git/HEAD = ref: refs/heads/.invalid` 空工作树）→ **只清理本次新建目录**，否则重跑会被误判「已克隆」；④**「复用已克隆」无条件置真**（假成功）→ 复用前**健康校验**（工作树 + `.git/refs/heads/<pin>` 可用），`cloned` 仅在真克隆或经校验复用时置位。另：**预检子步不创建任何云效资源**，只把参数摊开给用户核对。（已落地 §4.3 Step 3、§4.5、§4.8 #17/#18）
+24. **【已定案·v0.19 新增】项目代码组自动创建（先查后建）**：Step 3 在组织内按 **`groupNameFormat`（默认 `{CODE}`，如 `csxmy` → `CSXMY`）先查后建**代码组：命中即复用（**不重复建**）、未命中才创建；父级取 `groupParentId`（**留空＝建在组织根下**），可见性沿用 `defaultVisibility`（默认 `internal`）。代码组名与 ID 记入「远端产物清单」。（已落地 §4.3 Step 3、§4.5、§4.8 #18）
+25. **【已定案·v0.19 新增】Git 权限收敛为「三能力组 + 唯一门禁出口」**：原 `GitWhitelist` 以**扁平操作名**逐条白名单，导致插件为实现「提交并推送」要声明一长串子命令，既难读又易误放。**定案**：`git` 能力改为**三组语义**——`clone_push`（`clone` / `push`）、`commit`（`add` / `commit`）、`inspect`（`rev-parse` / `status` / `diff` / `branch` / `config` / `checkout`）；插件按组声明；并把原本散落各处的 ad-hoc 判定**收敛到唯一出口**（按 git 子命令名判定，判定前先跳过 `-c` / `-C` / `--git-dir` / `--work-tree` / `--namespace` / `--config-env` / `--super-prefix` 等前置全局选项及其取值，避免 `-c` 开头的调用绕过门禁）。同时**框架默认白名单三组齐备**，宿主绑定 `LuBanAgent:Plugins:Security` 未显式配置时按默认放行。**否决策略**：乙＝维持扁平操作名（易漏、难读）；丙＝放宽 `clone_push` 覆盖提交（越权）；丁＝由宿主配置覆盖白名单（把安全责任外推给用户）。（已落地框架 `PluginSecurityOptions.GitWhitelist` + `PluginPermissionEvaluator`；插件 `plugin.json` 声明 `git:clone_push` / `git:commit` / `git:inspect`；§3.7 已同步三组语义）
 
 ---
 
