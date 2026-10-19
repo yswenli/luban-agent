@@ -1,0 +1,10 @@
+{
+  "name": "yunxiao-remote",
+  "description": "阿里云云效官方托管 MCP（Streamable HTTP；PAT 走凭据引用，无明文）",
+  "transport": "http",
+  "url": "https://openapi-rdc.aliyuncs.com/ai/mcp",
+  "headers": {
+    "Authorization": "Bearer $credential:connector:yunxiao:token"
+  },
+  "enabled": false
+}

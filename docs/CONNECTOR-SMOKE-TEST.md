@@ -6,6 +6,8 @@ R4（未声明即告警跳过）/ R5（按名解析 + 初始化契约）/ O1 / O
 
 与 TUI 功能清单（`LubanAgentCli/docs/TUI-SMOKE-TEST.md`）互不重叠：本文只验证连接器的装配、凭据与暴露面。
 
+> **外部 MCP（配置驱动）**不在本文范围：见 `docs/EXTERNAL-MCP.md`（`mcps/*.json`、HTTP/stdio、凭据引用、冒烟 S8）。
+
 ## 前置条件
 
 | 项 | 位置 |
