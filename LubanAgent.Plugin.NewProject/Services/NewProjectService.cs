@@ -1002,11 +1002,7 @@ public sealed class NewProjectService : INewProjectService
                         var verifyWatch = BeginOperation(Step, $"校验本地目录（{label}）",
                             $"{repository.LocalPath} · 要求 HEAD 可解析且存在分支 {repository.TemplateBranch}");
 
-                        // 本机 git 出口门禁（PRD §3.7）：插件自行拉起 git 进程前同样要过门禁，不能借助连接器才受检
-                        var guard = Resolve<PluginPermissionGuard>() ?? PluginPermissionGuard.Default;
-                        guard.RequireGit("verify", "NewProjectService.CreateRepositoriesAsync");
-                        guard.RequireProcess("git", "NewProjectService.CreateRepositoriesAsync");
-
+                        // 本机 git 出口门禁（PRD §3.7）已内置于 RunGitAsync，无需在此重复声明
                         var runner = Resolve<ProcessRunner>();
                         var verifyError = runner is null
                             ? "宿主未注册 ProcessRunner，无法校验本地目录的 Git 状态。"
@@ -1179,7 +1175,6 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
-        var guard = Resolve<PluginPermissionGuard>() ?? PluginPermissionGuard.Default;
         var total = Stopwatch.StartNew();
         var artifacts = new List<RemoteArtifact>();
 
@@ -1190,13 +1185,9 @@ public sealed class NewProjectService : INewProjectService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var label = $"{EndLabel(repository.End)}端";
-                var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch) ? _settings.PushBranch : repository.DefaultBranch;
+                var branch = ResolvePushBranch(repository);
 
-                // 本机 git 出口门禁（PRD §3.7）：插件自行拉起 git 进程前同样要过门禁，不能借助连接器才受检
-                guard.RequireGit("add", "NewProjectService.PushAsync");
-                guard.RequireGit("commit", "NewProjectService.PushAsync");
-                guard.RequireGit("push", "NewProjectService.PushAsync");
-                guard.RequireProcess("git", "NewProjectService.PushAsync");
+                // 本机 git 出口门禁（PRD §3.7）已内置于 RunGitAsync；连接器内的 push 由其自身门禁覆盖
 
                 if (!Directory.Exists(repository.LocalPath) || !Directory.Exists(Path.Combine(repository.LocalPath, ".git")))
                 {
@@ -1282,7 +1273,7 @@ public sealed class NewProjectService : INewProjectService
 
                 EndOperation(Step, $"推送到自有仓库（{label}）", $"已推送 {branch} → {repository.WebUrl}", StepStatus.Succeeded, pushWatch.Elapsed);
 
-                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch);
+                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch, branch);
                 if (artifact is not null)
                     artifacts.Add(artifact);
 
@@ -2111,6 +2102,17 @@ public sealed class NewProjectService : INewProjectService
         }
     }
 
+    /// <summary>
+    /// Step 6 的推送目标分支：配置 <c>pushBranch</c> 优先（默认 <c>main</c>，PRD §6 #17 定案）；
+    /// 配置留空才退回该端仓库的默认分支，仍为空则 <c>main</c>。
+    /// </summary>
+    /// <param name="repository">按端仓库信息。</param>
+    /// <returns>目标分支名。</returns>
+    private string ResolvePushBranch(EndRepository repository)
+        => !string.IsNullOrWhiteSpace(_settings.PushBranch)
+            ? _settings.PushBranch
+            : string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "main" : repository.DefaultBranch!;
+
     /// <summary>由 HTTPS 克隆地址推导仓库 Web 地址（去掉尾部 <c>.git</c>）。</summary>
     /// <param name="cloneUrl">克隆地址。</param>
     /// <returns>Web 地址。</returns>
@@ -2123,10 +2125,14 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="spec">项目档案。</param>
     /// <param name="repository">按端仓库信息。</param>
     /// <param name="kind">产物类别。</param>
+    /// <param name="branch">分支产物的分支名（Step 6 实际推送的分支，见 <see cref="ResolvePushBranch"/>）。</param>
     /// <returns>新登记的产物；已存在时为 <c>null</c>。</returns>
-    private static RemoteArtifact? AddArtifact(ProjectSpec spec, EndRepository repository, RemoteArtifactKind kind)
+    private static RemoteArtifact? AddArtifact(
+        ProjectSpec spec, EndRepository repository, RemoteArtifactKind kind, string? branch = null)
     {
-        var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "main" : repository.DefaultBranch;
+        branch = string.IsNullOrWhiteSpace(branch)
+            ? string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "main" : repository.DefaultBranch
+            : branch;
         var name = kind == RemoteArtifactKind.Repository ? repository.RepositoryName : branch;
         var webUrl = kind == RemoteArtifactKind.Repository
             ? repository.WebUrl
@@ -2205,19 +2211,29 @@ public sealed class NewProjectService : INewProjectService
         => string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase) ? "private" : "internal";
 
     /// <summary>
-    /// 执行本机 git 命令（本插件自身发起的调用，故需自行过权限门禁，见 <see cref="PushAsync"/>）。
+    /// 执行本机 git 命令，并在**唯一出口**处过权限门禁（PRD §3.7）：插件自行拉起的 git 进程
+    /// 不得借连接器之名绕过检查。操作名取**子命令**（<c>clone</c> / <c>push</c> / <c>add</c> /
+    /// <c>commit</c> / <c>rev-parse</c> …），会跳过 <c>-c</c> / <c>-C</c> / <c>--git-dir</c> 等前置全局选项；
+    /// 由宿主按 git 能力组判定
+    /// （见框架 <c>PluginSecurityOptions.GitWhitelist</c>：<c>clone_push</c> / <c>commit</c> / <c>inspect</c>）。
     /// </summary>
     /// <param name="runner">进程执行器。</param>
     /// <param name="workingDirectory">仓库目录。</param>
     /// <param name="arguments">参数列表（不经 shell，避免引号转义问题）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>执行结果。</returns>
-    private static Task<ProcessResult> RunGitAsync(
+    private Task<ProcessResult> RunGitAsync(
         ProcessRunner runner,
         string workingDirectory,
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
-        => runner.RunAsync(
+    {
+        var operation = ResolveGitOperation(arguments);
+        var guard = Resolve<PluginPermissionGuard>() ?? PluginPermissionGuard.Default;
+        guard.RequireGit(operation, $"NewProjectService.RunGitAsync({operation})");
+        guard.RequireProcess("git", $"NewProjectService.RunGitAsync({operation})");
+
+        return runner.RunAsync(
             "git",
             string.Empty,
             workingDirectory,
@@ -2226,6 +2242,48 @@ public sealed class NewProjectService : INewProjectService
             cancellationToken: cancellationToken,
             argumentList: arguments,
             outputEncoding: Encoding.UTF8);
+    }
+
+    /// <summary>
+    /// 从 git 参数列表里取出**子命令名**作为权限操作名：跳过 <c>-c name=value</c> / <c>-C path</c> /
+    /// <c>--git-dir=</c> 这类前置全局选项（含其取值），取第一个非选项参数。
+    /// </summary>
+    /// <param name="arguments">git 参数列表。</param>
+    /// <returns>子命令名（取不到时回落 <c>git</c>，由宿主判为越界）。</returns>
+    private static string ResolveGitOperation(IReadOnlyList<string> arguments)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var argument = arguments[i];
+            if (string.IsNullOrWhiteSpace(argument))
+                continue;
+
+            if (!argument.StartsWith('-'))
+                return argument.Trim();
+
+            // --opt=value 自带取值，无需再跳一项
+            if (argument.Contains('='))
+                continue;
+
+            // -c <name=value> / -C <path> / --git-dir <path> / --work-tree <path> / --namespace <name>
+            if (GitGlobalOptionsWithValue.Contains(argument))
+                i++;
+        }
+
+        return "git";
+    }
+
+    /// <summary>自带取值的 git 前置全局选项（用于跳过其值，避免把取值当成子命令）。</summary>
+    private static readonly HashSet<string> GitGlobalOptionsWithValue = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "-c",
+        "-C",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--config-env",
+        "--super-prefix"
+    };
 
     /// <summary>
     /// 校验本地目录是否为可复用的 Git 工作树（RC4）：HEAD 可解析，且给定分支在本地 refs 中存在。
@@ -2239,7 +2297,7 @@ public sealed class NewProjectService : INewProjectService
     /// git 克隆中途失败会留下 <c>.git/HEAD = ref: refs/heads/.invalid</c> 的残骸，
     /// 仅凭「目录非空」无法识别，必须让 git 自己判断。
     /// </remarks>
-    private static async Task<string?> VerifyWorktreeAsync(
+    private async Task<string?> VerifyWorktreeAsync(
         ProcessRunner runner,
         string repositoryPath,
         string? branch,
@@ -2309,7 +2367,7 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="key">配置键。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>配置值；缺失或读取失败时为 <c>null</c>。</returns>
-    private static async Task<string?> TryGetGitConfigAsync(
+    private async Task<string?> TryGetGitConfigAsync(
         ProcessRunner runner,
         string repositoryPath,
         string key,

@@ -1,9 +1,9 @@
 {
   "id": "com.tjces.newproject",
-  "name": "新建项目",
+  "name": "新建项目插件",
   "version": "1.0.0",
   "author": "Walle",
-  "description": "以 TJCES 三端模板仓新建项目：七步向导（PRD §4.3）+ 聊天式入口，共享同一 INewProjectService",
+  "description": "以 TJCES 三端模板仓新建项目：七步向导 + 聊天式入口，共享同一 INewProjectService",
   "entryAssembly": "LubanAgent.Plugin.NewProject.dll",
   "targetApp": "LubanAgentCodex",
   "minHostVersion": "2026.10.0",
@@ -72,6 +72,8 @@
     "network:flow.aliyun.com",
     "network:*.aliyuncs.com",
     "git:clone_push",
+    "git:commit",
+    "git:inspect",
     "process:dotnet",
     "process:git",
     "credential:yunxiao_pat"

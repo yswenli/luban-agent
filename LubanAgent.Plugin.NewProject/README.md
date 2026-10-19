@@ -136,6 +136,13 @@ Step 2 由面板事件回调触发，**不在**框架自动包裹范围内，故
 `PluginScopeContext.Enter(new PluginPermissionScope(PluginId, Permissions))`，
 否则后续连接器/进程/凭据出口会把插件调用误判为「宿主自身调用」而放行（PRD §3.7）。
 
+本插件 `plugin.json` 声明的 git 能力为**三个组**：`git:clone_push`（克隆/推送）、
+`git:commit`（本地 `add` / `commit`）、`git:inspect`（`rev-parse` / `status` / `diff` / `branch` / `config` / `checkout`）。
+Step 6 的本地提交由插件自己拉起 git，故必须声明后两组——只声明 `clone_push` 时
+`RequireGit("add")` 会在运行期被拒（真机已复现：`权限越界:git未授权访问add`）。
+门禁**只在唯一出口** `RunGitAsync` 内执行：操作名取子命令本身，同时校验 `process:git`，
+调用点不再各处重复声明，避免漏点。
+
 ### 技能清单来源
 
 技能 / MCP 声明**只**从插件清单读：`host.Services.GetService<PluginManager>()?.GetPlugin(host.PluginId)?.Manifest`，
@@ -204,14 +211,17 @@ Step 2 由面板事件回调触发，**不在**框架自动包裹范围内，故
 
 ### Step 6 时序（逐端串行）
 
-1. `git rev-parse --verify --quiet refs/heads/main` → 已存在则 `checkout main`，否则 `checkout -b main`（自模板 pin 分支）；
+1. 目标分支取配置 `pushBranch`（默认 `main`，PRD §6 #17 定案；留空才退回该端仓库默认分支）→
+   `git rev-parse --verify --quiet refs/heads/<branch>` 已存在则 `checkout <branch>`，否则 `checkout -b <branch>`（自模板 pin 分支）；
 2. `git add -A` → `git diff --cached --quiet` 判空，无改动**跳过提交**（不产生空提交）；
 3. 有改动才提交，作者取本机 `git config user.name/user.email`，缺失时用配置 `commitAuthorName/Email` 兜底；
-4. `CodeupClient.PushAsync(cloneUrl, dir, "main")`（连接器内置鉴权 URL 与出口门禁，**不强制推送**）；
+4. `CodeupClient.PushAsync(cloneUrl, dir, <branch>)`（连接器内置鉴权 URL 与出口门禁，**不强制推送**）；
 5. 登记 `RemoteArtifactKind.Branch` 产物。
 
-面板自身拉起的 git 进程同样要过门禁：`PluginPermissionGuard.RequireGit` / `RequireProcess`
-在每次 `RunGitAsync` 前显式调用（PRD §3.7「不得借连接器之名绕过检查」）。
+面板自身拉起的 git 进程同样要过门禁（PRD §3.7「不得借连接器之名绕过检查」）：
+`PluginPermissionGuard.RequireGit(子命令)` / `RequireProcess("git")` **内置于唯一出口 `RunGitAsync`**，
+故 `add` / `commit` / `checkout` / `rev-parse` / `config` 一个都不漏；操作名按子命令名判定，
+命中 `plugin.json` 声明的 `git:clone_push` / `git:commit` / `git:inspect` 三个能力组之一才放行。
 
 ### 面板结构（P3 起）
 

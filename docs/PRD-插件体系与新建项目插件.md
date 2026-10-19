@@ -276,7 +276,7 @@
 - **权限维度与范围**：
   - `filesystem`：允许路径范围（如 `workspace`）。
   - `network`：**域名白名单**（`codeup.aliyun.com`、`flow.aliyun.com`、`*.aliyuncs.com`）；宿主在网络出口处校验，越界访问被拦截并记录（对应 §4.8 验收第 5 条）。
-  - `git`：`clone_push` 能力。
+  - `git`：能力组——`clone_push`（覆盖 `clone` / `push`，远端读写）、`commit`（覆盖 `add` / `commit`，本地暂存与提交）、`inspect`（覆盖 `rev-parse` / `status` / `diff` / `branch` / `config` / `checkout`，本地只读检查与切分支）；插件须声明到组或具体操作名。
   - `database`：建库/执行脚本。
   - `process`：允许执行的命令（如 `dotnet`、`git`）；宿主以 `System.Diagnostics.Process` 启动前校验命令名白名单。
   - `credential`：声明插件可访问的凭据存储（如 `yunxiao_pat`）；未声明则无法读取云效 PAT（对应 §4 的 PAT 取用）。

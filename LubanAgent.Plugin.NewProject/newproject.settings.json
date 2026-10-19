@@ -12,6 +12,8 @@
 //   ④ pipelineReferences[].pipelineId —— Step 7 参考流水线，P5 前填入。
 {
   "defaultVisibility": "internal",
+
+  // Step 6 推送目标分支：默认 main（PRD §6 #17 定案）；留空则退回各端仓库的默认分支。
   "pushBranch": "main",
   "repositoryNameFormat": "{code}-{end}",
 
