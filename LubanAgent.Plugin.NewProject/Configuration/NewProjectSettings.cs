@@ -25,13 +25,21 @@ public sealed class TemplateBinding
     /// <summary>模板仓名（<c>TJCES-Service</c> / <c>TJCES-Admin</c> / <c>TJCES-Mobile</c>）。</summary>
     public string Repository { get; set; } = string.Empty;
 
-    /// <summary>模板 pin 的分支 / 标签（PRD §6 #5：不跟随模板升级，找不到即报错阻断）。</summary>
+    /// <summary>
+    /// 模板 pin 的<b>可选覆盖</b>（分支 / 标签）。
+    /// </summary>
+    /// <remarks>
+    /// <b>留空＝运行期实时解析</b>：在模板仓的现有分支里按 <c>develop → master → main → 模板默认分支</c>
+    /// 顺序取第一个存在的分支作为 pin，并把「取到了哪个、为什么」回显在 Step 3 预检里。
+    /// 登记了值则<b>必须</b>真实存在，否则阻断（不静默回退，避免用错版本建库）。
+    /// </remarks>
     public string Branch { get; set; } = string.Empty;
 
     /// <summary>
-    /// 模板仓 ID（可选覆盖，F1=A）：登记后 Step 3 <b>跳过</b>按名检索直接用该 ID；
-    /// 留空则运行期按 <see cref="Repository"/> 名检索（模板仓改名只需改名字，无需同步改 ID）。
+    /// 模板仓 ID（可选覆盖）：登记后 Step 3 在模板库列表中按该 ID 精确定位；
+    /// 留空则按 <see cref="Repository"/> 名匹配（模板仓改名只需改名字，无需同步改 ID）。
     /// </summary>
+    /// <remarks>云效侧是数字 ID，此处用字符串承载是为了允许配置里留空；解析失败即视为未登记。</remarks>
     public string? ProjectId { get; set; }
 }
 
@@ -100,9 +108,20 @@ public sealed class NewProjectSettings
     public string RepositoryNameFormat { get; set; } = "{code}-{end}";
 
     /// <summary>
-    /// 组织内分组 / 命名空间 ID（F6=B，可选）：登记后建库落在该分组下，留空则建在组织根下。
+    /// 项目代码组名格式（运行期自动建组）：占位符 <c>{code}</c> / <c>{Code}</c> / <c>{CODE}</c> / <c>{name}</c>，
+    /// 默认 <c>{CODE}</c>（如缩写 <c>jnms</c> → 组名 <c>JNMS</c>，与模板组 <c>TJCES</c> 的写法一致）。
     /// </summary>
-    public string? NamespaceId { get; set; }
+    /// <remarks>
+    /// 目标分组按该名字在组织内<b>先查后建</b>：命中即复用，未命中才创建（PRD §4.3 Step 3）。
+    /// 组名同时用作云效 <c>path</c>，故不要包含 <c>/</c> 等路径分隔符。
+    /// </remarks>
+    public string GroupNameFormat { get; set; } = "{CODE}";
+
+    /// <summary>
+    /// 项目代码组的父级组 ID（可选）：留空＝直接建在组织根下（云效文档语义：<c>parentId</c> 空即在组织路径下创建）。
+    /// </summary>
+    /// <remarks>云效侧是数字 ID，此处用字符串承载是为了允许配置里留空；解析失败即视为未登记。</remarks>
+    public string? GroupParentId { get; set; }
 
     /// <summary>
     /// Step 6 提交身份兜底（F5=A）：本机 <c>git config user.name/user.email</c> 缺失时使用，
@@ -177,6 +196,26 @@ public sealed class NewProjectSettings
         => RepositoryNameFormat
             .Replace("{code}", code, StringComparison.OrdinalIgnoreCase)
             .Replace("{end}", EndSuffix(end), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 目标代码组名（运行期自动建组的名字）：按 <see cref="GroupNameFormat"/> 展开令牌。
+    /// </summary>
+    /// <param name="code">项目英文缩写。</param>
+    /// <param name="name">项目中文名。</param>
+    /// <returns>组名（格式为空或展开结果为空时退回缩写的全大写形式）。</returns>
+    public string BuildGroupName(string code, string name)
+    {
+        var format = string.IsNullOrWhiteSpace(GroupNameFormat) ? "{CODE}" : GroupNameFormat;
+        var expanded = ExpandTokens(format, code, name).Trim();
+        return expanded.Length > 0 ? expanded : (code ?? string.Empty).ToUpperInvariant();
+    }
+
+    /// <summary>
+    /// 解析 <see cref="GroupParentId"/>（留空 / 非数字即视为「组织根」）。
+    /// </summary>
+    /// <returns>父级组 ID；未登记时为 <c>null</c>。</returns>
+    public long? TryGetGroupParentId()
+        => long.TryParse(GroupParentId?.Trim(), out var parsed) && parsed > 0 ? parsed : null;
 
     /// <summary>
     /// 端的英文后缀（Service / Admin / Mobile）。

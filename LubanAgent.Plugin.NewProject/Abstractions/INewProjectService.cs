@@ -124,16 +124,35 @@ public interface INewProjectService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>重跑幂等（PRD §4.3 Step 3 / §6 #15）</b>：①建库前先按目标仓库名检索，同名已存在则跳过创建、直接复用；
-    /// ②克隆前判断目标目录是否非空，非空时经 <see cref="CloneConflictResolver"/> 让用户三选一；
-    /// ③各端创建的仓库 id / 地址即时写入档案的 <see cref="ProjectSpec.RemoteArtifacts"/>。
+    /// <b>重跑幂等（PRD §4.3 Step 3 / §6 #15）</b>：①目标代码组先查后建（同名组已存在则复用）；
+    /// ②建库前先按目标仓库名检索，同名已存在则跳过创建、直接复用；
+    /// ③克隆前判断目标目录是否非空，非空时经 <see cref="CloneConflictResolver"/> 让用户三选一；
+    /// ④各端创建的仓库 id / 地址即时写入档案的 <see cref="ProjectSpec.RemoteArtifacts"/>。
     /// </para>
     /// <para>
-    /// <b>模板 pin（PRD §6 #5）</b>：模板仓按插件配置登记的名称（或 ID）定位，pin 分支必填；
-    /// 定位不到即阻断本步——不跟随升级、不跳过、不猜测。
+    /// <b>模板与 pin（PRD §6 #5）</b>：模板仓在云效<b>模板库</b>（<c>templateType=1</c>）中按登记名称（或 ID）定位；
+    /// pin 优先用配置登记值，留空则按 <c>develop → master → main → 模板默认分支</c> 实时解析；
+    /// 两者任一解析不出即阻断本步——不跟随升级、不跳过、不猜测。
     /// </para>
     /// </remarks>
     Task<StepResult> CreateRepositoriesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Step 3 预检（<b>只读</b>）：把「即将使用的参数」摆给用户核对——目标代码组（新建还是复用）、
+    /// 逐端模板库命中项、解析出的 pin 及来源、目标仓库名（新建还是复用）、可见性与落地目录。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 预检<b>不创建任何云效资源</b>：代码组只查不建，仓库只查不建。真正的建组 / 建库都在用户确认后的
+    /// <see cref="CreateRepositoriesAsync"/> 里发生（PRD §4.3「用户确认界面」）。
+    /// </para>
+    /// <para>
+    /// 任何一环出错都<b>不抛异常</b>，而是收集进 <see cref="RepositoryPrecheck.Errors"/> 供界面逐条展示。
+    /// </para>
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>预检读数。</returns>
+    Task<RepositoryPrecheck> PrecheckRepositoriesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 校验 Step 3 建库计划（PRD §4.3「用户确认界面」）：仓库名非空 / 合法 / 同批不重复，可见性取值合法。

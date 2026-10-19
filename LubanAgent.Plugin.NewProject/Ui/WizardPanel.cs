@@ -121,6 +121,28 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly TextBlock _landingText = new() { FontSize = 12, Foreground = PrimaryText, TextWrapping = TextWrapping.Wrap };
     private readonly CheckBox _confirmedCheck = new() { Content = "我已确认仓库名称与可见性（本步会在云效组织内创建真实仓库）" };
     private readonly Button _createRepoButton = new() { Content = "创建并克隆" };
+
+    /// <summary>Step 3 预检按钮（只读：查代码组 / 模板库 / 分支 / 同名仓库，不创建任何云效资源）。</summary>
+    private readonly Button _precheckButton = new() { Content = "预检（只读，不创建）" };
+
+    /// <summary>Step 3 预检读数展示（预检通过 / 未通过 / 已作废）。</summary>
+    private readonly TextBlock _precheckText = new()
+    {
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>最近一次预检结果（<c>null</c>＝尚未预检）。</summary>
+    private RepositoryPrecheck? _precheck;
+
+    /// <summary>预检时的输入签名：与当前输入不一致即表示预检已作废（PRD §4.3 Step 3）。</summary>
+    private string? _precheckSignature;
+
+    /// <summary>回填档案期间抑制「输入变更即作废预检」的误判（回填不是用户输入）。</summary>
+    private bool _populating;
+
     private readonly TextBlock _conflictText = new() { FontSize = 12, Foreground = WarningBrush, TextWrapping = TextWrapping.Wrap };
     private readonly Button _conflictReuseButton = new() { Content = "复用已克隆" };
     private readonly Button _conflictRecloneButton = new() { Content = "清空后重克隆" };
@@ -249,6 +271,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         // Step 3 / Step 6（P3）：建库克隆、冲突三选一、推送
         _createRepoButton.Click += OnCreateReposClicked;
+        _precheckButton.Click += OnPrecheckClicked;
+
+        // 可见性变更 → 预检作废（仓库名输入在 BuildStep3Area 里逐行挂钩）
+        _visibilityInternal.IsCheckedChanged += OnPlanCheckedChanged;
+        _visibilityPrivate.IsCheckedChanged += OnPlanCheckedChanged;
+
         _pushButton.Click += OnPushClicked;
         _skipToPushButton.Click += OnSkipToPushClicked;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
@@ -521,6 +549,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         foreach (var end in new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile })
         {
             var nameBox = new TextBox { PlaceholderText = "仓库名（可改）" };
+            nameBox.TextChanged += OnPlanTextChanged;
             var templateText = new TextBlock { FontSize = 11, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
             var panel = new StackPanel
             {
@@ -565,7 +594,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 new TextBlock
                 {
                     Text = "以各端模板仓为模板，在云效组织内创建本项目专属仓库，再按 HTTPS 地址克隆到本地并替换占位符。"
-                         + "仓库名可在此修改（改名会重新克隆到新目录）；模板与 pin 分支由插件配置登记，不做跟随升级。",
+                         + "仓库名可在此修改（改名会重新克隆到新目录）；模板在云效模板库中定位，pin 分支留空时按 "
+                         + "develop → master → main → 模板默认分支 实时解析。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap
@@ -580,6 +610,38 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 }),
                 LabeledField("归属组织", _orgText),
                 LabeledField("落地位置", _landingText),
+                new Border
+                {
+                    Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(6),
+                    Background = PageBackground,
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = DividerBrush,
+                    Child = new StackPanel
+                    {
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock { Text = "Step 3 预检（只读，不创建）", FontSize = 12, Foreground = PrimaryText },
+                            new TextBlock
+                            {
+                                Text = "预检只查不建：把「将要使用什么参数」提前摊开——目标代码组（新建还是复用）、逐端模板库命中项、"
+                                     + "解析出的 pin 分支与依据、目标仓库名（新建还是复用）、可见性与落地位置。"
+                                     + "任何输入变更都会让预检作废，需重新预检后才能执行。",
+                                FontSize = 11,
+                                Foreground = MutedText,
+                                TextWrapping = TextWrapping.Wrap
+                            },
+                            new StackPanel
+                            {
+                                Orientation = Orientation.Horizontal,
+                                Spacing = 8,
+                                Children = { _precheckButton }
+                            },
+                            _precheckText
+                        }
+                    }
+                },
                 _confirmedCheck,
                 new StackPanel
                 {
@@ -910,56 +972,208 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <param name="spec">项目档案。</param>
     private void PopulateStep3Area(ProjectSpec spec)
     {
-        foreach (var row in _repoRows)
+        _populating = true;
+        try
         {
-            var selected = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
-            row.Root.IsVisible = selected;
-            if (!selected)
-                continue;
-
-            var repository = spec.Repositories.FirstOrDefault(item => item.End == row.End);
-            var name = repository?.RepositoryName ?? string.Empty;
-            if (!row.NameBox.IsFocused && !string.Equals(row.NameBox.Text, name, StringComparison.Ordinal))
-                row.NameBox.Text = name;
-
-            if (repository is null || string.IsNullOrWhiteSpace(repository.TemplateRepository))
+            foreach (var row in _repoRows)
             {
-                row.TemplateText.Foreground = DangerBrush;
-                row.TemplateText.Text = "模板仓：未配置（插件配置 templates[] 缺少该端对照）→ 本步会被阻断，请在插件配置中补齐。";
-                continue;
+                var selected = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
+                row.Root.IsVisible = selected;
+                if (!selected)
+                    continue;
+
+                var repository = spec.Repositories.FirstOrDefault(item => item.End == row.End);
+                var name = repository?.RepositoryName ?? string.Empty;
+                if (!row.NameBox.IsFocused && !string.Equals(row.NameBox.Text, name, StringComparison.Ordinal))
+                    row.NameBox.Text = name;
+
+                if (repository is null || string.IsNullOrWhiteSpace(repository.TemplateRepository))
+                {
+                    row.TemplateText.Foreground = DangerBrush;
+                    row.TemplateText.Text = "模板仓：未配置（插件配置 templates[] 缺少该端对照）→ 本步会被阻断，请在插件配置中补齐。";
+                    continue;
+                }
+
+                row.TemplateText.Foreground = MutedText;
+                var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
+                    ? "pin 待运行期解析（develop → master → main → 模板默认分支；以预检读数为准）"
+                    : $"pin {repository.TemplateBranch}（上次解析结果；本次执行会按配置重新解析）";
+                var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
+                row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
             }
 
-            row.TemplateText.Foreground = MutedText;
-            var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
-                ? "pin 未配置（阻断：PRD §6 #5 要求登记 pin 分支后再建库）"
-                : $"pin {repository.TemplateBranch}";
-            var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
-            row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
+            // 可见性：档案里已有取值则回填，否则保持「组织内公开」默认
+            var visibility = spec.Repositories
+                .FirstOrDefault(item => spec.Ends.Count == 0 || spec.Ends.Contains(item.End))
+                ?.Visibility;
+            var isPrivate = string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase);
+            _visibilityInternal.IsChecked = !isPrivate;
+            _visibilityPrivate.IsChecked = isPrivate;
+
+            var organization = _service.OrganizationHint;
+            _orgText.Text = string.IsNullOrWhiteSpace(organization)
+                ? "未配置（请到 codex「设置 → 云效连接」填写组织 ID 后重跑本步）"
+                : organization!;
+            _orgText.Foreground = string.IsNullOrWhiteSpace(organization) ? DangerBrush : PrimaryText;
+
+            _landingText.Text = string.IsNullOrWhiteSpace(spec.LocalPath)
+                ? "未设置（Step 1 的本地目录为空）"
+                : string.Join("；", _repoRows.Where(view => view.Root.IsVisible).Select(view =>
+                {
+                    var repository = spec.Repositories.FirstOrDefault(item => item.End == view.End);
+                    return string.IsNullOrWhiteSpace(repository?.LocalPath)
+                        ? $"{EndLabel(view.End)}：—"
+                        : $"{EndLabel(view.End)}：{repository!.LocalPath}";
+                }));
+        }
+        finally
+        {
+            _populating = false;
         }
 
-        // 可见性：档案里已有取值则回填，否则保持「组织内公开」默认
-        var visibility = spec.Repositories
-            .FirstOrDefault(item => spec.Ends.Count == 0 || spec.Ends.Contains(item.End))
-            ?.Visibility;
-        var isPrivate = string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase);
-        _visibilityInternal.IsChecked = !isPrivate;
-        _visibilityPrivate.IsChecked = isPrivate;
+        // 回填完成后判定一次：预检是否已因输入变化而作废
+        SyncPrecheckState();
+    }
 
-        var organization = _service.OrganizationHint;
-        _orgText.Text = string.IsNullOrWhiteSpace(organization)
-            ? "未配置（请到 codex「设置 → 云效连接」填写组织 ID 后重跑本步）"
-            : organization!;
-        _orgText.Foreground = string.IsNullOrWhiteSpace(organization) ? DangerBrush : PrimaryText;
+    /// <summary>Step 3 确认区仓库名输入变更 → 预检作废。</summary>
+    private void OnPlanTextChanged(object? sender, TextChangedEventArgs e) => MarkPrecheckStale();
 
-        _landingText.Text = string.IsNullOrWhiteSpace(spec.LocalPath)
-            ? "未设置（Step 1 的本地目录为空）"
-            : string.Join("；", _repoRows.Where(view => view.Root.IsVisible).Select(view =>
+    /// <summary>Step 3 可见性变更 → 预检作废。</summary>
+    private void OnPlanCheckedChanged(object? sender, RoutedEventArgs e) => MarkPrecheckStale();
+
+    /// <summary>
+    /// 「创建并克隆」的可用性＝「预检已通过」且「预检未被输入变更作废」（PRD §4.3 Step 3）。
+    /// </summary>
+    private void SyncCreateEnabled()
+    {
+        var ready = !_busy
+            && _precheck is { IsReady: true }
+            && string.Equals(_precheckSignature, CurrentPlanSignature(), StringComparison.Ordinal);
+        _createRepoButton.IsEnabled = ready;
+    }
+
+    /// <summary>
+    /// 输入变更即作废预检（PRD §4.3 Step 3）：预检读的是一组具体参数，参数变了读数就不再可信。
+    /// </summary>
+    private void MarkPrecheckStale()
+    {
+        if (_populating || _precheck is null)
+            return;
+
+        _precheckSignature = null;
+        _precheckText.IsVisible = true;
+        _precheckText.Foreground = WarningBrush;
+        _precheckText.Text = "输入已变更：预检结果已作废，请点「预检」重新核对后再执行。";
+        SyncCreateEnabled();
+    }
+
+    /// <summary>刷新预检读数的展示（通过 / 未通过 / 已作废）。</summary>
+    private void SyncPrecheckState()
+    {
+        if (_precheck is null)
+        {
+            SyncCreateEnabled();
+            return;
+        }
+
+        _precheckText.IsVisible = true;
+        if (!string.Equals(_precheckSignature, CurrentPlanSignature(), StringComparison.Ordinal))
+        {
+            _precheckText.Foreground = WarningBrush;
+            _precheckText.Text = "输入已变更：预检结果已作废，请点「预检」重新核对后再执行。";
+        }
+        else
+        {
+            _precheckText.Foreground = _precheck.IsReady ? SuccessBrush : DangerBrush;
+            _precheckText.Text = FormatPrecheck(_precheck);
+        }
+
+        SyncCreateEnabled();
+    }
+
+    /// <summary>
+    /// 预检输入签名：把「当前确认区实际会提交的参数」压成可比对字符串（端 + 仓库名 + 可见性）。
+    /// </summary>
+    /// <returns>签名；无档案时为空串。</returns>
+    private string CurrentPlanSignature()
+    {
+        var spec = _service.Current;
+        if (spec is null)
+            return string.Empty;
+
+        var visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal";
+        var entries = _repoRows
+            .Where(row => row.Root.IsVisible)
+            .OrderBy(row => row.End)
+            .Select(row => $"{row.End}:{(row.NameBox.Text ?? string.Empty).Trim()}:{visibility}");
+
+        return $"{spec.Code}|{spec.Name}|{string.Join("|", entries)}";
+    }
+
+    /// <summary>预检读数的多行展示文案。</summary>
+    /// <param name="precheck">预检结果。</param>
+    /// <returns>文案。</returns>
+    private static string FormatPrecheck(RepositoryPrecheck precheck)
+    {
+        var lines = new List<string>
+        {
+            $"目标代码组：{precheck.GroupName}"
+                + (precheck.GroupExists
+                    ? $"（已存在，将复用 · id {precheck.GroupId}）"
+                    : $"（不存在，将新建 · 父级 {(precheck.GroupParentId.HasValue ? precheck.GroupParentId.Value.ToString() : "组织根")}）")
+        };
+
+        foreach (var end in precheck.Ends)
+        {
+            var label = EndLabel(end.End);
+            lines.Add(end.IsReady
+                ? $"· {label}：模板 {end.TemplateRepository}（id {end.TemplateProjectId} · {end.TemplatePath}）"
+                  + $" · pin {end.ResolvedBranch}（{end.ResolvedBranchSource}）"
+                  + $" → 仓库 {end.RepositoryName}"
+                  + $"（{(end.RepositoryExists ? "已存在，将复用" : "将新建")} · {VisibilityText(end.Visibility)}）"
+                : $"· {label}：✕ {end.Error}");
+        }
+
+        foreach (var warning in precheck.Warnings)
+            lines.Add($"⚠ {warning}");
+
+        lines.Add(precheck.IsReady
+            ? $"预检通过（{precheck.TakenAt:HH:mm:ss}）：可以执行「创建并克隆」。"
+            : "预检未通过：请按上述原因修正后重新预检（预检不会创建任何云效资源）。");
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>可见性的中文标签（与能力层文案一致）。</summary>
+    /// <param name="visibility">可见性。</param>
+    /// <returns>标签。</returns>
+    private static string VisibilityText(string? visibility)
+        => string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase) ? "私有" : "组织内公开";
+
+    /// <summary>
+    /// 把确认区当前输入整理成建库计划（Step 3 校验 / 预检 / 执行共用同一口径）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <returns>按端建库计划。</returns>
+    private List<EndRepository> CollectPlan(ProjectSpec spec)
+    {
+        var plan = new List<EndRepository>();
+        foreach (var row in _repoRows.Where(view => view.Root.IsVisible))
+        {
+            var current = spec.Repositories.FirstOrDefault(repository => repository.End == row.End);
+            plan.Add(new EndRepository
             {
-                var repository = spec.Repositories.FirstOrDefault(item => item.End == view.End);
-                return string.IsNullOrWhiteSpace(repository?.LocalPath)
-                    ? $"{EndLabel(view.End)}：—"
-                    : $"{EndLabel(view.End)}：{repository!.LocalPath}";
-            }));
+                End = row.End,
+                TemplateRepository = current?.TemplateRepository ?? string.Empty,
+                TemplateBranch = current?.TemplateBranch ?? string.Empty,
+                RepositoryName = row.NameBox.Text ?? string.Empty,
+                Visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal",
+                DefaultBranch = string.IsNullOrWhiteSpace(current?.DefaultBranch) ? "main" : current!.DefaultBranch,
+                LocalPath = current?.LocalPath ?? string.Empty
+            });
+        }
+
+        return plan;
     }
 
     /// <summary>
@@ -992,7 +1206,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         // Step 3 / Step 6 / 占位区（P3）：忙碌时只锁动作按钮；冲突三选一必须保持可点
         // —— 它回答的正是「Step 3 正在运行」时的问题，锁掉会直接把能力层挂死到超时。
-        _createRepoButton.IsEnabled = !_busy;
+        _precheckButton.IsEnabled = !_busy;
+        SyncCreateEnabled();
         _pushButton.IsEnabled = !_busy;
         _skipToPushButton.IsEnabled = !_busy;
         _confirmedCheck.IsEnabled = !_busy;
@@ -1277,8 +1492,85 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
+    /// Step 3「预检」（只读）：先按当前输入校验并回写档案，再让能力层查代码组 / 模板库 / 分支 / 同名仓库。
+    /// </summary>
+    private async void OnPrecheckClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _unloaded)
+            return;
+
+        var spec = _service.Current;
+        if (spec is null)
+        {
+            ShowErrors(new[] { "尚未建立项目档案，请先完成 Step 1。" });
+            return;
+        }
+
+        ShowErrors(Array.Empty<string>());
+
+        var plan = CollectPlan(spec);
+        SetBusy(true, "正在按当前输入校验建库计划…");
+        try
+        {
+            var validation = await _service.ValidateRepositoryPlanAsync(plan).ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (!validation.IsValid)
+            {
+                _precheck = null;
+                _precheckSignature = null;
+                _precheckText.IsVisible = true;
+                _precheckText.Foreground = DangerBrush;
+                _precheckText.Text = "预检前置校验未通过：" + string.Join("；", validation.Errors);
+                ShowErrors(validation.Errors);
+                SyncCreateEnabled();
+                return;
+            }
+
+            _service.ApplyRepositoryPlan(plan);
+
+            SetBusy(true, "正在预检 Step 3（只读：查代码组 / 模板库 / 分支 / 同名仓库）…");
+            var precheck = await _service.PrecheckRepositoriesAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            _precheck = precheck;
+            _precheckSignature = CurrentPlanSignature();
+            SyncPrecheckState();
+
+            if (!precheck.IsReady)
+            {
+                ShowErrors(precheck.Errors
+                    .Concat(precheck.Ends
+                        .Where(end => !end.IsReady)
+                        .Select(end => $"{EndLabel(end.End)}端 {end.Error}")));
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+            {
+                _precheck = null;
+                _precheckSignature = null;
+                ShowErrors(new[] { $"Step 3 预检失败：{ex.Message}" });
+                SyncCreateEnabled();
+            }
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
+    /// <summary>
     /// Step 3「创建并克隆」（PRD §4.3 Step 3）：确认勾选 → 校验建库计划 → 回写档案 → 执行。
     /// </summary>
+    /// <remarks>
+    /// <b>必须先通过预检</b>：未预检、或预检后被输入变更作废，都会在动作前阻断——
+    /// 本步会在云效组织内创建真实仓库，确认区读数与实际执行参数必须一致（PRD §4.3）。
+    /// </remarks>
     private async void OnCreateReposClicked(object? sender, RoutedEventArgs e)
     {
         if (_busy || _unloaded)
@@ -1293,6 +1585,20 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         ShowErrors(Array.Empty<string>());
 
+        // 预检门禁：未预检 / 已作废 / 预检未通过，一律不允许触碰云效写接口
+        if (_precheck is null || !string.Equals(_precheckSignature, CurrentPlanSignature(), StringComparison.Ordinal))
+        {
+            ShowErrors(new[] { "请先点「预检」并确认读数无误：预检未通过或已因输入变更作废时，本步不会执行。" });
+            SyncPrecheckState();
+            return;
+        }
+
+        if (!_precheck.IsReady)
+        {
+            ShowErrors(new[] { "预检未通过，请按预检读数修正后重新预检。" });
+            return;
+        }
+
         // 显式确认：本步会在云效组织内创建真实仓库（PRD §4.3「用户确认界面」）
         if (_confirmedCheck.IsChecked != true)
         {
@@ -1300,21 +1606,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             return;
         }
 
-        var plan = new List<EndRepository>();
-        foreach (var row in _repoRows.Where(view => view.Root.IsVisible))
-        {
-            var current = spec.Repositories.FirstOrDefault(repository => repository.End == row.End);
-            plan.Add(new EndRepository
-            {
-                End = row.End,
-                TemplateRepository = current?.TemplateRepository ?? string.Empty,
-                TemplateBranch = current?.TemplateBranch ?? string.Empty,
-                RepositoryName = row.NameBox.Text ?? string.Empty,
-                Visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal",
-                DefaultBranch = string.IsNullOrWhiteSpace(current?.DefaultBranch) ? "main" : current!.DefaultBranch,
-                LocalPath = current?.LocalPath ?? string.Empty
-            });
-        }
+        var plan = CollectPlan(spec);
 
         SetBusy(true, "正在校验建库计划…");
         try
@@ -1331,13 +1623,23 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
             _service.ApplyRepositoryPlan(plan);
 
-            SetBusy(true, "正在按模板建库并克隆（逐端：定位模板 → 建库 / 复用 → 克隆 → 替换占位符）…");
+            SetBusy(true, "正在按模板建库并克隆（逐端：建组 → 模板库定位 / 解析 pin → 建库 / 复用 → 克隆 → 替换占位符）…");
             var result = await _service.CreateRepositoriesAsync().ConfigureAwait(true);
             if (_unloaded)
                 return;
 
             if (result.Status != StepStatus.Succeeded)
                 ShowErrors(new[] { result.Message ?? "Step 3 失败，详见右侧操作记录。" });
+
+            // 本次执行已消耗预检读数（且档案被回写）：作废预检，避免误以为还能直接再执行
+            _precheck = null;
+            _precheckSignature = null;
+            _precheckText.IsVisible = true;
+            _precheckText.Foreground = result.Status == StepStatus.Succeeded ? SuccessBrush : DangerBrush;
+            _precheckText.Text = result.Status == StepStatus.Succeeded
+                ? "本步已执行完毕（预检读数已消耗）。如需重跑，请先重新预检。"
+                : "本步执行失败（预检读数已消耗）。修正后请重新预检再执行。";
+            SyncCreateEnabled();
         }
         catch (Exception ex)
         {

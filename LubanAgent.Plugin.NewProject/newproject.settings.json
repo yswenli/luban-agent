@@ -1,19 +1,26 @@
 // 「新建项目」插件配置（包内默认值）。
 // 允许 // 行注释。宿主配置节点可覆盖同名项（P2 起接入）。
 //
-// 【必须由真机联调填入的三项】
-//   ① templates[].branch —— 模板 pin 分支 / 标签。**空值会让 Step 3 直接阻断**（PRD §6 #5：按登记版本
-//      定位模板、不跟随升级）；由用户确认真实值后填入，插件不猜。
-//   ② templates[].projectId —— 可选的模板仓 ID 覆盖（留空则运行期按 repository 名在组织内检索）。
-//   ③ namespaceId —— 可选的组内分组 / 命名空间 ID；留空则仓库建在组织根下。
+// 【真机联调后可调的四项】
+//   ① templates[].branch —— 模板 pin 的**可选覆盖**（分支 / 标签）。留空＝运行期实时解析：
+//      在模板仓现有分支里按 develop → master → main → 模板默认分支 取第一个存在的，
+//      并把「取到了哪个、为什么」回显在 Step 3 预检里（无需人工登记即可跑通）。
+//      登记了值则必须真实存在，否则 Step 3 预检直接阻断（不静默回退）。
+//   ② templates[].projectId —— 可选的模板仓 ID 覆盖（整数，留空则按 repository 名在**模板库**中匹配）。
+//   ③ groupNameFormat / groupParentId —— 运行期自动建的项目代码组名格式与父级组 ID；
+//      groupParentId 留空＝建在组织根下（云效：parentId 空即在组织路径下创建）。
 //   ④ pipelineReferences[].pipelineId —— Step 7 参考流水线，P5 前填入。
 {
   "defaultVisibility": "internal",
   "pushBranch": "main",
   "repositoryNameFormat": "{code}-{end}",
 
-  // 组织内分组 / 命名空间 ID（F6=B，可选）：登记后建库落在该分组下
-  "namespaceId": "",
+  // 项目代码组名格式（{code}/{Code}/{CODE}/{name}）；默认全大写缩写，如 jnms → JNMS。
+  // 该名字先在组织内查、命中即复用、未命中才创建；同时用作云效 path，勿含 "/"。
+  "groupNameFormat": "{CODE}",
+
+  // 代码组父级组 ID（可选，整数）：留空＝直接建在组织根下（如 tjc 下）
+  "groupParentId": "",
 
   // Step 6 提交身份兜底（F5=A）：优先读本机 git config user.name/user.email，缺失时用这里的值
   "commitAuthorName": "LuBan Agent",
@@ -29,7 +36,7 @@
   ],
 
   "templates": [
-    // 后端：以 TJCES-Service 为模板（PRD §4.5）
+    // 后端：以 TJCES-Service 为模板（PRD §4.5）；branch 留空＝运行期解析 pin
     { "end": "Service", "repository": "TJCES-Service", "branch": "", "projectId": "" },
     // 管理端：以 TJCES-Admin 为模板
     { "end": "Admin", "repository": "TJCES-Admin", "branch": "", "projectId": "" },

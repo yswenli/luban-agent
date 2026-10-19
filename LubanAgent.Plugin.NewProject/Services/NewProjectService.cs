@@ -8,6 +8,7 @@
 *****************************************************************************/
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -52,6 +53,20 @@ public sealed class NewProjectService : INewProjectService
 
     /// <summary>云效仓库名规范（字母 / 数字 / 下划线 / 中划线 / 点，且以字母或数字开头）。</summary>
     private static readonly Regex RepositoryNamePattern = new("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// 模板 pin 的实时解析顺序（PRD §6 #5）：配置 <c>templates[].branch</c> 留空时按此择优。
+    /// </summary>
+    private static readonly string[] PreferredPins = { "develop", "master", "main" };
+
+    /// <summary>
+    /// 模板分支就绪等待上限（PRD §4.3 Step 3 竞态防护）：建库 API 返回<b>不等于</b>模板分支已同步完成，
+    /// 服务端的 <c>syncAllBranches</c> 是异步的，必须等 pin 分支真实出现再 <c>git clone -b</c>，否则必然失败。
+    /// </summary>
+    private static readonly TimeSpan BranchReadyTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>模板分支就绪轮询间隔（避免高频打云效接口）。</summary>
+    private static readonly TimeSpan BranchReadyPollInterval = TimeSpan.FromSeconds(3);
 
     private readonly List<OperationRecord> _operations = new();
     private readonly NewProjectStateStore _store = new();
@@ -551,9 +566,8 @@ public sealed class NewProjectService : INewProjectService
             if (string.IsNullOrWhiteSpace(entry.TemplateRepository))
                 errors.Add($"{label}模板仓：未配置（插件配置 templates[] 缺少该端对照）。");
 
-            // pin 必填：PRD §6 #5 要求「按登记版本」定位模板，空 pin 即无法保证可复现，故在动作前阻断
-            if (string.IsNullOrWhiteSpace(entry.TemplateBranch))
-                errors.Add($"{label}模板 pin：未配置（templates[].branch 为空；PRD §6 #5 要求先登记 pin 分支再建库）。");
+            // pin 不再必填：留空＝Step 3 预检 / 执行时按 develop → master → main → 模板默认分支 实时解析
+            // （配置登记了值则必须真实存在，校验发生在预检里，因为需要联网查分支）。
         }
 
         // 与 Step 1 的端选择对齐（档案里的端一个都不能漏）
@@ -606,6 +620,145 @@ public sealed class NewProjectService : INewProjectService
 
         _store.Save(spec);
         RaiseChanged();
+    }
+
+    /// <inheritdoc />
+    public async Task<RepositoryPrecheck> PrecheckRepositoriesAsync(CancellationToken cancellationToken = default)
+    {
+        const WizardStep Step = WizardStep.Repositories;
+
+        var result = new RepositoryPrecheck();
+        var spec = Current;
+        if (spec is null)
+        {
+            result.Errors.Add("尚未建立项目档案：请先完成 Step 1。");
+            return result;
+        }
+
+        var plan = PlanRepositories(spec);
+        result.OrganizationId = OrganizationHint;
+        result.GroupName = BuildGroupName(spec);
+        result.GroupParentId = _settings.TryGetGroupParentId();
+
+        if (plan.Count == 0)
+            result.Errors.Add("建库计划为空：Step 1 至少要选择后端与管理端。");
+
+        var codeup = Resolve<CodeupClient>();
+        if (codeup is null)
+            result.Errors.Add("云效连接器不可用（宿主未注册 CodeupClient），无法预检 Step 3。");
+
+        if (string.IsNullOrWhiteSpace(result.OrganizationId))
+            result.Errors.Add("未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新预检（PRD §4.9）。");
+
+        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
+            result.Errors.Add("未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重新预检（PRD §4.9）。");
+
+        if (string.IsNullOrWhiteSpace(result.GroupName))
+            result.Errors.Add("项目代码组名为空：请检查插件配置 groupNameFormat（默认 {CODE} 需能由项目缩写展开出非空名字）。");
+
+        // 前置不满足即不再联网（避免拿必失败的请求去打云效）
+        if (result.Errors.Count > 0 || codeup is null)
+        {
+            Record(Step, "Step 3 预检", string.Join("；", result.Errors), StepStatus.Failed, TimeSpan.Zero);
+            return result;
+        }
+
+        var organizationId = result.OrganizationId!;
+        using var permissionScope = EnterPermissionScope();
+        var watch = Stopwatch.StartNew();
+
+        // ── ① 目标代码组（只查不建）──────────────────────────────────────────────
+        try
+        {
+            var group = await FindGroupByNameAsync(codeup, result.GroupName, result.GroupParentId, organizationId, cancellationToken);
+            result.GroupExists = group is not null;
+            result.GroupId = group?.Id;
+            result.GroupWebUrl = group?.WebUrl;
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add($"查询目标代码组失败：{result.GroupName} —— {ex.Message}");
+        }
+
+        // ── ② 逐端：模板库定位 + pin 解析 + 同名仓库检查 + 落地目录──────────────────
+        foreach (var repository in plan)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var end = new EndPrecheck
+            {
+                End = repository.End,
+                TemplateRepository = repository.TemplateRepository,
+                RepositoryName = repository.RepositoryName,
+                Visibility = NormalizeVisibility(repository.Visibility),
+                LocalPath = ResolveRepositoryLocalPath(spec, repository.End, repository.RepositoryName)
+            };
+            result.Ends.Add(end);
+
+            try
+            {
+                var located = await LocateTemplateAsync(codeup, repository, organizationId, cancellationToken);
+                if (located.Template is null)
+                {
+                    end.Error = located.Error ?? $"定位不到模板仓「{repository.TemplateRepository}」。";
+                    continue;
+                }
+
+                end.TemplateProjectId = located.Template.ProjectId;
+                end.TemplatePath = located.Template.Path;
+                end.TemplateRepository = string.IsNullOrWhiteSpace(located.Template.Name)
+                    ? repository.TemplateRepository
+                    : located.Template.Name!;
+
+                var pin = await ResolvePinAsync(codeup, located.Template.ProjectId, repository.End, organizationId, cancellationToken);
+                end.TemplateBranches = pin.Branches;
+                end.ResolvedBranch = pin.Branch;
+                end.ResolvedBranchSource = pin.Source;
+                if (string.IsNullOrWhiteSpace(pin.Branch))
+                {
+                    end.Error = $"模板 pin 解析失败：{pin.Error}";
+                    continue;
+                }
+
+                var existing = await FindRepositoryByNameAsync(codeup, repository.RepositoryName, organizationId, cancellationToken);
+                end.RepositoryExists = existing is not null;
+                end.RepositoryWebUrl = string.IsNullOrWhiteSpace(existing?.HttpUrlToRepo)
+                    ? null
+                    : BuildWebUrl(existing!.HttpUrlToRepo!);
+
+                if (end.LocalPath.Length > 0 && Directory.Exists(end.LocalPath)
+                    && Directory.EnumerateFileSystemEntries(end.LocalPath).Any())
+                {
+                    end.LocalPathOccupied = true;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                end.Error = ex.Message;
+            }
+        }
+
+        foreach (var end in result.Ends.Where(item => item.LocalPathOccupied))
+        {
+            result.Warnings.Add($"{EndLabel(end.End)}端本地目录已存在且非空（{end.LocalPath}）：执行时会请你"
+                                + "「复用已克隆 / 清空后重新克隆 / 中止」三选一。");
+        }
+
+        watch.Stop();
+        var summary = result.IsReady
+            ? $"Step 3 预检通过：代码组 {result.GroupName}（{(result.GroupExists ? "已存在，将复用" : "不存在，将新建")}）· "
+              + $"{result.Ends.Count} 端 · 耗时 {watch.Elapsed.TotalSeconds:F1}s"
+            : "Step 3 预检未通过：" + string.Join("；", result.Errors.Concat(result.Ends
+                .Where(end => !end.IsReady)
+                .Select(end => $"{EndLabel(end.End)}端 {end.Error}")));
+
+        Record(Step, "Step 3 预检", summary, result.IsReady ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+        return result;
     }
 
     /// <inheritdoc />
@@ -662,46 +815,84 @@ public sealed class NewProjectService : INewProjectService
 
         try
         {
+            // ── 0. 目标代码组：先查后建（PRD §4.3 Step 3；组名＝项目缩写经配置格式展开）────────
+            var groupName = BuildGroupName(spec);
+            var groupWatch = BeginOperation(Step, "准备项目代码组", $"{groupName} · 组织 {organizationId}");
+
+            YunxiaoNamespace group;
+            try
+            {
+                group = await EnsureGroupAsync(codeup, groupName, organizationId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                var reason = $"准备项目代码组失败：{groupName} —— {ex.Message}";
+                EndOperation(Step, "准备项目代码组", reason, StepStatus.Failed, groupWatch.Elapsed);
+                SaveSpec(spec);
+                return StepResult.Fail(Step, reason);
+            }
+
+            var groupArtifact = AddGroupArtifact(spec, group);
+            if (groupArtifact is not null)
+                artifacts.Add(groupArtifact);
+
+            EndOperation(Step, "准备项目代码组",
+                $"代码组 {group.PathWithNamespace ?? group.Name ?? groupName}（id {group.Id}）· {group.WebUrl}",
+                StepStatus.Succeeded, groupWatch.Elapsed);
+            SaveSpec(spec);
+
             foreach (var repository in plan)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var label = $"{EndLabel(repository.End)}端";
 
-                // ── 1. 模板仓定位（PRD §6 #5：按登记版本；定位不到即阻断，不猜测）──────────
-                var templateWatch = BeginOperation(Step, $"定位模板仓（{label}）", repository.TemplateRepository);
-                var templateId = ResolveTemplateProjectId(repository);
-                if (string.IsNullOrWhiteSpace(templateId))
+                // 本端即将被重新处理：先把上一轮的「已就绪」标记置回未就绪，
+                // 免得本轮失败后档案仍留着旧绿灯（RC4：不给假绿，Step 6 也据此拒推）。
+                if (repository.Cloned)
                 {
-                    var found = await codeup.SearchRepositoriesAsync(
-                        repository.TemplateRepository,
-                        page: 1,
-                        perPage: 100,
-                        organizationId: organizationId,
-                        cancellationToken: cancellationToken);
-
-                    templateId = found?.Items?
-                        .FirstOrDefault(item => string.Equals(item.Name, repository.TemplateRepository, StringComparison.OrdinalIgnoreCase))
-                        ?.Id;
+                    repository.Cloned = false;
+                    SaveSpec(spec);
                 }
 
-                if (string.IsNullOrWhiteSpace(templateId))
+                // ── 1. 模板库定位 + pin 解析（PRD §6 #5：不跟随升级；定位 / 解析不到即阻断）────
+                var templateWatch = BeginOperation(Step, $"定位模板仓与 pin（{label}）", repository.TemplateRepository);
+
+                var located = await LocateTemplateAsync(codeup, repository, organizationId, cancellationToken);
+                if (located.Template is null)
                 {
-                    var reason = $"定位不到模板仓「{repository.TemplateRepository}」：请确认该模板仓在组织「{organizationId}」下可见，"
-                                 + "或在插件配置 templates[].projectId 中登记其仓库 ID（PRD §6 #5：不跟随升级、不猜测）。";
-                    EndOperation(Step, $"定位模板仓（{label}）", reason, StepStatus.Failed, templateWatch.Elapsed);
+                    var reason = located.Error ?? $"定位不到模板仓「{repository.TemplateRepository}」。";
+                    EndOperation(Step, $"定位模板仓与 pin（{label}）", reason, StepStatus.Failed, templateWatch.Elapsed);
                     SaveSpec(spec);
                     return StepResult.Fail(Step, reason);
                 }
 
-                EndOperation(Step, $"定位模板仓（{label}）",
-                    $"模板仓 {repository.TemplateRepository}（id {templateId}）· pin {repository.TemplateBranch}",
+                var template = located.Template;
+                var pin = await ResolvePinAsync(codeup, template.ProjectId, repository.End, organizationId, cancellationToken);
+                if (string.IsNullOrWhiteSpace(pin.Branch))
+                {
+                    var reason = $"{label}模板 pin 解析失败：{pin.Error}";
+                    EndOperation(Step, $"定位模板仓与 pin（{label}）", reason, StepStatus.Failed, templateWatch.Elapsed);
+                    SaveSpec(spec);
+                    return StepResult.Fail(Step, reason);
+                }
+
+                // 模板库命中项即为准（配置里的名字可能已被改名）：把实际使用的参数写回档案
+                repository.TemplateRepository = string.IsNullOrWhiteSpace(template.Name)
+                    ? repository.TemplateRepository
+                    : template.Name!;
+                repository.TemplateBranch = pin.Branch!;
+
+                EndOperation(Step, $"定位模板仓与 pin（{label}）",
+                    $"模板库命中 {repository.TemplateRepository}（id {template.ProjectId} · {template.Path}）"
+                    + $"· pin {repository.TemplateBranch}（{pin.Source}）",
                     StepStatus.Succeeded, templateWatch.Elapsed);
 
-                // ── 2. 目标仓库：同名复用（幂等①）or 以模板创建 ─────────────────────────
+                // ── 2. 目标仓库：同名复用（幂等①）or 以模板创建（落在项目代码组下）─────────────
                 var repoWatch = BeginOperation(Step, $"准备仓库（{label}）", repository.RepositoryName);
                 var existing = await FindRepositoryByNameAsync(codeup, repository.RepositoryName, organizationId, cancellationToken);
                 YunxiaoRepository? remote;
+                var createdNow = false;   // 本步是否新建了远端仓库（仅用于「等待分支就绪」的操作文案）
 
                 if (existing is not null)
                 {
@@ -714,7 +905,7 @@ public sealed class NewProjectService : INewProjectService
                 {
                     var createWatch = BeginOperation(Step, $"创建仓库（{label}）",
                         $"{repository.TemplateRepository} → {repository.RepositoryName} · {VisibilityLabel(repository.Visibility)}"
-                        + (string.IsNullOrWhiteSpace(_settings.NamespaceId) ? string.Empty : $" · 分组 {_settings.NamespaceId}"));
+                        + $" · 代码组 {group.PathWithNamespace ?? group.Name ?? groupName}");
 
                     remote = await codeup.CreateRepositoryAsync(
                         new YunxiaoCreateRepositoryRequest
@@ -722,12 +913,11 @@ public sealed class NewProjectService : INewProjectService
                             Name = repository.RepositoryName,
                             Path = repository.RepositoryName,
                             Visibility = repository.Visibility,
-                            NamespaceId = string.IsNullOrWhiteSpace(_settings.NamespaceId) ? null : _settings.NamespaceId,
-                            CreateParentPath = true,
+                            NamespaceId = group.Id,
                             Description = $"{spec.Name} · {label}（由「新建项目」插件按模板 {repository.TemplateRepository} 创建）",
                             TemplateProject = new YunxiaoTemplateProject
                             {
-                                TemplateProjectId = templateId,
+                                TemplateProjectId = template.ProjectId,
                                 TemplateType = 1,
                                 SyncAllBranches = true
                             }
@@ -735,22 +925,27 @@ public sealed class NewProjectService : INewProjectService
                         organizationId,
                         cancellationToken);
 
-                    if (string.IsNullOrWhiteSpace(remote?.Id))
+                    if (remote?.Id is null)
                     {
-                        var reason = $"{label}建库失败：云效未返回新仓库 id（请检查可见性、分组权限与仓库名是否被占用）。";
+                        var reason = $"{label}建库失败：云效未返回新仓库 id（请检查代码组 "
+                                     + $"{group.PathWithNamespace ?? group.Name ?? groupName} 的写权限、可见性与仓库名是否被占用）。";
                         EndOperation(Step, $"创建仓库（{label}）", reason, StepStatus.Failed, createWatch.Elapsed);
                         SaveSpec(spec);
                         return StepResult.Fail(Step, reason);
                     }
 
                     EndOperation(Step, $"创建仓库（{label}）",
-                        $"已创建 {repository.RepositoryName}（id {remote!.Id}）", StepStatus.Succeeded, createWatch.Elapsed);
+                        $"已创建 {repository.RepositoryName}（id {remote!.Id}）· 代码组 {group.PathWithNamespace ?? group.Name ?? groupName}",
+                        StepStatus.Succeeded, createWatch.Elapsed);
+                    createdNow = true;
                     EndOperation(Step, $"准备仓库（{label}）", "创建完成。", StepStatus.Succeeded, repoWatch.Elapsed);
                 }
 
                 // ── 3. 补查 HTTPS 克隆地址（创建 / 列表返回均不含，PRD v0.14 订正）──────────
                 var urlWatch = BeginOperation(Step, $"查询仓库地址（{label}）", "云效创建返回不含克隆地址，必须补查");
-                var detail = await codeup.GetRepositoryAsync(remote!.Id!, organizationId, cancellationToken);
+                var remoteRepoId = remote!.Id!.Value;
+                var repositoryId = remoteRepoId.ToString(CultureInfo.InvariantCulture);
+                var detail = await codeup.GetRepositoryAsync(repositoryId, organizationId, cancellationToken);
                 var cloneUrl = detail?.HttpUrlToRepo;
                 if (string.IsNullOrWhiteSpace(cloneUrl))
                 {
@@ -760,7 +955,7 @@ public sealed class NewProjectService : INewProjectService
                     return StepResult.Fail(Step, reason);
                 }
 
-                repository.ExternalId = remote.Id;
+                repository.ExternalId = repositoryId;
                 repository.CloneUrl = cloneUrl!;
                 repository.WebUrl = BuildWebUrl(cloneUrl!);
                 repository.DefaultBranch = string.IsNullOrWhiteSpace(detail?.DefaultBranch)
@@ -803,6 +998,34 @@ public sealed class NewProjectService : INewProjectService
                     }
                     else
                     {
+                        // 复用前健康校验（RC4）：坏克隆（HEAD = ref: refs/heads/.invalid）不得被当成「已克隆」盖章通过
+                        var verifyWatch = BeginOperation(Step, $"校验本地目录（{label}）",
+                            $"{repository.LocalPath} · 要求 HEAD 可解析且存在分支 {repository.TemplateBranch}");
+
+                        // 本机 git 出口门禁（PRD §3.7）：插件自行拉起 git 进程前同样要过门禁，不能借助连接器才受检
+                        var guard = Resolve<PluginPermissionGuard>() ?? PluginPermissionGuard.Default;
+                        guard.RequireGit("verify", "NewProjectService.CreateRepositoriesAsync");
+                        guard.RequireProcess("git", "NewProjectService.CreateRepositoriesAsync");
+
+                        var runner = Resolve<ProcessRunner>();
+                        var verifyError = runner is null
+                            ? "宿主未注册 ProcessRunner，无法校验本地目录的 Git 状态。"
+                            : await VerifyWorktreeAsync(runner, repository.LocalPath, repository.TemplateBranch, cancellationToken);
+
+                        if (verifyError is not null)
+                        {
+                            var reason = $"不能「复用已克隆」：{verifyError}。"
+                                         + "该目录不是可用的 Git 工作树（常见于上一次克隆中途失败留下的残骸——"
+                                         + "git 失败时会写入 .git/HEAD = ref: refs/heads/.invalid）；"
+                                         + "请在向导面板重跑本步并选择「清空后重克隆」，或手动删除该目录后重跑。";
+                            EndOperation(Step, $"校验本地目录（{label}）", reason, StepStatus.Failed, verifyWatch.Elapsed);
+                            SaveSpec(spec);
+                            return StepResult.Fail(Step, reason);
+                        }
+
+                        EndOperation(Step, $"校验本地目录（{label}）",
+                            "校验通过：HEAD 可解析且 pin 分支存在。", StepStatus.Succeeded, verifyWatch.Elapsed);
+
                         reuseLocal = true;
                         EndOperation(Step, $"处理已存在的本地目录（{label}）",
                             $"复用已克隆目录 {repository.LocalPath}（用户选择「复用已克隆」，本端跳过克隆）",
@@ -817,17 +1040,45 @@ public sealed class NewProjectService : INewProjectService
                 }
                 else
                 {
+                    // ── 5a. 先等 pin 分支真实就绪（RC1）：建库 API 返回 ≠ 模板分支已同步 ────────
+                    var readyWatch = BeginOperation(Step, $"等待模板分支就绪（{label}）",
+                        $"pin {repository.TemplateBranch} · 模板同步在服务端异步进行"
+                        + (createdNow ? "（本步新建仓库）" : "（复用既有仓库）"));
+
+                    var ready = await WaitForBranchReadyAsync(
+                        codeup, remoteRepoId, repository.TemplateBranch, organizationId, cancellationToken);
+                    if (!ready)
+                    {
+                        var reason = $"{label}模板分支未就绪：等待 {BranchReadyTimeout.TotalSeconds:F0}s 后，"
+                                     + $"{repository.RepositoryName}（id {remoteRepoId}）仍无分支 {repository.TemplateBranch}。"
+                                     + "远端仓库已保留，可稍后重跑本步（同名复用，不会重复建库）。";
+                        EndOperation(Step, $"等待模板分支就绪（{label}）", reason, StepStatus.Failed, readyWatch.Elapsed);
+                        SaveSpec(spec);
+                        return StepResult.Fail(Step, reason);
+                    }
+
+                    EndOperation(Step, $"等待模板分支就绪（{label}）",
+                        $"pin {repository.TemplateBranch} 已就绪（{readyWatch.Elapsed.TotalSeconds:F1}s）",
+                        StepStatus.Succeeded, readyWatch.Elapsed);
+
+                    // ── 5b. 克隆（失败时 git 会留下残骸，按「是否本步新建」决定是否清理，RC3）──────
                     var cloneWatch = BeginOperation(Step, $"克隆仓库（{label}）", $"git clone -b {repository.TemplateBranch} {cloneUrl}");
 
                     var parent = Path.GetDirectoryName(repository.LocalPath);
                     if (!string.IsNullOrEmpty(parent))
                         Directory.CreateDirectory(parent);
 
-                    var cloned = await codeup.CloneToLocalAsync(cloneUrl!, repository.LocalPath, repository.TemplateBranch, cancellationToken);
-                    if (!cloned)
+                    // 只有本步新建的目录才允许在失败时清理；原本就存在的目录交由三选一处置，不越权删除
+                    var dirPreExisted = Directory.Exists(repository.LocalPath);
+
+                    var clone = await codeup.CloneToLocalAsync(
+                        cloneUrl!, repository.LocalPath, repository.TemplateBranch, cancellationToken);
+                    if (!clone.Success)
                     {
-                        var reason = $"克隆失败：{label} {cloneUrl}（-b {repository.TemplateBranch}）。"
-                                     + "请确认 pin 分支在模板全量同步后的新仓中存在（templates[].branch）。";
+                        var cleaned = TryCleanPartialClone(repository.LocalPath, dirPreExisted);
+                        var reason = $"克隆失败：{label} {cloneUrl}（-b {repository.TemplateBranch}）—— {clone.FailureSummary()}。"
+                                     + (cleaned ? "已清理本次克隆留下的残留目录。" : string.Empty)
+                                     + "远端仓库已保留，可稍后重跑本步（同名复用，不会重复建库）。";
                         EndOperation(Step, $"克隆仓库（{label}）", reason, StepStatus.Failed, cloneWatch.Elapsed);
                         SaveSpec(spec);
                         return StepResult.Fail(Step, reason);
@@ -844,6 +1095,8 @@ public sealed class NewProjectService : INewProjectService
                     StepStatus.Succeeded, replaceWatch.Elapsed);
 
                 // ── 7. 落库：仓库信息 + 远端产物（每条即时持久化，中途失败也不丢账）───────────
+                // Cloned 语义＝「本地目录已就绪」：真克隆成功，或「复用已克隆」经健康校验通过
+                // （两条路径的失败分支均已提前 return，故走到这里必然可用）。
                 repository.Cloned = true;
                 var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Repository);
                 if (artifact is not null)
@@ -1018,9 +1271,9 @@ public sealed class NewProjectService : INewProjectService
                 // ── 3. 推送（连接器负责带鉴权的 URL 与自身出口门禁）─────────────────────
                 var pushWatch = BeginOperation(Step, $"推送到自有仓库（{label}）", $"{repository.RepositoryName} · {branch}");
                 var pushed = await codeup.PushAsync(repository.CloneUrl, repository.LocalPath, branch, force: false, cancellationToken);
-                if (!pushed)
+                if (!pushed.Success)
                 {
-                    var reason = $"推送失败：{repository.RepositoryName} · {branch}"
+                    var reason = $"推送失败：{repository.RepositoryName} · {branch} —— {pushed.FailureSummary()}"
                                  + "（请确认 PAT 具备该仓库写权限，且目标分支未被保护）。";
                     EndOperation(Step, $"推送到自有仓库（{label}）", reason, StepStatus.Failed, pushWatch.Elapsed);
                     SaveSpec(spec);
@@ -1423,14 +1676,278 @@ public sealed class NewProjectService : INewProjectService
             .ToList();
 
     /// <summary>
-    /// 模板仓 ID：插件配置登记了 <c>templates[].projectId</c> 则直接采用（F1=A 的配置覆盖路径）。
+    /// 目标项目代码组名：由插件配置 <c>groupNameFormat</c> 按项目缩写 / 名称展开
+    /// （默认 <c>{CODE}</c>，如 <c>jnms</c> → <c>JNMS</c>）。
     /// </summary>
-    /// <param name="repository">按端仓库信息。</param>
-    /// <returns>模板仓 ID；未登记时为 <c>null</c>（由调用方按名检索）。</returns>
-    private string? ResolveTemplateProjectId(EndRepository repository)
+    /// <param name="spec">项目档案。</param>
+    /// <returns>组名（展开结果为空时为空串）。</returns>
+    private string BuildGroupName(ProjectSpec spec)
+        => (_settings.BuildGroupName(spec.Code, spec.Name) ?? string.Empty).Trim();
+
+    /// <summary>
+    /// 在组织内按名精确查找目标代码组（<b>只读</b>）。
+    /// </summary>
+    /// <remarks>
+    /// 云效 <c>namespaces.search</c> 是「组名包含」语义，故命中后还要做一次精确名比较；
+    /// 未登记父级（组织根）时可能存在嵌套同名组，此时取层级最浅的一个，避免误复用深层同名组。
+    /// </remarks>
+    /// <param name="codeup">云效客户端。</param>
+    /// <param name="groupName">组名（精确匹配，忽略大小写）。</param>
+    /// <param name="parentId">父级组 ID（<c>null</c>＝组织根）。</param>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>命中的代码组；未命中为 <c>null</c>。</returns>
+    private static async Task<YunxiaoNamespace?> FindGroupByNameAsync(
+        CodeupClient codeup,
+        string groupName,
+        long? parentId,
+        string organizationId,
+        CancellationToken cancellationToken)
     {
-        var configured = _settings.FindTemplate(repository.End)?.ProjectId;
-        return string.IsNullOrWhiteSpace(configured) ? null : configured!.Trim();
+        if (string.IsNullOrWhiteSpace(groupName))
+            return null;
+
+        var list = await codeup.ListNamespacesAsync(
+            search: groupName,
+            parentId: parentId,
+            page: 1,
+            perPage: 100,
+            organizationId: organizationId,
+            cancellationToken: cancellationToken);
+
+        var candidates = (list ?? new List<YunxiaoNamespace>())
+            .Where(item => string.IsNullOrWhiteSpace(item.Kind)
+                           || string.Equals(item.Kind, "group", StringComparison.OrdinalIgnoreCase))
+            .Where(item => string.Equals(item.Name, groupName, StringComparison.OrdinalIgnoreCase));
+
+        if (parentId.HasValue)
+            candidates = candidates.Where(item => item.ParentId == parentId);
+
+        return candidates
+            .OrderBy(item => (item.PathWithNamespace ?? item.Path ?? string.Empty).Count(ch => ch == '/'))
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// 确保目标代码组存在（先查后建，PRD §4.3 Step 3）：命中即复用，未命中才创建。
+    /// </summary>
+    /// <param name="codeup">云效客户端。</param>
+    /// <param name="groupName">组名。</param>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>可用的代码组（新建或复用）。</returns>
+    /// <exception cref="InvalidOperationException">组名为空，或云效未返回新建组 id。</exception>
+    private async Task<YunxiaoNamespace> EnsureGroupAsync(
+        CodeupClient codeup,
+        string groupName,
+        string organizationId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(groupName))
+            throw new InvalidOperationException("项目代码组名为空：请检查插件配置 groupNameFormat。");
+
+        var parentId = _settings.TryGetGroupParentId();
+        var existing = await FindGroupByNameAsync(codeup, groupName, parentId, organizationId, cancellationToken);
+        if (existing is not null)
+            return existing;
+
+        var created = await codeup.CreateNamespaceAsync(
+            new YunxiaoCreateNamespaceRequest
+            {
+                Name = groupName,
+                Path = groupName,
+                ParentId = parentId,
+                Visibility = NormalizeVisibility(_settings.DefaultVisibility),
+                Description = $"由「新建项目」插件自动创建的项目代码组（{groupName}）"
+            },
+            organizationId,
+            cancellationToken);
+
+        if (created is null || created.Id <= 0)
+            throw new InvalidOperationException($"云效未返回新建代码组 id（{groupName}）。");
+
+        return created;
+    }
+
+    /// <summary>
+    /// 在云效<b>模板库</b>（<c>templateType=1</c>）中定位某端的模板仓（PRD §6 #5）。
+    /// </summary>
+    /// <remarks>
+    /// 优先用配置登记的 <c>templates[].projectId</c>（整数）精确匹配；未登记则按模板仓名匹配。
+    /// 走模板库列表而不是按名搜普通仓库：只有登记为模板的仓库才能用作 <c>templateProjectId</c>。
+    /// </remarks>
+    /// <param name="codeup">云效客户端。</param>
+    /// <param name="repository">按端仓库信息。</param>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>命中的模板仓；失败时给出可读原因（不抛异常）。</returns>
+    private async Task<(YunxiaoTemplateRepository? Template, string? Error)> LocateTemplateAsync(
+        CodeupClient codeup,
+        EndRepository repository,
+        string organizationId,
+        CancellationToken cancellationToken)
+    {
+        var binding = _settings.FindTemplate(repository.End);
+        var wanted = (repository.TemplateRepository ?? string.Empty).Trim();
+        if (wanted.Length == 0)
+            wanted = (binding?.Repository ?? string.Empty).Trim();
+
+        var configuredId = long.TryParse(binding?.ProjectId?.Trim(), out var parsedId) && parsedId > 0
+            ? parsedId
+            : (long?)null;
+
+        List<YunxiaoTemplateRepository> templates;
+        try
+        {
+            templates = await codeup.ListTemplateRepositoriesAsync(
+                templateType: 1,
+                page: 1,
+                perPage: 100,
+                organizationId: organizationId,
+                cancellationToken: cancellationToken)
+                ?? new List<YunxiaoTemplateRepository>();
+        }
+        catch (Exception ex)
+        {
+            return (null, $"读取云效模板库失败：{ex.Message}");
+        }
+
+        if (templates.Count == 0)
+            return (null, "云效自定义模板库为空（templateType=1）：请先在云效把模板仓登记为模板（PRD §6 #5）。");
+
+        if (configuredId.HasValue)
+        {
+            var byId = templates.FirstOrDefault(item => item.ProjectId == configuredId.Value);
+            return byId is not null
+                ? (byId, null)
+                : (null, $"配置登记的模板仓 ID {configuredId} 不在云效模板库中。"
+                         + $"模板库现有：{string.Join(" / ", templates.Select(TemplateLabel))}");
+        }
+
+        var byName = templates.FirstOrDefault(item =>
+            string.Equals(item.Name, wanted, StringComparison.OrdinalIgnoreCase));
+        return byName is not null
+            ? (byName, null)
+            : (null, $"模板库中没有名为「{wanted}」的模板仓。"
+                     + $"模板库现有：{string.Join(" / ", templates.Select(TemplateLabel))}");
+    }
+
+    /// <summary>
+    /// 解析某端的模板 pin 分支（PRD §6 #5）。
+    /// </summary>
+    /// <remarks>
+    /// 配置 <c>templates[].branch</c> 登记了值则以登记值为准（不存在即报错，不静默回退）；
+    /// 留空则运行期实时取模板仓分支，按 <c>develop → master → main → 模板默认分支</c> 顺序择一。
+    /// </remarks>
+    /// <param name="codeup">云效客户端。</param>
+    /// <param name="templateId">模板仓 ID。</param>
+    /// <param name="end">所属端。</param>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>pin 分支、来源说明、模板仓分支清单、失败原因。</returns>
+    private async Task<(string? Branch, string Source, List<string> Branches, string? Error)> ResolvePinAsync(
+        CodeupClient codeup,
+        long templateId,
+        ProjectEnd end,
+        string organizationId,
+        CancellationToken cancellationToken)
+    {
+        var empty = new List<string>();
+
+        List<YunxiaoBranch> branches;
+        try
+        {
+            branches = await codeup.ListBranchesAsync(
+                templateId,
+                page: 1,
+                perPage: 100,
+                organizationId: organizationId,
+                cancellationToken: cancellationToken)
+                ?? new List<YunxiaoBranch>();
+        }
+        catch (Exception ex)
+        {
+            return (null, string.Empty, empty, $"读取模板仓分支失败：{ex.Message}");
+        }
+
+        var names = branches
+            .Select(item => item.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .ToList();
+
+        if (names.Count == 0)
+            return (null, string.Empty, names, "模板仓没有任何分支（模板全量同步可能尚未完成）。");
+
+        var configured = _settings.FindTemplate(end)?.Branch?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return names.Contains(configured, StringComparer.Ordinal)
+                ? (configured, "配置登记", names, null)
+                : (null, string.Empty, names,
+                    $"配置登记的 pin「{configured}」在模板仓中不存在（模板仓现有：{string.Join(" / ", names)}）。");
+        }
+
+        foreach (var candidate in PreferredPins)
+        {
+            if (names.Contains(candidate, StringComparer.Ordinal))
+                return (candidate, $"按开发约定取模板 {candidate}", names, null);
+        }
+
+        var fallback = branches.FirstOrDefault(item => item.DefaultBranch)?.Name;
+        if (!string.IsNullOrWhiteSpace(fallback))
+            return (fallback, $"取模板默认分支 {fallback}", names, null);
+
+        return (null, string.Empty, names,
+            "模板仓既没有 develop / master / main，也未标记默认分支："
+            + $"请在插件配置 templates[].branch 显式登记 pin（模板仓现有：{string.Join(" / ", names)}）。");
+    }
+
+    /// <summary>模板库条目的展示名（名称缺失时退回路径 / id）。</summary>
+    /// <param name="template">模板库条目。</param>
+    /// <returns>展示名。</returns>
+    private static string TemplateLabel(YunxiaoTemplateRepository template)
+        => string.IsNullOrWhiteSpace(template.Name)
+            ? (string.IsNullOrWhiteSpace(template.Path) ? $"#{template.ProjectId}" : template.Path!)
+            : template.Name!;
+
+    /// <summary>
+    /// 登记项目级远端产物「代码组」（重跑幂等：同名只更新地址，不重复入册）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="group">云效代码组。</param>
+    /// <returns>新登记的产物；已存在时为 <c>null</c>。</returns>
+    private static RemoteArtifact? AddGroupArtifact(ProjectSpec spec, YunxiaoNamespace group)
+    {
+        var name = string.IsNullOrWhiteSpace(group.PathWithNamespace)
+            ? (string.IsNullOrWhiteSpace(group.Name) ? group.Id.ToString(CultureInfo.InvariantCulture) : group.Name!)
+            : group.PathWithNamespace!;
+
+        var webUrl = group.WebUrl ?? string.Empty;
+        var externalId = group.Id.ToString(CultureInfo.InvariantCulture);
+
+        var existing = spec.RemoteArtifacts.FirstOrDefault(artifact =>
+            artifact.Kind == RemoteArtifactKind.Group
+            && string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            existing.WebUrl = webUrl;
+            existing.ExternalId = externalId;
+            return null;
+        }
+
+        var created = new RemoteArtifact
+        {
+            Kind = RemoteArtifactKind.Group,
+            End = null,
+            Name = name,
+            WebUrl = webUrl,
+            ExternalId = externalId
+        };
+
+        spec.RemoteArtifacts.Add(created);
+        return created;
     }
 
     /// <summary>
@@ -1525,6 +2042,72 @@ public sealed class NewProjectService : INewProjectService
         {
             Logger.Warn($"[newproject] 统计目录条目失败：{path}", ex);
             return 0;
+        }
+    }
+
+    /// <summary>
+    /// 等待「建库后模板同步」把 pin 分支真的推到新仓（RC1：建库返回 ≠ 分支就绪）。
+    /// </summary>
+    /// <param name="codeup">云效连接器。</param>
+    /// <param name="repositoryId">云效仓库 id（本步新建或同名复用的那条）。</param>
+    /// <param name="branch">pin 分支名（精确匹配，区分大小写）。</param>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>在 <see cref="BranchReadyTimeout"/> 内命中分支返回 <c>true</c>，超时返回 <c>false</c>。</returns>
+    /// <remarks>
+    /// 建库接口返回只代表仓库已登记，模板分支由服务端异步同步；此时立刻 <c>git clone -b</c> 必然失败，
+    /// 且 git 会在目标目录留下 <c>.git/HEAD = ref: refs/heads/.invalid</c> 的残骸。故克隆前先轮询到位。
+    /// </remarks>
+    private static async Task<bool> WaitForBranchReadyAsync(
+        CodeupClient codeup,
+        long repositoryId,
+        string branch,
+        string organizationId,
+        CancellationToken cancellationToken)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < BranchReadyTimeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var branches = await codeup.ListBranchesAsync(
+                repositoryId,
+                page: 1,
+                perPage: 100,
+                organizationId: organizationId,
+                cancellationToken: cancellationToken);
+
+            if (branches is not null
+                && branches.Any(item => string.Equals(item.Name, branch, StringComparison.Ordinal)))
+                return true;
+
+            await Task.Delay(BranchReadyPollInterval, cancellationToken);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 克隆失败时清理本次新建的残留目录（RC3：失败留下的坏 <c>.git</c> 会在重跑时被误当成「已克隆」）。
+    /// </summary>
+    /// <param name="path">目标目录。</param>
+    /// <param name="dirPreExisted">克隆前该目录是否已存在（已存在则不动，交由三选一处置，不越权删除）。</param>
+    /// <returns>是否执行了清理。</returns>
+    private static bool TryCleanPartialClone(string path, bool dirPreExisted)
+    {
+        if (dirPreExisted)
+            return false;
+
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"[newproject] 清理克隆残留目录失败：{path}", ex);
+            return false;
         }
     }
 
@@ -1643,6 +2226,45 @@ public sealed class NewProjectService : INewProjectService
             cancellationToken: cancellationToken,
             argumentList: arguments,
             outputEncoding: Encoding.UTF8);
+
+    /// <summary>
+    /// 校验本地目录是否为可复用的 Git 工作树（RC4）：HEAD 可解析，且给定分支在本地 refs 中存在。
+    /// </summary>
+    /// <param name="runner">进程执行器。</param>
+    /// <param name="repositoryPath">本地仓库目录。</param>
+    /// <param name="branch">要求存在的本地分支（可为空，只校验 HEAD）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>可复用返回 <c>null</c>；否则返回可展示的失败原因。</returns>
+    /// <remarks>
+    /// git 克隆中途失败会留下 <c>.git/HEAD = ref: refs/heads/.invalid</c> 的残骸，
+    /// 仅凭「目录非空」无法识别，必须让 git 自己判断。
+    /// </remarks>
+    private static async Task<string?> VerifyWorktreeAsync(
+        ProcessRunner runner,
+        string repositoryPath,
+        string? branch,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(repositoryPath))
+            return $"本地目录不存在：{repositoryPath}";
+
+        // ① HEAD 必须可解析（--verify --quiet：不存在时不输出，仅以非 0 退出码表示）
+        var head = await RunGitAsync(
+            runner, repositoryPath, new[] { "rev-parse", "--verify", "--quiet", "HEAD" }, cancellationToken);
+        if (head.ExitCode != 0)
+            return $"HEAD 无法解析（{Summarize(head)}）";
+
+        // ② 要求的分支必须真实存在
+        if (!string.IsNullOrWhiteSpace(branch))
+        {
+            var exists = await RunGitAsync(
+                runner, repositoryPath, new[] { "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}" }, cancellationToken);
+            if (exists.ExitCode != 0)
+                return $"缺少分支 {branch}（{Summarize(exists)}）";
+        }
+
+        return null;
+    }
 
     /// <summary>把 git 执行结果压成一行可展示的失败摘要（优先 stderr）。</summary>
     /// <param name="result">执行结果。</param>

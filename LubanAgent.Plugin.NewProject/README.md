@@ -12,11 +12,12 @@
 LubanAgent.Plugin.NewProject/
 ├─ LubanAgent.Plugin.NewProject.csproj   # 含「铺包」目标（见下）
 ├─ plugin.json                           # 插件清单：侧栏条目 / 6 个技能 / yunxiao MCP / 权限
-├─ newproject.settings.json              # 模板 pin / 分组 ID / 占位符规则 / 提交身份兜底 / 参考流水线
+├─ newproject.settings.json              # 代码组名格式 / 占位符规则 / 提交身份兜底 / 模板对照 / 参考流水线
 ├─ NewProjectPlugin.cs                   # 插件入口（PluginBase）
 ├─ Abstractions/
 │  ├─ ProjectSpec.cs                     # 项目档案与相关模型（PRD §4.5）
 │  ├─ BasicInfoValidation.cs             # Step 1 校验结果（字段级错误 + 非阻断提示，面板与聊天入口共用）
+│  ├─ RepositoryPrecheck.cs              # Step 3 预检读数（只读：代码组 / 模板库 / pin / 仓库名 / 落地位置）
 │  └─ INewProjectService.cs              # 共享能力层契约（PRD §4.10.2）
 ├─ Configuration/NewProjectSettings.cs   # 包内配置读取（模板对照 / 占位符规则 / 参考流水线）
 ├─ Serialization/PluginJsonContext.cs    # 源生成 JSON 上下文（插件持久化的唯一入口，见下）
@@ -142,34 +143,64 @@ Step 2 由面板事件回调触发，**不在**框架自动包裹范围内，故
 
 ## Step 3 / Step 6 实现要点（P3 定案）
 
-### 前置校验（任一缺失即阻断，不做动作）
+### 前置校验 / 预检（任一缺失即阻断，不做动作）
 
 | 前置 | 缺失时的行为 |
 |------|--------------|
-| 宿主注册的 `CodeupClient` | 时间线红字「云效连接器不可用」 |
+| 宿主注册的 `CodeupClient` | 时间线红字「云效连接器不可用」，阻断 |
 | 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `yunxiao_organization_id`） |
 | 云效 PAT | 同上（读取 `IYunxiaoCredentialProvider.GetPatAsync`） |
-| `templates[].branch`（模板 pin） | 阻断，提示「PRD §6 #5 要求先登记 pin 分支再建库」——**空 pin 不猜**，由真机联调填入 |
+| 模板仓（模板库中按名 / ID 命中） | 阻断；错误里**列出模板库现有条目**（`templates[].projectId` 可精确指定） |
+| 模板 pin 分支 | 阻断；配置留空时按 `develop → master → main → 模板默认分支` **实时解析**，解析不出即报错（不猜） |
 
-组织 ID（F6=B）与提交身份（F5=A）、占位符规则（F3=A）全部走插件配置；模板仓定位（F1=A）
-优先用 `templates[].projectId`，未登记则按 `repository` 名在组织内检索，**找不到即阻断**，不猜测同名近似仓。
+组织 ID / 提交身份（F5=A）/ 占位符规则（F3=A）全部走插件配置；pin 由运行时解析后写入档案的
+`repositories[].templateBranch`（**不落固定值**，PRD §6 #5 修订）。
+
+### Step 3 预检（只读，先于动作）
+
+`PrecheckRepositoriesAsync` 把「即将使用的参数」摆给用户核对，**不创建任何云效资源**：
+
+- 目标代码组：按 `groupNameFormat`（默认 `{CODE}`，如 `jnms` → `JNMS`）在组织内**只查不建**，
+  报告「已存在将复用（含 id）」或「不存在将新建（含父级＝组织根）」；
+- 逐端：模板库命中项（`templateProjectId` / 全路径）、模板仓现有分支、解析出的 pin 及**依据**、
+  目标仓库名（已存在将复用 / 将新建）、可见性、落地目录；
+- 任何一环出错**不抛异常**，收集进 `RepositoryPrecheck.Errors` 逐条展示；
+- 本地目录已存在且非空 → 归入 `Warnings`（执行时才三选一）。
+
+面板侧：**「创建并克隆」在预检通过前保持禁用**；任何输入变更（仓库名 / 可见性）立即**作废**预检
+（比对「输入签名」），需重新预检；预检读数在**执行后被消耗**（避免误以为还能直接再跑）。
 
 ### Step 3 时序（逐端串行）
 
-1. 定位模板仓（配置 ID 或按名检索）→ 空 pin 已在预检拦下；
-2. 目标仓库同名检索：**命中即复用**（重跑幂等①，不重复建库）；未命中才 `CreateRepositoryAsync`
-   带 `TemplateProject{ templateProjectId, syncAllBranches = true }` + 可选 `namespaceId`（分组）；
-3. `GetRepositoryAsync(id)` 补查 **HTTPS 克隆地址**（创建 / 列表返回都不含该字段）；
-4. 目标目录存在且非空 → `CloneConflictResolver` **内联三选一**（PRD §4.3 Step 3）：
-   - 复用已克隆 → 本端跳过克隆；
+1. **准备项目代码组**：先查后建——`ListNamespacesAsync(search)` 命中同名组即复用，未命中才
+   `CreateNamespaceAsync`（`parentId` 空＝组织根，`visibility` 取配置 `defaultVisibility`）；
+   产物以 `RemoteArtifactKind.Group`（项目级，`End = null`）入册；
+2. **模板库定位**：`ListTemplateRepositoriesAsync(templateType = 1)`，按配置 `projectId`（整数）或
+   `repository` 名匹配（**走模板库而非按名搜普通仓库**——只有登记为模板的仓才能作 `templateProjectId`）；
+3. **解析 pin**：配置 `templates[].branch` 优先（不存在即阻断）；留空则 `ListBranchesAsync` 按
+   `develop → master → main → 模板默认分支` 取第一个（写回 `repositories[].templateBranch`）；
+4. 目标仓库同名检索：**命中即复用**（重跑幂等①，不重复建库）；未命中才 `CreateRepositoryAsync` 带
+   `namespaceId`（＝代码组 id）+ `TemplateProject{ templateProjectId, templateType = 1, syncAllBranches = true }`；
+5. `GetRepositoryAsync(id)` 补查 **HTTPS 克隆地址**（创建 / 列表返回都不含该字段）；
+6. 目标目录存在且非空 → `CloneConflictResolver` **内联三选一**（PRD §4.3 Step 3）：
+   - 复用已克隆 → **先做健康校验**（`git rev-parse --verify --quiet HEAD` 与 `refs/heads/<pin>`）：
+     校验不通过（典型是一次失败克隆留下的 `HEAD = ref: refs/heads/.invalid` 残骸）→ **拒绝复用并给出引导**
+     （重跑选「清空后重克隆」，或手动删目录），不再把坏目录盖章成「已克隆」（RC4）；
    - 清空后重克隆 → 删目录后重克隆；
    - 中止本步 → **远端仓库保留**（登记为孤儿产物），本地目录不动；
    无人回答（聊天入口 / 面板未创建，resolver 为 `null`）→ 中止本步 + 引导文案；
-5. `CloneToLocalAsync(url, dir, pin)`（`git clone -b`，PRD §6 #17）；
-6. `PlaceholderReplacer.Apply`：替换**内容 + 文件/目录名**（跳过 `.git` / `bin` / `obj` / `node_modules`，4MB 上限，UTF-8 BOM 保留）；
-7. 逐端即时落库 `RemoteArtifacts`（按 `Kind + End + Name` 去重）+ `ExternalId` / `CloneUrl` / `WebUrl`，最后 `CurrentStep = Database`。
+7. **等待模板分支就绪**：建库返回 **不等于** 模板分支已同步（`syncAllBranches` 在服务端异步），
+   先轮询 `ListBranchesAsync` 直到 pin 分支出现（上限 120s / 间隔 3s），超时才报错（RC1）；
+8. `CloneToLocalAsync(url, dir, pin)`（`git clone -b`，PRD §6 #17）：
+   失败时**清理本次新建的残留目录**（残留不清理会在重跑时被误判为「已克隆」，RC3），
+   失败文案带上 git 原始报错摘要（`GitCommandResult.FailureSummary()`，URL 内嵌凭据已脱敏，RC2）；
+9. `PlaceholderReplacer.Apply`：替换**内容 + 文件/目录名**（跳过 `.git` / `bin` / `obj` / `node_modules`，4MB 上限，UTF-8 BOM 保留）；
+10. 逐端即时落库 `RemoteArtifacts`（按 `Kind + End + Name` 去重）+ `ExternalId` / `CloneUrl` / `WebUrl`，最后 `CurrentStep = Database`。
 
 > 每条产物**即时持久化**：某端失败时已成功端的账目不会丢（时间线 + 档案双份），重跑本步只补缺失。
+> `repositories[].cloned` 语义收紧为「**本地目录确已就绪**」：真克隆成功，或「复用已克隆」经健康校验通过；
+> 本步开始处理某端时先把它的 `cloned` 置回未就绪（本轮失败**不留上一轮的旧绿灯**），
+> 任一端未就绪即 `Step 3` 失败（不给假绿，Step 6 亦据此拒推）。
 
 ### Step 6 时序（逐端串行）
 
@@ -188,11 +219,12 @@ Step 2 由面板事件回调触发，**不在**框架自动包裹范围内，故
 
 - 常驻：校验错误 / 非阻断提示 / 忙碌文案 / 残留横幅 + 「档案与维护」（重跑 Step 2 / 中止并清理）；
 - Step 1 表单（`BasicInfo` / `Scaffold`）；
-- Step 3 确认区（`Repositories`）：逐端仓库名 / 可见性单选 / 归属组织只读 / 落地位置 / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
+- Step 3 确认区（`Repositories`）：逐端仓库名 / 可见性单选 / 归属组织只读 / 落地位置 / **预检卡片（「预检（只读，不创建）」按钮 + 读数）** / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
 - Step 4-5 占位（`Database` / `Build`，含临时「直接执行推送」入口，P4 落地后移除）；
 - Step 6 推送区（`Push`）；Step 7 占位（`Pipeline`）。
 
 > 冲突三选一即使处于「忙碌」态也**保持可点**——它回答的正是运行中提出的问题，锁掉会把能力层挂到超时。
+> 「创建并克隆」只在**预检通过且未被输入变更作废**时可用；未预检就点会被拦下并提示先预检（预检读数在执行后被消耗，重跑需重新预检）。
 
 ## 构建与铺包
 
@@ -234,20 +266,36 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 
 ### P3 增补（Step 3 / Step 6）
 
-11. **预检阻断**：未填「云效连接」的组织 ID / PAT，或 `templates[].branch` 为空时点「创建并克隆」→
-    时间线出现对应红字（引导去设置页 / 提示先登记 pin），**不会**产生任何远端动作；
-12. **Step 3 正常路径**：填好配置后勾选「我已确认」→ 建库 → 克隆 → 占位符替换逐条进时间线；
-    复核本地目录里有仓库内容、`spec.json` 里 `repositories[].cloneUrl/webUrl/externalId` 已落、
-    `remoteArtifacts` 出现 Repository 条目；远端仓库由模板同步了分支；
-13. **Step 3 重跑幂等**：再点一次「创建并克隆」→ 时间线出现「云效已存在同名仓库，跳过创建直接复用」，
-    **不会**因重名建库失败；
-14. **克隆冲突三选一**：手工往目标目录塞一个多余文件后重跑 → 面板出现三选一；
-    选「复用已克隆」→ 跳过克隆；选「清空后重克隆」→ 目录被清空后重克隆；选「中止本步」→
-    时间线说明远端仓库保留（孤儿），本地目录未被改动；
-15. **Step 6**：从 Step 4 占位区点「直接执行推送」→ 时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」，
-    云效仓库出现 `main` 分支与首次提交；再点一次 → 无改动时显示「工作区无改动，跳过提交」，
-    推送仍成功（幂等）；
-16. 「中止并清理」在 Step 3/6 视图下同样可见可用（常驻维护卡），且不删除本地目录与远端仓库。
+11. **预检门禁**：Step 3 未预检时「创建并克隆」不可用（灰）；设备输入后点它 → 红字要求先预检，
+    **不会**产生任何远端动作；改动仓库名 / 可见性 → 预检读数变黄「已作废」，须重新预检；
+12. **预检读数**：点「预检（只读，不创建）」→ 读数含：目标代码组（不存在将新建 / 已存在将复用 · id）、
+    逐端模板库命中（`templateProjectId` · 全路径）、pin 及依据（如「按开发约定取模板 develop」）、
+    仓库名（将新建 / 已存在将复用 · 可见性）；此时**云效侧未新增任何代码组 / 仓库**（只读，可对照后台）；
+13. **预检阻断**：未填「云效连接」的组织 ID / PAT，或模板库中找不到配置的模板仓名时点「预检」→
+    读数与时间线给出红字（引导去设置页 / 列出模板库现有条目）；
+14. **Step 3 正常路径**：预检通过 → 勾选「我已确认」→ 「创建并克隆」→ 逐条进时间线
+    （准备项目代码组 → 定位模板仓与 pin → 创建仓库 / 同名复用 → 查询仓库地址 → **等待模板分支就绪** → 克隆 → 替换占位符）；
+    「等待模板分支就绪」在 pin 分支尚未同步到新仓时轮询等待（上限 120s / 间隔 3s），就绪后立刻写「pin develop 已就绪」；
+    复核本地目录里有仓库内容、`spec.json` 里 `repositories[].cloneUrl/webUrl/externalId/templateBranch` 已落、
+    `remoteArtifacts` 出现 `Group`（项目级，`end` 为 null）与各端 `Repository` 条目；远端仓库由模板同步了分支；
+    代码组落在 `groupNameFormat` 指定的名字下（默认＝缩写全大写，如 JNMS）；
+15. **模板 pin 实时解析**：`templates[].branch` 留空 → 读数为 `develop`（Service/Admin）与 `master`（Mobile，无 develop）；
+    在配置里把某端 pin 改成不存在的分支 → 预检阻断，提示现有分支清单（不静默回退）；
+16. **Step 3 重跑幂等**：重新预检后（此时代码组已存在）→ 页面显示「已存在，将复用」；
+    执行 → 时间线出现「云效已存在同名仓库，跳过创建直接复用」，**不会**因重名建库失败；
+17. **克隆冲突三选一（含复用健康校验）**：手工往目标目录塞一个多余文件后重跑 → 预检的非阻断提示列出该目录；
+    执行时面板出现三选一；选「复用已克隆」→ 时间线先出现「校验本地目录（X端）」且通过后才跳过克隆；
+    选「清空后重克隆」→ 目录被清空后重克隆；
+    选「中止本步」→ 时间线说明远端仓库保留（孤儿），本地目录未被改动；
+18. **Step 6**：从 Step 4 占位区点「直接执行推送」→ 时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」，
+    云效仓库出现 `main` 分支与首次提交；再点一次 → 无改动时显示「工作区无改动，跳过提交」，推送仍成功（幂等）；
+19. 「中止并清理」在 Step 3/6 视图下同样可见可用（常驻维护卡），且不删除本地目录、远端仓库与代码组。
+20. **坏目录不得假成功（回归）**：把某端本地目录的 `.git/HEAD` 手工改成 `ref: refs/heads/.invalid`
+    （复现一次失败克隆的残骸）后重跑 Step 3 → 三选一里选「复用已克隆」→ 时间线红字
+    「不能『复用已克隆』：HEAD 无法解析…」且 `spec.json` 的该端 `cloned` **不会**置真；
+    改成选「清空后重克隆」→ 目录被清空后正常克隆成功（本项对应真机首轮踩到的 RC4 假成功）。
+
+> **真机第一次执行建仓动作前**，先对照第 12 项读数与用户逐项核对（模板库命中 / pin / 代码组名 / 仓库名 / 落地位置）。
 
 ## 阶段进度
 
@@ -255,7 +303,7 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 |------|------|------|
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
-| P3 | Step 3 按模板建库并克隆（框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成**（构建 0 错误；真机联调待配置真实 PAT / 组织 ID / 模板 pin） |
+| P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功；待重启 codex 复跑真机 11–20 项） |
 | P4 | Step 4 配置与建库 + Step 5 编译检查 | 待办 |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
 | P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 待办 |

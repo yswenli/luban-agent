@@ -80,6 +80,9 @@ public enum RemoteArtifactKind
     /// <summary>云效 Codeup 仓库。</summary>
     Repository,
 
+    /// <summary>云效 Codeup 代码组（项目级，运行期自动建组时登记）。</summary>
+    Group,
+
     /// <summary>已推送分支。</summary>
     Branch,
 
@@ -122,7 +125,10 @@ public sealed class EndRepository
     /// <summary>模板仓名（固定：<c>TJCES-Service</c> / <c>TJCES-Admin</c> / <c>TJCES-Mobile</c>）。</summary>
     public string TemplateRepository { get; set; } = string.Empty;
 
-    /// <summary>模板 pin 的分支 / 标签（PRD §6 #5：不跟随模板升级，找不到即阻断）。</summary>
+    /// <summary>
+    /// 实际使用的模板 pin 分支（运行期解析后写入：配置登记的覆盖值，或按
+    /// <c>develop → master → main → 模板默认分支</c> 解析出的分支；PRD §6 #5）。
+    /// </summary>
     public string TemplateBranch { get; set; } = string.Empty;
 
     /// <summary>目标仓库名，默认 <c>{缩写}-Service</c> / <c>-Admin</c> / <c>-Mobile</c>，可在 Step 3 改。</summary>
