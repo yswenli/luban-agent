@@ -12,6 +12,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins.Security;
+using LubanAgent.Connectors.AliyunDevOps;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
 
@@ -35,14 +36,17 @@ namespace LubanAgentCodex.Security;
 public sealed class CodexCredentialStore : ICredentialStore
 {
     private readonly UserContextRegistry _users;
+    private readonly ICredentialKeyAliases _aliases;
 
     /// <summary>
     /// 创建 Codex 凭据存储。
     /// </summary>
     /// <param name="users">用户状态注册表（单例）。</param>
-    public CodexCredentialStore(UserContextRegistry users)
+    /// <param name="aliases">凭据键别名（宿主注册的云效别名表；未注入时回落产品默认实现）。</param>
+    public CodexCredentialStore(UserContextRegistry users, ICredentialKeyAliases? aliases = null)
     {
         _users = users ?? throw new ArgumentNullException(nameof(users));
+        _aliases = aliases ?? AliyunCredentialKeyAliases.Instance;
     }
 
     /// <summary>当前用户的配置管理器（Codex 为单用户，固定默认用户）。</summary>
@@ -51,7 +55,7 @@ public sealed class CodexCredentialStore : ICredentialStore
     /// <inheritdoc />
     public Task<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
-        var normalized = CredentialKeys.Normalize(key);
+        var normalized = _aliases.Resolve(key);
 
         var configured = Config.GetIntegration(normalized) ?? ReadLegacyIntegration(normalized);
         if (!string.IsNullOrWhiteSpace(configured))
@@ -64,7 +68,7 @@ public sealed class CodexCredentialStore : ICredentialStore
     /// <remarks>值按归一化键写入全局 config.json；<c>null</c>/空表示删除该键。</remarks>
     public Task SetAsync(string key, string? value, CancellationToken cancellationToken = default)
     {
-        var normalized = CredentialKeys.Normalize(key);
+        var normalized = _aliases.Resolve(key);
         Config.SetIntegration(normalized, string.IsNullOrWhiteSpace(value) ? null : value.Trim());
         return Task.CompletedTask;
     }
@@ -72,7 +76,7 @@ public sealed class CodexCredentialStore : ICredentialStore
     /// <inheritdoc />
     public bool Contains(string key)
     {
-        var normalized = CredentialKeys.Normalize(key);
+        var normalized = _aliases.Resolve(key);
         return !string.IsNullOrWhiteSpace(Config.GetIntegration(normalized)) ||
                !string.IsNullOrWhiteSpace(ReadLegacyIntegration(normalized)) ||
                !string.IsNullOrWhiteSpace(ReadEnvironment(normalized));
@@ -80,10 +84,10 @@ public sealed class CodexCredentialStore : ICredentialStore
 
     /// <inheritdoc />
     public IReadOnlyCollection<string> Keys =>
-        Config.Integrations.Keys.Select(CredentialKeys.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        Config.Integrations.Keys.Select(_aliases.Resolve).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     /// <summary>
-    /// 按历史键拼写回退读取（Q15 凭据键泛化的兜底）。
+    /// 按历史键拼写回退读取（凭据键泛化的兜底）。
     /// </summary>
     /// <remarks>
     /// 迁移由 <c>ConfigManager.Load</c> 一次性完成并落盘；若配置文件只读或迁移未落盘，
@@ -93,7 +97,7 @@ public sealed class CodexCredentialStore : ICredentialStore
     /// <returns>历史键上的值；均未命中时返回 <c>null</c>。</returns>
     private string? ReadLegacyIntegration(string normalizedKey)
     {
-        foreach (var alias in CredentialKeys.GetLegacyKeyAliases(normalizedKey))
+        foreach (var alias in _aliases.GetLegacyAliases(normalizedKey))
         {
             var value = Config.GetIntegration(alias);
             if (!string.IsNullOrWhiteSpace(value))
@@ -103,9 +107,19 @@ public sealed class CodexCredentialStore : ICredentialStore
         return null;
     }
 
-    private static string? ReadEnvironment(string key)
+    private string? ReadEnvironment(string key)
     {
-        var variable = CredentialKeys.GetEnvironmentVariableName(key);
+        var value = ReadEnvironmentVariable(CredentialKeys.GetEnvironmentVariableName(key));
+        if (!string.IsNullOrWhiteSpace(value))
+            return value;
+
+        // 厂商历史环境变量名（如 LUBAN_YUNXIAO_PAT）由别名表提供
+        var legacyVariable = _aliases.GetLegacyEnvironmentVariableName(key);
+        return string.IsNullOrWhiteSpace(legacyVariable) ? null : ReadEnvironmentVariable(legacyVariable);
+    }
+
+    private static string? ReadEnvironmentVariable(string variable)
+    {
         if (string.IsNullOrWhiteSpace(variable))
             return null;
 

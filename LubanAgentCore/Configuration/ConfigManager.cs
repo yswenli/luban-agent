@@ -15,8 +15,7 @@
 *****************************************************************************/
 using System.Text.Json;
 using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Connectors.AliyunDevOps;
-using LuBan.AIAgent.Plugins.Security;
+using LubanAgent.Connectors.AliyunDevOps;
 using Microsoft.Extensions.AI;
 
 namespace LubanAgentCore.Configuration;
@@ -217,13 +216,13 @@ public class ConfigManager : IAppConfigReader
     {
         var changed = false;
 
-        // ① 凭据键泛化
+        // ① 凭据键泛化（历史拼写 → 规范键，由产品侧别名表解析；旧键保留不删）
         foreach (var kvp in _config.Integrations.ToList())
         {
             if (string.IsNullOrWhiteSpace(kvp.Key) || string.IsNullOrWhiteSpace(kvp.Value))
                 continue;
 
-            var canonical = CredentialKeys.Normalize(kvp.Key);
+            var canonical = AliyunCredentialKeyAliases.Instance.Resolve(kvp.Key);
             if (string.Equals(canonical, kvp.Key, StringComparison.OrdinalIgnoreCase))
                 continue;
             if (_config.Integrations.ContainsKey(canonical))

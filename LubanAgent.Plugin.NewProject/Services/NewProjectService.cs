@@ -12,7 +12,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using LuBan.AIAgent.Connectors.AliyunDevOps;
+using LubanAgent.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Infrastructure;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
@@ -109,7 +109,7 @@ public sealed class NewProjectService : INewProjectService
 
             try
             {
-                var stored = Resolve<ICredentialStore>()?.GetAsync(CredentialKeys.YunxiaoOrganizationId).GetAwaiter().GetResult();
+                var stored = Resolve<ICredentialStore>()?.GetAsync(AliyunCredentialKeyAliases.DefaultOrganizationIdKey).GetAwaiter().GetResult();
                 return string.IsNullOrWhiteSpace(stored) ? null : stored!.Trim();
             }
             catch (Exception ex)

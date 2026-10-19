@@ -12,6 +12,8 @@
 		<ProjectReference Include="..\..\luban-framework\LuBan.Common\LuBan.Common.csproj" />
 		<ProjectReference Include="..\..\luban-framework\LuBan.Logging\LuBan.Logging.csproj" />
 		<ProjectReference Include="..\..\luban-framework\LuBan.Orm\LuBan.Orm.csproj" />
+		<!-- 产品侧厂商连接器（宿主程序集）：放入输出目录并回落默认 ALC，由宿主显式注册 -->
+		<ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />

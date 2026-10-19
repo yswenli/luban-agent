@@ -79,7 +79,8 @@ public class AppConfig
     public Dictionary<string, bool> ModelCapabilities { get; set; } = new();
 
     /// <summary>
-    /// 外部集成配置与凭据（键为归一化键，如 <c>yunxiao_pat</c>、<c>yunxiao_organization_id</c>）。
+    /// 外部集成配置与凭据（键为归一化键，如 <c>connector:yunxiao:token</c>、
+    /// <c>connector:yunxiao:organizationid</c>；历史拼写由产品侧别名表回退读取）。
     /// </summary>
     /// <remarks>
     /// PRD §4.9.3 放宽裁决：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线），

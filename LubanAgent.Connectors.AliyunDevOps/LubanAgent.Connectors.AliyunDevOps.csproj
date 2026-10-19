@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    阿里云云效（DevOps）连接器 —— 产品侧厂商连接器实现。
+
+    归属说明：框架 LuBan.AIAgent 只保留「抽象基本连接器 + 连接器管理」，
+    厂商连接器定义在本程序集（产品），由宿主显式注册（AddAliyunDevOpsConnector）。
+
+    ALC 约束：本程序集属宿主程序集，运行期必须由默认 ALC 提供；
+    插件包 lib/ 不得包含本程序集（见 LubanAgent.Plugin.NewProject.csproj 文件头）。
+    同时需在 PluginAssemblySharing 中登记，供插件 ALC 回落到宿主程序集。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>LubanAgent.Connectors.AliyunDevOps</AssemblyName>
+    <RootNamespace>LubanAgent.Connectors.AliyunDevOps</RootNamespace>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- framework（TEMP-LOCAL-VERIFY：开发期走项目引用，与 LubanAgentCore 保持一致） -->
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

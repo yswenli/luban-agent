@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    产品侧测试项目（MSTest）。
+
+    存在理由：框架 LuBan.AIAgent 已完成去厂商化，框架测试不得再含厂商知识；
+    云效连接器迁到产品程序集 LubanAgent.Connectors.AliyunDevOps 后，其专属用例随之迁入本处。
+
+    范围约定：本处只放「产品侧/厂商侧」测试（连接器实现、凭据别名、工具定义），
+    通用能力（抽象连接器、MCP 配置解析等）的测试仍留在框架 LuBan.XTestProject。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>LubanAgent.Tests</AssemblyName>
+    <RootNamespace>LubanAgent.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.5.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 被测产品程序集（含其传递的框架引用） -->
+    <ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+</Project>

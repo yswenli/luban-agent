@@ -17,6 +17,10 @@
 /LubanAgentCore/obj/
 /LubanAgent.Plugin.NewProject/bin/
 /LubanAgent.Plugin.NewProject/obj/
+/LubanAgent.Connectors.AliyunDevOps/bin/
+/LubanAgent.Connectors.AliyunDevOps/obj/
+/LubanAgent.Tests/bin/
+/LubanAgent.Tests/obj/
 
 # 冒烟资产（smoke/plugin-system）：工程构建产物与生成的插件包
 /smoke/plugin-system/**/bin/

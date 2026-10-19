@@ -155,7 +155,7 @@ Step 6 的本地提交由插件自己拉起 git，故必须声明后两组——
 | 前置 | 缺失时的行为 |
 |------|--------------|
 | 宿主注册的 `CodeupClient` | 时间线红字「云效连接器不可用」，阻断 |
-| 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `yunxiao_organization_id`） |
+| 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `connector:yunxiao:organizationid`，历史键 `yunxiao_organization_id` 由别名表回退） |
 | 云效 PAT | 同上（读取 `IYunxiaoCredentialProvider.GetPatAsync`） |
 | 模板仓（模板库中按名 / ID 命中） | 阻断；错误里**列出模板库现有条目**（`templates[].projectId` 可精确指定） |
 | 模板 pin 分支 | 阻断；配置留空时按 `develop → master → main → 模板默认分支` **实时解析**，解析不出即报错（不猜） |

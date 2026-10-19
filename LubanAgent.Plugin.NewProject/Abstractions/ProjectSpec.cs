@@ -298,7 +298,11 @@ public sealed class ProjectSpec
 
     // ── 云效相关 ─────────────────────────────────────────────────────
     /// <summary>云效 PAT 的凭据键名（<b>不含</b>令牌明文，PRD §4.5）。</summary>
-    public string CredentialKey { get; set; } = "yunxiao_pat";
+    /// <remarks>
+    /// 规范键为 <c>connector:yunxiao:token</c>（= <c>AliyunCredentialKeyAliases.DefaultTokenKey</c>）；
+    /// 历史档案里的 <c>yunxiao_pat</c> 仍由产品别名表回退读取。
+    /// </remarks>
+    public string CredentialKey { get; set; } = "connector:yunxiao:token";
 
     /// <summary>云效企业 / 组织 ID（中心版必填，取自 codex 云效连接配置）。</summary>
     public string? OrganizationId { get; set; }

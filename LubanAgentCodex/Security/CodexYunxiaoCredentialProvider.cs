@@ -11,7 +11,7 @@
 *描述：Codex 宿主的云效 PAT 提供者 - 读取宿主凭据存储
 *
 *****************************************************************************/
-using LuBan.AIAgent.Connectors.AliyunDevOps;
+using LubanAgent.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Plugins.Security;
 
 namespace LubanAgentCodex.Security;
@@ -58,9 +58,19 @@ public sealed class CodexYunxiaoCredentialProvider : IYunxiaoCredentialProvider
         if (!string.IsNullOrWhiteSpace(pat))
             return pat;
 
-        // 存储实现（含配置节点）未命中时，再看环境变量兜底
-        var variable = CredentialKeys.GetEnvironmentVariableName(key);
-        var fallback = string.IsNullOrWhiteSpace(variable) ? null : Environment.GetEnvironmentVariable(variable);
+        // 存储实现（含配置节点）未命中时，再看环境变量兜底：
+        // 先按通用约定（LUBAN_CONNECTOR_*），再按产品别名表提供的历史变量名（LUBAN_YUNXIAO_PAT）。
+        var fallback = ReadEnvironment(CredentialKeys.GetEnvironmentVariableName(key))
+                       ?? ReadEnvironment(AliyunCredentialKeyAliases.Instance.GetLegacyEnvironmentVariableName(key));
         return string.IsNullOrWhiteSpace(fallback) ? null : fallback;
+    }
+
+    private static string? ReadEnvironment(string? variable)
+    {
+        if (string.IsNullOrWhiteSpace(variable))
+            return null;
+
+        var value = Environment.GetEnvironmentVariable(variable);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

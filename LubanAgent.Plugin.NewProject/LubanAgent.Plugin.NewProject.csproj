@@ -35,6 +35,8 @@
     <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
     <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束） -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+    <!-- 产品侧厂商连接器（宿主程序集）：同上，仅编译期；插件包 lib/ 不得包含 -->
+    <ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
   </ItemGroup>
 
   <ItemGroup>

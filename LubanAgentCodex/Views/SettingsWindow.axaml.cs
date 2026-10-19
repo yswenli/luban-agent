@@ -1085,7 +1085,7 @@ public partial class SettingsWindow : Window
         host.Children.Add(new TextBlock
         {
             Text = "PAT 仅写入凭据存储，页面不回显明文；也可用环境变量 LUBAN_YUNXIAO_PAT 兜底。"
-                 + "插件若要在出口调用云效接口，须在清单中声明 credential: [\"yunxiao_pat\"] 与对应网络白名单（PRD §3.7）。",
+                 + "插件若要在出口调用云效接口，须在清单中声明 credential: [\"connector:yunxiao:token\"] 与对应网络白名单（PRD §3.7）。",
             FontSize = 10,
             Foreground = Brush.Parse("#8A8A8A"),
             TextWrapping = TextWrapping.Wrap,

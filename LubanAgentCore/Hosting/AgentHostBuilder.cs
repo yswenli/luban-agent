@@ -76,6 +76,10 @@ public static class AgentHostBuilder
 
         services.AddLuBanAgent(configuration);
 
+        // 产品侧厂商连接器（云效）：框架只保留「抽象连接器 + 连接器管理」，
+        // 厂商实现由宿主显式注册（含提供方工厂与凭据键别名）。
+        services.AddAliyunDevOpsConnector(configuration);
+
         // ── user scope：身份与用户级服务 ──────────────────────────────
         services.AddScoped<UserContextState>();
         services.AddScoped<LuBan.AIAgent.Abstractions.IUserContext>(sp =>

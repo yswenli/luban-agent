@@ -11,8 +11,8 @@
 *描述：云效连接配置读写门面（组织 ID + PAT），供设置页使用
 *
 *****************************************************************************/
+using LubanAgent.Connectors.AliyunDevOps;
 using LubanAgentCore.Hosting;
-using LuBan.AIAgent.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Plugins.Security;
 
 namespace LubanAgentCodex.Security;
@@ -54,13 +54,13 @@ public sealed class YunxiaoSettingsService
         if (!string.IsNullOrWhiteSpace(_options.OrganizationId))
             return _options.OrganizationId!;
 
-        return _store.GetAsync(CredentialKeys.YunxiaoOrganizationId).GetAwaiter().GetResult() ?? string.Empty;
+        return _store.GetAsync(AliyunCredentialKeyAliases.DefaultOrganizationIdKey).GetAwaiter().GetResult() ?? string.Empty;
     }
 
     /// <summary>
     /// 判断是否已配置 PAT（不回显明文）。
     /// </summary>
-    public bool HasPat() => _store.Contains(CredentialKeys.YunxiaoPat);
+    public bool HasPat() => _store.Contains(AliyunCredentialKeyAliases.DefaultTokenKey);
 
     /// <summary>
     /// 保存云效连接配置。
@@ -77,11 +77,11 @@ public sealed class YunxiaoSettingsService
 
         // 组织 ID：运行时共享选项 + 持久化（便于下次启动即用）
         _options.OrganizationId = orgId;
-        await _store.SetAsync(CredentialKeys.YunxiaoOrganizationId, orgId, cancellationToken).ConfigureAwait(false);
+        await _store.SetAsync(AliyunCredentialKeyAliases.DefaultOrganizationIdKey, orgId, cancellationToken).ConfigureAwait(false);
 
         // PAT：null 视为「不修改」，避免设置页留空时误清空既有令牌
         if (pat is not null)
-            await _store.SetAsync(CredentialKeys.YunxiaoPat, string.IsNullOrWhiteSpace(pat) ? null : pat.Trim(), cancellationToken)
+            await _store.SetAsync(AliyunCredentialKeyAliases.DefaultTokenKey, string.IsNullOrWhiteSpace(pat) ? null : pat.Trim(), cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -93,7 +93,7 @@ public sealed class YunxiaoSettingsService
         if (!string.IsNullOrWhiteSpace(_options.OrganizationId))
             return;
 
-        var persisted = _store.GetAsync(CredentialKeys.YunxiaoOrganizationId).GetAwaiter().GetResult();
+        var persisted = _store.GetAsync(AliyunCredentialKeyAliases.DefaultOrganizationIdKey).GetAwaiter().GetResult();
         if (!string.IsNullOrWhiteSpace(persisted))
             _options.OrganizationId = persisted;
     }

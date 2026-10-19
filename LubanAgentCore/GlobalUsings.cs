@@ -15,6 +15,8 @@ global using LuBan.Common.IO;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 
+global using LubanAgent.Connectors.AliyunDevOps;
+
 global using LubanAgentCore.Agents;
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Context;

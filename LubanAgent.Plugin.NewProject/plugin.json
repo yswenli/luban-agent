@@ -76,7 +76,7 @@
     "git:inspect",
     "process:dotnet",
     "process:git",
-    "credential:yunxiao_pat"
+    "credential:connector:yunxiao:token"
   ],
   "dependencies": []
 }
