@@ -91,7 +91,8 @@ Operate through natural language—zero learning curve:
 
 **Storage Locations**:
 - Skill: `<workspace>/.luban-agent/skills/<skill-id>/SKILL.md`
-- MCP: `<workspace>/.luban-agent/mcps/<mcp-name>.json`
+- MCP: `<workspace>/.luban-agent/mcps/<mcp-name>.json` (external MCP; in-process connector MCPs are resolved from the config.json declaration and never land here)
+- Connector enablement: `<workspace>/.luban-agent/connectors/<name>.json`
 
 ### 📎 Attachment Support (Images + Text Files)
 - **Two attachment kinds**: images (PNG/JPEG/GIF/WebP/BMP/TIFF/HEIC, requires a vision model) and text files (code, config, logs, etc.)
@@ -394,7 +395,9 @@ luban-agent/
 
 ### User Configuration (%LocalAppData%\LuBan\AIAgent\config.json)
 
-User configurations (Providers, custom Skills, rules, etc.) are automatically saved locally, shared by both clients, and loaded on restart.
+User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally, shared by both clients, and loaded on restart.
+
+> Connectors (e.g. the Aliyun DevOps `yunxiao` connector) declare their **availability** in the `connectors` section of `config.json` (an undeclared connector counts as not installed); whether one is enabled in a given workspace is decided by `.luban-agent/connectors/<name>.json`. When an older install has no `connectors` section, a default declaration is seeded on first load.
 
 > 📖 For complete configuration options, see each sub-project's README.
 

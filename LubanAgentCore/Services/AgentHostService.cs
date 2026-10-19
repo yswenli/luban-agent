@@ -17,6 +17,7 @@
 *
 *****************************************************************************/
 using System.Threading.Channels;
+using LuBan.AIAgent.Connectors;
 
 namespace LubanAgentCore.Services;
 
@@ -367,6 +368,23 @@ public class AgentHostService
             {
                 Logger.Warn("插件会话级贡献回放失败", ex);
             }
+        }
+
+        // 连接器工作区启用（PRD §3.10 连接器配置化）：按 .luban-agent/connectors/*.json 把已启用
+        // 连接器的 MCP 暴露面注册进本会话注册表（会话级、幂等）。插件清单声明的 MCP 另经
+        // IPluginSessionContributor 注入；连接器实例为宿主级单例，这里只注册会话级客户端。
+        try
+        {
+            var connectors = sp.GetService<ConnectorRegistry>();
+            if (connectors is not null)
+            {
+                connectors.LoadFromWorkspace(workspace.RootPath);
+                await connectors.ApplyEnabledAsync(workspace.RootPath, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("连接器工作区启用失败", ex);
         }
 
         // 选择 Profile

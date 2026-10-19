@@ -99,7 +99,7 @@ LubanAgent.Plugin.NewProject/
    重跑分支**显式** `CreateSessionAsync("新建项目：{名称}")`，不复用它恢复的旧会话；
 5. 档案快照写入工作区 `<工作区根>/.luban-agent/plugin-newproject/spec.json`（走源生成上下文）；
 6. 重新发 `host.RegisterSkill(清单技能)` × 6 → 按 §3.11 落到**新**工作区；
-7. `host.RegisterMcpServer("yunxiao")` → 该会话首次对话时由宿主注入（MCP 是会话级）；
+7. `host.RegisterMcpServer("yunxiao")` → 该会话首次对话时由宿主按 `ConnectorRegistry` 的暴露面解析并注入（MCP 是会话级）；前提是 `config.json` 的 `connectors` 节已声明 `yunxiao`（未声明则解析返回 `null` 并告警跳过）；
 8. 项目级 Agent 延迟到首次对话（`EnsureRuntimeAsync` 惰性创建）；
 9. 落 `WorkspaceId` / `SessionId`、`CurrentStep = Repositories`。
 

@@ -54,7 +54,7 @@ pwsh -File luban-agent\smoke\plugin-system\build.ps1 -SkipCodex
 | 4 | 本次会话构建 | `logs/info.txt` 出现「会话回放插件 MCP：yunxiao（插件 com.demo.codex）」 |
 | 5 | **问题 C 回归（运行期技能回放）** | 插件保持启用 → 切到另一个工作区（或新开工作区）→ 新工作区 `.luban-agent\skills\codex-runtime-skill\SKILL.md` **被补齐**且 info 出现「会话回放运行期插件技能：codex-runtime-skill」；若启用时无活动工作区，info 出现「暂无活动工作区，将在会话构建时补齐」而非报错 |
 | 6 | **固定回归项：挂载面板后停用** | 面板先从内容区解绑（UI 无残留、无异常），info 出现「定时器释放 → 已停用」，且**不得**出现「程序集卸载验证未通过」降级；停止后 `codex-runtime-skill` 等在**所有写过的工作区**被删除（第 5 步补齐的工作区也要清掉） |
-| 7 | M3 凭据（D1：明文沿用宿主配置基线） | 设置页录入云效组织 ID + PAT → `%LocalAppData%\LuBan\AIAgent\users\<用户>\config.json` 的 `Integrations` 出现 `yunxiao_organization_id` / `yunxiao_pat` |
+| 7 | M3 凭据（D1：明文沿用宿主配置基线） | 设置页录入云效组织 ID + PAT → `%LocalAppData%\LuBan\AIAgent\users\<用户>\config.json` 的 `Integrations` 出现 `yunxiao_organization_id` / `connector:yunxiao:token`（旧键 `yunxiao_pat` 首次加载时自动迁移补写，仍保留） |
 | 8 | 警告核对 | `logs/warn.txt` 为**当日文件**，其 `LastWriteTime` 早于本次运行 ⇒ 本次零警告（无入口文件不可读、无越界、无卸载降级） |
 
 已知限制：codex 侧无自动化（app 无测试工程），只能按上表手工回归；`logs/warn.txt` 仅在产生 warn 级条目时才写入/更新时间戳，故「时间戳未变」即「本次零警告」。

@@ -91,7 +91,8 @@
 
 **存储位置**：
 - Skill: `<工作区>/.luban-agent/skills/<skill-id>/SKILL.md`
-- MCP: `<工作区>/.luban-agent/mcps/<mcp-name>.json`
+- MCP: `<工作区>/.luban-agent/mcps/<mcp-name>.json`（外部 MCP；进程内连接器 MCP 由 config.json 声明解析，不落此目录）
+- 连接器启用: `<工作区>/.luban-agent/connectors/<name>.json`
 
 ### 📎 附件支持（图片 + 文本文件）
 - **两种附件类型**：图片（PNG/JPEG/GIF/WebP/BMP/TIFF/HEIC，需 vision 模型）与文本文件（代码、配置、日志等）
@@ -394,7 +395,9 @@ luban-agent/
 
 ### 用户配置 (%LocalAppData%\LuBan\AIAgent\config.json)
 
-用户配置（Provider、自定义 Skill、规则等）自动保存在本地，两个客户端共享，重启后自动加载。
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，两个客户端共享，重启后自动加载。
+
+> 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明**可用性**（未声明者视为未安装）；是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定。旧安装无 `connectors` 节时首次加载自动补种默认声明。
 
 > 📖 完整配置项说明请查看各子项目的 README。
 

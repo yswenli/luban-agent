@@ -111,7 +111,7 @@ Nine core built-in skills, plug and play:
 ### 📂 Workspace & Knowledge Base
 - **Workspace Isolation**: Each workspace has its own root directory, session history, and configuration directory
 - **Stable Workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
-- **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations
+- **Workspace Config Directory**: Automatically creates `.luban-agent/` under workspace root for custom `skills`, `rules`, `mcps` configurations, plus connector enablement files `connectors/<name>.json`
 - **LLM Wiki Knowledge Base**: Special workspace type supporting file indexing and semantic retrieval with auto-retrieval-augmented Q&A
 - **Vector Store Isolation**: Index data from different workspaces is completely isolated, no cross-workspace data leaks
 - **Path Authorization Management**: Paths inside the workspace are allowed directly; paths outside the workspace are allowed after user confirmation, with grants remembered per path root (this-time/this-turn/this-session tiers)
@@ -780,7 +780,9 @@ All dialogs inherit from `BaseDialog`, ensuring unified style and behavior:
 
 ### User Configuration (%LocalAppData%\LuBan\AIAgent\config.json)
 
-User configurations (Providers, custom Skills, rules, etc.) are automatically saved locally and loaded on restart.
+User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally and loaded on restart.
+
+> Connectors (e.g. the Aliyun DevOps `yunxiao` connector) declare availability in the `connectors` section of `config.json`, and whether one is enabled in a workspace is decided by `.luban-agent/connectors/<name>.json`; credential keys are generalized to `connector:<instanceName>:token` (with legacy-key `yunxiao_pat` compatibility).
 
 ---
 

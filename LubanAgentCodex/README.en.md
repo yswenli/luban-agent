@@ -113,7 +113,7 @@ Built-in nine core skills, plug and play:
 ### 📂 Workspace & Knowledge Base
 - **Workspace isolation**: Each workspace has independent root directory, session history, and configuration directory
 - **Stable workspace ID**: The workspace ID is derived from the normalized root path, so CLI and Codex yield the same ID for the same directory and thus share long-term memory across hosts
-- **Workspace configuration directory**: Automatically creates `.luban-agent/` under each workspace root, can place custom `skills`, `rules`, `mcps` configurations
+- **Workspace configuration directory**: Automatically creates `.luban-agent/` under each workspace root, can place custom `skills`, `rules`, `mcps` configurations, plus connector enablement files `connectors/<name>.json`
 - **Temporary file management**: Scripts, screenshots, intermediate files generated at runtime uniformly stored in `.luban-agent/temp/`, supports automatic cleanup of expired files
 - **LLM Wiki Knowledge Base**: Special workspace type, supports file indexing and semantic retrieval, automatic retrieval-augmented Q&A
 - **Vector storage isolation**: Index data from different workspaces completely isolated, no cross-reading
@@ -610,7 +610,9 @@ LubanAgentCodex/
 
 ### User Configuration (%LocalAppData%\LuBan\AIAgent\config.json)
 
-User configuration (Provider, custom Skills, rules, etc.) automatically saved locally, automatically loaded on restart.
+User configuration (Provider, custom Skills, rules, connector declarations, etc.) automatically saved locally, automatically loaded on restart.
+
+> Connectors (e.g. the Aliyun DevOps `yunxiao` connector) declare availability in the `connectors` section of `config.json`; a plugin manifest's `mcpServers: ["yunxiao"]` is resolved by the host from the connector's MCP surface, and the PAT flows only through the credential store (key `connector:yunxiao:token`, with legacy-key `yunxiao_pat` compatibility) — it is never written in plain text into `.luban-agent/mcps/*.json`.
 
 ---
 

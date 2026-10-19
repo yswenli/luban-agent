@@ -111,7 +111,7 @@
 ### 📂 工作区与知识库
 - **工作区隔离**：每个工作区拥有独立的根目录、会话历史和配置目录
 - **工作区 ID 稳定**：工作区 ID 由归一化后的根路径派生，CLI 与 Codex 在同一目录得到同一 ID，进而跨宿主共享长期记忆
-- **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置
+- **工作区配置目录**：每个工作区根目录下自动创建 `.luban-agent/`，可放置自定义 `skills`、`rules`、`mcps` 配置，以及连接器启用文件 `connectors/<name>.json`
 - **临时文件管理**：运行时生成的脚本、截图、中间文件统一存放于 `.luban-agent/temp/`，支持自动清理过期文件
 - **LLM Wiki 知识库**：特殊工作区类型，支持文件索引与语义检索，自动检索增强问答
 - **向量存储隔离**：不同工作区的索引数据完全隔离，互不串读
@@ -801,7 +801,9 @@ LubanAgent/
 
 ### 用户配置 (%LocalAppData%\LuBan\AIAgent\config.json)
 
-用户配置（Provider、自定义 Skill、规则等）自动保存在本地，重启后自动加载。
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，重启后自动加载。
+
+> 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明可用性，是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定；凭据键泛化为 `connector:<实例名>:token`（兼容旧键 `yunxiao_pat`）。
 
 ---
 

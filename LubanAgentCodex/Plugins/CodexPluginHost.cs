@@ -363,7 +363,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
 
                     var client = PluginMcpCatalog.Create(
                         declaration.Name,
-                        _context.Root,
+                        sessionServices,
                         plugin.Id,
                         plugin.Manifest?.Permissions);
                     if (client is null) continue;
@@ -433,7 +433,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             var scope = PluginScopeContext.Current;
             var client = PluginMcpCatalog.Create(
                 name,
-                _context.Root,
+                sessionServices,
                 scope?.PluginId ?? string.Empty,
                 scope?.Permissions);
             if (client is null) return;

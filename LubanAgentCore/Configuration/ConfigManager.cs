@@ -15,6 +15,8 @@
 *****************************************************************************/
 using System.Text.Json;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors.AliyunDevOps;
+using LuBan.AIAgent.Plugins.Security;
 using Microsoft.Extensions.AI;
 
 namespace LubanAgentCore.Configuration;
@@ -41,6 +43,7 @@ public class ConfigManager : IAppConfigReader
     List<CustomSkillConfig> IAppConfigReader.CustomSkills => _config.CustomSkills;
     List<CustomRuleConfig> IAppConfigReader.CustomRules => _config.CustomRules;
     List<McpServerConfig> IAppConfigReader.McpServers => _config.McpServers;
+    List<ConnectorConfig> IAppConfigReader.Connectors => _config.Connectors;
     List<string> IAppConfigReader.DisabledBuiltinSkills => _config.DisabledBuiltinSkills;
     List<string> IAppConfigReader.DisabledBuiltinRules => _config.DisabledBuiltinRules;
     List<string> IAppConfigReader.DisabledBuiltinMcpClients => _config.DisabledBuiltinMcpClients;
@@ -69,6 +72,11 @@ public class ConfigManager : IAppConfigReader
     /// MCP 服务器配置列表
     /// </summary>
     public List<McpServerConfig> McpServers => _config.McpServers;
+
+    /// <summary>
+    /// 连接器声明列表（可用性 + 非敏感参数）。
+    /// </summary>
+    public List<ConnectorConfig> Connectors => _config.Connectors;
 
     /// <summary>
     /// 已禁用的内置 Skill 标识列表
@@ -134,6 +142,67 @@ public class ConfigManager : IAppConfigReader
             Logger.Error("ConfigManager.Load 加载配置失败", ex, _configPath);
             _config = new AppConfig();
         }
+
+        // 配置迁移（Q15 凭据键泛化 + 连接器声明补种）：一次性、失败不阻断启动
+        try
+        {
+            if (MigrateIfNeeded())
+                Save();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ConfigManager 配置迁移失败", ex, _configPath);
+        }
+    }
+
+    /// <summary>
+    /// 需要落盘的一次性配置迁移。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ① <b>凭据键泛化（Q15）</b>：把历史拼写键（<c>yunxiao_pat</c> / <c>codeup:pat</c> 等）的值
+    /// 复制到规范键（<c>connector:&lt;实例名&gt;:token</c>）。旧键<b>保留不删</b>，供读取回退与回滚。
+    /// </para>
+    /// <para>
+    /// ② <b>连接器声明补种</b>：老安装的 <c>config.json</c> 无 <c>connectors</c> 节点时补一条默认声明，
+    /// 使插件清单里的 <c>mcpServers: ["yunxiao"]</c> 仍能解析；<c>enabled=false</c> 表示「声明可用但
+    /// 不默认启用」，避免连接器工具被无差别暴露给所有会话（启用仍由工作区显式开启）。
+    /// </para>
+    /// </remarks>
+    /// <returns>有变动需要保存时返回 <c>true</c>。</returns>
+    private bool MigrateIfNeeded()
+    {
+        var changed = false;
+
+        // ① 凭据键泛化
+        foreach (var kvp in _config.Integrations.ToList())
+        {
+            if (string.IsNullOrWhiteSpace(kvp.Key) || string.IsNullOrWhiteSpace(kvp.Value))
+                continue;
+
+            var canonical = CredentialKeys.Normalize(kvp.Key);
+            if (string.Equals(canonical, kvp.Key, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (_config.Integrations.ContainsKey(canonical))
+                continue;
+
+            _config.Integrations[canonical] = kvp.Value;
+            changed = true;
+        }
+
+        // ② 连接器声明补种
+        if (_config.Connectors.Count == 0)
+        {
+            _config.Connectors.Add(new ConnectorConfig
+            {
+                Name = YunxiaoConnector.DefaultName,
+                Provider = YunxiaoConnector.ProviderKey,
+                Enabled = false
+            });
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>

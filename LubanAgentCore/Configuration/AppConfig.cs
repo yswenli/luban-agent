@@ -48,6 +48,16 @@ public class AppConfig
     public List<McpServerConfig> McpServers { get; set; } = new();
 
     /// <summary>
+    /// 连接器声明列表（提供方可用性 + 非敏感参数；是否在当前工作区启用另由
+    /// <c>.luban-agent/connectors/&lt;name&gt;.json</c> 决定）。
+    /// </summary>
+    /// <remarks>
+    /// 老安装无本节点时由 <c>ConfigManager.Load</c> 一次性补种默认声明（<c>enabled=false</c>：
+    /// 声明可用但不默认启用，避免未经插件声明就把连接器工具暴露给所有会话）。
+    /// </remarks>
+    public List<ConnectorConfig> Connectors { get; set; } = new();
+
+    /// <summary>
     /// 已禁用的内置 Skill 标识列表
     /// </summary>
     public List<string> DisabledBuiltinSkills { get; set; } = new();

@@ -53,7 +53,7 @@ public sealed class CodexCredentialStore : ICredentialStore
     {
         var normalized = CredentialKeys.Normalize(key);
 
-        var configured = Config.GetIntegration(normalized);
+        var configured = Config.GetIntegration(normalized) ?? ReadLegacyIntegration(normalized);
         if (!string.IsNullOrWhiteSpace(configured))
             return Task.FromResult<string?>(configured);
 
@@ -74,12 +74,34 @@ public sealed class CodexCredentialStore : ICredentialStore
     {
         var normalized = CredentialKeys.Normalize(key);
         return !string.IsNullOrWhiteSpace(Config.GetIntegration(normalized)) ||
+               !string.IsNullOrWhiteSpace(ReadLegacyIntegration(normalized)) ||
                !string.IsNullOrWhiteSpace(ReadEnvironment(normalized));
     }
 
     /// <inheritdoc />
     public IReadOnlyCollection<string> Keys =>
         Config.Integrations.Keys.Select(CredentialKeys.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    /// <summary>
+    /// 按历史键拼写回退读取（Q15 凭据键泛化的兜底）。
+    /// </summary>
+    /// <remarks>
+    /// 迁移由 <c>ConfigManager.Load</c> 一次性完成并落盘；若配置文件只读或迁移未落盘，
+    /// 这里保证旧键（如 <c>yunxiao_pat</c>）写入的凭据仍能被读到。
+    /// </remarks>
+    /// <param name="normalizedKey">归一化后的规范键。</param>
+    /// <returns>历史键上的值；均未命中时返回 <c>null</c>。</returns>
+    private string? ReadLegacyIntegration(string normalizedKey)
+    {
+        foreach (var alias in CredentialKeys.GetLegacyKeyAliases(normalizedKey))
+        {
+            var value = Config.GetIntegration(alias);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return null;
+    }
 
     private static string? ReadEnvironment(string key)
     {
