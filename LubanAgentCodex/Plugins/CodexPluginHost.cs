@@ -13,6 +13,7 @@
 *****************************************************************************/
 using System.Text;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
 using LuBan.AIAgent.Plugins.Security;
@@ -325,6 +326,53 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
             }
         }
 
+        ReloadAgents(_ => true);
+    }
+
+    #endregion
+
+    #region 连接器贡献
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 连接器工厂表（<c>ConnectorFactoryRegistry</c>）为<b>单例</b>，直接经根容器写入即可
+    /// （无需按会话回放；会话级 <c>ConnectorRegistry</c> 只在解析时读该表）。
+    /// 卸载流程第 3 步会先 <see cref="UnregisterConnector"/> 再卸载 ALC，避免工厂委托钉住插件程序集。
+    /// </remarks>
+    public void RegisterConnector(ConnectorFactoryRegistration registration)
+    {
+        if (registration is null || string.IsNullOrWhiteSpace(registration.ProviderKey))
+        {
+            LogError("插件连接器缺少提供方键，已忽略。");
+            return;
+        }
+
+        var factories = _context.Root.GetService<ConnectorFactoryRegistry>();
+        if (factories is null)
+        {
+            LogError("连接器工厂表不可用，插件连接器注册已跳过。");
+            return;
+        }
+
+        try
+        {
+            factories.AddOrUpdate(registration);
+            Log($"已注册连接器提供方 {registration.ProviderKey}。");
+        }
+        catch (Exception ex)
+        {
+            LogError($"注册连接器提供方 {registration.ProviderKey} 失败", ex);
+        }
+
+        ReloadAgents(_ => true);
+    }
+
+    /// <inheritdoc />
+    public void UnregisterConnector(string providerKey)
+    {
+        if (string.IsNullOrWhiteSpace(providerKey)) return;
+
+        _context.Root.GetService<ConnectorFactoryRegistry>()?.TryRemove(providerKey);
         ReloadAgents(_ => true);
     }
 

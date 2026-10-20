@@ -1,3 +1,4 @@
+using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.Plugins;
 
 namespace Harness;
@@ -36,6 +37,8 @@ internal sealed class TestPluginHost : IPluginHost
 
     public HashSet<string> McpServers { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public HashSet<string> Connectors { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<string> Logs => _logs;
 
     public void Log(string message) => _logs.Add(message);
@@ -63,6 +66,10 @@ internal sealed class TestPluginHost : IPluginHost
     public void RegisterMcpServer(string name) => McpServers.Add(name);
 
     public void UnregisterMcpServer(string name) => McpServers.Remove(name);
+
+    public void RegisterConnector(ConnectorFactoryRegistration registration) => Connectors.Add(registration.ProviderKey);
+
+    public void UnregisterConnector(string providerKey) => Connectors.Remove(providerKey);
 
     public void PostToUi(Action action)
     {

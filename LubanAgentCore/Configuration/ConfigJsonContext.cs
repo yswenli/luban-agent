@@ -2,6 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors;
 
 namespace LubanAgentCore.Configuration;
 
@@ -13,6 +14,7 @@ namespace LubanAgentCore.Configuration;
 [JsonSerializable(typeof(CustomSkillConfig))]
 [JsonSerializable(typeof(CustomRuleConfig))]
 [JsonSerializable(typeof(McpServerConfig))]
+[JsonSerializable(typeof(ConnectorWorkspaceEntry))]
 internal partial class ConfigJsonContext : JsonSerializerContext
 {
 }

@@ -14,7 +14,9 @@
 *
 *****************************************************************************/
 using System.Text.Json;
+using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors;
 using LubanAgent.Connectors.AliyunDevOps;
 using Microsoft.Extensions.AI;
 
@@ -23,7 +25,7 @@ namespace LubanAgentCore.Configuration;
 /// <summary>
 /// 应用配置管理器，负责配置文件的加载与保存，并提供 Provider、Skill、规则、MCP 服务器及模型等配置项的读写操作
 /// </summary>
-public class ConfigManager : IAppConfigReader
+public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
 {
     private readonly string _configPath;
     private AppConfig _config = new();
@@ -766,4 +768,113 @@ public class ConfigManager : IAppConfigReader
             Logger.Warn($"迁移旧配置失败: {ex.Message}");
         }
     }
+
+    #region IConnectorConfigWriter（工作区连接器声明落盘）
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// 落点：工作区 <c>.luban-agent/connectors/&lt;name&gt;.json</c>（与框架
+    /// <c>ConnectorRegistry.LoadFromWorkspace</c> 的约定一致）。产品侧实现本抽象以便统一
+    /// 「写入 → 缓存失效 → 通知」链路；凭据门禁复用框架 <c>ConnectorSettingsSecurityValidator</c>。
+    /// </para>
+    /// <para>
+    /// 本方法<b>不</b>改动用户 <c>config.json</c>（连接器声明的运行期来源是该工作区文件）。
+    /// </para>
+    /// </remarks>
+    public async Task<ToolResult<string>> WriteAsync(
+        ConnectorWorkspaceEntry entry,
+        bool overwrite,
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return ToolResult.Fail<string>("工作区根目录不能为空。");
+
+        var name = entry.ResolveName(string.Empty);
+        if (string.IsNullOrWhiteSpace(name))
+            return ToolResult.Fail<string>("连接器名称不能为空。");
+
+        if (!IsValidConnectorFileName(name))
+            return ToolResult.Fail<string>("连接器名称不能包含路径分隔符或非法文件名字符。");
+
+        var securityError = ConnectorSettingsSecurityValidator.Validate(entry.Settings);
+        if (securityError is not null)
+            return ToolResult.Fail<string>(securityError);
+
+        var file = ConnectorConfigFilePath(workspaceRoot, name);
+        if (File.Exists(file) && !overwrite)
+            return ToolResult.Fail<string>($"连接器 '{name}' 已存在，需设置 overwrite=true 覆盖。");
+
+        try
+        {
+            var directory = Path.GetDirectoryName(file);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+
+            var normalized = new ConnectorWorkspaceEntry
+            {
+                Name = name,
+                Provider = string.IsNullOrWhiteSpace(entry.Provider) ? null : entry.Provider!.Trim(),
+                Settings = entry.Settings is null || entry.Settings.Count == 0
+                    ? null
+                    : new Dictionary<string, string?>(entry.Settings, StringComparer.OrdinalIgnoreCase),
+                Enabled = entry.Enabled
+            };
+
+            var json = JsonSerializer.Serialize(
+                normalized,
+                ConfigJsonOptions.Pretty.GetTypeInfo(typeof(ConnectorWorkspaceEntry)));
+
+            await File.WriteAllTextAsync(file, json, cancellationToken).ConfigureAwait(false);
+
+            return ToolResult.Ok(file, $"连接器 '{name}' 配置已写入 {file}");
+        }
+        catch (Exception ex)
+        {
+            return ToolResult.Fail<string>($"写入连接器配置失败: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<ToolResult<string>> DeleteAsync(
+        string name,
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Task.FromResult(ToolResult.Fail<string>("连接器名称不能为空。"));
+
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+            return Task.FromResult(ToolResult.Fail<string>("工作区根目录不能为空。"));
+
+        var trimmed = name.Trim();
+        if (!IsValidConnectorFileName(trimmed))
+            return Task.FromResult(ToolResult.Fail<string>("连接器名称不能包含路径分隔符或非法文件名字符。"));
+
+        var file = ConnectorConfigFilePath(workspaceRoot, trimmed);
+        if (!File.Exists(file))
+            return Task.FromResult(ToolResult.Fail<string>($"连接器 '{trimmed}' 配置文件不存在。"));
+
+        try
+        {
+            File.Delete(file);
+            return Task.FromResult(ToolResult.Ok(file, $"连接器 '{trimmed}' 已删除。"));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(ToolResult.Fail<string>($"删除连接器失败: {ex.Message}"));
+        }
+    }
+
+    private static string ConnectorConfigFilePath(string workspaceRoot, string name)
+        => Path.Combine(workspaceRoot, ".luban-agent", "connectors", $"{name}.json");
+
+    private static bool IsValidConnectorFileName(string name)
+        => name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+           && !name.Contains("..", StringComparison.Ordinal);
+
+    #endregion
 }

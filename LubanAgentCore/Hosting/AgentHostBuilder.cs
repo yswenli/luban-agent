@@ -1,6 +1,7 @@
 using LuBan.AIAgent;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.LocalMemory;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
@@ -115,6 +116,8 @@ public static class AgentHostBuilder
         services.AddScoped(sp => sp.GetRequiredService<UserContextRegistry>()
             .GetOrCreate(sp.GetRequiredService<LuBan.AIAgent.Abstractions.IUserContext>().UserId).WorkspaceManager);
         services.AddScoped<IAppConfigReader>(sp => sp.GetRequiredService<ConfigManager>());
+        // 连接器声明写入器：产品实现覆盖框架默认（TryAddScoped），统一「写入 → 失效 → 通知」链路
+        services.AddScoped<IConnectorConfigWriter>(sp => sp.GetRequiredService<ConfigManager>());
 
         services.AddScoped<LuBanAgentFactory>();
         services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
