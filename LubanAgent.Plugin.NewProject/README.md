@@ -193,13 +193,14 @@ Step 6 的本地提交由插件自己拉起 git，故必须声明后两组——
    - 复用已克隆 → **先做健康校验**（`git rev-parse --verify --quiet HEAD` 与 `refs/heads/<pin>`）：
      校验不通过（典型是一次失败克隆留下的 `HEAD = ref: refs/heads/.invalid` 残骸）→ **拒绝复用并给出引导**
      （重跑选「清空后重克隆」，或手动删目录），不再把坏目录盖章成「已克隆」（RC4）；
-   - 清空后重克隆 → 删目录后重克隆；
+   - 清空后重克隆 → 经 `DirectoryCleaner.DeleteForce` 清空（**先递归清只读再删**，RC5）后重克隆；
    - 中止本步 → **远端仓库保留**（登记为孤儿产物），本地目录不动；
    无人回答（聊天入口 / 面板未创建，resolver 为 `null`）→ 中止本步 + 引导文案；
 7. **等待模板分支就绪**：建库返回 **不等于** 模板分支已同步（`syncAllBranches` 在服务端异步），
    先轮询 `ListBranchesAsync` 直到 pin 分支出现（上限 120s / 间隔 3s），超时才报错（RC1）；
 8. `CloneToLocalAsync(url, dir, pin)`（`git clone -b`，PRD §6 #17）：
-   失败时**清理本次新建的残留目录**（残留不清理会在重跑时被误判为「已克隆」，RC3），
+   失败时**清理本次新建的残留目录**（残留不清理会在重跑时被误判为「已克隆」，RC3；
+   清理同样走 `DirectoryCleaner.DeleteForce`，见 RC5），
    失败文案带上 git 原始报错摘要（`GitCommandResult.FailureSummary()`，URL 内嵌凭据已脱敏，RC2）；
 9. `PlaceholderReplacer.Apply`：替换**内容 + 文件/目录名**（跳过 `.git` / `bin` / `obj` / `node_modules`，4MB 上限，UTF-8 BOM 保留）；
 10. 逐端即时落库 `RemoteArtifacts`（按 `Kind + End + Name` 去重）+ `ExternalId` / `CloneUrl` / `WebUrl`，最后 `CurrentStep = Database`。
@@ -304,6 +305,12 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
     （复现一次失败克隆的残骸）后重跑 Step 3 → 三选一里选「复用已克隆」→ 时间线红字
     「不能『复用已克隆』：HEAD 无法解析…」且 `spec.json` 的该端 `cloned` **不会**置真；
     改成选「清空后重克隆」→ 目录被清空后正常克隆成功（本项对应真机首轮踩到的 RC4 假成功）。
+21. **只读 pack 残骸必须能清空（回归，RC5）**：造一个真机等价残骸——`<目标目录>/.git/objects/pack/`
+    下放一个**只读** pack 文件（`attrib +r`），其余目录结构随意，然后重跑 Step 3 → 三选一里选「清空后重克隆」：
+    目录必须被真正删空并重新克隆成功（**不得**再报 `Access to the path '…idx' is denied.`）。
+    说明：git 在 Windows 上把 pack 标为只读，裸 `Directory.Delete` 必失败且会在抛错前删掉 HEAD / config / refs，
+    把残骸越搞越烂——这正是 RC5 的死锁现场（真机 2026-10-20 17:27 踩到）。
+    自动化侧由 `LubanAgent.Tests/DirectoryCleanerUnitTest.cs` 锁死（裸删必抛 + `DeleteForce` 必成）。
 
 > **真机第一次执行建仓动作前**，先对照第 12 项读数与用户逐项核对（模板库命中 / pin / 代码组名 / 仓库名 / 落地位置）。
 
@@ -313,7 +320,7 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 |------|------|------|
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
-| P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功；待重启 codex 复跑真机 11–20 项） |
+| P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner` + 4 条单测，测试 37/37 通过；待重启 codex 复跑真机 11–21 项） |
 | P4 | Step 4 配置与建库 + Step 5 编译检查 | 待办 |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
 | P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 待办 |

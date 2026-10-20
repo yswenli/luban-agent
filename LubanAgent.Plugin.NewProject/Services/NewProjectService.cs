@@ -21,7 +21,9 @@ using LuBan.AIAgent.Sessions;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
 using LubanAgentCore.Infrastructure;
+using LubanAgentCore.Models;
 using LubanAgentCore.Services;
+using LubanAgentCore.Utils;
 using LubanAgent.Plugin.NewProject.Abstractions;
 using LubanAgent.Plugin.NewProject.Configuration;
 using LubanAgent.Plugin.NewProject.Serialization;
@@ -992,7 +994,20 @@ public sealed class NewProjectService : INewProjectService
 
                     if (choice == CloneConflictChoice.Reclone)
                     {
-                        Directory.Delete(repository.LocalPath, recursive: true);
+                        // 删除必须走 DirectoryCleaner：git 会把 pack 文件标成只读，裸 Directory.Delete 必失败，
+                        // 且会在抛错前把目录删成「只剩只读文件」的残缺态，让三选一两条路同时失效（RC5）
+                        try
+                        {
+                            DirectoryCleaner.DeleteForce(repository.LocalPath);
+                        }
+                        catch (IOException ex)
+                        {
+                            var reason = $"清空本地目录失败，本步中止：{ex.Message}";
+                            EndOperation(Step, $"处理已存在的本地目录（{label}）", reason, StepStatus.Failed, conflictWatch.Elapsed);
+                            SaveSpec(spec);
+                            return StepResult.Fail(Step, reason);
+                        }
+
                         EndOperation(Step, $"处理已存在的本地目录（{label}）",
                             $"已清空 {repository.LocalPath}（用户选择「清空后重克隆」）", StepStatus.Succeeded, conflictWatch.Elapsed);
                     }
@@ -2084,6 +2099,11 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="path">目标目录。</param>
     /// <param name="dirPreExisted">克隆前该目录是否已存在（已存在则不动，交由三选一处置，不越权删除）。</param>
     /// <returns>是否执行了清理。</returns>
+    /// <remarks>
+    /// 删除走 <see cref="DirectoryCleaner.DeleteForce"/>（RC5）：<c>git</c> 的 pack 文件是<b>只读</b>的，
+    /// 裸 <c>Directory.Delete</c> 必抛 <c>UnauthorizedAccessException</c>，且抛错前已删掉 HEAD / config / refs，
+    /// 只会把残留越搞越烂。
+    /// </remarks>
     private static bool TryCleanPartialClone(string path, bool dirPreExisted)
     {
         if (dirPreExisted)
@@ -2092,7 +2112,7 @@ public sealed class NewProjectService : INewProjectService
         try
         {
             if (Directory.Exists(path))
-                Directory.Delete(path, recursive: true);
+                DirectoryCleaner.DeleteForce(path);
             return true;
         }
         catch (Exception ex)

@@ -69,6 +69,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly TextBlock _archiveText;
     private readonly TextBlock _stepHint;
     private readonly StackPanel _timeline;
+    /// <summary>右列时间线的滚动宿主：内容变化后用它滚到最新一条（PRD §4.6）。</summary>
+    private ScrollViewer? _timelineScroll;
+    /// <summary>待滚动标记：<see cref="Refresh"/> 置位，由 <see cref="OnTimelineLayoutUpdated"/> 消费。</summary>
+    private bool _pendingScrollToEnd;
 
     // ── Step 1 表单 ──────────────────────────────────────────────────────────────
     private readonly TextBox _nameBox = new() { PlaceholderText = "例如：津南民生实事" };
@@ -327,6 +331,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _service.CloneConflictResolver = null;
         _conflictChoice?.TrySetResult(CloneConflictChoice.Abort);
         _conflictChoice = null;
+
+        // 解绑时间线布局订阅并清掉待滚动标记（卸载后不再有 UI 可滚）
+        _timeline.LayoutUpdated -= OnTimelineLayoutUpdated;
+        _pendingScrollToEnd = false;
 
         if (_subscribed)
         {
@@ -794,7 +802,27 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             }
         };
 
-        return new ScrollViewer { Padding = new Thickness(20), Content = column };
+        _timelineScroll = new ScrollViewer { Padding = new Thickness(20), Content = column };
+        // 时间线高度变化（新增 / 重建记录）后滚到最新：布局完成时内容高度才稳定（见 OnTimelineLayoutUpdated）
+        _timeline.LayoutUpdated += OnTimelineLayoutUpdated;
+        return _timelineScroll;
+    }
+
+    /// <summary>
+    /// 时间线内容变化后把日志滚到最新一条。
+    /// </summary>
+    /// <remarks>
+    /// 面板不得直接触碰 <c>Dispatcher</c>（PRD §6 #22），故不按优先级另行投递，而是借
+    /// <c>LayoutUpdated</c> 在布局完成后再滚动——此时内容高度（<c>Extent</c>）已按新记录更新，
+    /// <c>ScrollToEnd</c> 才能准确定位到底部（<see cref="Refresh"/> 内同步调用会读到旧高度而滚不到底）。
+    /// </remarks>
+    private void OnTimelineLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (_unloaded || !_pendingScrollToEnd || _timelineScroll is null)
+            return;
+
+        _pendingScrollToEnd = false;
+        _timelineScroll.ScrollToEnd();
     }
 
     /// <summary>
@@ -830,19 +858,55 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         SyncFormEnabled();
         SyncStepAreas(spec, currentStep);
 
+        // 步骤状态一律取自本步操作记录的真实终态，不再用「序号小于当前步」推断：
+        // 序号推断会把「从未执行过的后续步」显示成已完成，也会把「停在该步但当前没在跑」
+        // 显示成进行中（P3 冒烟缺陷：Step 4/5 未实现却显示「进行中」）。
+        var operations = _service.Operations;
+        var runningSteps = new HashSet<WizardStep>();
+        var succeededSteps = new HashSet<WizardStep>();
+        var failedSteps = new HashSet<WizardStep>();
+        foreach (var record in operations)
+        {
+            switch (record.Status)
+            {
+                case StepStatus.Running:
+                    runningSteps.Add(record.Step);
+                    break;
+                case StepStatus.Succeeded:
+                    succeededSteps.Add(record.Step);
+                    break;
+                case StepStatus.Failed:
+                    failedSteps.Add(record.Step);
+                    break;
+            }
+        }
+
         foreach (var view in _stepViews)
         {
             var isCurrent = spec is not null && view.Step == currentStep;
-            var isDone = spec is not null && (int)view.Step < (int)currentStep;
+            // Step 1 是纯表单采集，能力层不为其记成功记录：只要档案已建立即视为已完成
+            var isSucceeded = succeededSteps.Contains(view.Step)
+                              || (view.Step == WizardStep.BasicInfo && spec is not null);
+            var isRunning = runningSteps.Contains(view.Step);
+            var isFailed = !isSucceeded && failedSteps.Contains(view.Step);
 
-            view.Badge.Background = isDone ? SuccessBrush : isCurrent ? AccentBrush : Brushes.Transparent;
-            view.Badge.BorderBrush = isDone ? SuccessBrush : isCurrent ? AccentBrush : DividerBrush;
-            view.BadgeText.Foreground = isDone || isCurrent ? PageBackground : MutedText;
-            view.Status.Foreground = isDone ? SuccessBrush : isCurrent ? AccentBrush : MutedText;
-            view.Status.Text = isDone ? "已完成" : isCurrent ? "进行中" : "未开始";
+            view.Badge.Background = isSucceeded ? SuccessBrush : isRunning ? AccentBrush : Brushes.Transparent;
+            view.Badge.BorderBrush = isSucceeded ? SuccessBrush
+                : isRunning || isCurrent ? AccentBrush
+                : isFailed ? DangerBrush
+                : DividerBrush;
+            view.BadgeText.Foreground = isSucceeded || isRunning ? PageBackground : MutedText;
+            view.Status.Foreground = isSucceeded ? SuccessBrush
+                : isRunning || isCurrent ? AccentBrush
+                : isFailed ? DangerBrush
+                : MutedText;
+            view.Status.Text = isSucceeded ? "已完成"
+                : isRunning ? "执行中"
+                : isFailed ? "失败"
+                : isCurrent ? "待执行"
+                : "未开始";
         }
 
-        var operations = _service.Operations;
         _timeline.Children.Clear();
 
         if (operations.Count == 0)
@@ -855,6 +919,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             });
             return;
         }
+
+        // 有新记录：请布局完成后滚到最新（同步调用会读到重建前的旧高度，滚不到底）
+        _pendingScrollToEnd = true;
 
         foreach (var record in operations)
         {
@@ -957,9 +1024,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         {
             _otherStepText.Text = currentStep switch
             {
-                WizardStep.Database => "Step 4 · 初始化数据库：尚未实现（M4-P4）。本步将由项目助手驱动建库与建表脚本。",
-                WizardStep.Build => "Step 5 · 编译验证：尚未实现（M4-P4）。",
-                _ => "Step 7 · 创建流水线：尚未实现（M4-P5）。"
+                WizardStep.Database => "Step 4 · 配置与数据库：功能尚未实现（计划 M4-P4，将由项目助手驱动生成配置与建库脚本）。"
+                                       + "本步当前无法执行，只能点下方临时入口直接跳到推送。",
+                WizardStep.Build => "Step 5 · 编译检查：功能尚未实现（计划 M4-P4，将由项目助手逐端编译并汇总结果）。"
+                                    + "本步当前无法执行，只能点下方临时入口直接跳到推送。",
+                _ => "Step 7 · 创建流水线：功能尚未实现（计划 M4-P5）。本步当前无法执行。"
             };
 
             // 临时入口：P4 未落地前允许直接执行 Step 6（推送），避免向导在 Step 4 处彻底卡死

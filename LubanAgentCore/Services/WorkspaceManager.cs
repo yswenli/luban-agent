@@ -80,6 +80,15 @@ public interface IWorkspaceManager
     WorkspaceInfo? CurrentWorkspace { get; }
 
     /// <summary>
+    /// 当前工作区变更（切换成功时触发，参数为新工作区）。
+    /// </summary>
+    /// <remarks>
+    /// 供宿主在「非用户点击」路径（如插件后台调用 <see cref="SetCurrentAsync"/>）后刷新界面，
+    /// 避免侧栏 / 会话树仍停留在旧工作区。
+    /// </remarks>
+    event Action<WorkspaceInfo>? CurrentWorkspaceChanged;
+
+    /// <summary>
     /// 创建工作区
     /// </summary>
     /// <param name="rootPath">根目录路径</param>

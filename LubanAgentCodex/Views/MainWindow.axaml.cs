@@ -204,6 +204,10 @@ public partial class MainWindow : Window
                 _sidebar.PluginManageRequested += OnPluginManageRequested;
                 _sidebar.PluginEntrySelected += OnPluginEntrySelected;
 
+                // 当前工作区被外部（插件后台 SetCurrentAsync，如「新建项目」Step 2）切换时，
+                // 宿主必须与「用户点击工作区」同样刷新侧栏与页脚，否则界面仍停留在旧工作区。
+                services.GetRequiredService<IWorkspaceManager>().CurrentWorkspaceChanged += OnCurrentWorkspaceChanged;
+
                 // 会话运行状态变化（含后台会话）实时更新侧栏徽标
                 _viewModel.SessionRunningChanged += (s, e) => _sidebar?.UpdateSessionRunning(e.SessionId, e.IsRunning);
                 // 会话待确认状态变化实时更新侧栏徽标
@@ -697,6 +701,25 @@ public partial class MainWindow : Window
             await Dialogs.ShowErrorAsync(this, $"切换到知识库会话失败：{ex.Message}");
         }
     }
+
+    /// <summary>
+    /// 当前工作区被外部切换（插件后台调用 <c>SetCurrentAsync</c>，典型为「新建项目」Step 2 初始化后置为当前工作区）。
+    /// </summary>
+    /// <remarks>
+    /// 宿主按「用户点击工作区」的尾部动作刷新侧栏与会话树、页脚，避免界面继续显示旧工作区（P3 冒烟缺陷）。
+    /// 刻意<b>不</b>调用 <see cref="ShowChatArea"/>：切换多发生在插件面板打开期间，不应把用户从向导里拽回对话区。
+    /// 事件由后台线程触发，统一投递到 UI 线程执行。
+    /// </remarks>
+    /// <param name="workspace">新的当前工作区。</param>
+    private void OnCurrentWorkspaceChanged(WorkspaceInfo workspace)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            var services = _viewModel?.Services;
+            if (services is null) return;
+
+            _sidebar?.SetServiceProvider(services);
+            UpdateFooter();
+        });
 
     /// <summary>
     /// 初始化工作区 AGENTS.md 请求：切到目标工作区 → 结构化表单 → 生成 → 落盘 → 注入聊天流
