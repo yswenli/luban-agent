@@ -15,6 +15,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using LuBan.AIAgent.Plugins;
 using LubanAgent.Plugin.NewProject.Abstractions;
+using LubanAgent.Plugin.NewProject.Services;
 
 namespace LubanAgent.Plugin.NewProject.Ui;
 
@@ -155,6 +156,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly Button _skipToPushButton = new() { Content = "跳过 Step 4/5，直接执行推送（临时入口，P4 落地后自动衔接）" };
     private readonly TextBlock _otherStepText = new() { FontSize = 12, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
 
+    /// <summary>【T0 SPIKE · 临时】宿主自跑一轮诊断入口（验证通过后连同 <c>RunHostBridgeSpikeAsync</c> 一并删除）。</summary>
+    private readonly Button _spikeButton = new() { Content = "T0 诊断：让宿主 Agent 自跑一轮脚本（临时）" };
+
     /// <summary>Step 3 运行期待决的克隆冲突三选一（面板与能力层之间的挂起点）。</summary>
     private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
 
@@ -283,6 +287,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _pushButton.Click += OnPushClicked;
         _skipToPushButton.Click += OnSkipToPushClicked;
+        _spikeButton.Click += OnSpikeClicked;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
         _conflictRecloneButton.Click += OnConflictChoiceClicked;
         _conflictAbortButton.Click += OnConflictChoiceClicked;
@@ -542,6 +547,13 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 Orientation = Orientation.Horizontal,
                 Spacing = 8,
                 Children = { _rerunButton, _resetButton }
+            },
+            // 【T0 SPIKE · 临时】验证通过后删除本行与 _spikeButton
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _spikeButton }
             }
         }
     });
@@ -1273,6 +1285,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _rerunButton.IsVisible = hasArchive && _resumeResolved;
         _rerunButton.IsEnabled = _rerunButton.IsVisible && !_busy;
         _resetButton.IsEnabled = !_busy;
+        _spikeButton.IsEnabled = !_busy;
 
         // Step 3 / Step 6 / 占位区（P3）：忙碌时只锁动作按钮；冲突三选一必须保持可点
         // —— 它回答的正是「Step 3 正在运行」时的问题，锁掉会直接把能力层挂死到超时。
@@ -1728,6 +1741,41 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     /// <summary>Step 4-5 占位区的临时入口：跳过未实现步骤直接执行 Step 6。</summary>
     private async void OnSkipToPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
+
+    /// <summary>【T0 SPIKE · 临时】让宿主 Agent 自跑一轮脚本、插件回读结果文件（验证通过后删除）。</summary>
+    private async void OnSpikeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        if (_service is not NewProjectService service)
+        {
+            ShowErrors(new[] { "T0 诊断需要共享能力层具体实现，当前宿主返回的实例类型不匹配。" });
+            return;
+        }
+
+        ShowErrors(Array.Empty<string>());
+        SetBusy(true, "T0 诊断：正在让宿主 Agent 自跑一轮脚本并回读结果文件（会向当前会话写入一轮对话）…");
+        try
+        {
+            var result = await service.RunHostBridgeSpikeAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "T0 诊断未全部通过，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"T0 诊断异常：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
 
     /// <summary>Step 6 执行入口（正常流程与临时入口共用）。</summary>
     private async Task RunPushAsync()

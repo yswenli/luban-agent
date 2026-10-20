@@ -13,6 +13,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LubanAgent.Connectors.AliyunDevOps;
+using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Infrastructure;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
@@ -27,6 +28,7 @@ using LubanAgentCore.Utils;
 using LubanAgent.Plugin.NewProject.Abstractions;
 using LubanAgent.Plugin.NewProject.Configuration;
 using LubanAgent.Plugin.NewProject.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgent.Plugin.NewProject.Services;
 
@@ -1149,6 +1151,177 @@ public sealed class NewProjectService : INewProjectService
     /// <inheritdoc />
     public Task<StepResult> BuildAsync(CancellationToken cancellationToken = default)
         => NotYetAsync(WizardStep.Build, "M4-P4");
+
+    /// <summary>
+    /// 【T0 SPIKE · 临时】验证「插件经宿主既有服务自跑一轮提示词」技术路线（PRD M4-P4 前置 spike）。
+    /// </summary>
+    /// <remarks>
+    /// <para>只做只读探测 + 一轮提示词：不写任何项目配置、不动 <c>appsettings</c>；结论全部落到操作记录区。</para>
+    /// <para>待验证三点：① Step 4 时目标会话运行时是否存在（不存在则按既定口径自动创建/唤起会话）；
+    /// ② <c>RunStreamingAsync</c> 事件流能否驱动，以及 Agent 用脚本工具写出的结果文件能否被插件回读；
+    /// ③ 与 UI 聊天的并发防护（回合串行 / <c>SessionRuntime.IsRunning</c>）。</para>
+    /// <para>验证通过后本方法由 Step 4 正式实现取代并删除，不属于最终交付物。</para>
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>诊断结果。</returns>
+    internal async Task<StepResult> RunHostBridgeSpikeAsync(CancellationToken cancellationToken = default)
+    {
+        const WizardStep Step = WizardStep.Database;
+        var spec = Current;
+        if (spec is null)
+            return StepResult.Fail(Step, "尚未建立项目档案，请先完成第 1 步。");
+
+        var lines = new List<string>();
+        var watch = Stopwatch.StartNew();
+
+        StepResult Fail(string reason)
+        {
+            lines.Add("✖ " + reason);
+            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines), StepStatus.Failed, watch.Elapsed);
+            return StepResult.Fail(Step, reason);
+        }
+
+        try
+        {
+            var runtimes = Resolve<SessionRuntimeManager>();
+            if (runtimes is null)
+                return Fail("宿主未注册 SessionRuntimeManager，无法验证。");
+
+            var sessions = ResolveSessionManager();
+            var sessionId = spec.SessionId;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                sessionId = sessions?.CurrentSession?.SessionId;
+                lines.Add($"档案无 SessionId，回退当前会话：{sessionId ?? "(无)"}");
+            }
+            else
+            {
+                lines.Add($"目标会话（档案 SessionId）：{sessionId}");
+            }
+
+            // ① 目标会话运行时是否存在
+            var runtime = string.IsNullOrWhiteSpace(sessionId) ? null : runtimes.Get(sessionId);
+            lines.Add($"① 运行前 runtime 存在 = {runtime is not null}");
+
+            // ② 不存在 → 自动创建/唤起会话（已确认口径：允许插件自动创建会话）
+            if (runtime is null)
+            {
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    if (sessions is null)
+                        return Fail("会话管理器不可用，无法自动创建会话。");
+
+                    var created = await sessions.CreateSessionAsync(
+                        string.IsNullOrWhiteSpace(spec.Name) ? "新建项目" : $"新建项目：{spec.Name}",
+                        spec.WorkspaceId);
+                    sessionId = created.SessionId;
+                    spec.SessionId = sessionId;
+                    SaveSpec(spec);
+                    lines.Add($"② 已自动创建会话：{sessionId}");
+                }
+
+                var factory = _host?.Services.GetService(typeof(IServiceScopeFactory)) as IServiceScopeFactory;
+                using var bootstrapScope = factory?.CreateUserScope(LocalUserDefaults.DefaultUserId);
+                var bootstrap = bootstrapScope?.ServiceProvider.GetService(typeof(AgentHostService)) as AgentHostService;
+                if (bootstrap is null)
+                    return Fail("无法从用户 scope 解析 AgentHostService，自动创建运行时失败。");
+
+                await bootstrap.InitializeAsync(sessionId!, cancellationToken);
+                runtime = runtimes.Get(sessionId!);
+                lines.Add($"② InitializeAsync 后 runtime 存在 = {runtime is not null}");
+            }
+
+            if (runtime is null)
+                return Fail("目标会话运行时仍不存在：spike 第 1 项不通过。");
+
+            // ③ 与 UI 聊天的并发读数
+            lines.Add($"③ 运行前 IsRunning = {runtime.IsRunning}（true 表示正被 UI 聊天占用，本回合将排队）");
+
+            var runner = runtime.Services.GetService(typeof(AgentHostService)) as AgentHostService;
+            if (runner is null)
+                return Fail("会话 scope 内无法解析 AgentHostService。");
+
+            // ④ 结果文件 + 提示词（让 Agent 用脚本工具原样执行一段 Python 写文件）
+            var resultFile = Path.Combine(Path.GetTempPath(), "luban-newproject-spike", $"hostbridge-{Guid.NewGuid():N}.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(resultFile)!);
+
+            var script = string.Join('\n', new[]
+            {
+                "import json, os, sys, time",
+                $"p = r\"{resultFile}\"",
+                "data = {\"spike\": \"runpython-ok\", \"pid\": os.getpid(), \"python\": sys.version.split()[0], \"ts\": time.time()}",
+                "with open(p, \"w\", encoding=\"utf-8\") as f:",
+                "    json.dump(data, f, ensure_ascii=False)",
+                "print(json.dumps(data, ensure_ascii=False))"
+            });
+
+            var prompt =
+                "这是一次宿主能力自检。请严格按下面两步执行，不要做额外探索，不要修改任何项目文件：\n"
+                + "1) 使用脚本工具里的 Python 执行一次（工具名 runpython），脚本内容原样照抄、不要改动其中的路径：\n"
+                + "```python\n" + script + "\n```\n"
+                + "2) 执行成功后只回复一行 DONE；若失败，回复 FAILED 并附上错误原因。";
+
+            var toolCalls = new List<string>();
+            var textLength = 0;
+            var errors = new List<string>();
+
+            await foreach (var evt in runner.RunStreamingAsync(
+                prompt,
+                Array.Empty<string>(),
+                static (_, _) => ConfirmResult.Allow,
+                ToolPermissionMode.BypassPermissions,
+                sessionId: sessionId,
+                ct: cancellationToken))
+            {
+                switch (evt)
+                {
+                    case ToolCallStartedEvent started:
+                        toolCalls.Add(started.Name);
+                        break;
+                    case TextDeltaEvent delta:
+                        textLength += delta.Delta?.Length ?? 0;
+                        break;
+                    case ToolCallFailedEvent failed:
+                        errors.Add($"工具失败 {failed.Error}");
+                        break;
+                    case ErrorEvent error:
+                        errors.Add(error.Message);
+                        break;
+                }
+            }
+
+            lines.Add($"④ 事件流结束：耗时 {watch.Elapsed.TotalSeconds:F1}s · 工具调用 [{string.Join(", ", toolCalls)}] · 正文 {textLength} 字");
+            if (errors.Count > 0)
+                lines.Add("   错误事件：" + string.Join(" | ", errors));
+
+            // ⑤ 结果文件回读（不解析 ResultSummary：其仅前 200 字符，长结果会被截断）
+            var exists = File.Exists(resultFile);
+            lines.Add($"⑤ 结果文件存在 = {exists}（{resultFile}）");
+            if (exists)
+                lines.Add("   内容：" + await File.ReadAllTextAsync(resultFile, cancellationToken));
+
+            lines.Add($"③ 运行后 IsRunning = {runtime.IsRunning}");
+
+            var ok = exists && toolCalls.Count > 0 && errors.Count == 0;
+            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines),
+                ok ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            return ok
+                ? StepResult.Ok(Step, "T0 spike 通过：会话运行时可达 · 事件流可驱动 · 结果文件可回读。")
+                : StepResult.Fail(Step, "T0 spike 未全部通过，详见右侧操作记录。");
+        }
+        catch (OperationCanceledException)
+        {
+            return Fail("已取消。");
+        }
+        catch (Exception ex)
+        {
+            _host?.LogError("[newproject] T0 spike 异常", ex);
+            lines.Add($"异常：{ex.GetType().Name} {ex.Message}");
+            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines), StepStatus.Failed, watch.Elapsed);
+            return StepResult.Fail(Step, $"T0 spike 异常：{ex.Message}");
+        }
+    }
 
     /// <inheritdoc />
     public async Task<StepResult> PushAsync(CancellationToken cancellationToken = default)
