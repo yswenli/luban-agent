@@ -19,8 +19,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-		<!-- TEMP-LOCAL-VERIFY: P0/P1/P2 开发期框架走项目引用，避免反复发本 nupkg；
-		     三阶段全部验收后统一发最终版本包并还原为 PackageReference（见 P2 计划 Phase N） -->
-		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+		<!-- framework：经 NuGet 私有源引用（版本与 LubanAgentCore 保持一致） -->
+		<PackageReference Include="LuBan.AIAgent" Version="2026.10.20.1" />
 	</ItemGroup>
 </Project>

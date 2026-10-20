@@ -31,8 +31,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- framework（TEMP-LOCAL-VERIFY：开发期走项目引用，与 LubanAgentCore 保持一致） -->
-    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+    <!-- framework：经 NuGet 私有源引用（版本与 LubanAgentCore 保持一致）。
+         仅编译期需要；运行期宿主程序集由默认 ALC 提供，插件包 lib/ 不得包含（见文件头打包约束）。 -->
+    <PackageReference Include="LuBan.AIAgent" Version="2026.10.20.1" />
     <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束） -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
     <!-- 产品侧厂商连接器（宿主程序集）：同上，仅编译期；插件包 lib/ 不得包含 -->

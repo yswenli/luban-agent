@@ -1,7 +1,7 @@
 # PRD：luban-agent 插件体系设计与「新建项目」插件需求
 
-- **版本**：v0.20（**连接器去厂商化回写**：框架 `LuBan.AIAgent` 只保留「连接器抽象 + 连接器管理 + 通用外部 MCP」，云效实现迁至产品程序集 `LubanAgent.Connectors.AliyunDevOps` 并由宿主显式注册；新增第 7 权限维度 `connectors`、插件贡献连接器、对话生成连接器与 `$credential:` 凭据引用。正文按此刷新：§3.0 分层、§3.2 清单字段、§3.7 权限、§3.10 连接器（含 3.10.1–3.10.4）、§4.11.1、§5 里程碑归属注）
-- **日期**：2026-10-19
+- **版本**：v0.21（**依赖方式收尾**：产品工程已由 `TEMP-LOCAL-VERIFY` 项目引用**还原为 NuGet 包引用**，`LuBan.*` 统一 `2026.10.20.1`，来自私有源 `nexus3`；§3.0 依赖方式改写，并记录 NU1605 联动约束）
+- **日期**：2026-10-20
 - **作者**：luban 团队
 - **状态**：设计评审中
 - **关联仓库**：`luban-agent`（宿主为 `LubanAgentCodex`）
@@ -20,6 +20,7 @@
 - **修订说明（v0.17）：决策——采用可回收 ALC 实现程序集级热卸载（不采用「停用后重启生效」的简化方案）**。据此：①**§1.4 第 2 条由「不做」改为「要做」**，撤销 v0.15 的限定语；②**§3.5「禁用 / 卸载」给出严格卸载顺序**（关闭 → 注销 UI 与事件 → 注销 Skill/MCP → 删除工作区文件 → 卸载 ALC → GC 验证）；③**新增 §3.12「ALC 热卸载设计约束」**，列出宿主侧禁止项（注册表长寿命强引用、Avalonia 全局样式与静态缓存、事件订阅、`Dispatcher.UIThread` 延续）与「卸载失败降级为提示重启」的兜底口径；④**§3.11 补充**：文件式 Skill 对 ALC 友好（不产生程序集引用），而进程内 `YunxiaoMCPClient` 实例是**唯一会阻止卸载的强引用**，必须靠注册口在卸载第一步注销；⑤§4.8 第 4 条与 §6 #8 同步更新为「真卸载 + 卸载失败降级」的双重判定。
 - **修订说明（v0.16）：§6 风险与开放问题共 13 项已逐条决策并回写正文**。①**错误提示措辞定案**——PAT 失效统一报「**个人令牌无效**」；权限类失败统一提示「**缺少 XX 权限，请到云效个人令牌页面设置**」（§4.7）。②**凭据安全按「不用太严格」放宽**——不强求 Windows 凭据管理器 / DPAPI 加密，**沿用宿主现有配置存储方式**（与现有 API Key 同基线）即可，但**日志、会话消息、操作记录中仍不得出现明文 PAT**（§4.9.3、§4.8 #6/#7/#11）。③**仅支持中心版**——移除 Region 版预留与「未来切换」表述（§4.4、§4.5、§4.3 前置）。④**模板版本 pin**——不跟随模板升级，找不到即报错阻断（§4.3 Step 3、§6 #5）。⑤**ALC 卸载增设专项测试**（§4.8 #4、M5）。⑥**插件目录固定** `luban-agent-codex/plugins/`，用户级覆盖暂不考虑（§3.3、§6 #9）。⑦**模板占位符规范不与维护方对齐**——改为「按约定扫描替换 + 第 5 步编译验证兜底」，残余风险显式记录在 §6 #10。⑧**ListPipelines 字段不足**——改用 `GetPipeline`（查询流水线详情）补充创建人与状态（§4.11.3、§6 #13）。⑨同步更正工作区根 `AGENTS.md` 中与代码相反的依赖表述。
 - **修订说明（v0.15）：对照更新后的代码重新审查**（三路并行事实核查：框架侧能力 / 宿主挂载点与重载机制 / PRD 逐条验真）。**纠正 4 处会导致实现失败的事实错误**：①**依赖方式写反**——§3.0 原写「已通过 ProjectReference…发布期按 AGENTS.md 改为 NuGet」，实际当前**就是** `ProjectReference`（`LubanAgentCore.csproj:9-11` 注释 `TEMP-LOCAL-VERIFY` 明示「开发期一律走项目引用…验收后统一发最终版本包并还原为 PackageReference」），`LuBan.*` 的 `PackageReference` 数为 0。②**Step 2「复用宿主会话」不可行**——`SessionRuntimeManager.cs:83-88` 在 runtime 创建时一次性写入 `SessionId/WorkspaceId/WorkspaceRoot/AllowedRoots`，Codex UI 路径此后无追加入口，旧会话看不到新 `localPath`，所有文件工具被 `IsWithinEffectiveRoot` 拒绝；改为「必须新建会话」并给出正确顺序。③**技能命名全部非法**——框架 `SkillManageToolGroup.cs:26` 校验正则 `^[a-z0-9][a-z0-9_-]{0,63}$` **不含点号**，`newproject-create` 等被硬拒；全套改为中划线（如 `newproject-create`）。④**UI 模板是死代码**——`SkillManageWindow`/`MCPManageWindow`/`RuleManageWindow` 零引用、已被 `SettingsWindow` 取代（`MainWindowViewModel.cs:721/729/737`）。**复用框架新增能力**：⑤`SkillRegistry`/`MCPRegistry` 实为**带读写锁的实例类**（非 PRD 原说的静态只读），且框架已提供「写文件 → `LoadFromWorkspace()` → `RequestReload()`」三件套（`SkillManage`/`McpManage` 工具组）与 `IAgentReloadTrigger` + `PendingReload` 延迟重载链，M1 由「新增三个注册 API」降为「复用三件套 + 补一个进程内客户端注册口」。⑥补订义**卸载语义**（工作区文件式 Skill/MCP 不随插件卸载消失，须显式删除）。⑦订正 MainWindow 挂载点位置（包 `ContentRoot` 外会连带包进侧栏，应包 `Grid.Column="1"` 内层 Grid）。⑧补 PAT 明文弹窗泄漏面与 DI 硬约束 `ValidateScopes/ValidateOnBuild`。
+- **修订说明（v0.21）：依赖方式收尾——项目引用还原为 NuGet 包引用**。三阶段验收后按 P2 计划 Phase N 执行：①框架侧发布 `LuBan.*` 闭包 7 包（`AIAgent` / `Common` / `DI` / `Threading` / `Logging` / `Orm` / `Linq`）`2026.10.20.1` 至私有源 `nexus3`（`https://nexus.tjingcai.com/repository/nuget-hosted/index.json`）；②`LubanAgentCore` / `LubanAgentA2A` / `LubanAgent.Connectors.AliyunDevOps` / `LubanAgent.Plugin.NewProject` 四个产品工程的 `ProjectReference` 全部改为 `PackageReference`，`TEMP-LOCAL-VERIFY` 注释清除；③**smoke 4 个工程有意保留**项目引用（开发验证台，不在 `LubanAgent.slnx` 内，详见 `smoke/plugin-system/README.md`）；④框架同轮把 `Microsoft.Extensions.*` 升到 `10.0.13`、`Microsoft.Extensions.AI`/`AI.OpenAI` 升到 `10.11.0`，产品侧同名低版本直接引用触发 **NU1605 包降级（NuGet 默认即 error）**，按「删直接引用、交由 `LuBan.*` 传递提供」口径收敛，仅保留 `OpenAI 2.14.0`（钉住 2.13.0 流式工具调用破坏性变更的下限）等确需显式声明的包；⑤由此**改 framework 源码不再即时生效**，需重新发包并提升产品侧版本号。验收：`dotnet build LubanAgent.slnx` 0 错误、`LubanAgent.Tests` 33/33、插件铺装 `lib/` 仍仅 `dll`+`deps.json` 2 个文件（ALC 回落路径不变，deps.json 中 `LuBan.*` 条目由 `type=project` 变为 `type=package`）。
 
 ---
 
@@ -142,7 +143,7 @@
 | **宿主 / 操作层** | `luban-agent/LubanAgentCodex`（Avalonia 桌面端） | **操作插件**：加载（ALC）、管理（安装 / 启用 / 停用 / 卸载）、渲染 UI 贡献（侧栏条目 + 面板）、提供 `PluginManageWindow` | 运行时宿主，消费框架 `PluginManager` |
 
 - 框架 `LuBan.AIAgent` 已有同构模块（`Skills/`、`Rules/`、`MCP/`），插件模块 `Plugins/` 沿用同一模式：`IPlugin` / `PluginBase` 类比 `ISkill` / `SkillBase`；`PluginManager`（含插件注册表）类比 `SkillRegistry`（`LuBan.AIAgent/Skills/SkillRegistry.cs`）。
-- **依赖方式（v0.15 订正）**：当前 `LubanAgentCore.csproj:11` 就是 **`<ProjectReference>`** 指向 `..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj`，且 csproj 第 9–10 行有明确注释：`TEMP-LOCAL-VERIFY: P0/P1/P2 开发期框架一律走项目引用，避免反复发本 nupkg；三阶段全部验收后统一发最终版本包并还原为 PackageReference`。即**先项项目引用、后还原 NuGet**，`luban-agent` 内 `LuBan.*` 的 `PackageReference` 当前**为 0 条**。因此**改 framework 源码即时生效，无需打包发布**（这一点与仓库 `AGENTS.md` 的表述相反，AGENTS.md 待更正）。具体插件项目同样引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`。
+- **依赖方式（v0.21 定案）**：产品工程通过 **`PackageReference`** 引用 `LuBan.*` 框架包，版本统一 **`2026.10.20.1`**，来自私有源 `nexus3`（凭据在用户级 NuGet.Config）。`LubanAgentCore` 声明 `LuBan.AIAgent` / `LuBan.Common` / `LuBan.Logging` / `LuBan.Orm`，其余闭包包（`DI` / `Threading` / `Linq`）经传递引用进入；`LubanAgentA2A`、`LubanAgent.Connectors.AliyunDevOps`、`LubanAgent.Plugin.NewProject` 各声明 `LuBan.AIAgent`。**历史**：P0/P1/P2 开发期曾用 `TEMP-LOCAL-VERIFY` 项目引用以便框架改动即时生效，三阶段验收后（v0.21）还原为包引用；**smoke 4 个开发验证台工程有意保留项目引用**。**代价**：改 framework 源码不再即时生效，需重新发包并提升版本号。具体插件项目同样以 `PackageReference` 引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`（且插件包 `lib/` 不得含框架程序集）。
 - （v0.15 时）框架**尚无** `Plugins/` 目录，本次为新增模块；该模块现已落地（`LuBan.AIAgent/Plugins/*`，含契约、生命周期、`PluginManager`/`PluginLoader`/`ManifestValidator`、`PluginBase`/`BuiltinPluginCatalog` 与安全子系统）。
 
 ### 3.1 宿主定位
@@ -190,7 +191,7 @@
 > **（v0.16 定案）插件目录固定为宿主目录下的 `plugins/<插件标识>/`（首版即 `luban-agent-codex/plugins/`）。用户级（`~/.luban-agent/plugins/`）覆盖机制**本期不实现**，不在设计范围内（见 §6 #9）。
 - **应用内置目录**：`<AppContext.BaseDirectory>/plugins/<plugin-id>/`，结构：`plugin.json` + `lib/`（程序集，含 `entryAssembly` 及其依赖）+ `assets/`（图标/模板）。
 - **用户级覆盖（开发/调试优先）**：对齐现有记忆库约定 `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)/LuBan/AIAgent/plugins/<plugin-id>/`；原 `~/.luban-agent/plugins/` 可并存作为备选。解析顺序：用户级优先，未命中回退应用内置。建议新增 `PluginLocation.ResolveDirectories()` 统一返回有序目录列表。
-- **契约与插件核心（来自框架）**：`IPlugin` / `PluginBase` / `PluginManager` / `BuiltinPluginCatalog` 定义于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 NuGet 包 `LuBan.AIAgent` 发布；宿主与具体插件项目均引用该包（开发期 `ProjectReference`，发布期 NuGet），**不单独新建 agent 侧契约工程**。插件工程引用时契约程序集置于默认 ALC，不随插件包分发。
+- **契约与插件核心（来自框架）**：`IPlugin` / `PluginBase` / `PluginManager` / `BuiltinPluginCatalog` 定义于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 NuGet 包 `LuBan.AIAgent` 发布；宿主与具体插件项目均以 `PackageReference` 引用该包（v0.21 起已统一为包引用 `2026.10.20.1`），**不单独新建 agent 侧契约工程**。插件工程引用时契约程序集置于默认 ALC，不随插件包分发。
 
 ### 3.4 加载与隔离（方案 B：ALC + `IPlugin`）—— 已确认落地
 
