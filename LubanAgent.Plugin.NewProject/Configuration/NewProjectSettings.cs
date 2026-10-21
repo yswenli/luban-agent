@@ -101,8 +101,13 @@ public sealed class NewProjectSettings
     /// <summary>默认可见性（PRD §4.5：默认＝组织内公开）。</summary>
     public string DefaultVisibility { get; set; } = "internal";
 
-    /// <summary>Step 6 统一推送的分支（PRD §6 #17）。</summary>
-    public string PushBranch { get; set; } = "main";
+    /// <summary>Step 6 统一推送的分支（PRD §6 #17；v0.28 起默认 <c>develop</c>，与 Step 3 克隆 pin 的择优结果对齐）。</summary>
+    /// <remarks>
+    /// 该值同时用作云效建仓的默认分支（<c>DefaultBranch</c>），故 Step 3 与 Step 6 口径一致；
+    /// 这里的默认值只是<b>兜底</b>——正常路径取包内 <c>newproject.settings.json</c>（同样是 <c>develop</c>），
+    /// 仅在配置文件缺失/损坏时才会命中本默认值。留空则退回各端仓库默认分支（仍为空则 <c>main</c>）。
+    /// </remarks>
+    public string PushBranch { get; set; } = "develop";
 
     /// <summary>目标仓库名格式，占位符 <c>{code}</c> / <c>{end}</c>。</summary>
     public string RepositoryNameFormat { get; set; } = "{code}-{end}";
