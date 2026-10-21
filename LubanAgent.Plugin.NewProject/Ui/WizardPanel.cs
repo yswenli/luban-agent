@@ -741,7 +741,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             var panel = new StackPanel
             {
                 Spacing = 4,
-                Children = { LabeledField($"{EndLabel(end)}端目标仓库名", nameBox), templateText }
+                Children = { LabeledField($"{EndLabel(end)}目标仓库名", nameBox), templateText }
             };
 
             _repoRowsPanel.Children.Add(panel);
@@ -911,7 +911,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
             var name = new TextBlock
             {
-                Text = $"{EndLabel(end)}端",
+                Text = EndLabel(end),
                 FontSize = 12,
                 Foreground = PrimaryText,
                 Width = 64
@@ -1006,9 +1006,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>Step 5 逐端编译状态行的视觉载体。</summary>
     private sealed record EndBuildRowView(ProjectEnd End, Control Root, TextBlock Status);
 
-    /// <summary>端的中文标签（与能力层文案一致）。</summary>
+    /// <summary>端的中文标签（**已自带「端」字**：调用方不得再拼一个「端」；与能力层口径一致）。</summary>
     /// <param name="end">端。</param>
     /// <returns>标签。</returns>
+    /// <remarks>v0.29：与 <c>NewProjectService.EndLabel</c> 同步——此前多处拼「端」产出「管理端端」等重字。</remarks>
     private static string EndLabel(ProjectEnd end) => end switch
     {
         ProjectEnd.Service => "后端",
@@ -2215,7 +2216,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 ShowErrors(precheck.Errors
                     .Concat(precheck.Ends
                         .Where(end => !end.IsReady)
-                        .Select(end => $"{EndLabel(end.End)}端 {end.Error}")));
+                        .Select(end => $"{EndLabel(end.End)} {end.Error}")));
             }
         }
         catch (Exception ex)
@@ -2477,7 +2478,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             }
 
             _conflictChoice = completion;
-            _conflictText.Text = $"{EndLabel(conflict.End)}端目标目录已存在且非空：{conflict.LocalPath}（{conflict.EntryCount} 项）。"
+            _conflictText.Text = $"{EndLabel(conflict.End)}目标目录已存在且非空：{conflict.LocalPath}（{conflict.EntryCount} 项）。"
                                  + $"远端仓库 {conflict.RepositoryName} 已就绪，请选择本地目录的处置方式：";
             _conflictPanel.IsVisible = true;
         });

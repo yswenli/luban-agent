@@ -56,6 +56,54 @@ public sealed record GitCommandResult(
         => new(false, -1, string.Empty, message, false);
 
     /// <summary>
+    /// 是否疑似「服务端限流」：命中云效 <c>请求过于频繁，请稍后重试!</c> 或 HTTP <c>429</c> 一类特征词。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 判定只看标准错误 / 标准输出**全文**（大小写不敏感），不依赖退出码：git 把服务端的
+    /// <c>remote:</c> 提示写在标准错误里，但不同 git 版本 / 代理层可能把 429 落在标准输出
+    /// （如 <c>fatal: unable to access '…': The requested URL returned error: 429</c>）。
+    /// </para>
+    /// <para>
+    /// 用途：调用方据此把**限流**与**权限 / 分支保护**两类失败分开措辞，并做**退避重试**
+    /// （Step 6 推送用 10s → 20s → 30s）。真机冒烟里二者曾被混为一谈，用户按「权限问题」排查了很久。
+    /// </para>
+    /// </remarks>
+    public bool IsRateLimited => HasRateLimitMarker(StandardError) || HasRateLimitMarker(StandardOutput);
+
+    /// <summary>限流特征词（云效原文、HTTP 429 的几种写法）。</summary>
+    private static readonly string[] RateLimitMarkers =
+    [
+        "请求过于频繁",
+        "请稍后重试",
+        "服务繁忙",
+        "too many requests",
+        "rate limit",
+        "ratelimit",
+        "error: 429",
+        "http 429",
+        "status 429",
+        "429 too many"
+    ];
+
+    /// <summary>文本是否含任一限流特征词（大小写不敏感）。</summary>
+    /// <param name="text">标准错误 / 标准输出（已脱敏）。</param>
+    /// <returns>命中为真。</returns>
+    private static bool HasRateLimitMarker(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        foreach (var marker in RateLimitMarkers)
+        {
+            if (text.Contains(marker, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 失败原因单行摘要：优先取标准错误首行，其次标准输出首行，最后回退到退出码描述。
     /// </summary>
     /// <returns>单行摘要（可能为空字符串）。</returns>

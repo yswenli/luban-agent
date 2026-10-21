@@ -548,7 +548,7 @@ public sealed class NewProjectService : INewProjectService
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in entries)
         {
-            var label = $"{EndLabel(entry.End)}端";
+            var label = EndLabel(entry.End);
             var name = entry.RepositoryName?.Trim() ?? string.Empty;
 
             if (name.Length == 0)
@@ -574,7 +574,7 @@ public sealed class NewProjectService : INewProjectService
         // 与 Step 1 的端选择对齐（档案里的端一个都不能漏）
         var selected = Current?.Ends ?? new List<ProjectEnd>();
         foreach (var end in selected.Where(end => entries.All(entry => entry.End != end)))
-            errors.Add($"{EndLabel(end)}端：建库计划缺失（Step 1 已勾选该端）。");
+            errors.Add($"{EndLabel(end)}：建库计划缺失（Step 1 已勾选该端）。");
 
         return Task.FromResult(errors.Count == 0
             ? BasicInfoValidation.Ok()
@@ -744,7 +744,7 @@ public sealed class NewProjectService : INewProjectService
 
         foreach (var end in result.Ends.Where(item => item.LocalPathOccupied))
         {
-            result.Warnings.Add($"{EndLabel(end.End)}端本地目录已存在且非空（{end.LocalPath}）：执行时会请你"
+            result.Warnings.Add($"{EndLabel(end.End)}本地目录已存在且非空（{end.LocalPath}）：执行时会请你"
                                 + "「复用已克隆 / 清空后重新克隆 / 中止」三选一。");
         }
 
@@ -754,7 +754,7 @@ public sealed class NewProjectService : INewProjectService
               + $"{result.Ends.Count} 端 · 耗时 {watch.Elapsed.TotalSeconds:F1}s"
             : "Step 3 预检未通过：" + string.Join("；", result.Errors.Concat(result.Ends
                 .Where(end => !end.IsReady)
-                .Select(end => $"{EndLabel(end.End)}端 {end.Error}")));
+                .Select(end => $"{EndLabel(end.End)} {end.Error}")));
 
         Record(Step, "Step 3 预检", summary, result.IsReady ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
 
@@ -845,7 +845,7 @@ public sealed class NewProjectService : INewProjectService
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var label = $"{EndLabel(repository.End)}端";
+                var label = EndLabel(repository.End);
 
                 // 本端即将被重新处理：先把上一轮的「已就绪」标记置回未就绪，
                 // 免得本轮失败后档案仍留着旧绿灯（RC4：不给假绿，Step 6 也据此拒推）。
@@ -1492,7 +1492,7 @@ public sealed class NewProjectService : INewProjectService
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var label = $"{EndLabel(repository.End)}端";
+                var label = EndLabel(repository.End);
                 var branch = ResolvePushBranch(repository);
 
                 // 本机 git 出口门禁（PRD §3.7）已内置于 RunGitAsync；连接器内的 push 由其自身门禁覆盖
@@ -1567,19 +1567,37 @@ public sealed class NewProjectService : INewProjectService
                         $"已提交（{authorName} <{authorEmail}>）：{commitMessage}", StepStatus.Succeeded, commitWatch.Elapsed);
                 }
 
-                // ── 3. 推送（连接器负责带鉴权的 URL 与自身出口门禁）─────────────────────
+                // ── 3. 推送（连接器负责带鉴权的 URL 与自身出口门禁；v0.29：云效限流退避重试）──
                 var pushWatch = BeginOperation(Step, $"推送到自有仓库（{label}）", $"{repository.RepositoryName} · {branch}");
                 var pushed = await codeup.PushAsync(repository.CloneUrl, repository.LocalPath, branch, force: false, cancellationToken);
+
+                // 只对「服务端限流」退避重试（10s → 20s → 30s，最多 3 次）；非快进 / 鉴权 / 权限类失败一律不重试。
+                // 等待期间原地改写同一条「进行中」记录的说明，用户能看见「在等什么、还要等多久」。
+                var retried = 0;
+                while (retried < PushRetryPolicy.MaxRetries && PushRetryPolicy.ShouldRetry(pushed))
+                {
+                    retried++;
+                    UpdateRunningOperation(Step, $"推送到自有仓库（{label}）",
+                        PushRetryPolicy.WaitingDetail(repository.RepositoryName, branch, retried, pushed.FailureSummary()));
+
+                    await Task.Delay(PushRetryPolicy.DelayBefore(retried), cancellationToken);
+
+                    pushed = await codeup.PushAsync(repository.CloneUrl, repository.LocalPath, branch, force: false, cancellationToken);
+                }
+
                 if (!pushed.Success)
                 {
-                    var reason = $"推送失败：{repository.RepositoryName} · {branch} —— {pushed.FailureSummary()}"
-                                 + "（请确认 PAT 具备该仓库写权限，且目标分支未被保护）。";
+                    var reason = PushRetryPolicy.DescribeFailure(repository.RepositoryName, branch, pushed, retried);
                     EndOperation(Step, $"推送到自有仓库（{label}）", reason, StepStatus.Failed, pushWatch.Elapsed);
                     SaveSpec(spec);
                     return StepResult.Fail(Step, reason);
                 }
 
-                EndOperation(Step, $"推送到自有仓库（{label}）", $"已推送 {branch} → {repository.WebUrl}", StepStatus.Succeeded, pushWatch.Elapsed);
+                EndOperation(Step, $"推送到自有仓库（{label}）",
+                    retried == 0
+                        ? $"已推送 {branch} → {repository.WebUrl}"
+                        : $"已推送 {branch} → {repository.WebUrl}（云效限流后，第 {retried} 次重试成功）",
+                    StepStatus.Succeeded, pushWatch.Elapsed);
 
                 var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch, branch);
                 if (artifact is not null)
@@ -1909,7 +1927,44 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="duration">耗时。</param>
     private void EndOperation(WizardStep step, string action, string detail, StepStatus status, TimeSpan duration = default)
     {
-        var updated = false;
+        var updated = TryMutateRunningOperation(step, action, operation =>
+        {
+            operation.Detail = detail;
+            operation.Status = status;
+            operation.Duration = duration;
+        });
+
+        if (updated)
+            RaiseChanged();
+        else
+            Record(step, action, detail, status, duration);
+    }
+
+    /// <summary>
+    /// 原地改写最近一条同名「进行中」记录的说明，**不改状态**（用于「还需等待 N 秒」这类进度文案）。
+    /// </summary>
+    /// <remarks>
+    /// 退避重试期间调用（v0.29 Step 6 推送）：一次推送仍是一条动作记录，只把说明改成当前退避进度，
+    /// 避免时间线里出现「推送到自有仓库 ×4」这种把重试摊成多条记录的噪声。
+    /// </remarks>
+    /// <param name="step">步骤。</param>
+    /// <param name="action">动作标题。</param>
+    /// <param name="detail">新的说明。</param>
+    private void UpdateRunningOperation(WizardStep step, string action, string detail)
+    {
+        if (TryMutateRunningOperation(step, action, operation => operation.Detail = detail))
+            RaiseChanged();
+    }
+
+    /// <summary>
+    /// 找最近一条「同一步 + 同名 + 进行中」的记录并就地改写；找不到返回假。
+    /// </summary>
+    /// <param name="step">步骤。</param>
+    /// <param name="action">动作标题（按序数比较，与 <see cref="EndOperation"/> 同口径）。</param>
+    /// <param name="mutate">改写动作。</param>
+    /// <returns>命中并改写返回 <c>true</c>。</returns>
+    private bool TryMutateRunningOperation(WizardStep step, string action, Action<OperationRecord> mutate)
+    {
         lock (_gate)
         {
             for (var i = _operations.Count - 1; i >= 0; i--)
@@ -1921,18 +1976,12 @@ public sealed class NewProjectService : INewProjectService
                 if (!string.Equals(operation.Action, action, StringComparison.Ordinal))
                     continue;
 
-                operation.Detail = detail;
-                operation.Status = status;
-                operation.Duration = duration;
-                updated = true;
-                break;
+                mutate(operation);
+                return true;
             }
         }
 
-        if (updated)
-            RaiseChanged();
-        else
-            Record(step, action, detail, status, duration);
+        return false;
     }
 
     /// <summary>
@@ -2548,9 +2597,14 @@ public sealed class NewProjectService : INewProjectService
         return Path.Combine(spec.LocalPath, name);
     }
 
-    /// <summary>端的中文标签。</summary>
+    /// <summary>端的中文标签（**已自带「端」字**：调用方不得再拼一个「端」）。</summary>
     /// <param name="end">端。</param>
     /// <returns>标签。</returns>
+    /// <remarks>
+    /// v0.29：此前多处写作 <c>$"{EndLabel(end)}端"</c>，产出「后端端」「管理端端」「移动端端」，
+    /// 并被拼进 Step 6 的提交信息（真机提交 <c>chore: 初始化 测试项目一（管理端端）——…</c>）。
+    /// 一律直接用本方法的返回值。
+    /// </remarks>
     private static string EndLabel(ProjectEnd end) => end switch
     {
         ProjectEnd.Service => "后端",

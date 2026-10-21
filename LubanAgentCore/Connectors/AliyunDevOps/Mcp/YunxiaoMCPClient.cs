@@ -255,7 +255,11 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
 
         return result.Success
             ? Ok(new { localPath, remoteUrl = SecretMasker.MaskUrlCredentials(remoteUrl), branch }.ToJson())
-            : Fail($"推送失败：{result.FailureSummary()}");
+            : Fail(result.IsRateLimited
+                // v0.29：限流与权限 / 分支保护分开措辞——真机里两者曾被混为一谈（同一条 PAT 11 秒后重推即成功）
+                ? $"推送失败：{result.FailureSummary()}"
+                  + "（云效服务端限流：请等约 1 分钟后再推，已推送内容不受影响；不要据此判定 PAT 或分支保护有问题）"
+                : $"推送失败：{result.FailureSummary()}");
     }
 
     private async Task<MCPToolResult> CodeupListBranchesAsync(
