@@ -9,6 +9,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -77,6 +78,63 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private ScrollViewer? _timelineScroll;
     /// <summary>待滚动标记：<see cref="Refresh"/> 置位，由 <see cref="OnTimelineLayoutUpdated"/> 消费。</summary>
     private bool _pendingScrollToEnd;
+
+    // ── 步骤导航（P4 收尾：步骤条可点击回退 + 「上一步」）───────────────────────
+    /// <summary>
+    /// 视图游标：用户正在查看 / 操作的步骤（<c>null</c>＝跟随档案的「已到达最大步」）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 回退只动这个游标、不动档案的推进指针（<see cref="INewProjectService.CurrentStep"/> 单调只前进）：
+    /// 「回到 Step 5 重跑编译」不会把已到达 Step 7 的档案拉回去，重启后视图自然回到已到达步。
+    /// </para>
+    /// <para>
+    /// 游标超过推进指针（档案被「中止并清理」重置）时在 <see cref="Refresh"/> 内丢弃；本次刷新若观察到推进指针
+    /// 前移越过游标（如回退到 Step 4 重跑探活），同样在 <see cref="Refresh"/> 内丢弃，让视图跟上新步骤。
+    /// </para>
+    /// </remarks>
+    private WizardStep? _viewStep;
+
+    /// <summary>
+    /// 上一次刷新看到的推进指针：用于识别「本次刷新是否发生了前进」，从而决定回退游标是否该让位。
+    /// </summary>
+    /// <remarks>
+    /// 只在指针真的前移且越过游标时才丢弃游标。「回退到早已到达的步骤重跑」（如已到 Step 7 后回 Step 5
+    /// 重编译）不会让指针前移，视图就停在该步，用户能就地看到逐端编译结论——这正是回退导航想要的。
+    /// </remarks>
+    private WizardStep _lastKnownReached = WizardStep.BasicInfo;
+
+    /// <summary>「上一步」按钮（PRD §4.6 草图项）：视图游标 −1。</summary>
+    private readonly Button _backButton = new() { Content = "← 上一步" };
+
+    /// <summary>回退导航说明（步骤条行同样可点击）。</summary>
+    private readonly TextBlock _navHint = new()
+    {
+        Text = "步骤条可点击：回到「已到达」的步骤查看或重跑；只切视图，不改档案进度，也不会自动重跑动作。",
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        VerticalAlignment = VerticalAlignment.Center
+    };
+
+    /// <summary>
+    /// Step 1 重提确认横幅：已建档案时回退到 Step 1 再点「下一步」＝清空档案并从 Step 2 重来（等同「中止并清理」），
+    /// 属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
+    /// </summary>
+    private readonly Border _restartConfirmBanner;
+
+    private readonly TextBlock _restartConfirmText = new()
+    {
+        FontSize = 12,
+        Foreground = WarningBrush,
+        TextWrapping = TextWrapping.Wrap
+    };
+
+    private readonly Button _restartConfirmButton = new() { Content = "确认清空档案并重走 Step 2" };
+    private readonly Button _restartCancelButton = new() { Content = "取消" };
+
+    /// <summary>本次「下一步」是否已拿到「清空档案重来」的确认。</summary>
+    private bool _restartConfirmed;
 
     // ── Step 1 表单 ──────────────────────────────────────────────────────────────
     private readonly TextBox _nameBox = new() { PlaceholderText = "例如：津南民生实事" };
@@ -311,6 +369,30 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             }
         };
 
+        _restartConfirmBanner = new Border
+        {
+            Padding = new Thickness(12),
+            CornerRadius = new CornerRadius(6),
+            Background = PageBackground,
+            BorderThickness = new Thickness(1),
+            BorderBrush = WarningBrush,
+            IsVisible = false,
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                Children =
+                {
+                    _restartConfirmText,
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        Children = { _restartConfirmButton, _restartCancelButton }
+                    }
+                }
+            }
+        };
+
         _timeline = new StackPanel { Spacing = 8 };
 
         // 残留档案未处置前禁止「下一步」，避免静默覆盖（PRD §4.7）
@@ -321,6 +403,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _adoptButton.Click += OnAdoptClicked;
         _rerunButton.Click += OnRerunClicked;
         _resetButton.Click += OnAbortCleanupClicked;
+        _backButton.Click += OnBackClicked;
+        _restartConfirmButton.Click += OnRestartConfirmClicked;
+        _restartCancelButton.Click += OnRestartCancelClicked;
 
         // Step 3 / Step 6（P3）：建库克隆、冲突三选一、推送
         _createRepoButton.Click += OnCreateReposClicked;
@@ -465,14 +550,23 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             Grid.SetColumn(row.Children[1], 1);
             Grid.SetColumn(statusBlock, 2);
 
-            steps.Children.Add(new Border
+            var rowButton = new Button
             {
                 Padding = new Thickness(10, 6),
                 CornerRadius = new CornerRadius(6),
-                Child = row
-            });
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Content = row
+            };
+            // 回退导航（P4 收尾）：点击切到该步；「未到达」的步骤行由 SyncFormEnabled 统一灰化
+            rowButton.Click += (_, _) => GoToStep(step);
 
-            _stepViews.Add(new StepView(step, badge, badgeText, statusBlock));
+            steps.Children.Add(rowButton);
+
+            _stepViews.Add(new StepView(step, badge, badgeText, statusBlock, rowButton));
         }
 
         _statusCard = Card(new StackPanel
@@ -488,6 +582,15 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step5Area = BuildStep5Area();
         _step6Area = BuildStep6Area();
         _otherStepArea = BuildOtherStepArea();
+
+        // 回退导航行（P4 收尾）：显式「上一步」+ 说明；步骤条行本身也可点击
+        _navHint.Margin = new Thickness(10, 0, 0, 0);
+        var navRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            Children = { _backButton, _navHint }
+        };
+        Grid.SetColumn(_navHint, 1);
 
         return new ScrollViewer
         {
@@ -509,6 +612,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     _stepHint,
                     new Border { Height = 1, Background = DividerBrush, Margin = new Thickness(0, 4) },
                     steps,
+                    navRow,
                     _statusCard,
                     _step1Form,
                     _maintenanceCard,
@@ -549,11 +653,13 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock
             {
                 Text = "名称 / 缩写 / 介绍 / 端选择 / 本地目录；点「下一步」后立即自动执行 Step 2 初始化"
-                     + "（建工作区 → 授权 → 会话 → 技能 → 云效），全过程实时记录在右侧。",
+                     + "（建工作区 → 授权 → 会话 → 技能 → 云效），全过程实时记录在右侧。"
+                     + "已建档案后从步骤条回到本页，该按钮的语义变为「清空档案并重走 Step 2」，点它会先要求确认。",
                 FontSize = 12,
                 Foreground = MutedText,
                 TextWrapping = TextWrapping.Wrap
             },
+            _restartConfirmBanner,
             new Border { Height = 1, Background = DividerBrush },
             LabeledField("项目名称", _nameBox),
             LabeledField("英文缩写", _codeBox),
@@ -1004,7 +1110,20 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private void Refresh()
     {
         var spec = _service.Current;
-        var currentStep = _service.CurrentStep;
+        var reached = _service.CurrentStep;
+
+        // 若本次刷新观察到推进指针前移（刚执行的动作把流程推到了后一步），丢弃回退游标让视图跟上新步骤。
+        // 反之：只是「回看早已到达的步骤」时指针不会前移，游标保持——用户能停在该步查看逐端结论。
+        if ((int)reached > (int)_lastKnownReached
+            && _viewStep is { } advancing
+            && (int)reached > (int)advancing)
+            _viewStep = null;
+        _lastKnownReached = reached;
+
+        // 视图游标只在「已到达」范围内有效：档案被重置（如「中止并清理」）后丢弃过期游标
+        if (_viewStep is { } pinned && (int)pinned > (int)reached)
+            _viewStep = null;
+        var currentStep = _viewStep ?? reached;
 
         _archiveText.Text = spec is null
             ? "尚未开始新项目：在 Step 1 填表后创建档案；"
@@ -1014,7 +1133,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _stepHint.Text = spec is null
             ? "当前步骤：1 基本信息（待填表）"
-            : $"当前步骤：{(int)currentStep} {Steps[(int)currentStep - 1].Title}";
+            : $"当前步骤：{(int)currentStep} {Steps[(int)currentStep - 1].Title}"
+              + (_viewStep is not null && _viewStep < reached
+                  ? $"（回看；档案已到达 {(int)reached} {Steps[(int)reached - 1].Title}）"
+                  : string.Empty);
 
         if (spec is not null && !_resumeResolved)
         {
@@ -1127,9 +1249,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 步骤条行的视觉载体（步骤号 + 序号徽标 + 状态文字）。
+    /// 步骤条行的视觉载体（步骤号 + 序号徽标 + 状态文字 + 可点击的行按钮）。
     /// </summary>
-    private sealed record StepView(WizardStep Step, Border Badge, TextBlock BadgeText, TextBlock Status);
+    /// <param name="Step">步骤。</param>
+    /// <param name="Badge">序号徽标。</param>
+    /// <param name="BadgeText">徽标文字。</param>
+    /// <param name="Status">状态文字。</param>
+    /// <param name="Button">行按钮（回退导航入口；未到达的步骤由 <see cref="SyncFormEnabled"/> 灰化）。</param>
+    private sealed record StepView(WizardStep Step, Border Badge, TextBlock BadgeText, TextBlock Status, Button Button);
 
     /// <summary>步骤状态中文名（PRD §4.6.1 草图用语）。</summary>
     /// <param name="status">状态。</param>
@@ -1169,9 +1296,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step1Form.IsVisible = !hasArchive || currentStep is WizardStep.BasicInfo or WizardStep.Scaffold;
         _maintenanceCard.IsVisible = hasArchive && _resumeResolved;
 
-        // 「重新推送（重跑 Step 6）」：向导没有「返回上一步」的导航，故入口常驻在维护卡里；
-        // 至少有一端已克隆（Step 3 完成）才显示，避免在 Step 1 / 2 就给出必然失败的入口。
-        _repushButton.IsVisible = spec is not null && spec.Repositories.Any(repository => repository.Cloned);
+        // Step 1 的「下一步」在已建档案后语义变为「清空档案并重走 Step 2」（破坏性，卡内先行确认）
+        _nextButton.Content = hasArchive ? "清空档案并重走 Step 2" : "下一步：初始化项目";
+
+        // 「重新推送（重跑 Step 6）」：流程已到达推送步（Step 6 及之后）才显示。
+        // 早期按「至少一端已克隆」判定，Step 3 一完成就出现，等于给出「编译（Step 5）之前越级推送」的通道：
+        // 推送成功把档案推到 Step 7，而当时的向导没有回退导航，Step 5 就此永久不可达（真机冒烟缺陷）。
+        // 现在推进指针到 Step 6 即蕴含「Step 5 已通过」（能力层另有硬校验），且回退导航已补齐，常驻才安全。
+        _repushButton.IsVisible = spec is not null && (int)spec.CurrentStep >= (int)WizardStep.Push;
 
         _step3Area.IsVisible = hasArchive && currentStep == WizardStep.Repositories;
         _step4Area.IsVisible = hasArchive && currentStep == WizardStep.Database;
@@ -1191,8 +1323,54 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         if (spec is not null && _otherStepArea.IsVisible)
         {
             _otherStepText.Text = "Step 7 · 创建流水线：功能尚未实现（计划 M4-P5：按端克隆参考流水线并创建）。"
-                                  + "本步当前无法执行；若需重推改动，请用上方常驻「档案与维护」卡里的「重新推送（重跑 Step 6）」。";
+                                  + "本步当前无法执行；若需重推改动，可点步骤条回到「推送」步重跑，或用上方常驻"
+                                  + "「档案与维护」卡里的「重新推送（重跑 Step 6）」。";
         }
+    }
+
+    /// <summary>
+    /// 解析当前视图步：显式游标优先，且不越过档案的「已到达最大步」。
+    /// </summary>
+    /// <param name="reached">档案推进指针（已到达最大步）。</param>
+    /// <returns>视图步。</returns>
+    private WizardStep CurrentViewStep(WizardStep reached)
+        => _viewStep is { } pinned && (int)pinned <= (int)reached ? pinned : reached;
+
+    /// <summary>
+    /// 切到指定步骤（PRD §4.6「步骤条可点击 / 上一步」）。
+    /// </summary>
+    /// <remarks>
+    /// 只移动面板的视图游标，不改档案推进指针，也不触发任何步骤动作——动作必须由用户在该步的操作区显式触发。
+    /// 否则「点一下步骤条就重跑一遍建库」这类误触代价太大。超出「已到达最大步」的步骤必须按顺序执行，不可跳过去。
+    /// </remarks>
+    /// <param name="step">目标步骤。</param>
+    private void GoToStep(WizardStep step)
+    {
+        if (_busy || _unloaded)
+            return;
+
+        if (_service.Current is null || (int)step > (int)_service.CurrentStep)
+            return;
+
+        // 导航即意味着放弃上一次「清空档案重来」的确认意图
+        _restartConfirmed = false;
+        _restartConfirmBanner.IsVisible = false;
+
+        if (_viewStep == step)
+            return;
+
+        _viewStep = step;
+        Refresh();
+    }
+
+    /// <summary>「上一步」（PRD §4.6 草图项）：视图游标 −1，只在「已到达」步之间移动。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnBackClicked(object? sender, RoutedEventArgs e)
+    {
+        var step = CurrentViewStep(_service.CurrentStep);
+        if (step > WizardStep.BasicInfo)
+            GoToStep(step - 1);
     }
 
     /// <summary>
@@ -1550,6 +1728,15 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         foreach (var row in _repoRows)
             row.NameBox.IsEnabled = !_busy;
 
+        // 回退导航（P4 收尾）：只放开「已到达」的步骤（回看 / 重跑）；超过推进指针的必须按顺序执行。
+        // 步骤条行与「上一步」同受此约束；残留档案未处置时一并锁住（PRD §4.7）。
+        var reached = _service.CurrentStep;
+        var navigable = hasArchive && !_busy && !blockedByResidual;
+        foreach (var view in _stepViews)
+            view.Button.IsEnabled = navigable && (int)view.Step <= (int)reached;
+
+        _backButton.IsEnabled = navigable && (int)CurrentViewStep(reached) > (int)WizardStep.BasicInfo;
+
         SyncStatusCardVisibility();
     }
 
@@ -1654,6 +1841,20 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         if (_busy || _unloaded)
             return;
 
+        // 已建档案后从步骤条回退到 Step 1 再点「下一步」＝清空档案、从 Step 2 重来（Step 3-6 的进度会重置）。
+        // 属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
+        if (!allowExistingWorkspace && _service.Current is { } existing && !_restartConfirmed)
+        {
+            _restartConfirmText.Text = $"已存在项目档案「{existing.Name}（{existing.Code}）」：重新提交会清空该档案并从"
+                                       + " Step 2 重走——Step 3-6 的建库 / 探活 / 编译 / 推送进度会重置"
+                                       + "（本地目录与云效上的远端仓库不会被删除）。确认要重来吗？";
+            _restartConfirmBanner.IsVisible = true;
+            return;
+        }
+
+        _restartConfirmed = false;
+        _restartConfirmBanner.IsVisible = false;
+
         ShowErrors(Array.Empty<string>());
         ShowWarnings(Array.Empty<string>());
         var name = _nameBox.Text ?? string.Empty;
@@ -1686,6 +1887,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             _resumeResolved = true;
             _service.StartNewProject(name, code, introduction, ends, localPath);
 
+            // 新档案从 Step 1 重新开始：丢弃回退游标，避免视图停在旧档案的步骤上
+            _viewStep = null;
+
             SetBusy(true, allowExistingWorkspace
                 ? $"正在复用工作区{(_existingWorkspaceName is null ? string.Empty : $"「{_existingWorkspaceName}」")}"
                   + "并执行 Step 2（授权 → 会话 → 技能 → 云效）…"
@@ -1707,6 +1911,27 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             if (!_unloaded)
                 SetBusy(false, null);
         }
+    }
+
+    /// <summary>Step 1 重提确认：确认后按「清空档案并重走 Step 2」继续。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private async void OnRestartConfirmClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _unloaded)
+            return;
+
+        _restartConfirmed = true;
+        await ProceedAsync(false).ConfigureAwait(true);
+    }
+
+    /// <summary>Step 1 重提确认的「取消」：收起横幅，不动档案。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnRestartCancelClicked(object? sender, RoutedEventArgs e)
+    {
+        _restartConfirmed = false;
+        _restartConfirmBanner.IsVisible = false;
     }
 
     /// <summary>「重跑 Step 2」：重跑幂等（复用已有工作区、显式新建会话，PRD §4.3 陷阱①③）。</summary>
@@ -1767,7 +1992,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             {
                 _resumeResolved = true;
                 ClearForm();
+                // 档案已清空：丢弃回退游标与「清空档案重来」的确认态，视图回落到 Step 1
+                _viewStep = null;
+                _restartConfirmed = false;
+                _restartConfirmBanner.IsVisible = false;
                 SetBusy(false, null);
+                Refresh();
             }
         }
     }
@@ -1808,6 +2038,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _resumeResolved = true;
         ClearForm();
+        // 档案已清空：丢弃回退游标与「清空档案重来」的确认态
+        _viewStep = null;
+        _restartConfirmed = false;
+        _restartConfirmBanner.IsVisible = false;
         Refresh();
     }
 

@@ -352,8 +352,25 @@ public sealed class ProjectSpec
     /// <summary>七步是否全部完成。</summary>
     public bool IsCompleted { get; set; }
 
-    /// <summary>当前推进到的步骤。</summary>
+    /// <summary>
+    /// 当前推进到的步骤：语义为「<b>已到达的最大步</b>」（只前进，见 <see cref="AdvanceTo"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 面板的「回退到某步重看 / 重跑」只移动面板自己的视图游标，不改本字段：否则「回看第 5 步重编译」会把
+    /// 已经到达第 7 步的档案拉回第 6 步，回退重跑反而让进度倒退（P4 真机冒烟缺陷）。「已到达」与「未到达」
+    /// 也据此区分——只有前者允许直接切过去，后者必须按顺序执行。
+    /// </remarks>
     public WizardStep CurrentStep { get; set; } = WizardStep.BasicInfo;
+
+    /// <summary>
+    /// 单调推进当前步骤：只前进不后退。
+    /// </summary>
+    /// <param name="step">目标步骤。</param>
+    public void AdvanceTo(WizardStep step)
+    {
+        if (CurrentStep < step)
+            CurrentStep = step;
+    }
 
     /// <summary>
     /// 各步骤的<b>终态快照</b>：键为 <see cref="WizardStep"/> 名称、值为 <see cref="StepStatus"/> 名称。

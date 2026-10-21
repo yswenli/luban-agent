@@ -483,7 +483,7 @@ public sealed class NewProjectService : INewProjectService
                 "延迟到该会话首次对话时由 EnsureRuntimeAsync 惰性创建（本步无需触网）。", StepStatus.Succeeded, TimeSpan.Zero);
 
             // ── 9. 落库并推进到 Step 3 ─────────────────────────────────────────────
-            spec.CurrentStep = WizardStep.Repositories;
+            spec.AdvanceTo(WizardStep.Repositories);
             SaveSpec(spec);
 
             total.Stop();
@@ -1114,7 +1114,7 @@ public sealed class NewProjectService : INewProjectService
                 SaveSpec(spec);
             }
 
-            spec.CurrentStep = WizardStep.Database;
+            spec.AdvanceTo(WizardStep.Database);
             SaveSpec(spec);
 
             total.Stop();
@@ -1204,7 +1204,7 @@ public sealed class NewProjectService : INewProjectService
             spec.Database.ProbedAt = DateTimeOffset.Now;
 
             // 探活结果不阻断（v0.22 定案）：无论通过与否都推进到 Step 5
-            spec.CurrentStep = WizardStep.Build;
+            spec.AdvanceTo(WizardStep.Build);
             SaveSpec(spec);
 
             var lines = DescribeTurn(outcome, resultFile);
@@ -1313,7 +1313,7 @@ public sealed class NewProjectService : INewProjectService
 
             // 失败阻断（D4）：未全部通过就不推进到 Step 6
             if (passed)
-                spec.CurrentStep = WizardStep.Push;
+                spec.AdvanceTo(WizardStep.Push);
 
             SaveSpec(spec);
 
@@ -1458,6 +1458,16 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
+        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7）：向导的步骤顺序只是界面约束——常驻「重新推送」、
+        // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验（判据见 StepGate.CanPush）。
+        if (!StepGate.CanPush(spec))
+        {
+            const string Tip = "编译（Step 5）尚未全部通过，已拒绝推送：请回到「编译」步逐端编译，"
+                               + "全部通过后本步才可执行（编译结果见 Step 5 的逐端状态行与右侧操作记录）。";
+            Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
         var total = Stopwatch.StartNew();
         var artifacts = new List<RemoteArtifact>();
 
@@ -1563,7 +1573,7 @@ public sealed class NewProjectService : INewProjectService
                 SaveSpec(spec);
             }
 
-            spec.CurrentStep = spec.CurrentStep <= WizardStep.Push ? WizardStep.Pipeline : spec.CurrentStep;
+            spec.AdvanceTo(WizardStep.Pipeline);
             SaveSpec(spec);
 
             total.Stop();
