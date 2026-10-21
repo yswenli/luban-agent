@@ -18,9 +18,13 @@
 
 | 情形 | 目标分支 |
 |------|----------|
-| 插件配置 `pushBranch` 有值（**默认 `main`**） | 用它 |
+| 插件配置 `pushBranch` 有值（**v0.28 起默认 `develop`**） | 用它 |
 | `pushBranch` 留空 | 退回该端仓库的**默认分支** |
 | 仓库仍为空（无任何分支） | 以 `main` 为默认分支创建并推送 |
+
+> **分支策略（v0.28 口径）**：Step 3 克隆的 pin 按 `develop → master → main` 择优（`NewProjectService.PreferredPins`），
+> 本组织各端仓库实际都落在 `develop`；故 Step 6 推送分支同步为 `develop`，避免「在 develop 编译、推 main」。
+> 该值同时用作云效建仓时的默认分支（`DefaultBranch`），Step 3 与 Step 6 两处口径一致。
 
 ## 执行（云效相关步骤：委托 MCP 工具，PRD §4.10.7）
 

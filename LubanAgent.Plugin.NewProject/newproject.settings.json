@@ -13,8 +13,12 @@
 {
   "defaultVisibility": "internal",
 
-  // Step 6 推送目标分支：默认 main（PRD §6 #17 定案）；留空则退回各端仓库的默认分支。
-  "pushBranch": "main",
+  // Step 6 推送目标分支：本组织口径为 develop（v0.28 起；PRD §6 #17 定案改口径）。
+  // 理由：Step 3 克隆的 pin 按 develop → master → main 择优（NewProjectService.PreferredPins），
+  //      各端仓库实际都落在 develop；推送分支若仍取 main 就成了「在 develop 编译、推 main」。
+  // 该值同时用作云效建仓的默认分支，故 Step 3 建仓与 Step 6 推送两处口径一致。
+  // 留空则退回各端仓库的默认分支（仍为空则 main）。
+  "pushBranch": "develop",
   "repositoryNameFormat": "{code}-{end}",
 
   // 项目代码组名格式（{code}/{Code}/{CODE}/{name}）；默认全大写缩写，如 jnms → JNMS。

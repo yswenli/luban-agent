@@ -958,7 +958,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，默认 main）→ 暂存 → 有改动则提交 → 推送到各端自有仓库（PRD §4.3 Step 6）。
+    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，v0.28 起默认 develop）→ 暂存 → 有改动则提交 → 推送到各端自有仓库（PRD §4.3 Step 6）。
     /// </summary>
     /// <returns>操作区。</returns>
     private Border BuildStep6Area() => Card(new StackPanel
@@ -969,7 +969,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock { Text = "Step 6 · 推送改动到自有仓库", FontSize = 14, Foreground = PrimaryText },
             new TextBlock
             {
-                Text = "逐端执行：切到目标分支（配置 pushBranch，默认 main；不存在则从模板 pin 分支创建）"
+                Text = "逐端执行：切到目标分支（配置 pushBranch，v0.28 起默认 develop；不存在则从模板 pin 分支创建）"
                      + "→ git add -A → 有改动则提交 → 推送。"
                      + "不强制推送；提交身份优先取本机 git 配置，缺失时用插件配置兜底。",
                 FontSize = 12,

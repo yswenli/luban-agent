@@ -46,7 +46,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </para>
 /// <para>
 /// <b>当前进度（M4-P3）</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
-/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、默认 main + 提交 + 推送）已落地；
+/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、v0.28 起默认 develop + 提交 + 推送）已落地；
 /// Step 4 / 5 / 7 按计划在 P4~P5 分批实现（未实现的步骤返回明确的「未实现」结果，不抛异常）。
 /// </para>
 /// </remarks>
@@ -1505,7 +1505,7 @@ public sealed class NewProjectService : INewProjectService
                     return StepResult.Fail(Step, reason);
                 }
 
-                // ── 1. 切到目标分支（PRD §6 #17：pushBranch 优先、默认 main）────────────
+                // ── 1. 切到目标分支（PRD §6 #17：pushBranch 优先、v0.28 起默认 develop）────────────
                 var branchWatch = BeginOperation(Step, $"整理分支（{label}）", $"目标分支 {branch}");
                 var hasBranch = await RunGitAsync(runner, repository.LocalPath,
                     new[] { "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}" }, cancellationToken);
@@ -2471,7 +2471,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// Step 6 的推送目标分支：配置 <c>pushBranch</c> 优先（默认 <c>main</c>，PRD §6 #17 定案）；
+    /// Step 6 的推送目标分支：配置 <c>pushBranch</c> 优先（v0.28 起包内默认 <c>develop</c>，PRD §6 #17 改口径）；
     /// 配置留空才退回该端仓库的默认分支，仍为空则 <c>main</c>。
     /// </summary>
     /// <param name="repository">按端仓库信息。</param>
