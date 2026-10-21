@@ -1114,6 +1114,10 @@ public sealed class NewProjectService : INewProjectService
                 SaveSpec(spec);
             }
 
+            // 本步重跑成功＝本地代码可能已随模板 / pin / 占位符替换而变：作废上一轮编译结论。
+            // 不作废就会出现「改完代码不重编也能推」——闸门按档案事实判定，会误放行。
+            InvalidateBuildConclusion(spec);
+
             spec.AdvanceTo(WizardStep.Database);
             SaveSpec(spec);
 
@@ -1430,6 +1434,18 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
 
+        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7）：向导的步骤顺序只是界面约束——常驻「重新推送」、
+        // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验（判据见 StepGate.CanPush）。
+        // 位置在前置检查之前：顺序约束比参数齐备更根本，报错先给最该修的那一条。
+        // 拒绝不记操作记录——一次「未执行的拒绝」不是本步的终态，记了会被 SnapshotStepStates 回放写进档案，
+        // 把早已成功的 Push 状态改写成失败（提示由调用方按 StepResult.Message 呈现）。
+        if (!StepGate.CanPush(spec))
+        {
+            const string Tip = "编译（Step 5）尚未全部通过，已拒绝推送：请到步骤条的「编译」步逐端编译，"
+                               + "全部通过后本步才可执行（编译结论见 Step 5 的逐端状态行与右侧操作记录）。";
+            return StepResult.Fail(Step, Tip);
+        }
+
         using var permissionScope = EnterPermissionScope();
 
         var codeup = Resolve<CodeupClient>();
@@ -1454,16 +1470,6 @@ public sealed class NewProjectService : INewProjectService
         if (pushable.Count == 0)
         {
             const string Tip = "没有任何已克隆的仓库可推送：请先完成 Step 3（按模板建库并克隆）。";
-            Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, Tip);
-        }
-
-        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7）：向导的步骤顺序只是界面约束——常驻「重新推送」、
-        // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验（判据见 StepGate.CanPush）。
-        if (!StepGate.CanPush(spec))
-        {
-            const string Tip = "编译（Step 5）尚未全部通过，已拒绝推送：请回到「编译」步逐端编译，"
-                               + "全部通过后本步才可执行（编译结果见 Step 5 的逐端状态行与右侧操作记录）。";
             Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
@@ -1954,6 +1960,26 @@ public sealed class NewProjectService : INewProjectService
                 continue;
 
             spec.StepStates[record.Step.ToString()] = record.Status.ToString();
+        }
+    }
+
+    /// <summary>
+    /// 作废上一轮的编译（Step 5）结论：Step 3 重跑成功后调用（本地代码可能已变）。
+    /// </summary>
+    /// <remarks>
+    /// 档案侧交给 <see cref="StepGate.InvalidateBuild" />（清逐端结论 + 终态快照的 <c>Build</c> 键），
+    /// 但快照还会在下一次 <see cref="SaveSpec" /> 的 <see cref="SnapshotStepStates" /> 里按<b>内存操作记录</b>
+    /// 回放重写——本进程里遗留的 Build 记录会把刚清掉的键「复活」。故一并清掉那些记录：结论既已作废，
+    /// 留在时间线上同样是误导。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void InvalidateBuildConclusion(ProjectSpec spec)
+    {
+        StepGate.InvalidateBuild(spec);
+
+        lock (_gate)
+        {
+            _operations.RemoveAll(record => record.Step == WizardStep.Build);
         }
     }
 

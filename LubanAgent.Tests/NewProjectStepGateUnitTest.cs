@@ -106,4 +106,39 @@ public class NewProjectStepGateUnitTest
 
         Assert.IsTrue(StepGate.CanPush(spec));
     }
+
+    // ── 结论作废：Step 3 重跑后必须重新编译 ────────────────────────────────
+
+    [TestMethod]
+    public void InvalidateBuild_作废逐端结论与终态快照_闸门转为拒绝()
+    {
+        // 场景：Step 5 全部通过（本可推送）→ 重跑 Step 3 拉了新代码：旧结论不再代表当前工作树
+        var spec = new ProjectSpec { CurrentStep = WizardStep.Pipeline };
+        spec.StepStates[nameof(WizardStep.Build)] = nameof(StepStatus.Succeeded);
+        spec.BuildResults.Add(new EndBuildResult { End = ProjectEnd.Service, Ok = true });
+        Assert.IsTrue(StepGate.CanPush(spec), "前置条件：本用例要先构成「可推送」形态。");
+
+        StepGate.InvalidateBuild(spec);
+
+        Assert.AreEqual(0, spec.BuildResults.Count);
+        Assert.IsFalse(spec.StepStates.ContainsKey(nameof(WizardStep.Build)));
+        Assert.IsFalse(StepGate.CanPush(spec));
+    }
+
+    [TestMethod]
+    public void InvalidateBuild_无结论无快照_不抛且保持拒绝()
+    {
+        var spec = new ProjectSpec { CurrentStep = WizardStep.Repositories };
+
+        StepGate.InvalidateBuild(spec);
+
+        Assert.AreEqual(0, spec.BuildResults.Count);
+        Assert.IsFalse(StepGate.CanPush(spec));
+    }
+
+    [TestMethod]
+    public void InvalidateBuild_传空档案_抛参数异常()
+    {
+        Assert.ThrowsExactly<ArgumentNullException>(() => StepGate.InvalidateBuild(null!));
+    }
 }

@@ -23,6 +23,10 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// 故判据一律取<b>档案里的事实</b>（终态快照 + 逐端结论），不取界面状态、不取内存记录——两者都可被绕开或重启丢失。
 /// </para>
+/// <para>
+/// 「作废结论」（<see cref="InvalidateBuild"/>）与「判定结论」（<see cref="CanPush"/>）成对放在同一处，
+/// 免得两处口径各自漂移。
+/// </para>
 /// </remarks>
 public static class StepGate
 {
@@ -45,5 +49,23 @@ public static class StepGate
         return buildSucceeded
                && spec.BuildResults.Count > 0
                && spec.BuildResults.All(result => result.Ok);
+    }
+
+    /// <summary>
+    /// 作废档案里的编译（Step 5）结论：Step 3（建库并克隆）重跑成功后调用——本地代码可能已经变了，
+    /// 旧结论不再代表当前工作树，必须重新编译才能推送。
+    /// </summary>
+    /// <remarks>
+    /// 同时清「逐端结论」（<see cref="ProjectSpec.BuildResults"/>）与「终态快照」里的 <c>Build</c> 键，
+    /// 使 <see cref="CanPush" /> 立刻判否。注意：终态快照还会被保存档案时按<b>内存操作记录</b>回放重写，
+    /// 故调用方（Step 3）还须清掉本进程里遗留的 Build 记录，否则刚清掉的键会被「复活」。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    public static void InvalidateBuild(ProjectSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        spec.BuildResults.Clear();
+        spec.StepStates.Remove(nameof(WizardStep.Build));
     }
 }

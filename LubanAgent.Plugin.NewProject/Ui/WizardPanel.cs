@@ -54,6 +54,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private static readonly IBrush SuccessBrush = new SolidColorBrush(Color.Parse("#A6E3A1"));
     private static readonly IBrush DangerBrush = new SolidColorBrush(Color.Parse("#F38BA8"));
     private static readonly IBrush WarningBrush = new SolidColorBrush(Color.Parse("#F9E2AF"));
+    private static readonly IBrush HoverBrush = new SolidColorBrush(Color.Parse("#313244"));
 
     /// <summary>七步定义（PRD §4.3）。标题不含序号：序号由左侧徽标承载，避免「③ 3 建库」重复。</summary>
     private static readonly (WizardStep Step, string Title, string Summary)[] Steps =
@@ -118,9 +119,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     };
 
     /// <summary>
-    /// Step 1 重提确认横幅：已建档案时回退到 Step 1 再点「下一步」＝清空档案并从 Step 2 重来（等同「中止并清理」），
-    /// 属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
+    /// Step 1 重提确认横幅：已建档案后从步骤条回到 Step 1、改填<b>另一个本地目录</b>再点「下一步」＝
+    /// 清空档案并按新目录从 Step 2 重来，属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
     /// </summary>
+    /// <remarks>
+    /// 本地目录与档案相同的情形<b>不弹</b>此横幅：那不是「另建项目」而是「沿用同一工作区」，正确入口是
+    /// 维护卡的「重跑 Step 2」——因为该目录已被宿主登记为工作区，重提必被唯一性口径①拦下，确认了也走不到
+    /// Step 2（且「复用该工作区继续」按钮在有档案时按设计不出现）。
+    /// </remarks>
     private readonly Border _restartConfirmBanner;
 
     private readonly TextBlock _restartConfirmText = new()
@@ -221,8 +227,13 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <remarks>
     /// 向导没有「返回上一步」的导航，Step 6 执行过后若要重推，得有个随时可达的入口。
     /// 原实现把它做成 Step 7 占位区的临时出口（文案「跳过 Step 7」），语义不实——P5 未实现前它并不是
-    /// 「跳过」，而是「重跑」。故收口为常驻卡里的正式入口：有档案且至少有一端已克隆才显示。
+    /// 「跳过」，而是「重跑」。故收口为常驻卡里的正式入口。
     /// Step 6 本身幂等（无改动则跳过提交、推送照常收尾，PRD §4.8 第 18 条⑥），重跑安全。
+    /// </remarks>
+    /// <remarks>
+    /// 可见性＝<b>推进指针 ≥ Step 6</b>（v0.23 起；原口径「至少一端已克隆」在 Step 3 一完成就给出一条
+    /// 编译前的越级通道）。可见只是「能点」，能不能真推由 <c>StepGate.CanPush</c> 在执行时复核——
+    /// 编译未全部通过照样被拒。
     /// </remarks>
     private readonly Button _repushButton = new() { Content = "重新推送（重跑 Step 6）" };
 
@@ -417,6 +428,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _pushButton.Click += OnPushClicked;
         _repushButton.Click += OnPushClicked;
+
+        // hover 反馈：行内按钮都显式设了背景，主题的 :pointerover 样式被本地值盖住，默认像是「点不动」
+        // （P4 冒烟：重推入口没有任何可点提示）。进入时换底色、离开时清掉本地值交回主题默认。
+        _repushButton.PointerEntered += (_, _) => _repushButton.Background = HoverBrush;
+        _repushButton.PointerExited += (_, _) => _repushButton.ClearValue(Button.BackgroundProperty);
         _probeButton.Click += OnProbeClicked;
         _buildButton.Click += OnBuildClicked;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
@@ -693,8 +709,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock
             {
                 Text = "「重跑 Step 2」复用同一工作区并新建执行会话；「重新推送」= 重跑 Step 6（已有改动才提交，"
-                     + "推送照常收尾；至少一端已克隆后可用）；「中止并清理」注销工作区、删除已写入的技能与 MCP、"
-                     + "清空档案——本地目录与云效上的远端产物都不会被删除（PRD §4.7）。",
+                     + "推送照常收尾；推进到「推送」步后才出现，且编译未全部通过时会被拒绝）；「中止并清理」注销工作区、"
+                     + "删除已写入的技能与 MCP、清空档案——本地目录与云效上的远端产物都不会被删除（PRD §4.7）。",
                 FontSize = 11,
                 Foreground = MutedText,
                 TextWrapping = TextWrapping.Wrap
@@ -1465,6 +1481,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _buildResultText.Text = failed == 0 && !lastFailed
             ? $"最近一次编译：{spec.BuildResults.Count} 端全部通过"
               + $"（{spec.BuildResults.Max(item => item.CheckedAt):yyyy-MM-dd HH:mm}）。"
+              + "可在上方步骤条点「6 推送」继续推送（该步执行前仍会复核本结论）。"
             : $"最近一次编译未全部通过（下表为最近一次产出结论的执行结果）：{failed}/{spec.BuildResults.Count} 端失败。"
               + "本步失败会阻断 Step 6，修好后重跑本步。";
     }
@@ -1733,7 +1750,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         var reached = _service.CurrentStep;
         var navigable = hasArchive && !_busy && !blockedByResidual;
         foreach (var view in _stepViews)
-            view.Button.IsEnabled = navigable && (int)view.Step <= (int)reached;
+        {
+            var reachable = navigable && (int)view.Step <= (int)reached;
+            view.Button.IsEnabled = reachable;
+
+            // 显式降不透明度：行内 TextBlock 全都显式设了前景色，主题的「禁用前景色」覆盖不到，
+            // 只靠 IsEnabled 在视觉上几乎看不出区别（P4 冒烟：未到达的行与可点行肉眼一样）。
+            view.Button.Opacity = reachable ? 1.0 : 0.45;
+        }
 
         _backButton.IsEnabled = navigable && (int)CurrentViewStep(reached) > (int)WizardStep.BasicInfo;
 
@@ -1797,6 +1821,36 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _existingWorkspaceName = validation.ExistingWorkspaceName;
     }
 
+    /// <summary>两个本地目录是否指同一处（归一化后忽略大小写与尾部分隔符）。</summary>
+    /// <remarks>
+    /// 用于 Step 1 重提的「同目录 ≠ 另建项目」判定。归一化失败（非法字符等）时退回原样比较，
+    /// 路径本身的合法性由后续校验负责报错——此处只判断「是否同一个目录」。
+    /// </remarks>
+    /// <param name="left">左值（多为表单输入）。</param>
+    /// <param name="right">右值（多为档案 <c>LocalPath</c>）。</param>
+    /// <returns>指同一处返回 <c>true</c>。</returns>
+    private static bool SameLocalPath(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            return false;
+
+        static string Normalize(string path)
+        {
+            var trimmed = path.Trim();
+            try
+            {
+                return Path.GetFullPath(trimmed)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+        }
+
+        return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>读取端选择。</summary>
     /// <returns>所选端（后端 / 管理端恒在）。</returns>
     private List<ProjectEnd> SelectedEnds()
@@ -1845,9 +1899,23 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         // 属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
         if (!allowExistingWorkspace && _service.Current is { } existing && !_restartConfirmed)
         {
-            _restartConfirmText.Text = $"已存在项目档案「{existing.Name}（{existing.Code}）」：重新提交会清空该档案并从"
-                                       + " Step 2 重走——Step 3-6 的建库 / 探活 / 编译 / 推送进度会重置"
-                                       + "（本地目录与云效上的远端仓库不会被删除）。确认要重来吗？";
+            // 同目录不是「另建项目」而是「沿用当前工作区」：该目录已被登记（Step 2 建过），重提必被唯一性
+            // 口径①拦下，而「复用该工作区继续」按钮在已有档案时按设计不出现——确认了只会撞一条指不到出路的
+            // 红字。故这里不弹破坏性横幅，改为指路「重跑 Step 2」（复用同一工作区、进度不丢）。
+            if (SameLocalPath(_pathBox.Text, existing.LocalPath))
+            {
+                ShowWarnings(new[]
+                {
+                    $"本地目录就是当前档案（{existing.Name}）的工作区：沿用请点「档案与维护」卡里的「重跑 Step 2」"
+                    + "（复用工作区、新建执行会话，进度不丢）；要另建项目请改填其他目录后再点「下一步」。"
+                    + "（若上部还有残留档案横幅，先点「保留并继续」解锁。）"
+                });
+                return;
+            }
+
+            _restartConfirmText.Text = $"已存在项目档案「{existing.Name}（{existing.Code}）」：重新提交会清空该档案，"
+                                       + "并按当前表单的本地目录从 Step 2 重走——Step 3-6 的建库 / 探活 / 编译 / 推送"
+                                       + "进度会重置（本地目录与云效上的远端仓库不会被删除）。确认要重来吗？";
             _restartConfirmBanner.IsVisible = true;
             return;
         }
