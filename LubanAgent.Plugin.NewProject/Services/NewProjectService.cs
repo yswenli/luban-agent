@@ -1267,7 +1267,9 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ②）</b>：编译命令<b>由助手按工程类型自行判断</b>（后端 <c>dotnet build</c>、前端 <c>pnpm run build</c> 等），插件只提供白名单与结论契约。</para>
+    /// <para><b>执行形态（路线 ②）</b>：编译命令<b>由助手按工程类型自行判断</b>（后端 <c>dotnet build</c>、前端按本组织既有姿势 <c>fnm exec --using=16 -- npm.cmd run build:dev</c> 等），插件只提供白名单与结论契约。</para>
+    /// <para><b>边界（v0.28 放宽）</b>：只编译、<b>不改业务</b>——允许修依赖树与环境（装依赖 / <c>fnm</c> 切 Node /
+    /// <c>npm rebuild X</c> 补跑依赖自身的构建脚本 / 必要时重建 <c>node_modules</c>），禁止改业务源码与工程配置。</para>
     /// <para><b>失败阻断</b>：只要有一端未通过（含「助手漏给某端结论」），档案就不推进到 Step 6；修好后重跑本步即可。</para>
     /// </remarks>
     public async Task<StepResult> BuildAsync(CancellationToken cancellationToken = default)

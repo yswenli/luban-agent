@@ -324,14 +324,27 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - **口令传递＝方案 A（用户裁决）**：口令**明文内联进本轮提示词**。**已知残余风险**：会随框架会话历史落进
   `luban-ai-agent.db`，并在该会话后续轮回灌模型上下文（已记入 PRD §4.8 第 19 条）。曾评估未采纳：系统临时口令文件 / 插件写含口令的探活脚本 / 插件直连探活。
 
-### Step 5：逐端编译（编译方式交助手判断）
+### Step 5：逐端编译（编译方式交助手判断 + 按端已知构建姿势）
 
-- **插件不预设命令**：助手先看仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml`）再自行决定
-  （后端 `dotnet build`、管理端 Vite/Vue `pnpm install && pnpm run build`）。真机管理端就是 Vite/Vue、无 `.sln`，统一 `dotnet build` 不成立。
+- **插件不预设命令**：助手先看仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml`）再自行决定；
+  提示词里另给一段【本组织已知构建姿势】（v0.28 新增），**与本组织仓库既有做法冲突时以提示词为准**。
+- **管理端（Admin，Vite + Vue）已知姿势（v0.28 本机实测通过）**：分支 `develop`；Node 16 —— 所有命令用
+  `fnm exec --using=16 -- npm.cmd <子命令>` 包一层（**Windows 下必须写 `npm.cmd`**，`fnm` 直接 spawn `npm` 报 `program not found`；
+  管道 + `Invoke-Expression` 那类写法仍被守卫拒绝）；装依赖 `npm install --registry=https://registry.npmmirror.com`（或 `cnpm`）；
+  构建 **`npm run build:dev`（不是 `npm run build`：该仓库的构建脚本叫 `build:dev`）**。
 - `checks[].name` **必须用端标识**（`Service` / `Admin` / `Mobile`），**逐端齐全**——漏端即判「该端未给结论」＝**本步失败**（不用「其余端通过」兜底，否则漏跑一端会被静默放过）。
-- **失败阻断 Step 6**；只编译**不修复**、不清理编译产物。
-- **编译失败先查工程 / 仓库基线（真机教训）**：管理端是 pnpm 工作区，若依赖的**构建脚本被跳过**（pnpm 默认不跑依赖的 `postinstall`），包入口（`dist`）不会生成，`vite build` 会报 `Failed to resolve entry for package "…"`。
-  正解是**在管理端仓库侧**执行一次 `pnpm approve-builds`（会把策略写进 `pnpm-workspace.yaml`）或等价地登记 `onlyBuiltDependencies` 后重跑本步——**属仓库配置变更，不归插件、也不该让助手改**（Step 5 边界是「只编译不修复」）。同理：不带参数的 `pnpm approve-builds` 是交互式命令，助手在无 TTY 的 Shell 里跑不动（需带包名或 `--all`）。
+- **失败阻断 Step 6**；**只编译、不改业务**（v0.28 放宽）：**允许修依赖树与环境**——装依赖、`fnm` 切 Node、
+  重跑依赖自身的构建脚本（`npm rebuild X`）、必要时重建 `node_modules`；**禁止改业务源码与工程配置**
+  （业务代码、`package.json`、`vite.config`、`.csproj` / `.sln` 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。不清理编译产物。
+- **真机根因（v0.28 闭环）**：管理端 `@vue-office/{docx,excel,pdf}` 的 `package.json` 里 `main = lib/index.js`，
+  而 `lib/index.js` **不随包发布**——由包自身 `postinstall`（`lib/script/postinstall.js` → `utils.js` 的 `switchVersion(3)`，
+  即把 `lib/v3/index.js` 复制成 `lib/index.js`，`index.css` 同理）生成。pnpm v10 默认跳过依赖的构建脚本 → 入口缺失 →
+  `vite build` 报 `Failed to resolve entry for package "X"`。v0.27 曾判定「正解是在仓库侧执行 `pnpm approve-builds`，
+  属仓库配置变更、不该让助手动」；v0.28 复核后改为：**这条路根本不需要 pnpm** —— 该仓库用 **npm 系**
+  （`npm install` 默认跑依赖构建脚本）× **Node 16** 就是本组织既有姿势，助手在白名单内即可把依赖树修好
+  （本机实测：`npm install` 81s → `npm run build:dev` exit 0 / 89s，`dist` 正常产出）。
+  若装完仍报入口缺失，用 `fnm exec --using=16 -- npm.cmd rebuild X` 补跑后重试一次（实测可重新生成入口）。
+  （附带结论：不带参数的 `pnpm approve-builds` 是**交互式**命令，助手在无 TTY 的 Shell 里本就跑不动。）
 
 ### 助手工具白名单（替代 `BypassPermissions`）
 
@@ -341,8 +354,12 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
   命令在白名单内的 `RunShellAsync`、**工作区内**的写类工具（`WriteFileAsync` / `CopyFileAsync` 按 `destPath` / `MoveFileAsync` 按 `destPath`）。
 - **拒绝**：`RunLuaAsync`、删除类（`DeleteFileAsync` / `DeleteDirectoryAsync`）、技能与 MCP 写删类、越出工作区的写入、未知工具、工作区根未知时的任何写入。
 - **Shell 逐段判定**：按 **未加引号** 的 `&&` / `||` / `;` / `|` / 换行切段（引号内的分隔符属参数文本、不切段——`node -e "…;…"` / `git commit -m "a;b"` 必须放行；单引号内除 `''` 外不转义、双引号内反引号转义、未闭合引号按「到末尾都在引号内」处理；单个 `&` 不切段，只有 `&&` 切），每段取首词（支持 `& "prog"` 与 `"C:\Program Files\...\dotnet.exe"` 引号路径，去目录、去 `.exe/.cmd/.bat/.ps1` 后缀），
-  首词不在 `AllowedExecutables`（`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `python` / `py` / `python3` / `pip` / `pip3`）与 pwsh 无副作用内置（`cd` / `Set-Location` 等）内即**整条拒绝**；
+  首词不在 `AllowedExecutables`（`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `fnm` / `cnpm` / `python` / `py` / `python3` / `pip` / `pip3`）与 pwsh 无副作用内置（`cd` / `Set-Location` 等）内即**整条拒绝**；
   `$env:X = "..."` 赋值段视为无副作用放行。
+- **v0.28 新增 `fnm` / `cnpm`**：本组织管理端要求 Node 16 + npm 系客户端，助手需用 `fnm exec --using=16 -- npm.cmd …`
+  与 `cnpm`（内网镜像客户端）。二者都只是「版本管理器 / 包管理器」，不引入新的越界面；
+  `fnm env --use-on-cd | Out-String | Invoke-Expression` 那类写法**仍被拒**（管道分段后 `Out-String` / `Invoke-Expression`
+  不是白名单首词，且 `Invoke-Expression` 等同任意求值——提示词里改为 `fnm exec --using=16 -- …` 的免管道形态）。
 - **拒绝 ≠ 本轮失败（v0.27）**：被拒的调用**不计进事件流错误**（`AssistantToolPolicy.IsGuardDenial` 认宿主文案「工具调用被拒绝或已取消」），只留在操作记录「被拒明细」里——否则助手**试错一次就被自己的守卫判成整步失败**（四环第④环会中招）。早先的实现正是把守卫拒绝塞进 `errors`，真机两轮都因此判失败。
 
 ### 防死锁：助手不得回调插件
@@ -523,6 +540,18 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
 46. **守卫拒绝不判本步失败（回归）**：让助手尝试一条白名单外命令（如 `curl` / `powershell`）→ 该调用被**拒绝**并出现在操作记录「被拒明细」里，
     但**只要结论文件 `ok` 为真且事件流无真错误，本步仍判通过**（编译通过时应能继续推送）。修复前必判失败——守卫拒绝被当成「本轮事件流有 1 条错误」。
 
+#### P4 复审增补 · v0.28（管理端构建姿势 + 边界放宽）
+
+47. **管理端用本组织姿势能编过（核心回归，必测）**：重启 codex 后跑 Step 5，管理端应走
+    `fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com` → `fnm exec --using=16 -- npm.cmd run build:dev`，
+    结论 `ok: true`；运行记录里能看到这两条命令**被放行**（`fnm` / `cnpm` 在白名单内）。修复前助手只会 `pnpm run build` → 报入口缺失。
+48. **`fnm` / `cnpm` 放行、管道形态仍拒（回归）**：`fnm exec --using=16 -- npm.cmd run build:dev` 与 `cnpm install`
+    应放行；`fnm env --use-on-cd | Out-String | Invoke-Expression` 应**被拒**（管道分段后首词不是白名单可执行文件），
+    且该拒绝**不判本步失败**（见第 46 项）。
+49. **依赖入口缺失可自修（回归）**：人为删掉 `node_modules\@vue-office\pdf\lib\index.js` 后跑 Step 5，
+    助手应改用 `fnm exec --using=16 -- npm.cmd rebuild @vue-office/pdf` 补跑并最终编过（本轮边界放宽后允许）；
+    **边界仍守住**：业务源码与工程配置（`package.json` / `vite.config` / `.csproj` / `.sln`）不得被改写。
+
 ## 阶段进度
 
 | 批次 | 内容 | 状态 |
@@ -530,6 +559,6 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
 | P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner` + 4 条单测，测试 37/37 通过；待重启 codex 复跑真机 11–21 项） |
-| P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（技术路线 ②：助手亲自执行 + 结论文件回读判定） | **代码完成 + 冒烟缺陷已修（v0.23）**（构建 0 错误；`LubanAgent.Tests` **135/135** 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 / **推进指针与推送闸门** 5 组单测；修复「Step 5 无入口 → 越级推送」根因——步骤条回退导航 + `StepGate.CanPush` 能力层闸门 + 重推入口可见性收紧；并完成审查收口：同目录重提不给破坏性确认、闸门拒绝不写 Push 终态、闸门前置、Step 3 重跑作废旧编译结论、未到达行显式灰化与重推 hover 反馈；v0.25 复审再收口：**落库顺序 P0**（Step 4/5 改为「先记终态再落库」，否则闸门读不到 `StepStates["Build"]` 恒判否）、同目录判据补齐 junction 别名、灰化只绑已到达、黄字清残留红字并补「中止并清理」出口；**v0.27**：真机 Step 5 冒烟暴露的**助手守卫两处真缺陷**随修——①Shell 逐段判定改为识别成对引号（引号内的 `;` / `|` / `&&` / 换行不再被误切成命令段，`node -e "…;…"` 不再被误拒）；②守卫拒绝不再计入「本轮错误事件」（只留「被拒明细」），不再把助手的一次试错判成整步失败；`LubanAgent.Tests` **137/137**；真机管理端编译失败的根因是**仓库基线**（pnpm 跳过 `@vue-office/docx` 的构建脚本 → 包入口缺失），需在**管理端仓库侧** `pnpm approve-builds`，**不入插件缺陷**；**待真机冒烟**——见「P4 增补」22–29 与「P4 增补 · 冒烟缺陷修复项」30–46） |
+| P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（技术路线 ②：助手亲自执行 + 结论文件回读判定） | **代码完成 + 冒烟缺陷已修（v0.23）**（构建 0 错误；`LubanAgent.Tests` **135/135** 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 / **推进指针与推送闸门** 5 组单测；修复「Step 5 无入口 → 越级推送」根因——步骤条回退导航 + `StepGate.CanPush` 能力层闸门 + 重推入口可见性收紧；并完成审查收口：同目录重提不给破坏性确认、闸门拒绝不写 Push 终态、闸门前置、Step 3 重跑作废旧编译结论、未到达行显式灰化与重推 hover 反馈；v0.25 复审再收口：**落库顺序 P0**（Step 4/5 改为「先记终态再落库」，否则闸门读不到 `StepStates["Build"]` 恒判否）、同目录判据补齐 junction 别名、灰化只绑已到达、黄字清残留红字并补「中止并清理」出口；**v0.27**：真机 Step 5 冒烟暴露的**助手守卫两处真缺陷**随修——①Shell 逐段判定改为识别成对引号（引号内的 `;` / `|` / `&&` / 换行不再被误切成命令段，`node -e "…;…"` 不再被误拒）；②守卫拒绝不再计入「本轮错误事件」（只留「被拒明细」），不再把助手的一次试错判成整步失败；`LubanAgent.Tests` **137/137**；真机管理端编译失败的根因是**仓库基线**（pnpm 跳过 `@vue-office/docx` 的构建脚本 → 包入口缺失）；**v0.28**：该根因闭环——Step 5 提示词新增【本组织已知构建姿势】（管理端：`develop` 分支；`fnm exec --using=16 -- npm.cmd …`；`npm install --registry=https://registry.npmmirror.com`；**`npm run build:dev`** 而非 `npm run build`；报 `Failed to resolve entry for package "X"` 时 `npm.cmd rebuild X` 补跑），白名单补 `fnm` / `cnpm`，边界由「只编译、不修复」放宽为「**只编译、不改业务**」（允许修依赖树与环境，禁改业务源码与工程配置）；本机实测管理端 `npm install` 81s → `build:dev` exit 0 / 89s，`dist` 正常产出；**待真机冒烟**——见「P4 增补」22–29、「P4 增补 · 冒烟缺陷修复项」30–46 与「P4 复审增补 · v0.28」47–49） |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
 | P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 进行中（Step 4/5 两个技能正文已按 v0.22 改写为「助手亲自执行」，主 skill 编排顺序已同步；Step 7 与联调待办） |

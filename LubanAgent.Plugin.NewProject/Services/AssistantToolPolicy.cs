@@ -50,10 +50,17 @@ public static class AssistantToolPolicy
     /// <remarks>
     /// 覆盖三端编译所需：.NET（<c>dotnet</c>）、Vite/Vue 前端（<c>node</c> / <c>npm</c> / <c>npx</c> / <c>pnpm</c> / <c>yarn</c>）、
     /// 依赖安装（<c>pip</c> / <c>pip3</c>）、脚本兜底（<c>python</c> / <c>py</c> / <c>python3</c>）与只读检查（<c>git</c>）。
+    /// <para>
+    /// <b>v0.28 新增</b> <c>fnm</c> / <c>cnpm</c>：本组织管理端仓库要求 Node 16 + npm 系客户端，
+    /// 助手需用 <c>fnm exec --using=16 -- npm.cmd …</c>（<c>fnm</c> 只做 Node 版本切换，本身不改仓库）
+    /// 与 <c>cnpm</c>（内网 npm 镜像客户端）完成安装与构建。二者都只是「包管理器 / 版本管理器」，
+    /// 不引入新的越界面；<c>fnm env | Out-String | Invoke-Expression</c> 那类管道 + 求值写法仍被拒
+    /// （管道分段后 <c>Out-String</c> / <c>Invoke-Expression</c> 非白名单首词，且 <c>Invoke-Expression</c> 等同任意求值）。
+    /// </para>
     /// </remarks>
     public static readonly IReadOnlySet<string> AllowedExecutables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "dotnet", "git", "node", "npm", "npx", "pnpm", "yarn", "python", "py", "python3", "pip", "pip3"
+        "dotnet", "git", "node", "npm", "npx", "pnpm", "yarn", "fnm", "cnpm", "python", "py", "python3", "pip", "pip3"
     };
 
     /// <summary>允许的 Shell 内置（pwsh 切目录用，无副作用）。</summary>
@@ -119,7 +126,7 @@ public static class AssistantToolPolicy
             var command = ReadArgument(arguments, "command");
             if (IsAllowedShellCommand(command, out var offender))
             {
-                reason = "放行：命令每一段的首词都在白名单内（dotnet / git / node / npm / npx / pnpm / yarn / python / pip 等）。";
+                reason = "放行：命令每一段的首词都在白名单内（dotnet / git / node / npm / npx / pnpm / yarn / fnm / cnpm / python / pip 等）。";
                 return ConfirmResult.Allow;
             }
 

@@ -112,7 +112,7 @@ public class NewProjectStepPromptsUnitTest
     }
 
     [TestMethod]
-    public void BuildCompilePrompt_编译方式交助手判断且不修复不改代码()
+    public void BuildCompilePrompt_编译方式交助手判断且不改业务源码()
     {
         var targets = new List<EndRepository>
         {
@@ -124,16 +124,31 @@ public class NewProjectStepPromptsUnitTest
         // PRD §4.3 Step 5（v0.22）：编译方式由助手按工程类型决定
         StringAssert.Contains(prompt, "编译方式由你按工程类型决定");
         StringAssert.Contains(prompt, "dotnet build");
-        StringAssert.Contains(prompt, "pnpm");
 
-        // 只编译不修复
-        StringAssert.Contains(prompt, "只编译、不修复");
-        StringAssert.Contains(prompt, "禁止修改任何源码");
+        // v0.28：本组织已知构建姿势（管理端：develop + Node16 + npm run build:dev）
+        StringAssert.Contains(prompt, "本组织已知构建姿势");
+        StringAssert.Contains(prompt, "不要用 pnpm");
+        StringAssert.Contains(prompt, "develop");
+        StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com");
+        StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd run build:dev");
+        StringAssert.Contains(prompt, "不是 npm run build");
+        StringAssert.Contains(prompt, "Failed to resolve entry for package");
+        StringAssert.Contains(prompt, "npm.cmd rebuild X");
+
+        // v0.28 兜底：环境缺件时如实上报、不自行装全局工具链、不改仓库配置
+        StringAssert.Contains(prompt, "不要**自行安装全局工具链");
+        StringAssert.Contains(prompt, "由用户补好环境后重跑");
+
+        // v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——可修依赖树与环境，禁改业务源码与工程配置
+        StringAssert.Contains(prompt, "允许修依赖树与环境");
+        StringAssert.Contains(prompt, "禁止修改仓库里的业务源码与工程配置");
 
         // 命令白名单（与 AssistantToolPolicy 同口径）
         StringAssert.Contains(prompt, "白名单");
         StringAssert.Contains(prompt, "dotnet");
         StringAssert.Contains(prompt, "pip");
+        StringAssert.Contains(prompt, "fnm");
+        StringAssert.Contains(prompt, "cnpm");
     }
 
     [TestMethod]

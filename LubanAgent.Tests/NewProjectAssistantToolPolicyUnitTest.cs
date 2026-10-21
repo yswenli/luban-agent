@@ -151,6 +151,8 @@ public class NewProjectAssistantToolPolicyUnitTest
                      "dotnet build Csxmy-Service.sln",
                      "git status",
                      "pnpm install",
+                     "fnm exec --using=16 -- npm.cmd install",
+                     "cnpm install",
                      "git clone https://codeup.aliyun.com/x.git",
                      "C:\\Python312\\python.exe -m pip install pymysql"
                  })
@@ -235,6 +237,24 @@ public class NewProjectAssistantToolPolicyUnitTest
     {
         Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("cd D:\\ws\\jnms && dotnet build A.sln", out _));
         Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("Set-Location D:\\ws\\jnms", out _));
+    }
+
+    [TestMethod]
+    public void IsAllowedShellCommand_fnm与cnpm在白名单内_管道求值形态仍拒()
+    {
+        // v0.28 本组织管理端姿势：fnm 切 Node 16 + npm.cmd 子命令
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
+            "fnm exec --using=16 -- npm.cmd run build:dev", out _));
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
+            "cd D:\\ws\\jnms\\csxmy-Admin && fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com", out _));
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
+            "fnm exec --using=16 -- npm.cmd rebuild @vue-office/pdf", out _));
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("cnpm install", out _));
+
+        // 管道 + Invoke-Expression 形态仍被拒（等价写法是 fnm exec，见提示词）
+        Assert.IsFalse(AssistantToolPolicy.IsAllowedShellCommand(
+            "fnm env --use-on-cd | Out-String | Invoke-Expression", out var offender));
+        Assert.AreEqual("Out-String", offender);
     }
 
     [TestMethod]

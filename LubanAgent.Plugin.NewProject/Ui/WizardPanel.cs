@@ -937,8 +937,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 new TextBlock
                 {
                     Text = "按所选端让项目助手逐端编译（编译方式由助手按工程类型判断：后端 dotnet build、"
-                         + "Vite/Vue 前端 pnpm build 等）。本步只编译不修复：只要有一端未通过就会阻断 Step 6，"
-                         + "把错误修好后重跑本步即可。",
+                         + "Vite/Vue 前端按本组织既有姿势：fnm 切 Node 16 后 npm run build:dev）。"
+                         + "本步只编译、不改业务：允许修依赖树与环境（装依赖 / 切 Node / 补跑依赖构建脚本），"
+                         + "禁止改业务源码与工程配置；只要有一端未通过就会阻断 Step 6，把错误修好后重跑本步即可。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap

@@ -101,6 +101,11 @@ public static class StepPrompts
     /// <summary>
     /// 构造 Step 5「逐端编译检查」提示词。
     /// </summary>
+    /// <remarks>
+    /// v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——允许修依赖树与环境（`fnm` 切 Node 16、
+    /// npm / cnpm 装依赖、`npm rebuild` 补跑依赖自身的构建脚本），仍禁止改业务源码与工程配置；
+    /// 并按端写入【本组织已知构建姿势】（管理端：develop 分支 + Node 16 + `npm run build:dev`）。
+    /// </remarks>
     /// <param name="spec">项目档案。</param>
     /// <param name="targets">本次要编译的端（按端仓库，已带本地目录）。</param>
     /// <param name="resultFile">结论文件绝对路径。</param>
@@ -116,11 +121,13 @@ public static class StepPrompts
 
         AppendHardBoundaries(builder, new[]
         {
-            "本步只做编译检查：只编译、不修复。禁止修改任何源码 / 配置 / 项目文件；"
-                + "即使编译报错也不要去改代码——把错误如实报出来，由用户修完后再重跑本步。",
+            "本步的边界是「只编译、不改业务」：**允许修依赖树与环境**（装依赖、切 Node 版本、重跑依赖自身的构建脚本、"
+                + "必要时重建 node_modules），但**禁止修改仓库里的业务源码与工程配置**（业务代码、package.json、"
+                + "vite.config、.csproj / .sln 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。"
+                + "编译错误若是源码问题，如实报出来，由用户修完后再重跑本步。",
             "编译产物（bin / obj / node_modules / dist）留在原处即可，不要删除、不要清理。",
-            "依赖未装就先装（dotnet restore / npm install / pnpm install 等），再编译；每个端最多重试 1 次。",
-            "命令首词必须是白名单内的可执行文件：dotnet / git / node / npm / npx / pnpm / yarn / python / pip。"
+            "依赖未装就先装（dotnet restore / npm install / cnpm install / pnpm install 等），再编译；每个端最多重试 1 次。",
+            "命令首词必须是白名单内的可执行文件：dotnet / git / node / npm / npx / pnpm / yarn / fnm / cnpm / python / pip。"
                 + "一次一条命令，可用 && 串联（每一段的首词同样受白名单约束）；不要用管道与重定向。"
         });
 
@@ -132,12 +139,31 @@ public static class StepPrompts
         }
         builder.AppendLine();
 
+        builder.AppendLine("【本组织已知构建姿势】（本组织各端仓库的既有做法；与你按工程类型的默认判断冲突时，以这里为准）");
+        builder.AppendLine("- 管理端（Admin，Vite + Vue）：本仓库用 npm 系构建，**不要用 pnpm**；Node 版本必须是 16。");
+        builder.AppendLine("  1) 分支：本仓库的工作分支是 develop；若当前不在 develop 且工作树干净，先 git checkout develop。");
+        builder.AppendLine("  2) Node 16：用 fnm 把命令包一层——fnm exec --using=16 -- npm.cmd <子命令>"
+                           + "（Windows 下 fnm 直接 spawn npm 会报 program not found，必须写成 npm.cmd；"
+                           + "不要用 fnm env | Invoke-Expression 这类管道 / 求值写法，会被守卫拒绝）。");
+        builder.AppendLine("  3) 装依赖：fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com"
+                           + "（内网慢可换 cnpm 同源镜像；node_modules 若原本是 pnpm 装的，npm install 会补装成 npm 布局，属正常）。");
+        builder.AppendLine("  4) 构建：fnm exec --using=16 -- npm.cmd run build:dev"
+                           + "（**不是 npm run build**：本仓库的构建脚本叫 build:dev）。");
+        builder.AppendLine("  5) 若报 Failed to resolve entry for package \"X\"：说明该依赖自身的构建脚本被跳过、包入口没生成"
+                           + "（@vue-office/* 系列常见）——用 fnm exec --using=16 -- npm.cmd rebuild X 补跑后重试一次。");
+        builder.AppendLine("- 后端（Service，.NET）：dotnet build <解决方案>.sln。");
+        builder.AppendLine("- 其它端（移动端等）：按工程类型自行判断。");
+        builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装全局工具链、也不要改仓库配置——"
+                           + "把缺失项如实写进该端结论的 detail，本步按失败上报，由用户补好环境后重跑。）");
+        builder.AppendLine();
+
         builder.AppendLine("【执行要求】");
         builder.AppendLine("1) 每个端先看清目录里有什么（.sln / .csproj / package.json / pubspec.yaml 等），"
                            + "再自行判断该用什么命令编译——编译方式由你按工程类型决定。");
         builder.AppendLine("2) 后端一般是 .NET 解决方案：在仓库目录里 dotnet build 对应的 .sln（或 .csproj）。");
-        builder.AppendLine("3) 前端（Vite/Vue 等）一般需要先装依赖再构建："
-                           + "npm install / pnpm install 之后 npm run build / pnpm run build。");
+        builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：装依赖用 npm / cnpm"
+                           + "（本组织管理端仓库不要用 pnpm），构建优先用仓库里真实存在的开发态脚本"
+                           + "（本组织管理端为 npm run build:dev），不要凭默认猜 npm run build。");
         builder.AppendLine("4) 每个端得出「通过 / 失败」与一句话 detail；失败时附关键错误（错误码 / 文件名 / 行号，最多 3 条）。");
         builder.AppendLine();
 
@@ -148,7 +174,7 @@ public static class StepPrompts
         builder.AppendLine("  \"ok\": false,   // 仅当所有端都通过时才写 true");
         builder.AppendLine("  \"checks\": [");
         builder.AppendLine("    { \"name\": \"Service\", \"ok\": true,  \"detail\": \"编译通过\", \"command\": \"dotnet build xxx.sln\" },");
-        builder.AppendLine("    { \"name\": \"Admin\",   \"ok\": false, \"detail\": \"2 个错误：…\", \"command\": \"pnpm run build\" }");
+        builder.AppendLine("    { \"name\": \"Admin\",   \"ok\": false, \"detail\": \"2 个错误：…\", \"command\": \"fnm exec --using=16 -- npm.cmd run build:dev\" }");
         builder.AppendLine("  ],");
         builder.AppendLine("  \"message\": \"<一句话总结>\"");
         builder.AppendLine("}");
