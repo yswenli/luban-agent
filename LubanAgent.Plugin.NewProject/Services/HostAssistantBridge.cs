@@ -38,7 +38,8 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>工具审批</b>：一律 <see cref="ToolPermissionMode.Default"/> + <see cref="AssistantToolPolicy"/> 白名单回调，
 /// <b>不</b>使用 <c>BypassPermissions</c>；被拒的调用不取消本轮（<c>onUserDenied</c> 传 <c>null</c>），
-/// 只记进 <see cref="TurnOutcome.Denials"/>，让助手自己看到拒绝结果后继续收尾。
+/// 只记进 <see cref="TurnOutcome.Denials"/>、<b>不计进</b> <see cref="TurnOutcome.Errors"/>（见该字段注释），
+/// 让助手自己看到拒绝结果后继续收尾。
 /// </para>
 /// <para>
 /// <b>并发</b>：同一会话的回合是串行的（运行时自带队列）。若下发时该会话正被 UI 聊天占用，
@@ -91,7 +92,7 @@ internal sealed class HostAssistantBridge
         /// <summary>审批拒绝的调用（工具名 + 依据）。</summary>
         public IReadOnlyList<string> Denials { get; init; } = Array.Empty<string>();
 
-        /// <summary>本轮错误（工具失败 / 错误事件）。</summary>
+        /// <summary>本轮错误（工具失败 / 错误事件）；<b>不含</b>守卫拒绝与用户取消（那两类只进 <see cref="Denials"/>）。</summary>
         public IReadOnlyList<string> Errors { get; init; } = Array.Empty<string>();
 
         /// <summary>助手正文总字数（只作读数，不参与判定）。</summary>
@@ -237,7 +238,11 @@ internal sealed class HostAssistantBridge
                         textLength += delta.Delta?.Length ?? 0;
                         break;
                     case ToolCallFailedEvent failed:
-                        errors.Add($"工具失败：{failed.Error}");
+                        // 守卫拒绝 / 用户取消不是「执行失败」：拒绝依据已由审批回调写进 Denials（见类注释）。
+                        // 若这里再计进 Errors，四环判据的「事件流无错误」就会把「助手换条命令再试一次」判成整步失败
+                        // ——真机已复现：一次 RunShell 被白名单拒 → 即使逐端编译全过也报失败。
+                        if (!AssistantToolPolicy.IsGuardDenial(failed.Error))
+                            errors.Add($"工具失败：{failed.Error}");
                         break;
                     case ErrorEvent error:
                         errors.Add(error.Message);

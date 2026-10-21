@@ -7,6 +7,7 @@
 *描述：路线② 助手的工具审批策略（M4-P4 决策点 D2：白名单过滤，不用 BypassPermissions）
 *****************************************************************************/
 
+using System.Text;
 using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgent.Plugin.NewProject.Services;
@@ -171,10 +172,33 @@ public static class AssistantToolPolicy
     }
 
     /// <summary>
+    /// 宿主对「工具调用被拒绝 / 被取消」的统一文案。
+    /// </summary>
+    /// <remarks>
+    /// 字面量写在框架 <c>LuBan.AIAgent</c> 的 <c>AgentHostService</c> 里（拒绝与取消在结果层不可区分，故用同一条中性文案），
+    /// 插件侧只能按字面量对齐；改框架时两处需同步（CLI 侧亦有一处同样的字面量比对）。
+    /// </remarks>
+    public const string DeniedOrCancelledMessage = "工具调用被拒绝或已取消";
+
+    /// <summary>
+    /// 判定一条工具失败读数是否<b>只</b>代表「守卫拒绝 / 用户取消」，而非真的执行失败。
+    /// </summary>
+    /// <remarks>
+    /// 为什么必须区分：四环判据含「本轮事件流无错误事件」。守卫拒绝（白名单驳回）本身是**控制动作**，
+    /// 若也计成错误，助手只要试错一次（换命令、换写法）就被自己的守卫判成整步失败——真机已复现
+    /// （第二次尝试被拒 → 即便编译通过也报失败）。拒绝依据由审批回调写进 <c>Denials</c>，不会丢信息。
+    /// </remarks>
+    /// <param name="error">工具失败读数原文（<see cref="LuBan.AIAgent.Abstractions.ToolCallFailedEvent.Error"/>）。</param>
+    /// <returns>是守卫拒绝 / 取消返回 <c>true</c>。</returns>
+    public static bool IsGuardDenial(string? error) =>
+        !string.IsNullOrWhiteSpace(error) && error.Contains(DeniedOrCancelledMessage, StringComparison.Ordinal);
+
+    /// <summary>
     /// 判定一条 Shell 命令是否<b>每一段</b>都由白名单可执行文件 / 内置命令打头。
     /// </summary>
     /// <remarks>
-    /// 纯函数（供单测锁死口径）：按 <c>||</c> · <c>&&</c> · <c>;</c> · <c>|</c> · 换行 切段，
+    /// 纯函数（供单测锁死口径）：按**未加引号**的 <c>||</c> · <c>&&</c> · <c>;</c> · <c>|</c> · 换行 切段
+    /// （引号内的分隔符属参数文本，见 <see cref="SplitSegments"/>），
     /// 每段取首个词（支持引号路径，去引号、去目录、去可执行后缀）判定；环境变量赋值段（<c>$env:X = ...</c>）视为无副作用放行。
     /// 复合语句里只要有一段越界，整条命令即拒——避免「用无害命令做前缀、真实动作藏在后半段」。
     /// </remarks>
@@ -190,7 +214,7 @@ public static class AssistantToolPolicy
             return false;
         }
 
-        foreach (var rawSegment in System.Text.RegularExpressions.Regex.Split(command!, @"\|\||&&|[;|\r\n]"))
+        foreach (var rawSegment in SplitSegments(command!))
         {
             var segment = rawSegment.Trim();
             if (segment.Length == 0)
@@ -214,6 +238,116 @@ public static class AssistantToolPolicy
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 按<b>未加引号</b>的分隔符（<c>||</c> · <c>&&</c> · <c>;</c> · <c>|</c> · 换行）切段。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>必须识别成对引号</b>：<c>node -e "const m=require('x'); console.log(m)"</c> 里的 <c>;</c> 是参数文本而不是命令分隔符。
+    /// 早先的实现直接按字面量切，后半截 <c>console.log(m)"</c> 被当成可执行文件 → 白名单内的合法命令被整条拒绝
+    /// （真机复现：助手想用 <c>node -e</c> 自查依赖入口，被守卫挡下，且该拒绝还被计成「本轮错误」）。
+    /// </para>
+    /// <para>
+    /// 引号规则对齐 pwsh（命令由宿主的 Shell 工具执行）：单引号内除 <c>''</c>（一个字面单引号）外不转义；
+    /// 双引号内用反引号转义。未闭合的引号按「到末尾都在引号内」处理——pwsh 对未闭合引号本身就报语法错，
+    /// 不存在「引号内藏了半条命令还能被执行」的情形。
+    /// </para>
+    /// <para>单个 <c>&</c> 不切段（pwsh 的调用运算符，交给 <see cref="ReadHead"/> 处理），只有 <c>&amp;&amp;</c> 才切。</para>
+    /// </remarks>
+    /// <param name="command">命令原文。</param>
+    /// <returns>命令段（含空段，由调用方跳过）。</returns>
+    private static List<string> SplitSegments(string command)
+    {
+        var segments = new List<string>();
+        var builder = new StringBuilder();
+        var inSingleQuote = false;
+        var inDoubleQuote = false;
+
+        for (var i = 0; i < command.Length; i++)
+        {
+            var current = command[i];
+
+            if (inSingleQuote)
+            {
+                builder.Append(current);
+                if (current != '\'')
+                    continue;
+
+                // pwsh 单引号串内 '' 表示一个字面单引号，不结束引用
+                if (i + 1 < command.Length && command[i + 1] == '\'')
+                {
+                    builder.Append('\'');
+                    i++;
+                    continue;
+                }
+
+                inSingleQuote = false;
+                continue;
+            }
+
+            if (inDoubleQuote)
+            {
+                builder.Append(current);
+                if (current == '`' && i + 1 < command.Length)
+                {
+                    builder.Append(command[i + 1]);
+                    i++;
+                    continue;
+                }
+
+                if (current == '"')
+                    inDoubleQuote = false;
+
+                continue;
+            }
+
+            switch (current)
+            {
+                case '\'':
+                    inSingleQuote = true;
+                    builder.Append(current);
+                    continue;
+
+                case '"':
+                    inDoubleQuote = true;
+                    builder.Append(current);
+                    continue;
+
+                case ';':
+                case '|':
+                case '\r':
+                case '\n':
+                    segments.Add(builder.ToString());
+                    builder.Clear();
+
+                    // || 是一个分隔符，不要把它切成两个空段
+                    if (current == '|' && i + 1 < command.Length && command[i + 1] == '|')
+                        i++;
+
+                    continue;
+
+                case '&':
+                    if (i + 1 < command.Length && command[i + 1] == '&')
+                    {
+                        segments.Add(builder.ToString());
+                        builder.Clear();
+                        i++;
+                        continue;
+                    }
+
+                    builder.Append(current);
+                    continue;
+
+                default:
+                    builder.Append(current);
+                    continue;
+            }
+        }
+
+        segments.Add(builder.ToString());
+        return segments;
     }
 
     /// <summary>

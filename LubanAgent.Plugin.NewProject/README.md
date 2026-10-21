@@ -308,7 +308,7 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 |----|------|
 | 路径 | `{LocalPath}\.luban-agent\plugin-newproject\results\step{4,5}-<时间戳>.json` |
 | schema | `{ "step": 4 或 5, "ok": bool, "checks": [ { "name", "ok", "detail", "command"? } ], "message" }` |
-| 通过判定 | **四环齐**：①文件存在 ②schema 可解析（`StepReportParser`，走源生成上下文） ③`ok` 为真 ④本轮事件流无错误事件 |
+| 通过判定 | **四环齐**：①文件存在 ②schema 可解析（`StepReportParser`，走源生成上下文） ③`ok` 为真 ④本轮事件流无错误事件（**守卫拒绝 / 用户取消不算错误**，见下「助手工具白名单」与 v0.27） |
 | Step 3 之后注意 | 该目录与各端 git 仓库**同级、不在任何仓库内** → Step 6 推送不会把它带进业务仓库 |
 
 放工作区内的理由：①命中「工作区内路径免确认」，不会被工具审批拒；②用户随时可自查（结论文件本身就是本步证据）。
@@ -330,6 +330,8 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
   （后端 `dotnet build`、管理端 Vite/Vue `pnpm install && pnpm run build`）。真机管理端就是 Vite/Vue、无 `.sln`，统一 `dotnet build` 不成立。
 - `checks[].name` **必须用端标识**（`Service` / `Admin` / `Mobile`），**逐端齐全**——漏端即判「该端未给结论」＝**本步失败**（不用「其余端通过」兜底，否则漏跑一端会被静默放过）。
 - **失败阻断 Step 6**；只编译**不修复**、不清理编译产物。
+- **编译失败先查工程 / 仓库基线（真机教训）**：管理端是 pnpm 工作区，若依赖的**构建脚本被跳过**（pnpm 默认不跑依赖的 `postinstall`），包入口（`dist`）不会生成，`vite build` 会报 `Failed to resolve entry for package "…"`。
+  正解是**在管理端仓库侧**执行一次 `pnpm approve-builds`（会把策略写进 `pnpm-workspace.yaml`）或等价地登记 `onlyBuiltDependencies` 后重跑本步——**属仓库配置变更，不归插件、也不该让助手改**（Step 5 边界是「只编译不修复」）。同理：不带参数的 `pnpm approve-builds` 是交互式命令，助手在无 TTY 的 Shell 里跑不动（需带包名或 `--all`）。
 
 ### 助手工具白名单（替代 `BypassPermissions`）
 
@@ -338,9 +340,10 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - **放行**：只读工具（`ReadFileAsync` / `ListDirectoryAsync` / `GetWorkspaceOverviewAsync` / `UseSkillAsync` 等）、`RunPythonAsync`、
   命令在白名单内的 `RunShellAsync`、**工作区内**的写类工具（`WriteFileAsync` / `CopyFileAsync` 按 `destPath` / `MoveFileAsync` 按 `destPath`）。
 - **拒绝**：`RunLuaAsync`、删除类（`DeleteFileAsync` / `DeleteDirectoryAsync`）、技能与 MCP 写删类、越出工作区的写入、未知工具、工作区根未知时的任何写入。
-- **Shell 逐段判定**：按 `&&` / `||` / `;` / `|` / 换行切段，每段取首词（支持 `& "prog"` 与 `"C:\Program Files\...\dotnet.exe"` 引号路径，去目录、去 `.exe/.cmd/.bat/.ps1` 后缀），
+- **Shell 逐段判定**：按 **未加引号** 的 `&&` / `||` / `;` / `|` / 换行切段（引号内的分隔符属参数文本、不切段——`node -e "…;…"` / `git commit -m "a;b"` 必须放行；单引号内除 `''` 外不转义、双引号内反引号转义、未闭合引号按「到末尾都在引号内」处理；单个 `&` 不切段，只有 `&&` 切），每段取首词（支持 `& "prog"` 与 `"C:\Program Files\...\dotnet.exe"` 引号路径，去目录、去 `.exe/.cmd/.bat/.ps1` 后缀），
   首词不在 `AllowedExecutables`（`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `python` / `py` / `python3` / `pip` / `pip3`）与 pwsh 无副作用内置（`cd` / `Set-Location` 等）内即**整条拒绝**；
   `$env:X = "..."` 赋值段视为无副作用放行。
+- **拒绝 ≠ 本轮失败（v0.27）**：被拒的调用**不计进事件流错误**（`AssistantToolPolicy.IsGuardDenial` 认宿主文案「工具调用被拒绝或已取消」），只留在操作记录「被拒明细」里——否则助手**试错一次就被自己的守卫判成整步失败**（四环第④环会中招）。早先的实现正是把守卫拒绝塞进 `errors`，真机两轮都因此判失败。
 
 ### 防死锁：助手不得回调插件
 
@@ -391,7 +394,7 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
 其中与本插件相关的用例：`NewProjectStepPromptsUnitTest`（提示词：口令内联 / 硬边界 / 结论契约 / 端清单）、
 `NewProjectStepReportUnitTest`（结论解析容错 + Step 4 不阻断 + Step 5 逐端归并与漏端即失败 + 事件流有错即失败）、
 `NewProjectDatabaseProbeUnitTest`（参数校验 / 口令脱敏 / 连接串解析不回填口令 / appsettings 容错 / 结论文件路径）、
-`NewProjectAssistantToolPolicyUnitTest`（工具白名单 + Shell 逐段判定 + 越界拒绝）、`StepStateResolverUnitTest`、
+`NewProjectAssistantToolPolicyUnitTest`（工具白名单 + Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫拒绝文案判定**）、`StepStateResolverUnitTest`、
 `DirectoryCleanerUnitTest`、`NewProjectStepGateUnitTest`（**v0.23**：`AdvanceTo` 单调只前进 + `StepGate.CanPush` 判据，
 含「冒烟档案形态」——`CurrentStep=Pipeline` 且无 `Build` 键——的回归锁定）。
 **其余验证仍为手工冒烟**（本插件的 UI 与真机链路）。
@@ -513,6 +516,13 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
 44. **同目录黄字无残留红字**：先制造一条红字（如本地目录填成不存在的盘符后点「下一步」），再把目录改回**档案工作区**目录并点「下一步」
     → 只应看到黄字提示（含「中止并清理」出口那条），**不残留上一轮红字**。
 
+#### P4 复审增补 · v0.27（助手守卫两处真缺陷）
+
+45. **引号内的分号不误伤（回归，必测）**：Step 5 里助手执行含引号内分隔符的命令（`node -e "…;…"` / `git commit -m "a;b"` / `python -c "import sys; print(sys.version)"`）
+    应被**放行并正常执行**（运行记录里该次调用是「放行」而不是「拒绝」）。修复前必被拒——分段器按字面量切 `;`，后半截被当成可执行文件。
+46. **守卫拒绝不判本步失败（回归）**：让助手尝试一条白名单外命令（如 `curl` / `powershell`）→ 该调用被**拒绝**并出现在操作记录「被拒明细」里，
+    但**只要结论文件 `ok` 为真且事件流无真错误，本步仍判通过**（编译通过时应能继续推送）。修复前必判失败——守卫拒绝被当成「本轮事件流有 1 条错误」。
+
 ## 阶段进度
 
 | 批次 | 内容 | 状态 |
@@ -520,6 +530,6 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
 | P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner` + 4 条单测，测试 37/37 通过；待重启 codex 复跑真机 11–21 项） |
-| P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（技术路线 ②：助手亲自执行 + 结论文件回读判定） | **代码完成 + 冒烟缺陷已修（v0.23）**（构建 0 错误；`LubanAgent.Tests` **135/135** 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 / **推进指针与推送闸门** 5 组单测；修复「Step 5 无入口 → 越级推送」根因——步骤条回退导航 + `StepGate.CanPush` 能力层闸门 + 重推入口可见性收紧；并完成审查收口：同目录重提不给破坏性确认、闸门拒绝不写 Push 终态、闸门前置、Step 3 重跑作废旧编译结论、未到达行显式灰化与重推 hover 反馈；v0.25 复审再收口：**落库顺序 P0**（Step 4/5 改为「先记终态再落库」，否则闸门读不到 `StepStates["Build"]` 恒判否）、同目录判据补齐 junction 别名、灰化只绑已到达、黄字清残留红字并补「中止并清理」出口；**待真机冒烟**——见「P4 增补」22–29 与「P4 增补 · 冒烟缺陷修复项」30–44） |
+| P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（技术路线 ②：助手亲自执行 + 结论文件回读判定） | **代码完成 + 冒烟缺陷已修（v0.23）**（构建 0 错误；`LubanAgent.Tests` **135/135** 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 / **推进指针与推送闸门** 5 组单测；修复「Step 5 无入口 → 越级推送」根因——步骤条回退导航 + `StepGate.CanPush` 能力层闸门 + 重推入口可见性收紧；并完成审查收口：同目录重提不给破坏性确认、闸门拒绝不写 Push 终态、闸门前置、Step 3 重跑作废旧编译结论、未到达行显式灰化与重推 hover 反馈；v0.25 复审再收口：**落库顺序 P0**（Step 4/5 改为「先记终态再落库」，否则闸门读不到 `StepStates["Build"]` 恒判否）、同目录判据补齐 junction 别名、灰化只绑已到达、黄字清残留红字并补「中止并清理」出口；**v0.27**：真机 Step 5 冒烟暴露的**助手守卫两处真缺陷**随修——①Shell 逐段判定改为识别成对引号（引号内的 `;` / `|` / `&&` / 换行不再被误切成命令段，`node -e "…;…"` 不再被误拒）；②守卫拒绝不再计入「本轮错误事件」（只留「被拒明细」），不再把助手的一次试错判成整步失败；`LubanAgent.Tests` **137/137**；真机管理端编译失败的根因是**仓库基线**（pnpm 跳过 `@vue-office/docx` 的构建脚本 → 包入口缺失），需在**管理端仓库侧** `pnpm approve-builds`，**不入插件缺陷**；**待真机冒烟**——见「P4 增补」22–29 与「P4 增补 · 冒烟缺陷修复项」30–46） |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
 | P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 进行中（Step 4/5 两个技能正文已按 v0.22 改写为「助手亲自执行」，主 skill 编排顺序已同步；Step 7 与联调待办） |

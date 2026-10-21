@@ -253,4 +253,40 @@ public class NewProjectAssistantToolPolicyUnitTest
         Assert.IsFalse(AssistantToolPolicy.IsAllowedShellCommand("dotnet build A.sln\r\nwget http://x/y", out var offender));
         Assert.AreEqual("wget", offender);
     }
+
+    [TestMethod]
+    public void IsAllowedShellCommand_引号内的分隔符属参数_不切段()
+    {
+        // 真机复现：助手用 node -e 自查依赖入口（引号内 ; 被按字面切段 → 后半截被当成可执行文件 → 整条拒）
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
+            "node -e \"const m = require('@vue-office/docx'); console.log(m)\"", out var offender), offender);
+
+        // 单引号同理
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("node -e 'const a = 1; console.log(a)'", out _));
+
+        // Python 一行脚本、git 提交信息里的分号
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("python -c \"import sys; print(sys.version)\"", out _));
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("git commit -m \"fix: a;b\"", out _));
+
+        // 引号内的换行也不切段
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand("node -e \"a\nb\"", out _));
+
+        // 引号后仍照常切段：第二段越界照样拒
+        Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
+            "node -e \"a;b\" && pnpm run build", out _), "引号闭合后按 && 切段，两段都在白名单内");
+
+        Assert.IsFalse(AssistantToolPolicy.IsAllowedShellCommand("dotnet build A.sln && \"rm -rf /\"", out var second));
+        Assert.AreEqual("rm -rf /", second);
+    }
+
+    [TestMethod]
+    public void IsGuardDenial_只认宿主的中性文案()
+    {
+        Assert.IsTrue(AssistantToolPolicy.IsGuardDenial(AssistantToolPolicy.DeniedOrCancelledMessage));
+        Assert.IsTrue(AssistantToolPolicy.IsGuardDenial("工具失败：工具调用被拒绝或已取消"));
+
+        Assert.IsFalse(AssistantToolPolicy.IsGuardDenial("工具失败：进程退出码 1"));
+        Assert.IsFalse(AssistantToolPolicy.IsGuardDenial(null));
+        Assert.IsFalse(AssistantToolPolicy.IsGuardDenial("   "));
+    }
 }
