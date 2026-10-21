@@ -38,7 +38,7 @@ public enum WizardStep
     /// <summary>Step 3：按模板建库并克隆。</summary>
     Repositories = 3,
 
-    /// <summary>Step 4：配置与建库。</summary>
+    /// <summary>Step 4：数据库探活（只读，不建库、不写配置）。</summary>
     Database = 4,
 
     /// <summary>Step 5：编译检查。</summary>
@@ -157,21 +157,43 @@ public sealed class EndRepository
 }
 
 /// <summary>
-/// 数据库配置（Step 4）。
+/// 数据库探活参数与结论（Step 4，<b>v0.22 口径</b>）。
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>v0.22 起 Step 4 只探活</b>：插件<b>不</b>生成连接串、<b>不</b>改 <c>appsettings*.json</c>、<b>不</b>建库、
+/// 不执行任何 SQL；本对象只记「界面填了什么（非敏感项）」与「探活结论」，用于表单回填与重启后复核。
+/// </para>
+/// <para>
+/// <b>口令不落档案</b>：口令只在内存中随本轮提示词交给助手（PRD §4.8 已记录该口径及其残余影响），
+/// 一律不写入本档案、日志与操作记录。
+/// </para>
+/// </remarks>
 public sealed class DatabaseOptions
 {
-    /// <summary>数据库类型标识。</summary>
+    /// <summary>数据库类型标识（当前只用 <c>mysql</c>）。</summary>
     public string Provider { get; set; } = "mysql";
 
-    /// <summary>连接串（<b>不含</b>明文口令以外的敏感信息时也应避免落日志）。</summary>
-    public string ConnectionString { get; set; } = string.Empty;
+    /// <summary>服务器（主机名或 IP）。</summary>
+    public string Host { get; set; } = string.Empty;
 
-    /// <summary>建库脚本路径（可选；为空表示仅写配置）。</summary>
-    public string? ScriptPath { get; set; }
+    /// <summary>端口（默认 MySQL 3306）。</summary>
+    public int Port { get; set; } = 3306;
 
-    /// <summary>建库是否已执行成功。</summary>
-    public bool Created { get; set; }
+    /// <summary>库名（<b>由用户手工创建</b>，插件不建库）。</summary>
+    public string Database { get; set; } = string.Empty;
+
+    /// <summary>账号。</summary>
+    public string User { get; set; } = string.Empty;
+
+    /// <summary>最近一次探活是否通过（判定口径＝能连上且该库存在）。</summary>
+    public bool ProbeOk { get; set; }
+
+    /// <summary>最近一次探活结论（失败时为可操作原因，如 <c>1049 Unknown database</c>）。</summary>
+    public string ProbeMessage { get; set; } = string.Empty;
+
+    /// <summary>最近一次探活时间。</summary>
+    public DateTimeOffset? ProbedAt { get; set; }
 }
 
 /// <summary>
@@ -293,8 +315,18 @@ public sealed class ProjectSpec
     public List<EndRepository> Repositories { get; set; } = new();
 
     // ── Step 4：数据库 ───────────────────────────────────────────────
-    /// <summary>数据库配置。</summary>
+    /// <summary>数据库探活参数与结论。</summary>
     public DatabaseOptions Database { get; set; } = new();
+
+    // ── Step 5：逐端编译 ─────────────────────────────────────────────
+    /// <summary>
+    /// 逐端编译结果（最近一次 Step 5 的结论）。
+    /// </summary>
+    /// <remarks>
+    /// 落档案的理由与 <see cref="StepStates"/> 同源：编译结论必须跨重启可复核（哪端过了、用的什么命令、错在哪），
+    /// 且 Step 6 的「失败阻断」判定也读这里。全部端通过才允许推进到 Step 6。
+    /// </remarks>
+    public List<EndBuildResult> BuildResults { get; set; } = new();
 
     // ── 云效相关 ─────────────────────────────────────────────────────
     /// <summary>云效 PAT 的凭据键名（<b>不含</b>令牌明文，PRD §4.5）。</summary>
@@ -322,4 +354,18 @@ public sealed class ProjectSpec
 
     /// <summary>当前推进到的步骤。</summary>
     public WizardStep CurrentStep { get; set; } = WizardStep.BasicInfo;
+
+    /// <summary>
+    /// 各步骤的<b>终态快照</b>：键为 <see cref="WizardStep"/> 名称、值为 <see cref="StepStatus"/> 名称。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 必须落档案的原因：<b>操作记录只在内存里</b>（进程重启即空），而步骤条的状态一律取自「记录的真实终态」。
+    /// 若只读记录，重启后已经跑完的步骤会全部退回「未开始」（与档案里的
+    /// <see cref="EndRepository.Cloned" />、<see cref="RemoteArtifacts" /> 自相矛盾）。
+    /// 故共享能力层在每次落库时把本步终态写进这里，面板按「档案快照 ⊕ 本次运行记录（更新者优先）」渲染。
+    /// </para>
+    /// <para>只落终态（成功 / 失败 / 已跳过）；进行中属易失状态，不落档案。</para>
+    /// </remarks>
+    public Dictionary<string, string> StepStates { get; set; } = new();
 }

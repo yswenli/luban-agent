@@ -321,8 +321,7 @@ public sealed class NewProjectService : INewProjectService
         }
 
         Current = spec;
-        _store.Save(spec);
-        RaiseChanged();
+        SaveSpec(spec);
 
         return spec;
     }
@@ -485,8 +484,7 @@ public sealed class NewProjectService : INewProjectService
 
             // ── 9. 落库并推进到 Step 3 ─────────────────────────────────────────────
             spec.CurrentStep = WizardStep.Repositories;
-            _store.Save(spec);
-            RaiseChanged();
+            SaveSpec(spec);
 
             total.Stop();
             var message = $"初始化完成：工作区「{workspace.Name}」· 会话 {sessionId} · "
@@ -529,8 +527,7 @@ public sealed class NewProjectService : INewProjectService
             }
 
             spec.CurrentStep = WizardStep.BasicInfo;
-            _store.Save(spec);
-            RaiseChanged();
+            SaveSpec(spec);
 
             return StepResult.Fail(Step,
                 $"Step 2 初始化失败：{ex.Message}（已回滚本步；修正后可直接重跑本步）");
@@ -622,8 +619,7 @@ public sealed class NewProjectService : INewProjectService
             target.LocalPath = ResolveRepositoryLocalPath(spec, target.End, name);
         }
 
-        _store.Save(spec);
-        RaiseChanged();
+        SaveSpec(spec);
     }
 
     /// <inheritdoc />
@@ -1145,182 +1141,281 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <inheritdoc />
-    public Task<StepResult> SetupDatabaseAsync(CancellationToken cancellationToken = default)
-        => NotYetAsync(WizardStep.Database, "M4-P4");
-
-    /// <inheritdoc />
-    public Task<StepResult> BuildAsync(CancellationToken cancellationToken = default)
-        => NotYetAsync(WizardStep.Build, "M4-P4");
-
-    /// <summary>
-    /// 【T0 SPIKE · 临时】验证「插件经宿主既有服务自跑一轮提示词」技术路线（PRD M4-P4 前置 spike）。
-    /// </summary>
     /// <remarks>
-    /// <para>只做只读探测 + 一轮提示词：不写任何项目配置、不动 <c>appsettings</c>；结论全部落到操作记录区。</para>
-    /// <para>待验证三点：① Step 4 时目标会话运行时是否存在（不存在则按既定口径自动创建/唤起会话）；
-    /// ② <c>RunStreamingAsync</c> 事件流能否驱动，以及 Agent 用脚本工具写出的结果文件能否被插件回读；
-    /// ③ 与 UI 聊天的并发防护（回合串行 / <c>SessionRuntime.IsRunning</c>）。</para>
-    /// <para>验证通过后本方法由 Step 4 正式实现取代并删除，不属于最终交付物。</para>
+    /// <para><b>执行形态（路线 ②）</b>：插件把参数交给项目会话的助手，由助手用脚本工具自己连库探活，并把结论写进约定文件；插件回读结论、给出可展示的判定。</para>
+    /// <para><b>v0.22 口径</b>：只探活——不写任何项目文件 / <c>appsettings</c>、不建库、不执行任何 SQL；判定只看「能连上且库存在」，结果<b>不阻断</b>，本步结束即推进到 Step 5。</para>
+    /// <para><b>口令</b>：只在内存（内联进本轮提示词），不落档案、不写日志、操作记录一律 <c>***</c>。</para>
     /// </remarks>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>诊断结果。</returns>
-    internal async Task<StepResult> RunHostBridgeSpikeAsync(CancellationToken cancellationToken = default)
+    public async Task<StepResult> SetupDatabaseAsync(DatabaseProbeRequest request, CancellationToken cancellationToken = default)
     {
         const WizardStep Step = WizardStep.Database;
+        const string Action = "数据库探活（只读）";
+
         var spec = Current;
         if (spec is null)
-            return StepResult.Fail(Step, "尚未建立项目档案，请先完成第 1 步。");
-
-        var lines = new List<string>();
-        var watch = Stopwatch.StartNew();
-
-        StepResult Fail(string reason)
         {
-            lines.Add("✖ " + reason);
-            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines), StepStatus.Failed, watch.Elapsed);
-            return StepResult.Fail(Step, reason);
+            Record(Step, Action, "尚未建立项目档案，请先完成 Step 1。", StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
+
+        if (request is null)
+        {
+            const string Empty = "探活参数为空。";
+            Record(Step, Action, Empty, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Empty);
+        }
+
+        if (!request.TryValidate(out var invalid))
+        {
+            Record(Step, Action, invalid, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, invalid);
+        }
+
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
+        {
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        var watch = BeginOperation(Step, Action, $"目标 {request.Describe()}");
 
         try
         {
-            var runtimes = Resolve<SessionRuntimeManager>();
-            if (runtimes is null)
-                return Fail("宿主未注册 SessionRuntimeManager，无法验证。");
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath, 4);
+            StepResultFile.EnsureDirectory(resultFile);
 
-            var sessions = ResolveSessionManager();
-            var sessionId = spec.SessionId;
-            if (string.IsNullOrWhiteSpace(sessionId))
-            {
-                sessionId = sessions?.CurrentSession?.SessionId;
-                lines.Add($"档案无 SessionId，回退当前会话：{sessionId ?? "(无)"}");
-            }
-            else
-            {
-                lines.Add($"目标会话（档案 SessionId）：{sessionId}");
-            }
+            var outcome = await CreateBridge()
+                .RunAsync(spec, StepPrompts.BuildDatabaseProbePrompt(spec, request, resultFile), resultFile, cancellationToken)
+                .ConfigureAwait(false);
 
-            // ① 目标会话运行时是否存在
-            var runtime = string.IsNullOrWhiteSpace(sessionId) ? null : runtimes.Get(sessionId);
-            lines.Add($"① 运行前 runtime 存在 = {runtime is not null}");
+            // 非敏感参数回填档案（口令不落档案）
+            spec.Database.Provider = "mysql";
+            spec.Database.Host = request.Host.Trim();
+            spec.Database.Port = request.Port;
+            spec.Database.Database = request.Database.Trim();
+            spec.Database.User = request.User.Trim();
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
 
-            // ② 不存在 → 自动创建/唤起会话（已确认口径：允许插件自动创建会话）
-            if (runtime is null)
-            {
-                if (string.IsNullOrWhiteSpace(sessionId))
-                {
-                    if (sessions is null)
-                        return Fail("会话管理器不可用，无法自动创建会话。");
+            var (probed, message) = InterpretProbe(outcome);
+            spec.Database.ProbeOk = probed;
+            spec.Database.ProbeMessage = message;
+            spec.Database.ProbedAt = DateTimeOffset.Now;
 
-                    var created = await sessions.CreateSessionAsync(
-                        string.IsNullOrWhiteSpace(spec.Name) ? "新建项目" : $"新建项目：{spec.Name}",
-                        spec.WorkspaceId);
-                    sessionId = created.SessionId;
-                    spec.SessionId = sessionId;
-                    SaveSpec(spec);
-                    lines.Add($"② 已自动创建会话：{sessionId}");
-                }
+            // 探活结果不阻断（v0.22 定案）：无论通过与否都推进到 Step 5
+            spec.CurrentStep = WizardStep.Build;
+            SaveSpec(spec);
 
-                var factory = _host?.Services.GetService(typeof(IServiceScopeFactory)) as IServiceScopeFactory;
-                using var bootstrapScope = factory?.CreateUserScope(LocalUserDefaults.DefaultUserId);
-                var bootstrap = bootstrapScope?.ServiceProvider.GetService(typeof(AgentHostService)) as AgentHostService;
-                if (bootstrap is null)
-                    return Fail("无法从用户 scope 解析 AgentHostService，自动创建运行时失败。");
+            var lines = DescribeTurn(outcome, resultFile);
+            lines.Add($"结论：{message}");
+            EndOperation(Step, Action, string.Join("\n", lines),
+                probed ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
 
-                await bootstrap.InitializeAsync(sessionId!, cancellationToken);
-                runtime = runtimes.Get(sessionId!);
-                lines.Add($"② InitializeAsync 后 runtime 存在 = {runtime is not null}");
-            }
-
-            if (runtime is null)
-                return Fail("目标会话运行时仍不存在：spike 第 1 项不通过。");
-
-            // ③ 与 UI 聊天的并发读数
-            lines.Add($"③ 运行前 IsRunning = {runtime.IsRunning}（true 表示正被 UI 聊天占用，本回合将排队）");
-
-            var runner = runtime.Services.GetService(typeof(AgentHostService)) as AgentHostService;
-            if (runner is null)
-                return Fail("会话 scope 内无法解析 AgentHostService。");
-
-            // ④ 结果文件 + 提示词（让 Agent 用脚本工具原样执行一段 Python 写文件）
-            var resultFile = Path.Combine(Path.GetTempPath(), "luban-newproject-spike", $"hostbridge-{Guid.NewGuid():N}.json");
-            Directory.CreateDirectory(Path.GetDirectoryName(resultFile)!);
-
-            var script = string.Join('\n', new[]
-            {
-                "import json, os, sys, time",
-                $"p = r\"{resultFile}\"",
-                "data = {\"spike\": \"runpython-ok\", \"pid\": os.getpid(), \"python\": sys.version.split()[0], \"ts\": time.time()}",
-                "with open(p, \"w\", encoding=\"utf-8\") as f:",
-                "    json.dump(data, f, ensure_ascii=False)",
-                "print(json.dumps(data, ensure_ascii=False))"
-            });
-
-            var prompt =
-                "这是一次宿主能力自检。请严格按下面两步执行，不要做额外探索，不要修改任何项目文件：\n"
-                + "1) 使用脚本工具里的 Python 执行一次（工具名 runpython），脚本内容原样照抄、不要改动其中的路径：\n"
-                + "```python\n" + script + "\n```\n"
-                + "2) 执行成功后只回复一行 DONE；若失败，回复 FAILED 并附上错误原因。";
-
-            var toolCalls = new List<string>();
-            var textLength = 0;
-            var errors = new List<string>();
-
-            await foreach (var evt in runner.RunStreamingAsync(
-                prompt,
-                Array.Empty<string>(),
-                static (_, _) => ConfirmResult.Allow,
-                ToolPermissionMode.BypassPermissions,
-                sessionId: sessionId,
-                ct: cancellationToken))
-            {
-                switch (evt)
-                {
-                    case ToolCallStartedEvent started:
-                        toolCalls.Add(started.Name);
-                        break;
-                    case TextDeltaEvent delta:
-                        textLength += delta.Delta?.Length ?? 0;
-                        break;
-                    case ToolCallFailedEvent failed:
-                        errors.Add($"工具失败 {failed.Error}");
-                        break;
-                    case ErrorEvent error:
-                        errors.Add(error.Message);
-                        break;
-                }
-            }
-
-            lines.Add($"④ 事件流结束：耗时 {watch.Elapsed.TotalSeconds:F1}s · 工具调用 [{string.Join(", ", toolCalls)}] · 正文 {textLength} 字");
-            if (errors.Count > 0)
-                lines.Add("   错误事件：" + string.Join(" | ", errors));
-
-            // ⑤ 结果文件回读（不解析 ResultSummary：其仅前 200 字符，长结果会被截断）
-            var exists = File.Exists(resultFile);
-            lines.Add($"⑤ 结果文件存在 = {exists}（{resultFile}）");
-            if (exists)
-                lines.Add("   内容：" + await File.ReadAllTextAsync(resultFile, cancellationToken));
-
-            lines.Add($"③ 运行后 IsRunning = {runtime.IsRunning}");
-
-            var ok = exists && toolCalls.Count > 0 && errors.Count == 0;
-            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines),
-                ok ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
-
-            return ok
-                ? StepResult.Ok(Step, "T0 spike 通过：会话运行时可达 · 事件流可驱动 · 结果文件可回读。")
-                : StepResult.Fail(Step, "T0 spike 未全部通过，详见右侧操作记录。");
+            return probed ? StepResult.Ok(Step, message) : StepResult.Fail(Step, message);
         }
         catch (OperationCanceledException)
         {
-            return Fail("已取消。");
+            EndOperation(Step, Action, "已取消（档案未推进，可直接重跑本步）。", StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, "第 4 步数据库探活已取消。");
         }
         catch (Exception ex)
         {
-            _host?.LogError("[newproject] T0 spike 异常", ex);
-            lines.Add($"异常：{ex.GetType().Name} {ex.Message}");
-            Record(Step, "T0 诊断：宿主自跑一轮", string.Join("\n", lines), StepStatus.Failed, watch.Elapsed);
-            return StepResult.Fail(Step, $"T0 spike 异常：{ex.Message}");
+            _host?.LogError("[newproject] Step 4 数据库探活失败", ex);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, $"第 4 步失败：{ex.Message}");
         }
+    }
+
+    /// <inheritdoc />
+    public DatabaseProbeRequest SuggestDatabaseProbe()
+    {
+        var spec = Current;
+        if (spec is null)
+            return new DatabaseProbeRequest { Port = 3306 };
+
+        // ① 档案里已填过的非敏感参数优先（重启后仍能回填，口令除外）
+        if (!string.IsNullOrWhiteSpace(spec.Database.Host))
+        {
+            return new DatabaseProbeRequest
+            {
+                Host = spec.Database.Host,
+                Port = spec.Database.Port > 0 ? spec.Database.Port : 3306,
+                Database = spec.Database.Database,
+                User = spec.Database.User
+            };
+        }
+
+        // ② 否则从已克隆的后端仓库 WebHost/appsettings.json 的连接串推导（只读、绝不回填口令）
+        var backend = PlanRepositories(spec)
+            .FirstOrDefault(repository => repository.End == ProjectEnd.Service && repository.Cloned);
+
+        if (backend is null || string.IsNullOrWhiteSpace(backend.LocalPath))
+            return new DatabaseProbeRequest { Port = 3306 };
+
+        return DatabaseProbeDefaults.FromBackendRepository(backend.LocalPath);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>执行形态（路线 ②）</b>：编译命令<b>由助手按工程类型自行判断</b>（后端 <c>dotnet build</c>、前端 <c>pnpm run build</c> 等），插件只提供白名单与结论契约。</para>
+    /// <para><b>失败阻断</b>：只要有一端未通过（含「助手漏给某端结论」），档案就不推进到 Step 6；修好后重跑本步即可。</para>
+    /// </remarks>
+    public async Task<StepResult> BuildAsync(CancellationToken cancellationToken = default)
+    {
+        const WizardStep Step = WizardStep.Build;
+        const string Action = "逐端编译检查";
+
+        var spec = Current;
+        if (spec is null)
+        {
+            Record(Step, Action, "尚未建立项目档案，请先完成 Step 1。", StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
+        }
+
+        var targets = PlanRepositories(spec)
+            .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.LocalPath))
+            .ToList();
+        if (targets.Count == 0)
+        {
+            const string Tip = "没有任何已克隆的端可编译：请先完成 Step 3（按模板建库并克隆）。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
+        {
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        var ends = targets.Select(repository => repository.End).Distinct().ToList();
+        var watch = BeginOperation(Step, Action, string.Join("、", ends.Select(EndLabel)) + "端");
+
+        try
+        {
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath, 5);
+            StepResultFile.EnsureDirectory(resultFile);
+
+            var outcome = await CreateBridge()
+                .RunAsync(spec, StepPrompts.BuildCompilePrompt(spec, targets, resultFile), resultFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
+
+            var (passed, results, message) = InterpretBuild(outcome, ends);
+            if (results.Count > 0)
+                spec.BuildResults = results;
+
+            // 失败阻断（D4）：未全部通过就不推进到 Step 6
+            if (passed)
+                spec.CurrentStep = WizardStep.Push;
+
+            SaveSpec(spec);
+
+            var lines = DescribeTurn(outcome, resultFile);
+            lines.Add($"结论：{message}");
+            EndOperation(Step, Action, string.Join("\n", lines),
+                passed ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            return passed ? StepResult.Ok(Step, message) : StepResult.Fail(Step, message);
+        }
+        catch (OperationCanceledException)
+        {
+            EndOperation(Step, Action, "已取消（档案未推进：本步失败会阻断 Step 6）。", StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, "第 5 步编译检查已取消。");
+        }
+        catch (Exception ex)
+        {
+            _host?.LogError("[newproject] Step 5 编译检查失败", ex);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, $"第 5 步失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 创建「插件 → 宿主会话助手」的桥接层（路线 ②）。
+    /// </summary>
+    /// <returns>桥接层实例（每次现建，用完即弃）。</returns>
+    private HostAssistantBridge CreateBridge() => new(ResolveByType, ResolveSessionManager, _host);
+
+    /// <summary>
+    /// 把一轮提示词的事件流读数压成操作记录里的可读行（<b>不含口令</b>）。
+    /// </summary>
+    /// <param name="outcome">执行读数。</param>
+    /// <param name="resultFile">结论文件路径。</param>
+    /// <returns>多行文本。</returns>
+    private static List<string> DescribeTurn(HostAssistantBridge.TurnOutcome outcome, string resultFile)
+    {
+        var lines = new List<string>
+        {
+            $"会话：{outcome.SessionId ?? "(无)"}（新建会话={outcome.SessionCreated} · 唤起运行时={outcome.RuntimeBootstrapped}"
+                + $" · 下发时被聊天占用={outcome.WasBusy}）",
+            $"耗时 {outcome.Elapsed.TotalSeconds:F1}s · 工具调用 "
+                + (outcome.ToolCalls.Count == 0 ? "（无）" : string.Join(", ", outcome.ToolCalls))
+                + $" · 正文 {outcome.TextLength} 字",
+            $"工具审批：放行 {outcome.Approvals.Count} 次 / 拒绝 {outcome.Denials.Count} 次"
+        };
+
+        if (outcome.Denials.Count > 0)
+            lines.Add("　被拒明细：" + string.Join("；", outcome.Denials.Take(3)));
+
+        if (outcome.Errors.Count > 0)
+            lines.Add("　错误事件：" + string.Join("；", outcome.Errors.Take(3)));
+
+        lines.Add($"结论文件：{resultFile}（{(outcome.ResultFileContent is null ? "未产出" : "已回读")}）");
+
+        if (!string.IsNullOrWhiteSpace(outcome.Failure))
+            lines.Add("　未跑起来：" + outcome.Failure);
+
+        return lines;
+    }
+
+    /// <summary>
+    /// Step 4 判定：四环齐才算通过（结论文件存在 + 可解析 + <c>ok</c> + 事件流无错误）。
+    /// </summary>
+    /// <param name="outcome">执行读数。</param>
+    /// <returns>是否通过 + 可展示结论。</returns>
+    private static (bool Ok, string Message) InterpretProbe(HostAssistantBridge.TurnOutcome outcome)
+    {
+        if (!outcome.Ran)
+            return (false, $"本步未能跑起来：{outcome.Failure}");
+
+        if (outcome.ResultFileContent is null)
+            return (false, $"助手未产出结论文件（{outcome.ResultFile}），无法判定探活结果。");
+
+        if (!StepReportParser.TryParse(outcome.ResultFileContent, out var report, out var parseError))
+            return (false, parseError);
+
+        return StepReportEvaluator.EvaluateProbe(report!, outcome.Errors);
+    }
+
+    /// <summary>
+    /// Step 5 判定：逐端归并 + 失败阻断判定。
+    /// </summary>
+    /// <param name="outcome">执行读数。</param>
+    /// <param name="ends">本次要求编译的端。</param>
+    /// <returns>是否通过 + 逐端结果 + 可展示结论。</returns>
+    private static (bool Ok, List<EndBuildResult> Results, string Message) InterpretBuild(
+        HostAssistantBridge.TurnOutcome outcome,
+        IReadOnlyList<ProjectEnd> ends)
+    {
+        if (!outcome.Ran)
+            return (false, new List<EndBuildResult>(), $"本步未能跑起来：{outcome.Failure}");
+
+        if (outcome.ResultFileContent is null)
+            return (false, new List<EndBuildResult>(), $"助手未产出结论文件（{outcome.ResultFile}），无法判定编译结果。");
+
+        if (!StepReportParser.TryParse(outcome.ResultFileContent, out var report, out var parseError))
+            return (false, new List<EndBuildResult>(), parseError);
+
+        return StepReportEvaluator.EvaluateBuild(report!, ends, outcome.Errors);
     }
 
     /// <inheritdoc />
@@ -1821,8 +1916,35 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="spec">项目档案。</param>
     private void SaveSpec(ProjectSpec spec)
     {
+        SnapshotStepStates(spec);
         _store.Save(spec);
         RaiseChanged();
+    }
+
+    /// <summary>
+    /// 把本次运行的步骤终态写回档案（唯一落库出口 <see cref="SaveSpec" /> 的一部分）。
+    /// </summary>
+    /// <remarks>
+    /// 操作记录只在内存（重启即空），步骤条要跨重启保住状态就只能落档案；此处按发生顺序回放本次记录，
+    /// 每一步「最后一次出现的终态」即该步快照（进行中不落，属易失状态）。失败步骤若要「重跑后转成功」，
+    /// 由后一条成功记录覆盖，与时间线语义一致。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void SnapshotStepStates(ProjectSpec spec)
+    {
+        OperationRecord[] snapshot;
+        lock (_gate)
+        {
+            snapshot = _operations.ToArray();
+        }
+
+        foreach (var record in snapshot)
+        {
+            if (record.Status is not (StepStatus.Succeeded or StepStatus.Failed or StepStatus.Skipped))
+                continue;
+
+            spec.StepStates[record.Step.ToString()] = record.Status.ToString();
+        }
     }
 
     /// <summary>
@@ -1832,14 +1954,22 @@ public sealed class NewProjectService : INewProjectService
     /// <returns>服务实例；未注册或解析失败时为 <c>null</c>。</returns>
     private T? Resolve<T>()
         where T : class
+        => ResolveByType(typeof(T)) as T;
+
+    /// <summary>
+    /// 按 <see cref="Type"/> 从宿主根容器按需解析服务（供桥接层等只持有 <c>Func&lt;Type, object?&gt;</c> 的场景复用同一条通路）。
+    /// </summary>
+    /// <param name="serviceType">服务类型。</param>
+    /// <returns>服务实例；未注册或解析失败时为 <c>null</c>。</returns>
+    private object? ResolveByType(Type serviceType)
     {
         try
         {
-            return _host?.Services.GetService(typeof(T)) as T;
+            return _host?.Services.GetService(serviceType);
         }
         catch (Exception ex)
         {
-            Logger.Warn($"[newproject] 解析宿主服务 {typeof(T).Name} 失败。", ex);
+            Logger.Warn($"[newproject] 解析宿主服务 {serviceType.Name} 失败。", ex);
             return null;
         }
     }

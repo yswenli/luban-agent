@@ -42,6 +42,7 @@ namespace LubanAgent.Plugin.NewProject.Serialization;
     WriteIndented = true)]
 [JsonSerializable(typeof(NewProjectSettings))]
 [JsonSerializable(typeof(ProjectSpec))]
+[JsonSerializable(typeof(StepReport))]
 internal partial class PluginJsonContext : JsonSerializerContext
 {
 }

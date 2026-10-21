@@ -37,6 +37,8 @@
     <ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
     <!-- 产品侧连接器配置写入器（ConfigManager : IConnectorConfigWriter） -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+    <!-- 「新建项目」插件的共享能力层（步骤状态归并等纯逻辑，供单测覆盖；UI 部分不参与测试） -->
+    <ProjectReference Include="..\LubanAgent.Plugin.NewProject\LubanAgent.Plugin.NewProject.csproj" />
   </ItemGroup>
 
   <ItemGroup>

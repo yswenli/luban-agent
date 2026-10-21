@@ -1,10 +1,11 @@
 # LubanAgent.Plugin.NewProject（新建项目插件）
 
-> PRD：`docs/PRD-插件体系与新建项目插件.md`（v0.18）· 里程碑 **M4**
+> PRD：`docs/PRD-插件体系与新建项目插件.md`（v0.22）· 里程碑 **M4**
 > 插件标识：`com.tjces.newproject` · 显示名：新建项目
 
 以 TJCES 三端模板仓创建新项目：**七步向导**（左侧栏面板）+ **聊天式入口**（`newproject-*` 技能），
 两条入口共用同一个 `INewProjectService`，云效逻辑零分叉。
+**（v0.22）** Step 4 / Step 5 的动作**不由插件执行**：插件下发提示词与硬边界 → **项目会话的助手亲自探活 / 编译** → 插件回读**结论文件**判定（技术路线 ②）。
 
 ## 目录结构
 
@@ -18,13 +19,22 @@ LubanAgent.Plugin.NewProject/
 │  ├─ ProjectSpec.cs                     # 项目档案与相关模型（PRD §4.5）
 │  ├─ BasicInfoValidation.cs             # Step 1 校验结果（字段级错误 + 非阻断提示，面板与聊天入口共用）
 │  ├─ RepositoryPrecheck.cs              # Step 3 预检读数（只读：代码组 / 模板库 / pin / 仓库名 / 落地位置）
+│  ├─ DatabaseProbe.cs                   # Step 4 探活参数（含校验与口令脱敏的 Describe）
+│  ├─ StepReport.cs                      # Step 4/5 结论文件模型（step / ok / checks[] / message）
 │  └─ INewProjectService.cs              # 共享能力层契约（PRD §4.10.2）
 ├─ Configuration/NewProjectSettings.cs   # 包内配置读取（模板对照 / 占位符规则 / 参考流水线）
 ├─ Serialization/PluginJsonContext.cs    # 源生成 JSON 上下文（插件持久化的唯一入口，见下）
 ├─ Services/
 │  ├─ NewProjectService.cs               # 共享能力层实现（P4~P5 分批补齐）
 │  ├─ PlaceholderReplacer.cs             # 克隆后的占位符替换（内容 + 文件/目录名）
-│  └─ NewProjectStateStore.cs            # 档案持久化（残留检测 / 孤儿清单）
+│  ├─ NewProjectStateStore.cs            # 档案持久化（残留检测 / 孤儿清单）
+│  ├─ HostAssistantBridge.cs             # 路线② 桥接层：经宿主服务在项目会话上跑一轮提示词（P4）
+│  ├─ StepPrompts.cs                     # Step 4/5 提示词构造（纯函数，锁死边界与结论契约）
+│  ├─ StepReportParser.cs                # 结论文件解析（源生成上下文，不抛异常）
+│  ├─ StepReportEvaluator.cs             # 结论归并与阻断判定（纯函数）
+│  ├─ StepResultFile.cs                   # 结论文件路径约定（工作区内，不在任何 git 仓库里）
+│  ├─ AssistantToolPolicy.cs             # 助手工具白名单（替代 BypassPermissions）
+│  └─ DatabaseProbeDefaults.cs           # Step 4 默认值：解析 appsettings.json 连接串装配参数
 ├─ Ui/WizardPanel.cs                     # 向导面板（UserControl + IPluginPanel，纯代码 UI）
 └─ skills/                               # 6 个技能正文（随插件包分发，落到工作区）
 ```
@@ -228,14 +238,74 @@ Step 6 的本地提交由插件自己拉起 git，故必须声明后两组——
 
 左列从「单表单」改为「常驻状态卡 + 按 `CurrentStep` 切换的操作区」：
 
-- 常驻：校验错误 / 非阻断提示 / 忙碌文案 / 残留横幅 + 「档案与维护」（重跑 Step 2 / 中止并清理）；
+- 常驻：校验错误 / 非阻断提示 / 忙碌文案 / 残留横幅 + 「档案与维护」（重跑 Step 2 / 重新推送（重跑 Step 6）/ 中止并清理）；
 - Step 1 表单（`BasicInfo` / `Scaffold`）；
 - Step 3 确认区（`Repositories`）：逐端仓库名 / 可见性单选 / 归属组织只读 / 落地位置 / **预检卡片（「预检（只读，不创建）」按钮 + 读数）** / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
-- Step 4-5 占位（`Database` / `Build`，含临时「直接执行推送」入口，P4 落地后移除）；
-- Step 6 推送区（`Push`）；Step 7 占位（`Pipeline`）。
+- Step 4 探活表单（`Database`）：服务器 / 端口 / 库名 / 账号 / 口令（默认值取自克隆下来的 `WebHost/appsettings.json`，口令用 `PasswordChar` 遮蔽且不回填）+ 「开始探活（只读，不建库）」+ 结论区（读档案，跨重启可见）；
+- Step 5 逐端卡（`Build`）：所选端逐条显示「通过 / 失败 / 未勾选」，附**实际执行的命令**与失败摘要 + 「开始编译（逐端）」；
+- Step 6 推送区（`Push`）；Step 7 占位（`Pipeline`，只说明「P5 未实现」）；
 
 > 冲突三选一即使处于「忙碌」态也**保持可点**——它回答的正是运行中提出的问题，锁掉会把能力层挂到超时。
 > 「创建并克隆」只在**预检通过且未被输入变更作废**时可用；未预检就点会被拦下并提示先预检（预检读数在执行后被消耗，重跑需重新预检）。
+
+## Step 4 / Step 5 实现要点（P4 定案 · 技术路线 ②）
+
+### 为什么「插件不代劳」
+
+Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作区内、用宿主已有的能力**就能完成。
+若由插件自己实现，等于把「脚本执行 / 文件写入 / 进程拉起」在插件侧再实现一遍，且与「聊天入口里助手执行」形成两套。
+故定案：**插件只负责「下发提示词 + 固定边界 + 回读结论」**，动作交给**项目会话里的助手**（技术路线 ②）。
+
+### 判定一律以「结论文件」为准（不解析对话正文）
+
+| 项 | 约定 |
+|----|------|
+| 路径 | `{LocalPath}\.luban-agent\plugin-newproject\results\step{4,5}-<时间戳>.json` |
+| schema | `{ "step": 4 或 5, "ok": bool, "checks": [ { "name", "ok", "detail", "command"? } ], "message" }` |
+| 通过判定 | **四环齐**：①文件存在 ②schema 可解析（`StepReportParser`，走源生成上下文） ③`ok` 为真 ④本轮事件流无错误事件 |
+| Step 3 之后注意 | 该目录与各端 git 仓库**同级、不在任何仓库内** → Step 6 推送不会把它带进业务仓库 |
+
+放工作区内的理由：①命中「工作区内路径免确认」，不会被工具审批拒；②用户随时可自查（结论文件本身就是本步证据）。
+
+### Step 4：只探活（v0.22 收窄）
+
+- **只做一件事**：确认「能连上且库已存在」。**不建库、不执行任何 SQL、不生成/修改任何项目文件与配置**（唯一写入＝结论文件）。
+- **不阻断**：探活未通过照常进 Step 5，只给可操作原因（`1049 Unknown database` → 提示手工建库后重跑）。
+- **默认值**：从克隆下来的后端 `WebHost/appsettings.json` 的连接串预填服务器 / 端口 / 库名 / 账号
+  （`DbConnectionOptions:ConnectionConfigs[0]:ConnectionString`；解析容错 `//` 注释与尾随逗号）；
+  **口令不回填**（界面 `PasswordChar` 遮蔽，用户重填）。
+- **落档**：服务器 / 端口 / 库名 / 账号回写 `spec.json`；**口令不落档、不写日志**，操作记录一律 `***`（`DatabaseProbeRequest.Describe()`）。
+- **口令传递＝方案 A（用户裁决）**：口令**明文内联进本轮提示词**。**已知残余风险**：会随框架会话历史落进
+  `luban-ai-agent.db`，并在该会话后续轮回灌模型上下文（已记入 PRD §4.8 第 19 条）。曾评估未采纳：系统临时口令文件 / 插件写含口令的探活脚本 / 插件直连探活。
+
+### Step 5：逐端编译（编译方式交助手判断）
+
+- **插件不预设命令**：助手先看仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml`）再自行决定
+  （后端 `dotnet build`、管理端 Vite/Vue `pnpm install && pnpm run build`）。真机管理端就是 Vite/Vue、无 `.sln`，统一 `dotnet build` 不成立。
+- `checks[].name` **必须用端标识**（`Service` / `Admin` / `Mobile`），**逐端齐全**——漏端即判「该端未给结论」＝**本步失败**（不用「其余端通过」兜底，否则漏跑一端会被静默放过）。
+- **失败阻断 Step 6**；只编译**不修复**、不清理编译产物。
+
+### 助手工具白名单（替代 `BypassPermissions`）
+
+`AssistantToolPolicy.Decide` 对每次工具调用给结论，落 `Allow` / `Deny` 并写入操作记录（含依据）：
+
+- **放行**：只读工具（`ReadFileAsync` / `ListDirectoryAsync` / `GetWorkspaceOverviewAsync` / `UseSkillAsync` 等）、`RunPythonAsync`、
+  命令在白名单内的 `RunShellAsync`、**工作区内**的写类工具（`WriteFileAsync` / `CopyFileAsync` 按 `destPath` / `MoveFileAsync` 按 `destPath`）。
+- **拒绝**：`RunLuaAsync`、删除类（`DeleteFileAsync` / `DeleteDirectoryAsync`）、技能与 MCP 写删类、越出工作区的写入、未知工具、工作区根未知时的任何写入。
+- **Shell 逐段判定**：按 `&&` / `||` / `;` / `|` / 换行切段，每段取首词（支持 `& "prog"` 与 `"C:\Program Files\...\dotnet.exe"` 引号路径，去目录、去 `.exe/.cmd/.bat/.ps1` 后缀），
+  首词不在 `AllowedExecutables`（`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `python` / `py` / `python3` / `pip` / `pip3`）与 pwsh 无副作用内置（`cd` / `Set-Location` 等）内即**整条拒绝**；
+  `$env:X = "..."` 赋值段视为无副作用放行。
+
+### 防死锁：助手不得回调插件
+
+本轮提示词由**插件在项目会话上发起**。若助手在同一个回合里回头调用 `newproject-*` 技能或「新建项目」插件的服务，
+就会变成「同会话回合串行」的**自等死锁**。故两条提示词与三个技能正文都写死这条禁令。
+
+### 已知遗留（建议单独立项）
+
+- 框架 `FileSystemToolPlugin.DeleteDirectoryAsync`（`luban-framework/LuBan.AIAgent/Tools/FileSystem/FileSystemToolPlugin.cs:807`）
+  用的是裸 `Directory.Delete`，删 git 目录（含只读 pack）会失败且只报「权限不足」。本插件自己的清理走
+  `DirectoryCleaner.DeleteForce`（先清只读再删，RC5 已修）；框架那个要改需重新发包。
 
 ## 构建与铺包
 
@@ -258,7 +328,19 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 > 首次运行的 codex 可能**尚未启用**本插件：默认状态为禁用，需在「插件管理」窗口启用。
 > 启用状态记录在 `%LocalAppData%/LuBan/AIAgent/plugins/plugin-states.json`。
 
-## 验证（luban-agent 无自动化测试，手工冒烟）
+## 验证（自动化 + 手工冒烟）
+
+产品侧已有自动化测试项目 **`LubanAgent.Tests`**（MSTest）：
+
+```powershell
+dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
+```
+
+其中与本插件相关的用例：`NewProjectStepPromptsUnitTest`（提示词：口令内联 / 硬边界 / 结论契约 / 端清单）、
+`NewProjectStepReportUnitTest`（结论解析容错 + Step 4 不阻断 + Step 5 逐端归并与漏端即失败 + 事件流有错即失败）、
+`NewProjectDatabaseProbeUnitTest`（参数校验 / 口令脱敏 / 连接串解析不回填口令 / appsettings 容错 / 结论文件路径）、
+`NewProjectAssistantToolPolicyUnitTest`（工具白名单 + Shell 逐段判定 + 越界拒绝）、`StepStateResolverUnitTest`、
+`DirectoryCleanerUnitTest`。**其余验证仍为手工冒烟**（本插件的 UI 与真机链路）。
 
 1. 构建解决方案 → 确认上面的插件包目录已生成；
 2. 启动 codex → 「插件管理」启用「新建项目」；
@@ -298,7 +380,7 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
     执行时面板出现三选一；选「复用已克隆」→ 时间线先出现「校验本地目录（X端）」且通过后才跳过克隆；
     选「清空后重克隆」→ 目录被清空后重克隆；
     选「中止本步」→ 时间线说明远端仓库保留（孤儿），本地目录未被改动；
-18. **Step 6**：从 Step 4 占位区点「直接执行推送」→ 时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」，
+18. **Step 6**：点常驻「档案与维护」卡里的「重新推送（重跑 Step 6）」（有档案且至少一端已克隆后可见，Step 6 页自身的按钮等价）→ 时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」，
     云效仓库出现 `main` 分支与首次提交；再点一次 → 无改动时显示「工作区无改动，跳过提交」，推送仍成功（幂等）；
 19. 「中止并清理」在 Step 3/6 视图下同样可见可用（常驻维护卡），且不删除本地目录、远端仓库与代码组。
 20. **坏目录不得假成功（回归）**：把某端本地目录的 `.git/HEAD` 手工改成 `ref: refs/heads/.invalid`
@@ -314,6 +396,28 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 
 > **真机第一次执行建仓动作前**，先对照第 12 项读数与用户逐项核对（模板库命中 / pin / 代码组名 / 仓库名 / 落地位置）。
 
+### P4 增补（Step 4 / Step 5）
+
+**冒烟前置（重要，否则会测到旧技能正文）**：宿主把技能写入工作区是**只补缺失**策略，已存在的
+`{LocalPath}\.luban-agent\skills\newproject-*` **不会被覆盖**。改了 `skills/*.md` 后必须先删掉这几个目录，
+再从 Step 2 重跑，才能拿到新正文。另：P4 改动需先重新构建 `LubanAgent.slnx`（把新包铺到 codex 运行目录）。
+
+22. **Step 4 界面**：进入 Step 4 → 服务器 / 端口 / 库名 / 账号已从克隆下来的 `WebHost/appsettings.json` **预填**，
+    口令为空（遮蔽输入，不回填）；点「开始探活（只读，不建库）」→ 时间线出现「连接数据库」记录，右侧结论区出结果；
+23. **Step 4 「库不存在」分支（必测）**：库名填一个**不存在**的库（Step 3 已把模板库名改成 `tjc_dev_{缩写}` 而该库通常尚未创建）
+    → 结论应为**未通过**并点名 `1049 Unknown database`，且**流程照常推进到 Step 5**（第二步仍可点）；
+24. **Step 4 「库存在」分支**：库名换成本机/服务器上**已存在**的库（如 `tjc_dev_tjces`）→ 结论通过；
+    `spec.json` 里回写了服务器 / 端口 / 库名 / 账号，**没有任何口令痕迹**（含操作记录与日志）；
+25. **Step 4 只读核验**：探活前后对比 —— 目标库**没有**多出任何表/库；克隆下来的项目目录里**没有**任何文件被改动
+    （`git status` 干净，`appsettings*.json` 未被写入）；工作区里只多出 `results/step4-*.json`；
+26. **Step 5 逐端**：进 Step 5 → 逐端卡片出现，点「开始编译（逐端）」→ 时间线出现助手的编译命令（后端 `dotnet build ...`、
+    管理端 `pnpm` 系列），各端结论与「实际执行的命令」一并展示；**通过后**「下一步」才可用；失败时不可用（阻断 Step 6）；
+27. **Step 5 漏端防护**：手工把某端的结论从 `results/step5-*.json` 删掉再让它回读 → 该端应显示「未给出该端的编译结论」且本步判失败
+    （不静默放过）；
+28. **助手不得回调插件（死锁防护）**：Step 4 / Step 5 执行期间观察操作记录 —— 助手**不应**出现调用
+    `newproject-*` 技能或插件工具的记录；若出现，说明提示词边界失效（会自等死锁），按缺陷处理；
+29. **工具白名单**：Step 5 里若助手尝试白名单外命令（如 `powershell` / `curl`），应被**拒绝**并记入操作记录，工作流不中断（助手改用白名单内命令重试）。
+
 ## 阶段进度
 
 | 批次 | 内容 | 状态 |
@@ -321,6 +425,6 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
 | P3 | Step 3 预检 + 按模板建库并克隆（运行期自动建组 + 实时解析 pin，框架 `CodeupClient` 直连）+ Step 6 推送 | **代码完成 + 真机首轮排障已修**（构建 0 错误；修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner` + 4 条单测，测试 37/37 通过；待重启 codex 复跑真机 11–21 项） |
-| P4 | Step 4 配置与建库 + Step 5 编译检查 | 待办 |
+| P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（技术路线 ②：助手亲自执行 + 结论文件回读判定） | **代码完成**（构建 0 错误；`LubanAgent.Tests` 124/124 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 4 组单测；**待真机冒烟**——见「P4 增补」22–29 项，含「库不存在」与「库存在」两分支） |
 | P5 | Step 7 创建流水线 + 远端产物孤儿清单化展示（本地回收已在 P2 完成） | 待办 |
-| P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 待办 |
+| P6 | 6 个技能正文细化 + 聊天入口与向导联调 | 进行中（Step 4/5 两个技能正文已按 v0.22 改写为「助手亲自执行」，主 skill 编排顺序已同步；Step 7 与联调待办） |

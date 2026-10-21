@@ -13,6 +13,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using System.Globalization;
 using LuBan.AIAgent.Plugins;
 using LubanAgent.Plugin.NewProject.Abstractions;
 using LubanAgent.Plugin.NewProject.Services;
@@ -29,10 +30,12 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// 让用户看到每一步做了什么、结果如何，并可就地在失败步骤重试。
 /// </para>
 /// <para>
-/// <b>本阶段（M4-P3）范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
+/// <b>本阶段（M4-P4）范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
 /// Step 2 初始化触发、Step 3 建库确认区（逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 克隆冲突三选一）、
-/// Step 6 推送区与 Step 4-5 占位区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
-/// Step 4 / 5 / 7 的操作区在 P4~P5 接入。面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
+/// Step 4 数据库探活表单（服务器 / 端口 / 库名 / 账号 / 口令 + 「开始探活」）、Step 5 逐端编译区与
+/// Step 6 推送区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
+/// Step 4 / 5 的实际动作由项目助手执行（路线②），面板只负责采集参数与呈现结论。Step 7 的操作区在 P5 接入。
+/// 面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
 /// <c>PostToUi</c> 令牌（PRD §6 #22）。
 /// </para>
 /// <para>
@@ -57,7 +60,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         (WizardStep.BasicInfo, "基本信息", "名称 / 缩写 / 介绍 / 端 / 本地目录"),
         (WizardStep.Scaffold, "初始化", "工作区 · 会话 · 技能 · 云效 · 项目助手"),
         (WizardStep.Repositories, "建库", "以模板建各端仓库并克隆到本地"),
-        (WizardStep.Database, "数据库", "生成配置 · 执行建库脚本"),
+        (WizardStep.Database, "数据库", "只读探活：能连上且库存在"),
         (WizardStep.Build, "编译", "逐端编译并汇总结果"),
         (WizardStep.Push, "推送", "提交并推送到各端专属仓库"),
         (WizardStep.Pipeline, "流水线", "逐端克隆参考流水线并创建")
@@ -153,11 +156,53 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly Button _conflictRecloneButton = new() { Content = "清空后重克隆" };
     private readonly Button _conflictAbortButton = new() { Content = "中止本步" };
     private readonly Button _pushButton = new() { Content = "提交并推送" };
-    private readonly Button _skipToPushButton = new() { Content = "跳过 Step 4/5，直接执行推送（临时入口，P4 落地后自动衔接）" };
+
+    /// <summary>
+    /// 常驻「档案与维护」卡里的正式入口：重跑 Step 6（提交并推送）。
+    /// </summary>
+    /// <remarks>
+    /// 向导没有「返回上一步」的导航，Step 6 执行过后若要重推，得有个随时可达的入口。
+    /// 原实现把它做成 Step 7 占位区的临时出口（文案「跳过 Step 7」），语义不实——P5 未实现前它并不是
+    /// 「跳过」，而是「重跑」。故收口为常驻卡里的正式入口：有档案且至少有一端已克隆才显示。
+    /// Step 6 本身幂等（无改动则跳过提交、推送照常收尾，PRD §4.8 第 18 条⑥），重跑安全。
+    /// </remarks>
+    private readonly Button _repushButton = new() { Content = "重新推送（重跑 Step 6）" };
+
     private readonly TextBlock _otherStepText = new() { FontSize = 12, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
 
-    /// <summary>【T0 SPIKE · 临时】宿主自跑一轮诊断入口（验证通过后连同 <c>RunHostBridgeSpikeAsync</c> 一并删除）。</summary>
-    private readonly Button _spikeButton = new() { Content = "T0 诊断：让宿主 Agent 自跑一轮脚本（临时）" };
+    // ── Step 4 操作区（P4 接入）─────────────────────────────────────────────────
+    private Border _step4Area = null!;
+    private readonly TextBox _dbHostBox = new() { PlaceholderText = "例如：10.10.0.214" };
+    private readonly TextBox _dbPortBox = new() { PlaceholderText = "3306" };
+    private readonly TextBox _dbNameBox = new() { PlaceholderText = "例如：tjc_dev_jnms（需你先手工建库）" };
+    private readonly TextBox _dbUserBox = new() { PlaceholderText = "例如：testuser" };
+    private readonly TextBox _dbPasswordBox = new() { PasswordChar = '●', PlaceholderText = "数据库口令（只在内存，不写档案）" };
+    private readonly Button _probeButton = new() { Content = "开始探活（只读，不建库）" };
+    private readonly TextBlock _probeResultText = new()
+    {
+        FontSize = 12,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>Step 4 表单已回填过的档案缩写（同一档案只回填一次，不覆盖用户输入）。</summary>
+    private string? _step4LoadedForCode;
+
+    // ── Step 5 操作区（P4 接入）─────────────────────────────────────────────────
+    private Border _step5Area = null!;
+    private readonly Button _buildButton = new() { Content = "开始编译（逐端）" };
+    private readonly StackPanel _buildRowsPanel = new() { Spacing = 6 };
+    private readonly TextBlock _buildResultText = new()
+    {
+        FontSize = 12,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>Step 5 逐端状态行（端 → 最近一次编译结论）。</summary>
+    private readonly List<EndBuildRowView> _buildRows = new();
 
     /// <summary>Step 3 运行期待决的克隆冲突三选一（面板与能力层之间的挂起点）。</summary>
     private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
@@ -286,8 +331,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _visibilityPrivate.IsCheckedChanged += OnPlanCheckedChanged;
 
         _pushButton.Click += OnPushClicked;
-        _skipToPushButton.Click += OnSkipToPushClicked;
-        _spikeButton.Click += OnSpikeClicked;
+        _repushButton.Click += OnPushClicked;
+        _probeButton.Click += OnProbeClicked;
+        _buildButton.Click += OnBuildClicked;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
         _conflictRecloneButton.Click += OnConflictChoiceClicked;
         _conflictAbortButton.Click += OnConflictChoiceClicked;
@@ -438,6 +484,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step1Form = BuildStep1Form();
         _maintenanceCard = BuildMaintenanceCard();
         _step3Area = BuildStep3Area();
+        _step4Area = BuildStep4Area();
+        _step5Area = BuildStep5Area();
         _step6Area = BuildStep6Area();
         _otherStepArea = BuildOtherStepArea();
 
@@ -465,6 +513,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     _step1Form,
                     _maintenanceCard,
                     _step3Area,
+                    _step4Area,
+                    _step5Area,
                     _step6Area,
                     _otherStepArea
                 }
@@ -525,7 +575,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// 常驻「档案与维护」卡：任何步骤下都能重跑 Step 2 或中止并清理（PRD §4.7）。
+    /// 常驻「档案与维护」卡：任何步骤下都能重跑 Step 2 / 重新推送 / 中止并清理（PRD §4.7）。
     /// </summary>
     /// <returns>维护卡。</returns>
     private Border BuildMaintenanceCard() => Card(new StackPanel
@@ -536,7 +586,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock { Text = "档案与维护", FontSize = 13, Foreground = PrimaryText },
             new TextBlock
             {
-                Text = "「重跑 Step 2」复用同一工作区并新建执行会话；「中止并清理」注销工作区、删除已写入的技能与 MCP、"
+                Text = "「重跑 Step 2」复用同一工作区并新建执行会话；「重新推送」= 重跑 Step 6（已有改动才提交，"
+                     + "推送照常收尾；至少一端已克隆后可用）；「中止并清理」注销工作区、删除已写入的技能与 MCP、"
                      + "清空档案——本地目录与云效上的远端产物都不会被删除（PRD §4.7）。",
                 FontSize = 11,
                 Foreground = MutedText,
@@ -546,14 +597,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 8,
-                Children = { _rerunButton, _resetButton }
-            },
-            // 【T0 SPIKE · 临时】验证通过后删除本行与 _spikeButton
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                Children = { _spikeButton }
+                Children = { _rerunButton, _repushButton, _resetButton }
             }
         }
     });
@@ -675,6 +719,121 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
+    /// Step 4 操作区（PRD §4.3 Step 4，v0.22 口径）：数据库参数表单 + 「开始探活」。
+    /// </summary>
+    /// <remarks>
+    /// 本步<b>只探活</b>：真正的连接由项目助手执行（路线②），面板只采集参数并呈现结论；
+    /// 不写任何项目文件 / <c>appsettings</c>、不建库，结论<b>不阻断</b>后续步骤。
+    /// 口令只走内存（用 <see cref="TextBox.PasswordChar"/> 遮蔽），不回填、不落档案。
+    /// </remarks>
+    /// <returns>操作区。</returns>
+    private Border BuildStep4Area() => Card(new StackPanel
+    {
+        Spacing = 10,
+        Children =
+        {
+            new TextBlock { Text = "Step 4 · 数据库探活（只读）", FontSize = 14, Foreground = PrimaryText },
+            new TextBlock
+            {
+                Text = "填好参数点「开始探活」：由项目助手亲自连库确认「能连上且该库已存在」。"
+                     + "本步不建库、不写任何文件或配置（appsettings 保持模板原样），库请先手工创建；"
+                     + "探活结论不阻断后续步骤——失败也可以先继续编译、推送，稍后修好再重跑本步。",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            },
+            new TextBlock
+            {
+                Text = "口令只在内存：不写入项目档案、不写日志，操作记录里以 *** 呈现。"
+                     + "（已记录口径：本轮提示词会随框架会话历史落进本地会话库，详见 PRD §4.8）",
+                FontSize = 11,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            },
+            new Border { Height = 1, Background = DividerBrush },
+            LabeledField("服务器（主机名或 IP）", _dbHostBox),
+            LabeledField("端口", _dbPortBox),
+            LabeledField("库名（需你先手工建库）", _dbNameBox),
+            LabeledField("账号", _dbUserBox),
+            LabeledField("口令", _dbPasswordBox),
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _probeButton }
+            },
+            _probeResultText
+        }
+    });
+
+    /// <summary>
+    /// Step 5 操作区（PRD §4.3 Step 5）：逐端编译状态列表 + 「开始编译」。
+    /// </summary>
+    /// <remarks>
+    /// 编译方式<b>由助手按工程类型决定</b>（后端 .NET / 前端 Vite 的构建命令不同），面板不做判断，
+    /// 只把每端的最近一次结论（落档案的 <see cref="ProjectSpec.BuildResults"/>）摊开给用户复核。
+    /// </remarks>
+    /// <returns>操作区。</returns>
+    private Border BuildStep5Area()
+    {
+        foreach (var end in new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile })
+        {
+            var status = new TextBlock
+            {
+                Text = "未编译",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            var name = new TextBlock
+            {
+                Text = $"{EndLabel(end)}端",
+                FontSize = 12,
+                Foreground = PrimaryText,
+                Width = 64
+            };
+
+            var row = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                Children = { name, status }
+            };
+            Grid.SetColumn(status, 1);
+
+            _buildRowsPanel.Children.Add(row);
+            _buildRows.Add(new EndBuildRowView(end, row, status));
+        }
+
+        return Card(new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                new TextBlock { Text = "Step 5 · 逐端编译检查", FontSize = 14, Foreground = PrimaryText },
+                new TextBlock
+                {
+                    Text = "按所选端让项目助手逐端编译（编译方式由助手按工程类型判断：后端 dotnet build、"
+                         + "Vite/Vue 前端 pnpm build 等）。本步只编译不修复：只要有一端未通过就会阻断 Step 6，"
+                         + "把错误修好后重跑本步即可。",
+                    FontSize = 12,
+                    Foreground = MutedText,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new Border { Height = 1, Background = DividerBrush },
+                _buildRowsPanel,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _buildButton }
+                },
+                _buildResultText
+            }
+        });
+    }
+
+    /// <summary>
     /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，默认 main）→ 暂存 → 有改动则提交 → 推送到各端自有仓库（PRD §4.3 Step 6）。
     /// </summary>
     /// <returns>操作区。</returns>
@@ -704,7 +863,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 4 / 5 / 7 的占位区（P4 / P5 落地前给出明确说明，并提供临时推送入口）。
+    /// Step 7 的占位区（P5 落地前给出明确说明；重跑 Step 6 请用常驻「档案与维护」卡里的正式入口）。
     /// </summary>
     /// <returns>占位区。</returns>
     private Border BuildOtherStepArea() => Card(new StackPanel
@@ -712,19 +871,16 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         Spacing = 10,
         Children =
         {
-            new TextBlock { Text = "后续步骤", FontSize = 14, Foreground = PrimaryText },
-            _otherStepText,
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                Children = { _skipToPushButton }
-            }
+            new TextBlock { Text = "Step 7 · 创建流水线（计划 P5）", FontSize = 14, Foreground = PrimaryText },
+            _otherStepText
         }
     });
 
     /// <summary>Step 3 各端仓库名行的视觉载体。</summary>
     private sealed record RepoRowView(ProjectEnd End, Control Root, TextBox NameBox, TextBlock TemplateText);
+
+    /// <summary>Step 5 逐端编译状态行的视觉载体。</summary>
+    private sealed record EndBuildRowView(ProjectEnd End, Control Root, TextBlock Status);
 
     /// <summary>端的中文标签（与能力层文案一致）。</summary>
     /// <param name="end">端。</param>
@@ -870,37 +1026,24 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         SyncFormEnabled();
         SyncStepAreas(spec, currentStep);
 
-        // 步骤状态一律取自本步操作记录的真实终态，不再用「序号小于当前步」推断：
+        // 步骤状态一律取自「真实终态」，不再用「序号小于当前步」推断：
         // 序号推断会把「从未执行过的后续步」显示成已完成，也会把「停在该步但当前没在跑」
         // 显示成进行中（P3 冒烟缺陷：Step 4/5 未实现却显示「进行中」）。
+        // 记录只在内存、重启即空，故必须与档案里的终态快照归并（规则集中在 StepStateResolver）。
         var operations = _service.Operations;
-        var runningSteps = new HashSet<WizardStep>();
-        var succeededSteps = new HashSet<WizardStep>();
-        var failedSteps = new HashSet<WizardStep>();
-        foreach (var record in operations)
-        {
-            switch (record.Status)
-            {
-                case StepStatus.Running:
-                    runningSteps.Add(record.Step);
-                    break;
-                case StepStatus.Succeeded:
-                    succeededSteps.Add(record.Step);
-                    break;
-                case StepStatus.Failed:
-                    failedSteps.Add(record.Step);
-                    break;
-            }
-        }
+        var stepStates = StepStateResolver.Resolve(spec?.StepStates, operations);
 
         foreach (var view in _stepViews)
         {
             var isCurrent = spec is not null && view.Step == currentStep;
+            stepStates.TryGetValue(view.Step, out var state);
+
             // Step 1 是纯表单采集，能力层不为其记成功记录：只要档案已建立即视为已完成
-            var isSucceeded = succeededSteps.Contains(view.Step)
+            var isSucceeded = state == StepStatus.Succeeded
                               || (view.Step == WizardStep.BasicInfo && spec is not null);
-            var isRunning = runningSteps.Contains(view.Step);
-            var isFailed = !isSucceeded && failedSteps.Contains(view.Step);
+            var isRunning = state == StepStatus.Running;
+            var isFailed = !isSucceeded && !isRunning && state == StepStatus.Failed;
+            var isSkipped = !isSucceeded && !isRunning && !isFailed && state == StepStatus.Skipped;
 
             view.Badge.Background = isSucceeded ? SuccessBrush : isRunning ? AccentBrush : Brushes.Transparent;
             view.Badge.BorderBrush = isSucceeded ? SuccessBrush
@@ -915,6 +1058,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             view.Status.Text = isSucceeded ? "已完成"
                 : isRunning ? "执行中"
                 : isFailed ? "失败"
+                : isSkipped ? "已跳过"
                 : isCurrent ? "待执行"
                 : "未开始";
         }
@@ -1010,7 +1154,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 : $"{duration.TotalSeconds:F1}s";
 
     /// <summary>
-    /// 按当前步骤切换左列的操作区：Step 1 表单 / Step 3 建库确认区 / Step 4-5-7 占位区 / Step 6 推送区。
+    /// 按当前步骤切换左列的操作区：Step 1 表单 / Step 3 建库确认区 / Step 4-5-7 操作区 / Step 6 推送区。
     /// </summary>
     /// <remarks>
     /// 「状态提示（校验 / 忙碌 / 残留横幅）」与「档案与维护」抽为常驻卡，故切换步骤不会连失败信息与
@@ -1025,27 +1169,126 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step1Form.IsVisible = !hasArchive || currentStep is WizardStep.BasicInfo or WizardStep.Scaffold;
         _maintenanceCard.IsVisible = hasArchive && _resumeResolved;
 
+        // 「重新推送（重跑 Step 6）」：向导没有「返回上一步」的导航，故入口常驻在维护卡里；
+        // 至少有一端已克隆（Step 3 完成）才显示，避免在 Step 1 / 2 就给出必然失败的入口。
+        _repushButton.IsVisible = spec is not null && spec.Repositories.Any(repository => repository.Cloned);
+
         _step3Area.IsVisible = hasArchive && currentStep == WizardStep.Repositories;
+        _step4Area.IsVisible = hasArchive && currentStep == WizardStep.Database;
+        _step5Area.IsVisible = hasArchive && currentStep == WizardStep.Build;
         _step6Area.IsVisible = hasArchive && currentStep == WizardStep.Push;
-        _otherStepArea.IsVisible = hasArchive && currentStep is WizardStep.Database or WizardStep.Build or WizardStep.Pipeline;
+        _otherStepArea.IsVisible = hasArchive && currentStep == WizardStep.Pipeline;
 
         if (spec is not null && _step3Area.IsVisible)
             PopulateStep3Area(spec);
 
+        if (spec is not null && _step4Area.IsVisible)
+            PopulateStep4Area(spec);
+
+        if (spec is not null && _step5Area.IsVisible)
+            PopulateStep5Area(spec);
+
         if (spec is not null && _otherStepArea.IsVisible)
         {
-            _otherStepText.Text = currentStep switch
-            {
-                WizardStep.Database => "Step 4 · 配置与数据库：功能尚未实现（计划 M4-P4，将由项目助手驱动生成配置与建库脚本）。"
-                                       + "本步当前无法执行，只能点下方临时入口直接跳到推送。",
-                WizardStep.Build => "Step 5 · 编译检查：功能尚未实现（计划 M4-P4，将由项目助手逐端编译并汇总结果）。"
-                                    + "本步当前无法执行，只能点下方临时入口直接跳到推送。",
-                _ => "Step 7 · 创建流水线：功能尚未实现（计划 M4-P5）。本步当前无法执行。"
-            };
-
-            // 临时入口：P4 未落地前允许直接执行 Step 6（推送），避免向导在 Step 4 处彻底卡死
-            _skipToPushButton.IsVisible = currentStep is WizardStep.Database or WizardStep.Build;
+            _otherStepText.Text = "Step 7 · 创建流水线：功能尚未实现（计划 M4-P5：按端克隆参考流水线并创建）。"
+                                  + "本步当前无法执行；若需重推改动，请用上方常驻「档案与维护」卡里的「重新推送（重跑 Step 6）」。";
         }
+    }
+
+    /// <summary>
+    /// 回填 Step 4 表单（同一档案只回填一次，避免覆盖用户输入；<b>口令永不回填</b>）。
+    /// </summary>
+    /// <remarks>
+    /// 默认值来源（优先级由能力层 <c>SuggestDatabaseProbe</c> 决定）：档案里已填的非敏感参数 →
+    /// 已克隆后端仓库的 <c>WebHost/appsettings.json</c> 连接串。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void PopulateStep4Area(ProjectSpec spec)
+    {
+        if (!string.Equals(_step4LoadedForCode, spec.Code, StringComparison.Ordinal))
+        {
+            var suggestion = _service.SuggestDatabaseProbe();
+
+            _populating = true;
+            try
+            {
+                _dbHostBox.Text = suggestion.Host;
+                _dbPortBox.Text = suggestion.Port > 0
+                    ? suggestion.Port.ToString(CultureInfo.InvariantCulture)
+                    : string.Empty;
+                _dbNameBox.Text = suggestion.Database;
+                _dbUserBox.Text = suggestion.User;
+                _dbPasswordBox.Text = string.Empty;
+            }
+            finally
+            {
+                _populating = false;
+            }
+
+            _step4LoadedForCode = spec.Code;
+        }
+
+        // 结论区读档案里的最近一次探活（跨重启可见）；口令永不回显
+        if (spec.Database.ProbedAt is not null && !string.IsNullOrWhiteSpace(spec.Database.ProbeMessage))
+        {
+            _probeResultText.IsVisible = true;
+            _probeResultText.Foreground = spec.Database.ProbeOk ? SuccessBrush : WarningBrush;
+            _probeResultText.Text = $"最近一次探活（{spec.Database.ProbedAt:yyyy-MM-dd HH:mm}）："
+                                    + (spec.Database.ProbeOk ? "✔ " : "✖ ")
+                                    + spec.Database.ProbeMessage;
+        }
+        else
+        {
+            _probeResultText.IsVisible = false;
+        }
+    }
+
+    /// <summary>
+    /// 刷新 Step 5 逐端状态行与汇总文案（数据来自档案里的 <see cref="ProjectSpec.BuildResults"/> 与步骤终态快照）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    private void PopulateStep5Area(ProjectSpec spec)
+    {
+        foreach (var row in _buildRows)
+        {
+            var inScope = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
+            row.Root.IsVisible = inScope;
+            if (!inScope)
+                continue;
+
+            var result = spec.BuildResults.FirstOrDefault(item => item.End == row.End);
+            if (result is null)
+            {
+                row.Status.Text = "未编译";
+                row.Status.Foreground = MutedText;
+                continue;
+            }
+
+            row.Status.Foreground = result.Ok ? SuccessBrush : DangerBrush;
+            row.Status.Text = (result.Ok ? "✔ 通过" : "✖ 失败")
+                              + (string.IsNullOrWhiteSpace(result.Command) ? string.Empty : $"｜{result.Command}")
+                              + $"｜{result.Summary}";
+        }
+
+        var lastFailed = spec.StepStates.TryGetValue(nameof(WizardStep.Build), out var raw)
+                         && string.Equals(raw, nameof(StepStatus.Failed), StringComparison.Ordinal);
+
+        if (spec.BuildResults.Count == 0)
+        {
+            _buildResultText.IsVisible = lastFailed;
+            _buildResultText.Foreground = DangerBrush;
+            _buildResultText.Text = "最近一次编译未通过且未产出逐端结论，详见右侧操作记录。";
+            return;
+        }
+
+        var failed = spec.BuildResults.Count(item => !item.Ok);
+        _buildResultText.IsVisible = true;
+        _buildResultText.Foreground = failed == 0 && !lastFailed ? SuccessBrush : DangerBrush;
+        _buildResultText.Text = failed == 0 && !lastFailed
+            ? $"最近一次编译：{spec.BuildResults.Count} 端全部通过"
+              + $"（{spec.BuildResults.Max(item => item.CheckedAt):yyyy-MM-dd HH:mm}）。"
+            : $"最近一次编译未全部通过（下表为最近一次产出结论的执行结果）：{failed}/{spec.BuildResults.Count} 端失败。"
+              + "本步失败会阻断 Step 6，修好后重跑本步。";
     }
 
     /// <summary>
@@ -1285,19 +1528,47 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _rerunButton.IsVisible = hasArchive && _resumeResolved;
         _rerunButton.IsEnabled = _rerunButton.IsVisible && !_busy;
         _resetButton.IsEnabled = !_busy;
-        _spikeButton.IsEnabled = !_busy;
+
+        // Step 4 / 5：忙碌时只锁动作按钮与输入框（结论区保持可见，便于对照）
+        _dbHostBox.IsEnabled = !_busy;
+        _dbPortBox.IsEnabled = !_busy;
+        _dbNameBox.IsEnabled = !_busy;
+        _dbUserBox.IsEnabled = !_busy;
+        _dbPasswordBox.IsEnabled = !_busy;
+        _probeButton.IsEnabled = !_busy;
+        _buildButton.IsEnabled = !_busy;
 
         // Step 3 / Step 6 / 占位区（P3）：忙碌时只锁动作按钮；冲突三选一必须保持可点
         // —— 它回答的正是「Step 3 正在运行」时的问题，锁掉会直接把能力层挂死到超时。
         _precheckButton.IsEnabled = !_busy;
         SyncCreateEnabled();
         _pushButton.IsEnabled = !_busy;
-        _skipToPushButton.IsEnabled = !_busy;
+        _repushButton.IsEnabled = !_busy;
         _confirmedCheck.IsEnabled = !_busy;
         _visibilityInternal.IsEnabled = !_busy;
         _visibilityPrivate.IsEnabled = !_busy;
         foreach (var row in _repoRows)
             row.NameBox.IsEnabled = !_busy;
+
+        SyncStatusCardVisibility();
+    }
+
+    /// <summary>
+    /// 常驻「状态提示」卡的空壳收敛：忙碌 / 校验错误 / 警告 / 残留横幅<b>全都没有</b>时整卡隐藏。
+    /// </summary>
+    /// <remarks>
+    /// 卡内三个文本块各自按需隐藏，但卡自身（带底色与描边）不会自动收起来，留下一个空洞的圆角框
+    /// （P3 真机截图缺陷）。故可见性由「卡内是否有可见内容」统一决定。
+    /// </remarks>
+    private void SyncStatusCardVisibility()
+    {
+        if (_statusCard is null)
+            return;
+
+        _statusCard.IsVisible = _busy
+                                || _validationText.IsVisible
+                                || _warningText.IsVisible
+                                || _resumeBanner.IsVisible;
     }
 
     /// <summary>切换忙碌态并给出阶段提示。</summary>
@@ -1318,6 +1589,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         var list = errors.Where(error => !string.IsNullOrWhiteSpace(error)).ToList();
         _validationText.Text = string.Join("\n", list.Select(error => "• " + error));
         _validationText.IsVisible = list.Count > 0;
+        SyncStatusCardVisibility();
     }
 
     /// <summary>展示非阻断提示（空集合即清除）；与错误区分色，且不阻止「下一步」。</summary>
@@ -1327,6 +1599,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         var list = warnings.Where(warning => !string.IsNullOrWhiteSpace(warning)).ToList();
         _warningText.Text = string.Join("\n", list.Select(warning => "• " + warning));
         _warningText.IsVisible = list.Count > 0;
+        SyncStatusCardVisibility();
     }
 
     /// <summary>记住最近一次校验命中的已登记工作区（供「复用该工作区继续」出口使用）。</summary>
@@ -1517,7 +1790,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _resumeResolved = true;
         ShowErrors(Array.Empty<string>());
-        SyncFormEnabled();
+        // 必须走 Refresh（而非只 SyncFormEnabled）：常驻「档案与维护」卡的可见性只在 SyncStepAreas 里算，
+        // 处置残留时若只刷新表单开关，维护卡（重跑 Step 2 / 中止并清理）会永远不出现。
+        Refresh();
     }
 
     /// <summary>残留档案：清理后重来（本地完整回收 + 清空档案，不含远端产物，PRD §4.7）。</summary>
@@ -1533,7 +1808,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _resumeResolved = true;
         ClearForm();
-        SyncFormEnabled();
+        Refresh();
     }
 
     /// <summary>「浏览…」：经 TopLevel 的 StorageProvider 选择目录（不引入 XAML）。</summary>
@@ -1736,39 +2011,49 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         }
     }
 
-    /// <summary>Step 6「提交并推送」（PRD §4.3 Step 6）。</summary>
+    /// <summary>Step 6「提交并推送」（PRD §4.3 Step 6）——与维护卡里的「重新推送（重跑 Step 6）」共用。</summary>
     private async void OnPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
 
-    /// <summary>Step 4-5 占位区的临时入口：跳过未实现步骤直接执行 Step 6。</summary>
-    private async void OnSkipToPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
+    /// <summary>Step 4「开始探活」（PRD §4.3 Step 4，v0.22：只探活、不建库、不写文件）。</summary>
+    private async void OnProbeClicked(object? sender, RoutedEventArgs e) => await RunProbeAsync();
 
-    /// <summary>【T0 SPIKE · 临时】让宿主 Agent 自跑一轮脚本、插件回读结果文件（验证通过后删除）。</summary>
-    private async void OnSpikeClicked(object? sender, RoutedEventArgs e)
+    /// <summary>Step 5「开始编译」（PRD §4.3 Step 5）。</summary>
+    private async void OnBuildClicked(object? sender, RoutedEventArgs e) => await RunBuildAsync();
+
+    /// <summary>
+    /// Step 4 执行入口：采集参数 → 交能力层驱动项目助手探活 → 呈现结论（<b>不阻断</b>流程）。
+    /// </summary>
+    private async Task RunProbeAsync()
     {
         if (_busy || _unloaded || _service.Current is null)
             return;
 
-        if (_service is not NewProjectService service)
+        var request = CollectProbeRequest();
+        if (!request.TryValidate(out var invalid))
         {
-            ShowErrors(new[] { "T0 诊断需要共享能力层具体实现，当前宿主返回的实例类型不匹配。" });
+            ShowErrors(new[] { invalid });
             return;
         }
 
         ShowErrors(Array.Empty<string>());
-        SetBusy(true, "T0 诊断：正在让宿主 Agent 自跑一轮脚本并回读结果文件（会向当前会话写入一轮对话）…");
+        ShowWarnings(Array.Empty<string>());
+        SetBusy(true, "正在让项目助手执行数据库探活（只读：不建库、不写文件）…");
         try
         {
-            var result = await service.RunHostBridgeSpikeAsync().ConfigureAwait(true);
+            var result = await _service.SetupDatabaseAsync(request).ConfigureAwait(true);
             if (_unloaded)
                 return;
 
+            // 口令用完即弃：既不留在内存，也不进任何记录
+            _dbPasswordBox.Text = string.Empty;
+
             if (result.Status != StepStatus.Succeeded)
-                ShowErrors(new[] { result.Message ?? "T0 诊断未全部通过，详见右侧操作记录。" });
+                ShowWarnings(new[] { result.Message ?? "探活未通过，详见右侧操作记录（本步不阻断流程）。" });
         }
         catch (Exception ex)
         {
             if (!_unloaded)
-                ShowErrors(new[] { $"T0 诊断异常：{ex.Message}" });
+                ShowErrors(new[] { $"Step 4 执行失败：{ex.Message}" });
         }
         finally
         {
@@ -1777,7 +2062,62 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         }
     }
 
-    /// <summary>Step 6 执行入口（正常流程与临时入口共用）。</summary>
+    /// <summary>
+    /// Step 5 执行入口：交能力层驱动项目助手逐端编译 → 呈现逐端结论（<b>失败阻断</b> Step 6）。
+    /// </summary>
+    private async Task RunBuildAsync()
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        ShowErrors(Array.Empty<string>());
+        ShowWarnings(Array.Empty<string>());
+        SetBusy(true, "正在让项目助手逐端编译（编译方式由助手按工程类型判断）…");
+        try
+        {
+            var result = await _service.BuildAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "编译未全部通过，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"Step 5 执行失败：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
+    /// <summary>
+    /// 采集 Step 4 表单（口令只从内存取；端口留空按 3306）。
+    /// </summary>
+    /// <returns>探活参数。</returns>
+    private DatabaseProbeRequest CollectProbeRequest()
+    {
+        var portText = _dbPortBox.Text?.Trim();
+        var port = 3306;
+        if (!string.IsNullOrEmpty(portText))
+            port = int.TryParse(portText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : 0;
+
+        return new DatabaseProbeRequest
+        {
+            Host = _dbHostBox.Text?.Trim() ?? string.Empty,
+            Port = port,
+            Database = _dbNameBox.Text?.Trim() ?? string.Empty,
+            User = _dbUserBox.Text?.Trim() ?? string.Empty,
+            Password = _dbPasswordBox.Text ?? string.Empty
+        };
+    }
+
+    /// <summary>Step 6 执行入口（Step 6 页与维护卡「重新推送」共用）。</summary>
     private async Task RunPushAsync()
     {
         if (_busy || _unloaded || _service.Current is null)

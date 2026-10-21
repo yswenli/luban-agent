@@ -172,13 +172,41 @@ public interface INewProjectService
     void ApplyRepositoryPlan(IEnumerable<EndRepository> plan);
 
     /// <summary>
-    /// Step 4 · 配置与建库：生成配置、执行建库脚本。
+    /// Step 4 · 数据库探活（<b>v0.22 口径</b>）：把界面填的参数交给项目助手执行<b>只读</b>探活，回报结论；
+    /// <b>不建库、不写任何项目文件 / <c>appsettings</c></b>，结论<b>不阻断</b>流程。
     /// </summary>
-    Task<StepResult> SetupDatabaseAsync(CancellationToken cancellationToken = default);
+    /// <remarks>
+    /// <para>判定口径＝「能连上且该库存在」。无论探活通过与否，本步结束后档案都推进到 Step 5。</para>
+    /// <para>口令只在内存（随本轮提示词交给助手），不落档案、不写日志、操作记录一律脱敏。</para>
+    /// </remarks>
+    /// <param name="request">探活参数（服务器 / 端口 / 库名 / 账号 / 口令）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>探活结果（失败时 <see cref="StepResult.Message"/> 为可操作原因）。</returns>
+    Task<StepResult> SetupDatabaseAsync(DatabaseProbeRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Step 5 · 编译检查：逐端编译并汇总结果（失败阻断后续步骤，但保留已生成代码）。
+    /// Step 4 表单的默认值（<b>只读</b>）：优先档案里已填过的非敏感参数，其次解析已克隆后端仓库的
+    /// <c>WebHost/appsettings.json</c> 连接串。
     /// </summary>
+    /// <remarks>
+    /// 供面板预填用。返回值的 <see cref="DatabaseProbeRequest.Password"/> <b>恒为空</b>：
+    /// 口令只由用户在界面手工填，不回填、不落档案、不写日志。
+    /// </remarks>
+    /// <returns>默认探活参数。</returns>
+    DatabaseProbeRequest SuggestDatabaseProbe();
+
+    /// <summary>
+    /// Step 5 · 编译检查：按所选端逐端编译并汇总结果。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 编译方式<b>由助手按工程类型自行判断</b>（.NET 端 <c>dotnet build</c>、Vite/Vue 端 <c>pnpm build</c> 等），
+    /// 插件只提供白名单与结论契约。
+    /// </para>
+    /// <para><b>失败阻断</b>：只要有一端未通过，档案<b>不</b>推进到 Step 6；修好后可重跑本步。</para>
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>编译结果（逐端结论见档案 <see cref="ProjectSpec.BuildResults"/>）。</returns>
     Task<StepResult> BuildAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
