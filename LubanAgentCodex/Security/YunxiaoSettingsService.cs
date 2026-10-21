@@ -11,7 +11,7 @@
 *描述：云效连接配置读写门面（组织 ID + PAT），供设置页使用
 *
 *****************************************************************************/
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LubanAgentCore.Hosting;
 using LuBan.AIAgent.Plugins.Security;
 

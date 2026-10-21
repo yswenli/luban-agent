@@ -17,7 +17,7 @@ using System.Text.Json;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using Microsoft.Extensions.AI;
 
 namespace LubanAgentCore.Configuration;

@@ -8,7 +8,7 @@
 *****************************************************************************/
 
 using System.Text.Json;
-using LubanAgent.Connectors.AliyunDevOps.Mcp;
+using LubanAgentCore.Connectors.AliyunDevOps.Mcp;
 
 namespace LubanAgent.Tests;
 

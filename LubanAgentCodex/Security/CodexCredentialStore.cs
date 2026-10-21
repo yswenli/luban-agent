@@ -12,7 +12,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins.Security;
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
 

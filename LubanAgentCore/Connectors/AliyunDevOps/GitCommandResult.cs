@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *公司名称：Walle
-*命名空间：LubanAgent.Connectors.AliyunDevOps
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： GitCommandResult
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -15,7 +15,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgent.Connectors.AliyunDevOps;
+namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
 /// 本地 Git 命令执行结果（克隆 / 推送）。

@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *公司名称：Walle
-*命名空间：LubanAgent.Connectors.AliyunDevOps.Mcp
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps.Mcp
 *文件名： YunxiaoToolDefinitions
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -15,7 +15,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgent.Connectors.AliyunDevOps.Mcp;
+namespace LubanAgentCore.Connectors.AliyunDevOps.Mcp;
 
 /// <summary>
 /// 云效 MCP 工具定义。

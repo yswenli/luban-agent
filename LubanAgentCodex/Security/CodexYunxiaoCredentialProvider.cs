@@ -11,7 +11,7 @@
 *描述：Codex 宿主的云效 PAT 提供者 - 读取宿主凭据存储
 *
 *****************************************************************************/
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Plugins.Security;
 
 namespace LubanAgentCodex.Security;

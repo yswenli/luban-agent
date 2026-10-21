@@ -13,8 +13,8 @@
 		<PackageReference Include="LuBan.Common" Version="2026.10.20.1" />
 		<PackageReference Include="LuBan.Logging" Version="2026.10.20.1" />
 		<PackageReference Include="LuBan.Orm" Version="2026.10.20.1" />
-		<!-- 产品侧厂商连接器（宿主程序集）：放入输出目录并回落默认 ALC，由宿主显式注册 -->
-		<ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
+		<!-- 产品侧厂商连接器（云效）已并入本程序集（Connectors/AliyunDevOps/），不再独立成程序集；
+		     宿主仍显式注册（AgentHostBuilder → AddAliyunDevOpsConnector），ALC 回落语义不变。 -->
 		<!-- Microsoft.Extensions.DependencyInjection / Options / Configuration / AI
 		     不再显式声明：统一由 LuBan.AIAgent / Common / Logging 传递提供（10.0.13 / 10.11.0）。
 		     显式钉低版本会触发 NU1605 包降级（NuGet 直接引用最近者优先）。 -->

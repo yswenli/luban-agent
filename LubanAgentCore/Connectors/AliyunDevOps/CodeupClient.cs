@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *公司名称：Walle
-*命名空间：LubanAgent.Connectors.AliyunDevOps
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： CodeupClient
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -21,7 +21,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace LubanAgent.Connectors.AliyunDevOps;
+namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
 /// 云效代码管理客户端 - 提供仓库管理、Git 操作等能力

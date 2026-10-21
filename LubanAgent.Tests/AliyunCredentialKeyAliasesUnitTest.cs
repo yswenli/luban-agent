@@ -7,7 +7,7 @@
 *      确保框架去厂商化后旧安装的凭据仍可被读到
 *****************************************************************************/
 
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Plugins.Security;
 
 namespace LubanAgent.Tests;

@@ -19,7 +19,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// 云效步骤（Step 3 / 6 / 7）在向导路径下直连框架连接器
-/// <c>LubanAgent.Connectors.AliyunDevOps</c>（PRD §4.11.2），**不**在插件内自行拼 REST。
+/// <c>LubanAgentCore.Connectors.AliyunDevOps</c>（PRD §4.11.2），**不**在插件内自行拼 REST。
 /// </para>
 /// </remarks>
 public interface INewProjectService

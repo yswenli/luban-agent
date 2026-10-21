@@ -20,7 +20,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using LubanAgentA2A;
 using LubanAgentA2A.Runtime;
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LubanAgentCodex.Views;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;

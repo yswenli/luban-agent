@@ -3,7 +3,7 @@
   <!--
     「新建项目」插件（PRD §5 M4 / §4）。
 
-    ⚠️ 打包硬约束：插件包 lib/ 只放「插件自身程序集」，宿主程序集（LubanAgentCore 等）不得随包分发。
+    ⚠️ 打包硬约束：插件包 lib/ 只放「插件自身程序集」，宿主程序集（LubanAgentCore 等，含其中并入的云效连接器）不得随包分发。
     原因：PluginLoadContext 只强制共享框架集（LuBan.* / Avalonia / Microsoft.* / System.*），
     宿主程序集若出现在 lib/ 会被加载进插件 ALC，产生第二份 Type 副本，与宿主传入的服务实例类型不一致。
     实测依据：AssemblyDependencyResolver.ResolveAssemblyToPath 对「文件缺失」的依赖返回 null，
@@ -34,10 +34,9 @@
     <!-- framework：经 NuGet 私有源引用（版本与 LubanAgentCore 保持一致）。
          仅编译期需要；运行期宿主程序集由默认 ALC 提供，插件包 lib/ 不得包含（见文件头打包约束）。 -->
     <PackageReference Include="LuBan.AIAgent" Version="2026.10.20.1" />
-    <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束） -->
+    <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束）。
+         云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），随宿主程序集一并由默认 ALC 提供。 -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-    <!-- 产品侧厂商连接器（宿主程序集）：同上，仅编译期；插件包 lib/ 不得包含 -->
-    <ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
   </ItemGroup>
 
   <ItemGroup>

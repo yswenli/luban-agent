@@ -11,7 +11,7 @@
 *      ⑥ 与用户 config.json 解耦（写入不改动 config.json）。
 *
 * 说明：框架已去厂商化，本用例一律用中性提供方键；厂商专属契约在
-*      LubanAgent.Connectors.AliyunDevOps 下自测。
+*      LubanAgentCore.Connectors.AliyunDevOps 下自测。
 *
 *****************************************************************************/
 

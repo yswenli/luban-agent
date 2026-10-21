@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *公司名称：Walle
-*命名空间：LubanAgent.Connectors.AliyunDevOps
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： FlowClient
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -21,7 +21,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace LubanAgent.Connectors.AliyunDevOps;
+namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
 /// 云效流水线客户端 - 提供流水线管理、执行等能力

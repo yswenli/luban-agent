@@ -39,6 +39,6 @@
   <ItemGroup>
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
     <ProjectReference Include="..\LubanAgentA2A\LubanAgentA2A.csproj" />
-    <ProjectReference Include="..\LubanAgent.Connectors.AliyunDevOps\LubanAgent.Connectors.AliyunDevOps.csproj" />
+    <!-- 云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），不再单独引用 -->
   </ItemGroup>
 </Project>

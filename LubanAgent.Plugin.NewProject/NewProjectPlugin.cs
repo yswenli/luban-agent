@@ -23,7 +23,7 @@ namespace LubanAgent.Plugin.NewProject;
 /// 持有共享能力层实例（<see cref="INewProjectService"/>）供面板与聊天两条入口复用。
 /// </para>
 /// <para>
-/// 云效能力全部经产品连接器 <c>LubanAgent.Connectors.AliyunDevOps</c>，插件内不自行拼 REST（PRD §4.11.1）。
+/// 云效能力全部经产品连接器 <c>LubanAgentCore.Connectors.AliyunDevOps</c>，插件内不自行拼 REST（PRD §4.11.1）。
 /// </para>
 /// </remarks>
 public sealed class NewProjectPlugin : PluginBase

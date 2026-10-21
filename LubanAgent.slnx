@@ -3,7 +3,6 @@
   <Project Path="LubanAgentCodex/LubanAgentCodex.csproj" Id="29f46c66-a4d2-4c2b-9785-a21291358fab" />
   <Project Path="LubanAgentCore/LubanAgentCore.csproj" Id="cfb76597-700c-475a-b73a-ac14eb8ed56b" />
   <Project Path="LubanAgentA2A/LubanAgentA2A.csproj" />
-  <Project Path="LubanAgent.Connectors.AliyunDevOps/LubanAgent.Connectors.AliyunDevOps.csproj" />
   <Project Path="LubanAgent.Plugin.NewProject/LubanAgent.Plugin.NewProject.csproj" />
   <Project Path="LubanAgent.Tests/LubanAgent.Tests.csproj" />
 </Solution>

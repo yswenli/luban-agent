@@ -12,7 +12,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using LubanAgent.Connectors.AliyunDevOps;
+using LubanAgentCore.Connectors.AliyunDevOps;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Infrastructure;
 using LuBan.AIAgent.Plugins;

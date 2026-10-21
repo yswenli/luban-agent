@@ -1,9 +1,9 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgent.Connectors.AliyunDevOps
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： GlobalUsings
-*描述：厂商连接器（云效）程序集的全局 using —— 框架基础类型来源
+*描述：厂商连接器（云效）全局 using —— 框架基础类型来源（本目录已并入 LubanAgentCore）
 *
 *****************************************************************************/
 
