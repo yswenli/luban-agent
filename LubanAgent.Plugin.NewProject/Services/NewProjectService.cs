@@ -1209,12 +1209,15 @@ public sealed class NewProjectService : INewProjectService
 
             // 探活结果不阻断（v0.22 定案）：无论通过与否都推进到 Step 5
             spec.AdvanceTo(WizardStep.Build);
-            SaveSpec(spec);
 
             var lines = DescribeTurn(outcome, resultFile);
             lines.Add($"结论：{message}");
             EndOperation(Step, Action, string.Join("\n", lines),
                 probed ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 落库放在 EndOperation 之后：终态快照只回放终态记录，顺序反了本步终态就进不了 StepStates
+            // （重启后步骤条退回「未开始」）。与 Step 5 / Step 6 同型。
+            SaveSpec(spec);
 
             return probed ? StepResult.Ok(Step, message) : StepResult.Fail(Step, message);
         }
@@ -1319,12 +1322,16 @@ public sealed class NewProjectService : INewProjectService
             if (passed)
                 spec.AdvanceTo(WizardStep.Push);
 
-            SaveSpec(spec);
-
             var lines = DescribeTurn(outcome, resultFile);
             lines.Add($"结论：{message}");
             EndOperation(Step, Action, string.Join("\n", lines),
                 passed ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 落库必须在 EndOperation **之后**：终态快照（StepStates）由 SaveSpec → SnapshotStepStates 按内存
+            // 操作记录回放生成，且只回放终态记录；顺序反了（先保存后记终态）时本步记录仍是 Running，会被跳过，
+            // 于是 StepStates 里根本没有 Build 键 → 闸门 CanPush 恒判否，编译通过了也推不动。
+            // 与 Step 6（EndOperation → SaveSpec）同型。
+            SaveSpec(spec);
 
             return passed ? StepResult.Ok(Step, message) : StepResult.Fail(Step, message);
         }

@@ -15,6 +15,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using System.Globalization;
+using LubanAgentCore.Infrastructure;
 using LuBan.AIAgent.Plugins;
 using LubanAgent.Plugin.NewProject.Abstractions;
 using LubanAgent.Plugin.NewProject.Services;
@@ -1756,7 +1757,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
             // 显式降不透明度：行内 TextBlock 全都显式设了前景色，主题的「禁用前景色」覆盖不到，
             // 只靠 IsEnabled 在视觉上几乎看不出区别（P4 冒烟：未到达的行与可点行肉眼一样）。
-            view.Button.Opacity = reachable ? 1.0 : 0.45;
+            // 灰化只按「进度」（是否已到达），与「能不能点」解耦——否则忙碌期间连当前步与已完成步
+            // 一起变淡，看起来像进度丢了（P4 冒烟收口）。
+            view.Button.Opacity = (int)view.Step <= (int)reached ? 1.0 : 0.45;
         }
 
         _backButton.IsEnabled = navigable && (int)CurrentViewStep(reached) > (int)WizardStep.BasicInfo;
@@ -1821,10 +1824,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _existingWorkspaceName = validation.ExistingWorkspaceName;
     }
 
-    /// <summary>两个本地目录是否指同一处（归一化后忽略大小写与尾部分隔符）。</summary>
+    /// <summary>两个本地目录是否指同一处（归一化后比较）。</summary>
     /// <remarks>
-    /// 用于 Step 1 重提的「同目录 ≠ 另建项目」判定。归一化失败（非法字符等）时退回原样比较，
-    /// 路径本身的合法性由后续校验负责报错——此处只判断「是否同一个目录」。
+    /// 判据与服务端唯一性口径①<b>同源</b>：服务端按 <c>WorkspaceIdGenerator.Compute(localPath)</c> 派生
+    /// <c>WorkspaceId</c> 再查宿主工作区（<c>NewProjectService.FindWorkspaceByPathAsync</c>），故此处直接用同一个
+    /// <see cref="WorkspaceIdGenerator.Normalize" /> 归一化——解析符号链接 / junction、去尾部分隔符、
+    /// Windows 下统一大写。若自行写一套（如只做 <c>GetFullPath</c> + 忽略大小写），「档案路径是 junction、
+    /// 用户填真实目标」这类别名会被误判为「不同目录」，弹出破坏性确认后照样撞唯一性①的红字（死胡同）。
+    /// 归一化抛异常（非法字符等）时退回原样比较，路径本身的合法性由后续校验负责报错。
     /// </remarks>
     /// <param name="left">左值（多为表单输入）。</param>
     /// <param name="right">右值（多为档案 <c>LocalPath</c>）。</param>
@@ -1836,19 +1843,19 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         static string Normalize(string path)
         {
-            var trimmed = path.Trim();
             try
             {
-                return Path.GetFullPath(trimmed)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return WorkspaceIdGenerator.Normalize(path);
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
-                return trimmed.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
         }
 
-        return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
+        // 归一化在 Windows 下已统一大写（与服务端判据一致），故按 Ordinal 比较；
+        // 非 Windows 文件系统大小写敏感，用忽略大小写反而会与「WorkSpaceId 派生」口径漂移。
+        return string.Equals(Normalize(left), Normalize(right), StringComparison.Ordinal);
     }
 
     /// <summary>读取端选择。</summary>
@@ -1904,11 +1911,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             // 红字。故这里不弹破坏性横幅，改为指路「重跑 Step 2」（复用同一工作区、进度不丢）。
             if (SameLocalPath(_pathBox.Text, existing.LocalPath))
             {
+                // 清上一轮残留红字：本分支不会走到后面的 ShowErrors(空)，不清会与黄字并排显示
+                ShowErrors(Array.Empty<string>());
                 ShowWarnings(new[]
                 {
                     $"本地目录就是当前档案（{existing.Name}）的工作区：沿用请点「档案与维护」卡里的「重跑 Step 2」"
-                    + "（复用工作区、新建执行会话，进度不丢）；要另建项目请改填其他目录后再点「下一步」。"
-                    + "（若上部还有残留档案横幅，先点「保留并继续」解锁。）"
+                    + "（复用工作区、新建执行会话，进度不丢）；想要一份全新档案请点「中止并清理」"
+                    + "（注销工作区、删技能与 MCP、清空档案，本地目录与远端仓库不删），再回本步重新提交；"
+                    + "要另建项目请改填其他目录后再点「下一步」。（若上部还有残留档案横幅，先点「保留并继续」解锁。）"
                 });
                 return;
             }
