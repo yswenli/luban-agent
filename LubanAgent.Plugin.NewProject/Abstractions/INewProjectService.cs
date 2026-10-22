@@ -228,29 +228,44 @@ public interface INewProjectService
     /// 人工确认资源后可调 <see cref="AppendDeployStagesAsync"/> 补齐。<b>建完不自动运行</b>。
     /// </para>
     /// <para><b>前置闸门</b>：Step 6（推送）未成功时拒绝执行（判据见 <c>StepGate.CanCreatePipelines</c>）。</para>
+    /// <para>
+    /// <b>手工微调（v0.31）</b>：<paramref name="yamlOverrides"/> 按端提供用户改过的 YAML 原文，命中即以它替换模板渲染结果
+    /// （流水线名与待绑定清单仍按模板口径，<c>name:</c> 必须与模板名一致，否则直接给可读失败、不发请求）；
+    /// 未命中／空白即用模板。真正的语法校验交给云效（非法 YAML 原样透出 <c>1209300</c>）。
+    /// </para>
     /// </remarks>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c> 或空字典＝全部走模板）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>步骤结果（逐端结论见档案 <see cref="ProjectSpec.PipelineResults"/>）。</returns>
-    Task<StepResult> CreatePipelinesAsync(CancellationToken cancellationToken = default);
+    Task<StepResult> CreatePipelinesAsync(
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Step 7 补充操作 · 一键补齐部署阶段：把该端部署阶段并存进已有流水线（<c>UpdatePipeline</c>）。
     /// </summary>
     /// <remarks>
     /// 仅有独立部署阶段的端生效（当前仅后端；前端构建产物上传 OSS 即发布），无流水线或无需补齐的端跳过并在结果里说明。
+    /// <b>与手工微调的配合</b>：若该端提供了微调 YAML，则以微调文本为基础、在末尾追加部署阶段片段
+    /// （微调文本里已自己写了 <c>VMDockerDeploy</c> 或已存在 <c>deploy</c> 阶段时视为自备部署阶段，不再追加）。
     /// </remarks>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c> 或空字典＝全部走模板）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>步骤结果。</returns>
-    Task<StepResult> AppendDeployStagesAsync(CancellationToken cancellationToken = default);
+    Task<StepResult> AppendDeployStagesAsync(
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Step 7 补充操作 · 只读预览：按当前档案算出「各端将提交的流水线名 + 新版 YAML + 待绑定清单」。
+    /// Step 7 补充操作 · 预览：按当前档案算出「各端将提交的流水线名 + 新版 YAML + 待绑定清单」。
     /// </summary>
     /// <remarks>
     /// <b>不调云效、不落档案</b>（纯本地渲染），供界面在建之前摊开原文复核；口径与创建同源，预览到什么就提交什么。
+    /// 命中 <paramref name="yamlOverrides"/> 时回显微调后的原文（<see cref="PipelinePreview.Edited"/> 为 <c>true</c>）。
     /// </remarks>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c> 或空字典＝全部走模板）。</param>
     /// <returns>按端预览（口径同 <see cref="CreatePipelinesAsync"/>：已克隆的所选端）。</returns>
-    IReadOnlyList<PipelinePreview> PreviewPipelines();
+    IReadOnlyList<PipelinePreview> PreviewPipelines(IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null);
 
     /// <summary>
     /// 「中止并清理」（PRD §4.7）：注销本项目工作区（<b>不删</b> <c>LocalPath</c> 目录）、

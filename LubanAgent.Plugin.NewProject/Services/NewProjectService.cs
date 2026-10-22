@@ -1637,15 +1637,19 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <inheritdoc />
-    public Task<StepResult> CreatePipelinesAsync(CancellationToken cancellationToken = default)
-        => RunPipelineStepAsync(includeDeployStage: false, cancellationToken);
+    public Task<StepResult> CreatePipelinesAsync(
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        CancellationToken cancellationToken = default)
+        => RunPipelineStepAsync(includeDeployStage: false, yamlOverrides, cancellationToken);
 
     /// <inheritdoc />
-    public Task<StepResult> AppendDeployStagesAsync(CancellationToken cancellationToken = default)
-        => RunPipelineStepAsync(includeDeployStage: true, cancellationToken);
+    public Task<StepResult> AppendDeployStagesAsync(
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        CancellationToken cancellationToken = default)
+        => RunPipelineStepAsync(includeDeployStage: true, yamlOverrides, cancellationToken);
 
     /// <inheritdoc />
-    public IReadOnlyList<PipelinePreview> PreviewPipelines()
+    public IReadOnlyList<PipelinePreview> PreviewPipelines(IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null)
     {
         var spec = Current;
         if (spec is null)
@@ -1657,13 +1661,17 @@ public sealed class NewProjectService : INewProjectService
             .Select(repository =>
             {
                 var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage: false);
+                var overridden = TryGetYamlOverride(yamlOverrides, repository.End);
                 var existing = spec.PipelineResults.FirstOrDefault(item => item.End == repository.End);
 
                 return new PipelinePreview
                 {
                     End = repository.End,
                     PipelineName = rendered.PipelineName,
-                    Yaml = rendered.Yaml,
+                    // 预览是「首次创建」口径（只含构建阶段），故不追加部署阶段片段；
+                    // 补齐时由执行体在微调文本末尾追加（PipelineYamlOverride.Compose）。
+                    Yaml = PipelineYamlOverride.Compose(rendered.Yaml, overridden, deployStageYaml: null),
+                    Edited = overridden is not null,
                     PendingBindings = rendered.PendingBindings,
                     PipelineId = existing?.PipelineId ?? string.Empty,
                     WebUrl = existing?.WebUrl ?? string.Empty,
@@ -1672,6 +1680,17 @@ public sealed class NewProjectService : INewProjectService
             })
             .ToList();
     }
+
+    /// <summary>
+    /// 取出某端的手工微调 YAML（空白视为未微调）。
+    /// </summary>
+    /// <param name="yamlOverrides">按端微调表（可为 <c>null</c>）。</param>
+    /// <param name="end">端。</param>
+    /// <returns>微调原文；未提供返回 <c>null</c>。</returns>
+    private static string? TryGetYamlOverride(IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides, ProjectEnd end)
+        => yamlOverrides is not null && yamlOverrides.TryGetValue(end, out var text) && !string.IsNullOrWhiteSpace(text)
+            ? text
+            : null;
 
     /// <summary>
     /// Step 7 执行体（PRD §4.3 Step 7 <b>v0.30 口径</b>）：内嵌模板渲染新版 YAML → 同名幂等检索 → 创建 / 更新。
@@ -1692,11 +1711,20 @@ public sealed class NewProjectService : INewProjectService
     /// <b>幂等</b>：创建前按流水线名精确检索，命中即复用（不再重复建），与 Step 3 建库同口径。
     /// </para>
     /// <para><b>建完不自动运行</b>（PRD §6 #14）：本步不发 <c>CreatePipelineRun</c>。</para>
+    /// <para>
+    /// <b>手工微调（v0.31）</b>：<paramref name="yamlOverrides"/> 命中该端时以微调文本替换模板渲染结果；
+    /// 补齐模式下若微调文本没有自备 <c>VMDockerDeploy</c>，则把部署阶段片段追加到末尾
+    /// （见 <see cref="PipelineYamlOverride.Compose"/>）。微调文本提交前只做最小校验，语法错误由云效原样报回。
+    /// </para>
     /// </remarks>
     /// <param name="includeDeployStage">是否包含部署阶段。</param>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c>＝全部走模板）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>步骤结果（含逐端流水线地址）。</returns>
-    private async Task<StepResult> RunPipelineStepAsync(bool includeDeployStage, CancellationToken cancellationToken)
+    private async Task<StepResult> RunPipelineStepAsync(
+        bool includeDeployStage,
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides,
+        CancellationToken cancellationToken)
     {
         const WizardStep Step = WizardStep.Pipeline;
         var action = includeDeployStage ? "补齐部署阶段" : "创建云效流水线";
@@ -1791,6 +1819,26 @@ public sealed class NewProjectService : INewProjectService
                 var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage);
                 var watch = BeginOperation(Step, $"{action}（{label}）", $"流水线名 {rendered.PipelineName}");
 
+                // ── 0. 手工微调（v0.31）：微调文本优先；补齐时把部署阶段追加到微调文本之后 ──────────
+                var overrideYaml = TryGetYamlOverride(yamlOverrides, repository.End);
+                var yaml = PipelineYamlOverride.Compose(rendered.Yaml, overrideYaml, rendered.DeployStageYaml);
+
+                if (overrideYaml is not null)
+                {
+                    // 幂等检索与 UpdatePipeline 都以「该端最终流水线名」为准：补齐时名称取自档案里的现名。
+                    var expectedName = includeDeployStage && previous is not null && !string.IsNullOrWhiteSpace(previous.PipelineName)
+                        ? previous.PipelineName
+                        : rendered.PipelineName;
+
+                    var invalid = PipelineYamlOverride.Validate(yaml, expectedName);
+                    if (invalid is not null)
+                    {
+                        EndOperation(Step, $"{action}（{label}）", "手工微调的 YAML 未通过提交前校验", StepStatus.Failed, watch.Elapsed);
+                        SaveSpec(spec);
+                        return StepResult.Fail(Step, invalid);
+                    }
+                }
+
                 // ── 1. 幂等：按名精确检索，命中即复用（PRD §4.3 Step 7）──────────────────
                 var listed = await flow.ListPipelinesAsync(
                     pipelineName: rendered.PipelineName,
@@ -1813,7 +1861,7 @@ public sealed class NewProjectService : INewProjectService
                         new YunxiaoUpdatePipelineRequest
                         {
                             PipelineName = previous.PipelineName,
-                            Content = rendered.Yaml
+                            Content = yaml
                         },
                         cancellationToken: cancellationToken);
 
@@ -1832,7 +1880,7 @@ public sealed class NewProjectService : INewProjectService
                         new YunxiaoCreatePipelineRequest
                         {
                             PipelineName = rendered.PipelineName,
-                            Content = rendered.Yaml
+                            Content = yaml
                         },
                         cancellationToken: cancellationToken);
 
@@ -1856,7 +1904,7 @@ public sealed class NewProjectService : INewProjectService
                 result.Created = created;
                 result.DeployStageIncluded = includeDeployStage ? true : previous?.DeployStageIncluded ?? false;
                 result.PendingBindings = rendered.PendingBindings.ToList();
-                result.Yaml = rendered.Yaml;
+                result.Yaml = yaml;
 
                 if (previous is null)
                     spec.PipelineResults.Add(result);

@@ -54,7 +54,7 @@
     {
       "id": "newproject-create-pipeline",
       "name": "创建流水线",
-      "description": "Step 7：逐端按内嵌新版 YAML 模板渲染并创建流水线（PRD §4.10.4；v0.30 起不再克隆参考流水线原文）",
+      "description": "Step 7：逐端按内嵌新版 YAML 模板渲染并创建流水线，YAML 可手工微调后再提交（PRD §4.10.4；v0.31）",
       "entry": "skills/newproject-create-pipeline.md",
       "category": "newproject"
     }

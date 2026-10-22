@@ -4,13 +4,13 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： PipelinePreview
 *创建时间：2026/10/22
-*描述：Step 7 流水线「只读预览」（PRD §4.3 Step 7 v0.30）：建之前把将提交的新版 YAML 摊给用户看
+*描述：Step 7 流水线预览（PRD §4.3 Step 7 v0.30）：建之前把将提交的新版 YAML 摊给用户看，并支持手工微调
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
 
 /// <summary>
-/// Step 7 流水线只读预览：<b>不调云效</b>，只把「按当前档案与本机配置会提交什么」算出来。
+/// Step 7 流水线预览：<b>不调云效</b>，只把「按当前档案与本机配置会提交什么」算出来。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,7 +20,8 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// 预览口径与创建口径<b>同源</b>（同一 <c>PipelineRenderer.Render</c> 调用，只是 <c>includeDeployStage=false</c>），
-/// 故预览到什么就提交什么，不存在两套模板。
+/// 故预览到什么就提交什么，不存在两套模板。<b>v0.31</b>：用户手工微调后，这里回显的就是微调后的原文
+/// （<see cref="Edited"/> 为 <c>true</c>），创建时提交同一份内容。
 /// </para>
 /// </remarks>
 public sealed class PipelinePreview
@@ -45,6 +46,12 @@ public sealed class PipelinePreview
 
     /// <summary>该端流水线当前是否已包含部署阶段。</summary>
     public bool DeployStageIncluded { get; set; }
+
+    /// <summary>
+    /// <see cref="Yaml"/> 是否来自用户手工微调（<c>false</c>＝模板渲染原文）。
+    /// </summary>
+    /// <remarks>界面据此显示「已手工微调」标记与「重置为模板」出口；微调只在会话内保留。</remarks>
+    public bool Edited { get; set; }
 
     /// <summary>该端是否已创建过流水线。</summary>
     public bool Created => !string.IsNullOrWhiteSpace(PipelineId);

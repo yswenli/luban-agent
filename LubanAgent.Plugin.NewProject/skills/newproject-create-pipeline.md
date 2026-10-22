@@ -28,7 +28,9 @@
    已存在则 `mcp_yunxiao_flow_update_pipeline`（`pipelineId` + `name` + `content`）。
 4. 需要时 `mcp_yunxiao_flow_list_pipelines` / 详情接口复核；回写档案（流水线 ID 与 `RemoteArtifactKind.Pipeline`）。
 
-界面提供 **YAML 预览**（建库前先看渲染结果）；Agent 侧同样先渲染再提交。
+界面提供 **YAML 预览**，可点「**编辑 YAML…**」在独立窗口里**手工微调**选中端的提交原文（v0.31）：
+按端、会话内保留，可「重置为模板」；提交前只做最小校验（非空 / 无 Tab / 有顶层 `stages:` / `name:` 与模板名一致），
+真正语法错误由云效原样报回（`1209300`）。创建与补齐**都以微调后的原文为准**；Agent 侧同样先渲染再提交。
 
 ## 结果
 
@@ -57,9 +59,12 @@
 - 补齐走 `mcp_yunxiao_flow_update_pipeline`，部署阶段用官方组件 `VMDockerDeploy`
   （`with: { machineGroup, executeUser: root, run }`）。
 - **注意**：更新会**一并覆盖流水线名称**，因此必须回传现有名称（界面用卡内勾选确认后再提交）。
+- **与手工微调叠加**：若该端有微调文本，则以微调文本为基础、在末尾**追加**部署阶段片段（缩进在 `stages:` 之下）；
+  若微调文本里已自己写了 `VMDockerDeploy`（自备部署阶段）或已有 `deploy` 阶段（换了组件也算），则不再重复追加。
 
 ## 失败处理
 
 - 未通过 Step 6：阻断并提示「先完成第 6 步（推送）」。
 - 渲染后残留占位符 / YAML 非法：停在创建前，附上失败原因，不创建半成品流水线。
+- 微调文本缺 `stages:` / 用了 Tab / 改了 `name:`：提交前拦下（不发请求），提示「恢复模板」或改配置 `pipelineNameFormat`。
 - 云效返回业务错误（`errorCode` 为字符串）：原样透出 `errorMessage`（如 `1209300 yaml校验失败…`），便于定位步骤参数。

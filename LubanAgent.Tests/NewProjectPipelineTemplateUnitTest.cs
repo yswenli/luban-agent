@@ -243,8 +243,8 @@ public class NewProjectPipelineTemplateUnitTest
 
         var result = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), settings);
 
-        // 默认不含部署阶段：注释里出现（被注释掉），但不存在未注释的 deploy: 阶段
-        StringAssert.Contains(result.Yaml, "# deploy:");
+        // 默认不含部署阶段：注释里出现（被注释掉，且按 stages 之下的缩进展示），但不存在未注释的 deploy: 阶段
+        StringAssert.Contains(result.Yaml, "#   deploy:");
         Assert.IsFalse(
             result.Yaml.Split('\n').Any(line => line.Trim() == "deploy:"),
             "默认口径下部署阶段不应是可执行阶段（只作注释附在末尾）");
@@ -267,6 +267,15 @@ public class NewProjectPipelineTemplateUnitTest
         StringAssert.Contains(result.Yaml, "component: VMDockerDeploy");
         StringAssert.Contains(result.Yaml, $"machineGroup: '{MachineGroupUuid}'");
         Assert.IsFalse(result.Yaml.Contains("只含构建阶段"), "补齐口径下不应再附「只含构建阶段」的注释");
+
+        // 结构护栏：部署阶段必须挂在顶层 stages: 之下（stage id 缩进 2 空格），
+        // 顶格的 deploy: 是顶层键，云效 YAML 校验必失败（v0.30 潜在结构错误，v0.31 修正）。
+        Assert.IsTrue(
+            result.Yaml.Split('\n').Any(line => line == "  deploy:"),
+            "部署阶段片段必须缩进 2 空格、挂在 stages: 之下");
+        Assert.IsFalse(
+            result.Yaml.Split('\n').Any(line => line == "deploy:"),
+            "不得出现顶格 deploy:（那会变成顶层键）");
     }
 
     [TestMethod]
@@ -304,6 +313,117 @@ public class NewProjectPipelineTemplateUnitTest
 
         StringAssert.Contains(result.Yaml, "branch: master");   // 退回仓库默认分支
         StringAssert.Contains(result.Yaml, "name: JNMS_DEV_Deploy_jnms-Admin");
+    }
+
+    // ── 手工微调（v0.31：YAML 可编辑 + 补齐追加部署阶段）──────────────────────
+
+    [TestMethod]
+    public void Render_ExposesExpandedDeployFragment_ForServiceOnly()
+    {
+        var settings = CreateSettings();
+
+        var service = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), settings);
+        var admin = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Admin), settings);
+
+        Assert.IsNotNull(service.DeployStageYaml, "后端应带出展开后的部署阶段片段（供补齐时追加到微调文本之后）");
+        StringAssert.StartsWith(service.DeployStageYaml, "  deploy:", "部署阶段片段必须按 stages 之下的缩进（2 空格）");
+        StringAssert.Contains(service.DeployStageYaml, $"machineGroup: '{MachineGroupUuid}'");
+        Assert.IsFalse(service.DeployStageYaml!.Contains('{'), "部署阶段片段必须完全展开");
+        Assert.IsNull(admin.DeployStageYaml, "前端没有独立部署阶段");
+    }
+
+    [TestMethod]
+    public void Compose_WithoutOverride_KeepsRenderedYaml()
+    {
+        const string Rendered = "name: X\nstages:\n  build:\n";
+
+        Assert.AreEqual(Rendered, PipelineYamlOverride.Compose(Rendered, null, "deploy:\n  component: VMDockerDeploy"));
+        Assert.AreEqual(Rendered, PipelineYamlOverride.Compose(Rendered, "   \n\t", "deploy: x"));
+    }
+
+    [TestMethod]
+    public void Compose_WithOverride_SubmitsEditedTextVerbatim_WithNormalizedLineEndings()
+    {
+        const string Edited = "name: X\r\nstages:\r\n  build:\r\n    jobs:\r\n      j:\r\n        steps: {}\r\n\r\n";
+
+        var actual = PipelineYamlOverride.Compose("name: IGNORED\nstages:", Edited, deployStageYaml: null);
+
+        Assert.AreEqual("name: X\nstages:\n  build:\n    jobs:\n      j:\n        steps: {}", actual,
+            "微调文本必须原样提交（只统一换行符、去掉末尾空白）");
+    }
+
+    [TestMethod]
+    public void Compose_AppendDeploy_AppendsFragmentAfterEditedText()
+    {
+        var actual = PipelineYamlOverride.Compose(
+            "name: IGNORED\nstages:",
+            "name: X\nstages:\n  build: {}",
+            "  deploy:\n    component: VMDockerDeploy");
+
+        StringAssert.StartsWith(actual, "name: X\nstages:");
+        StringAssert.EndsWith(actual, "  deploy:\n    component: VMDockerDeploy");
+        StringAssert.Contains(actual, "\n\n", "构建段与部署段之间应留一个空行");
+    }
+
+    [TestMethod]
+    public void Compose_AppendDeploy_DoesNotDuplicate_WhenUserWroteOwnDeployStage()
+    {
+        // 用户自己写了 deploy 阶段但换了组件：同 id 再追加会拼出重复键，故按「已有 deploy 阶段」跳过
+        const string Edited = "name: X\nstages:\n  build: {}\n  deploy:\n    component: KubectlDeploy";
+
+        var actual = PipelineYamlOverride.Compose(Edited, Edited, "  deploy:\n    component: VMDockerDeploy");
+
+        Assert.AreEqual(Edited, actual, "已有 deploy 阶段 ⇒ 不得再追加同 id 阶段");
+    }
+
+    [TestMethod]
+    public void Compose_AppendDeploy_DoesNotDuplicate_WhenUserAlreadyWroteDeployComponent()
+    {
+        const string Edited = "name: X\nstages:\n  build: {}\n  deploy:\n    component: VMDockerDeploy";
+
+        var actual = PipelineYamlOverride.Compose(Edited, Edited, "deploy:\n  component: VMDockerDeploy");
+
+        Assert.AreEqual(Edited, actual, "用户自己写了 VMDockerDeploy ⇒ 视为自备部署阶段，不得重复追加");
+    }
+
+    [TestMethod]
+    public void Validate_AcceptsRenderedYaml_AndReadsName()
+    {
+        var rendered = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), CreateSettings());
+
+        Assert.IsNull(PipelineYamlOverride.Validate(rendered.Yaml, rendered.PipelineName));
+        Assert.AreEqual(rendered.PipelineName, PipelineYamlOverride.ReadName(rendered.Yaml));
+    }
+
+    [TestMethod]
+    public void Validate_AcceptsQuotedName_AndTrailingCommentOnStages()
+    {
+        const string Yaml = "name: \"JNMS_DEV_Deploy_jnms-Service\"\nstages:   # 构建\n  build: {}";
+
+        Assert.AreEqual("JNMS_DEV_Deploy_jnms-Service", PipelineYamlOverride.ReadName(Yaml));
+        Assert.IsNull(PipelineYamlOverride.Validate(Yaml, "JNMS_DEV_Deploy_jnms-Service"));
+    }
+
+    [TestMethod]
+    public void Validate_RejectsEmptyTabMissingStagesAndRenamedYaml()
+    {
+        Assert.IsNotNull(PipelineYamlOverride.Validate(null, "X"), "空 YAML 必须拦下");
+        Assert.IsNotNull(PipelineYamlOverride.Validate("   ", "X"), "空白 YAML 必须拦下");
+
+        var tab = PipelineYamlOverride.Validate("name: X\nstages:\n\tbuild: {}", "X");
+        Assert.IsNotNull(tab, "Tab 缩进必须拦下（云效只接受空格）");
+        StringAssert.Contains(tab, "Tab");
+
+        var noStages = PipelineYamlOverride.Validate("name: X\nsources: {}", "X");
+        Assert.IsNotNull(noStages, "缺顶层 stages: 必须拦下");
+        StringAssert.Contains(noStages, "stages");
+
+        var noName = PipelineYamlOverride.Validate("stages:\n  build: {}", "X");
+        Assert.IsNotNull(noName, "缺顶层 name: 必须拦下");
+
+        var renamed = PipelineYamlOverride.Validate("name: Y\nstages:\n  build: {}", "X");
+        Assert.IsNotNull(renamed, "改掉流水线名必须拦下（同名幂等检索依赖它）");
+        StringAssert.Contains(renamed, "流水线名不能改");
     }
 
     // ── 辅助 ──────────────────────────────────────────────────────────────────

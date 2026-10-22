@@ -8,6 +8,7 @@
 *****************************************************************************/
 
 using System.Text;
+using System.Text.RegularExpressions;
 using LubanAgent.Plugin.NewProject.Abstractions;
 using LubanAgent.Plugin.NewProject.Configuration;
 
@@ -86,7 +87,9 @@ public static class PipelineTemplateLibrary
         }
 
         foreach (var line in body.Split('\n'))
-            note.Append("# ").AppendLine(line.TrimEnd('\r'));
+            // 前缀「# 」之外再补 2 空格：片段是「顶格写的独立 stage」，解除注释后必须挂在顶层 stages: 之下
+            // （stage id 缩进 2 空格），否则会变成顶层 deploy: 键、云效 YAML 校验必失败。
+            note.Append("#   ").AppendLine(line.TrimEnd('\r'));
 
         return note.ToString();
     }
@@ -381,6 +384,15 @@ public sealed class PipelineRenderResult
 
     /// <summary>待人工绑定清单（已展开占位符）。</summary>
     public IReadOnlyList<string> PendingBindings { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// 展开后的<b>部署阶段片段</b>（该端没有独立部署阶段时为 <c>null</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 首次创建时它只以注释块形式附在 <see cref="Yaml"/> 末尾；用户手工微调后走「一键补齐部署阶段」时，
+    /// 由 <see cref="PipelineYamlOverride.Compose"/> 把它追加到微调文本之后。
+    /// </remarks>
+    public string? DeployStageYaml { get; set; }
 }
 
 /// <summary>
@@ -420,11 +432,18 @@ public static class PipelineRenderer
 
         var yaml = new StringBuilder(Expand(PipelineTemplateLibrary.BuildStageYaml(repository.End), tokens).TrimEnd());
 
+        // 部署阶段片段（展开后）一并带出：首次创建只把注释块附在末尾；
+        // 补齐时若用户手工微调过 YAML，由能力层用 Compose 把它追加到微调文本之后。
+        // 注意缩进：片段必须挂在顶层 `stages:` 之下（stage id 缩进 2 空格），
+        // 否则拼出来的是顶层 `deploy:` 键（v0.30 的片段未缩进，属未被真机覆盖的潜在结构错误）。
+        var deployFragment = PipelineTemplateLibrary.DeployStageYaml(repository.End);
+        if (deployFragment is not null)
+            deployFragment = Indent(Expand(deployFragment, tokens).TrimEnd(), 2);
+
         if (includeDeployStage)
         {
-            var deploy = PipelineTemplateLibrary.DeployStageYaml(repository.End);
-            if (deploy is not null)
-                yaml.AppendLine().AppendLine().Append(Expand(deploy, tokens).TrimEnd());
+            if (deployFragment is not null)
+                yaml.AppendLine().AppendLine().Append(deployFragment);
         }
         else
         {
@@ -439,7 +458,8 @@ public static class PipelineRenderer
         {
             PipelineName = name,
             Yaml = yaml.ToString(),
-            PendingBindings = pending
+            PendingBindings = pending,
+            DeployStageYaml = deployFragment
         };
     }
 
@@ -541,4 +561,141 @@ public static class PipelineRenderer
     /// <returns>首字母大写后的缩写。</returns>
     private static string Capitalize(string? code)
         => string.IsNullOrEmpty(code) ? string.Empty : char.ToUpperInvariant(code[0]) + code[1..];
+
+    /// <summary>
+    /// 把整段文本统一缩进若干空格（空行不补空格）。
+    /// </summary>
+    /// <param name="text">原文。</param>
+    /// <param name="spaces">缩进空格数。</param>
+    /// <returns>缩进后的文本。</returns>
+    /// <remarks>
+    /// 用途：部署阶段片段在模板常量里是「顶格写的独立片段」，拼进完整 YAML 时必须挂在顶层 <c>stages:</c> 之下
+    /// （stage id 缩进 2 空格）——否则会变成顶层 <c>deploy:</c> 键，云效 YAML 校验必失败。
+    /// </remarks>
+    private static string Indent(string text, int spaces)
+    {
+        if (string.IsNullOrEmpty(text) || spaces <= 0)
+            return text;
+
+        var pad = new string(' ', spaces);
+        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        return string.Join("\n", lines.Select(line => line.Length == 0 ? line : pad + line));
+    }
+}
+
+/// <summary>
+/// Step 7 手工微调（PRD §4.3 Step 7 v0.31）：把用户在编辑器里改过的 YAML 与模板渲染结果合并，并做提交前的最小校验。
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>为什么不上 YAML 解析库</b>：插件不引入额外依赖，真正的语法校验交给云效——非法 YAML 由服务端返回
+/// <c>1209300</c>，文案原样透出。这里只挡两类「必然白跑一次」的低级错误：改坏顶层结构（缺 <c>stages:</c>）
+/// 与改掉流水线名（同名幂等检索与档案名称会和远端对不上）。
+/// </para>
+/// <para>
+/// <b>补齐语义</b>：手工微调只作用在构建段；「一键补齐部署阶段」会在微调文本末尾追加部署阶段片段，
+/// 若微调文本里已经自己写了 <c>VMDockerDeploy</c>（用户自备部署阶段）或已存在 <c>deploy</c> 阶段（换了组件也算），
+/// 则不再重复追加——同 id 阶段追加两次会拼出重复键、云效校验必失败。
+/// </para>
+/// </remarks>
+public static class PipelineYamlOverride
+{
+    /// <summary>顶层 <c>name:</c> 行（新版 YAML 的首行）。</summary>
+    private static readonly Regex NamePattern = new(@"^name:[ \t]*(?<value>.+?)[ \t]*$", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>顶层 <c>stages:</c> 行（允许行尾注释）。</summary>
+    private static readonly Regex StagesPattern = new(@"^stages:[ \t]*(#.*)?$", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// 已存在的 <c>deploy</c> 阶段行（stage id 缩进 1–4 空格；步骤 id 缩进更深，不会误判）。
+    /// </summary>
+    /// <remarks>
+    /// 用于「补齐不重复追加」：用户若自己写了 <c>deploy</c> 阶段（哪怕换了组件），再追加一个同 id 阶段
+    /// 会拼出重复键、云效校验必失败。
+    /// </remarks>
+    private static readonly Regex DeployStagePattern = new(@"^[ \t]{1,4}deploy:[ \t]*$", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// 合并「模板渲染结果」与「用户手工微调」：无微调即原样返回模板结果；有微调时以微调文本为准。
+    /// </summary>
+    /// <param name="renderedYaml">模板渲染出的完整 YAML（首次创建口径）。</param>
+    /// <param name="overrideYaml">用户手工微调的原文；<c>null</c>／空白表示未微调。</param>
+    /// <param name="deployStageYaml">展开后的部署阶段片段；该端无部署阶段或本次不补齐时为 <c>null</c>。</param>
+    /// <returns>最终要提交给云效的 YAML。</returns>
+    /// <remarks>
+    /// 不做语法修复：微调文本原样提交（只统一换行符、去掉末尾空白），保证「界面看到的与提交的一致」。
+    /// <paramref name="deployStageYaml"/> 由 <c>PipelineRenderer</c> 给出（已按 stage 缩进 2 空格）。
+    /// </remarks>
+    public static string Compose(string renderedYaml, string? overrideYaml, string? deployStageYaml)
+    {
+        if (string.IsNullOrWhiteSpace(overrideYaml))
+            return renderedYaml;
+
+        var text = Normalize(overrideYaml);
+        if (string.IsNullOrWhiteSpace(deployStageYaml)
+            || text.Contains("VMDockerDeploy", StringComparison.OrdinalIgnoreCase)
+            || DeployStagePattern.IsMatch(text))
+        {
+            return text.TrimEnd();
+        }
+
+        return text.TrimEnd() + "\n\n" + Normalize(deployStageYaml).TrimEnd();
+    }
+
+    /// <summary>
+    /// 提交前的最小校验：非空 / 不含 Tab / 有顶层 <c>stages:</c> / <c>name:</c> 与模板渲染名一致。
+    /// </summary>
+    /// <param name="yaml">待提交 YAML。</param>
+    /// <param name="expectedName">模板渲染出的流水线名（同名幂等检索依赖它）。</param>
+    /// <returns>不合规时的可读文案；合规返回 <c>null</c>。</returns>
+    public static string? Validate(string? yaml, string expectedName)
+    {
+        if (string.IsNullOrWhiteSpace(yaml))
+            return "YAML 不能为空：请点「恢复模板」重置后再微调。";
+
+        if (yaml.Contains('\t'))
+            return "YAML 里不能出现 Tab：云效用空格缩进，请把 Tab 换成空格后重试。";
+
+        if (!StagesPattern.IsMatch(yaml))
+            return "YAML 缺少顶层 stages:（云效只收顶层 stages: 的新版 YAML）：请点「恢复模板」，只改内容、不改结构。";
+
+        var name = ReadName(yaml);
+        if (string.IsNullOrWhiteSpace(name))
+            return $"YAML 缺少顶层 name:（应保持为 {expectedName}）：请点「恢复模板」后重试。";
+
+        if (!string.Equals(name, expectedName, StringComparison.Ordinal))
+        {
+            return $"流水线名不能改：YAML 里的 name 是「{name}」，期望「{expectedName}」。"
+                   + "改名会让同名幂等检索与档案里的名称对不上；确需改名请改插件配置 pipelineNameFormat 后重跑本步。";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 读取顶层 <c>name:</c> 的值（去掉成对引号）。
+    /// </summary>
+    /// <param name="yaml">YAML 原文。</param>
+    /// <returns>流水线名；未找到返回 <c>null</c>。</returns>
+    public static string? ReadName(string? yaml)
+    {
+        if (string.IsNullOrWhiteSpace(yaml))
+            return null;
+
+        var match = NamePattern.Match(yaml);
+        if (!match.Success)
+            return null;
+
+        var value = match.Groups["value"].Value.Trim();
+        if (value.Length >= 2 && (value[0] == '"' || value[0] == '\'') && value[^1] == value[0])
+            value = value[1..^1].Trim();
+
+        return value.Length == 0 ? null : value;
+    }
+
+    /// <summary>统一换行符为 <c>\n</c>（提交与落档案同形，跨平台比较也不飘）。</summary>
+    /// <param name="text">原文。</param>
+    /// <returns>换行统一后的文本。</returns>
+    private static string Normalize(string text)
+        => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 }

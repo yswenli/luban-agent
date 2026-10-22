@@ -301,7 +301,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         HorizontalAlignment = HorizontalAlignment.Left
     };
 
-    /// <summary>Step 7 YAML 预览正文（只读）。</summary>
+    /// <summary>Step 7 YAML 预览正文（只读；手工微调在独立窗口里做，见 <see cref="PipelineYamlEditorWindow"/>）。</summary>
     private readonly TextBox _pipelineYamlBox = new()
     {
         IsReadOnly = true,
@@ -311,6 +311,31 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         Height = 220,
         IsVisible = false
     };
+
+    /// <summary>Step 7「编辑 YAML…」：在独立窗口里手工微调选中端的提交原文。</summary>
+    private readonly Button _pipelineEditButton = new() { Content = "编辑 YAML…", FontSize = 12 };
+
+    /// <summary>Step 7「重置为模板」：丢弃选中端的手工微调（只在已微调时出现）。</summary>
+    private readonly Button _pipelineResetButton = new() { Content = "重置为模板", FontSize = 12, IsVisible = false };
+
+    /// <summary>Step 7「已手工微调」标记。</summary>
+    private readonly TextBlock _pipelineEditedText = new()
+    {
+        Text = "已手工微调",
+        FontSize = 11,
+        Foreground = WarningBrush,
+        VerticalAlignment = VerticalAlignment.Center,
+        IsVisible = false
+    };
+
+    /// <summary>
+    /// Step 7 手工微调的 YAML（按端；<b>只在会话内保留</b>）。
+    /// </summary>
+    /// <remarks>
+    /// 提交成功后<b>实际提交的原文</b>落档案 <c>PipelineResults[].Yaml</c>；重开面板不自动回填，
+    /// 避免旧微调在档案配置已变（Step 1 改名 / 仓库名调整）之后悄悄覆盖新渲染结果。
+    /// </remarks>
+    private readonly Dictionary<ProjectEnd, string> _pipelineYamlOverrides = new();
 
     /// <summary>Step 7 YAML 预览的说明行（点明这是哪一端的原文）。</summary>
     private readonly TextBlock _pipelineYamlCaption = new()
@@ -499,6 +524,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _buildButton.Click += OnBuildClicked;
         _pipelineButton.Click += OnPipelineClicked;
         _appendDeployButton.Click += OnAppendDeployClicked;
+        _pipelineEditButton.Click += OnEditPipelineYamlClicked;
+        _pipelineResetButton.Click += OnResetPipelineYamlClicked;
         _pipelinePreviewPicker.SelectionChanged += OnPipelinePreviewChanged;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
         _conflictRecloneButton.Click += OnConflictChoiceClicked;
@@ -1051,11 +1078,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.30 口径</b>）：逐端流水线状态 + YAML 只读预览 + 创建 / 一键补齐部署阶段。
+    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.31 口径</b>）：逐端流水线状态 + YAML 预览（可手工微调）+ 创建 / 一键补齐部署阶段。
     /// </summary>
     /// <remarks>
-    /// 面板零业务规则：模板、变量与缓存、待绑定清单全部由能力层（<c>PipelineRenderer</c>）算出，
-    /// 这里只呈现 <see cref="INewProjectService.PreviewPipelines"/> 的结果并投递两个动作。
+    /// 面板零业务规则：模板、变量与缓存、待绑定清单、微调校验全部由能力层（<c>PipelineRenderer</c> /
+    /// <c>PipelineYamlOverride</c>）算出，这里只呈现 <see cref="INewProjectService.PreviewPipelines"/> 的结果、
+    /// 收集微调原文并投递动作。
     /// </remarks>
     /// <returns>操作区。</returns>
     private Border BuildStep7Area()
@@ -1101,7 +1129,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                          + "且没有「复制流水线」接口，故不再克隆参考流水线原文）。模板已内嵌变量（variables）与缓存（cache）："
                          + "后端写入 DOCKER_IMAGE_NAME / APP_PORT / DOCKER_CONTAINER_NAME 等；前端写入 npm 缓存目录。"
                          + "创建前按流水线名精确检索，命中即复用（幂等）；建完不自动运行。"
-                         + "**只含构建阶段**——部署阶段按口径默认禁用，确认资源绑定后可点「一键补齐部署阶段」并入。",
+                         + "**只含构建阶段**——部署阶段按口径默认禁用，确认资源绑定后可点「一键补齐部署阶段」并入。"
+                         + "下方 YAML 可点「编辑 YAML…」手工微调（按端、会话内保留）：提交内容与预览原文一致，"
+                         + "名称与顶层 stages 必须保留（提交前会拦下明显改坏的文本）。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap
@@ -1126,6 +1156,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 },
                 _pipelineYamlCaption,
                 _pipelineYamlBox,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _pipelineEditButton, _pipelineResetButton, _pipelineEditedText }
+                },
                 _appendDeployConfirm,
                 new StackPanel
                 {
@@ -1636,7 +1672,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <param name="spec">项目档案。</param>
     private void PopulateStep7Area(ProjectSpec spec)
     {
-        _pipelinePreviews = _service.PreviewPipelines();
+        _pipelinePreviews = _service.PreviewPipelines(_pipelineYamlOverrides);
 
         foreach (var row in _pipelineRows)
         {
@@ -1721,7 +1757,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         ShowPipelineYaml(_pipelinePreviewPicker.SelectedItem as string);
     }
 
-    /// <summary>把选中端的 YAML 原文摊到只读框里。</summary>
+    /// <summary>把选中端的 YAML 原文摊到只读框里（已手工微调则显示微调后的原文）。</summary>
     /// <param name="endLabel">端标签；<c>null</c>／未命中时清空。</param>
     private void ShowPipelineYaml(string? endLabel)
     {
@@ -1730,15 +1766,21 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         {
             _pipelineYamlBox.IsVisible = false;
             _pipelineYamlCaption.IsVisible = false;
+            _pipelineEditButton.IsEnabled = false;
+            _pipelineResetButton.IsVisible = false;
+            _pipelineEditedText.IsVisible = false;
             return;
         }
 
         _pipelineYamlCaption.IsVisible = true;
         _pipelineYamlCaption.Text = $"{EndLabel(preview.End)}将提交的流水线名 {preview.PipelineName}"
                                     + (preview.Created ? "（该端已存在，再次执行为覆盖更新）" : "（新建）")
-                                    + "。下方为原文预览，与提交内容完全一致：";
+                                    + (preview.Edited ? "。下方为**手工微调后的原文**，与提交内容完全一致：" : "。下方为原文预览，与提交内容完全一致：");
         _pipelineYamlBox.IsVisible = true;
         _pipelineYamlBox.Text = preview.Yaml;
+        _pipelineEditButton.IsEnabled = !_busy;
+        _pipelineResetButton.IsVisible = preview.Edited;
+        _pipelineEditedText.IsVisible = preview.Edited;
     }
 
     /// <summary>
@@ -2598,6 +2640,78 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private void OnPipelinePreviewChanged(object? sender, SelectionChangedEventArgs e)
         => ShowPipelineYaml(_pipelinePreviewPicker.SelectedItem as string);
 
+    /// <summary>Step 7「编辑 YAML…」：弹窗手工微调选中端的提交原文。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private async void OnEditPipelineYamlClicked(object? sender, RoutedEventArgs e) => await EditPipelineYamlAsync();
+
+    /// <summary>Step 7「重置为模板」：丢弃选中端的手工微调。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnResetPipelineYamlClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_unloaded || _service.Current is null)
+            return;
+
+        var preview = CurrentPipelinePreview();
+        if (preview is null || !_pipelineYamlOverrides.Remove(preview.End))
+            return;
+
+        ShowWarnings(Array.Empty<string>());
+        PopulateStep7Area(_service.Current);
+    }
+
+    /// <summary>
+    /// Step 7 手工微调入口：在独立窗口里编辑选中端 YAML，保存后回填内存字典并刷新预览。
+    /// </summary>
+    /// <remarks>
+    /// 面板只负责传递文本：校验由能力层 <c>PipelineYamlOverride.Validate</c> 负责（弹窗内即时拦、提交前再拦一次），
+    /// 既不解析 YAML 也不猜云效规则。
+    /// </remarks>
+    private async Task EditPipelineYamlAsync()
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        var preview = CurrentPipelinePreview();
+        if (preview is null)
+        {
+            ShowWarnings(new[] { "当前没有可微调的流水线预览：请先完成 Step 3 建库并克隆，再回到本步。" });
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            ShowErrors(new[] { "当前宿主不是桌面窗口，无法打开 YAML 编辑器：请在 codex 桌面端里微调。" });
+            return;
+        }
+
+        var dialog = new PipelineYamlEditorWindow(EndLabel(preview.End), preview.PipelineName, preview.Yaml);
+        var edited = await dialog.ShowDialog<string?>(owner).ConfigureAwait(true);
+        if (_unloaded || edited is null)
+            return;
+
+        // 与当前生效原文完全一致 ⇒ 视为未微调（避免「打开又保存」就把该端永久标成已微调）
+        if (string.Equals(edited, preview.Yaml, StringComparison.Ordinal))
+            _pipelineYamlOverrides.Remove(preview.End);
+        else
+            _pipelineYamlOverrides[preview.End] = edited;
+
+        ShowErrors(Array.Empty<string>());
+        ShowWarnings(Array.Empty<string>());
+
+        if (_service.Current is { } spec)
+            PopulateStep7Area(spec);
+    }
+
+    /// <summary>取当前选中端对应的流水线预览（无预览时为 <c>null</c>）。</summary>
+    /// <returns>预览；未命中返回 <c>null</c>。</returns>
+    private PipelinePreview? CurrentPipelinePreview()
+    {
+        var label = _pipelinePreviewPicker.SelectedItem as string;
+        return _pipelinePreviews.FirstOrDefault(item => EndLabel(item.End) == label);
+    }
+
     /// <summary>
     /// Step 7 执行入口（创建流水线）：交能力层渲染内嵌模板并逐端创建。
     /// </summary>
@@ -2610,7 +2724,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         SetBusy(true, "正在逐端创建云效流水线（渲染内嵌新版 YAML → 同名检索 → 创建）…");
         try
         {
-            var result = await _service.CreatePipelinesAsync().ConfigureAwait(true);
+            var result = await _service.CreatePipelinesAsync(_pipelineYamlOverrides).ConfigureAwait(true);
             if (_unloaded)
                 return;
 
@@ -2653,7 +2767,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         SetBusy(true, "正在把部署阶段并入已有流水线（UpdatePipeline 覆盖更新）…");
         try
         {
-            var result = await _service.AppendDeployStagesAsync().ConfigureAwait(true);
+            var result = await _service.AppendDeployStagesAsync(_pipelineYamlOverrides).ConfigureAwait(true);
             if (_unloaded)
                 return;
 
