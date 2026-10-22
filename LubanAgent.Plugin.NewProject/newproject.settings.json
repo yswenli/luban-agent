@@ -82,8 +82,13 @@
   // 真机核：OpenAPI 校验对私有集群一律报「runsOn {} 不存在」，故企服版的私有集群值此处**故意留空**，
   // 由人工在控制台确认后回填（见「待人工绑定清单」）。前端两端企服版用的是公共构建集群，同样留空。
   //
-  // 【deployMachineGroup】必须是**主机组 uuid**（真机核：tb 数字 id 226948 报「该机器组uuid[226948]不存在」），
-  // 故此处留空；留空时 YAML 给「待绑定：主机组 uuid」占位，且「一键补齐部署阶段」会直接给可读失败（不发请求）。
+  // 【deployMachineGroup】必须是**主机组 uuid**（真机核：tb 数字 id 226948 报「该机器组uuid[226948]不存在」）；
+  // 留空时 YAML 给「待绑定：主机组 uuid」占位，且「一键补齐部署阶段」会直接给可读失败（不发请求）。
+  //
+  // 【Service 已填真机值】tIPKOJBbwwOVKVia = 移动云DEV主机组（主机组 id 226948）。
+  // 来源：只读探针 GET /oapi/v1/flow/organizations/{org}/hostGroups（2026-10-22 发现，此前误以为无 API）；
+  //      与企服版参考流水线 3481236 的 tb `machine_group_id: 226948` 一一对应。
+  // 前端（Admin/Mobile）无独立部署阶段（构建产物上传 OSS 即发布），此处保持留空。
   "pipelineDefaults": [
     {
       "end": "Service",
@@ -100,7 +105,7 @@
       "ossRegion": "",
       "ossPrefix": "",
       "uploadPath": "",
-      "deployMachineGroup": ""
+      "deployMachineGroup": "tIPKOJBbwwOVKVia"
     },
     {
       "end": "Admin",

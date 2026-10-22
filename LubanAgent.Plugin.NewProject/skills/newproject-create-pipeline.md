@@ -1,6 +1,6 @@
 # 创建流水线（newproject-create-pipeline）
 
-> 「新建项目」插件原子技能 · 对应 **Step 7** · **v0.30 版**（2026-10-22 真机取证后重写）。
+> 「新建项目」插件原子技能 · 对应 **Step 7** · **v0.31 版**（2026-10-22 真机取证后重写；v0.31 起 YAML 可手工微调）。
 
 ## 何时使用
 
@@ -56,6 +56,11 @@
 - 前端两端**无独立部署阶段**（构建产物上传 OSS 即发布），只对 Service 有效。
 - 前置：`pipelineDefaults[Service].deployMachineGroup` 必须是**主机组 uuid**
   （tb 的数字 id 如 `226948` 会被拒：`该机器组uuid[226948]不存在`）。未绑定时**直接给可读失败、不发请求**。
+  - **uuid 怎么查（2026-10-22 真机补充）**：`GET /oapi/v1/flow/organizations/{orgId}/hostGroups` → 200，返回
+    `name` / `id` / **`uuid`** / `hostNum` / `aliyunRegion`（`/machineGroups` 等路径是 404，别再用）。
+  - 包内默认值已填 Service = `tIPKOJBbwwOVKVia`（**移动云DEV主机组**，主机组 id `226948`，与企服版参考流水线 `3481236`
+    的 tb `machine_group_id: 226948` 一一对应）；前端两端无部署阶段，保持留空。
+  - 该组合已用写探针验证过：`ZZPROBE-*` 建后即删，完整「构建段 + 部署段（`VMDockerDeploy` + uuid）」创建 200、删除 `true`、残留 0。
 - 补齐走 `mcp_yunxiao_flow_update_pipeline`，部署阶段用官方组件 `VMDockerDeploy`
   （`with: { machineGroup, executeUser: root, run }`）。
 - **注意**：更新会**一并覆盖流水线名称**，因此必须回传现有名称（界面用卡内勾选确认后再提交）。

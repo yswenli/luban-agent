@@ -446,6 +446,19 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
   `name:` 与模板名一致。**不引入 YAML 解析库**：其余语法错误由云效原样报回（`1209300`），不做「猜规则」的修补。
 - 单测：`NewProjectPipelineTemplateUnitTest` 的「手工微调（v0.31）」组（`Compose` 五态 + `Validate` 六态 + 部署片段展开与缩进护栏）。
 
+### 主机组 uuid 从哪来（2026-10-22 真机补充）
+
+- **能查了**：`GET /oapi/v1/flow/organizations/{orgId}/hostGroups` → **200**，返回主机组列表（`name` / `id` / **`uuid`** / `hostNum` / `aliyunRegion`）。
+  此前探的 `/machineGroups`、`/deployMachineGroups`、`/machineGroups/public` **全是 404**，所以「uuid 只能人工从控制台抄」的结论**已作废**。
+- **包内默认值已填**：`pipelineDefaults[Service].deployMachineGroup = "tIPKOJBbwwOVKVia"`
+  （= **移动云DEV主机组**，主机组 id `226948`；与企服版参考流水线 `3481236` 的 tb `machine_group_id: 226948` 一一对应）。
+  前端两端无独立部署阶段，保持留空。
+- **写法**：只认 **uuid**；tb 的数字 id 会被拒（「该机器组uuid[226948]不存在」）。
+- **已做写探针验证**（`ZZPROBE-*`，建后即删）：提交「渲染产物的构建段 + 注释块里解出的部署段（`VMDockerDeploy` + uuid）」
+  → **创建 200**（id `5340668`）→ **删除 `true`** → **残留 0** ⇒ 部署段 YAML 合法，「补齐会被校验拦下」的担心排除。
+- **待立项（本期不动代码）**：插件加「列出主机组 → 下拉选择 → 写回 `deployMachineGroup`」，把该项从「待绑定 uuid」降级为「确认目标主机组」
+  （PRD §6 #26）。
+
 ### 真机校正清单（8 轮写探针 + 官方组件文档，2026-10-22）
 
 | 项 | 真机口径 |
@@ -683,7 +696,8 @@ dotnet test luban-agent/LubanAgent.Tests/LubanAgent.Tests.csproj
     （`HARBOR_PASSWORD` 标为**私密**），步骤参数与预览一致，**建完不自动运行**（`triggers: []`）；核对完成后**删除**测试流水线。
 58. **幂等（重跑不重复建）**：同一步再点一次 → 时间线显示命中同名流水线并**走更新**（不新增第二条），名称与 YAML 被覆盖为当前渲染结果。
 59. **部署阶段默认禁用 + 一键补齐**：首次创建的流水线**没有**部署阶段（只把部署 YAML 作注释附在末尾）；
-    `deployMachineGroup` 留空时点「一键补齐」→ **不发请求**即给红字（提示需填**主机组 uuid**，企服版数字 id `226948` 会被拒）；
+    `deployMachineGroup` 留空时点「一键补齐」→ **不发请求**即给红字（提示需填**主机组 uuid**，企服版数字 id `226948` 会被拒）——
+    包内默认值现已填 Service 的 uuid（`tIPKOJBbwwOVKVia`，移动云DEV主机组），要复现这条拦截需临时把该值清空；
     填入真实 uuid 后再点 → 出现 `deploy` 阶段（组件 `VMDockerDeploy`），且**流水线名称未被改掉**。
 60. **前端两端没有部署阶段**：对管理端 / 移动端点「一键补齐」→ 提示「无独立部署阶段（构建产物上传 OSS 即发布），跳过补齐」。
 61. **闸门拦截**：Step 6 未全部成功时进 Step 7 → 创建被拒并提示先完成推送（判据取档案事实，与界面顺序无关）。
