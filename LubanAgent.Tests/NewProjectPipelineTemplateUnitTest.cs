@@ -387,6 +387,79 @@ public class NewProjectPipelineTemplateUnitTest
     }
 
     [TestMethod]
+    public void Compose_RealPreviewText_AppendsExecutableDeployStage()
+    {
+        var settings = CreateSettings();
+        var rendered = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), settings);
+
+        // 真实微调底稿＝预览原文：用户通常只改变量、**保留末尾的部署阶段注释块**。
+        var edited = rendered.Yaml.Replace("value: '7000'", "value: '7021'");
+        Assert.AreNotEqual(rendered.Yaml, edited, "样本必须真的含 APP_PORT 变量，否则本用例失去意义");
+
+        // 锁住 D2 的根因：注释块里就有 VMDockerDeploy 字样（裸子串判据会因此误判为「用户自备部署阶段」）
+        Assert.IsTrue(
+            rendered.Yaml.Split('\n').Any(line => line.Contains("component: VMDockerDeploy") && line.TrimStart().StartsWith('#')),
+            "预览原文的部署阶段注释块里应含 component: VMDockerDeploy（D2 的触发条件）");
+        StringAssert.Contains(rendered.Yaml, "#   deploy:");
+
+        var actual = PipelineYamlOverride.Compose(rendered.Yaml, edited, rendered.DeployStageYaml);
+
+        Assert.IsTrue(
+            actual.Split('\n').Any(line => line == "  deploy:"),
+            "补齐时必须真的追加活动部署阶段（不得被注释块骗过）；失败即回归 D2");
+        Assert.IsTrue(
+            actual.Split('\n').Any(line => line.Trim() == "component: VMDockerDeploy"),
+            "追加出的部署阶段应含活动组件行");
+        StringAssert.Contains(actual, $"machineGroup: '{MachineGroupUuid}'");
+        StringAssert.Contains(actual, "value: '7021'", "微调内容必须原样保留");
+        Assert.IsFalse(
+            actual.Split('\n').Any(line => line == "deploy:"),
+            "不得出现顶格 deploy:（那会变成顶层键）");
+        Assert.IsFalse(actual.Contains("只含构建阶段"), "追加部署段后不应再留「只含构建阶段」的注释块");
+        Assert.IsNull(
+            PipelineYamlOverride.Validate(actual, rendered.PipelineName),
+            "补齐后的文本必须能过提交前校验");
+    }
+
+    [TestMethod]
+    public void Compose_RealPreviewText_CreateMode_DoesNotAppendDeployStage()
+    {
+        var settings = CreateSettings();
+        var rendered = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), settings);
+        var edited = rendered.Yaml.Replace("value: '7000'", "value: '7021'");
+
+        // 创建口径：NewProjectService 只在 includeDeployStage 时传部署片段，此处等价于传 null。
+        var actual = PipelineYamlOverride.Compose(rendered.Yaml, edited, deployStageYaml: null);
+
+        Assert.IsFalse(
+            actual.Split('\n').Any(line => line.Trim() == "deploy:"),
+            "首次创建口径不得出现活动部署阶段（PRD 2A）；失败即回归 D1");
+        StringAssert.Contains(actual, "value: '7021'", "微调内容仍须原样提交");
+        StringAssert.Contains(actual, "只含构建阶段", "创建口径应保留模板自带的注释块");
+    }
+
+    [TestMethod]
+    public void Compose_AppendDeploy_IgnoresCommentedBlock_ButStillHonoursActiveDeployStage()
+    {
+        var settings = CreateSettings();
+        var rendered = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), settings);
+
+        // ① 只有注释块（默认底稿）⇒ 必须追加
+        var appended = PipelineYamlOverride.Compose(rendered.Yaml, rendered.Yaml, rendered.DeployStageYaml);
+        Assert.IsTrue(
+            appended.Split('\n').Any(line => line == "  deploy:"),
+            "只有注释块时不得判定为「用户自备部署阶段」");
+
+        // ② 用户把注释块解注释、自己写了 deploy 阶段 ⇒ 守卫仍须生效（不得拼出重复键）
+        var withOwnDeploy = rendered.Yaml.Replace("#   deploy:", "  deploy:");
+        Assert.AreNotEqual(rendered.Yaml, withOwnDeploy, "样本必须真的含注释掉的 deploy 行");
+
+        var actual = PipelineYamlOverride.Compose(rendered.Yaml, withOwnDeploy, rendered.DeployStageYaml);
+        var expected = withOwnDeploy.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').TrimEnd();
+        Assert.AreEqual(expected, actual, "已有活动 deploy 阶段 ⇒ 不得再追加同 id 阶段（Compose 只统一换行符）");
+    }
+
+    [TestMethod]
     public void Validate_AcceptsRenderedYaml_AndReadsName()
     {
         var rendered = PipelineRenderer.Render(CreateSpec(), CreateRepository(ProjectEnd.Service), CreateSettings());

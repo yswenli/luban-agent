@@ -1819,9 +1819,14 @@ public sealed class NewProjectService : INewProjectService
                 var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage);
                 var watch = BeginOperation(Step, $"{action}（{label}）", $"流水线名 {rendered.PipelineName}");
 
-                // ── 0. 手工微调（v0.31）：微调文本优先；补齐时把部署阶段追加到微调文本之后 ──────────
+                // ── 0. 手工微调（v0.31）：微调文本优先；**只有补齐**才把部署阶段追加到微调文本之后 ──────────
                 var overrideYaml = TryGetYamlOverride(yamlOverrides, repository.End);
-                var yaml = PipelineYamlOverride.Compose(rendered.Yaml, overrideYaml, rendered.DeployStageYaml);
+                // 创建口径不追加部署阶段（PRD 2A：首次创建只含构建段）；与 PreviewPipelines 的
+                // deployStageYaml: null 同源，保证「预览到什么就提交什么」（2026-10-22 代码审查 D1）。
+                var yaml = PipelineYamlOverride.Compose(
+                    rendered.Yaml,
+                    overrideYaml,
+                    includeDeployStage ? rendered.DeployStageYaml : null);
 
                 if (overrideYaml is not null)
                 {

@@ -625,6 +625,8 @@ public static class PipelineYamlOverride
     /// <remarks>
     /// 不做语法修复：微调文本原样提交（只统一换行符、去掉末尾空白），保证「界面看到的与提交的一致」。
     /// <paramref name="deployStageYaml"/> 由 <c>PipelineRenderer</c> 给出（已按 stage 缩进 2 空格）。
+    /// <b>判据与注释块</b>：「是否已自备部署阶段」一律在 <see cref="ActiveText"/>（剔除整行注释）上判断，
+    /// 因为默认微调底稿里就含模板自带的部署阶段注释块；确认要追加时再剔除该注释块，避免自相矛盾的文案。
     /// </remarks>
     public static string Compose(string renderedYaml, string? overrideYaml, string? deployStageYaml)
     {
@@ -632,14 +634,22 @@ public static class PipelineYamlOverride
             return renderedYaml;
 
         var text = Normalize(overrideYaml);
+
+        // 判据只看**活动行**：默认微调底稿＝预览原文，而预览原文末尾的部署阶段**注释块**里就含
+        // `component: VMDockerDeploy`；用裸子串判「用户已自备部署阶段」会被模板自带的注释骗到，
+        // 导致「一键补齐」静默不追加却报成功（2026-10-22 代码审查 D2）。
+        var active = ActiveText(text);
+
         if (string.IsNullOrWhiteSpace(deployStageYaml)
-            || text.Contains("VMDockerDeploy", StringComparison.OrdinalIgnoreCase)
-            || DeployStagePattern.IsMatch(text))
+            || active.Contains("VMDockerDeploy", StringComparison.OrdinalIgnoreCase)
+            || DeployStagePattern.IsMatch(active))
         {
             return text.TrimEnd();
         }
 
-        return text.TrimEnd() + "\n\n" + Normalize(deployStageYaml).TrimEnd();
+        // 真要追加时先把模板自带的「只含构建阶段」注释块剔除：否则提交出去的 YAML 会一边声称
+        // 「部署阶段未写入」、一边真的挂着 deploy 阶段，自相矛盾且误导后续人工维护。
+        return StripDeployCommentBlock(text) + "\n\n" + Normalize(deployStageYaml).TrimEnd();
     }
 
     /// <summary>
@@ -698,4 +708,35 @@ public static class PipelineYamlOverride
     /// <returns>换行统一后的文本。</returns>
     private static string Normalize(string text)
         => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+
+    /// <summary>模板自带部署阶段注释块的首行（补齐追加时据此剔除整块）。</summary>
+    private const string DeployCommentMarker = "# ⚠ 本流水线";
+
+    /// <summary>剔除「整行注释」（行首可有空白、<c>#</c> 之后皆为注释）后的活动文本。</summary>
+    /// <param name="text">已 <see cref="Normalize"/> 过换行的 YAML 原文。</param>
+    /// <returns>只含活动行的文本；行序保持，按行锚定的正则（如 <see cref="DeployStagePattern"/>）可继续使用。</returns>
+    /// <remarks>
+    /// 存在的理由：注释行里的 <c>component: VMDockerDeploy</c> 不是「用户自备部署阶段」，
+    /// 但裸子串检索分辨不出来（2026-10-22 代码审查 D2）。
+    /// </remarks>
+    private static string ActiveText(string text)
+        => string.Join('\n', text.Split('\n').Where(line => !line.TrimStart().StartsWith('#')));
+
+    /// <summary>剔除模板自带的部署阶段注释块（自标记行起、连续的空行与注释行）。</summary>
+    /// <param name="text">已 <see cref="Normalize"/> 过换行的 YAML 原文。</param>
+    /// <returns>剔除后的文本（末尾空白一并去掉）；未找到标记则只去末尾空白。</returns>
+    /// <remarks>只删模板自己写的那一块：用户自写的注释不在 <see cref="DeployCommentMarker"/> 之后连成一片时不受影响。</remarks>
+    private static string StripDeployCommentBlock(string text)
+    {
+        var lines = text.Split('\n');
+        var start = Array.FindIndex(lines, line => line.StartsWith(DeployCommentMarker, StringComparison.Ordinal));
+        if (start < 0)
+            return text.TrimEnd();
+
+        var end = start;
+        while (end + 1 < lines.Length && (lines[end + 1].Length == 0 || lines[end + 1].TrimStart().StartsWith('#')))
+            end++;
+
+        return string.Join('\n', lines.Take(start).Concat(lines.Skip(end + 1))).TrimEnd();
+    }
 }
