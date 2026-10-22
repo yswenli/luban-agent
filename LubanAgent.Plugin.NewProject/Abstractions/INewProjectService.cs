@@ -215,9 +215,42 @@ public interface INewProjectService
     Task<StepResult> PushAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Step 7 · 创建流水线：逐端克隆参考流水线并替换后创建（所选端各 1 条，最多 3 条）。
+    /// Step 7 · 创建流水线：按端渲染内嵌新版 YAML 模板并创建（所选端各 1 条，最多 3 条）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>v0.30 口径</b>：云效 OpenAPI 没有「复制流水线」接口，且只收顶层 <c>stages:</c> 的新版 YAML
+    /// （喂 tb 形态 <c>flow</c> 原文必报 <c>1209300</c>），故改为「按企服版语义翻译成新版 YAML → 本地渲染 → 提交创建」，
+    /// 变量与缓存一并生成（<c>variables:</c> / <c>cache:</c>）。
+    /// </para>
+    /// <para>
+    /// <b>只含构建阶段</b>：部署阶段默认不写入（PRD §6 #14），仅以注释块附在 YAML 末尾并列出「待人工绑定清单」；
+    /// 人工确认资源后可调 <see cref="AppendDeployStagesAsync"/> 补齐。<b>建完不自动运行</b>。
+    /// </para>
+    /// <para><b>前置闸门</b>：Step 6（推送）未成功时拒绝执行（判据见 <c>StepGate.CanCreatePipelines</c>）。</para>
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>步骤结果（逐端结论见档案 <see cref="ProjectSpec.PipelineResults"/>）。</returns>
     Task<StepResult> CreatePipelinesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Step 7 补充操作 · 一键补齐部署阶段：把该端部署阶段并存进已有流水线（<c>UpdatePipeline</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 仅有独立部署阶段的端生效（当前仅后端；前端构建产物上传 OSS 即发布），无流水线或无需补齐的端跳过并在结果里说明。
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>步骤结果。</returns>
+    Task<StepResult> AppendDeployStagesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Step 7 补充操作 · 只读预览：按当前档案算出「各端将提交的流水线名 + 新版 YAML + 待绑定清单」。
+    /// </summary>
+    /// <remarks>
+    /// <b>不调云效、不落档案</b>（纯本地渲染），供界面在建之前摊开原文复核；口径与创建同源，预览到什么就提交什么。
+    /// </remarks>
+    /// <returns>按端预览（口径同 <see cref="CreatePipelinesAsync"/>：已克隆的所选端）。</returns>
+    IReadOnlyList<PipelinePreview> PreviewPipelines();
 
     /// <summary>
     /// 「中止并清理」（PRD §4.7）：注销本项目工作区（<b>不删</b> <c>LocalPath</c> 目录）、

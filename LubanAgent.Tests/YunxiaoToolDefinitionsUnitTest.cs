@@ -24,7 +24,7 @@ public class YunxiaoToolDefinitionsUnitTest
         "codeup_list_branches",
         "codeup_create_group",
         "flow_list_pipelines",
-        "flow_clone_pipeline",
+        "flow_create_pipeline",
         "flow_update_pipeline",
         "flow_run_pipeline"
     ];
@@ -75,6 +75,26 @@ public class YunxiaoToolDefinitionsUnitTest
         {
             Assert.IsTrue(properties.TryGetProperty(name, out _), $"codeup_list_branches 缺少参数 {name}");
         }
+    }
+
+    /// <summary>工具定义口径（v0.30）：`flow_create_pipeline` 取代 `flow_clone_pipeline`
+    /// （云效无「复制流水线」接口，且只收顶层 `stages:` 的新版 YAML）。</summary>
+    [TestMethod]
+    public void FlowCreatePipeline_Schema_RequiresNameAndContent()
+    {
+        var tool = YunxiaoToolDefinitions.GetAllTools().Single(t => t.Name == "flow_create_pipeline");
+
+        using var doc = JsonDocument.Parse(tool.InputSchema!);
+        var required = doc.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        CollectionAssert.AreEquivalent(new[] { "name", "content" }, required);
+
+        var properties = doc.RootElement.GetProperty("properties");
+        foreach (var name in new[] { "name", "content", "organizationId" })
+        {
+            Assert.IsTrue(properties.TryGetProperty(name, out _), $"flow_create_pipeline 缺少参数 {name}");
+        }
+
+        Assert.IsFalse(properties.TryGetProperty("sourcePipelineId", out _), "新版口径不再有 sourcePipelineId（不再克隆）");
     }
 
     [TestMethod]

@@ -176,7 +176,7 @@ public static class YunxiaoToolDefinitions
     public static readonly MCPTool FlowListPipelines = new()
     {
         Name = "flow_list_pipelines",
-        Description = "查找云效流水线。注意：返回体不含创建人与运行状态，需要时再查流水线详情。",
+        Description = "查找云效流水线。注意：返回体含创建人（createAccountId）但**不含运行状态**，需要时再查流水线详情。",
         InputSchema = new
         {
             type = "object",
@@ -192,29 +192,22 @@ public static class YunxiaoToolDefinitions
     };
 
     /// <summary>
-    /// 复制流水线（读取源 YAML → 替换 → 创建）
+    /// 创建流水线（CreatePipeline，提交新版 YAML）
     /// </summary>
-    public static readonly MCPTool FlowClonePipeline = new()
+    public static readonly MCPTool FlowCreatePipeline = new()
     {
-        Name = "flow_clone_pipeline",
-        Description = "从参考流水线克隆（内部：读取源 YAML → 按 substitutions 替换 名称/端口/仓库地址/流水线参数 → 创建）。新流水线部署阶段默认禁用，并返回待人工绑定清单。",
+        Name = "flow_create_pipeline",
+        Description = "创建云效流水线：提交新版 YAML（顶层 stages:）与名称。注意 content 必须是新版 YAML，控制台 tb 形态的 flow 原文不可提交（会报 1209300 校验失败）。",
         InputSchema = new
         {
             type = "object",
             properties = new
             {
-                sourcePipelineId = new { type = "string", description = "源流水线 ID（如 TJCES 参考流水线）" },
-                newName = new { type = "string", description = "新流水线名称" },
-                substitutions = new
-                {
-                    type = "object",
-                    description = "变量替换映射（YAML 占位符 → 实际值，如 {\"PROJECT_NAME\": \"demo\"}）",
-                    additionalProperties = new { type = "string" }
-                },
-                disableDeployStage = new { type = "boolean", description = "是否默认禁用部署阶段（默认 true，见 PRD §6 #14）", @default = true },
+                name = new { type = "string", description = "流水线名称（必填）" },
+                content = new { type = "string", description = "流水线新版 YAML 内容（必填，顶层须为 stages:）" },
                 organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
             },
-            required = new[] { "sourcePipelineId", "newName" }
+            required = new[] { "name", "content" }
         }.ToJson()
     };
 
@@ -281,7 +274,7 @@ public static class YunxiaoToolDefinitions
         yield return CodeupListBranches;
         yield return CodeupCreateGroup;
         yield return FlowListPipelines;
-        yield return FlowClonePipeline;
+        yield return FlowCreatePipeline;
         yield return FlowUpdatePipeline;
         yield return FlowRunPipeline;
     }

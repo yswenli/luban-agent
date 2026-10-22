@@ -66,7 +66,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         (WizardStep.Database, "数据库", "只读探活：能连上且库存在"),
         (WizardStep.Build, "编译", "逐端编译并汇总结果"),
         (WizardStep.Push, "推送", "提交并推送到各端专属仓库"),
-        (WizardStep.Pipeline, "流水线", "逐端克隆参考流水线并创建")
+        (WizardStep.Pipeline, "流水线", "逐端按模板渲染并创建（含变量与缓存）")
     };
 
     private readonly INewProjectService _service;
@@ -175,7 +175,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private Border _step1Form = null!;
     private Border _step3Area = null!;
     private Border _step6Area = null!;
-    private Border _otherStepArea = null!;
+    private Border _step7Area = null!;
     private Border _conflictPanel = null!;
     private StackPanel _repoRowsPanel = null!;
 
@@ -238,8 +238,6 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// </remarks>
     private readonly Button _repushButton = new() { Content = "重新推送（重跑 Step 6）" };
 
-    private readonly TextBlock _otherStepText = new() { FontSize = 12, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
-
     // ── Step 4 操作区（P4 接入）─────────────────────────────────────────────────
     private Border _step4Area = null!;
     private readonly TextBox _dbHostBox = new() { PlaceholderText = "例如：10.10.0.214" };
@@ -273,6 +271,69 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     /// <summary>Step 5 逐端状态行（端 → 最近一次编译结论）。</summary>
     private readonly List<EndBuildRowView> _buildRows = new();
+
+    // ── Step 7 操作区（v0.30 接入）──────────────────────────────────────────────
+    private readonly Button _pipelineButton = new() { Content = "创建流水线（逐端）" };
+    private readonly Button _appendDeployButton = new() { Content = "一键补齐部署阶段" };
+    private readonly StackPanel _pipelineRowsPanel = new() { Spacing = 6 };
+    private readonly TextBlock _pipelineResultText = new()
+    {
+        FontSize = 12,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>Step 7 待人工绑定清单（按端，只读）。</summary>
+    private readonly TextBlock _pipelineBindingsText = new()
+    {
+        FontSize = 11,
+        Foreground = WarningBrush,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>Step 7 YAML 预览的端选择（只读回显：预览到什么就提交什么）。</summary>
+    private readonly ComboBox _pipelinePreviewPicker = new()
+    {
+        FontSize = 12,
+        MinWidth = 120,
+        HorizontalAlignment = HorizontalAlignment.Left
+    };
+
+    /// <summary>Step 7 YAML 预览正文（只读）。</summary>
+    private readonly TextBox _pipelineYamlBox = new()
+    {
+        IsReadOnly = true,
+        AcceptsReturn = true,
+        TextWrapping = TextWrapping.NoWrap,
+        FontSize = 11,
+        Height = 220,
+        IsVisible = false
+    };
+
+    /// <summary>Step 7 YAML 预览的说明行（点明这是哪一端的原文）。</summary>
+    private readonly TextBlock _pipelineYamlCaption = new()
+    {
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>Step 7 逐端状态行（端 → 流水线结论）。</summary>
+    private readonly List<EndPipelineRowView> _pipelineRows = new();
+
+    /// <summary>「一键补齐部署阶段」的破坏性确认（Step 3「我已确认」同一姿势；<c>UpdatePipeline</c> 会整体覆盖 YAML）。</summary>
+    private readonly CheckBox _appendDeployConfirm = new()
+    {
+        Content = "我已确认：一键补齐部署阶段会整体覆盖该端流水线 YAML（控制台上的人工改动会被抹掉）",
+        FontSize = 12,
+        Foreground = MutedText
+    };
+
+    /// <summary>Step 7 最近一次预览（<c>null</c>＝尚未预览）。</summary>
+    private IReadOnlyList<PipelinePreview> _pipelinePreviews = Array.Empty<PipelinePreview>();
 
     /// <summary>Step 3 运行期待决的克隆冲突三选一（面板与能力层之间的挂起点）。</summary>
     private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
@@ -436,6 +497,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _repushButton.PointerExited += (_, _) => _repushButton.ClearValue(Button.BackgroundProperty);
         _probeButton.Click += OnProbeClicked;
         _buildButton.Click += OnBuildClicked;
+        _pipelineButton.Click += OnPipelineClicked;
+        _appendDeployButton.Click += OnAppendDeployClicked;
+        _pipelinePreviewPicker.SelectionChanged += OnPipelinePreviewChanged;
         _conflictReuseButton.Click += OnConflictChoiceClicked;
         _conflictRecloneButton.Click += OnConflictChoiceClicked;
         _conflictAbortButton.Click += OnConflictChoiceClicked;
@@ -598,7 +662,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step4Area = BuildStep4Area();
         _step5Area = BuildStep5Area();
         _step6Area = BuildStep6Area();
-        _otherStepArea = BuildOtherStepArea();
+        _step7Area = BuildStep7Area();
 
         // 回退导航行（P4 收尾）：显式「上一步」+ 说明；步骤条行本身也可点击
         _navHint.Margin = new Thickness(10, 0, 0, 0);
@@ -637,7 +701,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     _step4Area,
                     _step5Area,
                     _step6Area,
-                    _otherStepArea
+                    _step7Area
                 }
             }
         };
@@ -987,24 +1051,100 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 7 的占位区（P5 落地前给出明确说明；重跑 Step 6 请用常驻「档案与维护」卡里的正式入口）。
+    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.30 口径</b>）：逐端流水线状态 + YAML 只读预览 + 创建 / 一键补齐部署阶段。
     /// </summary>
-    /// <returns>占位区。</returns>
-    private Border BuildOtherStepArea() => Card(new StackPanel
+    /// <remarks>
+    /// 面板零业务规则：模板、变量与缓存、待绑定清单全部由能力层（<c>PipelineRenderer</c>）算出，
+    /// 这里只呈现 <see cref="INewProjectService.PreviewPipelines"/> 的结果并投递两个动作。
+    /// </remarks>
+    /// <returns>操作区。</returns>
+    private Border BuildStep7Area()
     {
-        Spacing = 10,
-        Children =
+        foreach (var end in new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile })
         {
-            new TextBlock { Text = "Step 7 · 创建流水线（计划 P5）", FontSize = 14, Foreground = PrimaryText },
-            _otherStepText
+            var status = new TextBlock
+            {
+                Text = "未创建",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            var name = new TextBlock
+            {
+                Text = EndLabel(end),
+                FontSize = 12,
+                Foreground = PrimaryText,
+                Width = 64
+            };
+
+            var row = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+                Children = { name, status }
+            };
+            Grid.SetColumn(status, 1);
+
+            _pipelineRowsPanel.Children.Add(row);
+            _pipelineRows.Add(new EndPipelineRowView(end, row, status));
         }
-    });
+
+        return Card(new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                new TextBlock { Text = "Step 7 · 创建流水线", FontSize = 14, Foreground = PrimaryText },
+                new TextBlock
+                {
+                    Text = "按企服版语义翻译的**新版 YAML 模板**逐端创建云效流水线（云效 OpenAPI 只收顶层 stages: 的新版 YAML，"
+                         + "且没有「复制流水线」接口，故不再克隆参考流水线原文）。模板已内嵌变量（variables）与缓存（cache）："
+                         + "后端写入 DOCKER_IMAGE_NAME / APP_PORT / DOCKER_CONTAINER_NAME 等；前端写入 npm 缓存目录。"
+                         + "创建前按流水线名精确检索，命中即复用（幂等）；建完不自动运行。"
+                         + "**只含构建阶段**——部署阶段按口径默认禁用，确认资源绑定后可点「一键补齐部署阶段」并入。",
+                    FontSize = 12,
+                    Foreground = MutedText,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new Border { Height = 1, Background = DividerBrush },
+                _pipelineRowsPanel,
+                _pipelineResultText,
+                new TextBlock
+                {
+                    Text = "待人工绑定清单（云效不做资源重绑定，需你在控制台确认）：",
+                    FontSize = 12,
+                    Foreground = PrimaryText,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                _pipelineBindingsText,
+                new Border { Height = 1, Background = DividerBrush },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { new TextBlock { Text = "YAML 预览：", FontSize = 12, Foreground = PrimaryText, VerticalAlignment = VerticalAlignment.Center }, _pipelinePreviewPicker }
+                },
+                _pipelineYamlCaption,
+                _pipelineYamlBox,
+                _appendDeployConfirm,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _pipelineButton, _appendDeployButton }
+                }
+            }
+        });
+    }
 
     /// <summary>Step 3 各端仓库名行的视觉载体。</summary>
     private sealed record RepoRowView(ProjectEnd End, Control Root, TextBox NameBox, TextBlock TemplateText);
 
     /// <summary>Step 5 逐端编译状态行的视觉载体。</summary>
     private sealed record EndBuildRowView(ProjectEnd End, Control Root, TextBlock Status);
+
+    /// <summary>Step 7 逐端流水线状态行的视觉载体。</summary>
+    private sealed record EndPipelineRowView(ProjectEnd End, Control Root, TextBlock Status);
 
     /// <summary>端的中文标签（**已自带「端」字**：调用方不得再拼一个「端」；与能力层口径一致）。</summary>
     /// <param name="end">端。</param>
@@ -1328,7 +1468,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _step4Area.IsVisible = hasArchive && currentStep == WizardStep.Database;
         _step5Area.IsVisible = hasArchive && currentStep == WizardStep.Build;
         _step6Area.IsVisible = hasArchive && currentStep == WizardStep.Push;
-        _otherStepArea.IsVisible = hasArchive && currentStep == WizardStep.Pipeline;
+        _step7Area.IsVisible = hasArchive && currentStep == WizardStep.Pipeline;
 
         if (spec is not null && _step3Area.IsVisible)
             PopulateStep3Area(spec);
@@ -1339,12 +1479,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         if (spec is not null && _step5Area.IsVisible)
             PopulateStep5Area(spec);
 
-        if (spec is not null && _otherStepArea.IsVisible)
-        {
-            _otherStepText.Text = "Step 7 · 创建流水线：功能尚未实现（计划 M4-P5：按端克隆参考流水线并创建）。"
-                                  + "本步当前无法执行；若需重推改动，可点步骤条回到「推送」步重跑，或用上方常驻"
-                                  + "「档案与维护」卡里的「重新推送（重跑 Step 6）」。";
-        }
+        if (spec is not null && _step7Area.IsVisible)
+            PopulateStep7Area(spec);
     }
 
     /// <summary>
@@ -1487,6 +1623,122 @@ public sealed class WizardPanel : UserControl, IPluginPanel
               + "可在上方步骤条点「6 推送」继续推送（该步执行前仍会复核本结论）。"
             : $"最近一次编译未全部通过（下表为最近一次产出结论的执行结果）：{failed}/{spec.BuildResults.Count} 端失败。"
               + "本步失败会阻断 Step 6，修好后重跑本步。";
+    }
+
+    /// <summary>
+    /// 刷新 Step 7 逐端状态行、待人工绑定清单与 YAML 预览（数据来自能力层 <see cref="INewProjectService.PreviewPipelines"/>，
+    /// 面板零业务规则）。
+    /// </summary>
+    /// <remarks>
+    /// 预览口径与创建口径同源：<b>预览到什么就提交什么</b>。已创建端从档案里带出流水线 id / 链接与部署阶段状态；
+    /// 未创建端如实显示「未创建」，不假装已经建好。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void PopulateStep7Area(ProjectSpec spec)
+    {
+        _pipelinePreviews = _service.PreviewPipelines();
+
+        foreach (var row in _pipelineRows)
+        {
+            var inScope = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
+            row.Root.IsVisible = inScope;
+            if (!inScope)
+                continue;
+
+            var preview = _pipelinePreviews.FirstOrDefault(item => item.End == row.End);
+            var result = spec.PipelineResults.FirstOrDefault(item => item.End == row.End);
+
+            if (result is null || string.IsNullOrWhiteSpace(result.PipelineId))
+            {
+                row.Status.Foreground = MutedText;
+                row.Status.Text = preview is null
+                    ? "未创建（该端尚未建库 / 克隆，本步会被跳过）"
+                    : $"未创建｜将创建 {preview.PipelineName}";
+                continue;
+            }
+
+            row.Status.Foreground = SuccessBrush;
+            row.Status.Text = "✔ 已创建"
+                              + (result.Created ? "（本次新建）" : "（命中同名，复用）")
+                              + $"｜{result.PipelineName}｜id {result.PipelineId}"
+                              + (result.DeployStageIncluded ? "｜已并入部署阶段" : "｜部署阶段未并入")
+                              + (result.WebUrl.Length == 0 ? string.Empty : $"｜{result.WebUrl}");
+        }
+
+        // ── 待人工绑定清单：只列「已创建 / 将创建」端的条目，避免未建库时刷一屏空话 ──
+        var pending = _pipelinePreviews
+            .SelectMany(item => item.PendingBindings.Select(binding => $"{EndLabel(item.End)}{binding}"))
+            .ToList();
+
+        if (pending.Count == 0)
+        {
+            _pipelineBindingsText.IsVisible = false;
+        }
+        else
+        {
+            _pipelineBindingsText.IsVisible = true;
+            _pipelineBindingsText.Text = string.Join("\n", pending.Select(item => $"· {item}"));
+        }
+
+        PopulatePipelinePreviewPicker();
+
+        var lastFailed = spec.StepStates.TryGetValue(nameof(WizardStep.Pipeline), out var raw)
+                         && string.Equals(raw, nameof(StepStatus.Failed), StringComparison.Ordinal);
+
+        if (spec.PipelineResults.Count == 0)
+        {
+            _pipelineResultText.IsVisible = lastFailed;
+            _pipelineResultText.Foreground = DangerBrush;
+            _pipelineResultText.Text = lastFailed
+                ? "最近一次创建流水线未通过且档案里没有成功结论，详见右侧操作记录。"
+                : string.Empty;
+            return;
+        }
+
+        var created = spec.PipelineResults.Count(item => !string.IsNullOrWhiteSpace(item.PipelineId));
+        var withDeploy = spec.PipelineResults.Count(item => item.DeployStageIncluded);
+        _pipelineResultText.IsVisible = true;
+        _pipelineResultText.Foreground = lastFailed ? DangerBrush : SuccessBrush;
+        _pipelineResultText.Text = $"档案里已有 {created} 端流水线（{withDeploy} 端已并入部署阶段）"
+                                   + (lastFailed ? "；最近一次执行仍有失败项，详见右侧操作记录。" : "。");
+    }
+
+    /// <summary>
+    /// 刷新 YAML 预览的端选择器与正文（保持用户当前选择；选择项随所选端变化）。
+    /// </summary>
+    private void PopulatePipelinePreviewPicker()
+    {
+        var selected = _pipelinePreviewPicker.SelectedItem as string;
+
+        _pipelinePreviewPicker.ItemsSource = _pipelinePreviews
+            .Select(item => EndLabel(item.End))
+            .ToList();
+
+        var keep = _pipelinePreviews.Any(item => EndLabel(item.End) == selected) ? selected : null;
+        _pipelinePreviewPicker.SelectedItem = keep
+                                              ?? _pipelinePreviews.Select(item => EndLabel(item.End)).FirstOrDefault();
+
+        ShowPipelineYaml(_pipelinePreviewPicker.SelectedItem as string);
+    }
+
+    /// <summary>把选中端的 YAML 原文摊到只读框里。</summary>
+    /// <param name="endLabel">端标签；<c>null</c>／未命中时清空。</param>
+    private void ShowPipelineYaml(string? endLabel)
+    {
+        var preview = _pipelinePreviews.FirstOrDefault(item => EndLabel(item.End) == endLabel);
+        if (preview is null)
+        {
+            _pipelineYamlBox.IsVisible = false;
+            _pipelineYamlCaption.IsVisible = false;
+            return;
+        }
+
+        _pipelineYamlCaption.IsVisible = true;
+        _pipelineYamlCaption.Text = $"{EndLabel(preview.End)}将提交的流水线名 {preview.PipelineName}"
+                                    + (preview.Created ? "（该端已存在，再次执行为覆盖更新）" : "（新建）")
+                                    + "。下方为原文预览，与提交内容完全一致：";
+        _pipelineYamlBox.IsVisible = true;
+        _pipelineYamlBox.Text = preview.Yaml;
     }
 
     /// <summary>
@@ -2333,6 +2585,92 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     /// <summary>Step 5「开始编译」（PRD §4.3 Step 5）。</summary>
     private async void OnBuildClicked(object? sender, RoutedEventArgs e) => await RunBuildAsync();
+
+    /// <summary>Step 7「创建流水线（逐端）」（PRD §4.3 Step 7 v0.30）。</summary>
+    private async void OnPipelineClicked(object? sender, RoutedEventArgs e) => await RunCreatePipelinesAsync();
+
+    /// <summary>Step 7「一键补齐部署阶段」。</summary>
+    private async void OnAppendDeployClicked(object? sender, RoutedEventArgs e) => await RunAppendDeployStagesAsync();
+
+    /// <summary>Step 7 YAML 预览切换端。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private void OnPipelinePreviewChanged(object? sender, SelectionChangedEventArgs e)
+        => ShowPipelineYaml(_pipelinePreviewPicker.SelectedItem as string);
+
+    /// <summary>
+    /// Step 7 执行入口（创建流水线）：交能力层渲染内嵌模板并逐端创建。
+    /// </summary>
+    private async Task RunCreatePipelinesAsync()
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        ShowErrors(Array.Empty<string>());
+        SetBusy(true, "正在逐端创建云效流水线（渲染内嵌新版 YAML → 同名检索 → 创建）…");
+        try
+        {
+            var result = await _service.CreatePipelinesAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "Step 7 未全部完成，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"Step 7 执行失败：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
+    /// <summary>
+    /// Step 7 补充入口（一键补齐部署阶段）：对该端已有流水线做覆盖更新，把部署阶段并入 YAML。
+    /// </summary>
+    private async Task RunAppendDeployStagesAsync()
+    {
+        if (_busy || _unloaded || _service.Current is null)
+            return;
+
+        // 破坏性提示：UpdatePipeline 会整体覆盖该端流水线 YAML，控制台上的人工改动会被抹掉。
+        // 与 Step 3 同一姿势（卡内先勾选再执行），不弹模态框。
+        if (_appendDeployConfirm.IsChecked != true)
+        {
+            ShowWarnings(new[]
+            {
+                "「一键补齐部署阶段」会对已有流水线做整体覆盖更新（UpdatePipeline）：若你已在云效控制台手工改过 "
+                + "YAML，那些改动会被抹掉。确认后请先勾选按钮上方那句确认再执行。"
+            });
+            return;
+        }
+
+        ShowWarnings(Array.Empty<string>());
+        SetBusy(true, "正在把部署阶段并入已有流水线（UpdatePipeline 覆盖更新）…");
+        try
+        {
+            var result = await _service.AppendDeployStagesAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            if (result.Status != StepStatus.Succeeded)
+                ShowErrors(new[] { result.Message ?? "补齐部署阶段未完成，详见右侧操作记录。" });
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+                ShowErrors(new[] { $"补齐部署阶段失败：{ex.Message}" });
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
 
     /// <summary>
     /// Step 4 执行入口：采集参数 → 交能力层驱动项目助手探活 → 呈现结论（<b>不阻断</b>流程）。

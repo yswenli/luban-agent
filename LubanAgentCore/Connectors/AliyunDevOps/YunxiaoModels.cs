@@ -15,6 +15,8 @@
 *
 *****************************************************************************/
 
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LubanAgentCore.Connectors.AliyunDevOps;
@@ -22,8 +24,14 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 #region 通用响应
 
 /// <summary>
-/// 云效 API 通用响应包装
+/// 云效 API 通用响应包装（<c>{ errorCode, errorMessage, result, requestId }</c>）。
 /// </summary>
+/// <remarks>
+/// <b>仅作参考模型保留</b>：真机取证（2026-10-22）表明 <c>/oapi/v1</c> 下的<b>成功响应并不套这层外壳</b>
+/// （列表＝裸数组、详情＝裸对象、创建＝裸标量），故客户端<b>不再</b>用它拆包
+/// ——解析统一走 <see cref="YunxiaoResponseParser"/>。失败时才出现类似的错误包裹，
+/// 且 <c>errorCode</c> 是<b>字符串</b>（如 <c>InvalidPipeline.createOrUpdateError</c>），与本类型的 <c>int</c> 不一致。
+/// </remarks>
 public class YunxiaoApiResponse<T>
 {
     /// <summary>
@@ -52,8 +60,13 @@ public class YunxiaoApiResponse<T>
 }
 
 /// <summary>
-/// 分页结果
+/// 分页结果（<b>仅 codeup 侧</b>使用：<c>CodeupClient.SearchRepositoriesAsync</c> 把裸数组与
+/// <c>x-total</c> 响应头合成此对象）。
 /// </summary>
+/// <remarks>
+/// <b>不要</b>用于 <c>/flow</c> 侧：流水线列表接口返回裸数组，分页信息不在响应体里
+/// （<c>FlowClient.ListPipelinesAsync</c> 直接返回 <c>List&lt;YunxiaoPipeline&gt;</c>）。
+/// </remarks>
 public class YunxiaoPagedResult<T>
 {
     /// <summary>
@@ -460,16 +473,41 @@ public class YunxiaoCreateNamespaceRequest
 /// <summary>
 /// 云效流水线
 /// </summary>
+/// <remarks>
+/// <b>真机口径（2026-10-22 取证）</b>：<b>两个接口字段名并不一致</b>——
+/// <c>GET /pipelines/{id}</c>（详情）的名称字段是 <c>name</c>、id 字段是 <c>id</c>；
+/// <c>GET /pipelines</c>（列表）的名称字段是 <c>pipelineName</c>、id 字段是 <c>pipelineId</c>、另有 <c>createAccountId</c>。
+/// 两处的 id <b>都是 JSON 数字</b>，故必须用整型（与 <see cref="YunxiaoRepository.Id"/> 同口径）：
+/// 用 <c>string?</c> 反序列化数字会抛 <c>JsonException</c>（<c>JsonOpts</c> 虽带了
+/// <c>NumberHandling.AllowReadingFromString</c>，但那只管「字符串 → 数字」，不管「数字 → 字符串」），
+/// 这正是 2026-10-22 复审修掉的一个隐患。
+/// 取用一律走 <see cref="DisplayName"/> / <see cref="DisplayId"/>，屏蔽两个接口的拼写差异。
+/// <c>pipelineConfig</c> 里 tb 形态流水线带 <c>settings</c>（JSON 串，含 <c>globalParams</c> / <c>caches</c>）与
+/// <c>sources</c>；<b>新版 YAML 形态也有 <c>settings</c></b>（真机核对：不含 <c>globalParams</c> / <c>caches</c>），
+/// 其变量 / 缓存写在新版 YAML 的顶层 <c>variables</c> / <c>cache</c> 里，随 <c>flow</c> 原样返回。
+/// </remarks>
 public class YunxiaoPipeline
 {
     /// <summary>
-    /// 流水线 ID
+    /// 流水线 ID（<b>详情</b>接口字段；云效返回 JSON 数字，故用整型）。
     /// </summary>
-    [JsonPropertyName("pipelineId")]
-    public string? PipelineId { get; set; }
+    [JsonPropertyName("id")]
+    public long? Id { get; set; }
 
     /// <summary>
-    /// 流水线名称
+    /// 流水线 ID（<b>列表</b>接口字段；云效返回 JSON 数字，故用整型）。
+    /// </summary>
+    [JsonPropertyName("pipelineId")]
+    public long? PipelineId { get; set; }
+
+    /// <summary>
+    /// 流水线名称（<b>详情</b>接口字段）。
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// 流水线名称（<b>列表</b>接口字段）。
     /// </summary>
     [JsonPropertyName("pipelineName")]
     public string? PipelineName { get; set; }
@@ -484,46 +522,113 @@ public class YunxiaoPipeline
     /// 创建时间
     /// </summary>
     [JsonPropertyName("createTime")]
-    public string? CreateTime { get; set; }
+    public long? CreateTime { get; set; }
 
     /// <summary>
     /// 最后修改时间
     /// </summary>
     [JsonPropertyName("modifyTime")]
-    public string? ModifyTime { get; set; }
+    public long? ModifyTime { get; set; }
 
     /// <summary>
     /// 状态
     /// </summary>
     [JsonPropertyName("status")]
     public string? Status { get; set; }
+
+    /// <summary>
+    /// 流水线归属分组 id（图标展示用；孤儿清单定位参考）。
+    /// </summary>
+    [JsonPropertyName("groupId")]
+    public long? GroupId { get; set; }
+
+    /// <summary>
+    /// 创建人账号 id（列表接口字段；真机有此值但<b>无运行状态</b>，见 PRD §4.11.3 注⑦）。
+    /// </summary>
+    [JsonPropertyName("createAccountId")]
+    public string? CreateAccountId { get; set; }
+
+    /// <summary>
+    /// 统一取用名称：优先<b>详情</b>字段 <see cref="Name"/>，退化<b>列表</b>字段 <see cref="PipelineName"/>。
+    /// </summary>
+    [JsonIgnore]
+    public string? DisplayName => string.IsNullOrWhiteSpace(Name) ? PipelineName : Name;
+
+    /// <summary>
+    /// 统一取用 id：优先<b>详情</b>字段 <see cref="Id"/>，退化<b>列表</b>字段 <see cref="PipelineId"/>，
+    /// 统一输出为<b>不变文化</b>的十进制字符串（消费点只认字符串，如档案 <c>PipelineId</c> / Web 链接）。
+    /// </summary>
+    [JsonIgnore]
+    public string? DisplayId => (Id ?? PipelineId)?.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>
 /// 流水线配置
 /// </summary>
+/// <remarks>
+/// <c>settings</c> 为 <b>JSON 字符串</b>（不是对象）：tb 形态流水线的变量与缓存在此，
+/// 例如 <c>{"globalParams":[{"key":"APP_PORT","value":"7000",...}],"caches":[{"directory":"/root/.m2","disable":false}],"runnerCacheMode":"local",...}</c>。
+/// <b>新版 YAML 形态同样有这段</b>（真机核对：字段存在但不含 <c>globalParams</c> / <c>caches</c>——
+/// 变量 / 缓存已改由新版 YAML 顶层 <c>variables</c> / <c>cache</c> 承载，随 <c>flow</c> 返回），
+/// 故「有/无 <c>settings</c>」<b>不能</b>用来判断流水线是新版还是 tb 形态（判 <c>type</c> / <c>flow</c> 结构）。
+/// 云效 OpenAPI <b>没有</b>写 <c>settings</c> 的入口，故本字段只读核对。
+/// </remarks>
 public class YunxiaoPipelineConfig
 {
     /// <summary>
-    /// 流水线 YAML 内容
+    /// 流水线 YAML 内容（tb 形态为控制台私有结构；新版 YAML 形态为 <c>stages:</c> 顶层可提交内容）。
     /// </summary>
     [JsonPropertyName("flow")]
     public string? Flow { get; set; }
+
+    /// <summary>
+    /// 变量与缓存配置（JSON 串；<b>只读核对</b>，OpenAPI 无法写入）。
+    /// </summary>
+    /// <remarks>
+    /// tb 形态的变量 / 缓存在这里（<c>globalParams</c> / <c>caches</c> / <c>runnerCacheMode</c>）；
+    /// 新版 YAML 形态也<b>会有</b>本字段，但不含这些键（变量 / 缓存已由 YAML 顶层 <c>variables</c> / <c>cache</c> 承载）。
+    /// </remarks>
+    [JsonPropertyName("settings")]
+    public string? Settings { get; set; }
+
+    /// <summary>
+    /// 流水线源数组（原样 JSON，只读核对；写入走 <c>flow</c> 里的 <c>sources:</c>）。
+    /// </summary>
+    [JsonPropertyName("sources")]
+    public JsonElement? Sources { get; set; }
+
+    /// <summary>
+    /// 流水线配置 id（版本视图用）。
+    /// </summary>
+    [JsonPropertyName("pipelineConfigId")]
+    public long? PipelineConfigId { get; set; }
+
+    /// <summary>
+    /// 流水线配置版本号。
+    /// </summary>
+    [JsonPropertyName("version")]
+    public long? Version { get; set; }
 }
 
 /// <summary>
 /// 创建流水线请求
 /// </summary>
+/// <remarks>
+/// <b>真机口径</b>：请求体字段名是 <c>name</c>（<b>不是</b> <c>pipelineName</c>），
+/// <c>content</c> 必须是顶层为 <c>stages:</c> 的<b>新版 YAML</b>；喂 tb 形态 <c>flow</c> 原文必报
+/// <c>1209300 yaml校验失败…至少要包含一个stage</c>。成功时<b>响应体就是裸整数 id</b>（无 <c>result</c> 外壳），
+/// 由 <see cref="YunxiaoResponseParser.ParseId"/> 归一化为字符串。
+/// </remarks>
 public class YunxiaoCreatePipelineRequest
 {
     /// <summary>
-    /// 流水线名称
+    /// 流水线名称（JSON 字段名 <c>name</c>）
     /// </summary>
-    [JsonPropertyName("pipelineName")]
+    [JsonPropertyName("name")]
     public string? PipelineName { get; set; }
 
     /// <summary>
-    /// 流水线 YAML 内容
+    /// 流水线 YAML 内容（新版 YAML：顶层 <c>stages:</c>）
     /// </summary>
     [JsonPropertyName("content")]
     public string? Content { get; set; }
@@ -532,16 +637,17 @@ public class YunxiaoCreatePipelineRequest
 /// <summary>
 /// 更新流水线请求
 /// </summary>
+/// <remarks>字段口径同 <see cref="YunxiaoCreatePipelineRequest"/>（<c>name</c> + <c>content</c>）。</remarks>
 public class YunxiaoUpdatePipelineRequest
 {
     /// <summary>
-    /// 流水线名称
+    /// 流水线名称（JSON 字段名 <c>name</c>；更新会一并覆盖名称，须回传现有名称以免被改名）
     /// </summary>
-    [JsonPropertyName("pipelineName")]
+    [JsonPropertyName("name")]
     public string? PipelineName { get; set; }
 
     /// <summary>
-    /// 流水线 YAML 内容
+    /// 流水线 YAML 内容（新版 YAML：顶层 <c>stages:</c>）
     /// </summary>
     [JsonPropertyName("content")]
     public string? Content { get; set; }
@@ -563,34 +669,6 @@ public class YunxiaoRunPipelineRequest
     /// </summary>
     [JsonPropertyName("env")]
     public Dictionary<string, string>? Environment { get; set; }
-}
-
-/// <summary>
-/// 克隆流水线结果
-/// </summary>
-public class YunxiaoPipelineCloneResult
-{
-    /// <summary>
-    /// 新流水线 ID
-    /// </summary>
-    public string? PipelineId { get; set; }
-
-    /// <summary>
-    /// 新流水线名称
-    /// </summary>
-    public string? PipelineName { get; set; }
-
-    /// <summary>
-    /// 是否已禁用部署阶段
-    /// </summary>
-    public bool DeployStageDisabled { get; set; }
-
-    /// <summary>
-    /// 待人工绑定清单（服务连接 / 主机组 / 构建集群 / 制品仓库等资源字面量）。
-    /// 云效 OpenAPI 无「复制流水线」接口，克隆实为 YAML 文本复制，
-    /// 官方不做资源重绑定，这些资源需用户在云效确认后再启用部署阶段（PRD §6 #14）。
-    /// </summary>
-    public List<string> PendingBindings { get; set; } = new();
 }
 
 /// <summary>

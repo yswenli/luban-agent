@@ -128,7 +128,7 @@ public class CodeupClient : IDisposable
             body: null,
             cancellationToken);
 
-        var items = DeserializeList<YunxiaoRepository>(response.Body);
+        var items = YunxiaoResponseParser.DeserializeList<YunxiaoRepository>(response.Body);
 
         return new YunxiaoPagedResult<YunxiaoRepository>
         {
@@ -278,7 +278,7 @@ public class CodeupClient : IDisposable
             body: null,
             cancellationToken);
 
-        return DeserializeList<YunxiaoBranch>(response.Body);
+        return YunxiaoResponseParser.DeserializeList<YunxiaoBranch>(response.Body);
     }
 
     /// <summary>
@@ -311,7 +311,7 @@ public class CodeupClient : IDisposable
 
         var response = await SendRawAsync(HttpMethod.Get, path, body: null, cancellationToken);
 
-        return DeserializeList<YunxiaoTemplateRepository>(response.Body);
+        return YunxiaoResponseParser.DeserializeList<YunxiaoTemplateRepository>(response.Body);
     }
 
     /// <summary>
@@ -357,7 +357,7 @@ public class CodeupClient : IDisposable
             body: null,
             cancellationToken);
 
-        return DeserializeList<YunxiaoNamespace>(response.Body);
+        return YunxiaoResponseParser.DeserializeList<YunxiaoNamespace>(response.Body);
     }
 
     /// <summary>
@@ -594,7 +594,7 @@ public class CodeupClient : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     // 云效错误体是 {"code":404,"errorCode":"SYSTEM_NOT_FOUND_ERROR","errorMessage":"...","traceId":"..."}
-                    var detail = ExtractErrorMessage(responseBody) ?? responseBody;
+                    var detail = YunxiaoResponseParser.ExtractErrorMessage(responseBody) ?? responseBody;
                     var errorMsg = YunxiaoErrorMapper.MapHttpStatus((int)response.StatusCode, detail);
 
                     // 检查是否需要重试
@@ -611,7 +611,7 @@ public class CodeupClient : IDisposable
                 }
 
                 // 少数接口会用 2xx 携带业务错误码，这里统一拦截
-                var businessError = ParseBusinessError(responseBody);
+                var businessError = YunxiaoResponseParser.ParseBusinessError(responseBody);
                 if (businessError is not null)
                 {
                     var (code, message) = businessError.Value;
@@ -670,143 +670,7 @@ public class CodeupClient : IDisposable
         if (string.IsNullOrWhiteSpace(response.Body))
             return default;
 
-        return DeserializeObject<T>(response.Body, path);
-    }
-
-    /// <summary>
-    /// 反序列化单个对象（解析失败即抛 <see cref="YunxiaoApiException"/>，不静默返回 <c>null</c>）。
-    /// </summary>
-    /// <typeparam name="T">目标类型。</typeparam>
-    /// <param name="json">JSON 文本。</param>
-    /// <param name="path">请求路径（仅用于错误文案）。</param>
-    /// <returns>反序列化结果。</returns>
-    private static T? DeserializeObject<T>(string json, string path)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<T>(json, JsonOpts);
-        }
-        catch (JsonException ex)
-        {
-            throw new YunxiaoApiException(0, $"云效响应解析失败（{path}）：{ex.Message}", ex);
-        }
-    }
-
-    /// <summary>
-    /// 反序列化<b>数组</b>响应（云效列表接口一律返回裸数组）。
-    /// </summary>
-    /// <typeparam name="T">元素类型。</typeparam>
-    /// <param name="json">JSON 文本。</param>
-    /// <returns>列表；空体或根不是数组时为 <c>null</c>。</returns>
-    private static List<T>? DeserializeList<T>(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.ValueKind == JsonValueKind.Array
-                ? JsonSerializer.Deserialize<List<T>>(json, JsonOpts)
-                : null;
-        }
-        catch (JsonException ex)
-        {
-            throw new YunxiaoApiException(0, $"云效列表响应解析失败：{ex.Message}", ex);
-        }
-    }
-
-    /// <summary>
-    /// 识别「2xx 但携带业务错误码」的响应体。
-    /// </summary>
-    /// <remarks>
-    /// 云效成功响应没有 <c>errorCode</c> 字段，出现该字段即视为错误；
-    /// 错误码可能是字符串（如 <c>BAD_REQUEST</c>）也可能是数字，故按字符串读后再尝试转数字，
-    /// 转不出时用响应体里的 <c>code</c>（HTTP 语义状态码）兜底。
-    /// </remarks>
-    /// <param name="json">响应体。</param>
-    /// <returns>错误码与信息；非错误时为 <c>null</c>。</returns>
-    private static (int Code, string Message)? ParseBusinessError(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        var trimmed = json.TrimStart();
-        if (trimmed.StartsWith('['))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return null;
-            if (!root.TryGetProperty("errorCode", out var errorCodeElement))
-                return null;
-
-            var rawCode = errorCodeElement.ValueKind switch
-            {
-                JsonValueKind.String => errorCodeElement.GetString(),
-                JsonValueKind.Number => errorCodeElement.GetRawText(),
-                JsonValueKind.Null => null,
-                _ => null
-            };
-
-            if (string.IsNullOrWhiteSpace(rawCode)
-                || rawCode == "0"
-                || string.Equals(rawCode, "SUCCESS", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            var code = int.TryParse(rawCode, out var parsed) ? parsed : 0;
-            if (code == 0 && root.TryGetProperty("code", out var httpCodeElement)
-                && httpCodeElement.ValueKind == JsonValueKind.Number)
-            {
-                code = httpCodeElement.GetInt32();
-            }
-
-            var message = ExtractErrorMessage(json) ?? "云效返回业务错误";
-            return (code == 0 ? 400 : code, message);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// 从错误响应体中取可读信息（<c>errorMessage</c> → <c>errorDescription</c> → <c>message</c>）。
-    /// </summary>
-    /// <param name="json">响应体。</param>
-    /// <returns>错误信息；取不到时为 <c>null</c>。</returns>
-    private static string? ExtractErrorMessage(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-                return null;
-
-            foreach (var name in new[] { "errorMessage", "errorDescription", "message" })
-            {
-                if (document.RootElement.TryGetProperty(name, out var element)
-                    && element.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(element.GetString()))
-                {
-                    return element.GetString();
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            // 非 JSON 错误体：交给调用方回退到原始文本
-        }
-
-        return null;
+        return YunxiaoResponseParser.DeserializeObject<T>(response.Body, path);
     }
 
     /// <summary>

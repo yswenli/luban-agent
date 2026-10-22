@@ -47,7 +47,8 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>当前进度（M4-P3）</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
 /// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、v0.28 起默认 develop + 提交 + 推送）已落地；
-/// Step 4 / 5 / 7 按计划在 P4~P5 分批实现（未实现的步骤返回明确的「未实现」结果，不抛异常）。
+/// Step 4 / 5 已落地为「助手亲自执行」；Step 7（v0.30：内嵌新版 YAML 模板渲染 + 创建 + 一键补齐部署阶段）见
+/// <see cref="CreatePipelinesAsync"/> / <see cref="AppendDeployStagesAsync"/>。
 /// </para>
 /// </remarks>
 public sealed class NewProjectService : INewProjectService
@@ -1118,6 +1119,10 @@ public sealed class NewProjectService : INewProjectService
             // 不作废就会出现「改完代码不重编也能推」——闸门按档案事实判定，会误放行。
             InvalidateBuildConclusion(spec);
 
+            // 同理作废上一轮流水线结论：流水线 YAML 里写死了代码源地址与分支，仓库改名 / 重建后旧结论是误导。
+            // 只清结论，不删云效上的流水线本体（远端产物一律不自动删除，PRD §4.5）。
+            InvalidatePipelineConclusion(spec);
+
             spec.AdvanceTo(WizardStep.Database);
             SaveSpec(spec);
 
@@ -1633,7 +1638,266 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     public Task<StepResult> CreatePipelinesAsync(CancellationToken cancellationToken = default)
-        => NotYetAsync(WizardStep.Pipeline, "M4-P5");
+        => RunPipelineStepAsync(includeDeployStage: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StepResult> AppendDeployStagesAsync(CancellationToken cancellationToken = default)
+        => RunPipelineStepAsync(includeDeployStage: true, cancellationToken);
+
+    /// <inheritdoc />
+    public IReadOnlyList<PipelinePreview> PreviewPipelines()
+    {
+        var spec = Current;
+        if (spec is null)
+            return Array.Empty<PipelinePreview>();
+
+        // 与创建口径同源：同一渲染器、同一过滤条件（已建库且已克隆的所选端），只是不调云效、不落档案。
+        return PlanRepositories(spec)
+            .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.CloneUrl))
+            .Select(repository =>
+            {
+                var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage: false);
+                var existing = spec.PipelineResults.FirstOrDefault(item => item.End == repository.End);
+
+                return new PipelinePreview
+                {
+                    End = repository.End,
+                    PipelineName = rendered.PipelineName,
+                    Yaml = rendered.Yaml,
+                    PendingBindings = rendered.PendingBindings,
+                    PipelineId = existing?.PipelineId ?? string.Empty,
+                    WebUrl = existing?.WebUrl ?? string.Empty,
+                    DeployStageIncluded = existing?.DeployStageIncluded ?? false
+                };
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Step 7 执行体（PRD §4.3 Step 7 <b>v0.30 口径</b>）：内嵌模板渲染新版 YAML → 同名幂等检索 → 创建 / 更新。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么是「渲染后创建」而不是「克隆参考流水线」</b>：云效 OpenAPI 既没有「复制流水线」接口，
+    /// 也只收顶层 <c>stages:</c> 的新版 YAML（喂 tb 形态 <c>flow</c> 原文必报 <c>1209300</c>）；组织内 70 条流水线
+    /// 全是 tb 形态，取不到可提交范本。故改为「按企服版语义翻译成新版 YAML 模板 → 本地渲染 → 提交创建」，
+    /// 变量与缓存由模板直接生成（见 <see cref="PipelineTemplateLibrary"/>）。
+    /// </para>
+    /// <para>
+    /// <b>两条入口共用本执行体</b>：<c>includeDeployStage=false</c> 为首次创建（<b>只含构建阶段</b>，
+    /// 部署阶段以注释块附末尾，PRD §6 #14）；<c>true</c> 为「一键补齐部署阶段」（对该端已有流水线做
+    /// <c>UpdatePipeline</c>，把部署阶段并入 YAML）。
+    /// </para>
+    /// <para>
+    /// <b>幂等</b>：创建前按流水线名精确检索，命中即复用（不再重复建），与 Step 3 建库同口径。
+    /// </para>
+    /// <para><b>建完不自动运行</b>（PRD §6 #14）：本步不发 <c>CreatePipelineRun</c>。</para>
+    /// </remarks>
+    /// <param name="includeDeployStage">是否包含部署阶段。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>步骤结果（含逐端流水线地址）。</returns>
+    private async Task<StepResult> RunPipelineStepAsync(bool includeDeployStage, CancellationToken cancellationToken)
+    {
+        const WizardStep Step = WizardStep.Pipeline;
+        var action = includeDeployStage ? "补齐部署阶段" : "创建云效流水线";
+
+        var spec = Current;
+        if (spec is null)
+        {
+            Record(Step, action, "尚未建立项目档案，请先完成第 1 步。", StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
+        }
+
+        // 闸门：与「编译失败阻断推送」同口径，只认档案事实（界面顺序 / 常驻入口 / 聊天入口都能绕开）。
+        // 首次创建要求 Step 6 已成功；补齐要求该端流水线已存在（尚无流水线时无从补齐，按端另行提示）。
+        if (!includeDeployStage && !StepGate.CanCreatePipelines(spec))
+        {
+            const string Tip = "推送（Step 6）尚未全部成功，已拒绝创建流水线：仓库里还没有可构建的代码，"
+                               + "请先完成 Step 6（推送）再执行本步（结论见 Step 6 的逐端状态行与右侧操作记录）。";
+            return StepResult.Fail(Step, Tip);
+        }
+
+        using var permissionScope = EnterPermissionScope();
+
+        var flow = Resolve<FlowClient>();
+        if (flow is null)
+        {
+            const string Tip = "宿主能力不完整：云效流水线客户端（FlowClient）不可用，无法执行 Step 7。";
+            Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
+        {
+            const string Tip = "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重跑本步（PRD §4.9）。";
+            Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        var targets = PlanRepositories(spec)
+            .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.CloneUrl))
+            .ToList();
+        if (targets.Count == 0)
+        {
+            const string Tip = "没有任何已建库并克隆的仓库可建流水线：请先完成 Step 3（按模板建库并克隆）。";
+            Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        var total = Stopwatch.StartNew();
+        var artifacts = new List<RemoteArtifact>();
+        var summary = new List<string>();
+
+        try
+        {
+            foreach (var repository in targets)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var label = EndLabel(repository.End);
+                var previous = spec.PipelineResults.FirstOrDefault(item => item.End == repository.End);
+
+                // 补齐：只对「已有流水线」且「该端确实有部署阶段模板」的端生效。
+                // 前端两端无独立部署阶段（企服版参考流水线取证：OSS 上传即发布），按端跳过并如实说明。
+                if (includeDeployStage)
+                {
+                    if (previous is null || string.IsNullOrWhiteSpace(previous.PipelineId))
+                    {
+                        summary.Add($"{label}尚未创建流水线，跳过补齐");
+                        continue;
+                    }
+
+                    if (PipelineTemplateLibrary.DeployStageYaml(repository.End) is null)
+                    {
+                        summary.Add($"{label}无独立部署阶段（构建产物上传 OSS 即发布），跳过补齐");
+                        continue;
+                    }
+
+                    // 补齐前置（真机口径）：VMDockerDeploy.machineGroup 必须是**主机组 uuid**（tb 的数字 id 会被拒）。
+                    // 未绑定就直接给可读失败、不发请求——否则必然是 400「该机器组uuid[]不存在」，白跑一次。
+                    if (string.IsNullOrWhiteSpace(_settings.FindPipelineDefault(repository.End)?.DeployMachineGroup))
+                    {
+                        const string Tip = "补齐部署阶段前需先绑定部署主机组：请在插件配置 newproject.settings.json 的 "
+                                           + "pipelineDefaults[Service].deployMachineGroup 填入**主机组 uuid**"
+                                           + "（云效控制台主机组详情可见；企服版 tb 的数字 id 226948 不被新版 YAML 接受，"
+                                           + "报「该机器组uuid[226948]不存在」），再重跑「一键补齐部署阶段」。"
+                                           + "该端其余人工项（Harbor 凭据 HARBOR_USER / HARBOR_PASSWORD、代码源服务连接）见「待人工绑定清单」。";
+                        Record(Step, $"{action}（{label}）", Tip, StepStatus.Failed, TimeSpan.Zero);
+                        SaveSpec(spec);
+                        return StepResult.Fail(Step, Tip);
+                    }
+                }
+
+                var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage);
+                var watch = BeginOperation(Step, $"{action}（{label}）", $"流水线名 {rendered.PipelineName}");
+
+                // ── 1. 幂等：按名精确检索，命中即复用（PRD §4.3 Step 7）──────────────────
+                var listed = await flow.ListPipelinesAsync(
+                    pipelineName: rendered.PipelineName,
+                    page: 1,
+                    perPage: 10,
+                    cancellationToken: cancellationToken);
+
+                var hit = (listed ?? new List<YunxiaoPipeline>())
+                    .FirstOrDefault(item => string.Equals(item.DisplayName, rendered.PipelineName, StringComparison.OrdinalIgnoreCase));
+
+                var pipelineId = hit?.DisplayId;
+                var created = false;
+
+                // ── 2. 创建 / 更新 ───────────────────────────────────────────────────
+                if (includeDeployStage)
+                {
+                    // 补齐：对该端已有流水线做整体覆盖更新（UpdatePipeline 会一并覆盖名称，故回传现名）
+                    var updated = await flow.UpdatePipelineAsync(
+                        previous!.PipelineId,
+                        new YunxiaoUpdatePipelineRequest
+                        {
+                            PipelineName = previous.PipelineName,
+                            Content = rendered.Yaml
+                        },
+                        cancellationToken: cancellationToken);
+
+                    if (!updated)
+                    {
+                        EndOperation(Step, $"{action}（{label}）", "云效未接受更新请求", StepStatus.Failed, watch.Elapsed);
+                        SaveSpec(spec);
+                        return StepResult.Fail(Step, $"{action}失败（{label}）：云效未接受更新请求，请稍后重试。");
+                    }
+
+                    pipelineId = previous.PipelineId;
+                }
+                else if (string.IsNullOrWhiteSpace(pipelineId))
+                {
+                    pipelineId = await flow.CreatePipelineAsync(
+                        new YunxiaoCreatePipelineRequest
+                        {
+                            PipelineName = rendered.PipelineName,
+                            Content = rendered.Yaml
+                        },
+                        cancellationToken: cancellationToken);
+
+                    if (string.IsNullOrWhiteSpace(pipelineId))
+                    {
+                        EndOperation(Step, $"{action}（{label}）", "云效未返回流水线 id", StepStatus.Failed, watch.Elapsed);
+                        SaveSpec(spec);
+                        return StepResult.Fail(Step, $"{action}失败（{label}）：云效未返回流水线 id，请稍后重试。");
+                    }
+
+                    created = true;
+                }
+
+                var webUrl = BuildPipelineWebUrl(pipelineId);
+
+                // ── 3. 落档案（重跑幂等：同端覆盖，不重复入册）────────────────────────
+                var result = previous ?? new EndPipelineResult { End = repository.End };
+                result.PipelineId = pipelineId!;
+                result.PipelineName = created || previous is null ? rendered.PipelineName : previous.PipelineName;
+                result.WebUrl = webUrl;
+                result.Created = created;
+                result.DeployStageIncluded = includeDeployStage ? true : previous?.DeployStageIncluded ?? false;
+                result.PendingBindings = rendered.PendingBindings.ToList();
+                result.Yaml = rendered.Yaml;
+
+                if (previous is null)
+                    spec.PipelineResults.Add(result);
+
+                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Pipeline, name: rendered.PipelineName, externalId: pipelineId, webUrl: webUrl);
+                if (artifact is not null)
+                    artifacts.Add(artifact);
+
+                var outcome = created
+                    ? $"已创建（{rendered.PendingBindings.Count} 项待人工绑定）"
+                    : includeDeployStage ? "已并入部署阶段" : "命中同名流水线，已复用";
+                EndOperation(Step, $"{action}（{label}）", $"{outcome} · {webUrl}", StepStatus.Succeeded, watch.Elapsed);
+                summary.Add($"{label}{outcome}");
+
+                SaveSpec(spec);
+            }
+
+            spec.AdvanceTo(WizardStep.Pipeline);
+            SaveSpec(spec);
+
+            total.Stop();
+            var message = $"Step 7 完成：{summary.Count} 端流水线已就绪（{string.Join(" · ", summary)}）· 耗时 {total.Elapsed.TotalSeconds:F1}s";
+            Record(Step, "Step 7 完成", message, StepStatus.Succeeded, total.Elapsed);
+            _host?.Log($"[newproject] {message}");
+
+            return StepResult.Ok(Step, message, artifacts);
+        }
+        catch (OperationCanceledException)
+        {
+            FailRunningOperation(Step, "用户取消。", total.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, "Step 7 已取消。");
+        }
+        catch (Exception ex)
+        {
+            _host?.LogError("[newproject] Step 7 创建流水线失败", ex);
+            FailRunningOperation(Step, ex.Message, total.Elapsed);
+            SaveSpec(spec);
+            return StepResult.Fail(Step, $"Step 7 失败：{ex.Message}（已创建的端不受影响；修正后可直接重跑本步）");
+        }
+    }
 
     /// <inheritdoc />
     /// <remarks>
@@ -2038,6 +2302,27 @@ public sealed class NewProjectService : INewProjectService
         lock (_gate)
         {
             _operations.RemoveAll(record => record.Step == WizardStep.Build);
+        }
+    }
+
+    /// <summary>
+    /// 作废档案里的流水线（Step 7）结论：Step 3（建库并克隆）重跑成功后调用。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="InvalidateBuildConclusion"/> 同源理由：流水线 YAML 里写死了代码源地址与分支，
+    /// 仓库一旦重建 / 改名，旧结论就是误导（面板会继续回显一条指向旧仓库的流水线链接）。
+    /// 本方法<b>只清结论</b>，不动云效上的流水线本体——远端产物一律不自动删除（PRD §4.5）。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void InvalidatePipelineConclusion(ProjectSpec spec)
+    {
+        spec.PipelineResults.Clear();
+        spec.StepStates.Remove(nameof(WizardStep.Pipeline));
+        spec.RemoteArtifacts.RemoveAll(artifact => artifact.Kind == RemoteArtifactKind.Pipeline);
+
+        lock (_gate)
+        {
+            _operations.RemoveAll(record => record.Step == WizardStep.Pipeline);
         }
     }
 
@@ -2536,6 +2821,12 @@ public sealed class NewProjectService : INewProjectService
     private static string BuildWebUrl(string cloneUrl)
         => cloneUrl.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? cloneUrl[..^4] : cloneUrl;
 
+    /// <summary>云效流水线控制台链接（供用户核对 / 人工绑定 / 手动删除）。</summary>
+    /// <param name="pipelineId">流水线 ID。</param>
+    /// <returns>控制台链接；id 为空时为空串。</returns>
+    private static string BuildPipelineWebUrl(string? pipelineId)
+        => string.IsNullOrWhiteSpace(pipelineId) ? string.Empty : $"https://flow.aliyun.com/pipelines/{pipelineId}/detail";
+
     /// <summary>
     /// 登记远端产物（重跑幂等：同端同类别同名只更新地址，不重复入册）。
     /// </summary>
@@ -2543,17 +2834,33 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="repository">按端仓库信息。</param>
     /// <param name="kind">产物类别。</param>
     /// <param name="branch">分支产物的分支名（Step 6 实际推送的分支，见 <see cref="ResolvePushBranch"/>）。</param>
+    /// <param name="name">
+    /// 产物名覆盖（仅流水线用：名字是「流水线名」而不是分支名）；为空则按 <paramref name="kind"/> 推导。
+    /// </param>
+    /// <param name="externalId">云效侧标识覆盖（仅流水线用：流水线 id 与仓库 id 不同源）。</param>
+    /// <param name="webUrl">控制台链接覆盖（仅流水线用：<c>flow.aliyun.com</c> 与代码库链接不同域名）。</param>
     /// <returns>新登记的产物；已存在时为 <c>null</c>。</returns>
     private static RemoteArtifact? AddArtifact(
-        ProjectSpec spec, EndRepository repository, RemoteArtifactKind kind, string? branch = null)
+        ProjectSpec spec,
+        EndRepository repository,
+        RemoteArtifactKind kind,
+        string? branch = null,
+        string? name = null,
+        string? externalId = null,
+        string? webUrl = null)
     {
         branch = string.IsNullOrWhiteSpace(branch)
             ? string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "main" : repository.DefaultBranch
             : branch;
-        var name = kind == RemoteArtifactKind.Repository ? repository.RepositoryName : branch;
-        var webUrl = kind == RemoteArtifactKind.Repository
-            ? repository.WebUrl
-            : string.IsNullOrWhiteSpace(repository.WebUrl) ? string.Empty : $"{repository.WebUrl}/tree/{branch}";
+        name = string.IsNullOrWhiteSpace(name)
+            ? kind == RemoteArtifactKind.Repository ? repository.RepositoryName : branch
+            : name.Trim();
+        webUrl = string.IsNullOrWhiteSpace(webUrl)
+            ? kind == RemoteArtifactKind.Repository
+                ? repository.WebUrl
+                : string.IsNullOrWhiteSpace(repository.WebUrl) ? string.Empty : $"{repository.WebUrl}/tree/{branch}"
+            : webUrl;
+        externalId ??= repository.ExternalId;
 
         var existing = spec.RemoteArtifacts.FirstOrDefault(artifact =>
             artifact.Kind == kind
@@ -2563,7 +2870,7 @@ public sealed class NewProjectService : INewProjectService
         if (existing is not null)
         {
             existing.WebUrl = webUrl;
-            existing.ExternalId = repository.ExternalId;
+            existing.ExternalId = externalId;
             return null;
         }
 
@@ -2573,7 +2880,7 @@ public sealed class NewProjectService : INewProjectService
             End = repository.End,
             Name = name,
             WebUrl = webUrl,
-            ExternalId = repository.ExternalId
+            ExternalId = externalId
         };
 
         spec.RemoteArtifacts.Add(created);
@@ -2806,15 +3113,6 @@ public sealed class NewProjectService : INewProjectService
             return null;
         }
     }
-
-    /// <summary>
-    /// 尚未实现的步骤：返回明确失败结果（不抛异常，面板可原样展示）。
-    /// </summary>
-    /// <param name="step">步骤。</param>
-    /// <param name="batch">计划实现批次。</param>
-    /// <returns>失败结果。</returns>
-    private static Task<StepResult> NotYetAsync(WizardStep step, string batch)
-        => Task.FromResult(StepResult.Fail(step, $"该步骤将在 {batch} 实现（M4 P1 骨架阶段）。"));
 
     /// <summary>
     /// 触发变更通知（面板据此刷新）。

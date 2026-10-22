@@ -52,6 +52,24 @@ public static class StepGate
     }
 
     /// <summary>
+    /// 创建流水线（Step 7）的前置：推送（Step 6）是否已成功。
+    /// </summary>
+    /// <remarks>
+    /// 判据取档案里的终态快照（跨重启保留，见 <see cref="ProjectSpec.StepStates"/>）：Step 6 未成功时，
+    /// 仓库里没有可构建的代码，流水线建出来只会指向空仓库。与 <see cref="CanPush"/> 同口径——只看档案事实，
+    /// 不看界面状态（常驻入口 / 步骤条回退 / 聊天入口都能绕开界面约束）。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    /// <returns>Step 6 已成功返回 <c>true</c>。</returns>
+    public static bool CanCreatePipelines(ProjectSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        return spec.StepStates.TryGetValue(nameof(WizardStep.Push), out var state)
+               && string.Equals(state, nameof(StepStatus.Succeeded), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 作废档案里的编译（Step 5）结论：Step 3（建库并克隆）重跑成功后调用——本地代码可能已经变了，
     /// 旧结论不再代表当前工作树，必须重新编译才能推送。
     /// </summary>

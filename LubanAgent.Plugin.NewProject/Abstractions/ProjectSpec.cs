@@ -283,6 +283,40 @@ public sealed class CloneConflict
 }
 
 /// <summary>
+/// 逐端流水线结果（Step 7，PRD §4.3 Step 7 v0.30）。
+/// </summary>
+/// <remarks>
+/// 落档案的理由与 <see cref="ProjectSpec.BuildResults"/> 同源：流水线是<b>远端产物</b>，必须跨重启可复核
+/// （哪端建了、id / 链接是什么、还有哪些资源待人工绑定），面板才能如实回显并列出孤儿清单。
+/// </remarks>
+public sealed class EndPipelineResult
+{
+    /// <summary>所属端。</summary>
+    public ProjectEnd End { get; set; }
+
+    /// <summary>云效流水线 ID。</summary>
+    public string PipelineId { get; set; } = string.Empty;
+
+    /// <summary>流水线名称。</summary>
+    public string PipelineName { get; set; } = string.Empty;
+
+    /// <summary>云效控制台链接。</summary>
+    public string WebUrl { get; set; } = string.Empty;
+
+    /// <summary>本次是<b>新建</b>（true）还是命中同名<b>复用</b>（false，幂等，PRD §4.3 Step 7）。</summary>
+    public bool Created { get; set; }
+
+    /// <summary>该流水线当前是否已包含部署阶段（「一键补齐部署阶段」后为 true）。</summary>
+    public bool DeployStageIncluded { get; set; }
+
+    /// <summary>该端的待人工绑定清单（已展开占位符）。</summary>
+    public List<string> PendingBindings { get; set; } = new();
+
+    /// <summary>渲染出的新版 YAML（供界面查看与排障；不做脱敏，因不含任何凭据）。</summary>
+    public string Yaml { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// 新建项目「项目档案」（PRD §4.5）：从上到下贯穿七步，并持久化以支持残留检测与孤儿清单展示。
 /// </summary>
 public sealed class ProjectSpec
@@ -341,6 +375,12 @@ public sealed class ProjectSpec
 
     /// <summary>参考流水线标识（按端；来自插件配置，Step 2 载入）。</summary>
     public List<string> PipelineReferenceIds { get; set; } = new();
+
+    /// <summary>
+    /// 逐端流水线结果（最近一次 Step 7；PRD §4.3 Step 7 v0.30）。
+    /// </summary>
+    /// <remarks>Step 3 建库重跑会作废本结论（仓库地址可能已变，见 <c>NewProjectService.InvalidatePipelineConclusion</c>）。</remarks>
+    public List<EndPipelineResult> PipelineResults { get; set; } = new();
 
     /// <summary>远端产物清单（v0.18 新增）：向导与插件管理界面均可查看。</summary>
     public List<RemoteArtifact> RemoteArtifacts { get; set; } = new();

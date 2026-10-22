@@ -19,7 +19,6 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 
 namespace LubanAgentCore.Connectors.AliyunDevOps;
 
@@ -35,17 +34,11 @@ public class FlowClient : IDisposable
     private readonly string? _connectorName;
     private bool _disposed;
 
-    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    // 部署阶段相关的资源字面量：服务连接 / 主机组 / 构建集群 / 制品仓库。
-    // 云效 OpenAPI 无「复制流水线」接口，克隆实为 YAML 文本复制，官方不做资源重绑定，
-    // 故克隆后需产出「待人工绑定清单」（PRD §6 #14）。
-    private static readonly Regex ResourceLiteralPattern = new(
-        @"(?im)^\s*(serviceConnection|machineGroup|runsOn|hostGroup|artifactRepo|endpoint)\s*:\s*(?<v>.+?)\s*$",
-        RegexOptions.Compiled);
+    /// <summary>
+    /// 与 <see cref="CodeupClient"/> 同口径的 JSON 选项（由 <see cref="YunxiaoResponseParser"/> 承载，
+    /// 保证「请求体序列化」与「响应体解析」用的是一份配置）。
+    /// </summary>
+    private static JsonSerializerOptions JsonOpts => YunxiaoResponseParser.JsonOpts;
 
     /// <summary>
     /// 创建 FlowClient 实例
@@ -81,14 +74,20 @@ public class FlowClient : IDisposable
     /// <summary>
     /// 列出流水线
     /// </summary>
-    /// <param name="pipelineName">流水线名称过滤（可选）</param>
+    /// <remarks>
+    /// <b>真机口径（2026-10-22 取证）</b>：成功响应是<b>裸数组</b>（无 <c>{ result: ... }</c> 外壳），
+    /// 元素字段为 <c>pipelineId</c>（数字）/ <c>pipelineName</c> / <c>createAccountId</c> / <c>createTime</c>；
+    /// 分页信息<b>不在</b>响应体里（<c>page</c> / <c>perPage</c> 只是请求参数）。故返回 <see cref="List{T}"/>，
+    /// 不再用带 <c>result</c> 外壳的 <see cref="YunxiaoPagedResult{T}"/>（那个类型对 <c>/flow</c> 侧不成立）。
+    /// </remarks>
+    /// <param name="pipelineName">流水线名称过滤（可选，<b>服务端精确匹配</b>，幂等检索就靠它）</param>
     /// <param name="page">页码（从 1 开始）</param>
-    /// <param name="perPage">每页条数</param>
+    /// <param name="perPage">每页条数（注意：服务端会把过大的值截到 10）</param>
     /// <param name="statusList">状态过滤（可选，逗号分隔）</param>
     /// <param name="organizationId">组织 ID（可选，优先于配置）</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>流水线列表</returns>
-    public async Task<YunxiaoPagedResult<YunxiaoPipeline>?> ListPipelinesAsync(
+    /// <returns>流水线列表；响应体为空时为 <c>null</c>。</returns>
+    public async Task<List<YunxiaoPipeline>?> ListPipelinesAsync(
         string? pipelineName = null,
         int page = 1,
         int perPage = 20,
@@ -112,12 +111,13 @@ public class FlowClient : IDisposable
         if (!string.IsNullOrWhiteSpace(statusList))
             queryParams.Add($"statusList={Uri.EscapeDataString(statusList!)}");
 
-        var result = await SendRequestAsync<YunxiaoPagedResult<YunxiaoPipeline>>(
+        var responseBody = await SendRawAsync(
             HttpMethod.Get,
             $"{path}?{string.Join("&", queryParams)}",
-            cancellationToken: cancellationToken);
+            null,
+            cancellationToken);
 
-        return result;
+        return YunxiaoResponseParser.DeserializeList<YunxiaoPipeline>(responseBody);
     }
 
     /// <summary>
@@ -152,11 +152,16 @@ public class FlowClient : IDisposable
     /// <summary>
     /// 创建流水线
     /// </summary>
-    /// <param name="request">创建请求</param>
+    /// <remarks>
+    /// 真机口径（2026-10-22 取证）：请求体为 <c>{ "name": ..., "content": "&lt;新版 YAML&gt;" }</c>，
+    /// <c>content</c> 必须是顶层 <c>stages:</c> 的新版 YAML；<b>成功响应是裸整数 id</b>（无外壳），
+    /// 由 <see cref="YunxiaoResponseParser.ParseId"/> 归一化为字符串。
+    /// </remarks>
+    /// <param name="request">创建请求（名称 + 新版 YAML）。</param>
     /// <param name="organizationId">组织 ID（可选）</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>创建的流水线</returns>
-    public async Task<YunxiaoPipeline?> CreatePipelineAsync(
+    /// <returns>新流水线 id；无法解析时为 <c>null</c>。</returns>
+    public async Task<string?> CreatePipelineAsync(
         YunxiaoCreatePipelineRequest request,
         string? organizationId = null,
         CancellationToken cancellationToken = default)
@@ -164,30 +169,39 @@ public class FlowClient : IDisposable
         if (request == null)
             throw new ArgumentNullException(nameof(request));
 
+        if (string.IsNullOrWhiteSpace(request.PipelineName))
+            throw new ArgumentException("流水线名称不能为空", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.Content))
+            throw new ArgumentException("流水线 YAML 内容不能为空", nameof(request));
+
         var orgId = organizationId ?? _options.OrganizationId;
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
         var path = $"/oapi/v1/flow/organizations/{orgId}/pipelines";
 
-        var result = await SendRequestAsync<YunxiaoPipeline>(
+        var responseBody = await SendRawAsync(
             HttpMethod.Post,
             path,
             request,
             cancellationToken);
 
-        return result;
+        return YunxiaoResponseParser.ParseId(responseBody);
     }
 
     /// <summary>
-    /// 更新流水线
+    /// 更新流水线（新版 YAML 全量覆盖）
     /// </summary>
+    /// <remarks>
+    /// 更新与创建同口径：<c>name</c> + <c>content</c>（新版 YAML）；<b>名称会被一并覆盖</b>，
+    /// 故调用方须回传现有名称。用于「一键补齐部署阶段」（在已创建的构建阶段之后追加部署阶段）。
+    /// </remarks>
     /// <param name="pipelineId">流水线 ID</param>
-    /// <param name="request">更新请求</param>
+    /// <param name="request">更新请求（名称 + 新版 YAML）。</param>
     /// <param name="organizationId">组织 ID（可选）</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>更新后的流水线</returns>
-    public async Task<YunxiaoPipeline?> UpdatePipelineAsync(
+    /// <returns>是否成功（不抛异常即视为成功）。</returns>
+    public async Task<bool> UpdatePipelineAsync(
         string pipelineId,
         YunxiaoUpdatePipelineRequest request,
         string? organizationId = null,
@@ -199,101 +213,24 @@ public class FlowClient : IDisposable
         if (request == null)
             throw new ArgumentNullException(nameof(request));
 
+        if (string.IsNullOrWhiteSpace(request.PipelineName))
+            throw new ArgumentException("流水线名称不能为空", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.Content))
+            throw new ArgumentException("流水线 YAML 内容不能为空", nameof(request));
+
         var orgId = organizationId ?? _options.OrganizationId;
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
         var path = $"/oapi/v1/flow/organizations/{orgId}/pipelines/{pipelineId}";
 
-        var result = await SendRequestAsync<YunxiaoPipeline>(
+        await SendRawAsync(
             HttpMethod.Put,
             path,
             request,
             cancellationToken);
 
-        return result;
-    }
-
-    /// <summary>
-    /// 从模板克隆流水线（读取源 YAML → 变量替换 → 创建）
-    /// </summary>
-    /// <param name="sourcePipelineId">源流水线 ID</param>
-    /// <param name="newName">新流水线名称</param>
-    /// <param name="substitutions">变量替换映射（YAML 中的占位符 → 实际值）</param>
-    /// <param name="disableDeployStage">是否默认禁用部署阶段（PRD §6 #14，默认 true）</param>
-    /// <param name="organizationId">组织 ID（可选）</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>克隆结果（含待人工绑定清单）</returns>
-    /// <remarks>
-    /// 云效 OpenAPI <b>没有</b>「复制流水线」接口，此处为自实现：读取源流水线 YAML 文本、
-    /// 做占位符替换后创建新流水线。因此流水线中引用的服务连接 / 主机组 / 构建集群等
-    /// 资源不会被官方重绑定，需由用户人工确认（见 <see cref="YunxiaoPipelineCloneResult.PendingBindings"/>）。
-    /// </remarks>
-    public async Task<YunxiaoPipelineCloneResult?> ClonePipelineFromTemplateAsync(
-        string sourcePipelineId,
-        string newName,
-        Dictionary<string, string>? substitutions = null,
-        bool disableDeployStage = true,
-        string? organizationId = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(sourcePipelineId))
-            throw new ArgumentException("源流水线 ID 不能为空", nameof(sourcePipelineId));
-
-        if (string.IsNullOrWhiteSpace(newName))
-            throw new ArgumentException("新流水线名称不能为空", nameof(newName));
-
-        // 1. 读取源流水线
-        var sourcePipeline = await GetPipelineAsync(sourcePipelineId, organizationId, cancellationToken);
-        if (sourcePipeline?.PipelineConfig?.Flow == null)
-            throw new InvalidOperationException("源流水线不存在或未配置 YAML");
-
-        // 2. 收集「待人工绑定清单」（部署相关资源字面量，去重）
-        var pendingBindings = new List<string>();
-        foreach (Match match in ResourceLiteralPattern.Matches(sourcePipeline.PipelineConfig.Flow))
-        {
-            var literal = $"{match.Groups[1].Value}: {match.Groups[2].Value}";
-            if (!pendingBindings.Contains(literal, StringComparer.OrdinalIgnoreCase))
-                pendingBindings.Add(literal);
-        }
-
-        // 3. 替换变量
-        var yaml = sourcePipeline.PipelineConfig.Flow;
-        if (substitutions != null && substitutions.Count > 0)
-        {
-            foreach (var kvp in substitutions)
-            {
-                yaml = yaml.Replace($"${{{kvp.Key}}}", kvp.Value);
-            }
-        }
-
-        // 4. 默认禁用部署阶段（PRD §6 #14）。
-        //    云效 Flow YAML 结构随版本变化，这里只做「显式 disabled: false → true」的保守替换，
-        //    不做结构性插入，避免损坏 YAML；未能命中的部署阶段通过待人工绑定清单提示人工处理。
-        var deployStageDisabled = false;
-        if (disableDeployStage)
-        {
-            var replaced = Regex.Replace(yaml, @"(?im)^(\s*disabled\s*:\s*)false\b", "${1}true");
-            deployStageDisabled = !ReferenceEquals(replaced, yaml) && !string.Equals(replaced, yaml, StringComparison.Ordinal);
-            yaml = replaced;
-        }
-
-        // 5. 创建新流水线
-        var createRequest = new YunxiaoCreatePipelineRequest
-        {
-            PipelineName = newName,
-            Content = yaml
-        };
-
-        var created = await CreatePipelineAsync(createRequest, organizationId, cancellationToken);
-
-        return new YunxiaoPipelineCloneResult
-        {
-            PipelineId = created?.PipelineId,
-            PipelineName = created?.PipelineName ?? newName,
-            DeployStageDisabled = deployStageDisabled,
-            PendingBindings = pendingBindings
-        };
+        return true;
     }
 
     /// <summary>
@@ -358,7 +295,7 @@ public class FlowClient : IDisposable
 
         var path = $"/oapi/v1/flow/organizations/{orgId}/pipelines/{pipelineId}/runs/{pipelineRunId}/jobs/{jobId}/run";
 
-        await SendRequestAsync<object>(HttpMethod.Post, path, null, cancellationToken);
+        await SendRawAsync(HttpMethod.Post, path, null, cancellationToken);
 
         return true;
     }
@@ -367,15 +304,29 @@ public class FlowClient : IDisposable
 
     #region HTTP 请求
 
-    private async Task<T?> SendRequestAsync<T>(
+    /// <summary>
+    /// 发起请求并返回<b>原始响应体</b>（含出口门禁、重试与错误映射）。
+    /// </summary>
+    /// <remarks>
+    /// <b>与 <see cref="CodeupClient"/> 同口径</b>：云效成功响应<b>不套</b> <c>{ "result": ... }</c> 外壳，
+    /// 故先把裸响应体交出去，由 <see cref="YunxiaoResponseParser"/> 按「裸数组 / 裸对象 / 裸标量」分别解析，
+    /// 避免历史上「拆壳后拿到 <c>null</c>」的假失败。
+    /// </remarks>
+    /// <param name="method">HTTP 方法。</param>
+    /// <param name="path">相对路径（含查询串）。</param>
+    /// <param name="body">请求体对象（<c>null</c> 表示无体）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>原始响应体文本。</returns>
+    /// <exception cref="YunxiaoApiException">HTTP 非 2xx，或 2xx 但响应体携带业务错误码。</exception>
+    private async Task<string> SendRawAsync(
         HttpMethod method,
         string path,
-        object? body = null,
-        CancellationToken cancellationToken = default)
+        object? body,
+        CancellationToken cancellationToken)
     {
         // 出口门禁（PRD §3.7）：目标主机 + PAT 凭据
-        _guard.RequireNetwork(_options.Endpoint, "FlowClient.SendRequestAsync");
-        _guard.RequireCredential(PatCredentialKey, "FlowClient.SendRequestAsync");
+        _guard.RequireNetwork(_options.Endpoint, "FlowClient.SendRawAsync");
+        _guard.RequireCredential(PatCredentialKey, "FlowClient.SendRawAsync");
 
         var pat = await _credentialProvider.GetPatAsync(_connectorName, cancellationToken);
         if (string.IsNullOrWhiteSpace(pat))
@@ -408,7 +359,9 @@ public class FlowClient : IDisposable
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    var errorMsg = YunxiaoErrorMapper.MapHttpStatus((int)response.StatusCode, responseBody);
+                    // 云效错误体是 {"errorCode":"InvalidPipeline.createOrUpdateError","errorMessage":"1209300 yaml校验失败…","requestId":"…"}
+                    var detail = YunxiaoResponseParser.ExtractErrorMessage(responseBody) ?? responseBody;
+                    var errorMsg = YunxiaoErrorMapper.MapHttpStatus((int)response.StatusCode, detail);
 
                     // 检查是否需要重试
                     if (YunxiaoErrorMapper.ShouldRetry((int)response.StatusCode) && retryCount < _options.RetryCount)
@@ -423,19 +376,15 @@ public class FlowClient : IDisposable
                     throw new YunxiaoApiException((int)response.StatusCode, errorMsg);
                 }
 
-                // 解析响应
-                var apiResponse = JsonSerializer.Deserialize<YunxiaoApiResponse<T>>(responseBody, JsonOpts);
-
-                if (apiResponse == null)
-                    throw new YunxiaoApiException(0, "响应解析失败");
-
-                if (apiResponse.ErrorCode != 0)
+                // 少数接口会用 2xx 携带业务错误码，这里统一拦截
+                var businessError = YunxiaoResponseParser.ParseBusinessError(responseBody);
+                if (businessError is not null)
                 {
-                    var errorMsg = YunxiaoErrorMapper.MapBusinessError(apiResponse.ErrorCode, apiResponse.ErrorMessage);
-                    throw new YunxiaoApiException(apiResponse.ErrorCode, errorMsg);
+                    var (code, message) = businessError.Value;
+                    throw new YunxiaoApiException(code, YunxiaoErrorMapper.MapBusinessError(code, message));
                 }
 
-                return apiResponse.Result;
+                return responseBody;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -460,7 +409,27 @@ public class FlowClient : IDisposable
             }
         }
 
-        return default;
+        throw new YunxiaoApiException(0, "云效 API 请求失败：重试次数已耗尽");
+    }
+
+    /// <summary>
+    /// 请求并反序列化<b>单个对象</b>响应（裸对象）。
+    /// </summary>
+    /// <typeparam name="T">目标类型。</typeparam>
+    /// <param name="method">HTTP 方法。</param>
+    /// <param name="path">相对路径。</param>
+    /// <param name="body">请求体对象（可选）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>反序列化结果；响应体为空时为 <c>default</c>。</returns>
+    private async Task<T?> SendRequestAsync<T>(
+        HttpMethod method,
+        string path,
+        object? body = null,
+        CancellationToken cancellationToken = default)
+    {
+        var responseBody = await SendRawAsync(method, path, body, cancellationToken);
+
+        return YunxiaoResponseParser.DeserializeObject<T>(responseBody, path);
     }
 
     #endregion

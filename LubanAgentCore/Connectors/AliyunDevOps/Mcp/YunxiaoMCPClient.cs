@@ -106,7 +106,7 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
                 "codeup_list_branches" => await CodeupListBranchesAsync(arguments, cancellationToken),
                 "codeup_create_group" => await CodeupCreateGroupAsync(arguments, cancellationToken),
                 "flow_list_pipelines" => await FlowListPipelinesAsync(arguments, cancellationToken),
-                "flow_clone_pipeline" => await FlowClonePipelineAsync(arguments, cancellationToken),
+                "flow_create_pipeline" => await FlowCreatePipelineAsync(arguments, cancellationToken),
                 "flow_update_pipeline" => await FlowUpdatePipelineAsync(arguments, cancellationToken),
                 "flow_run_pipeline" => await FlowRunPipelineAsync(arguments, cancellationToken),
                 _ => Fail($"未知工具: {toolName}")
@@ -319,6 +319,12 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
 
     #region Flow 工具实现
 
+    /// <summary>
+    /// 列出流水线（<b>真机口径</b>：成功响应是裸数组，元素字段为 <c>pipelineId</c> / <c>pipelineName</c>）。
+    /// </summary>
+    /// <param name="arguments">参数（pipelineName / page / perPage / statusList / organizationId）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工具结果。</returns>
     private async Task<MCPToolResult> FlowListPipelinesAsync(
         Dictionary<string, object?> arguments,
         CancellationToken cancellationToken)
@@ -339,30 +345,40 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         return Ok(result.ToJson());
     }
 
-    private async Task<MCPToolResult> FlowClonePipelineAsync(
+    /// <summary>
+    /// 创建流水线：提交 <c>name</c> + 新版 YAML <c>content</c>（PRD §4.11.3 注⑤ v0.30）。
+    /// </summary>
+    /// <remarks>
+    /// 云效 OpenAPI <b>没有</b>「复制流水线」接口，且 <c>content</c> 只收顶层 <c>stages:</c> 的新版 YAML
+    /// （喂控制台 tb 形态 <c>flow</c> 原文必报 <c>1209300</c>「至少要包含一个 stage」）。
+    /// 故本工具口径为「调用方自备新版 YAML → 提交创建」，不再做「读源 YAML → 替换 → 创建」。
+    /// </remarks>
+    /// <param name="arguments">参数（name / content / organizationId）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工具结果（成功时返回新流水线 id）。</returns>
+    private async Task<MCPToolResult> FlowCreatePipelineAsync(
         Dictionary<string, object?> arguments,
         CancellationToken cancellationToken)
     {
-        var sourcePipelineId = GetString(arguments, "sourcePipelineId");
-        var newName = GetString(arguments, "newName");
+        var name = GetString(arguments, "name");
+        var content = GetString(arguments, "content");
 
-        if (string.IsNullOrWhiteSpace(sourcePipelineId))
-            return Fail("缺少参数: sourcePipelineId");
-        if (string.IsNullOrWhiteSpace(newName))
-            return Fail("缺少参数: newName");
+        if (string.IsNullOrWhiteSpace(name))
+            return Fail("缺少参数: name");
+        if (string.IsNullOrWhiteSpace(content))
+            return Fail("缺少参数: content");
 
-        var substitutions = GetDictionary(arguments, "substitutions");
-        var disableDeployStage = GetBool(arguments, "disableDeployStage") ?? true;
         var organizationId = GetString(arguments, "organizationId");
 
         var client = _connector.GetFlowClient();
-        var result = await client.ClonePipelineFromTemplateAsync(
-            sourcePipelineId!, newName!, substitutions, disableDeployStage, organizationId, cancellationToken);
+        var pipelineId = await client.CreatePipelineAsync(
+            new YunxiaoCreatePipelineRequest { PipelineName = name, Content = content },
+            organizationId,
+            cancellationToken);
 
-        if (result == null)
-            return Fail("克隆流水线失败");
-
-        return Ok(result.ToJson());
+        return string.IsNullOrWhiteSpace(pipelineId)
+            ? Fail("创建流水线失败")
+            : Ok(new { success = true, pipelineId, name }.ToJson());
     }
 
     private async Task<MCPToolResult> FlowUpdatePipelineAsync(
@@ -383,13 +399,13 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         var organizationId = GetString(arguments, "organizationId");
 
         var client = _connector.GetFlowClient();
-        var result = await client.UpdatePipelineAsync(
+        var ok = await client.UpdatePipelineAsync(
             pipelineId!, new YunxiaoUpdatePipelineRequest { PipelineName = name, Content = content },
             organizationId, cancellationToken);
 
-        return result == null
-            ? Fail("更新流水线失败")
-            : Ok(new { success = true, pipelineId }.ToJson());
+        return ok
+            ? Ok(new { success = true, pipelineId }.ToJson())
+            : Fail("更新流水线失败");
     }
 
     private async Task<MCPToolResult> FlowRunPipelineAsync(

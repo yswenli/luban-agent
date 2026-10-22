@@ -9,7 +9,9 @@
 //   ② templates[].projectId —— 可选的模板仓 ID 覆盖（整数，留空则按 repository 名在**模板库**中匹配）。
 //   ③ groupNameFormat / groupParentId —— 运行期自动建的项目代码组名格式与父级组 ID；
 //      groupParentId 留空＝建在组织根下（云效：parentId 空即在组织路径下创建）。
-//   ④ pipelineReferences[].pipelineId —— Step 7 参考流水线，P5 前填入。
+//   ④ pipelineReferences[].pipelineId —— Step 7 **溯源标注**（已填真机取证值；模板内嵌在程序集内）。
+//   ⑤ pipelineDefaults[] —— Step 7 流水线按端默认值（端口 / 容器名 / 服务连接 / 构建集群 / OSS 目录），
+//      界面只读回显；现场需要改端口或换服务连接时改这里即可，不必重发插件。
 {
   "defaultVisibility": "internal",
 
@@ -50,9 +52,89 @@
     { "end": "Mobile", "repository": "TJCES-Mobile", "branch": "", "projectId": "" }
   ],
   "pipelineReferences": [
-    // 企服版三端参考流水线标识（Step 7 克隆来源）
-    { "end": "Service", "pipelineId": "" },
-    { "end": "Admin", "pipelineId": "" },
-    { "end": "Mobile", "pipelineId": "" }
+    // 企服版三端参考流水线标识（Step 7 **溯源标注**：模板已内嵌在插件程序集内，
+    // 此处填真实 id 只用于「这条模板是从哪条企服版流水线翻译来的」可追溯）。
+    // 真机取证（2026-10-22）：Service = 3481236、Admin = 3489337、Mobile = 3489317
+    //   （名称 CME_DEV_Deploy_TJCES-Service(7000) / -Admin / -Mobile；旧组 DEV_Deploy_TJCES-* 不作模板）。
+    { "end": "Service", "pipelineId": "3481236" },
+    { "end": "Admin", "pipelineId": "3489337" },
+    { "end": "Mobile", "pipelineId": "3489317" }
+  ],
+
+  // Step 7 流水线名称格式（占位符 {code}/{Code}/{CODE}/{name}/{repository}）；
+  // 对齐本组织既有命名习惯（如 CME_DEV_Deploy_TJCES-Service(7000)）。
+  "pipelineNameFormat": "{CODE}_DEV_Deploy_{repository}",
+
+  // Step 7 流水线模板的按端默认值（裁决 3A：包内按端默认 + 界面只读回显 + 此处可覆盖）。
+  // 值支持项目令牌 {code}/{Code}/{CODE}/{name}/{branch}（如 containerName = "{code}-service"）。
+  //
+  // 【真机取证依据】2026-10-22 取企服版三端参考流水线的 flow + settings + sources：
+  //   · 后端：DOCKER_IMAGE_NAME=tjces-service、APP_PORT=7000、DOCKER_CONTAINER_NAME=tjces-service、
+  //     DOCKER_REPO_NAME=develop、Harbor=harbor.tjingcai.com、构建集群 buildNodeGroup=PM-SielV3Iovlo4Au4J、
+  //     部署主机组 226948；caches 见模板内 cache: 段。
+  //   · 前端：node_build + OSS delete/upload（服务连接 520828 → sm7mho5x9ex945rp、bucket=tejingcai、
+  //     region=cn-shanghai、目录 DEV/TJCES-Admin/、DEV/TJCES-Mobile/；源目录 dist、dist/dev/h5），
+  //     构建集群 K8S-4（公共集群）。
+  //   · 代码源服务连接：组织内 codeup 服务连接 496035 → r3x6es4esgbsn6ur（本轮建库/推送用的同一条）。
+  //
+  // 【buildCluster】整串照写（模板不再拼 private/ 前缀）：留空＝不写 runsOn ⇒ 云效默认北京公共集群
+  // （cacheMode 自动取 remote）；填 private/<集群ID> 或 public/cn-beijing 则原样写入（private 前缀取 local）。
+  // 真机核：OpenAPI 校验对私有集群一律报「runsOn {} 不存在」，故企服版的私有集群值此处**故意留空**，
+  // 由人工在控制台确认后回填（见「待人工绑定清单」）。前端两端企服版用的是公共构建集群，同样留空。
+  //
+  // 【deployMachineGroup】必须是**主机组 uuid**（真机核：tb 数字 id 226948 报「该机器组uuid[226948]不存在」），
+  // 故此处留空；留空时 YAML 给「待绑定：主机组 uuid」占位，且「一键补齐部署阶段」会直接给可读失败（不发请求）。
+  "pipelineDefaults": [
+    {
+      "end": "Service",
+      "appPort": "7000",
+      "containerName": "{code}-service",
+      "imageName": "{code}-service",
+      "imageTag": "latest",
+      "dockerRepo": "{branch}",
+      "harborHost": "harbor.tjingcai.com",
+      "buildCluster": "",
+      "codeupServiceConnection": "r3x6es4esgbsn6ur",
+      "ossServiceConnection": "",
+      "ossBucket": "",
+      "ossRegion": "",
+      "ossPrefix": "",
+      "uploadPath": "",
+      "deployMachineGroup": ""
+    },
+    {
+      "end": "Admin",
+      "appPort": "",
+      "containerName": "",
+      "imageName": "",
+      "imageTag": "latest",
+      "dockerRepo": "",
+      "harborHost": "harbor.tjingcai.com",
+      "buildCluster": "",
+      "codeupServiceConnection": "r3x6es4esgbsn6ur",
+      "ossServiceConnection": "sm7mho5x9ex945rp",
+      "ossBucket": "tejingcai",
+      "ossRegion": "cn-shanghai",
+      "ossPrefix": "DEV/{CODE}-Admin/",
+      "uploadPath": "dist",
+      "deployMachineGroup": ""
+    },
+    {
+      "end": "Mobile",
+      "appPort": "",
+      "containerName": "",
+      "imageName": "",
+      "imageTag": "latest",
+      "dockerRepo": "",
+      "harborHost": "harbor.tjingcai.com",
+      "buildCluster": "",
+      "codeupServiceConnection": "r3x6es4esgbsn6ur",
+      "ossServiceConnection": "sm7mho5x9ex945rp",
+      "ossBucket": "tejingcai",
+      "ossRegion": "cn-shanghai",
+      "ossPrefix": "DEV/{CODE}-Mobile/",
+      "uploadPath": "dist/dev/h5",
+      "deployMachineGroup": ""
+    }
   ]
 }

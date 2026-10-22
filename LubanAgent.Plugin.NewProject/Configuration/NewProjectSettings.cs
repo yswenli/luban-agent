@@ -56,6 +56,84 @@ public sealed class PipelineReference
 }
 
 /// <summary>
+/// Step 7 流水线模板的<b>按端默认值</b>（PRD §4.3 Step 7，裁决 3A）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 语义：<b>包内按端默认</b>（来自企服版参考流水线真机取证）→ 界面<b>只读回显</b> → 本文件（或宿主配置节点）<b>可覆盖</b>。
+/// </para>
+/// <para>
+/// 字段值支持项目令牌：<c>{code}</c> / <c>{Code}</c> / <c>{CODE}</c> / <c>{name}</c> / <c>{branch}</c>，
+/// 由 <see cref="Services.PipelineRenderer"/> 展开（如 <c>containerName = "{code}-service"</c>）。
+/// </para>
+/// </remarks>
+public sealed class PipelineDefault
+{
+    /// <summary>所属端。</summary>
+    public ProjectEnd End { get; set; }
+
+    /// <summary>容器端口（仅后端有意义；界面只读回显）。</summary>
+    public string AppPort { get; set; } = string.Empty;
+
+    /// <summary>容器名（仅后端；如 <c>{code}-service</c>）。</summary>
+    public string ContainerName { get; set; } = string.Empty;
+
+    /// <summary>镜像名（仅后端；如 <c>{code}-service</c>）。</summary>
+    public string ImageName { get; set; } = string.Empty;
+
+    /// <summary>镜像标签。</summary>
+    public string ImageTag { get; set; } = "latest";
+
+    /// <summary>镜像仓库内的路径（留空＝按 <c>{branch}</c>，与企服版 <c>DOCKER_REPO_NAME=develop</c> 一致）。</summary>
+    public string DockerRepo { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Harbor 域名（仅后端）。企服版为 <c>harbor.tjingcai.com</c>；
+    /// 与 <c>HARBOR_USER</c> / <c>HARBOR_PASSWORD</c> 一并列入「待人工绑定清单」。
+    /// </summary>
+    public string HarborHost { get; set; } = "harbor.tjingcai.com";
+
+    /// <summary>
+    /// 构建任务的 <c>runsOn</c> 目标（<b>整串照写</b>，模板不拼前缀）；<b>留空＝不写 <c>runsOn</c></b>
+    /// （走云效默认北京公共集群，真机 200）。
+    /// </summary>
+    /// <remarks>
+    /// 取值形如 <c>private/&lt;私有集群ID&gt;</c>（企服版 Service 用的私有构建集群，构建机需有 docker daemon）
+    /// 或 <c>public/cn-beijing</c>（公共集群显式写法）。<b>真机核实</b>：OpenAPI 校验对<b>私有</b>集群一律报
+    /// 「runsOn {} 不存在」——故这里只能人工按控制台实际值回填，同时该值也决定缓存模式
+    /// （<c>private*</c> ⇒ <c>cacheMode: local</c>，否则 <c>remote</c>）。
+    /// </remarks>
+    public string BuildCluster { get; set; } = string.Empty;
+
+    /// <summary>代码源服务连接 uuid（<c>sources.&lt;id&gt;.certificate.serviceConnection</c>）。</summary>
+    public string CodeupServiceConnection { get; set; } = string.Empty;
+
+    /// <summary>OSS 服务连接 uuid（仅前端）。</summary>
+    public string OssServiceConnection { get; set; } = string.Empty;
+
+    /// <summary>OSS bucket（仅前端）。</summary>
+    public string OssBucket { get; set; } = string.Empty;
+
+    /// <summary>OSS 区域（仅前端；OSSDelete / OSSUpload 必填，留空＝<c>cn-shanghai</c>）。</summary>
+    public string OssRegion { get; set; } = string.Empty;
+
+    /// <summary>OSS 远端目录（仅前端；写入 <c>OSSUpload.targetFilePath</c> 与 <c>OSSDelete.prefix</c>，如 <c>DEV/{CODE}-Admin/</c>）。</summary>
+    public string OssPrefix { get; set; } = string.Empty;
+
+    /// <summary>上传的源文件目录（仅前端；写入 <c>OSSUpload.sourceFilePath</c>，如 <c>dist</c>）。</summary>
+    public string UploadPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 部署阶段主机组 uuid（仅后端；仅「一键补齐部署阶段」时使用）。
+    /// </summary>
+    /// <remarks>
+    /// <b>必须是 uuid</b>：真机核企服版 tb 的数字 id <c>226948</c> 会被拒（报「该机器组uuid[226948]不存在」）。
+    /// 留空时 YAML 里给占位提示，且「一键补齐部署阶段」会直接给可读失败（不发请求），避免必然 400。
+    /// </remarks>
+    public string DeployMachineGroup { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// 占位符替换规则（F3=A，PRD §4.3 Step 3「随后自动替换占位符：命名空间、项目名、缩写」）。
 /// </summary>
 /// <remarks>
@@ -147,6 +225,15 @@ public sealed class NewProjectSettings
     public List<PipelineReference> PipelineReferences { get; set; } = new();
 
     /// <summary>
+    /// Step 7 流水线名称格式（占位符 <c>{code}</c> / <c>{Code}</c> / <c>{CODE}</c> / <c>{name}</c> / <c>{repository}</c>）。
+    /// </summary>
+    /// <remarks>默认对齐本组织既有习惯（如 <c>CME_DEV_Deploy_TJCES-Service(7000)</c>）：<c>{CODE}_DEV_Deploy_{repository}</c>。</remarks>
+    public string PipelineNameFormat { get; set; } = "{CODE}_DEV_Deploy_{repository}";
+
+    /// <summary>Step 7 流水线模板的按端默认值（裁决 3A：包内默认 + 界面只读回显 + 此处可覆盖）。</summary>
+    public List<PipelineDefault> PipelineDefaults { get; set; } = new();
+
+    /// <summary>
     /// 包内配置文件的绝对路径（与插件包中 <c>lib/</c> 同级）。
     /// </summary>
     public static string DefaultFilePath
@@ -190,6 +277,22 @@ public sealed class NewProjectSettings
     /// <returns>绑定；未配置时返回 <c>null</c>。</returns>
     public TemplateBinding? FindTemplate(ProjectEnd end)
         => Templates.FirstOrDefault(item => item.End == end);
+
+    /// <summary>
+    /// 按端取流水线模板默认值（Step 7）。
+    /// </summary>
+    /// <param name="end">端。</param>
+    /// <returns>默认值；未配置时返回 <c>null</c>（渲染器会退化为空默认值）。</returns>
+    public PipelineDefault? FindPipelineDefault(ProjectEnd end)
+        => PipelineDefaults.FirstOrDefault(item => item.End == end);
+
+    /// <summary>
+    /// 按端取参考流水线绑定（仅作<b>溯源标注</b>，Step 7 不再读它的 YAML）。
+    /// </summary>
+    /// <param name="end">端。</param>
+    /// <returns>参考流水线绑定；未配置时返回 <c>null</c>。</returns>
+    public PipelineReference? FindPipelineReference(ProjectEnd end)
+        => PipelineReferences.FirstOrDefault(item => item.End == end);
 
     /// <summary>
     /// 目标仓库名：<c>{code}-{end}</c>（如 <c>jnms-Service</c>）。
@@ -313,6 +416,55 @@ public sealed class NewProjectSettings
             new() { End = ProjectEnd.Admin },
             new() { End = ProjectEnd.Mobile }
         },
-        PlaceholderRules = CreateDefaultPlaceholderRules()
+        PlaceholderRules = CreateDefaultPlaceholderRules(),
+        PipelineDefaults = CreateDefaultPipelineDefaults()
+    };
+
+    /// <summary>
+    /// 内置的按端流水线默认值（企服版参考流水线真机取证值；配置文件缺失时的兜底）。
+    /// </summary>
+    /// <remarks>
+    /// <b>2026-10-22 真机校正</b>：后端 <c>BuildCluster</c> / <c>DeployMachineGroup</c> 一律<b>置空</b>——
+    /// 企服版私有集群 ID（<c>PM-…</c>）在 OpenAPI 校验下报「runsOn {} 不存在」，主机组数字 id <c>226948</c>
+    /// 报「该机器组uuid[226948]不存在」，两者都必须由人工在控制台确认真实值后回填（见「待人工绑定清单」）。
+    /// </remarks>
+    /// <returns>按端默认值。</returns>
+    private static List<PipelineDefault> CreateDefaultPipelineDefaults() => new()
+    {
+        new()
+        {
+            End = ProjectEnd.Service,
+            AppPort = "7000",
+            ContainerName = "{code}-service",
+            ImageName = "{code}-service",
+            ImageTag = "latest",
+            DockerRepo = "{branch}",
+            HarborHost = "harbor.tjingcai.com",
+            // 留空 ⇒ 不写 runsOn（走云效默认北京公共集群）。企服版用私有集群，需人工回填 private/<集群ID>。
+            BuildCluster = "",
+            CodeupServiceConnection = "r3x6es4esgbsn6ur",
+            // 留空 ⇒ YAML 里给「待绑定：主机组 uuid」占位；一键补齐前会拦截并给出可读提示。
+            DeployMachineGroup = ""
+        },
+        new()
+        {
+            End = ProjectEnd.Admin,
+            OssServiceConnection = "sm7mho5x9ex945rp",
+            OssBucket = "tejingcai",
+            OssRegion = "cn-shanghai",
+            OssPrefix = "DEV/{CODE}-Admin/",
+            UploadPath = "dist",
+            CodeupServiceConnection = "r3x6es4esgbsn6ur"
+        },
+        new()
+        {
+            End = ProjectEnd.Mobile,
+            OssServiceConnection = "sm7mho5x9ex945rp",
+            OssBucket = "tejingcai",
+            OssRegion = "cn-shanghai",
+            OssPrefix = "DEV/{CODE}-Mobile/",
+            UploadPath = "dist/dev/h5",
+            CodeupServiceConnection = "r3x6es4esgbsn6ur"
+        }
     };
 }
