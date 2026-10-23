@@ -225,6 +225,77 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "至少写一项");
     }
 
+    /// <summary>
+    /// 方案 D（2026-10-23 真机：助手克隆完 Service 就写 failed 结论，Admin 未克隆、两端未替换占位符）：
+    /// 提示词必须锁死「逐端闭环 + 收尾自检 + 禁止用结论文件代替执行」。
+    /// </summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_逐端闭环且禁止用结论文件代替执行()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" },
+            new() { End = ProjectEnd.Admin, RepositoryName = "Csxmy-Admin", LocalPath = @"D:\ws\jnms\Csxmy-Admin" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        // 逐端闭环：拒绝「先把所有端建库、再统一克隆」
+        StringAssert.Contains(prompt, "逐端闭环");
+        StringAssert.Contains(prompt, "一端没走完不许收尾");
+        StringAssert.Contains(prompt, "禁止");
+        StringAssert.Contains(prompt, "统一克隆");
+
+        // 禁止写半成品结论收尾
+        StringAssert.Contains(prompt, "任一端未闭环时禁止写结论文件收尾");
+        StringAssert.Contains(prompt, "不得");
+        StringAssert.Contains(prompt, "代替执行");
+        StringAssert.Contains(prompt, "单端失败不豁免其它端");
+
+        // 每端六项收尾自检
+        StringAssert.Contains(prompt, "收尾自检");
+        StringAssert.Contains(prompt, "六项全绿");
+        StringAssert.Contains(prompt, "placeholderSources` **非空**");
+
+        // 逐端 checks 完备性 + message 不得写待办
+        StringAssert.Contains(prompt, "`checks[]` 必须**逐端一条**");
+        StringAssert.Contains(prompt, "需要继续执行");
+    }
+
+    /// <summary>
+    /// 方案 D：插件只落账整体通过的轮次，所以计划里的 Cloned=true 必须作为「已完成端」下发，
+    /// 助手跳过建库/克隆只补占位符与复核（否则每次重跑都从第 1 步重来，长链路易再次半途收尾）。
+    /// </summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_已克隆端只补占位符与复核()
+    {
+        var plan = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                Cloned = true
+            },
+            new()
+            {
+                End = ProjectEnd.Admin,
+                RepositoryName = "Csxmy-Admin",
+                LocalPath = @"D:\ws\jnms\Csxmy-Admin",
+                Cloned = false
+            }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        StringAssert.Contains(prompt, "【已落账的端（上一次已建库并克隆，本轮只补缺失）】");
+        StringAssert.Contains(prompt, "跳过 1)~5)");
+        StringAssert.Contains(prompt, "只做 6) 占位符替换 + 7) 复核");
+        StringAssert.Contains(prompt, "状态 = 已克隆（跳过建库与克隆，只补占位符替换与复核）");
+        StringAssert.Contains(prompt, "状态 = 未克隆（1)~5) 全做）");
+    }
+
     /// <summary>Step 6：分支不写死 develop、git 调用带 workingDirectory、暂存用 paths=["."]。</summary>
     [TestMethod]
     public void BuildPushPrompt_推送分支与git参数口径正确()

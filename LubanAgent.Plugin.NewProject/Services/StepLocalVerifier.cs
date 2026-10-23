@@ -148,7 +148,11 @@ public static class StepLocalVerifier
 
             if (tokens.Count == 0)
             {
-                issues.Add($"{label}：结论未给出占位符来源令牌（placeholderSources 为空），无法独立复核残余。");
+                // 方案 C：占位符来源令牌为空＝该端**没做**占位符替换，不是「无法复核」。
+                // 事实依据（2026-10-23 真机）：助手克隆完一端就把结论文件写成 failed，两端 placeholderSources 都是空，
+                // 旧文案只说「无法独立复核残余」，容易被当成复核器能力不足，半成品仍带着 cloned=true 落进结论。
+                issues.Add($"{label}：占位符替换未完成（placeholderSources 为空）——该端仍属未完成，"
+                           + "`cloned=true` 不成立；请按 docs 的规则表替换后把实际命中的来源令牌逐字写回。");
             }
             else
             {

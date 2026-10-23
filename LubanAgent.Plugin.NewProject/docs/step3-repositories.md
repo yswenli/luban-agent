@@ -79,6 +79,13 @@ mcp_yunxiao_codeup_get_repo(repositoryId=<命中项 id>)   # 仅当 search 命�
 提示词会带：用户确认后的建库计划 + 准备阶段结论文件绝对路径 + 用户答复（`answers`）。
 助手**只做增量**，不重跑准备阶段。
 
+> **逐端闭环（硬口径）**：本步是多端批次，但必须**一端一端闭环**——对每一端完整走完 2.1~2.8 后再进入下一端，
+> 禁止「先把所有端建库、再统一克隆 / 统一替换」。任一端未闭环（含占位符残余 ≠ 0、`placeholderSources` 为空）时
+> **不得写执行结论收尾**：继续调用工具做完；用 `status=failed` 的结论文件代替执行＝本步判失败。
+> 只有 docs 失败对照表里不可恢复的失败（401/403/pin 120s 未就绪/凭据缺失）才能让该端失败，
+> 且**单端失败不豁免其它端**——其它端照常做完再写结论。
+> 起步时先看计划里各端的「状态 = 已克隆 / 未克隆」：已克隆的端**跳过 2.1~2.5**，只补 2.7 + 2.8。
+
 ### 2.1 建代码组（先查后建）
 
 代码组不存在 ⇒
@@ -197,12 +204,14 @@ git clone -b <pin> <httpUrlToRepo> "<仓库目录>"      # 仓库目录 = <工�
 ```
 
 > 插件侧还会**独立再扫一遍残余**（不采信自报）⇒ 残余不为 0 会被判失败。
+> `extra.placeholderSources` **为空即判「占位符替换未完成」＝该端未完成**（不是「无法复核」），
+> 该端不得写 `cloned=true`，也不得进入下一端。
 
 ### 2.8 本地复核与落账
 
 助手完成前，在该端仓库目录（`workingDirectory=<仓库目录>`）用 `git status`（工作树）与 `git rev-parse --verify refs/heads/<pin>` 复核，然后把结果写进 `artifacts[]`：
 
-- `extra.cloned = true`；
+- `extra.cloned = true`（**前提**：占位符已替换且 `placeholderSources` 非空，否则不算就绪）；
 - `extra.defaultBranch`；
 - `extra.commitId`（若本次有本地提交/模板自带 commit 可读则填，读不到留空并如实说明）。
 
@@ -230,6 +239,7 @@ git clone -b <pin> <httpUrlToRepo> "<仓库目录>"      # 仓库目录 = <工�
 | 目标目录非空 | 三选一 | `needsInput` |
 | 仓库名已存在 | **复用**（幂等） | `done` + `checks[]` 注明「复用」 |
 | 占位符残余 ≠ 0 | 视为未完成 | `failed` |
+| `placeholderSources` 为空 | 视为**占位符替换未完成**（该端未完成，不得 `cloned=true`） | 继续做，不写结论 |
 | 仓库目录复核不通过（目录空 / 无 `.git` / refs 缺） | 视为未克隆 | `failed` |
 
 > 任一端失败 ⇒ **整步 failed**，但**已成功落账的端照常写进档案**（重跑只补缺失）。

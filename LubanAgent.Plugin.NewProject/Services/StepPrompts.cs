@@ -354,10 +354,27 @@ public static class StepPrompts
                                + $" · 可见性 = {repository.Visibility} · 仓库目录 = {repository.LocalPath}"
                                + "（已含仓库名，勿再拼一次）"
                                + $" · 模板仓 = {repository.TemplateRepository}"
-                               + $" · pin = {(string.IsNullOrWhiteSpace(repository.TemplateBranch) ? "（按 docs 现场解析）" : repository.TemplateBranch)}");
+                               + $" · pin = {(string.IsNullOrWhiteSpace(repository.TemplateBranch) ? "（按 docs 现场解析）" : repository.TemplateBranch)}"
+                               + (repository.Cloned ? " · 状态 = 已克隆（跳过建库与克隆，只补占位符替换与复核）" : " · 状态 = 未克隆（1)~5) 全做）"));
         }
         builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
         builder.AppendLine();
+
+        // 断点续跑：插件只把「整体通过」的轮次落账，所以 Cloned=true 的端一定已过本地复核——
+        // 直接告诉助手别重复建库/克隆，否则它每次重跑都从第 1 步重来，长链路易再次半途收尾。
+        var clonedEnds = plan.Where(repository => repository.Cloned).ToList();
+        if (clonedEnds.Count > 0)
+        {
+            builder.AppendLine("【已落账的端（上一次已建库并克隆，本轮只补缺失）】");
+            foreach (var repository in clonedEnds)
+            {
+                builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库目录 = {repository.LocalPath}："
+                                   + "**跳过 1)~5)**（不要重复建库、不要重新克隆，目录非空即复用），只做 6) 占位符替换 + 7) 复核，"
+                                   + "并把该端照常写进本次结论的 `artifacts[]` / `checks[]`。");
+            }
+            builder.AppendLine("其余端（状态 = 未克隆）照常走完整 1)→7)。");
+            builder.AppendLine();
+        }
 
         if (resolvedInputs is { Count: > 0 })
         {
@@ -367,7 +384,22 @@ public static class StepPrompts
             builder.AppendLine();
         }
 
-        builder.AppendLine("【执行步骤】（逐端）");
+        builder.AppendLine("【执行口径：逐端闭环，一端没走完不许收尾】");
+        builder.AppendLine("本步是多端批次，但**必须一端一端闭环**：对清单里的每一端，独立完整地走完 1)→7)，"
+                           + "把该端写进 `artifacts[]` / `checks[]` 之后再进入下一端。"
+                           + "**禁止**把多端拆成「先把所有端建库、再统一克隆 / 统一替换」的批处理顺序。");
+        builder.AppendLine("**任一端未闭环时禁止写结论文件收尾**：1)~7) 只要有一条没做（或占位符残余 ≠ 0），"
+                           + "就必须继续调用工具做完，**不得**用 `status=failed` 的结论文件代替执行、"
+                           + "也不得写「执行中断 / 需要继续执行」这类收尾语。"
+                           + "确实遇到 docs 失败对照表里不可恢复的失败（401/403/pin 120s 未就绪/凭据缺失）时，"
+                           + "才能在该端 `checks[]` 写明**失败环节 + 原始报错**并把整步写 `failed`；"
+                           + "此时仍要把**尚未尝试的端照常做完**（单端失败不豁免其它端）。");
+        builder.AppendLine("**收尾自检（每端六项全绿才算闭环，任一不绿就继续做）**："
+                           + "①仓库 id 已取到 ②`httpUrlToRepo` 已取到 ③pin 分支已在远端就位 ④本地目录已克隆且 `.git`/`refs/heads/<pin>` 有效 "
+                           + "⑤占位符残余 = 0 且 `extra.placeholderSources` **非空** ⑥`extra.cloned=true` 且 `extra.error` 为空。");
+        builder.AppendLine();
+
+        builder.AppendLine("【执行步骤】（对**每一端**依次执行；不要跨端交错）");
         builder.AppendLine("1) 代码组：查不到就 `mcp_yunxiao_codeup_create_group` 建（父级按 docs），查到就复用；");
         builder.AppendLine("2) 仓库：同名已存在则复用其 id；否则 `mcp_yunxiao_codeup_create_repo`（以模板创建、落在项目代码组下、"
                            + "`syncAllBranches=true`；参数名按工具 schema 原样小驼峰，写错即静默走默认值）；"
@@ -383,11 +415,12 @@ public static class StepPrompts
         builder.AppendLine("6) 占位符替换：按 docs 的规则表把模板占位符替换成项目命名空间 / 项目名 / 缩写（区分大小写、幂等），"
                            + "替换后残余必须为 0；把**实际替换的来源令牌**写进该端 `extra.placeholderSources`"
                            + "（令牌取值见 docs，逐字写实际命中的那几个，例如 `[\"<令牌原文>\", …]`；"
-                           + "**至少写一项**——插件要按它独立扫描残余，空列表会被判为「无法复核」＝本步失败）；");
+                           + "**至少写一项**——插件要按它独立扫描残余，空列表会被判为「占位符替换未完成＝该端未完成」）；");
         builder.AppendLine("7) 复核（**全部带 `workingDirectory=<仓库目录>`**）："
                            + "`GitStatusAsync(workingDirectory=<仓库目录>)` / "
                            + "`GitBranchListAsync(workingDirectory=<仓库目录>)` 确认工作树可用且 `refs/heads/<pin>` 存在，"
-                           + "再写 `extra.cloned=true`、`extra.defaultBranch`。");
+                           + "再写 `extra.cloned=true`、`extra.defaultBranch`；");
+        builder.AppendLine("8) 该端闭环后，才进入下一端（回到 1)）。全部端闭环后才写结论文件。");
         builder.AppendLine();
 
         AppendArtifactSchema(builder, 3, @"{
@@ -409,6 +442,12 @@ public static class StepPrompts
   ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""已建库并克隆，占位符残余 0"" } ],
   ""message"": ""<一句话总结>""
 }");
+
+        builder.AppendLine("注意：`checks[]` 必须**逐端一条**（`name` 取端标识 Service / Admin / Mobile），"
+                           + "`artifacts[]` 里 `kind=repository` 也必须每端一条；漏端会被判为「该端未给结论」＝本步失败。"
+                           + "`message` 只写一句话总结，**不要**在里面写「需要继续执行」这类待办——待办意味着本步还没做完，"
+                           + "此时不该写结论文件。");
+        builder.AppendLine();
 
         builder.AppendLine("需要用户答复时（无法自行判定的克隆冲突）用这个形态，并**停止**不要继续：");
         builder.AppendLine("```json");

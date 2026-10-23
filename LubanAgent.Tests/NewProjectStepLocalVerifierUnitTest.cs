@@ -264,6 +264,9 @@ public class NewProjectStepLocalVerifierUnitTest
 
         Assert.AreEqual(1, issues.Count);
         StringAssert.Contains(issues[0], "placeholderSources 为空");
+        // 方案 C：空令牌＝该端没做占位符替换（不是「复核器能力不足」），cloned=true 也不成立
+        StringAssert.Contains(issues[0], "占位符替换未完成");
+        StringAssert.Contains(issues[0], "`cloned=true` 不成立");
     }
 
     [TestMethod]
