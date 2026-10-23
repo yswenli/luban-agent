@@ -125,11 +125,12 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "编译方式由你按工程类型决定");
         StringAssert.Contains(prompt, "dotnet build");
 
-        // v0.28：本组织已知构建姿势（管理端：develop + Node16 + npm run build:dev）
+        // v0.30：管理端固定 4 步（先构建 → 失败再核 Node16 → cnpm 修依赖 → 再构建）
         StringAssert.Contains(prompt, "本组织已知构建姿势");
         StringAssert.Contains(prompt, "不要用 pnpm");
         StringAssert.Contains(prompt, "develop");
-        StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com");
+        StringAssert.Contains(prompt, "fnm exec --using=16 -- cnpm.cmd install -g vite");
+        StringAssert.Contains(prompt, "fnm exec --using=16 -- cnpm.cmd i");
         StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd run build:dev");
         StringAssert.Contains(prompt, "不是 npm run build");
         StringAssert.Contains(prompt, "Failed to resolve entry for package");
@@ -139,8 +140,8 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "rmSync('node_modules/X'");
         StringAssert.Contains(prompt, "不要用 npm rebuild X");
 
-        // v0.28 兜底：环境缺件时如实上报、不自行装全局工具链、不改仓库配置
-        StringAssert.Contains(prompt, "不要**自行安装全局工具链");
+        // v0.30 兜底：环境缺件时如实上报；全局只授权装 vite，其余不自行安装、不改仓库配置
+        StringAssert.Contains(prompt, "自行安装除 vite 之外的全局工具链");
         StringAssert.Contains(prompt, "由用户补好环境后重跑");
 
         // v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——可修依赖树与环境，禁改业务源码与工程配置
@@ -167,11 +168,11 @@ public class NewProjectStepPromptsUnitTest
 
         // 判定半装看入口文件是否缺失，而不是盲信 npm install 的 exit 0
         StringAssert.Contains(prompt, "es/index.mjs");
-        StringAssert.Contains(prompt, "只核对包目录是否存在，不校验文件完整性");
+        StringAssert.Contains(prompt, "包管理器只核对目录，不校验文件完整性");
 
-        // 修法：删单包目录后重装；整树重建只在多包残缺时用（可能超 2 分钟）
+        // 修法：删单包目录后用 cnpm i 补回
         StringAssert.Contains(prompt, "rmSync('node_modules/X'");
-        StringAssert.Contains(prompt, "npm.cmd ci");
+        StringAssert.Contains(prompt, "cnpm.cmd i");
 
         // 装依赖不能再被管道截断（上一轮 npm install 就是中途被杀，留下半装包）
         StringAssert.Contains(prompt, "装依赖必须独占一条命令");

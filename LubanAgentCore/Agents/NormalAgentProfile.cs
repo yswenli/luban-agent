@@ -53,6 +53,10 @@ public class NormalAgentProfile : AgentProfile
     protected override ToolGroupOptions BuildToolOptions() => new()
     {
         Browser = { Headless = false },
-        Script = { DefaultTimeout = 30000 }
+        // 15 分钟：本产品的真实场景（前端 npm install / vite build）动辄 2~5 分钟，
+        // 沿用框架默认 120s 甚至旧的 30s 会在收尾阶段杀死进程：
+        // 装依赖被杀 → 留下「目录在、文件不全」的半装包；构建被杀 → 产物写完但返回 exitCode=-1 + EPIPE，
+        // 被误判成编译失败（真机现场见 2026-10-23 Step 5）。
+        Script = { DefaultTimeout = 900000 }
     };
 }

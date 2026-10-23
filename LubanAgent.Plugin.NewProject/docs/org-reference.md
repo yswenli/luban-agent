@@ -110,9 +110,24 @@
 | 端 | 姿势 | 生效位置 |
 |----|------|----------|
 | 后端（Service） | `dotnet build`（**Step 5 本地编译检查**用；CI 侧是 `docker build -f WebHost/Dockerfile`） | Step 5 |
-| 管理端（Admin） | Node 16 + npm 系客户端：**`fnm exec --using=16 -- npm.cmd …`**；构建命令 `npm run build:dev` | Step 5 与控制台作业 |
+| 管理端（Admin） | 见下方「管理端 4 步」；Node 16 + npm 系客户端，构建命令 `npm run build:dev` | Step 5 与控制台作业 |
 | 移动端（Mobile） | 同管理端（`fnm exec --using=16 -- npm.cmd …` + `npm run build:dev`） | 同上 |
 | CI 侧 npm 源 | `npm config set registry https://registry.npmmirror.com`（写死在模板 `NodeBuild.with.run` 里） | `pipeline-admin.yml.md` / `pipeline-mobile.yml.md` |
+
+### 管理端 4 步（固定流程，不要自创）
+
+1. **先直接构建**：`fnm exec --using=16 -- npm.cmd run build:dev`（脚本名是 `build:dev`，不是 `build`）。
+   `exitCode=0` 即通过，收工。
+2. **失败才查环境**：`fnm exec --using=16 -- node -v` 必须是 `v16.x`；不是 16 的全部命令都用
+   `fnm exec --using=16 --` 包一层（Windows 下写 `npm.cmd` / `cnpm.cmd`）。顺带确认在 `develop` 分支。
+3. **装依赖**：`fnm exec --using=16 -- cnpm.cmd install -g vite`（全局 vite 兜底）
+   → 在仓库目录 `fnm exec --using=16 -- cnpm.cmd i`。
+   装依赖必须**独占一条命令跑完**，不要接管道截断输出、不要并行，否则会被中断成半装包。
+4. **再构建一次**：`fnm exec --using=16 -- npm.cmd run build:dev`，以这次的输出定结论。
+
+> 真机依据（2026-10-23）：该仓库 `build:dev` 实际耗时 2~4 分钟；工具超时 30s 时会被杀在半路，
+> 表现为 `esbuild service stopped: write EPIPE` + `exitCode=-1`，而 `dist/` 其实已写全。
+> 该症状＝**进程被杀**，不是 monaco 插件不兼容，先确认不是超时再怀疑插件。
 
 ---
 

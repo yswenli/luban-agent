@@ -31,10 +31,18 @@
 
 ### 本组织已知构建姿势
 
-各端（尤其**管理端**）的分支口径、Node 版本、包管理器、包一层命令的写法、构建脚本名、
-依赖入口缺失（`Failed to resolve entry for package "X"`）时的补跑姿势，以及兜底说明，
-**统一读 `docs/org-reference.md` 的「构建姿势」节**——本正文不复述。
-**与本组织既有做法冲突时以该文档为准**。
+各端（尤其**管理端**）的分支口径、Node 版本、包管理器、包一层命令的写法、构建脚本名，
+**统一读 `docs/org-reference.md` 的「构建姿势」节**。**与本组织既有做法冲突时以该文档为准**。
+
+管理端固定 4 步（简版，详见文档）：
+
+1. `fnm exec --using=16 -- npm.cmd run build:dev` —— 成功即通过；
+2. 失败才查环境：`fnm exec --using=16 -- node -v` 必须是 v16.x，不是就用 `fnm exec --using=16 --` 包一层；
+3. `fnm exec --using=16 -- cnpm.cmd install -g vite` → `fnm exec --using=16 -- cnpm.cmd i`；
+4. 再 `fnm exec --using=16 -- npm.cmd run build:dev`，以这一次输出定结论。
+
+> 本仓库 `build:dev` 实测要 **2~4 分钟**。若看到 `esbuild service stopped: write EPIPE` + `exitCode=-1`
+> 而 `dist/` 已写全，那是**进程被超时杀掉**的收尾残响，不是 monaco 插件不兼容。
 
 结论文件路径与 schema 由插件固定，**原样使用、不要另存别处**：
 
@@ -74,12 +82,12 @@
   （例：`node_modules/element-plus/es/index.mjs` 缺失）——这是安装被中途打断留下的半装包。
 - **修法**：在本端仓库目录执行
   `node -e "require('fs').rmSync('node_modules/X',{recursive:true,force:true})"`，
-  再重跑 `npm.cmd install`（只补这一个包，秒级）。
+  再重跑 `fnm exec --using=16 -- cnpm.cmd i`（只补这一个包，秒级）。
 - **无效做法**：`npm rebuild X`（只重跑包自身生命周期脚本，预构建包不会补回缺失文件）；
-  也不要因 `npm install` 几秒 exit 0 就认为修好——npm 只核对包目录是否存在，不校验文件完整性。
-  多个包同时残缺时才考虑 `npm.cmd ci`（整树重建，可能超过 2 分钟）。
+  也不要因安装几秒 exit 0 就认为修好——包管理器只核对包目录是否存在，不校验文件完整性。
 - 动过依赖后**必须重跑构建**，以最后一次构建输出定结论。
-- 编译产物（`bin` / `obj` / `node_modules` / `dist`）留在原处，**不要删除、不要清理**。
+- 编译产物（`bin` / `obj` / `dist`）与 `node_modules` 留在原处，**不要整体清理**；
+  唯一例外是修半装包时删掉出问题的那**一个**包目录。
 - 命令首词必须在白名单内：`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `fnm` / `cnpm` /
   `python` / `py` / `python3` / `pip` / `pip3`；
   一次一条命令，可用 `&&` 串联（**每段首词同样受白名单约束**），不要用管道与重定向。

@@ -107,6 +107,8 @@ public static class StepPrompts
     /// 并按端写入【本组织已知构建姿势】（管理端：develop 分支 + Node 16 + `npm run build:dev`）。
     /// v0.29：纠正「包入口缺失」的处置——半装包（如 element-plus 缺 <c>es/index.mjs</c>）只能删包目录重装，
     /// <c>npm rebuild</c> 无效；并要求装依赖独占一条命令跑完（管道截断会让子进程半途被杀）。
+    /// v0.30：管理端改为固定的 4 步流程（先构建 → 失败再核 Node 16 → <c>cnpm i</c> 修依赖 → 再构建），
+    /// 与真机验证过的成功路径一致；「全局装 vite」由用户明确授权。
     /// </remarks>
     /// <param name="spec">项目档案。</param>
     /// <param name="targets">本次要编译的端（按端仓库，已带本地目录）。</param>
@@ -145,27 +147,28 @@ public static class StepPrompts
         builder.AppendLine();
 
         builder.AppendLine("【本组织已知构建姿势】（本组织各端仓库的既有做法；与你按工程类型的默认判断冲突时，以这里为准）");
-        builder.AppendLine("- 管理端（Admin，Vite + Vue）：本仓库用 npm 系构建，**不要用 pnpm**；Node 版本必须是 16。");
-        builder.AppendLine("  1) 分支：本仓库的工作分支是 develop；若当前不在 develop 且工作树干净，先在该端仓库目录里 git checkout develop。");
-        builder.AppendLine("  2) Node 16：用 fnm 把命令包一层——fnm exec --using=16 -- npm.cmd <子命令>"
-                           + "（Windows 下 fnm 直接 spawn npm 会报 program not found，必须写成 npm.cmd；"
-                           + "不要用 fnm env | Invoke-Expression 这类管道 / 求值写法，会被守卫拒绝）。");
-        builder.AppendLine("  3) 装依赖：fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com"
-                           + "（内网慢可换 cnpm 同源镜像；node_modules 若原本是 pnpm 装的，npm install 会补装成 npm 布局，属正常）。"
-                           + "**装依赖要独占一条命令跑完**：不要接管道截断输出（| Select-Object / | Select-String / | head），"
-                           + "否则子进程会因断管中途被杀、留下半装包；若这次安装被中断（超时 / 被杀），必须重跑同一命令直到正常退出。");
-        builder.AppendLine("  4) 构建：fnm exec --using=16 -- npm.cmd run build:dev"
-                           + "（**不是 npm run build**：本仓库的构建脚本叫 build:dev）。");
-        builder.AppendLine("  5) 若报 Failed to resolve entry for package \"X\"：**先判定是不是「半装」**——包目录存在，但 package.json 里 "
+        builder.AppendLine("- 管理端（Admin，Vite + Vue）：Node 必须是 16，用 npm 系客户端（**不要用 pnpm**）。"
+                           + "固定按下面 4 步走，不要自创流程：");
+        builder.AppendLine("  1) 先直接跑构建：fnm exec --using=16 -- npm.cmd run build:dev"
+                           + "（本仓库的构建脚本叫 build:dev，**不是 npm run build**）。exitCode=0 即该端通过，收工。");
+        builder.AppendLine("  2) 构建失败时先核对 Node 版本：fnm exec --using=16 -- node -v 应为 v16.x；"
+                           + "不是 16 就一律用 fnm exec --using=16 -- 把命令包一层（Windows 下 fnm 直接 spawn npm 会报 program not found，"
+                           + "必须写成 npm.cmd / cnpm.cmd；不要用 fnm env | Invoke-Expression 这类管道 / 求值写法）。"
+                           + "同时确认当前在 develop 分支（工作树干净时才 git checkout develop）。");
+        builder.AppendLine("  3) 装依赖：先 fnm exec --using=16 -- cnpm.cmd install -g vite（全局 vite 兜底），"
+                           + "再在仓库目录 fnm exec --using=16 -- cnpm.cmd i（补全/修复项目依赖）。"
+                           + "**装依赖必须独占一条命令并等它正常退出**：不要接管道截断输出（| Select-Object / | Select-String / | head），"
+                           + "也不要并行做别的——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑；"
+                           + "若被中断，重跑同一命令直到正常退出。");
+        builder.AppendLine("  4) 再跑一次构建：fnm exec --using=16 -- npm.cmd run build:dev，**以这一次的输出定结论**。");
+        builder.AppendLine("  补充：若第 4 步仍报 Failed to resolve entry for package \"X\"：判「半装」——包目录存在，但 package.json 里 "
                            + "module / main / exports 指向的入口文件不存在（例：element-plus 缺 node_modules/element-plus/es/index.mjs）。"
-                           + "确认半装后的正确修法＝**删掉该包目录再装回来**（只补这一个包，秒级）：先在本端仓库目录执行 "
-                           + "node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\"，"
-                           + "再重跑上面的 npm.cmd install。**不要用 npm rebuild X**：它只重跑包自身的生命周期脚本，"
-                           + "对 element-plus 这类预构建包不会补回缺失文件；也**不要**因为 npm install 几秒就 exit 0 就认为已修好——"
-                           + "npm 只核对包目录是否存在，不校验文件完整性。多个包同时残缺时才考虑 npm.cmd ci（整树重建，可能超过 2 分钟）。");
+                           + "修法是删掉该包目录再装回来：node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\" "
+                           + "后重跑 cnpm.cmd i。**不要用 npm rebuild X**（对预构建包无效），也**不要**因安装几秒 exit 0 就认为修好——"
+                           + "包管理器只核对目录，不校验文件完整性。");
         builder.AppendLine("- 后端（Service，.NET）：dotnet build <解决方案>.sln。");
         builder.AppendLine("- 其它端（移动端等）：按工程类型自行判断。");
-        builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装全局工具链、也不要改仓库配置——"
+        builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装除 vite 之外的全局工具链、也不要改仓库配置——"
                            + "把缺失项如实写进该端结论的 detail，本步按失败上报，由用户补好环境后重跑。）");
         builder.AppendLine();
 
@@ -174,9 +177,8 @@ public static class StepPrompts
                            + "**命令一律在该端的「本地目录」（＝该端仓库目录）执行**（先 cd 或用工具的工作目录参数，"
                            + "不要在项目工作区根执行）；编译方式由你按工程类型决定。");
         builder.AppendLine("2) 后端一般是 .NET 解决方案：在仓库目录里 dotnet build 对应的 .sln（或 .csproj）。");
-        builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：装依赖用 npm / cnpm"
-                           + "（本组织管理端仓库不要用 pnpm），构建优先用仓库里真实存在的开发态脚本"
-                           + "（本组织管理端为 npm run build:dev），不要凭默认猜 npm run build。");
+        builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：本组织管理端先直接跑 npm run build:dev，"
+                           + "失败再按【本组织已知构建姿势】的 4 步流程修环境；不要凭默认猜 npm run build，也不要用 pnpm。");
         builder.AppendLine("4) **修了依赖就必须重跑构建验证**：本轮里凡动过 node_modules（装 / 重装 / 删包重装），"
                            + "都要在修复后**再跑一次该端的构建命令**，以最后一次构建的真实输出定结论；不许拿修复前的报错收尾，"
                            + "也不许只跑 npm install 就宣布修好（install 的 exit 0 不代表包完整）。");
