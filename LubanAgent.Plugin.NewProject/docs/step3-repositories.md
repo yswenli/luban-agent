@@ -55,7 +55,12 @@ mcp_yunxiao_codeup_get_repo(repositoryId=<命中项 id>)   # 仅当 search 命�
 
 ### 1.4 准备阶段产出
 
-写结论文件 `results/step3-<ts>.json`：`status="done"`，把事实写进 `artifacts[]`：
+写结论文件 `results/step3-prepare-<ts>.json`（**注意文件名带 `prepare`**）：
+`"phase": "prepare"`，`"status": "ready"`（事实查清、可执行）或 `"blocked"`（条件不满足、不可执行，必须写明原因），
+把事实写进 `artifacts[]`：
+
+> **不要写 `status="done"`**：`done` 是执行轮（建组 / 建库 / 克隆完成）专用。准备阶段写 `done` 会被判定为「本步已完成」，
+> 助手在执行轮就只剩一句 `DONE`、零写动作——这是真机翻车过的方式。
 
 - `kind=group` **一条**：`name` / `externalId`（组 id）/ `webUrl`；`extra.exists` / `extra.parentId` / `extra.organizationId`
   （**必须与提示词注入的组织 ID 同值**；空值会被判为准备失败）。

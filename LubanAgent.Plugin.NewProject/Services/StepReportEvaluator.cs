@@ -118,6 +118,10 @@ public static class StepReportEvaluator
     /// <c>needsInput</c> / <c>failed</c> 一律不通过。
     /// </para>
     /// <para>
+    /// <b>阶段区分（方案 A）</b>：准备（只读）结论用 <c>phase=prepare</c> + <c>status=ready|blocked</c>；
+    /// 执行轮只认 <c>status=done</c>，读到 <c>phase=prepare</c> / <c>ready</c> / <c>blocked</c> 即判「未执行」。
+    /// </para>
+    /// <para>
     /// <b>逐端完备性</b>：<c>artifacts[]</c> 中 <c>kind=repository</c> 必须<b>每端一条</b>；缺端即整步失败
     /// （沿用 Step 5「不用其余端兜底」口径）。执行续跑阶段（<paramref name="requireCloned"/>）还要求各端
     /// <c>extra.cloned=true</c> 且 <c>extra.error</c> 为空。
@@ -144,6 +148,24 @@ public static class StepReportEvaluator
 
         if (report.Step != 3)
             return Failed($"结论文件步骤号不符：应为 3，实为 {report.Step}。");
+
+        // 方案 A：准备（只读）结论与执行结论必须严格区分。
+        // 准备结论（phase=prepare / status=ready|blocked）只代表「事实已查清」，绝不能当作「本步已完成」。
+        var declared = (report.Status ?? string.Empty).Trim();
+        var isPrepareReport =
+            string.Equals((report.Phase ?? string.Empty).Trim(), StepReportPhase.Prepare, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(declared, StepReportStatus.Ready, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(declared, StepReportStatus.Blocked, StringComparison.OrdinalIgnoreCase);
+
+        if (requireCloned && isPrepareReport)
+        {
+            return Failed("读到的结论是准备（只读）阶段结论（phase=prepare / status=ready|blocked），"
+                          + "不代表本步已执行：必须完成建组 / 建库 / 克隆，并写出新的执行结论"
+                          + "（step3-<时间戳>.json，status=done）。");
+        }
+
+        if (!requireCloned && string.Equals(declared, StepReportStatus.Blocked, StringComparison.OrdinalIgnoreCase))
+            return Failed(Msg(report, "Step 3 准备阶段判定为不可执行（status=blocked）。"));
 
         var (status, gate) = GateStatus(report, "Step 3");
         if (gate is not null)

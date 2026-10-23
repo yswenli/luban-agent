@@ -29,6 +29,30 @@ public static class StepReportStatus
 
     /// <summary>本步失败（不推进）。</summary>
     public const string Failed = "failed";
+
+    /// <summary>
+    /// 准备（只读）阶段：事实已查清、可进入执行（仅 <c>step3-prepare-*.json</c> 使用）。
+    /// </summary>
+    /// <remarks>
+    /// <b>不得与 <see cref="Done"/> 混用</b>：<c>done</c> 只表示「本步的执行动作已完成」。
+    /// 准备阶段写 <c>done</c> 会被执行提示词当成「已经做过」而直接收尾（真机 Step 3 翻车根因）。
+    /// </remarks>
+    public const string Ready = "ready";
+
+    /// <summary>准备（只读）阶段：条件不满足、当前不可执行（仅准备结论使用）。</summary>
+    public const string Blocked = "blocked";
+}
+
+/// <summary>
+/// 结论文件的 <see cref="StepReport.Phase"/> 取值（方案 A：准备与执行分名）。
+/// </summary>
+public static class StepReportPhase
+{
+    /// <summary>准备（只读）阶段，文件名 <c>step{N}-prepare-&lt;时间戳&gt;.json</c>。</summary>
+    public const string Prepare = "prepare";
+
+    /// <summary>执行阶段，文件名 <c>step{N}-&lt;时间戳&gt;.json</c>。</summary>
+    public const string Execute = "execute";
 }
 
 /// <summary>
@@ -41,7 +65,8 @@ public static class StepReportStatus
 /// 插件回读后解析——判定口径 = 文件存在 + schema 可解析 + <see cref="Ok"/>（且 <see cref="Status"/>
 /// 为 <c>done</c>）+ 事件流无错误事件（+ Step 3/6/7 的本地复核），齐才算通过。
 /// </para>
-/// <para>路径约定：<c>{localPath}\.luban-agent\plugin-newproject\results\step{N}-&lt;时间戳&gt;.json</c>。</para>
+/// <para>路径约定：执行结论为 <c>{localPath}\.luban-agent\plugin-newproject\results\step{N}-&lt;时间戳&gt;.json</c>；
+    /// Step 3 准备（只读）结论为 <c>step3-prepare-&lt;时间戳&gt;.json</c>（<see cref="Phase"/> = <c>prepare</c>）。</para>
 /// <para>
 /// <b>向后兼容</b>：<see cref="Status"/> / <see cref="Inputs"/> / <see cref="Artifacts"/> 均为可选，
 /// Step 4 / Step 5 的旧结论（只有 <see cref="Step"/> / <see cref="Ok"/> / <see cref="Checks"/> / <see cref="Message"/>）
@@ -57,12 +82,18 @@ public sealed class StepReport
     public bool Ok { get; set; }
 
     /// <summary>
-    /// 三态状态：<c>done</c> / <c>needsInput</c> / <c>failed</c>（Step 3/6/7 使用）。
+    /// 三态状态：<c>done</c> / <c>needsInput</c> / <c>failed</c>（Step 3/6/7 使用）；
+    /// 准备（只读）结论用 <c>ready</c> / <c>blocked</c>（见 <see cref="StepReportStatus.Ready"/>）。
     /// </summary>
     /// <remarks>
     /// 留空时按「<see cref="Ok"/> 为真即 <c>done</c>、否则 <c>failed</c>」向后兼容 Step 4/5 的旧结论。
     /// </remarks>
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 阶段：<c>prepare</c> / <c>execute</c>（可空；空按执行阶段处理以兼容旧结论）。
+    /// </summary>
+    public string? Phase { get; set; }
 
     /// <summary>逐项检查结论（Step 5 为逐端结论）。</summary>
     public List<StepReportCheck> Checks { get; set; } = new();

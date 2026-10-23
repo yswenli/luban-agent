@@ -488,17 +488,9 @@ public sealed class NewProjectService : INewProjectService
             // 目标目录与 StepPrompts.DocsDirectory 保持同一约定。
             watch = BeginOperation(Step, "铺装知识正文", @"docs\ → .luban-agent\plugin-newproject\docs");
             var docs = CopyPluginDocs(workspace.RootPath);
-            if (docs is null)
-            {
-                EndOperation(Step, "铺装知识正文",
-                    "插件包未附带 docs/（或为内置插件无独立目录）；本步跳过。", StepStatus.Skipped, watch.Elapsed);
-            }
-            else
-            {
-                EndOperation(Step, "铺装知识正文",
-                    $"{docs.Value.Count} 份知识正文已写入 {docs.Value.Target}（覆盖式，保留用户手工补充的文件）",
-                    StepStatus.Succeeded, watch.Elapsed);
-            }
+            EndOperation(Step, "铺装知识正文",
+                $"{docs.Count} 份知识正文已写入 {docs.Target}（覆盖式，保留用户手工补充的文件）",
+                StepStatus.Succeeded, watch.Elapsed);
 
             // ── 7. 云效 MCP（yunxiao）：会话构建时由宿主按启用中插件清单注入 ──────────────
             watch = BeginOperation(Step, "接通云效 MCP", "yunxiao（进程内客户端）");
@@ -710,13 +702,22 @@ public sealed class NewProjectService : INewProjectService
             return result;
         }
 
+        // 方案 A：知识正文不可用即不下发。助手读不到 docs 只能凭记忆，等于必然白跑或误报。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath!);
+        if (docsError is not null)
+        {
+            result.Errors.Add(docsError);
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return result;
+        }
+
         using var permissionScope = EnterPermissionScope();
         var watch = BeginOperation(Step, Action,
             $"{plan.Count} 端 · 组织 {result.OrganizationId} · 代码组 {result.GroupName}");
 
         try
         {
-            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 3);
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 3, StepResultFile.PreparePhase);
             StepResultFile.EnsureDirectory(resultFile);
 
             // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
@@ -728,7 +729,7 @@ public sealed class NewProjectService : INewProjectService
             if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
                 spec.SessionId = outcome.SessionId;
 
-            var (report, reportPath, takenAt, readError) = ReadFreshReport(spec.LocalPath!, 3, startedAt);
+            var (report, reportPath, takenAt, readError) = ReadFreshReport(spec.LocalPath!, 3, startedAt, prepare: true);
             if (report is null && !string.IsNullOrWhiteSpace(readError))
                 result.Errors.Add(readError!);
 
@@ -820,13 +821,17 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="workspaceRoot">项目工作区根。</param>
     /// <param name="step">步骤号。</param>
     /// <param name="startedAtUtc">本次下发时刻（UTC）。</param>
+    /// <param name="prepare">是否回读<b>准备（只读）</b>阶段的结论（<c>step{N}-prepare-*.json</c>）。</param>
     /// <returns>已解析结论 + 路径 + 修改时间 + 读取 / 解析错误。</returns>
     private static (StepReport? Report, string? Path, DateTimeOffset TakenAt, string? Error) ReadFreshReport(
         string workspaceRoot,
         int step,
-        DateTime startedAtUtc)
+        DateTime startedAtUtc,
+        bool prepare = false)
     {
-        var fresh = StepResultFile.List(workspaceRoot, step)
+        var fresh = (prepare
+                ? StepResultFile.ListPrepare(workspaceRoot, step)
+                : StepResultFile.List(workspaceRoot, step))
             .Select(path => new FileInfo(path))
             .Where(info => info.LastWriteTimeUtc >= startedAtUtc)
             .OrderByDescending(info => info.LastWriteTimeUtc)
@@ -835,8 +840,9 @@ public sealed class NewProjectService : INewProjectService
 
         if (fresh is null)
         {
+            var pattern = prepare ? $"step{step}-{StepResultFile.PreparePhase}-*.json" : $"step{step}-*.json";
             return (null, null, DateTimeOffset.Now,
-                $"本次下发后未见新的结论文件（step{step}-*.json）：助手未产出结论。");
+                $"本次下发后未见新的结论文件（{pattern}）：助手未产出结论。");
         }
 
         var takenAt = new DateTimeOffset(fresh.LastWriteTimeUtc);
@@ -897,6 +903,14 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
+        // 方案 A：知识正文不可用即不下发（否则助手读不到 docs 只能凭记忆执行）。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, docsError);
+        }
+
         // 执行续跑仍要显式把组织 ID 下发（旧档案可能没写过；提示词拿不到值助手就会传空串）。
         if (!EnsureOrganizationId(spec))
         {
@@ -906,14 +920,15 @@ public sealed class NewProjectService : INewProjectService
         }
 
         // 执行续跑以「准备（只读）」结论为事实来源（§5.2）：优先用 PrecheckRepositoriesAsync 记下的那一份；
-        // 进程重启导致字段为空时，才回退取最新一份 step3-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
+        // 进程重启导致字段为空时，才回退取最新一份 step3-prepare-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
+        // 方案 A：准备结论与执行结论分名，绝不能再回退到最新一份执行结论（旧执行结论会被当成本次预检事实）。
         var prepareResultFile = !string.IsNullOrWhiteSpace(_repositoryPrepareResultFile)
                                 && File.Exists(_repositoryPrepareResultFile)
             ? _repositoryPrepareResultFile
-            : StepResultFile.FindLatest(spec.LocalPath!, 3);
+            : StepResultFile.FindLatestPrepare(spec.LocalPath!, 3);
         if (string.IsNullOrWhiteSpace(prepareResultFile) || !File.Exists(prepareResultFile))
         {
-            const string Tip = "缺少 Step 3 准备结论文件（step3-*.json）：请先在面板执行「准备（只读）」，确认后再执行本步。";
+            const string Tip = "缺少 Step 3 准备结论文件（step3-prepare-*.json）：请先在面板执行「准备（只读）」，确认后再执行本步。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
@@ -1249,6 +1264,14 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
+        // 方案 A：知识正文不可用即不下发。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, docsError);
+        }
+
         var watch = BeginOperation(Step, Action, $"目标 {request.Describe()}");
 
         try
@@ -1366,6 +1389,14 @@ public sealed class NewProjectService : INewProjectService
             const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
+        }
+
+        // 方案 A：知识正文不可用即不下发。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, docsError);
         }
 
         var ends = targets.Select(repository => repository.End).Distinct().ToList();
@@ -1551,6 +1582,14 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
+        // 方案 A：知识正文不可用即不下发。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, docsError);
+        }
+
         var watch = BeginOperation(Step, Action, $"{targets.Count} 端 · 推送分支 {_settings.PushBranch}");
 
         try
@@ -1699,6 +1738,14 @@ public sealed class NewProjectService : INewProjectService
             const string Tip = "没有任何已建库并克隆的仓库可建流水线：请先完成 Step 3（按模板建库并克隆）。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+
+        // 方案 A：知识正文不可用即不下发。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, Action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { docsError }, Message = docsError });
         }
 
         var watch = BeginOperation(Step, Action, $"{targets.Count} 端 · 只读准备（不触网写入）");
@@ -2048,6 +2095,14 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
+        // 方案 A：知识正文不可用即不下发。
+        var docsError = EnsureKnowledgeDocs(spec.LocalPath);
+        if (docsError is not null)
+        {
+            Record(Step, action, docsError, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, docsError);
+        }
+
         var watch = BeginOperation(Step, action,
             $"{targets.Count} 端 · 准备结论 {Path.GetFileName(prepareResultFile)}");
 
@@ -2366,50 +2421,55 @@ public sealed class NewProjectService : INewProjectService
     /// 把插件包内的 <c>docs/</c> 知识正文复制进项目工作区（<c>{工作区}\.luban-agent\plugin-newproject\docs\</c>）。
     /// </summary>
     /// <param name="workspaceRoot">项目工作区根目录。</param>
-    /// <returns>已复制份数 + 目标目录；插件包无 <c>docs/</c>（或为内置插件无独立目录）时返回 <c>null</c>。</returns>
+    /// <returns>已复制份数 + 目标目录。</returns>
     /// <remarks>
-    /// 覆盖式复制：同名文件以插件包为准（升级即生效），但**不删除**用户手工补充的文件（§4.2）。
+    /// <para>覆盖式复制：同名文件以插件包为准（升级即生效），但**不删除**用户手工补充的文件（§4.2）。</para>
+    /// <para>
+    /// <b>方案 A</b>：插件包缺 <c>docs/</c> 或复制失败一律<b>抛异常</b>（Step 2 按失败呈现），不再静默 Skipped——
+    /// 知识正文缺失时后续各步的助手只能凭记忆执行，必须在本步就暴露。
+    /// </para>
     /// </remarks>
-    private (int Count, string Target)? CopyPluginDocs(string workspaceRoot)
+    private (int Count, string Target) CopyPluginDocs(string workspaceRoot)
     {
-        try
+        var (ok, count, target, error) = KnowledgeDocs.Sync(ResolvePluginPackageRoot(), workspaceRoot);
+        if (!ok)
         {
-            var pluginId = _host?.PluginId;
-            if (string.IsNullOrWhiteSpace(pluginId))
-                return null;
-
-            var manager = _host!.Services.GetService(typeof(PluginManager)) as PluginManager;
-            var packageRoot = manager?.GetPlugin(pluginId)?.Directory;
-            if (string.IsNullOrWhiteSpace(packageRoot))
-                return null;
-
-            var sourceDir = Path.Combine(packageRoot, "docs");
-            if (!Directory.Exists(sourceDir))
-                return null;
-
-            var targetDir = Path.Combine(workspaceRoot, ".luban-agent", "plugin-newproject", "docs");
-            Directory.CreateDirectory(targetDir);
-
-            var copied = 0;
-            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
-            {
-                var relative = Path.GetRelativePath(sourceDir, file);
-                var destination = Path.Combine(targetDir, relative);
-                var destinationFolder = Path.GetDirectoryName(destination);
-                if (!string.IsNullOrEmpty(destinationFolder))
-                    Directory.CreateDirectory(destinationFolder);
-
-                File.Copy(file, destination, overwrite: true);
-                copied++;
-            }
-
-            return (copied, targetDir);
+            Logger.Warn($"[newproject] 铺装 docs 知识正文失败：{error}");
+            throw new InvalidOperationException($"插件包知识正文不可用：{error}");
         }
-        catch (Exception ex)
-        {
-            Logger.Warn("[newproject] 铺装 docs 知识正文失败（本步按失败呈现）。", ex);
-            throw;
-        }
+
+        return (count, target);
+    }
+
+    /// <summary>取当前插件包根目录（内置插件 / 卸载中返回 <c>null</c>）。</summary>
+    private string? ResolvePluginPackageRoot()
+    {
+        var pluginId = _host?.PluginId;
+        if (string.IsNullOrWhiteSpace(pluginId))
+            return null;
+
+        var manager = _host!.Services.GetService(typeof(PluginManager)) as PluginManager;
+        return manager?.GetPlugin(pluginId)?.Directory;
+    }
+
+    /// <summary>
+    /// 每步下发前的知识正文守卫（方案 A）：先覆盖式同步 <c>docs/</c>，不可用即返回可操作文案（调用方不下发）。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么每步都做</b>：此前只在 Step 2 复制一次，工作区被外部清理（真机 13:40 运行期目录整体重建）后，
+    /// Step 3 仍照常下发，助手读不到文档只能凭记忆回一个 DONE。改为每步自愈 + 不可用即失败。
+    /// </remarks>
+    /// <param name="workspaceRoot">项目工作区根。</param>
+    /// <returns>可用返回 <c>null</c>；不可用返回失败文案。</returns>
+    private string? EnsureKnowledgeDocs(string workspaceRoot)
+    {
+        var (ok, _, target, error) = KnowledgeDocs.Sync(ResolvePluginPackageRoot(), workspaceRoot);
+        if (ok)
+            return null;
+
+        Logger.Warn($"[newproject] 知识正文不可用，已阻止本步下发：{error}");
+        return $"知识正文不可用（{target}）：{error}。"
+               + "请重装「新建项目」插件包（其 docs/ 缺失或被清理）后重跑本步。";
     }
 
     /// <summary>

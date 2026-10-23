@@ -217,6 +217,8 @@ public static class StepPrompts
                            + "**建组 / 建库 / 克隆 / 改文件都不在本阶段**（唯一例外＝结论文件）。");
         builder.AppendLine();
 
+        AppendKnowledgeBounds(builder, docs, StepReportStatus.Blocked);
+
         AppendHardBoundaries(builder, new[]
         {
             "本阶段只读：**禁止**任何写入动作——云效侧禁止 codeup_create_group / codeup_create_repo / "
@@ -257,7 +259,8 @@ public static class StepPrompts
 
         AppendArtifactSchema(builder, 3, @"{
   ""step"": 3,
-  ""status"": ""done"",
+  ""phase"": ""prepare"",
+  ""status"": ""ready"",
   ""ok"": true,
   ""artifacts"": [
     { ""kind"": ""group"", ""name"": ""<代码组名>"", ""externalId"": ""<组 id 或 null>"", ""webUrl"": ""<链接或 null>"",
@@ -272,14 +275,19 @@ public static class StepPrompts
   ],
   ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""模板与 pin 已解析"" } ],
   ""message"": ""<一句话总结>""
-}");
+}", "ready / blocked / needsInput");
+
+        builder.AppendLine("**准备阶段只写 `ready`（事实查清、可执行）或 `blocked`（条件不满足、不可执行，必须写明原因）；"
+                           + "不要写 `done`** —— `done` 是执行轮（建组 / 建库 / 克隆完成）专用，"
+                           + "准备阶段写 `done` 会被执行提示词误判为「本步已完成」。");
+        builder.AppendLine();
 
         builder.AppendLine("要点：`end` 必须用端标识字符串（Service / Admin / Mobile，**不是**数字）；"
                            + "每端一条 `kind=repository` 产物；`extra.kind` 必须与 `kind` 一致（多态判别属性）；"
                            + "某端查不通时把原因写进该端 `extra.error` 并把 `checks` 里该项记为 ok=false，**不要**编造事实。");
         builder.AppendLine();
 
-        AppendResultContract(builder, resultFile, "DONE 或 FAILED: <一句话原因>");
+        AppendResultContract(builder, resultFile, "READY 或 BLOCKED: <一句话原因>");
 
         return builder.ToString();
     }
@@ -308,6 +316,8 @@ public static class StepPrompts
         builder.AppendLine("本次由「新建项目」向导的 Step 3 驱动你执行【建组建库并克隆】。用户已在面板确认下面的计划。");
         builder.AppendLine();
 
+        AppendKnowledgeBounds(builder, docs, StepReportStatus.Failed);
+
         AppendHardBoundaries(builder, new[]
         {
             "云效侧写入用 MCP：mcp_yunxiao_codeup_create_group（组不存在时）/ mcp_yunxiao_codeup_create_repo"
@@ -332,6 +342,9 @@ public static class StepPrompts
         builder.AppendLine("【事实来源：准备阶段结论文件】");
         builder.AppendLine(prepareResultFile);
         builder.AppendLine("（模板仓 / pin / 代码组是否存在 / 仓库是否已存在，都以它为准；需要复核可再调只读 MCP。）");
+        builder.AppendLine("**它只是准备（只读）阶段的结论（`phase=prepare` / `status=ready`），代表「事实已查清」，"
+                           + "不代表本步已完成**：建组 / 建库 / 克隆都还没做。本步必须真正执行并把结果写进**本次**执行结论"
+                           + "（`step3-<时间戳>.json`，`status=done`）；直接回 `DONE` 而不执行会被判为「未执行」。");
         builder.AppendLine();
 
         builder.AppendLine("【本次建库计划（用户已确认）】");
@@ -379,6 +392,7 @@ public static class StepPrompts
 
         AppendArtifactSchema(builder, 3, @"{
   ""step"": 3,
+  ""phase"": ""execute"",
   ""status"": ""done"",
   ""ok"": true,
   ""artifacts"": [
@@ -430,6 +444,8 @@ public static class StepPrompts
         builder.AppendLine();
         builder.AppendLine("本次由「新建项目」向导的 Step 6 驱动你执行【推送改动到自有仓库】。");
         builder.AppendLine();
+
+        AppendKnowledgeBounds(builder, docs, StepReportStatus.Failed);
 
         AppendHardBoundaries(builder, new[]
         {
@@ -515,6 +531,8 @@ public static class StepPrompts
         builder.AppendLine("本次由「新建项目」向导的 Step 7 驱动你执行【流水线准备（只读）】：把「将要提交的 YAML」"
                            + "与「待人工绑定清单」算出来给用户复核。**本阶段不创建 / 不更新云效流水线**。");
         builder.AppendLine();
+
+        AppendKnowledgeBounds(builder, docs, StepReportStatus.Failed);
 
         AppendHardBoundaries(builder, new[]
         {
@@ -611,6 +629,8 @@ public static class StepPrompts
             : "本次由「新建项目」向导的 Step 7 驱动你执行【创建云效流水线】。");
         builder.AppendLine();
 
+        AppendKnowledgeBounds(builder, docs, StepReportStatus.Failed);
+
         AppendHardBoundaries(builder, new[]
         {
             $"先读 `{docs}\\pipeline-conventions.md` 与 `{docs}\\pipeline-service.yml.md` / `pipeline-admin.yml.md` / "
@@ -686,16 +706,35 @@ public static class StepPrompts
     /// <param name="builder">缓冲。</param>
     /// <param name="step">步骤号。</param>
     /// <param name="sample">JSON 骨架（原文）。</param>
-    private static void AppendArtifactSchema(StringBuilder builder, int step, string sample)
+    /// <param name="statuses">本阶段允许的 <c>status</c> 取值（默认执行阶段三态）。</param>
+    private static void AppendArtifactSchema(StringBuilder builder, int step, string sample, string? statuses = null)
     {
         builder.AppendLine("【结论文件 JSON 契约】（把下面的 JSON 写入结论文件，UTF-8；用 WriteFileAsync 或 Python 写出均可）");
         builder.AppendLine("```json");
         builder.AppendLine(sample);
         builder.AppendLine("```");
-        builder.AppendLine("字段说明：`status` ∈ done / needsInput / failed；`ok` 仅在 `status=done` 且全部通过时为 true；"
+        builder.AppendLine($"字段说明：`status` ∈ {statuses ?? "done / needsInput / failed"}；"
+                           + "`ok` 表示本阶段结论是否通过（准备阶段：`ready` 为 true、`blocked` 为 false；"
+                           + "执行阶段：仅 `status=done` 且全部通过时为 true）；"
                            + "`artifacts[].extra` 是**具名类型**（由 `extra.kind` 判别，只有 group / repository / pipeline 三选一）；"
                            + "`checks[]` 逐项记录（Step 6/7 的 `name` 用端标识 Service / Admin / Mobile）；"
                            + "`inputs[]` 仅在 `status=needsInput` 时给。");
+        builder.AppendLine();
+    }
+
+    /// <summary>
+    /// 追加「知识正文是硬前置」的边界（方案 A）：文档不可读即停止并写失败结论，禁止凭记忆执行。
+    /// </summary>
+    /// <param name="builder">缓冲。</param>
+    /// <param name="docs">知识正文目录。</param>
+    /// <param name="failureStatus">读不到文档时本阶段应写的 <c>status</c>（准备阶段 <c>blocked</c>，其余 <c>failed</c>）。</param>
+    private static void AppendKnowledgeBounds(StringBuilder builder, string docs, string failureStatus)
+    {
+        builder.AppendLine("【知识正文是硬前置】");
+        builder.AppendLine($"本轮下发前插件已校验并铺装 `{docs}`。你必须先完整读取下文列出的知识正文再动手；"
+                           + "若读取失败（文件不存在 / 不可读 / 内容为空），**立即停止**，按结论文件契约写 "
+                           + $"`status=\"{failureStatus}\"`、`ok=false`、`checks[]` 记一项「知识正文不可读：<文件名>」并结束本轮，"
+                           + "**不得**凭记忆、猜测或通用经验继续执行本步（组织专有口径只能来自知识正文）。");
         builder.AppendLine();
     }
 

@@ -344,4 +344,80 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "`RunPythonAsync`");
         StringAssert.Contains(prompt, "名单外的可执行文件");
     }
+
+    /// <summary>
+    /// 方案 A：Step 3 准备结论用 phase=prepare + status=ready|blocked，且提示词明确「不要写 done」。
+    /// </summary>
+    [TestMethod]
+    public void BuildRepositoryPreparePrompt_准备阶段用ready或blocked且禁止写done()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
+
+        StringAssert.Contains(prompt, "\"phase\": \"prepare\"");
+        StringAssert.Contains(prompt, "\"status\": \"ready\"");
+        StringAssert.Contains(prompt, "ready / blocked / needsInput");
+        StringAssert.Contains(prompt, "不要写 `done`");
+        StringAssert.Contains(prompt, "READY 或 BLOCKED");
+    }
+
+    /// <summary>
+    /// 方案 A：执行提示词必须显式声明「准备结论≠本步完成」，否则助手读一份 ready 就回 DONE。
+    /// </summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_声明准备结论不代表本步已完成()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        StringAssert.Contains(prompt, "\"phase\": \"execute\"");
+        StringAssert.Contains(prompt, "不代表本步已完成");
+        StringAssert.Contains(prompt, "直接回 `DONE` 而不执行会被判为「未执行」");
+    }
+
+    /// <summary>
+    /// 方案 A：所有引用知识正文的提示词都必须带上「读取失败即写失败结论、不得凭记忆执行」的硬约束。
+    /// </summary>
+    [TestMethod]
+    public void BuildPrompts_知识正文不可读即失败硬约束()
+    {
+        var plan = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Service.git"
+            }
+        };
+        var execute = new[]
+        {
+            StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile),
+            StepPrompts.BuildPushPrompt(Spec(), plan, ResultFile),
+            StepPrompts.BuildPipelinePreparePrompt(Spec(), plan, ResultFile),
+            StepPrompts.BuildPipelineExecutePrompt(Spec(), plan, ResultFile, ResultFile, null, null, false)
+        };
+
+        foreach (var prompt in execute)
+        {
+            StringAssert.Contains(prompt, "【知识正文是硬前置】");
+            StringAssert.Contains(prompt, "立即停止");
+            StringAssert.Contains(prompt, "知识正文不可读");
+            StringAssert.Contains(prompt, "不得");
+        }
+
+        // 准备阶段读不到文档写 blocked（不是 failed）
+        var prepare = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
+        StringAssert.Contains(prepare, "【知识正文是硬前置】");
+        StringAssert.Contains(prepare, $"`status=\"{StepReportStatus.Blocked}\"`");
+    }
 }
