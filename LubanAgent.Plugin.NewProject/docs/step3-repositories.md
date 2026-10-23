@@ -179,10 +179,10 @@ git clone -b <pin> <httpUrlToRepo> "<仓库目录>"      # 仓库目录 = <工�
 
 执行姿势（助手侧脚本，`RunPythonAsync`）：
 
-1. **跳过** `.git`、`.vs`、`.idea`、`.vscode`、`node_modules`、`bin`、`obj`、`packages`、`TestResults`、`dist`、`build`；只改文本扩展名白名单内的文件；单文件 > 4 MB 跳过；UTF-16 跳过；含 `NUL` 的二进制跳过；**UTF-8 BOM 原样保留**。
+1. **跳过** `.git`、`.vs`、`.idea`、`.vscode`、`node_modules`、`bin`、`obj`、`packages`、`TestResults`、`dist`、`build`；只改文本扩展名白名单内的文件，外加 **`.env` 族**（文件名以 `.env` 开头：`.env`、`.env.development`、`.env.production`、`.env.test`…，**不要只按扩展名判**，`.env.development` 的扩展名是 `.development`）与无扩展名白名单（`Dockerfile`/`.gitignore`/`.gitattributes`/`.npmrc`/`.dockerignore`/`Makefile`/`LICENSE`/`README`）；单文件 > 4 MB 跳过；UTF-16 跳过；含 `NUL` 的二进制跳过；**UTF-8 BOM 原样保留**。
 2. **替换前统计命中数**（按 `From` 分别统计）。
 3. 替换顺序：**文件内容** → **文件改名** → **目录改名**（目录按路径深度倒序）。
-4. **替换后复查「残余命中 = 0」**（三个 `From` 全部为 0）。
+4. **替换后复查「残余命中 = 0」**（三个 `From` 全部为 0；**复查范围与替换范围必须完全一致**——同一套跳过目录 + 同一套文本白名单，否则要么漏报、要么把有意跳过的文件误判成残余）。
 5. 改名目标已存在 ⇒ 放弃该次改名并记录（不覆盖）。
 
 结论文件 `checks[]` 必须含一条：

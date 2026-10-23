@@ -7,6 +7,8 @@
 *描述：Step 3/6/7 的插件侧本地复核器（设计 §6.1.4「独立证据策略」第 4 环）
 *****************************************************************************/
 
+using System.Text;
+
 using LubanAgent.Plugin.NewProject.Abstractions;
 
 namespace LubanAgent.Plugin.NewProject.Services;
@@ -32,9 +34,49 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </remarks>
 public static class StepLocalVerifier
 {
-    /// <summary>占位符残余扫描时跳过的目录（与 <c>docs/step3-repositories.md</c> 的约定一致）。</summary>
+    /// <summary>占位符残余扫描时跳过的目录（与 <c>docs/org-reference.md</c> §4 的约定一致）。</summary>
     private static readonly HashSet<string> ExcludedDirectories =
-        new(StringComparer.OrdinalIgnoreCase) { ".git", "bin", "obj", "node_modules" };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".git", ".vs", ".idea", ".vscode", "node_modules", "bin", "obj",
+            "packages", "TestResults", "dist", "build"
+        };
+
+    /// <summary>
+    /// 残余扫描的文本扩展名白名单（与 <c>docs/org-reference.md</c> §4、<c>docs/step3-repositories.md</c> §2.7 一致）。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么必须同口径</b>：助手只改「文本白名单」内的文件，复核器若扫全部文件，
+    /// 就会把助手<b>按规则有意跳过</b>的文件（二进制 / 设计资源 / 未列入白名单的名）判成「残余」——
+    /// 真机已复现：管理端 <c>.env.development</c>（扩展名 <c>.development</c>）里残留 <c>tjces</c>，
+    /// 助手按白名单未改、复核器却扫到，导致 Step 3 被误判失败。
+    /// </remarks>
+    private static readonly HashSet<string> TextExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".cs", ".csproj", ".sln", ".slnx", ".props", ".targets", ".config", ".resx", ".manifest",
+            ".json", ".xml", ".yml", ".yaml", ".toml", ".ini", ".env", ".editorconfig", ".md", ".txt",
+            ".sql", ".sh", ".ps1", ".bat", ".cmd", ".dockerfile", ".html", ".htm", ".css", ".scss",
+            ".less", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".razor", ".cshtml", ".xaml",
+            ".axaml", ".java", ".kt", ".kts", ".gradle", ".properties", ".pro", ".plist", ".pbxproj",
+            ".xcconfig", ".swift", ".dart", ".go", ".py", ".rb", ".php"
+        };
+
+    /// <summary>无扩展名的文本文件名白名单（与文档同一张表；<c>.gitignore</c> 这类点号开头的名靠它命中）。</summary>
+    private static readonly HashSet<string> TextFileNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Dockerfile", ".gitignore", ".gitattributes", ".npmrc", ".dockerignore", "Makefile", "LICENSE", "README"
+        };
+
+    /// <summary>
+    /// 环境变量族统一按文本处理：<c>.env</c>、<c>.env.development</c>、<c>.env.production</c> 等。
+    /// </summary>
+    /// <remarks>
+    /// 这些文件的 <c>Path.GetExtension</c> 是 <c>.env</c> / <c>.development</c> / <c>.production</c>，单靠扩展名表
+    /// 会漏掉多段变体（真机踩坑点）；项目专有域名、包名常写在这里，必须一并替换。
+    /// </remarks>
+    private const string EnvFilePrefix = ".env";
 
     /// <summary>残余扫描的单文件上限（超过按二进制处理，跳过）。</summary>
     private const long MaxScanFileBytes = 4 * 1024 * 1024;
@@ -287,6 +329,9 @@ public static class StepLocalVerifier
                     break;
 
                 scanned++;
+                if (!IsTextCandidate(Path.GetFileName(file)))
+                    continue;
+
                 var (ok, text) = TryReadText(file);
                 if (!ok)
                     continue;
@@ -323,6 +368,23 @@ public static class StepLocalVerifier
         return (scanned, hits);
     }
 
+    /// <summary>
+    /// 判定文件是否落在「替换口径」的文本范围内：助手会改的，复核器才扫。
+    /// </summary>
+    /// <param name="fileName">文件名（不含目录）。</param>
+    /// <returns>在文本白名单内返回 <c>true</c>。</returns>
+    private static bool IsTextCandidate(string fileName)
+    {
+        if (TextFileNames.Contains(fileName))
+            return true;
+
+        if (fileName.StartsWith(EnvFilePrefix, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var extension = Path.GetExtension(fileName);
+        return extension.Length > 0 && TextExtensions.Contains(extension);
+    }
+
     private static (bool Ok, string Text) TryReadText(string file)
     {
         try
@@ -331,12 +393,39 @@ public static class StepLocalVerifier
             if (!info.Exists || info.Length > MaxScanFileBytes)
                 return (false, string.Empty);
 
-            return (true, File.ReadAllText(file));
+            var bytes = File.ReadAllBytes(file);
+            if (HasUtf16Or32Bom(bytes) || ContainsNul(bytes))
+                return (false, string.Empty);
+
+            return (true, Encoding.UTF8.GetString(bytes));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             return (false, string.Empty);
         }
+    }
+
+    /// <summary>UTF-16 / UTF-32 的 BOM（助手按文档跳过这类文件，复核器同样不参与）。</summary>
+    private static bool HasUtf16Or32Bom(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))
+            return true;
+
+        return bytes.Length >= 4
+            && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF;
+    }
+
+    /// <summary>前 8 KB 出现 <c>NUL</c> 视为二进制（与文档的编码边界一致）。</summary>
+    private static bool ContainsNul(byte[] bytes)
+    {
+        var limit = Math.Min(bytes.Length, 8 * 1024);
+        for (var i = 0; i < limit; i++)
+        {
+            if (bytes[i] == 0)
+                return true;
+        }
+
+        return false;
     }
 
     private static string? SafeRead(string file)

@@ -61,11 +61,11 @@
 | 替换顺序 | 按 **`From` 长度降序**（长键优先，避免短键先吃掉长键）；命中即字面量替换，**不做正则** | `placeholderRules[]` | 助手按本节执行 |
 | 作用对象 | 内容替换 → **文件改名** → **目录改名**（目录按路径深度**倒序**，自底向上避免路径失效） | 助手按本节执行 | 同上 |
 | 跳过目录 | `.git`、`.vs`、`.idea`、`.vscode`、`node_modules`、`bin`、`obj`、`packages`、`TestResults`、`dist`、`build` | 助手按本节执行 | 不进入这些目录 |
-| 只改文本 | 按扩展名白名单（`.cs/.csproj/.sln/.slnx/.props/.targets/.config/.resx/.manifest/.json/.xml/.yml/.yaml/.toml/.ini/.env/.editorconfig/.md/.txt/.sql/.sh/.ps1/.bat/.cmd/.dockerfile/.html/.htm/.css/.scss/.less/.js/.mjs/.cjs/.ts/.tsx/.jsx/.vue/.razor/.cshtml/.xaml/.axaml/.java/.kt/.kts/.gradle/.properties/.pro/.plist/.pbxproj/.xcconfig/.swift/.dart/.go/.py/.rb/.php`）+ 无扩展名白名单（`Dockerfile`、`.gitignore`、`.gitattributes`、`.npmrc`、`.dockerignore`、`Makefile`、`LICENSE`、`README`） | 助手按本节执行 | 其余文件一律不改写 |
+| 只改文本 | 按扩展名白名单（`.cs/.csproj/.sln/.slnx/.props/.targets/.config/.resx/.manifest/.json/.xml/.yml/.yaml/.toml/.ini/.env/.editorconfig/.md/.txt/.sql/.sh/.ps1/.bat/.cmd/.dockerfile/.html/.htm/.css/.scss/.less/.js/.mjs/.cjs/.ts/.tsx/.jsx/.vue/.razor/.cshtml/.xaml/.axaml/.java/.kt/.kts/.gradle/.properties/.pro/.plist/.pbxproj/.xcconfig/.swift/.dart/.go/.py/.rb/.php`）+ **`.env` 族**（文件名以 `.env` 开头的一律按文本处理：`.env`、`.env.development`、`.env.production`、`.env.test`…——它们的 `Path.GetExtension` 分别是 `.env`/`.development`/`.production`，只按扩展名匹配会漏掉多段变体）+ 无扩展名白名单（`Dockerfile`、`.gitignore`、`.gitattributes`、`.npmrc`、`.dockerignore`、`Makefile`、`LICENSE`、`README`） | 助手按本节执行 | 其余文件一律不改写 |
 | 单文件上限 | 4 MB（超过即跳过） | 助手按本节执行 | 同上 |
 | 编码边界 | **UTF-16 / UTF-32（BOM）跳过**；前 8 KB 出现 `NUL` 的二进制跳过；**UTF-8 BOM 原样保留** | 助手按本节执行 | 宁可漏改也不破坏文件 |
 | 改名冲突 | 改名目标已存在 ⇒ **放弃该次改名**并告警（不覆盖） | 助手按本节执行 | 同上 |
-| 幂等要求 | 替换前统计命中数、替换后**复查「残余命中 = 0」**；结论文件 `checks[]` 必须含 `placeholder-residual` 且 `ok=true` | 设计文档 §6.2 | Step 3 执行续跑的通过判定 |
+| 幂等要求 | 替换前统计命中数、替换后**复查「残余命中 = 0」**（**复查范围必须与替换范围一致**：同一套跳过目录 + 同一套文本白名单）；结论文件 `checks[]` 必须含 `placeholder-residual` 且 `ok=true` | 设计文档 §6.2 | Step 3 执行续跑的通过判定 |
 
 ---
 

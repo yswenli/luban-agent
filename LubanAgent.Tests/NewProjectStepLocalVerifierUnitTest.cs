@@ -196,6 +196,65 @@ public class NewProjectStepLocalVerifierUnitTest
     }
 
     [TestMethod]
+    public void VerifyRepositories_点号开头的env族文件残余_报问题()
+    {
+        // 真机踩坑点：.env.development 的扩展名是 .development，只按扩展名匹配会漏改/漏扫
+        var repo = NewRepo();
+        File.WriteAllText(Path.Combine(repo, ".env.development"),
+            "VITE_API_URL = 'https://dev-tjces.tjingcai.com/service'");
+        var report = RepoReport(repo, "develop", "TJCES", "Tjces", "tjces");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "占位符残余未清零");
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_白名单外文件与跳过目录_不参与残余()
+    {
+        // 助手按文档不会改这些文件，复核器必须同口径，否则会把「按规则跳过」误判成残余
+        var repo = NewRepo();
+        File.WriteAllText(Path.Combine(repo, "logo.png"), "TJCES");
+        Directory.CreateDirectory(Path.Combine(repo, "dist"));
+        File.WriteAllText(Path.Combine(repo, "dist", "app.js"), "TJCES");
+        Directory.CreateDirectory(Path.Combine(repo, "node_modules"));
+        File.WriteAllText(Path.Combine(repo, "node_modules", "pkg.js"), "TJCES");
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
+
+        CollectionAssert.AreEqual(Array.Empty<string>(), issues.ToArray());
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_UTF16文件_不参与残余()
+    {
+        // 文档约定 UTF-16 跳过（宁可不改也不破坏编码），复核器同样不参与
+        var repo = NewRepo();
+        File.WriteAllText(Path.Combine(repo, ".env.local"), "VITE_API_URL=dev-TJCES", System.Text.Encoding.Unicode);
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
+
+        CollectionAssert.AreEqual(Array.Empty<string>(), issues.ToArray());
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_无扩展名白名单文件残余_报问题()
+    {
+        // TextFileNames 里的名字（.gitignore 这类点号开头）不靠扩展名也要参与
+        var repo = NewRepo();
+        File.WriteAllText(Path.Combine(repo, ".gitignore"), "TJCES/bin/");
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "占位符残余未清零");
+    }
+
+    [TestMethod]
     public void VerifyRepositories_未给占位符令牌_报问题()
     {
         var repo = NewRepo();
