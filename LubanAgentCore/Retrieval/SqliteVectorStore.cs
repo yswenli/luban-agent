@@ -19,7 +19,7 @@ namespace LubanAgentCore.Retrieval;
 /// <summary>
 /// SQLite 向量存储实现，通过 <see cref="IWorkspaceManager"/> 实现工作区隔离
 /// </summary>
-public class SqliteVectorStore : IVectorStore
+public class SqliteVectorStore : IVectorStore, IVectorTopKSearch
 {
     private readonly LlmWikiFileRepository _files = new();
     private readonly LlmWikiChunkRepository _chunks = new();
@@ -145,12 +145,7 @@ public class SqliteVectorStore : IVectorStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<VectorEntry>> LoadVectorsAsync(string? pathPrefix = null, string? language = null, int maxResults = int.MaxValue, string? workspaceId = null)
     {
-        var wsId = ResolveWorkspaceId(workspaceId);
-        var q = _chunks.Context.Queryable<DbLlmWikiChunk>()
-            .InnerJoin<DbLlmWikiFile>((c, f) => c.FileId == f.Id)
-            .Where((c, f) => !c.IsDelete && !f.IsDelete && f.WorkspaceId == wsId);
-        if (!string.IsNullOrEmpty(pathPrefix)) q = q.Where((c, f) => f.FilePath.StartsWith(pathPrefix, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(language)) q = q.Where((c, f) => f.Language == language);
+        var q = BuildChunkQuery(pathPrefix, language, workspaceId);
 
         // 调用方可能要求全量候选（int.MaxValue）：超过上限时抽样并告警，避免大库内存/CPU 失控
         if (maxResults > MaxCandidateChunks)
@@ -168,6 +163,70 @@ public class SqliteVectorStore : IVectorStore
         if (maxResults < int.MaxValue) q = q.Take(maxResults);
         var list = await q.Select((c, f) => new { c.Id, c.Vector }).ToListAsync();
         return list.Select(x => new VectorEntry { ChunkId = x.Id, Vector = VectorMath.ToFloats(x.Vector) }).ToList();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 只做一次「有没有候选」的存在性判断：库为空时调用方可据此短路，
+    /// 不必先加载嵌入模型（数十 MB 原生内存）再发现无内容可查。
+    /// </remarks>
+    public async Task<bool> HasVectorsAsync(string? pathPrefix = null, string? language = null, string? workspaceId = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var rows = await BuildChunkQuery(pathPrefix, language, workspaceId)
+            .OrderBy((c, f) => c.Id)
+            .Select((c, f) => new { c.Id })
+            .Take(1)
+            .ToListAsync();
+        return rows.Count > 0;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 分页扫描 + 有界 top-K：内存占用固定在「一页候选 + K 条结果」，
+    /// 不随索引规模增长；相似度直接在 SQLite 返回的 byte[] 上按 float 读取，逐行不再 new float[]。
+    /// </remarks>
+    public async Task<IReadOnlyList<VectorHit>> SearchTopKAsync(float[] queryVector, int topK, string? pathPrefix = null, string? language = null, string? workspaceId = null, CancellationToken cancellationToken = default)
+    {
+        topK = Math.Clamp(topK, 1, 20);
+        var collector = new VectorTopK(topK);
+
+        // 按 Id 游标翻页（而不是 OFFSET）：每页重新构造查询，既避开 SqlSugar 复用同一
+        // queryable 实例时的语句缓存风险，也避免深分页时 OFFSET 的线性扫描开销。
+        var lastId = 0L;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var cursor = lastId;
+            var rows = await BuildChunkQuery(pathPrefix, language, workspaceId)
+                .Where((c, f) => c.Id > cursor)
+                .OrderBy((c, f) => c.Id)
+                .Select((c, f) => new { c.Id, c.Vector })
+                .Take(ScanPageSize)
+                .ToListAsync();
+
+            foreach (var row in rows)
+            {
+                collector.Add(row.Id, VectorMath.Cosine(queryVector, row.Vector));
+                lastId = row.Id;
+            }
+
+            if (rows.Count < ScanPageSize) break;
+        }
+
+        return collector.Results;
+    }
+
+    /// <summary>检索候选的唯一口径：未软删切块 × 未软删文件 × 目标工作区。</summary>
+    private ISugarQueryable<DbLlmWikiChunk, DbLlmWikiFile> BuildChunkQuery(string? pathPrefix, string? language, string? workspaceId)
+    {
+        var wsId = ResolveWorkspaceId(workspaceId);
+        var q = _chunks.Context.Queryable<DbLlmWikiChunk>()
+            .InnerJoin<DbLlmWikiFile>((c, f) => c.FileId == f.Id)
+            .Where((c, f) => !c.IsDelete && !f.IsDelete && f.WorkspaceId == wsId);
+        if (!string.IsNullOrEmpty(pathPrefix)) q = q.Where((c, f) => f.FilePath.StartsWith(pathPrefix, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(language)) q = q.Where((c, f) => f.Language == language);
+        return q;
     }
 
     /// <inheritdoc />
@@ -209,4 +268,7 @@ public class SqliteVectorStore : IVectorStore
 
     /// <summary>单次语义检索允许加载的最大候选切块数（超过则抽样并告警）</summary>
     private const int MaxCandidateChunks = 200_000;
+
+    /// <summary>top-K 检索的分页扫描大小：内存只驻留一页候选，不随索引规模增长</summary>
+    private const int ScanPageSize = 512;
 }

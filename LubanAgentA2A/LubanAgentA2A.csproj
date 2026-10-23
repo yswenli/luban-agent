@@ -20,6 +20,6 @@
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
 		<!-- framework：经 NuGet 私有源引用（版本与 LubanAgentCore 保持一致） -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.10.20.1" />
+		<PackageReference Include="LuBan.AIAgent" Version="2026.10.23.1" />
 	</ItemGroup>
 </Project>

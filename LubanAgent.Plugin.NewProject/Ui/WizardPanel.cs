@@ -81,6 +81,13 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>待滚动标记：<see cref="Refresh"/> 置位，由 <see cref="OnTimelineLayoutUpdated"/> 消费。</summary>
     private bool _pendingScrollToEnd;
 
+    /// <summary>时间线视图缓存：与 <see cref="INewProjectService.Operations"/> 快照按下标对齐，用于增量更新。</summary>
+    private readonly List<TimelineView> _timelineViews = new();
+    /// <summary>时间线为空时的占位提示（只创建一次，避免每次刷新都新建控件）。</summary>
+    private TextBlock? _emptyTimelineHint;
+    /// <summary>刷新合并标记：密集的 <c>Changed</c> 只排一次 UI 刷新（0＝空闲，1＝已排队）。</summary>
+    private int _refreshQueued;
+
     // ── 步骤导航（P4 收尾：步骤条可点击回退 + 「上一步」）───────────────────────
     /// <summary>
     /// 视图游标：用户正在查看 / 操作的步骤（<c>null</c>＝跟随档案的「已到达最大步」）。
@@ -656,6 +663,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         // 解绑时间线布局订阅并清掉待滚动标记（卸载后不再有 UI 可滚）
         _timeline.LayoutUpdated -= OnTimelineLayoutUpdated;
         _pendingScrollToEnd = false;
+
+        // 释放时间线视图缓存：面板卸载后不再需要这些控件引用（避免插件容器长期持有）
+        _timelineViews.Clear();
+        _emptyTimelineHint = null;
 
         if (_subscribed)
         {
@@ -1315,6 +1326,14 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>Step 7 逐端流水线状态行的视觉载体。</summary>
     private sealed record EndPipelineRowView(ProjectEnd End, Control Root, TextBlock Status);
 
+    /// <summary>操作时间线单条记录的视觉载体（用于增量更新，避免整表重建）。</summary>
+    /// <param name="Record">对应的操作记录实例（就地改写，引用不变）。</param>
+    /// <param name="Box">整条记录的外框。</param>
+    /// <param name="Header">首行：时间 · 步骤 · 动作。</param>
+    /// <param name="Detail">次行：参数 / 结果摘要。</param>
+    /// <param name="Footer">末行：状态 · 耗时。</param>
+    private sealed record TimelineView(OperationRecord Record, Border Box, TextBlock Header, TextBlock Detail, TextBlock Footer);
+
     /// <summary>端的中文标签（**已自带「端」字**：调用方不得再拼一个「端」；与能力层口径一致）。</summary>
     /// <param name="end">端。</param>
     /// <returns>标签。</returns>
@@ -1430,7 +1449,19 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>
     /// 服务事件 → UI 线程刷新。
     /// </summary>
-    private void OnServiceChanged(object? sender, EventArgs e) => _postToUi(Refresh);
+    private void OnServiceChanged(object? sender, EventArgs e)
+    {
+        // 合并密集刷新：一次动作至少会触发 2~3 次 Changed（Running / 完成 / 追加），
+        // 排队期间只保留一次 UI 刷新，避免整表重复刷新（PRD §4.6 时间线）。
+        if (Interlocked.Exchange(ref _refreshQueued, 1) != 0) return;
+
+        _postToUi(() =>
+        {
+            Interlocked.Exchange(ref _refreshQueued, 0);
+            if (_unloaded) return;
+            Refresh();
+        });
+    }
 
     /// <summary>
     /// 按当前档案与操作记录刷新界面。
@@ -1513,67 +1544,174 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 : "未开始";
         }
 
-        _timeline.Children.Clear();
+        SyncTimeline(operations);
+    }
 
+    /// <summary>
+    /// 增量同步操作时间线：已有记录只更新文字/颜色，新增记录才追加控件。
+    /// </summary>
+    /// <remarks>
+    /// 原先每次刷新都 <c>Children.Clear()</c> 后整表重建（每条记录 4 个控件），
+    /// 一次动作至少触发 2~3 次刷新，长流程下控件反复创建/丢弃，开销随记录数线性增长。
+    /// </remarks>
+    private void SyncTimeline(IReadOnlyList<OperationRecord> operations)
+    {
         if (operations.Count == 0)
         {
-            _timeline.Children.Add(new TextBlock
-            {
-                Text = "暂无操作记录。",
-                FontSize = 12,
-                Foreground = MutedText
-            });
+            _timelineViews.Clear();
+            _timeline.Children.Clear();
+            AddEmptyTimelineHint();
             return;
         }
 
-        // 有新记录：请布局完成后滚到最新（同步调用会读到重建前的旧高度，滚不到底）
-        _pendingScrollToEnd = true;
+        RemoveEmptyTimelineHint();
 
-        foreach (var record in operations)
+        // 快照与视图窗口对不齐（档案重置、记录被替换）时整体重建；仅「尾部追加 / 头部裁剪」时走增量
+        if (!AlignTimelineViews(operations))
         {
-            var statusBrush = record.Status switch
-            {
-                StepStatus.Succeeded => SuccessBrush,
-                StepStatus.Failed => DangerBrush,
-                StepStatus.Running => AccentBrush,
-                _ => MutedText
-            };
-
-            _timeline.Children.Add(new Border
-            {
-                Padding = new Thickness(12, 8),
-                CornerRadius = new CornerRadius(6),
-                Background = CardBackground,
-                BorderThickness = new Thickness(1),
-                BorderBrush = DividerBrush,
-                Child = new StackPanel
-                {
-                    Spacing = 3,
-                    Children =
-                    {
-                        new TextBlock
-                        {
-                            Text = $"{record.Timestamp:HH:mm:ss} · {(int)record.Step} 步 · {record.Action}",
-                            FontSize = 12,
-                            Foreground = statusBrush
-                        },
-                        new TextBlock
-                        {
-                            Text = record.Detail,
-                            FontSize = 12,
-                            Foreground = PrimaryText,
-                            TextWrapping = TextWrapping.Wrap
-                        },
-                        new TextBlock
-                        {
-                            Text = $"状态 {StatusText(record.Status)} · 耗时 {FormatDuration(record.Duration)}",
-                            FontSize = 11,
-                            Foreground = MutedText
-                        }
-                    }
-                }
-            });
+            _timelineViews.Clear();
+            _timeline.Children.Clear();
         }
+
+        var appended = 0;
+        for (var i = 0; i < operations.Count; i++)
+        {
+            var record = operations[i];
+            if (i < _timelineViews.Count)
+            {
+                UpdateTimelineView(_timelineViews[i], record);
+                continue;
+            }
+
+            var view = CreateTimelineView(record);
+            _timelineViews.Add(view);
+            _timeline.Children.Add(view.Box);
+            appended++;
+        }
+
+        // 有新记录：请布局完成后滚到最新（同步调用会读到追加前的旧高度，滚不到底）
+        if (appended > 0) _pendingScrollToEnd = true;
+    }
+
+    /// <summary>
+    /// 把视图窗口对齐到当前快照：只允许「窗口起点在快照中前移」（记录上限裁剪）与「尾部追加」。
+    /// </summary>
+    /// <returns>对齐成功返回 <c>true</c>；需要整体重建时返回 <c>false</c>。</returns>
+    private bool AlignTimelineViews(IReadOnlyList<OperationRecord> operations)
+    {
+        if (_timelineViews.Count == 0) return true;
+        if (_timelineViews.Count > operations.Count) return false;
+
+        if (!ReferenceEquals(_timelineViews[0].Record, operations[0]))
+        {
+            var start = -1;
+            for (var i = 1; i < operations.Count; i++)
+            {
+                if (ReferenceEquals(operations[i], _timelineViews[0].Record)) { start = i; break; }
+            }
+            if (start <= 0) return false;
+
+            // 丢弃已被上限裁掉的头部视图（只从控件树头部移除，不重建其余控件）
+            for (var i = 0; i < start; i++)
+            {
+                _timeline.Children.Remove(_timelineViews[0].Box);
+                _timelineViews.RemoveAt(0);
+            }
+        }
+
+        for (var i = 0; i < _timelineViews.Count; i++)
+        {
+            if (!ReferenceEquals(_timelineViews[i].Record, operations[i])) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 新建一条操作记录视图。
+    /// </summary>
+    private TimelineView CreateTimelineView(OperationRecord record)
+    {
+        var header = new TextBlock
+        {
+            FontSize = 12,
+            Foreground = StatusBrush(record.Status)
+        };
+        var detail = new TextBlock
+        {
+            FontSize = 12,
+            Foreground = PrimaryText,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var footer = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = MutedText
+        };
+
+        var box = new Border
+        {
+            Padding = new Thickness(12, 8),
+            CornerRadius = new CornerRadius(6),
+            Background = CardBackground,
+            BorderThickness = new Thickness(1),
+            BorderBrush = DividerBrush,
+            Child = new StackPanel
+            {
+                Spacing = 3,
+                Children = { header, detail, footer }
+            }
+        };
+
+        var view = new TimelineView(record, box, header, detail, footer);
+        UpdateTimelineView(view, record);
+        return view;
+    }
+
+    /// <summary>
+    /// 就地更新一条记录视图（文字无变化时不赋值，避免无谓的布局/绘制失效）。
+    /// </summary>
+    private void UpdateTimelineView(TimelineView view, OperationRecord record)
+    {
+        var headerText = $"{record.Timestamp:HH:mm:ss} · {(int)record.Step} 步 · {record.Action}";
+        if (view.Header.Text != headerText) view.Header.Text = headerText;
+
+        var statusBrush = StatusBrush(record.Status);
+        if (!ReferenceEquals(view.Header.Foreground, statusBrush)) view.Header.Foreground = statusBrush;
+
+        if (view.Detail.Text != record.Detail) view.Detail.Text = record.Detail;
+
+        var footerText = $"状态 {StatusText(record.Status)} · 耗时 {FormatDuration(record.Duration)}";
+        if (view.Footer.Text != footerText) view.Footer.Text = footerText;
+    }
+
+    /// <summary>记录状态对应的强调色。</summary>
+    private static IBrush StatusBrush(StepStatus status) => status switch
+    {
+        StepStatus.Succeeded => SuccessBrush,
+        StepStatus.Failed => DangerBrush,
+        StepStatus.Running => AccentBrush,
+        _ => MutedText
+    };
+
+    /// <summary>时间线为空时的占位提示（只创建一次）。</summary>
+    private void AddEmptyTimelineHint()
+    {
+        if (_emptyTimelineHint is not null) return;
+        _emptyTimelineHint = new TextBlock
+        {
+            Text = "暂无操作记录。",
+            FontSize = 12,
+            Foreground = MutedText
+        };
+        _timeline.Children.Add(_emptyTimelineHint);
+    }
+
+    /// <summary>移除时间线占位提示。</summary>
+    private void RemoveEmptyTimelineHint()
+    {
+        if (_emptyTimelineHint is null) return;
+        _timeline.Children.Remove(_emptyTimelineHint);
+        _emptyTimelineHint = null;
     }
 
     /// <summary>

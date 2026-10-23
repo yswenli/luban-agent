@@ -65,6 +65,12 @@ public sealed class NewProjectService : INewProjectService
     /// </summary>
     private const int MaxRepositoryRounds = 3;
 
+    /// <summary>
+    /// 操作记录在内存中保留的最近条数上限：面板刷新成本与记录条数成正比，
+    /// 长跑场景不限量会让时间线重建越来越慢、分配越来越大。
+    /// </summary>
+    private const int MaxOperationRecords = 500;
+
     private readonly List<OperationRecord> _operations = new();
     private readonly NewProjectStateStore _store = new();
     private readonly object _gate = new();
@@ -2344,6 +2350,10 @@ public sealed class NewProjectService : INewProjectService
                 Status = status,
                 Duration = duration
             });
+
+            // 只保留最近 N 条：超长流程下避免记录无限增长拖慢整表刷新
+            if (_operations.Count > MaxOperationRecords)
+                _operations.RemoveRange(0, _operations.Count - MaxOperationRecords);
         }
 
         RaiseChanged();
