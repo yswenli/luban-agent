@@ -34,9 +34,9 @@ public class NewProjectStepPromptsUnitTest
     {
         var request = new DatabaseProbeRequest
         {
-            Host = "10.10.0.214",
+            Host = "192.0.2.10",
             Port = 3306,
-            Database = "tjc_dev_jnms",
+            Database = "demo_dev_jnms",
             User = "testuser",
             Password = "S3cr3t-Pwd"
         };
@@ -49,8 +49,8 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "不要回显");
 
         // 参数齐全，助手无需再猜
-        StringAssert.Contains(prompt, "server   = 10.10.0.214");
-        StringAssert.Contains(prompt, "database = tjc_dev_jnms");
+        StringAssert.Contains(prompt, "server   = 192.0.2.10");
+        StringAssert.Contains(prompt, "database = demo_dev_jnms");
         StringAssert.Contains(prompt, "user     = testuser");
 
         // 结论文件路径原样下发

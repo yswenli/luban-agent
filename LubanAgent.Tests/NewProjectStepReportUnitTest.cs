@@ -127,7 +127,7 @@ public class NewProjectStepReportUnitTest
         {
             Step = 4,
             Ok = false,
-            Message = "探活未通过：1049 Unknown database 'tjc_dev_jnms'"
+            Message = "探活未通过：1049 Unknown database 'demo_dev_jnms'"
         };
 
         var (ok, message) = StepReportEvaluator.EvaluateProbe(report, null);

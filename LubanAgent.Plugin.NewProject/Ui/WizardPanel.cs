@@ -247,9 +247,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     // ── Step 4 操作区（P4 接入）─────────────────────────────────────────────────
     private Border _step4Area = null!;
-    private readonly TextBox _dbHostBox = new() { PlaceholderText = "例如：10.10.0.214" };
+    private readonly TextBox _dbHostBox = new() { PlaceholderText = "例如：192.0.2.10" };
     private readonly TextBox _dbPortBox = new() { PlaceholderText = "3306" };
-    private readonly TextBox _dbNameBox = new() { PlaceholderText = "例如：tjc_dev_jnms（需你先手工建库）" };
+    private readonly TextBox _dbNameBox = new() { PlaceholderText = "例如：demo_dev_jnms（需你先手工建库）" };
     private readonly TextBox _dbUserBox = new() { PlaceholderText = "例如：testuser" };
     private readonly TextBox _dbPasswordBox = new() { PasswordChar = '●', PlaceholderText = "数据库口令（只在内存，不写档案）" };
     private readonly Button _probeButton = new() { Content = "开始探活（只读，不建库）" };

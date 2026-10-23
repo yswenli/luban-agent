@@ -55,9 +55,9 @@ public class NewProjectDatabaseProbeUnitTest
     {
         var request = new DatabaseProbeRequest
         {
-            Host = "10.10.0.214",
+            Host = "192.0.2.10",
             Port = 3306,
-            Database = "tjc_dev_jnms",
+            Database = "demo_dev_jnms",
             User = "testuser",
             Password = "testuser"
         };
@@ -99,9 +99,9 @@ public class NewProjectDatabaseProbeUnitTest
     {
         var request = new DatabaseProbeRequest
         {
-            Host = "10.10.0.214",
+            Host = "192.0.2.10",
             Port = 3306,
-            Database = "tjc_dev_jnms",
+            Database = "demo_dev_jnms",
             User = "testuser",
             Password = "S3cr3t-Pwd"
         };
@@ -109,7 +109,7 @@ public class NewProjectDatabaseProbeUnitTest
         var text = request.Describe();
 
         StringAssert.Contains(text, "***");
-        StringAssert.Contains(text, "testuser@10.10.0.214:3306/tjc_dev_jnms");
+        StringAssert.Contains(text, "testuser@192.0.2.10:3306/demo_dev_jnms");
         Assert.IsFalse(text.Contains("S3cr3t-Pwd"), "操作记录里不得出现口令原文。");
     }
 
@@ -119,15 +119,15 @@ public class NewProjectDatabaseProbeUnitTest
     public void ParseMySqlConnectionString_模板连接串_拆出四项且口令丢弃()
     {
         const string ConnectionString =
-            "server=10.10.0.214;user id=testuser; password=testuser; Port=3306;database=tjc_dev_csxmy; "
+            "server=192.0.2.10;user id=testuser; password=testuser; Port=3306;database=demo_dev_csxmy; "
             + "pooling=true; max pool size=80;min pool size=10;connection timeout=15;sslmode=none;";
 
         var request = DatabaseProbeDefaults.ParseMySqlConnectionString(ConnectionString);
 
         Assert.IsNotNull(request);
-        Assert.AreEqual("10.10.0.214", request!.Host);
+        Assert.AreEqual("192.0.2.10", request!.Host);
         Assert.AreEqual(3306, request.Port);
-        Assert.AreEqual("tjc_dev_csxmy", request.Database);
+        Assert.AreEqual("demo_dev_csxmy", request.Database);
         Assert.AreEqual("testuser", request.User);
         Assert.AreEqual(string.Empty, request.Password, "口令绝不从文件回填。");
     }
@@ -148,11 +148,11 @@ public class NewProjectDatabaseProbeUnitTest
     public void ParseMySqlConnectionString_键名大小写与别名_都能识别()
     {
         var request = DatabaseProbeDefaults.ParseMySqlConnectionString(
-            "Data Source=db.local;Initial Catalog=tjc_dev_x;User Id=root;Port=3307;Password=x");
+            "Data Source=db.local;Initial Catalog=demo_dev_x;User Id=root;Port=3307;Password=x");
 
         Assert.IsNotNull(request);
         Assert.AreEqual("db.local", request!.Host);
-        Assert.AreEqual("tjc_dev_x", request.Database);
+        Assert.AreEqual("demo_dev_x", request.Database);
         Assert.AreEqual("root", request.User);
         Assert.AreEqual(3307, request.Port);
     }
@@ -199,7 +199,7 @@ public class NewProjectDatabaseProbeUnitTest
               {
                 //"DbType": "Sqlite",
                 "DbType": "MySql",
-                "ConnectionString": "server=10.10.0.214;user id=testuser; password=testuser; Port=3306;database=tjc_dev_csxmy;",
+                "ConnectionString": "server=192.0.2.10;user id=testuser; password=testuser; Port=3306;database=demo_dev_csxmy;",
               },
             ],
           },
@@ -212,7 +212,7 @@ public class NewProjectDatabaseProbeUnitTest
         var connectionString = DatabaseProbeDefaults.ReadConnectionString(file);
 
         Assert.IsNotNull(connectionString);
-        StringAssert.Contains(connectionString!, "tjc_dev_csxmy");
+        StringAssert.Contains(connectionString!, "demo_dev_csxmy");
     }
 
     [TestMethod]
@@ -269,7 +269,7 @@ public class NewProjectDatabaseProbeUnitTest
             {
               "DbConnectionOptions": {
                 "ConnectionConfigs": [
-                  { "DbType": "MySql", "ConnectionString": "server=10.10.0.214;user id=testuser; password=testuser; Port=3306;database=tjc_dev_csxmy;" }
+                  { "DbType": "MySql", "ConnectionString": "server=192.0.2.10;user id=testuser; password=testuser; Port=3306;database=demo_dev_csxmy;" }
                 ]
               }
             }
@@ -277,9 +277,9 @@ public class NewProjectDatabaseProbeUnitTest
 
         var request = DatabaseProbeDefaults.FromBackendRepository(root);
 
-        Assert.AreEqual("10.10.0.214", request.Host);
+        Assert.AreEqual("192.0.2.10", request.Host);
         Assert.AreEqual(3306, request.Port);
-        Assert.AreEqual("tjc_dev_csxmy", request.Database);
+        Assert.AreEqual("demo_dev_csxmy", request.Database);
         Assert.AreEqual("testuser", request.User);
         Assert.AreEqual(string.Empty, request.Password);
     }

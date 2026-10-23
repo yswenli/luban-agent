@@ -820,7 +820,7 @@ public class YunxiaoHostInfo
     public string? InstanceName { get; set; }
 
     /// <summary>
-    /// 内网 IP（真机如 <c>10.10.0.214</c>）。
+    /// 内网 IP（真机如 <c>192.0.2.10</c>）。
     /// </summary>
     [JsonPropertyName("ip")]
     public string? Ip { get; set; }

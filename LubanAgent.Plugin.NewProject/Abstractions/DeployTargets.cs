@@ -18,7 +18,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// <b>写进 YAML 的是 <see cref="Uuid"/>，不是 <see cref="HostGroupId"/></b>：真机核 <c>VMDockerDeploy.machineGroup</c>
-/// 只认主机组 uuid（tb 形态的数字 id 226948 会被拒，报「该机器组uuid[226948]不存在」）；
+/// 只认主机组 uuid（tb 形态的数字 id（如 100001）会被拒，报「该机器组uuid[...]不存在」）；
 /// 数字 id 的用途只有一个——调详情接口拿机器明细（路径键必须是数字）。
 /// </para>
 /// </remarks>
@@ -77,7 +77,7 @@ public sealed class DeployHostMachine
     /// <summary>实例名（真机如 <c>tjc-sh-100-dev-all-in-one</c>）。</summary>
     public string? InstanceName { get; set; }
 
-    /// <summary>内网 IP（真机如 <c>10.10.0.214</c>）。</summary>
+    /// <summary>内网 IP（真机如 <c>192.0.2.10</c>）。</summary>
     public string? Ip { get; set; }
 
     /// <summary>机器状态（真机观测为 <c>ok</c>）。</summary>

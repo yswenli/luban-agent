@@ -51,7 +51,7 @@ public class YunxiaoResponseParserUnitTest
         const string Json = """
             [
               { "pipelineId": 1000001, "pipelineName": "A" },
-              { "pipelineId": 3489337, "pipelineName": "B" }
+              { "pipelineId": 1000002, "pipelineName": "B" }
             ]
             """;
 
@@ -223,3 +223,4 @@ public class YunxiaoResponseParserUnitTest
         Assert.IsNull(YunxiaoResponseParser.ExtractErrorMessage(null));
     }
 }
+
