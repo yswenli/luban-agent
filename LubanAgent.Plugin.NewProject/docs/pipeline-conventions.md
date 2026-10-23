@@ -12,7 +12,7 @@
 
 - 顶层 `name:` 就是流水线名，**创建后不允许改**：同名幂等检索与档案里记录的名称都依赖它。
 - 确需改名 ⇒ 改本文件的格式串后**重跑 Step 7**（不要只改某一条 YAML 的 `name:`）。
-- 对齐组织既有命名习惯（如企服版 `CME_DEV_Deploy_TJCES-Service(7000)`）。
+- 对齐组织既有命名习惯（如企服版 `{CODE}_DEV_Deploy_{repository}` 形态；具体参考流水线见 [`org-reference.md`](./org-reference.md) §9）。
 
 ## 2. 变量与缓存
 
@@ -35,7 +35,7 @@
 | Mobile（移动端） | ❌ 无 | 同上 | `false` | 不需要 |
 
 - 有部署阶段的端：`deploy` 段**随创建一起写入** YAML（不是"先建残缺流水线、再事后补齐"）。
-- `VMDockerDeploy.machineGroup` **必须是主机组 uuid**（tb 形态数字 id `226948` 会被拒，报「该机器组uuid[226948]不存在」）。
+- `VMDockerDeploy.machineGroup` **必须是主机组 uuid**（tb 形态数字 id 会被拒，报「该机器组uuid[...]不存在」）。
 - 部署目标在**创建之前**由用户在 Step 7「部署目标」区从主机组列表里选；`inputs[]` 的选项**必须同时带数字 `hostGroupId` 与 `uuid`**：
   - 数字 `hostGroupId` ⇒ 调 `mcp_yunxiao_flow_get_host_group(hostGroupId=...)` 拉机器明细（**传 uuid 会 400**）；
   - `uuid` ⇒ 写进 YAML 的 `machineGroup`。
@@ -51,19 +51,19 @@
 
 | # | 待绑定项 | 当前值 / 状态 | 要做的事 |
 |---|----------|---------------|----------|
-| 1 | 服务连接（代码源 codeup） | `r3x6es4esgbsn6ur` | 确认**该项目仓库在授权范围内** |
-| 2 | 构建阶段 `runsOn` | **留空**（＝云效默认北京公共集群，只跑 `docker build`，需构建机有可用 docker daemon） | 如需私有集群：在控制台确认实际形态（形如 `private/<集群ID>`）后回填 `runsOn`；企服版取证注释记载 `buildNodeGroup=PM-SielV3Iovlo4Au4J`，**以控制台实际值为准** |
+| 1 | 服务连接（代码源 codeup） | 见 [`org-reference.md`](./org-reference.md) §5 | 确认**该项目仓库在授权范围内** |
+| 2 | 构建阶段 `runsOn` | **留空**（＝云效默认北京公共集群，只跑 `docker build`，需构建机有可用 docker daemon） | 如需私有集群：在控制台确认实际形态（形如 `private/<集群ID>`）后回填 `runsOn`；企服版取证注释曾记载私有集群 ID，**以控制台实际值为准** |
 | 3 | Harbor 凭据 | 变量 `HARBOR_USER` / `HARBOR_PASSWORD` **出厂为空**（后者已标 `secret: true`） | 在控制台流水线「变量和缓存」补齐 |
-| 4 | 部署主机组 | `machineGroup='tIPKOJBbwwOVKVia'`（主机组 id `226948`，名称「移动云DEV主机组」，1 台机器） | 已写进 `deploy` 段；如需换目标 ⇒ 在 Step 7「部署目标」区重选后用**覆盖更新**重推 YAML |
+| 4 | 部署主机组 | `machineGroup=<主机组 uuid>`（默认主机组见 [`org-reference.md`](./org-reference.md) §5；数字 id 在 Step 7 部署目标选择时提供） | 已写进 `deploy` 段；如需换目标 ⇒ 在 Step 7「部署目标」区重选后用**覆盖更新**重推 YAML |
 | 5 | 代码源事件触发 | `triggerEvents: []`（**建完不自动运行**） | 需要 push 自动构建时在控制台开启 |
 
 ### 4.2 管理端（Admin）
 
 | # | 待绑定项 | 当前值 / 状态 | 要做的事 |
 |---|----------|---------------|----------|
-| 1 | 服务连接（OSS） | `sm7mho5x9ex945rp` | 确认授权范围含 region `cn-shanghai` / bucket `tejingcai` |
+| 1 | 服务连接（OSS） | 见 [`org-reference.md`](./org-reference.md) §6 | 确认授权范围含 region `cn-shanghai` / 对应 bucket |
 | 2 | OSS 目录 | 上传源 `sourceFilePath='dist'` → 远端 `targetFilePath='DEV/{CODE}-Admin/'`（`OSSDelete` 以同一前缀做目录清理） | 确认前缀符合预期 |
-| 3 | 构建集群 | 模板**不写** `runsOn` ⇒ 云效默认公共北京集群（企服版用公共集群 `K8S-4`） | 如需私有集群：确认形态后回填（形如 `private/<集群ID>`） |
+| 3 | 构建集群 | 模板**不写** `runsOn` ⇒ 云效默认公共北京集群 | 如需私有集群：确认形态后回填（形如 `private/<集群ID>`） |
 | 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/gallium`（= Node 16，对齐企服版 `CI_RUNTIME_VERSION`） | 确认模板仓在 Node 16 下可构建 |
 | 5 | 代码源事件触发 | `triggerEvents: []` | 需要 push 自动构建时在控制台开启 |
 
@@ -71,7 +71,7 @@
 
 | # | 待绑定项 | 当前值 / 状态 | 要做的事 |
 |---|----------|---------------|----------|
-| 1 | 服务连接（OSS） | `sm7mho5x9ex945rp` | 确认授权范围含 region `cn-shanghai` / bucket `tejingcai` |
+| 1 | 服务连接（OSS） | 见 [`org-reference.md`](./org-reference.md) §6 | 确认授权范围含 region `cn-shanghai` / 对应 bucket |
 | 2 | OSS 目录 | 上传源 `sourceFilePath='dist/dev/h5'` → 远端 `targetFilePath='DEV/{CODE}-Mobile/'` | 确认前缀符合预期 |
 | 3 | 构建集群 | 模板**不写** `runsOn` ⇒ 云效默认公共北京集群 | 如需私有集群：确认形态后回填 |
 | 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/gallium`（= Node 16） | 确认模板仓在 Node 16 下可构建 |
@@ -98,9 +98,7 @@
 
 | 端 | 企服版 `pipelineId` | 企服版名称 |
 |----|---------------------|------------|
-| Service | `3481236` | `CME_DEV_Deploy_TJCES-Service(7000)` |
-| Admin | `3489337` | `CME_DEV_Deploy_TJCES-Admin` |
-| Mobile | `3489317` | `CME_DEV_Deploy_TJCES-Mobile` |
+| Service / Admin / Mobile | 见 [`org-reference.md`](./org-reference.md) §9 | 同左 |
 
-> 旧组 `DEV_Deploy_TJCES-*` **不作模板**。
+> 旧组 `DEV_Deploy_{CODE}-*` **不作模板**。
 > 溯源标注的用途：出问题时可回企服版流水线对照语义；**不要**把企服版 tb 形态 `flow` 原文直接提交给云效（必报 `1209300`）。

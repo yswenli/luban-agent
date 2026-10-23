@@ -22,7 +22,7 @@ namespace LubanAgent.Tests;
 /// 无法单测；把解析规则抽成纯函数后，这里就成了<b>唯一可测的缝合点</b>。
 /// </para>
 /// <para>
-/// JSON 字面量全部来自 2026-10-22 的真机取证（组织 <c>648c2f9fb44b3d9a1d1684d9</c>）：
+/// JSON 结构按 2026-10-22 的真机取证还原（组织 ID / 流水线标识已替换为测试假值）：
 /// <c>GET /flow/.../pipelines</c> = 裸数组；<c>GET /pipelines/{id}</c> = 裸对象；<c>POST /pipelines</c> 成功 = 裸整数；
 /// <c>PUT</c>/<c>DELETE</c> 成功 = 裸 <c>true</c>；失败才是
 /// <c>{"errorCode":"InvalidPipeline.createOrUpdateError","errorMessage":"1209300 yaml校验失败…","requestId":"…"}</c>。
@@ -50,7 +50,7 @@ public class YunxiaoResponseParserUnitTest
     {
         const string Json = """
             [
-              { "pipelineId": 3481236, "pipelineName": "A" },
+              { "pipelineId": 1000001, "pipelineName": "A" },
               { "pipelineId": 3489337, "pipelineName": "B" }
             ]
             """;
@@ -59,7 +59,7 @@ public class YunxiaoResponseParserUnitTest
 
         Assert.IsNotNull(items);
         Assert.AreEqual(2, items!.Count);
-        Assert.AreEqual("3481236", items[0].DisplayId);
+        Assert.AreEqual("1000001", items[0].DisplayId);
         Assert.AreEqual("B", items[1].DisplayName);
     }
 
@@ -87,16 +87,16 @@ public class YunxiaoResponseParserUnitTest
     {
         const string Json = """
             {
-              "id": 3481236,
-              "name": "CME_DEV_Deploy_TJCES-Service(7000)",
+              "id": 1000001,
+              "name": "DEMO_DEV_Deploy_Demo-Service(7000)",
               "pipelineConfig": { "flow": "stages:\n  build:\n", "version": 1 }
             }
             """;
 
-        var pipeline = YunxiaoResponseParser.DeserializeObject<YunxiaoPipeline>(Json, "/pipelines/3481236");
+        var pipeline = YunxiaoResponseParser.DeserializeObject<YunxiaoPipeline>(Json, "/pipelines/1000001");
 
         Assert.IsNotNull(pipeline);
-        Assert.AreEqual(3481236L, pipeline!.Id);
+        Assert.AreEqual(1000001L, pipeline!.Id);
         Assert.IsNotNull(pipeline.PipelineConfig);
         StringAssert.Contains(pipeline.PipelineConfig!.Flow!, "stages:");
     }
@@ -124,9 +124,9 @@ public class YunxiaoResponseParserUnitTest
     [TestMethod]
     public void ParseId_AcceptsBareNumberStringAndObject()
     {
-        Assert.AreEqual("3481236", YunxiaoResponseParser.ParseId("3481236"));          // 真机：POST 成功 = 裸整数
-        Assert.AreEqual("3481236", YunxiaoResponseParser.ParseId("\"3481236\""));      // 个别接口给字符串
-        Assert.AreEqual("3481236", YunxiaoResponseParser.ParseId("""{ "id": 3481236 }""")); // 再包一层对象
+        Assert.AreEqual("1000001", YunxiaoResponseParser.ParseId("1000001"));          // 真机：POST 成功 = 裸整数
+        Assert.AreEqual("1000001", YunxiaoResponseParser.ParseId("\"1000001\""));      // 个别接口给字符串
+        Assert.AreEqual("1000001", YunxiaoResponseParser.ParseId("""{ "id": 1000001 }""")); // 再包一层对象
         Assert.AreEqual("42", YunxiaoResponseParser.ParseId("""{ "id": " 42 " }"""));  // 字符串 id 去空白
     }
 

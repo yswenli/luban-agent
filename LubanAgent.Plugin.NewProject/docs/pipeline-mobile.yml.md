@@ -2,7 +2,7 @@
 
 > 用途：**Step 7 准备阶段**渲染移动端流水线。组织专有值以 [`org-reference.md`](./org-reference.md) 为准，通用口径见 [`pipeline-conventions.md`](./pipeline-conventions.md)。
 > 这是**翻译稿**（按企服版 tb 形态语义翻成新版 YAML），**不是企服版 `flow` 原文照抄**——照抄必报 `1209300`。
-> 溯源：企服版参考流水线 `pipelineId = 3489317`（`CME_DEV_Deploy_TJCES-Mobile`）。
+> 溯源：企服版参考流水线的 id 与名称见 [`org-reference.md`](./org-reference.md) §9（本文件不写具体值）。
 > 与管理端**同构**，仅 OSS 前缀与产物目录不同。**移动端只在 Step 1 勾选了 Mobile 时才参与。**
 
 ## 占位符表（渲染时逐项填值）
@@ -13,11 +13,11 @@
 | `{repository}` | 该端仓库名，例 `Csxmy-Mobile` | `sources.repo.name` |
 | `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
-| `{codeupSc}` | `r3x6es4esgbsn6ur` | codeup 服务连接 id |
+| `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md) §5 | codeup 服务连接 id |
 | `{cacheMode}` | 构建集群留空 ⇒ `remote`；`private/*` ⇒ `local` | `cache.cacheMode` |
-| `{ossSc}` | `sm7mho5x9ex945rp` | OSS 服务连接 id |
+| `{ossSc}` | 见 [`org-reference.md`](./org-reference.md) §6 | OSS 服务连接 id |
 | `{ossRegion}` | `cn-shanghai` | OSS 区域（**必填**） |
-| `{ossBucket}` | `tejingcai` | OSS 桶 |
+| `{ossBucket}` | 见 [`org-reference.md`](./org-reference.md) §6 | OSS 桶 |
 | `{ossPrefix}` | `DEV/{CODE}-Mobile/` 展开值，例 `DEV/CSXMY-Mobile/` | `OSSDelete.prefix` / `OSSUpload.targetFilePath` |
 | `{uploadPath}` | `dist/dev/h5` | `OSSUpload.sourceFilePath`（**与管理端不同**） |
 
@@ -96,7 +96,7 @@ sources:
     triggerEvents: []
     certificate:
       type: serviceConnection
-      serviceConnection: r3x6es4esgbsn6ur
+      serviceConnection: {codeupSc}
 
 cache:
   cacheDirs:
@@ -126,17 +126,17 @@ stages:
             step: OSSDelete
             name: 清理 OSS 远端目录
             with:
-              serviceConnection: sm7mho5x9ex945rp
+              serviceConnection: {ossSc}
               region: cn-shanghai
-              bucket: 'tejingcai'
+              bucket: '{ossBucket}'
               prefix: 'DEV/CSXMY-Mobile/'
           oss_upload:
             step: OSSUpload
             name: 上传构建产物到 OSS
             with:
-              serviceConnection: sm7mho5x9ex945rp
+              serviceConnection: {ossSc}
               region: cn-shanghai
-              bucket: 'tejingcai'
+              bucket: '{ossBucket}'
               sourceFilePath: 'dist/dev/h5'
               targetFilePath: 'DEV/CSXMY-Mobile/'
 ```

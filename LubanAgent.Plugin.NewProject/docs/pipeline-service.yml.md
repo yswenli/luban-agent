@@ -2,7 +2,7 @@
 
 > 用途：**Step 7 准备阶段**渲染后端流水线。组织专有值以 [`org-reference.md`](./org-reference.md) 为准，通用口径见 [`pipeline-conventions.md`](./pipeline-conventions.md)。
 > 这是**翻译稿**（按企服版 tb 形态语义翻成新版 YAML），**不是企服版 `flow` 原文照抄**——照抄必报 `1209300`。
-> 溯源：企服版参考流水线 `pipelineId = 3481236`（`CME_DEV_Deploy_TJCES-Service(7000)`）。
+> 溯源：企服版参考流水线的 id 与名称见 [`org-reference.md`](./org-reference.md) §9（本文件不写具体值）。
 
 ## 占位符表（渲染时逐项填值）
 
@@ -12,16 +12,16 @@
 | `{repository}` | 该端仓库名，例 `Csxmy-Service` | `sources.repo.name` |
 | `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
-| `{codeupSc}` | `r3x6es4esgbsn6ur` | codeup 服务连接 id |
+| `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md) §5 | codeup 服务连接 id |
 | `{image}` | `{code}-service`，例 `csxmy-service` | 变量 `DOCKER_IMAGE_NAME` |
 | `{container}` | `{code}-service` | 变量 `DOCKER_CONTAINER_NAME` |
 | `{imageTag}` | `latest` | 变量 `DOCKER_IMAGE_TAG` |
 | `{dockerRepo}` | `{branch}` 展开值 ⇒ `develop` | 变量 `DOCKER_REPO_NAME` |
 | `{port}` | `7000` | 变量 `APP_PORT` |
-| `{harborHost}` | `harbor.tjingcai.com` | 变量 `HARBOR_HOST` |
+| `{harborHost}` | 见 [`org-reference.md`](./org-reference.md) §5 | 变量 `HARBOR_HOST` |
 | `{cacheMode}` | 构建集群留空 ⇒ `remote`；`private/*` ⇒ `local` | `cache.cacheMode` |
 | `{runsOn}` | 构建集群留空 ⇒ **整行不写**（云效默认北京公共集群）；非空 ⇒ 写 `        runsOn: <cluster>`（**8 空格缩进**，与 `steps:` 同级） | 可选行 |
-| `{machineGroup}` | 部署主机组 **uuid**（默认 `tIPKOJBbwwOVKVia`；本步由用户在「部署目标」区选定） | `deploy` 段 `VMDockerDeploy.machineGroup`，**必须带单引号** |
+| `{machineGroup}` | 部署主机组 **uuid**（默认值见 [`org-reference.md`](./org-reference.md) §5；本步由用户在「部署目标」区选定） | `deploy` 段 `VMDockerDeploy.machineGroup`，**必须带单引号** |
 
 > **（v0.33）部署目标兜底口径**：准备阶段就要把 `{machineGroup}` 填成**具体 uuid**（候选里的默认值 / 唯一合理项），
 > 并写进结论 `extra.recommendedDeployTargetUuid`——YAML 必须是**可直接提交**的正文，插件侧已无渲染器与守卫。
@@ -114,7 +114,7 @@ stages:
 
   # ── 以下 deploy 段是「顶格写的独立片段」缩进 2 空格后的结果 ──
   # ⚠️ 必须挂在顶层 stages: 之下（stage id 缩进 2 空格）；顶格写会变成顶层 `deploy:` 键，云效 YAML 校验必失败。
-  # ⚠️ machineGroup 必须是主机组 **uuid**（tb 形态数字 id 会被拒，报「该机器组uuid[226948]不存在」）。
+  # ⚠️ machineGroup 必须是主机组 **uuid**（tb 形态数字 id 会被拒，报「该机器组uuid[...]不存在」）。
   deploy:
     name: 部署
     jobs:
@@ -148,7 +148,7 @@ sources:
     triggerEvents: []
     certificate:
       type: serviceConnection
-      serviceConnection: r3x6es4esgbsn6ur
+      serviceConnection: {codeupSc}
 
 variables:
   - key: DOCKER_IMAGE_NAME
@@ -162,7 +162,7 @@ variables:
   - key: APP_PORT
     value: '7000'
   - key: HARBOR_HOST
-    value: 'harbor.tjingcai.com'
+    value: '{harborHost}'
   # …（其余 key 同上模板）
 
 cache:
@@ -189,7 +189,7 @@ stages:
         name: 部署到主机组
         component: VMDockerDeploy
         with:
-          machineGroup: 'tIPKOJBbwwOVKVia'
+          machineGroup: '{machineGroup}'
           executeUser: root
           run: |           # 实际内容同上方模板
             set -e

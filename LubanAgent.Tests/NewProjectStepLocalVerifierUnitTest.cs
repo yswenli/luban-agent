@@ -201,7 +201,7 @@ public class NewProjectStepLocalVerifierUnitTest
         // 真机踩坑点：.env.development 的扩展名是 .development，只按扩展名匹配会漏改/漏扫
         var repo = NewRepo();
         File.WriteAllText(Path.Combine(repo, ".env.development"),
-            "VITE_API_URL = 'https://dev-tjces.tjingcai.com/service'");
+            "VITE_API_URL = 'https://dev-tjces.example.test/service'");
         var report = RepoReport(repo, "develop", "TJCES", "Tjces", "tjces");
 
         var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);

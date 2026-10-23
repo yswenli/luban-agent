@@ -27,8 +27,8 @@ namespace LubanAgent.Tests;
 /// 两种真机形态也覆盖到（细节用例见 <c>YunxiaoResponseParserUnitTest</c>）。
 /// </para>
 /// <para>
-/// 真实 JSON 来自只读取证（组织 <c>648c2f9fb44b3d9a1d1684d9</c>，参考流水线 <c>CME_DEV_Deploy_TJCES-Service(7000)</c> ＝
-/// <c>pipelineId 3481236</c>），此处以字面量固化，避免用例依赖网络。
+/// JSON 结构按只读取证还原，其中的组织 ID / 流水线 id / 名称<b>已替换为测试假值</b>，
+/// 避免把组织专有值固化进仓库。
 /// </para>
 /// </remarks>
 [TestClass]
@@ -40,10 +40,10 @@ public class YunxiaoPipelineModelUnitTest
         const string Json = """
             [
               {
-                "createAccountId": "64a6638755ddb11ea28b33c7",
+                "createAccountId": "000000000000000000000002",
                 "createTime": 1724925264000,
-                "pipelineId": 3481236,
-                "pipelineName": "CME_DEV_Deploy_TJCES-Service(7000)"
+                "pipelineId": 1000001,
+                "pipelineName": "DEMO_DEV_Deploy_Demo-Service(7000)"
               }
             ]
             """;
@@ -52,10 +52,10 @@ public class YunxiaoPipelineModelUnitTest
         var items = YunxiaoResponseParser.DeserializeList<YunxiaoPipeline>(Json);
 
         var item = items!.Single();
-        Assert.AreEqual(3481236L, item.PipelineId, "数字 pipelineId 必须能反序列化（用 string? 会抛 JsonException）");
-        Assert.AreEqual("3481236", item.DisplayId, "DisplayId 应把数字 id 归一化为不变文化的十进制字符串");
-        Assert.AreEqual("CME_DEV_Deploy_TJCES-Service(7000)", item.DisplayName);
-        Assert.AreEqual("64a6638755ddb11ea28b33c7", item.CreateAccountId);
+        Assert.AreEqual(1000001L, item.PipelineId, "数字 pipelineId 必须能反序列化（用 string? 会抛 JsonException）");
+        Assert.AreEqual("1000001", item.DisplayId, "DisplayId 应把数字 id 归一化为不变文化的十进制字符串");
+        Assert.AreEqual("DEMO_DEV_Deploy_Demo-Service(7000)", item.DisplayName);
+        Assert.AreEqual("000000000000000000000002", item.CreateAccountId);
     }
 
     [TestMethod]
@@ -63,18 +63,18 @@ public class YunxiaoPipelineModelUnitTest
     {
         const string Json = """
             {
-              "id": 3481236,
-              "name": "CME_DEV_Deploy_TJCES-Service(7000)",
+              "id": 1000001,
+              "name": "DEMO_DEV_Deploy_Demo-Service(7000)",
               "groupId": 42
             }
             """;
 
         // 真机详情接口 = 裸对象
-        var pipeline = YunxiaoResponseParser.DeserializeObject<YunxiaoPipeline>(Json, "/oapi/v1/flow/organizations/o/pipelines/3481236")!;
+        var pipeline = YunxiaoResponseParser.DeserializeObject<YunxiaoPipeline>(Json, "/oapi/v1/flow/organizations/0123456789abcdef01234567/pipelines/1000001")!;
 
-        Assert.AreEqual(3481236L, pipeline.Id);
-        Assert.AreEqual("3481236", pipeline.DisplayId);
-        Assert.AreEqual("CME_DEV_Deploy_TJCES-Service(7000)", pipeline.DisplayName);
+        Assert.AreEqual(1000001L, pipeline.Id);
+        Assert.AreEqual("1000001", pipeline.DisplayId);
+        Assert.AreEqual("DEMO_DEV_Deploy_Demo-Service(7000)", pipeline.DisplayName);
         Assert.AreEqual(42L, pipeline.GroupId);
     }
 

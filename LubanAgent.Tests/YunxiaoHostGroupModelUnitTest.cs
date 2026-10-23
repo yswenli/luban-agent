@@ -26,23 +26,23 @@ namespace LubanAgent.Tests;
 /// </para>
 /// <para>
 /// 解析一律走 <see cref="YunxiaoResponseParser"/>（客户端的真实解析入口），顺带覆盖「裸数组 / 裸对象」两种形态。
-/// 真实 JSON 来自只读取证（组织 <c>648c2f9fb44b3d9a1d1684d9</c>，主机组 <c>135860</c> 开发服务器组
-/// 与 <c>226948</c> 移动云DEV主机组），此处以字面量固化，避免用例依赖网络。
+/// JSON 结构按只读取证还原，但其中的组织 ID / 主机组 / 机器等标识<b>已替换为测试假值</b>，
+/// 避免把组织专有值固化进仓库。
 /// </para>
 /// </remarks>
 [TestClass]
 public class YunxiaoHostGroupModelUnitTest
 {
     /// <summary>
-    /// 列表接口原文（裸数组；<c>hostInfos</c> 恒为 <c>null</c>，id 为 JSON 数字）。
+    /// 列表接口形态（裸数组；<c>hostInfos</c> 恒为 <c>null</c>，id 为 JSON 数字）。
     /// </summary>
     private const string ListJson = """
         [
           {
-            "creatorAccountId": "648c2ea5b97ac8ef22f7db09",
+            "creatorAccountId": "000000000000000000000001",
             "updateTime": 1688613797000,
             "hostNum": 1,
-            "modifierAccountId": "648c2ea5b97ac8ef22f7db09",
+            "modifierAccountId": "000000000000000000000001",
             "description": null,
             "type": "ECS",
             "createTime": 1688613781000,
@@ -50,17 +50,17 @@ public class YunxiaoHostGroupModelUnitTest
             "aliyunRegion": "cn-shanghai",
             "ecsLabelKey": "",
             "ecsLabelValue": "",
-            "name": "开发服务器组",
-            "id": 135860,
-            "uuid": "ynjxmv6Z74491AzA",
-            "serviceConnectionId": 496036,
+            "name": "示例开发主机组",
+            "id": 100001,
+            "uuid": "sampleuuid000001",
+            "serviceConnectionId": 900001,
             "hostInfos": null
           },
           {
-            "creatorAccountId": "64a6638755ddb11ea28b33c7",
+            "creatorAccountId": "000000000000000000000002",
             "updateTime": 1727232937000,
             "hostNum": 1,
-            "modifierAccountId": "64a6638755ddb11ea28b33c7",
+            "modifierAccountId": "000000000000000000000002",
             "description": null,
             "type": "ECS",
             "createTime": 1724838869000,
@@ -68,9 +68,9 @@ public class YunxiaoHostGroupModelUnitTest
             "aliyunRegion": null,
             "ecsLabelKey": null,
             "ecsLabelValue": null,
-            "name": "移动云DEV主机组",
-            "id": 226948,
-            "uuid": "tIPKOJBbwwOVKVia",
+            "name": "示例部署主机组",
+            "id": 100002,
+            "uuid": "sampleuuid000002",
             "serviceConnectionId": null,
             "hostInfos": null
           }
@@ -78,14 +78,14 @@ public class YunxiaoHostGroupModelUnitTest
         """;
 
     /// <summary>
-    /// 详情接口原文（裸对象；带机器明细 <c>hostInfos</c>）。
+    /// 详情接口形态（裸对象；带机器明细 <c>hostInfos</c>）。
     /// </summary>
     private const string DetailJson = """
         {
-          "creatorAccountId": "64a6638755ddb11ea28b33c7",
+          "creatorAccountId": "000000000000000000000002",
           "updateTime": 1727232937000,
           "hostNum": 1,
-          "modifierAccountId": "64a6638755ddb11ea28b33c7",
+          "modifierAccountId": "000000000000000000000002",
           "description": null,
           "type": "ECS",
           "createTime": 1724838869000,
@@ -93,21 +93,21 @@ public class YunxiaoHostGroupModelUnitTest
           "aliyunRegion": null,
           "ecsLabelKey": null,
           "ecsLabelValue": null,
-          "name": "移动云DEV主机组",
-          "id": 226948,
-          "uuid": "tIPKOJBbwwOVKVia",
+          "name": "示例部署主机组",
+          "id": 100002,
+          "uuid": "sampleuuid000002",
           "serviceConnectionId": null,
           "hostInfos": [
             {
               "updateTime": 1792650289310,
               "creatorAccountId": null,
-              "instanceName": "tjc-sh-100-dev-all-in-one",
+              "instanceName": "demo-host-01",
               "modifierAccountId": null,
-              "ip": "10.10.0.214",
+              "ip": "192.0.2.10",
               "createTime": 1792650289310,
               "objectType": "MachineInfo",
               "aliyunRegionId": "PUBLIC",
-              "machineSn": "s-a488bcdf54aa4745ae33",
+              "machineSn": "s-00000000000000000000",
               "status": "ok"
             }
           ]
@@ -124,20 +124,20 @@ public class YunxiaoHostGroupModelUnitTest
         Assert.AreEqual(2, items!.Count);
 
         var devGroup = items[0];
-        Assert.AreEqual(135860L, devGroup.Id, "数字 id 必须能反序列化（用 string? 会抛 JsonException）");
-        Assert.AreEqual("ynjxmv6Z74491AzA", devGroup.Uuid, "部署阶段 machineGroup 要填的就是 uuid");
-        Assert.AreEqual("开发服务器组", devGroup.Name);
+        Assert.AreEqual(100001L, devGroup.Id, "数字 id 必须能反序列化（用 string? 会抛 JsonException）");
+        Assert.AreEqual("sampleuuid000001", devGroup.Uuid, "部署阶段 machineGroup 要填的就是 uuid");
+        Assert.AreEqual("示例开发主机组", devGroup.Name);
         Assert.AreEqual("ECS", devGroup.Type);
         Assert.AreEqual("ECS_ALIYUN", devGroup.EcsType);
         Assert.AreEqual(1, devGroup.HostNum);
         Assert.AreEqual("cn-shanghai", devGroup.AliyunRegion);
-        Assert.AreEqual(496036L, devGroup.ServiceConnectionId);
+        Assert.AreEqual(900001L, devGroup.ServiceConnectionId);
         Assert.IsNull(devGroup.HostInfos, "列表接口的 hostInfos 恒为 null（机器明细要另查详情）");
 
         var mobileDev = items[1];
-        Assert.AreEqual(226948L, mobileDev.Id);
-        Assert.AreEqual("tIPKOJBbwwOVKVia", mobileDev.Uuid, "Service 端默认部署目标（settings.pipelineDefaults[Service].deployMachineGroup）");
-        Assert.AreEqual("移动云DEV主机组", mobileDev.Name);
+        Assert.AreEqual(100002L, mobileDev.Id);
+        Assert.AreEqual("sampleuuid000002", mobileDev.Uuid, "Service 端默认部署目标（settings.pipelineDefaults[Service].deployMachineGroup）");
+        Assert.AreEqual("示例部署主机组", mobileDev.Name);
         Assert.AreEqual(1, mobileDev.HostNum);
         Assert.IsNull(mobileDev.AliyunRegion, "真机观测可为 null");
         Assert.IsNull(mobileDev.ServiceConnectionId, "真机观测可为 null");
@@ -149,20 +149,20 @@ public class YunxiaoHostGroupModelUnitTest
         // 真机详情接口 = 裸对象（路径键为数字 id）
         var group = YunxiaoResponseParser.DeserializeObject<YunxiaoHostGroup>(
             DetailJson,
-            "/oapi/v1/flow/organizations/648c2f9fb44b3d9a1d1684d9/hostGroups/226948");
+            "/oapi/v1/flow/organizations/0123456789abcdef01234567/hostGroups/100002");
 
         Assert.IsNotNull(group);
-        Assert.AreEqual(226948L, group!.Id);
-        Assert.AreEqual("tIPKOJBbwwOVKVia", group.Uuid);
+        Assert.AreEqual(100002L, group!.Id);
+        Assert.AreEqual("sampleuuid000002", group.Uuid);
 
         Assert.IsNotNull(group.HostInfos, "详情接口必须带出机器明细");
         Assert.AreEqual(1, group.HostInfos!.Count);
 
         var machine = group.HostInfos[0];
-        Assert.AreEqual("tjc-sh-100-dev-all-in-one", machine.InstanceName);
-        Assert.AreEqual("10.10.0.214", machine.Ip);
+        Assert.AreEqual("demo-host-01", machine.InstanceName);
+        Assert.AreEqual("192.0.2.10", machine.Ip);
         Assert.AreEqual("ok", machine.Status);
-        Assert.AreEqual("s-a488bcdf54aa4745ae33", machine.MachineSn);
+        Assert.AreEqual("s-00000000000000000000", machine.MachineSn);
         Assert.AreEqual("MachineInfo", machine.ObjectType);
         Assert.AreEqual("PUBLIC", machine.AliyunRegionId);
     }
@@ -175,9 +175,9 @@ public class YunxiaoHostGroupModelUnitTest
 
         // AllowReadingFromString 容忍「字符串形式的数字」（真机给数字，这里锁住容错下限）
         var tolerant = YunxiaoResponseParser.DeserializeList<YunxiaoHostGroup>(
-            """[{ "id": "226948", "uuid": "tIPKOJBbwwOVKVia", "name": "移动云DEV主机组" }]""");
+            """[{ "id": "100002", "uuid": "sampleuuid000002", "name": "示例部署主机组" }]""");
 
         Assert.IsNotNull(tolerant);
-        Assert.AreEqual(226948L, tolerant!.Single().Id);
+        Assert.AreEqual(100002L, tolerant!.Single().Id);
     }
 }

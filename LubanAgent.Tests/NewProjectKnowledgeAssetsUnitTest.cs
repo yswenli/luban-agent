@@ -7,8 +7,8 @@
 *描述：随包分发的知识资产（docs/ 与 skills/）的「存在性与结构」单测（设计 §6.5 / §12-2）：
 *      ① 三端流水线 YAML 模板齐备且为云效可收的 stages: 顶层形态；
 *      ② docs/README.md 索引覆盖全部 docs/*.md（不漏文件）；
-*      ③ skills/*.md 与 plugin.json 的「组织专有值禁用扫描」——唯一副本原则的可执行检查。
-*      为什么扫 skills 不扫 docs：docs/ 本就是组织专有值的唯一副本（合法含 TJCES / Harbor 等）。
+*      ③ skills/*.md、plugin.json 与 docs/（org-reference.md 除外）的「组织专有值禁用扫描」——唯一副本原则的可执行检查。
+*      真值只允许存在 docs/org-reference.md；其余 docs 只写占位符并指向该文件。
 *
 *****************************************************************************/
 
@@ -31,6 +31,26 @@ public class NewProjectKnowledgeAssetsUnitTest
         "PipelineTemplateLibrary",
         "PipelineYamlOverride",
         "PushRetryPolicy"
+    ];
+
+    /// <summary>
+    /// docs/ 中除 <c>org-reference.md</c> 外不得出现的组织专有值（真值只允许存在唯一副本）。
+    /// </summary>
+    private static readonly string[] ForbiddenInDocs =
+    [
+        "harbor.tjingcai.com",
+        "tjingcai.com",
+        "tejingcai",
+        "r3x6es4esgbsn6ur",
+        "sm7mho5x9ex945rp",
+        "tIPKOJBbwwOVKVia",
+        "226948",
+        "135860",
+        "PM-SielV3Iovlo4Au4J",
+        "3481236",
+        "3489337",
+        "3489317",
+        "CME_DEV_Deploy_TJCES"
     ];
 
     private static readonly string[] PipelineTemplates =
@@ -104,6 +124,27 @@ public class NewProjectKnowledgeAssetsUnitTest
         foreach (var file in files)
         {
             StringAssert.Contains(readme, $"./{file}", $"docs/README.md 索引未覆盖 {file}。");
+        }
+    }
+
+    // ── docs/：唯一副本原则（真值只在 org-reference.md） ──────────────────
+
+    [TestMethod]
+    public void Docs_除orgReference外_禁用值扫描_零命中()
+    {
+        foreach (var path in Directory.GetFiles(DocsDirectory(), "*.md"))
+        {
+            var fileName = Path.GetFileName(path);
+            if (string.Equals(fileName, "org-reference.md", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var content = File.ReadAllText(path);
+            foreach (var forbidden in ForbiddenInDocs)
+            {
+                Assert.IsFalse(
+                    content.Contains(forbidden, StringComparison.Ordinal),
+                    $"{fileName} 出现组织专有值「{forbidden}」——真值只允许存在 org-reference.md，其余文档请写占位符并指向该文件。");
+            }
         }
     }
 

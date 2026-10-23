@@ -2,7 +2,7 @@
 
 > 用途：**Step 7 准备阶段**渲染管理端流水线。组织专有值以 [`org-reference.md`](./org-reference.md) 为准，通用口径见 [`pipeline-conventions.md`](./pipeline-conventions.md)。
 > 这是**翻译稿**（按企服版 tb 形态语义翻成新版 YAML），**不是企服版 `flow` 原文照抄**——照抄必报 `1209300`。
-> 溯源：企服版参考流水线 `pipelineId = 3489337`（`CME_DEV_Deploy_TJCES-Admin`）。
+> 溯源：企服版参考流水线的 id 与名称见 [`org-reference.md`](./org-reference.md) §9（本文件不写具体值）。
 > 口径：`NodeBuild` 编译 + `OSSDelete` 清目录 + `OSSUpload` 上传 ⇒ **构建产物上传 OSS 即发布，无独立部署阶段**（`yamlIncludesDeployStage = false`）。
 
 ## 占位符表（渲染时逐项填值）
@@ -13,11 +13,11 @@
 | `{repository}` | 该端仓库名，例 `Csxmy-Admin` | `sources.repo.name` |
 | `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
-| `{codeupSc}` | `r3x6es4esgbsn6ur` | codeup 服务连接 id |
+| `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md) §5 | codeup 服务连接 id |
 | `{cacheMode}` | 构建集群留空 ⇒ `remote`；`private/*` ⇒ `local` | `cache.cacheMode` |
-| `{ossSc}` | `sm7mho5x9ex945rp` | OSS 服务连接 id |
+| `{ossSc}` | 见 [`org-reference.md`](./org-reference.md) §6 | OSS 服务连接 id |
 | `{ossRegion}` | `cn-shanghai` | OSS 区域（**必填**） |
-| `{ossBucket}` | `tejingcai` | OSS 桶 |
+| `{ossBucket}` | 见 [`org-reference.md`](./org-reference.md) §6 | OSS 桶 |
 | `{ossPrefix}` | `DEV/{CODE}-Admin/` 展开值，例 `DEV/CSXMY-Admin/` | `OSSDelete.prefix` / `OSSUpload.targetFilePath` |
 | `{uploadPath}` | `dist` | `OSSUpload.sourceFilePath` |
 
@@ -53,7 +53,7 @@ stages:
     jobs:
       build:
         name: node 编译并上传 OSS
-        # 不写 runsOn ⇒ 云效默认公共北京构建集群（企服版用公共集群 K8S-4）。
+        # 不写 runsOn ⇒ 云效默认公共北京构建集群。
         steps:
           node_build:
             step: NodeBuild
@@ -102,7 +102,7 @@ sources:
     triggerEvents: []
     certificate:
       type: serviceConnection
-      serviceConnection: r3x6es4esgbsn6ur
+      serviceConnection: {codeupSc}
 
 cache:
   cacheDirs:
@@ -132,17 +132,17 @@ stages:
             step: OSSDelete
             name: 清理 OSS 远端目录
             with:
-              serviceConnection: sm7mho5x9ex945rp
+              serviceConnection: {ossSc}
               region: cn-shanghai
-              bucket: 'tejingcai'
+              bucket: '{ossBucket}'
               prefix: 'DEV/CSXMY-Admin/'
           oss_upload:
             step: OSSUpload
             name: 上传构建产物到 OSS
             with:
-              serviceConnection: sm7mho5x9ex945rp
+              serviceConnection: {ossSc}
               region: cn-shanghai
-              bucket: 'tejingcai'
+              bucket: '{ossBucket}'
               sourceFilePath: 'dist'
               targetFilePath: 'DEV/CSXMY-Admin/'
 ```
