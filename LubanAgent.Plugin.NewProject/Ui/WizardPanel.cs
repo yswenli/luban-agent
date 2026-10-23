@@ -2234,19 +2234,33 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 if (!row.NameBox.IsFocused && !string.Equals(row.NameBox.Text, name, StringComparison.Ordinal))
                     row.NameBox.Text = name;
 
-                if (repository is null || string.IsNullOrWhiteSpace(repository.TemplateRepository))
+                // 模板仓：优先显示「本次准备（只读）」的解析结果（_precheck 才是当次事实）；
+                // 档案里的 TemplateRepository 只有执行成功后才回填，拿它判「未配置」会把刚预检通过的端误报成阻断。
+                var prechecked = _precheck?.Ends.FirstOrDefault(item => item.End == row.End);
+                if (prechecked is not null && !string.IsNullOrWhiteSpace(prechecked.TemplateRepository))
                 {
-                    row.TemplateText.Foreground = DangerBrush;
-                    row.TemplateText.Text = "模板仓：未配置（插件配置 templates[] 缺少该端对照）→ 本步会被阻断，请在插件配置中补齐。";
+                    var pin = string.IsNullOrWhiteSpace(prechecked.ResolvedBranch)
+                        ? "pin 待运行期解析"
+                        : $"pin {prechecked.ResolvedBranch}";
+                    var clonedNow = repository?.Cloned == true ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
+                    row.TemplateText.Foreground = MutedText;
+                    row.TemplateText.Text = $"模板仓：{prechecked.TemplateRepository} · {pin}（本次预检读数）{clonedNow}";
+                    continue;
+                }
+
+                if (repository is not null && !string.IsNullOrWhiteSpace(repository.TemplateRepository))
+                {
+                    row.TemplateText.Foreground = MutedText;
+                    var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
+                        ? "pin 待准备阶段解析（develop → master → main → 模板默认分支）"
+                        : $"pin {repository.TemplateBranch}（上次执行落账；本次按 docs 重新解析）";
+                    var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
+                    row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
                     continue;
                 }
 
                 row.TemplateText.Foreground = MutedText;
-                var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
-                    ? "pin 待运行期解析（develop → master → main → 模板默认分支；以预检读数为准）"
-                    : $"pin {repository.TemplateBranch}（上次解析结果；本次执行会按配置重新解析）";
-                var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
-                row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
+                row.TemplateText.Text = "模板仓：由准备阶段按 docs 的按端名称约定解析（执行成功后回填档案）。";
             }
 
             // 可见性：档案里已有取值则回填，否则保持「组织内公开」默认

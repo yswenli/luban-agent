@@ -112,6 +112,22 @@ public sealed class NewProjectService : INewProjectService
     /// <inheritdoc />
     public event EventHandler? Changed;
 
+    /// <summary>
+    /// 确保档案里的云效组织 ID 有值：旧档案 / 新进程里为空时按当前云效连接配置回填。
+    /// </summary>
+    /// <remarks>
+    /// 组织 ID 属<b>插件侧配置</b>，不该让助手从知识文档里猜；回填后由提示词原样下发，
+    /// 助手每次调用 <c>mcp_yunxiao_*</c> 都显式传这个值（空串会绕过客户端回落配置的兜底）。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    /// <returns><c>true</c>＝已有值；<c>false</c>＝连接配置里也没有。</returns>
+    private bool EnsureOrganizationId(ProjectSpec spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec.OrganizationId))
+            spec.OrganizationId = OrganizationHint;
+        return !string.IsNullOrWhiteSpace(spec.OrganizationId);
+    }
+
     /// <inheritdoc />
     public string? OrganizationHint
     {
@@ -682,6 +698,11 @@ public sealed class NewProjectService : INewProjectService
         if (string.IsNullOrWhiteSpace(spec.LocalPath))
             result.Errors.Add("档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。");
 
+        // 组织 ID 是插件侧已知的运行时配置：写进档案，供 Step 3 / Step 7 四段提示词原样注入助手。
+        // 否则助手只能按 schema 占位符写 null，执行时再传空串——空串会绕过客户端「未提供则回落配置」的兜底。
+        if (!string.IsNullOrWhiteSpace(result.OrganizationId))
+            spec.OrganizationId = result.OrganizationId;
+
         // 前置不满足即不下发（避免让助手白跑一轮）
         if (result.Errors.Count > 0)
         {
@@ -724,7 +745,18 @@ public sealed class NewProjectService : INewProjectService
                 }
                 : ArtifactViewModelMapper.ToRepositoryPrecheck(report, takenAt, spec.Ends);
 
-            result.OrganizationId = mapped.OrganizationId;
+            // 组织 ID 以插件侧运行时配置为准：结论文件里的同值只作事实记录。
+            // 助手没回写（旧结论 / 漏字段）时不阻断展示，但判定必须失败——否则执行续跑仍会拿到 null。
+            var organizationHint = result.OrganizationId;
+            result.OrganizationId = string.IsNullOrWhiteSpace(mapped.OrganizationId)
+                ? organizationHint
+                : mapped.OrganizationId;
+            if (report is not null && string.IsNullOrWhiteSpace(mapped.OrganizationId))
+            {
+                result.Errors.Add("准备结论缺少 group.extra.organizationId：请重跑本步"
+                                  + "（准备提示词已注入组织 ID，正常应回写同值）。");
+            }
+
             result.GroupName = mapped.GroupName;
             result.GroupParentId = mapped.GroupParentId;
             result.GroupId = mapped.GroupId;
@@ -861,6 +893,14 @@ public sealed class NewProjectService : INewProjectService
         if (string.IsNullOrWhiteSpace(spec.LocalPath))
         {
             const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        // 执行续跑仍要显式把组织 ID 下发（旧档案可能没写过；提示词拿不到值助手就会传空串）。
+        if (!EnsureOrganizationId(spec))
+        {
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
@@ -1643,6 +1683,14 @@ public sealed class NewProjectService : INewProjectService
             return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
         }
 
+        // 流水线 MCP（flow_*）同样要求组织 ID：旧档案没写过时按当前连接配置回填，仍空则不下发。
+        if (!EnsureOrganizationId(spec))
+        {
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+
         var targets = PlanRepositories(spec)
             .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.CloneUrl))
             .ToList();
@@ -1964,6 +2012,14 @@ public sealed class NewProjectService : INewProjectService
         if (string.IsNullOrWhiteSpace(spec.LocalPath))
         {
             const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        // 流水线 MCP（flow_*）同样要求组织 ID：旧档案没写过时按当前连接配置回填，仍空则不下发。
+        if (!EnsureOrganizationId(spec))
+        {
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
             Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }

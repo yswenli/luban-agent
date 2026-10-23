@@ -209,7 +209,7 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 | 前置 | 缺失时的行为 |
 |------|--------------|
 | 云效连接器（`yunxiao` MCP） | 时间线红字「云效连接器不可用」，阻断（向导路径由 MCP 子策略放行 `codeup_*` / `flow_*`） |
-| 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `connector:yunxiao:organizationid`，历史键 `yunxiao_organization_id` 由别名表回退） |
+| 云效组织 ID | 引导去 codex「设置 → 云效连接」填写（读取顺序：`YunxiaoApiOptions.OrganizationId` → 凭据存储 `connector:yunxiao:organizationid`，历史键 `yunxiao_organization_id` 由别名表回退）；Step 3 / Step 7 的准备与执行提示词会**直接注入**该值，结论 `extra.organizationId` 必须同值 |
 | 云效 PAT | 同上（读取 `IYunxiaoCredentialProvider.GetPatAsync`）；PAT 由连接器注入 MCP，**不进工具入参、不进提示词、不落结论文件** |
 | **git 凭据** | 由用户在**外部环境**自行配好（credential helper / 系统凭据管理器）；插件与技能**不提供凭据通路**，也不在 URL 里拼 `oauth2:<PAT>@` |
 | 模板仓（模板库中按名 / ID 命中） | 阻断（由助手按 `docs/step3-repositories.md` 的名称约定在客户端匹配） |

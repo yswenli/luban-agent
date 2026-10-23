@@ -57,7 +57,8 @@ mcp_yunxiao_codeup_get_repo(repositoryId=<命中项 id>)   # 仅当 search 命�
 
 写结论文件 `results/step3-<ts>.json`：`status="done"`，把事实写进 `artifacts[]`：
 
-- `kind=group` **一条**：`name` / `externalId`（组 id）/ `webUrl`；`extra.exists` / `extra.parentId` / `extra.organizationId`。
+- `kind=group` **一条**：`name` / `externalId`（组 id）/ `webUrl`；`extra.exists` / `extra.parentId` / `extra.organizationId`
+  （**必须与提示词注入的组织 ID 同值**；空值会被判为准备失败）。
 - `kind=repository` **每端一条**：`end` / `name` / `webUrl` / `cloneUrl` / `localPath` /
   `extra.templateRepository` / `extra.templateProjectId` / `extra.templatePath` / `extra.templateBranches` /
   `extra.resolvedBranchSource` / `extra.repositoryExists` / `extra.localPathOccupied` / `extra.visibility` / `extra.error`。

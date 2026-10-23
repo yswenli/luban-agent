@@ -95,7 +95,7 @@ public class FlowClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -135,7 +135,7 @@ public class FlowClient : IDisposable
         if (string.IsNullOrWhiteSpace(pipelineId))
             throw new ArgumentException("流水线 ID 不能为空", nameof(pipelineId));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -174,7 +174,7 @@ public class FlowClient : IDisposable
         if (string.IsNullOrWhiteSpace(request.Content))
             throw new ArgumentException("流水线 YAML 内容不能为空", nameof(request));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -218,7 +218,7 @@ public class FlowClient : IDisposable
         if (string.IsNullOrWhiteSpace(request.Content))
             throw new ArgumentException("流水线 YAML 内容不能为空", nameof(request));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -250,7 +250,7 @@ public class FlowClient : IDisposable
         if (string.IsNullOrWhiteSpace(pipelineId))
             throw new ArgumentException("流水线 ID 不能为空", nameof(pipelineId));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -289,7 +289,7 @@ public class FlowClient : IDisposable
         if (string.IsNullOrWhiteSpace(jobId))
             throw new ArgumentException("任务 ID 不能为空", nameof(jobId));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -321,7 +321,7 @@ public class FlowClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -357,7 +357,7 @@ public class FlowClient : IDisposable
         if (hostGroupId <= 0)
             throw new ArgumentOutOfRangeException(nameof(hostGroupId), hostGroupId, "主机组 ID 必须是正数（真机路径键为数字 id）");
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 

@@ -101,7 +101,7 @@ public class CodeupClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -153,7 +153,7 @@ public class CodeupClient : IDisposable
         if (string.IsNullOrWhiteSpace(repoId))
             throw new ArgumentException("仓库 ID 不能为空", nameof(repoId));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -182,7 +182,7 @@ public class CodeupClient : IDisposable
         if (request == null)
             throw new ArgumentNullException(nameof(request));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -221,7 +221,7 @@ public class CodeupClient : IDisposable
         if (request == null)
             throw new ArgumentNullException(nameof(request));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -260,7 +260,7 @@ public class CodeupClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -301,7 +301,7 @@ public class CodeupClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -335,7 +335,7 @@ public class CodeupClient : IDisposable
         string? organizationId = null,
         CancellationToken cancellationToken = default)
     {
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 
@@ -374,7 +374,7 @@ public class CodeupClient : IDisposable
         if (request == null)
             throw new ArgumentNullException(nameof(request));
 
-        var orgId = organizationId ?? _options.OrganizationId;
+        var orgId = YunxiaoOrganizationId.Resolve(organizationId, _options.OrganizationId);
         if (string.IsNullOrWhiteSpace(orgId))
             throw new InvalidOperationException("未配置组织 ID");
 

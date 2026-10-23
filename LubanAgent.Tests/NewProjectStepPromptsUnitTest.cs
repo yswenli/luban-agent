@@ -277,4 +277,71 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(execute, "推送分支 = develop");
         StringAssert.Contains(execute, "留空或留占位符");
     }
+
+    /// <summary>v0.34：组织 ID 必须注入 Step 3 / Step 7 的准备与执行四段提示词（不得让助手猜 / 传空串）。</summary>
+    [TestMethod]
+    public void BuildRepositoryAndPipelinePrompts_注入组织ID并禁止空串()
+    {
+        const string Org = "648c2f9b44b3d9a1d1684d9";
+        var spec = Spec();
+        spec.OrganizationId = Org;
+        var plan = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Service.git"
+            }
+        };
+
+        var prompts = new[]
+        {
+            StepPrompts.BuildRepositoryPreparePrompt(spec, plan, ResultFile),
+            StepPrompts.BuildRepositoryExecutePrompt(spec, plan, ResultFile, ResultFile),
+            StepPrompts.BuildPipelinePreparePrompt(spec, plan, ResultFile),
+            StepPrompts.BuildPipelineExecutePrompt(spec, plan, ResultFile, ResultFile, null, null, false)
+        };
+
+        foreach (var prompt in prompts)
+        {
+            StringAssert.Contains(prompt, "【云效组织 ID（运行时配置，照抄，不要另找）】");
+            StringAssert.Contains(prompt, $"`organizationId` = `{Org}`");
+            StringAssert.Contains(prompt, "每次调用 `mcp_yunxiao_*` 都必须显式传这个值");
+            StringAssert.Contains(prompt, "不要传空串");
+        }
+    }
+
+    /// <summary>v0.34：档案没有组织 ID 时，提示词明确禁止调用云效 MCP（避免助手瞎猜或传空串）。</summary>
+    [TestMethod]
+    public void BuildRepositoryPreparePrompt_缺组织ID时禁止调用云效MCP()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
+
+        StringAssert.Contains(prompt, "**未配置**");
+        StringAssert.Contains(prompt, "本步禁止调用任何 `mcp_yunxiao_*` 工具");
+        StringAssert.Contains(prompt, "设置 → 云效连接");
+    }
+
+    /// <summary>v0.34：Step 3 执行提示词锁死脚本口径（目录判定 ListDirectoryAsync、扫描/替换 RunPythonAsync）。</summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_脚本口径避免被白名单拒()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        StringAssert.Contains(prompt, "`ListDirectoryAsync` 判断");
+        StringAssert.Contains(prompt, "`RunPythonAsync`");
+        StringAssert.Contains(prompt, "名单外的可执行文件");
+    }
 }

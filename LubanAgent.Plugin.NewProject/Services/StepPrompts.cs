@@ -228,6 +228,8 @@ public static class StepPrompts
                 + "mcp_yunxiao_codeup_list_groups / mcp_yunxiao_codeup_search_repos / mcp_yunxiao_codeup_get_repo。"
         });
 
+        AppendOrganization(builder, spec);
+
         builder.AppendLine("【建库计划】（用户已在面板确认；仓库名与可见性以这里为准）");
         foreach (var repository in plan)
         {
@@ -249,7 +251,8 @@ public static class StepPrompts
                            + "`mcp_yunxiao_codeup_get_repo`（repositoryId=命中项 id）取 httpUrlToRepo 与 defaultBranch**"
                            + "（列表接口不含克隆地址；仓库页面地址由克隆地址去掉尾部 .git 推导）；");
         builder.AppendLine("5) 仓库目录：检查 `<仓库目录>`（上面各端的完整目录，**已含仓库名**，不要再拼一次）是否已存在且非空"
-                           + "（只读判断，不要删）。");
+                           + "（只读判断，不要删）。**目录判定一律用 `ListDirectoryAsync`**（或用 `RunPythonAsync` 读文件系统），"
+                           + "不要用 `RunShellAsync` 写 PowerShell `if` / `foreach`（按段首词白名单会拒「名单外的可执行文件」）。");
         builder.AppendLine();
 
         AppendArtifactSchema(builder, 3, @"{
@@ -319,8 +322,12 @@ public static class StepPrompts
                 + "等 pin 分支出现（上限 120s / 间隔 3s）后才克隆，否则 git 会在目标目录留下 `.git/HEAD = ref: refs/heads/.invalid` 的残骸。",
             "git 凭据由用户在**外部环境**自行配置（credential helper / 系统凭据管理器）：克隆地址用 "
                 + "`httpUrlToRepo`（**不要**把令牌拼进 URL）。凭据缺失时把 git 原文报错带出来，并提示"
-                + "「请先在外部环境配好 codeup HTTPS 凭据」。"
+                + "「请先在外部环境配好 codeup HTTPS 凭据」。",
+            "目录是否存在 / 是否非空用 `ListDirectoryAsync` 判断；占位符扫描 / 替换 / 清理一律用 `RunPythonAsync`"
+                + "（`RunShellAsync` 只认白名单可执行文件，`if` / `foreach` 这类 PowerShell 控制流会被判为「名单外的可执行文件」拒绝）。"
         });
+
+        AppendOrganization(builder, spec);
 
         builder.AppendLine("【事实来源：准备阶段结论文件】");
         builder.AppendLine(prepareResultFile);
@@ -520,6 +527,8 @@ public static class StepPrompts
                 + "把候选**同时带数字 id 与 uuid**写进 `inputs[]`（数字 id 用于拉机器明细，uuid 才是写进 YAML machineGroup 的值）。"
         });
 
+        AppendOrganization(builder, spec);
+
         builder.AppendLine("【待建流水线的端】（`{branch}` 按 docs 解析：配置 `pushBranch` 有值用它，留空退回该端仓库默认分支）");
         foreach (var repository in targets)
         {
@@ -611,6 +620,8 @@ public static class StepPrompts
                 + "旧流水线可能缺部署段或残留旧占位符）；未命中才创建。**显式覆盖更新**则直接改档案里那条 id，不检索。",
             "需要部署阶段的端（后端）若没有可用目标 uuid，**不要**把占位符提交到云效：写 `status=\"failed\"` 并说明缺部署目标。"
         });
+
+        AppendOrganization(builder, spec);
 
         builder.AppendLine("【事实来源：准备阶段结论文件】");
         builder.AppendLine(prepareResultFile);
@@ -733,6 +744,33 @@ public static class StepPrompts
                            + "（本轮提示词正是由该插件在同一会话发起的，回头调用会形成同会话回合的自等死锁）。");
         index++;
         builder.AppendLine($"{index}) 回复正文只回一行结论，不要展开过程；机器判定一律以下面的结论文件为准。");
+        builder.AppendLine();
+    }
+
+    /// <summary>
+    /// 追加云效组织 ID（运行时配置，不是知识文档里的值）：要求每次 <c>mcp_yunxiao_*</c> 调用显式传同一个值。
+    /// </summary>
+    /// <remarks>
+    /// 为什么要写死在提示词里：<c>organizationId</c> 是云效中心版必带参数，但它来自 codex「设置 → 云效连接」，
+    /// <c>docs/org-reference.md</c> 刻意不存。此前提示词不给值、schema 只留 <c>&lt;组织 ID&gt;</c> 占位符，
+    /// 助手只能写 <c>null</c>，执行时再传空串——空串会绕过客户端「未提供则回落配置」的兜底并抛「未配置组织 ID」。
+    /// </remarks>
+    /// <param name="builder">缓冲。</param>
+    /// <param name="spec">项目档案（<see cref="ProjectSpec.OrganizationId"/> 由服务端在准备 / 执行前回填）。</param>
+    private static void AppendOrganization(StringBuilder builder, ProjectSpec spec)
+    {
+        builder.AppendLine("【云效组织 ID（运行时配置，照抄，不要另找）】");
+        if (string.IsNullOrWhiteSpace(spec.OrganizationId))
+        {
+            builder.AppendLine("**未配置**：本步禁止调用任何 `mcp_yunxiao_*` 工具，直接写 `status=\"failed\"` 并说明"
+                               + "「请先到 codex「设置 → 云效连接」填写组织 ID」。");
+        }
+        else
+        {
+            builder.AppendLine($"`organizationId` = `{spec.OrganizationId}`。**每次调用 `mcp_yunxiao_*` 都必须显式传这个值**"
+                               + "（不要留空、不要传空串、不要从知识文档里另找一个）；结论产物 `extra.organizationId` 写同值。");
+        }
+
         builder.AppendLine();
     }
 

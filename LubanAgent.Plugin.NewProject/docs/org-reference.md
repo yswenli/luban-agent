@@ -5,6 +5,9 @@
 > 技能正文（`skills/*.md`）不复述这些值。
 >
 > 「取值来源」列里的插件配置项名（如 `templates[].repository`）是**历史出处**，用于追溯；当前运行期这些值**以本文件为准**。
+>
+> **云效组织 ID 不在这里**：它来自 codex「设置 → 云效连接」（`YunxiaoApiOptions.OrganizationId`），
+> 由插件在 Step 3 / Step 7 的准备与执行提示词里注入；助手调用 `mcp_yunxiao_*` 时显式带上同一个值即可，不要在本文件另存。
 
 ---
 
