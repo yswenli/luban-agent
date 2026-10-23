@@ -39,7 +39,7 @@ public class NewProjectKnowledgeAssetsUnitTest
     private static readonly string[] ForbiddenInDocs =
     [
         "harbor.tjingcai.com",
-        "tjingcai.com",
+        "dev-tjces.tjingcai.com",
         "tejingcai",
         "r3x6es4esgbsn6ur",
         "sm7mho5x9ex945rp",
@@ -50,6 +50,9 @@ public class NewProjectKnowledgeAssetsUnitTest
         "3481236",
         "3489337",
         "3489317",
+        "5340668",
+        "tjc-sh-100-dev-all-in-one",
+        "tjc_dev_",
         "CME_DEV_Deploy_TJCES"
     ];
 
@@ -77,6 +80,9 @@ public class NewProjectKnowledgeAssetsUnitTest
     }
 
     private static string DocsDirectory() => Path.Combine(PluginDirectory(), "docs");
+
+    /// <summary>仓库根（<see cref="PluginDirectory"/> 的父目录）。</summary>
+    private static string RepositoryRoot() => Directory.GetParent(PluginDirectory())!.FullName;
 
     private static string SkillsDirectory() => Path.Combine(PluginDirectory(), "skills");
 
@@ -132,7 +138,22 @@ public class NewProjectKnowledgeAssetsUnitTest
     [TestMethod]
     public void Docs_除orgReference外_禁用值扫描_零命中()
     {
-        foreach (var path in Directory.GetFiles(DocsDirectory(), "*.md"))
+        var docsDir = DocsDirectory();
+        AssertNoForbiddenValues(docsDir);
+    }
+
+    /// <summary>仓库级 docs/（PRD、历史 spec/plan）同样不得复制组织专有值。</summary>
+    [TestMethod]
+    public void RepoDocs_除orgReference外_禁用值扫描_零命中()
+    {
+        AssertNoForbiddenValues(Path.Combine(RepositoryRoot(), "docs"));
+    }
+
+    private static void AssertNoForbiddenValues(string docsDir)
+    {
+        Assert.IsTrue(Directory.Exists(docsDir), $"文档目录不存在：{docsDir}");
+
+        foreach (var path in Directory.GetFiles(docsDir, "*.md", SearchOption.AllDirectories))
         {
             var fileName = Path.GetFileName(path);
             if (string.Equals(fileName, "org-reference.md", StringComparison.OrdinalIgnoreCase))

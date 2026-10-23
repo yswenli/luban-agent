@@ -176,12 +176,12 @@ LubanAgent.Plugin.NewProject/
 | 项目命名 | 代码组名格式（`{CODE}`）、仓库名格式（`{Code}-{end}`，**注意是 `{Code}` 不是 `{code}`**）、推送分支（`develop`） |
 | pin 择优 | `develop → master → main → 模板默认分支`（及"登记值必须真实存在，否则阻断"） |
 | 占位符 | `TJCES→{CODE}` / `Tjces→{Code}` / `tjces→{code}`，令牌语义、跳过目录、大小写与替换顺序、幂等要求 |
-| 后端流水线 | 端口 `7000`、镜像/容器名 `{code}-service`、tag `latest`、dockerRepo `{branch}`、Harbor `harbor.tjingcai.com`、codeup 服务连接 `r3x6es4esgbsn6ur`、主机组默认值、`buildCluster` 留空须人工绑定 |
-| 前端流水线 | OSS 服务连接 `sm7mho5x9ex945rp`、bucket `tejingcai`、region `cn-shanghai`、目录 `DEV/{CODE}-Admin/`、`DEV/{CODE}-Mobile/`、上传源目录 `dist` / `dist/dev/h5`、构建集群留空 |
+| 后端流水线 | 端口 `7000`、镜像/容器名 `{code}-service`、tag `latest`、dockerRepo `{branch}`、Harbor `<harbor 域名>`、codeup 服务连接 `<codeup 服务连接 id>`、主机组默认值、`buildCluster` 留空须人工绑定 |
+| 前端流水线 | OSS 服务连接 `<OSS 服务连接 id>`、bucket `<OSS 桶>`、region `cn-shanghai`、目录 `DEV/{CODE}-Admin/`、`DEV/{CODE}-Mobile/`、上传源目录 `dist` / `dist/dev/h5`、构建集群留空 |
 | 构建姿势 | 后端 `dotnet build`；管理端 `fnm exec --using=16 -- npm.cmd …` + `npm run build:dev`；移动端同理 |
 | 提交身份 | 优先本机 `git config user.name/user.email`，缺失时兜底 `LuBan Agent <luban-agent@local>` |
 
-> 三端 YAML 模板正文（`pipeline-*.yml.md`）为**翻译稿**，不是企服版 `flow` 原文照抄——PRD v0.30 已实证照抄必报 `1209300`。`newproject.settings.json` 里的 `pipelineReferences[].pipelineId`（3481236 / 3489337 / 3489317）作为**溯源标注**迁到 `pipeline-conventions.md`。
+> 三端 YAML 模板正文（`pipeline-*.yml.md`）为**翻译稿**，不是企服版 `flow` 原文照抄——PRD v0.30 已实证照抄必报 `1209300`。`newproject.settings.json` 里的 `pipelineReferences[].pipelineId`（1000001 / 1000002 / 1000003）作为**溯源标注**迁到 `pipeline-conventions.md`。
 
 ### 4.4 `newproject.settings.json` 瘦身后保留什么
 
@@ -416,7 +416,7 @@ LubanAgent.Plugin.NewProject/
 // PipelineArtifactExtra
 { "yamlIncludesDeployStage": true, "pendingBindings": ["构建集群未绑定：请人工确认后回填"],
   "recommendedDeployTargetHostGroupId": 123456,      // ⚠️ 数字 id（拉机器明细用）
-  "recommendedDeployTargetUuid": "tIPKOJBbwwOVKVia" } // YAML machineGroup 用
+  "recommendedDeployTargetUuid": "demo-host-group-uuid" } // YAML machineGroup 用
 ```
 
 - `yamlIncludesDeployStage` 与 `recommendedDeployTarget*` 原由插件从 YAML 常量/配置算出；模板迁到 docs 后**改由助手在结论文件里给出**（依据是 `docs/pipeline-conventions.md` 的"哪些端有独立部署阶段"约定）。插件不再持有"哪端需要部署阶段"的常量。
@@ -481,8 +481,8 @@ LubanAgent.Plugin.NewProject/
     "prompt": "选择部署目标（必须选，创建时写入 deploy 段）",
     "ends": ["Service"],
     "options": [ { "value": "123456",            // ⚠️ v0.2：value = 数字 hostGroupId（拉明细用）
-                   "uuid": "tIPKOJBbwwOVKVia",   // YAML machineGroup 用
-                   "label": "移动云DEV主机组（1 台）" } ],
+                   "uuid": "demo-host-group-uuid",   // YAML machineGroup 用
+                   "label": "示例主机组（1 台）" } ],
     "details": { "defaultValue": "123456", "required": true }
   }
 ]
@@ -508,7 +508,7 @@ LubanAgent.Plugin.NewProject/
 ### 6.5 组织专有值的唯一副本原则
 
 同一事实**只允许在 `docs/` 里存在一份**。技能正文不得复述端口/Harbor/服务连接/uuid 等值（只写"读 `docs/org-reference.md` 的哪一节"）。这样"改一处生效"，也避免出现"技能与 docs 打架"。
-配套单测：对 `skills/*.md` 做**禁用值扫描**（出现 `harbor.tjingcai.com` / `r3x6es4esgbsn6ur` / `tejingcai` 等字样即失败），把"唯一副本"从约定变成可执行检查。
+配套单测：对 `skills/*.md` 与 `docs/`（`org-reference.md` 除外）做**禁用值扫描**（出现 Harbor 域名 / 服务连接 id / OSS 桶等组织专有值即失败），把"唯一副本"从约定变成可执行检查。
 
 ### 6.6 Step 3 重跑联动与档案失效（⚠️ v0.2 新增；C7′ 调整失效对象）
 
