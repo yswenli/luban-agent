@@ -1282,7 +1282,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// 加载会话历史：切换当前会话并展示其消息流。
-    /// 已存在的会话 ViewModel 保留其内存消息（避免清空后台运行中的会话），仅在首次创建时从存储回填。
+    /// <para>
+    /// 每次切换都按库重建消息流：历史可能由插件（新建项目向导）或其它入口在会话运行时之外写入，
+    /// 内存里已存在的 ViewModel 会因此过期（此前「已存在即早退」导致插件下发的回合永远看不到）。
+    /// </para>
+    /// <para>
+    /// 例外：本端正在为该会话跑流式回合（<see cref="SessionViewModel.IsRunning"/>）时跳过重建，
+    /// 避免清掉内存中正在增长的活动消息。
+    /// </para>
     /// </summary>
     /// <param name="sessionId">会话ID</param>
     public async Task LoadSessionHistoryAsync(string sessionId)
@@ -1290,7 +1297,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsSwitchingSession = true;
         try
         {
-            var sessionManager = _agentHost.Services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
+            var sessionManager = _agentHost.Services.GetRequiredService<ISessionManager>();
             await sessionManager.SetCurrentSessionAsync(sessionId);
 
             // 切换会话：丢弃上一会话遗留的待发附件
@@ -1300,36 +1307,92 @@ public partial class MainWindowViewModel : ObservableObject
             var session = GetOrCreateSession(sessionId);
             SetCurrentSession(session);
 
-            if (!isNew)
+            if (!isNew && session.IsRunning)
                 return;
 
             var messages = await sessionManager.GetLatestMessagesAsync(sessionId, UiConstants.HistoryLoadLimit);
-            foreach (var msg in messages.OrderBy(m => m.CreatedAt))
-            {
-                if (msg.Role == "user")
-                {
-                    session.Messages.Add(new UserMessageItem
-                    {
-                        Content = msg.Content,
-                        Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
-                    });
-                }
-                else if (msg.Role == "assistant")
-                {
-                    session.Messages.Add(new AssistantMessageItem
-                    {
-                        Content = msg.Content,
-                        Thinking = msg.Thinking ?? "",
-                        IsComplete = true
-                    });
-                }
-            }
+            RebuildMessagesFromHistory(session, messages);
         }
         finally
         {
             IsSwitchingSession = false;
         }
     }
+
+    /// <summary>
+    /// 用库里的历史重建消息流（落库口径：一条 assistant 消息聚合了本轮思考、工具调用与正文，
+    /// 这里按「思考 → 工具卡片 → 正文」还原，与流式渲染的块类型保持一致）。
+    /// </summary>
+    /// <param name="session">目标会话 ViewModel。</param>
+    /// <param name="messages">库里的历史消息（按时间正序）。</param>
+    private static void RebuildMessagesFromHistory(SessionViewModel session, IEnumerable<SessionMessage> messages)
+    {
+        session.Messages.Clear();
+
+        var toolCards = 0;
+        var truncated = false;
+
+        foreach (var msg in messages.OrderBy(m => m.CreatedAt))
+        {
+            switch (msg.Role)
+            {
+                case "user":
+                    session.Messages.Add(new UserMessageItem
+                    {
+                        Content = msg.Content,
+                        Attachments = AttachmentService.DisplayInfosFromJson(msg.Attachments)
+                    });
+                    break;
+
+                case "assistant":
+                    // 思考单独成块（与流式一致）；正文里不再重复携带 Thinking
+                    if (!string.IsNullOrWhiteSpace(msg.Thinking))
+                    {
+                        session.Messages.Add(new ThinkingMessageItem
+                        {
+                            Content = msg.Thinking,
+                            IsComplete = true
+                        });
+                    }
+
+                    foreach (var call in SessionToolCallHistory.Parse(msg.ToolCalls))
+                    {
+                        if (toolCards >= MaxHistoryToolCards)
+                        {
+                            truncated = true;
+                            break;
+                        }
+
+                        session.Messages.Add(new ToolCallItem
+                        {
+                            ToolName = call.Name,
+                            CallId = call.CallId,
+                            Arguments = call.Arguments,
+                            State = ToolCallState.Done
+                        });
+                        toolCards++;
+                    }
+
+                    session.Messages.Add(new AssistantMessageItem
+                    {
+                        Content = msg.Content,
+                        IsComplete = true
+                    });
+                    break;
+            }
+        }
+
+        if (truncated)
+        {
+            session.Messages.Add(new SystemMessageItem
+            {
+                Content = $"…历史中的工具调用过多，仅回放前 {MaxHistoryToolCards} 条工具卡片。"
+            });
+        }
+    }
+
+    /// <summary>历史重建时最多展开的工具卡片数（防止超长会话把消息流拖慢）。</summary>
+    private const int MaxHistoryToolCards = 2000;
 
     /// <summary>
     /// 清空当前会话消息流

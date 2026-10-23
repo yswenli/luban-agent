@@ -103,8 +103,10 @@ public static class StepPrompts
     /// </summary>
     /// <remarks>
     /// v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——允许修依赖树与环境（`fnm` 切 Node 16、
-    /// npm / cnpm 装依赖、`npm rebuild` 补跑依赖自身的构建脚本），仍禁止改业务源码与工程配置；
+    /// npm / cnpm 装依赖、重建 node_modules），仍禁止改业务源码与工程配置；
     /// 并按端写入【本组织已知构建姿势】（管理端：develop 分支 + Node 16 + `npm run build:dev`）。
+    /// v0.29：纠正「包入口缺失」的处置——半装包（如 element-plus 缺 <c>es/index.mjs</c>）只能删包目录重装，
+    /// <c>npm rebuild</c> 无效；并要求装依赖独占一条命令跑完（管道截断会让子进程半途被杀）。
     /// </remarks>
     /// <param name="spec">项目档案。</param>
     /// <param name="targets">本次要编译的端（按端仓库，已带本地目录）。</param>
@@ -121,12 +123,15 @@ public static class StepPrompts
 
         AppendHardBoundaries(builder, new[]
         {
-            "本步的边界是「只编译、不改业务」：**允许修依赖树与环境**（装依赖、切 Node 版本、重跑依赖自身的构建脚本、"
+            "本步的边界是「只编译、不改业务」：**允许修依赖树与环境**（装依赖、切 Node 版本、删掉半装的单个依赖目录后重装、"
                 + "必要时重建 node_modules），但**禁止修改仓库里的业务源码与工程配置**（业务代码、package.json、"
                 + "vite.config、.csproj / .sln 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。"
                 + "编译错误若是源码问题，如实报出来，由用户修完后再重跑本步。",
-            "编译产物（bin / obj / node_modules / dist）留在原处即可，不要删除、不要清理。",
-            "依赖未装就先装（dotnet restore / npm install / cnpm install / pnpm install 等），再编译；每个端最多重试 1 次。",
+            "编译产物（bin / obj / dist）留在原处即可，**不要整体清理 node_modules**；唯一例外是修半装包时"
+                + "按【本组织已知构建姿势】第 5) 条删掉出问题的那一个包目录（如 node_modules/element-plus）。",
+            "依赖未装就先装（dotnet restore / npm install / cnpm install / pnpm install 等），再编译；每个端最多重试 2 次。"
+                + "**装依赖必须独占一条命令并等它正常退出**：不要接管道截断输出，也不要在它跑的时候并行做别的事——"
+                + "中途被杀会留下「目录在、文件不全」的半装包，比没装更坑。",
             "命令首词必须是白名单内的可执行文件：dotnet / git / node / npm / npx / pnpm / yarn / fnm / cnpm / python / pip。"
                 + "一次一条命令，可用 && 串联（每一段的首词同样受白名单约束）；不要用管道与重定向。"
         });
@@ -146,11 +151,18 @@ public static class StepPrompts
                            + "（Windows 下 fnm 直接 spawn npm 会报 program not found，必须写成 npm.cmd；"
                            + "不要用 fnm env | Invoke-Expression 这类管道 / 求值写法，会被守卫拒绝）。");
         builder.AppendLine("  3) 装依赖：fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com"
-                           + "（内网慢可换 cnpm 同源镜像；node_modules 若原本是 pnpm 装的，npm install 会补装成 npm 布局，属正常）。");
+                           + "（内网慢可换 cnpm 同源镜像；node_modules 若原本是 pnpm 装的，npm install 会补装成 npm 布局，属正常）。"
+                           + "**装依赖要独占一条命令跑完**：不要接管道截断输出（| Select-Object / | Select-String / | head），"
+                           + "否则子进程会因断管中途被杀、留下半装包；若这次安装被中断（超时 / 被杀），必须重跑同一命令直到正常退出。");
         builder.AppendLine("  4) 构建：fnm exec --using=16 -- npm.cmd run build:dev"
                            + "（**不是 npm run build**：本仓库的构建脚本叫 build:dev）。");
-        builder.AppendLine("  5) 若报 Failed to resolve entry for package \"X\"：说明该依赖自身的构建脚本被跳过、包入口没生成"
-                           + "（@vue-office/* 系列常见）——用 fnm exec --using=16 -- npm.cmd rebuild X 补跑后重试一次。");
+        builder.AppendLine("  5) 若报 Failed to resolve entry for package \"X\"：**先判定是不是「半装」**——包目录存在，但 package.json 里 "
+                           + "module / main / exports 指向的入口文件不存在（例：element-plus 缺 node_modules/element-plus/es/index.mjs）。"
+                           + "确认半装后的正确修法＝**删掉该包目录再装回来**（只补这一个包，秒级）：先在本端仓库目录执行 "
+                           + "node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\"，"
+                           + "再重跑上面的 npm.cmd install。**不要用 npm rebuild X**：它只重跑包自身的生命周期脚本，"
+                           + "对 element-plus 这类预构建包不会补回缺失文件；也**不要**因为 npm install 几秒就 exit 0 就认为已修好——"
+                           + "npm 只核对包目录是否存在，不校验文件完整性。多个包同时残缺时才考虑 npm.cmd ci（整树重建，可能超过 2 分钟）。");
         builder.AppendLine("- 后端（Service，.NET）：dotnet build <解决方案>.sln。");
         builder.AppendLine("- 其它端（移动端等）：按工程类型自行判断。");
         builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装全局工具链、也不要改仓库配置——"
@@ -165,7 +177,11 @@ public static class StepPrompts
         builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：装依赖用 npm / cnpm"
                            + "（本组织管理端仓库不要用 pnpm），构建优先用仓库里真实存在的开发态脚本"
                            + "（本组织管理端为 npm run build:dev），不要凭默认猜 npm run build。");
-        builder.AppendLine("4) 每个端得出「通过 / 失败」与一句话 detail；失败时附关键错误（错误码 / 文件名 / 行号，最多 3 条）。");
+        builder.AppendLine("4) **修了依赖就必须重跑构建验证**：本轮里凡动过 node_modules（装 / 重装 / 删包重装），"
+                           + "都要在修复后**再跑一次该端的构建命令**，以最后一次构建的真实输出定结论；不许拿修复前的报错收尾，"
+                           + "也不许只跑 npm install 就宣布修好（install 的 exit 0 不代表包完整）。");
+        builder.AppendLine("5) 每个端得出「通过 / 失败」与一句话 detail；失败时附关键错误（错误码 / 文件名 / 行号，最多 3 条），"
+                           + "并在 detail 里写清「哪种修法试过、为什么没修好」，不要给用户无效建议（如对预构建包用 npm rebuild）。");
         builder.AppendLine();
 
         builder.AppendLine("把下面的 JSON 写入结论文件（用 WriteFileAsync 或 Python 写出均可，UTF-8）：");

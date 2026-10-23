@@ -133,7 +133,11 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd run build:dev");
         StringAssert.Contains(prompt, "不是 npm run build");
         StringAssert.Contains(prompt, "Failed to resolve entry for package");
-        StringAssert.Contains(prompt, "npm.cmd rebuild X");
+
+        // v0.29：半装包只能删目录重装，rebuild 无效（上一轮真机失败的对策纠正）
+        StringAssert.Contains(prompt, "删掉该包目录再装回来");
+        StringAssert.Contains(prompt, "rmSync('node_modules/X'");
+        StringAssert.Contains(prompt, "不要用 npm rebuild X");
 
         // v0.28 兜底：环境缺件时如实上报、不自行装全局工具链、不改仓库配置
         StringAssert.Contains(prompt, "不要**自行安装全局工具链");
@@ -149,6 +153,35 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "pip");
         StringAssert.Contains(prompt, "fnm");
         StringAssert.Contains(prompt, "cnpm");
+    }
+
+    [TestMethod]
+    public void BuildCompilePrompt_半装包按删目录重装且必须重跑构建()
+    {
+        var targets = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+        };
+
+        var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
+
+        // 判定半装看入口文件是否缺失，而不是盲信 npm install 的 exit 0
+        StringAssert.Contains(prompt, "es/index.mjs");
+        StringAssert.Contains(prompt, "只核对包目录是否存在，不校验文件完整性");
+
+        // 修法：删单包目录后重装；整树重建只在多包残缺时用（可能超 2 分钟）
+        StringAssert.Contains(prompt, "rmSync('node_modules/X'");
+        StringAssert.Contains(prompt, "npm.cmd ci");
+
+        // 装依赖不能再被管道截断（上一轮 npm install 就是中途被杀，留下半装包）
+        StringAssert.Contains(prompt, "装依赖必须独占一条命令");
+        StringAssert.Contains(prompt, "| Select-Object / | Select-String / | head");
+
+        // 动过依赖必须重跑构建，不许拿修复前的报错收尾
+        StringAssert.Contains(prompt, "修了依赖就必须重跑构建验证");
+
+        // 重试次数从 1 放宽到 2（第二次必须含上面的半装修复动作）
+        StringAssert.Contains(prompt, "每个端最多重试 2 次");
     }
 
     [TestMethod]

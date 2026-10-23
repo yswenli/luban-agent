@@ -16,7 +16,8 @@
 1. 先看清每端仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml` / `pom.xml` …），
    再自行决定编译命令——**编译方式由你按工程类型判断**，插件不预设命令。
 2. 依赖未装就先装（`dotnet restore` / `npm install` / `cnpm install` / `pnpm install`），再编译；
-   **每个端最多重试 1 次**。
+   **每个端最多重试 2 次**。装依赖必须**独占一条命令并等它正常退出**：不要接管道截断输出、
+   不要与其它命令并行——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑。
 3. 逐端得出「通过 / 失败」与一句话结论，写进**结论文件**；回复正文只回一行
    `DONE` 或 `FAILED: <失败端与原因>`。
 
@@ -63,9 +64,21 @@
 ## 硬边界
 
 - **只编译、不改业务**（v0.28 放宽）：**允许修依赖树与环境**——装依赖、切换 Node 版本、
-  重跑依赖自身的构建脚本（如 `npm rebuild X`）、必要时重建 `node_modules`；
+  重建 `node_modules`（含删掉半装的单个包目录后重装）；
   但**禁止改业务源码与工程配置**（业务代码、`package.json`、`vite.config`、`.csproj` / `.sln` 等一律不改；
   锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。源码级编译错误如实报出，用户修完后再重跑本步。
+
+### 半装包（`Failed to resolve entry for package "X"`）的判定与修法
+
+- **判定**：包目录存在，但 `package.json` 的 `module` / `main` / `exports` 指向的入口文件不存在
+  （例：`node_modules/element-plus/es/index.mjs` 缺失）——这是安装被中途打断留下的半装包。
+- **修法**：在本端仓库目录执行
+  `node -e "require('fs').rmSync('node_modules/X',{recursive:true,force:true})"`，
+  再重跑 `npm.cmd install`（只补这一个包，秒级）。
+- **无效做法**：`npm rebuild X`（只重跑包自身生命周期脚本，预构建包不会补回缺失文件）；
+  也不要因 `npm install` 几秒 exit 0 就认为修好——npm 只核对包目录是否存在，不校验文件完整性。
+  多个包同时残缺时才考虑 `npm.cmd ci`（整树重建，可能超过 2 分钟）。
+- 动过依赖后**必须重跑构建**，以最后一次构建输出定结论。
 - 编译产物（`bin` / `obj` / `node_modules` / `dist`）留在原处，**不要删除、不要清理**。
 - 命令首词必须在白名单内：`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `fnm` / `cnpm` /
   `python` / `py` / `python3` / `pip` / `pip3`；
