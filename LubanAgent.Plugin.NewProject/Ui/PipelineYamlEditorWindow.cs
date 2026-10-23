@@ -14,12 +14,11 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using LubanAgent.Plugin.NewProject.Services;
 
 namespace LubanAgent.Plugin.NewProject.Ui;
 
 /// <summary>
-/// Step 7「编辑 YAML…」的独立编辑窗口：<b>只做编辑与最小校验</b>，不碰能力层、不调云效。
+/// Step 7「编辑 YAML…」的独立编辑窗口：<b>只做编辑与微调回传</b>，不碰能力层、不调云效。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,8 +26,8 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// 提交成功后实际原文落档案 <c>PipelineResults[].Yaml</c>，重开面板不回填（避免旧微调悄悄覆盖新档案配置）。
 /// </para>
 /// <para>
-/// <b>校验边界</b>：非空 / 无 Tab / 有顶层 <c>stages:</c> / <c>name:</c> 与模板名一致，全部由能力层的
-/// <see cref="PipelineYamlOverride.Validate"/> 给结论（面板不写业务规则）；其余语法错误交给云效原样报回。
+/// <b>不做 YAML 校验（C10′）</b>：面板只负责传递文本，合法性交给云效在创建时<b>原样报回</b>（如 <c>1209300</c>），
+/// 插件不写业务规则、不静默丢弃。
 /// </para>
 /// <para>纯代码构建 UI（无 XAML）：插件以独立 ALC 加载，避免 XAML 编译产物带来的额外加载面。</para>
 /// </remarks>
@@ -38,13 +37,9 @@ public sealed class PipelineYamlEditorWindow : Window
     private static readonly IBrush EditorBackground = new SolidColorBrush(Color.Parse("#11111B"));
     private static readonly IBrush PrimaryText = new SolidColorBrush(Color.Parse("#CDD6F4"));
     private static readonly IBrush MutedText = new SolidColorBrush(Color.Parse("#A6ADC8"));
-    private static readonly IBrush DangerBrush = new SolidColorBrush(Color.Parse("#F38BA8"));
 
     /// <summary>YAML 编辑框。</summary>
     private readonly TextBox _editor;
-
-    /// <summary>校验错误行（保存前由能力层校验函数填充）。</summary>
-    private readonly TextBlock _errorText;
 
     /// <summary>该端的模板渲染原文（「恢复模板」用；窗口打开后不再变化）。</summary>
     private readonly string _templateYaml;
@@ -72,14 +67,6 @@ public sealed class PipelineYamlEditorWindow : Window
         ShowInTaskbar = false;
         Background = PageBackground;
 
-        _errorText = new TextBlock
-        {
-            FontSize = 12,
-            Foreground = DangerBrush,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false
-        };
-
         _editor = new TextBox
         {
             Text = _templateYaml,
@@ -99,7 +86,7 @@ public sealed class PipelineYamlEditorWindow : Window
     }
 
     /// <summary>
-    /// 组装窗口内容：标题 / 提示 / 编辑区 / 校验错误 / 动作按钮。
+    /// 组装窗口内容：标题 / 提示 / 编辑区 / 动作按钮。
     /// </summary>
     /// <param name="endLabel">端标签。</param>
     /// <returns>根布局。</returns>
@@ -117,7 +104,7 @@ public sealed class PipelineYamlEditorWindow : Window
         var root = new Grid
         {
             Margin = new Thickness(16),
-            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto")
+            RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto")
         };
 
         var header = new TextBlock
@@ -145,8 +132,6 @@ public sealed class PipelineYamlEditorWindow : Window
 
         Grid.SetRow(_editor, 2);
 
-        Grid.SetRow(_errorText, 3);
-
         var actions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -155,31 +140,21 @@ public sealed class PipelineYamlEditorWindow : Window
             Margin = new Thickness(0, 10, 0, 0),
             Children = { restore, cancel, save }
         };
-        Grid.SetRow(actions, 4);
+        Grid.SetRow(actions, 3);
 
         root.Children.Add(header);
         root.Children.Add(hint);
         root.Children.Add(_editor);
-        root.Children.Add(_errorText);
         root.Children.Add(actions);
         return root;
     }
 
-    /// <summary>「保存微调」：先过能力层的最小校验，通过才带结果关窗。</summary>
+    /// <summary>「保存微调」：带编辑区原文关窗（不做校验，合法性交给云效创建时原样报回）。</summary>
     /// <param name="sender">事件源。</param>
     /// <param name="e">事件参数。</param>
     private void OnSaveClicked(object? sender, RoutedEventArgs e)
     {
-        var text = _editor.Text ?? string.Empty;
-        var invalid = PipelineYamlOverride.Validate(text, _pipelineName);
-        if (invalid is not null)
-        {
-            _errorText.Text = invalid;
-            _errorText.IsVisible = true;
-            return;
-        }
-
-        Close(text);
+        Close(_editor.Text ?? string.Empty);
     }
 
     /// <summary>「恢复模板」：把编辑区重置为本次打开时的模板原文（仍需再点保存才生效）。</summary>
@@ -188,8 +163,6 @@ public sealed class PipelineYamlEditorWindow : Window
     private void OnRestoreClicked(object? sender, RoutedEventArgs e)
     {
         _editor.Text = _templateYaml;
-        _errorText.Text = string.Empty;
-        _errorText.IsVisible = false;
         _editor.Focus();
     }
 

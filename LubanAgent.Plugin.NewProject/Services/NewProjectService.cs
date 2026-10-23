@@ -47,31 +47,23 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>当前进度（M4-P3）</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
 /// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、v0.28 起默认 develop + 提交 + 推送）已落地；
-/// Step 4 / 5 已落地为「助手亲自执行」；Step 7（v0.30：内嵌新版 YAML 模板渲染 + 创建 + 一键补齐部署阶段）见
-/// <see cref="CreatePipelinesAsync"/> / <see cref="AppendDeployStagesAsync"/>。
+/// Step 4 / 5 已落地为「助手亲自执行」；Step 7（v0.32：内嵌新版 YAML 模板渲染 + 创建前选定部署目标、创建即写部署段 + 覆盖更新）见
+/// <see cref="CreatePipelinesAsync"/> / <see cref="UpdatePipelinesAsync"/>。
 /// </para>
 /// </remarks>
 public sealed class NewProjectService : INewProjectService
 {
-    /// <summary>英文缩写命名规范（PRD §4.3：只能小写字母开头，后面可跟小写字母或数字）。</summary>
-    private static readonly Regex CodePattern = new("^[a-z][a-z0-9]*$", RegexOptions.Compiled);
+    /// <summary>英文缩写命名规范（PRD §4.3：<b>只允许小写字母 a-z</b>，不允许数字 / 大写 / 符号）。</summary>
+    private static readonly Regex CodePattern = new("^[a-z]+$", RegexOptions.Compiled);
 
     /// <summary>云效仓库名规范（字母 / 数字 / 下划线 / 中划线 / 点，且以字母或数字开头）。</summary>
     private static readonly Regex RepositoryNamePattern = new("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.Compiled);
 
     /// <summary>
-    /// 模板 pin 的实时解析顺序（PRD §6 #5）：配置 <c>templates[].branch</c> 留空时按此择优。
+    /// Step 3 执行续跑的最大轮数（§5.0 / §6.1.3）：<c>needsInput</c> 时把用户答复拼进下一轮同会话续跑；
+    /// 连续 <c>needsInput</c> 超过本上限即判失败，防止无限往返。
     /// </summary>
-    private static readonly string[] PreferredPins = { "develop", "master", "main" };
-
-    /// <summary>
-    /// 模板分支就绪等待上限（PRD §4.3 Step 3 竞态防护）：建库 API 返回<b>不等于</b>模板分支已同步完成，
-    /// 服务端的 <c>syncAllBranches</c> 是异步的，必须等 pin 分支真实出现再 <c>git clone -b</c>，否则必然失败。
-    /// </summary>
-    private static readonly TimeSpan BranchReadyTimeout = TimeSpan.FromSeconds(120);
-
-    /// <summary>模板分支就绪轮询间隔（避免高频打云效接口）。</summary>
-    private static readonly TimeSpan BranchReadyPollInterval = TimeSpan.FromSeconds(3);
+    private const int MaxRepositoryRounds = 3;
 
     private readonly List<OperationRecord> _operations = new();
     private readonly NewProjectStateStore _store = new();
@@ -79,6 +71,25 @@ public sealed class NewProjectService : INewProjectService
 
     private IPluginHost? _host;
     private NewProjectSettings _settings = new();
+
+    /// <summary>
+    /// 最近一次 Step 7「准备（只读）」的读数（v0.3）：供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。
+    /// </summary>
+    /// <remarks>随读随用、不落档案（§5.3）；<c>null</c>＝本次进程尚未跑过准备，面板应先调 <see cref="PreparePipelinesAsync"/>。</remarks>
+    private PipelinePrepareResult? _pipelinePrepareResult;
+
+    /// <summary>
+    /// 最近一次 Step 3「准备（只读）」结论文件路径（执行续跑的<b>事实来源</b>，§5.2）。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么记住路径而不是取最新一份</b>：准备与执行共用 <c>results/step3-*.json</c> 命名（设计 §4.3 第 78 行），
+    /// 执行成功后再回取「最新一份」拿到的会是<b>执行</b>结论；把执行结论当准备结论下发会跑偏事实来源。
+    /// 本字段跨调用有效；进程重启后为空，才回退到「取最新一份」（尽力而为）。
+    /// </remarks>
+    private string? _repositoryPrepareResultFile;
+
+    /// <summary>最近一次 Step 7「准备（只读）」结论文件路径；语义同 <see cref="_repositoryPrepareResultFile"/>。</summary>
+    private string? _pipelinePrepareResultFile;
 
     /// <inheritdoc />
     public ProjectSpec? Current { get; private set; }
@@ -192,7 +203,7 @@ public sealed class NewProjectService : INewProjectService
         if (trimmedCode.Length == 0)
             errors.Add("英文缩写：必填。");
         else if (!CodePattern.IsMatch(trimmedCode))
-            errors.Add("英文缩写：只能小写字母开头，后面可跟小写字母或数字（不能有空格、中文或符号）。");
+            errors.Add("英文缩写：只能由小写字母组成（不能有数字、大写字母、空格、中文或符号）。");
         else if (trimmedCode.Length > 20)
             errors.Add("英文缩写：请控制在 20 个字符以内。");
 
@@ -290,15 +301,16 @@ public sealed class NewProjectService : INewProjectService
             CurrentStep = WizardStep.BasicInfo
         };
 
-        // 模板对照 → 各端目标仓库（仓库名默认 {缩写}-Service/-Admin/-Mobile，Step 3 可改）
+        // 各端目标仓库（仓库名默认 {Code}-Service/-Admin/-Mobile，如 Csxmy-Service；本地目录同源，Step 3 可改）。
+        // 模板仓对照不再由插件配置提供：v0.33 起迁到 docs/org-reference.md，由助手在 Step 3 只读准备阶段按那里的
+        // 按端名称约定定位模板仓，回填进 Step 3 预检产物（见 RepositoryPrecheck.TemplateRepository）。
         foreach (var end in selected)
         {
-            var template = _settings.FindTemplate(end);
             spec.Repositories.Add(new EndRepository
             {
                 End = end,
-                TemplateRepository = template?.Repository ?? string.Empty,
-                TemplateBranch = template?.Branch ?? string.Empty,
+                TemplateRepository = string.Empty,
+                TemplateBranch = string.Empty,
                 RepositoryName = _settings.BuildRepositoryName(spec.Code, end),
                 Visibility = _settings.DefaultVisibility,
                 DefaultBranch = _settings.PushBranch,
@@ -306,14 +318,6 @@ public sealed class NewProjectService : INewProjectService
                     ? string.Empty
                     : Path.Combine(spec.LocalPath, _settings.BuildRepositoryName(spec.Code, end))
             });
-        }
-
-        // 参考流水线清单（Step 2 载入，Step 7 使用）
-        foreach (var end in selected)
-        {
-            var reference = _settings.PipelineReferences.FirstOrDefault(item => item.End == end);
-            if (!string.IsNullOrWhiteSpace(reference?.PipelineId))
-                spec.PipelineReferenceIds.Add(reference!.PipelineId);
         }
 
         lock (_gate)
@@ -463,6 +467,23 @@ public sealed class NewProjectService : INewProjectService
                 $"{mounted} 个技能已写入 {Path.Combine(workspace.RootPath, ".luban-agent", "skills")}",
                 StepStatus.Succeeded, watch.Elapsed);
 
+            // ── 6b. 知识正文：把插件包 docs/ 复制进项目工作区（§4.2；覆盖式，不删用户补充）────
+            // 宿主不会自动铺 docs（TryWriteSkillFile 只处理技能单文件），故由插件自铺；
+            // 目标目录与 StepPrompts.DocsDirectory 保持同一约定。
+            watch = BeginOperation(Step, "铺装知识正文", @"docs\ → .luban-agent\plugin-newproject\docs");
+            var docs = CopyPluginDocs(workspace.RootPath);
+            if (docs is null)
+            {
+                EndOperation(Step, "铺装知识正文",
+                    "插件包未附带 docs/（或为内置插件无独立目录）；本步跳过。", StepStatus.Skipped, watch.Elapsed);
+            }
+            else
+            {
+                EndOperation(Step, "铺装知识正文",
+                    $"{docs.Value.Count} 份知识正文已写入 {docs.Value.Target}（覆盖式，保留用户手工补充的文件）",
+                    StepStatus.Succeeded, watch.Elapsed);
+            }
+
             // ── 7. 云效 MCP（yunxiao）：会话构建时由宿主按启用中插件清单注入 ──────────────
             watch = BeginOperation(Step, "接通云效 MCP", "yunxiao（进程内客户端）");
             if (mcps.Count == 0)
@@ -565,11 +586,11 @@ public sealed class NewProjectService : INewProjectService
             if (!IsSupportedVisibility(entry.Visibility))
                 errors.Add($"{label}可见性：取值非法（只能是「组织内公开」或「私有」）。");
 
-            if (string.IsNullOrWhiteSpace(entry.TemplateRepository))
-                errors.Add($"{label}模板仓：未配置（插件配置 templates[] 缺少该端对照）。");
+            // 模板仓不再由插件配置校验：v0.33 起由助手在 Step 3 只读准备阶段按 docs/org-reference.md 的
+            // 按端名称约定定位并回填（未定位到即 Step 3 预检失败），Step 2 此处不做模板仓必填校验。
 
-            // pin 不再必填：留空＝Step 3 预检 / 执行时按 develop → master → main → 模板默认分支 实时解析
-            // （配置登记了值则必须真实存在，校验发生在预检里，因为需要联网查分支）。
+            // pin 不再必填：留空＝助手在 Step 3 预检 / 执行续跑时按 docs/org-reference.md 的
+            // develop → master → main → 模板默认分支 实时解析（模板库查分支需联网，校验发生在预检里）。
         }
 
         // 与 Step 1 的端选择对齐（档案里的端一个都不能漏）
@@ -624,9 +645,18 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>v0.3 口径（一次只读准备下发）</b>：插件<b>不再</b>自己拿 <c>CodeupClient</c> / PAT 去联网预检；
+    /// 改为把「只读准备」下发到当前项目会话，由助手按 <c>docs/step3-repositories.md</c> 用云效只读 MCP 拉事实，
+    /// 写进结论文件 <c>step3-*.json</c>；插件回读该结论并映射成确认界面读数。</para>
+    /// <para><b>薄校验</b>：只做不联网的前置校验（档案 / 建库计划 / 本地目录 / 组织 ID 非空）；任一不满足即
+    /// 不下发（避免让助手白跑一轮）。代码组名与父级 ID 都改由结论产物 <c>kind=group</c> 的
+    /// <see cref="GroupArtifactExtra"/> 映射，不再依赖本地配置模板。</para>
+    /// </remarks>
     public async Task<RepositoryPrecheck> PrecheckRepositoriesAsync(CancellationToken cancellationToken = default)
     {
         const WizardStep Step = WizardStep.Repositories;
+        const string Action = "Step 3 准备（只读）";
 
         var result = new RepositoryPrecheck();
         var spec = Current;
@@ -639,514 +669,506 @@ public sealed class NewProjectService : INewProjectService
         var plan = PlanRepositories(spec);
         result.OrganizationId = OrganizationHint;
         result.GroupName = BuildGroupName(spec);
-        result.GroupParentId = _settings.TryGetGroupParentId();
 
         if (plan.Count == 0)
             result.Errors.Add("建库计划为空：Step 1 至少要选择后端与管理端。");
 
-        var codeup = Resolve<CodeupClient>();
-        if (codeup is null)
-            result.Errors.Add("云效连接器不可用（宿主未注册 CodeupClient），无法预检 Step 3。");
-
         if (string.IsNullOrWhiteSpace(result.OrganizationId))
-            result.Errors.Add("未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新预检（PRD §4.9）。");
-
-        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
-            result.Errors.Add("未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重新预检（PRD §4.9）。");
+            result.Errors.Add("未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。");
 
         if (string.IsNullOrWhiteSpace(result.GroupName))
             result.Errors.Add("项目代码组名为空：请检查插件配置 groupNameFormat（默认 {CODE} 需能由项目缩写展开出非空名字）。");
 
-        // 前置不满足即不再联网（避免拿必失败的请求去打云效）
-        if (result.Errors.Count > 0 || codeup is null)
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
+            result.Errors.Add("档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。");
+
+        // 前置不满足即不下发（避免让助手白跑一轮）
+        if (result.Errors.Count > 0)
         {
-            Record(Step, "Step 3 预检", string.Join("；", result.Errors), StepStatus.Failed, TimeSpan.Zero);
+            Record(Step, Action, string.Join("；", result.Errors), StepStatus.Failed, TimeSpan.Zero);
             return result;
         }
 
-        var organizationId = result.OrganizationId!;
         using var permissionScope = EnterPermissionScope();
-        var watch = Stopwatch.StartNew();
+        var watch = BeginOperation(Step, Action,
+            $"{plan.Count} 端 · 组织 {result.OrganizationId} · 代码组 {result.GroupName}");
 
-        // ── ① 目标代码组（只查不建）──────────────────────────────────────────────
         try
         {
-            var group = await FindGroupByNameAsync(codeup, result.GroupName, result.GroupParentId, organizationId, cancellationToken);
-            result.GroupExists = group is not null;
-            result.GroupId = group?.Id;
-            result.GroupWebUrl = group?.WebUrl;
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 3);
+            StepResultFile.EnsureDirectory(resultFile);
+
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            var startedAt = DateTime.UtcNow;
+            var outcome = await CreateBridge()
+                .RunAsync(spec, StepPrompts.BuildRepositoryPreparePrompt(spec, plan, resultFile), resultFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
+
+            var (report, reportPath, takenAt, readError) = ReadFreshReport(spec.LocalPath!, 3, startedAt);
+            if (report is null && !string.IsNullOrWhiteSpace(readError))
+                result.Errors.Add(readError!);
+
+            // 记住本次准备结论路径：执行续跑据它下发「事实来源」（进程重启后为空才回退取最新一份）
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                _repositoryPrepareResultFile = reportPath;
+
+            var mapped = report is null
+                ? new RepositoryPrecheck
+                {
+                    OrganizationId = result.OrganizationId,
+                    GroupName = result.GroupName,
+                    TakenAt = takenAt
+                }
+                : ArtifactViewModelMapper.ToRepositoryPrecheck(report, takenAt, spec.Ends);
+
+            result.OrganizationId = mapped.OrganizationId;
+            result.GroupName = mapped.GroupName;
+            result.GroupParentId = mapped.GroupParentId;
+            result.GroupId = mapped.GroupId;
+            result.GroupExists = mapped.GroupExists;
+            result.GroupWebUrl = mapped.GroupWebUrl;
+            result.Ends.Clear();
+            result.Ends.AddRange(mapped.Ends);
+            result.Errors.AddRange(mapped.Errors.Where(one => !result.Errors.Contains(one)));
+            result.Warnings.AddRange(mapped.Warnings);
+
+            var (evaluatedOk, evaluatedStatus, message) = StepReportEvaluator.EvaluateRepositorySetup(
+                report, spec.Ends, outcome.Errors, localIssues: null, requireCloned: false);
+
+            // 判定入口说不过（status=failed / ok=false）时，即使映射没抓到具体缺口也不能算「准备就绪」。
+            // needsInput 属正常形态（用户确认后在执行续跑里处理交互项），不在此列。
+            if (!evaluatedOk && evaluatedStatus != StepReportStatus.NeedsInput
+                && !string.IsNullOrWhiteSpace(message) && !result.Errors.Contains(message))
+            {
+                result.Errors.Add(message);
+            }
+
+            var lines = DescribeTurn(outcome, resultFile);
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                lines.Add($"结论文件解析：{reportPath}");
+            lines.Add($"结论：{(result.IsReady ? "准备就绪，可在面板确认后执行" : result.Errors.FirstOrDefault() ?? message)}");
+
+            EndOperation(Step, Action, string.Join("\n", lines),
+                result.IsReady ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 落库必须在 EndOperation 之后：终态快照（StepStates）按内存操作记录回放生成，且只回放终态记录。
+            SaveSpec(spec);
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            EndOperation(Step, Action, "已取消（准备阶段只读，未创建任何云效资源，可直接重跑本步）。",
+                StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            result.Errors.Add("第 3 步准备（只读）已取消。");
+            return result;
         }
         catch (Exception ex)
         {
-            result.Errors.Add($"查询目标代码组失败：{result.GroupName} —— {ex.Message}");
+            _host?.LogError("[newproject] Step 3 准备（只读）失败", ex);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            result.Errors.Add($"第 3 步准备失败：{ex.Message}");
+            return result;
         }
+    }
 
-        // ── ② 逐端：模板库定位 + pin 解析 + 同名仓库检查 + 落地目录──────────────────
-        foreach (var repository in plan)
+    /// <summary>
+    /// 回读「本次下发之后」产出的结论文件（时效口径，§6.1.3）。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="HostAssistantBridge.RunAsync"/> 只按传入路径回读、<b>不做</b>修改时间过滤；助手写结论文件用的是
+    /// 另一条路径，故这里按「文件修改时间 ≥ 下发时刻」判定本次新产出，取最新一份解析。旧结论一律不算数，
+    /// 避免上一次尝试的读数被误当本次结果。
+    /// </remarks>
+    /// <param name="workspaceRoot">项目工作区根。</param>
+    /// <param name="step">步骤号。</param>
+    /// <param name="startedAtUtc">本次下发时刻（UTC）。</param>
+    /// <returns>已解析结论 + 路径 + 修改时间 + 读取 / 解析错误。</returns>
+    private static (StepReport? Report, string? Path, DateTimeOffset TakenAt, string? Error) ReadFreshReport(
+        string workspaceRoot,
+        int step,
+        DateTime startedAtUtc)
+    {
+        var fresh = StepResultFile.List(workspaceRoot, step)
+            .Select(path => new FileInfo(path))
+            .Where(info => info.LastWriteTimeUtc >= startedAtUtc)
+            .OrderByDescending(info => info.LastWriteTimeUtc)
+            .ThenByDescending(info => info.FullName, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        if (fresh is null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var end = new EndPrecheck
-            {
-                End = repository.End,
-                TemplateRepository = repository.TemplateRepository,
-                RepositoryName = repository.RepositoryName,
-                Visibility = NormalizeVisibility(repository.Visibility),
-                LocalPath = ResolveRepositoryLocalPath(spec, repository.End, repository.RepositoryName)
-            };
-            result.Ends.Add(end);
-
-            try
-            {
-                var located = await LocateTemplateAsync(codeup, repository, organizationId, cancellationToken);
-                if (located.Template is null)
-                {
-                    end.Error = located.Error ?? $"定位不到模板仓「{repository.TemplateRepository}」。";
-                    continue;
-                }
-
-                end.TemplateProjectId = located.Template.ProjectId;
-                end.TemplatePath = located.Template.Path;
-                end.TemplateRepository = string.IsNullOrWhiteSpace(located.Template.Name)
-                    ? repository.TemplateRepository
-                    : located.Template.Name!;
-
-                var pin = await ResolvePinAsync(codeup, located.Template.ProjectId, repository.End, organizationId, cancellationToken);
-                end.TemplateBranches = pin.Branches;
-                end.ResolvedBranch = pin.Branch;
-                end.ResolvedBranchSource = pin.Source;
-                if (string.IsNullOrWhiteSpace(pin.Branch))
-                {
-                    end.Error = $"模板 pin 解析失败：{pin.Error}";
-                    continue;
-                }
-
-                var existing = await FindRepositoryByNameAsync(codeup, repository.RepositoryName, organizationId, cancellationToken);
-                end.RepositoryExists = existing is not null;
-                end.RepositoryWebUrl = string.IsNullOrWhiteSpace(existing?.HttpUrlToRepo)
-                    ? null
-                    : BuildWebUrl(existing!.HttpUrlToRepo!);
-
-                if (end.LocalPath.Length > 0 && Directory.Exists(end.LocalPath)
-                    && Directory.EnumerateFileSystemEntries(end.LocalPath).Any())
-                {
-                    end.LocalPathOccupied = true;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                end.Error = ex.Message;
-            }
+            return (null, null, DateTimeOffset.Now,
+                $"本次下发后未见新的结论文件（step{step}-*.json）：助手未产出结论。");
         }
 
-        foreach (var end in result.Ends.Where(item => item.LocalPathOccupied))
+        var takenAt = new DateTimeOffset(fresh.LastWriteTimeUtc);
+
+        string content;
+        try
         {
-            result.Warnings.Add($"{EndLabel(end.End)}本地目录已存在且非空（{end.LocalPath}）：执行时会请你"
-                                + "「复用已克隆 / 清空后重新克隆 / 中止」三选一。");
+            content = File.ReadAllText(fresh.FullName);
+        }
+        catch (Exception ex)
+        {
+            return (null, fresh.FullName, takenAt, $"结论文件不可读（{fresh.FullName}）：{ex.Message}");
         }
 
-        watch.Stop();
-        var summary = result.IsReady
-            ? $"Step 3 预检通过：代码组 {result.GroupName}（{(result.GroupExists ? "已存在，将复用" : "不存在，将新建")}）· "
-              + $"{result.Ends.Count} 端 · 耗时 {watch.Elapsed.TotalSeconds:F1}s"
-            : "Step 3 预检未通过：" + string.Join("；", result.Errors.Concat(result.Ends
-                .Where(end => !end.IsReady)
-                .Select(end => $"{EndLabel(end.End)} {end.Error}")));
+        if (!StepReportParser.TryParse(content, out var report, out var parseError))
+            return (null, fresh.FullName, takenAt, $"结论文件不可解析（{fresh.FullName}）：{parseError}");
 
-        Record(Step, "Step 3 预检", summary, result.IsReady ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
-
-        return result;
+        return (report, fresh.FullName, takenAt, null);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>执行形态（路线 ② · v0.3）</b>：Step 3 的「准备（只读）」由 <see cref="PrecheckRepositoriesAsync"/> 产出结论文件；
+    /// 本方法是用户确认后的<b>执行续跑</b>——把确认后的建库计划 + 准备结论文件路径下发，助手在<b>同一会话</b>里
+    /// 建组 / 建库 / 克隆 / 替换占位符，插件再回读 <c>artifacts[]</c> 落账 + 本地复核（§5.2 / §6.1.4）。</para>
+    /// <para><b>needsInput 往返（§6.1.3）</b>：目录非空等助手无法自行判定的情形，助手写 <c>status=needsInput</c> +
+    /// <c>inputs[]</c>；插件就 <c>id=clone-conflict</c> 征询用户三选一，把答复拼进下一轮执行续跑（最多 <see cref="MaxRepositoryRounds"/> 轮）。
+    /// 「清空后重克隆」的目录删除由<b>助手</b>执行（C5′），插件不再介入。</para>
+    /// <para><b>重跑联动（§6.6 / C7′）</b>：通过后作废上一轮 Step 5 编译结论与 Step 7 流水线结论——本地代码与仓库地址都可能已变，
+    /// 旧结论会误放行 / 误指向。</para>
+    /// </remarks>
     public async Task<StepResult> CreateRepositoriesAsync(CancellationToken cancellationToken = default)
     {
         const WizardStep Step = WizardStep.Repositories;
+        const string Action = "Step 3 执行（建组建库并克隆）";
 
         var spec = Current;
         if (spec is null)
         {
-            Record(Step, "按模板建库并克隆", "尚未建立项目档案，请先完成第 1 步。", StepStatus.Failed, TimeSpan.Zero);
+            Record(Step, Action, "尚未建立项目档案，请先完成第 1 步。", StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
 
         using var permissionScope = EnterPermissionScope();
 
-        // ── 前置校验：连接器 / 组织 ID / PAT / 建库计划 + pin（任一缺失即给可操作引导）───────
-        var codeup = Resolve<CodeupClient>();
-        if (codeup is null)
-        {
-            Record(Step, "按模板建库并克隆", "云效连接器不可用（宿主未注册 CodeupClient）。", StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, "云效连接器不可用，无法执行 Step 3。");
-        }
-
-        var organizationId = OrganizationHint;
-        if (string.IsNullOrWhiteSpace(organizationId))
-        {
-            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写组织 ID 后重跑本步（PRD §4.9）。";
-            Record(Step, "按模板建库并克隆", Tip, StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, Tip);
-        }
-
-        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
-        {
-            const string Tip = "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重跑本步（PRD §4.9）。";
-            Record(Step, "按模板建库并克隆", Tip, StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, Tip);
-        }
-
-        var planValidation = await ValidateRepositoryPlanAsync(spec.Repositories, cancellationToken);
-        if (!planValidation.IsValid)
-        {
-            var tip = "建库计划校验未通过：" + string.Join("；", planValidation.Errors);
-            Record(Step, "按模板建库并克隆", tip, StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, tip);
-        }
-
-        spec.OrganizationId = organizationId;
-        SaveSpec(spec);
-
         var plan = PlanRepositories(spec);
-        var total = Stopwatch.StartNew();
-        var artifacts = new List<RemoteArtifact>();
+        if (plan.Count == 0)
+        {
+            const string Tip = "建库计划为空：Step 1 至少要选择后端与管理端。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
+        {
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        // 执行续跑以「准备（只读）」结论为事实来源（§5.2）：优先用 PrecheckRepositoriesAsync 记下的那一份；
+        // 进程重启导致字段为空时，才回退取最新一份 step3-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
+        var prepareResultFile = !string.IsNullOrWhiteSpace(_repositoryPrepareResultFile)
+                                && File.Exists(_repositoryPrepareResultFile)
+            ? _repositoryPrepareResultFile
+            : StepResultFile.FindLatest(spec.LocalPath!, 3);
+        if (string.IsNullOrWhiteSpace(prepareResultFile) || !File.Exists(prepareResultFile))
+        {
+            const string Tip = "缺少 Step 3 准备结论文件（step3-*.json）：请先在面板执行「准备（只读）」，确认后再执行本步。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return StepResult.Fail(Step, Tip);
+        }
+
+        var watch = BeginOperation(Step, Action,
+            $"{plan.Count} 端 · 准备结论 {Path.GetFileName(prepareResultFile)}");
 
         try
         {
-            // ── 0. 目标代码组：先查后建（PRD §4.3 Step 3；组名＝项目缩写经配置格式展开）────────
-            var groupName = BuildGroupName(spec);
-            var groupWatch = BeginOperation(Step, "准备项目代码组", $"{groupName} · 组织 {organizationId}");
+            StepReport? report = null;
+            string? reportPath = null;
+            string? lastResultFile = null;
+            string? readError = null;
+            string? failReason = null;
+            var takenAt = DateTimeOffset.Now;
+            var resolvedInputs = new List<string>();
+            HostAssistantBridge.TurnOutcome? lastOutcome = null;
+            var rounds = 0;
 
-            YunxiaoNamespace group;
-            try
+            // 一次只读准备下发 + 用户确认后同会话执行续跑：needsInput 时把答复拼进下一轮（§6.1.3）
+            while (rounds < MaxRepositoryRounds)
             {
-                group = await EnsureGroupAsync(codeup, groupName, organizationId, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                var reason = $"准备项目代码组失败：{groupName} —— {ex.Message}";
-                EndOperation(Step, "准备项目代码组", reason, StepStatus.Failed, groupWatch.Elapsed);
-                SaveSpec(spec);
-                return StepResult.Fail(Step, reason);
-            }
-
-            var groupArtifact = AddGroupArtifact(spec, group);
-            if (groupArtifact is not null)
-                artifacts.Add(groupArtifact);
-
-            EndOperation(Step, "准备项目代码组",
-                $"代码组 {group.PathWithNamespace ?? group.Name ?? groupName}（id {group.Id}）· {group.WebUrl}",
-                StepStatus.Succeeded, groupWatch.Elapsed);
-            SaveSpec(spec);
-
-            foreach (var repository in plan)
-            {
+                rounds++;
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var label = EndLabel(repository.End);
+                var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 3);
+                StepResultFile.EnsureDirectory(resultFile);
+                lastResultFile = resultFile;
 
-                // 本端即将被重新处理：先把上一轮的「已就绪」标记置回未就绪，
-                // 免得本轮失败后档案仍留着旧绿灯（RC4：不给假绿，Step 6 也据此拒推）。
-                if (repository.Cloned)
+                // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+                var startedAt = DateTime.UtcNow;
+                var outcome = await CreateBridge()
+                    .RunAsync(spec,
+                        StepPrompts.BuildRepositoryExecutePrompt(spec, plan, prepareResultFile!, resultFile, resolvedInputs),
+                        resultFile, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                    spec.SessionId = outcome.SessionId;
+
+                lastOutcome = outcome;
+                (report, reportPath, takenAt, readError) = ReadFreshReport(spec.LocalPath!, 3, startedAt);
+
+                var status = report is null ? StepReportStatus.Failed : StepReportEvaluator.ResolveStatus(report);
+                if (status != StepReportStatus.NeedsInput)
+                    break;
+
+                // needsInput：只认「克隆冲突三选一」这一项（§6.3）
+                var input = report!.Inputs.FirstOrDefault(one =>
+                    string.Equals(one.Id?.Trim(), "clone-conflict", StringComparison.OrdinalIgnoreCase));
+                if (input is null)
                 {
-                    repository.Cloned = false;
-                    SaveSpec(spec);
+                    failReason = "助手请求用户补充输入，但未给出可识别的交互项（inputs[] 缺少 id=clone-conflict）："
+                                 + "请在面板重跑本步。";
+                    break;
                 }
 
-                // ── 1. 模板库定位 + pin 解析（PRD §6 #5：不跟随升级；定位 / 解析不到即阻断）────
-                var templateWatch = BeginOperation(Step, $"定位模板仓与 pin（{label}）", repository.TemplateRepository);
-
-                var located = await LocateTemplateAsync(codeup, repository, organizationId, cancellationToken);
-                if (located.Template is null)
-                {
-                    var reason = located.Error ?? $"定位不到模板仓「{repository.TemplateRepository}」。";
-                    EndOperation(Step, $"定位模板仓与 pin（{label}）", reason, StepStatus.Failed, templateWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                var template = located.Template;
-                var pin = await ResolvePinAsync(codeup, template.ProjectId, repository.End, organizationId, cancellationToken);
-                if (string.IsNullOrWhiteSpace(pin.Branch))
-                {
-                    var reason = $"{label}模板 pin 解析失败：{pin.Error}";
-                    EndOperation(Step, $"定位模板仓与 pin（{label}）", reason, StepStatus.Failed, templateWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                // 模板库命中项即为准（配置里的名字可能已被改名）：把实际使用的参数写回档案
-                repository.TemplateRepository = string.IsNullOrWhiteSpace(template.Name)
-                    ? repository.TemplateRepository
-                    : template.Name!;
-                repository.TemplateBranch = pin.Branch!;
-
-                EndOperation(Step, $"定位模板仓与 pin（{label}）",
-                    $"模板库命中 {repository.TemplateRepository}（id {template.ProjectId} · {template.Path}）"
-                    + $"· pin {repository.TemplateBranch}（{pin.Source}）",
-                    StepStatus.Succeeded, templateWatch.Elapsed);
-
-                // ── 2. 目标仓库：同名复用（幂等①）or 以模板创建（落在项目代码组下）─────────────
-                var repoWatch = BeginOperation(Step, $"准备仓库（{label}）", repository.RepositoryName);
-                var existing = await FindRepositoryByNameAsync(codeup, repository.RepositoryName, organizationId, cancellationToken);
-                YunxiaoRepository? remote;
-                var createdNow = false;   // 本步是否新建了远端仓库（仅用于「等待分支就绪」的操作文案）
-
-                if (existing is not null)
-                {
-                    remote = existing;
-                    EndOperation(Step, $"准备仓库（{label}）",
-                        $"云效已存在同名仓库，跳过创建直接复用（重跑幂等）：{repository.RepositoryName}（id {existing.Id}）",
-                        StepStatus.Succeeded, repoWatch.Elapsed);
-                }
-                else
-                {
-                    var createWatch = BeginOperation(Step, $"创建仓库（{label}）",
-                        $"{repository.TemplateRepository} → {repository.RepositoryName} · {VisibilityLabel(repository.Visibility)}"
-                        + $" · 代码组 {group.PathWithNamespace ?? group.Name ?? groupName}");
-
-                    remote = await codeup.CreateRepositoryAsync(
-                        new YunxiaoCreateRepositoryRequest
-                        {
-                            Name = repository.RepositoryName,
-                            Path = repository.RepositoryName,
-                            Visibility = repository.Visibility,
-                            NamespaceId = group.Id,
-                            Description = $"{spec.Name} · {label}（由「新建项目」插件按模板 {repository.TemplateRepository} 创建）",
-                            TemplateProject = new YunxiaoTemplateProject
-                            {
-                                TemplateProjectId = template.ProjectId,
-                                TemplateType = 1,
-                                SyncAllBranches = true
-                            }
-                        },
-                        organizationId,
-                        cancellationToken);
-
-                    if (remote?.Id is null)
-                    {
-                        var reason = $"{label}建库失败：云效未返回新仓库 id（请检查代码组 "
-                                     + $"{group.PathWithNamespace ?? group.Name ?? groupName} 的写权限、可见性与仓库名是否被占用）。";
-                        EndOperation(Step, $"创建仓库（{label}）", reason, StepStatus.Failed, createWatch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    EndOperation(Step, $"创建仓库（{label}）",
-                        $"已创建 {repository.RepositoryName}（id {remote!.Id}）· 代码组 {group.PathWithNamespace ?? group.Name ?? groupName}",
-                        StepStatus.Succeeded, createWatch.Elapsed);
-                    createdNow = true;
-                    EndOperation(Step, $"准备仓库（{label}）", "创建完成。", StepStatus.Succeeded, repoWatch.Elapsed);
-                }
-
-                // ── 3. 补查 HTTPS 克隆地址（创建 / 列表返回均不含，PRD v0.14 订正）──────────
-                var urlWatch = BeginOperation(Step, $"查询仓库地址（{label}）", "云效创建返回不含克隆地址，必须补查");
-                var remoteRepoId = remote!.Id!.Value;
-                var repositoryId = remoteRepoId.ToString(CultureInfo.InvariantCulture);
-                var detail = await codeup.GetRepositoryAsync(repositoryId, organizationId, cancellationToken);
-                var cloneUrl = detail?.HttpUrlToRepo;
-                if (string.IsNullOrWhiteSpace(cloneUrl))
-                {
-                    var reason = $"云效未返回仓库 HTTPS 克隆地址（{label} {repository.RepositoryName}）。";
-                    EndOperation(Step, $"查询仓库地址（{label}）", reason, StepStatus.Failed, urlWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                repository.ExternalId = repositoryId;
-                repository.CloneUrl = cloneUrl!;
-                repository.WebUrl = BuildWebUrl(cloneUrl!);
-                repository.DefaultBranch = string.IsNullOrWhiteSpace(detail?.DefaultBranch)
-                    ? _settings.PushBranch
-                    : detail!.DefaultBranch!;
-                repository.LocalPath = ResolveRepositoryLocalPath(spec, repository.End, repository.RepositoryName);
-                EndOperation(Step, $"查询仓库地址（{label}）", cloneUrl!, StepStatus.Succeeded, urlWatch.Elapsed);
-
-                // ── 4. 本地目录非空 → 三选一（幂等②，PRD §4.3 Step 3）──────────────────────
-                var reuseLocal = false;
-                if (Directory.Exists(repository.LocalPath) && Directory.EnumerateFileSystemEntries(repository.LocalPath).Any())
-                {
-                    var conflictWatch = BeginOperation(Step, $"处理已存在的本地目录（{label}）", repository.LocalPath);
-                    var choice = await AskCloneConflictAsync(repository, cancellationToken);
-                    if (choice is null)
-                    {
-                        var reason = $"目标目录已存在且非空：{repository.LocalPath}。"
-                                     + "请在向导面板中选择「复用已克隆 / 清空后重克隆 / 中止」后重跑本步。";
-                        EndOperation(Step, $"处理已存在的本地目录（{label}）", reason, StepStatus.Failed, conflictWatch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    if (choice == CloneConflictChoice.Abort)
-                    {
-                        // 远端仓库已创建，属孤儿产物：登记后中止，绝不自动删除（PRD §4.7）
-                        AddArtifact(spec, repository, RemoteArtifactKind.Repository);
-                        SaveSpec(spec);
-
-                        var reason = $"用户选择「中止」：{label} 远端仓库 {repository.RepositoryName} 保留（孤儿清单），本地目录未改动。";
-                        EndOperation(Step, $"处理已存在的本地目录（{label}）", reason, StepStatus.Failed, conflictWatch.Elapsed);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    if (choice == CloneConflictChoice.Reclone)
-                    {
-                        // 删除必须走 DirectoryCleaner：git 会把 pack 文件标成只读，裸 Directory.Delete 必失败，
-                        // 且会在抛错前把目录删成「只剩只读文件」的残缺态，让三选一两条路同时失效（RC5）
-                        try
-                        {
-                            DirectoryCleaner.DeleteForce(repository.LocalPath);
-                        }
-                        catch (IOException ex)
-                        {
-                            var reason = $"清空本地目录失败，本步中止：{ex.Message}";
-                            EndOperation(Step, $"处理已存在的本地目录（{label}）", reason, StepStatus.Failed, conflictWatch.Elapsed);
-                            SaveSpec(spec);
-                            return StepResult.Fail(Step, reason);
-                        }
-
-                        EndOperation(Step, $"处理已存在的本地目录（{label}）",
-                            $"已清空 {repository.LocalPath}（用户选择「清空后重克隆」）", StepStatus.Succeeded, conflictWatch.Elapsed);
-                    }
-                    else
-                    {
-                        // 复用前健康校验（RC4）：坏克隆（HEAD = ref: refs/heads/.invalid）不得被当成「已克隆」盖章通过
-                        var verifyWatch = BeginOperation(Step, $"校验本地目录（{label}）",
-                            $"{repository.LocalPath} · 要求 HEAD 可解析且存在分支 {repository.TemplateBranch}");
-
-                        // 本机 git 出口门禁（PRD §3.7）已内置于 RunGitAsync，无需在此重复声明
-                        var runner = Resolve<ProcessRunner>();
-                        var verifyError = runner is null
-                            ? "宿主未注册 ProcessRunner，无法校验本地目录的 Git 状态。"
-                            : await VerifyWorktreeAsync(runner, repository.LocalPath, repository.TemplateBranch, cancellationToken);
-
-                        if (verifyError is not null)
-                        {
-                            var reason = $"不能「复用已克隆」：{verifyError}。"
-                                         + "该目录不是可用的 Git 工作树（常见于上一次克隆中途失败留下的残骸——"
-                                         + "git 失败时会写入 .git/HEAD = ref: refs/heads/.invalid）；"
-                                         + "请在向导面板重跑本步并选择「清空后重克隆」，或手动删除该目录后重跑。";
-                            EndOperation(Step, $"校验本地目录（{label}）", reason, StepStatus.Failed, verifyWatch.Elapsed);
-                            SaveSpec(spec);
-                            return StepResult.Fail(Step, reason);
-                        }
-
-                        EndOperation(Step, $"校验本地目录（{label}）",
-                            "校验通过：HEAD 可解析且 pin 分支存在。", StepStatus.Succeeded, verifyWatch.Elapsed);
-
-                        reuseLocal = true;
-                        EndOperation(Step, $"处理已存在的本地目录（{label}）",
-                            $"复用已克隆目录 {repository.LocalPath}（用户选择「复用已克隆」，本端跳过克隆）",
-                            StepStatus.Succeeded, conflictWatch.Elapsed);
-                    }
-                }
-
-                // ── 5. 克隆（按模板 pin 版本，PRD §6 #17：git clone 必须带 -b）────────────
-                if (reuseLocal)
-                {
-                    Record(Step, $"克隆仓库（{label}）", "复用已克隆目录，跳过克隆。", StepStatus.Skipped, TimeSpan.Zero);
-                }
-                else
-                {
-                    // ── 5a. 先等 pin 分支真实就绪（RC1）：建库 API 返回 ≠ 模板分支已同步 ────────
-                    var readyWatch = BeginOperation(Step, $"等待模板分支就绪（{label}）",
-                        $"pin {repository.TemplateBranch} · 模板同步在服务端异步进行"
-                        + (createdNow ? "（本步新建仓库）" : "（复用既有仓库）"));
-
-                    var ready = await WaitForBranchReadyAsync(
-                        codeup, remoteRepoId, repository.TemplateBranch, organizationId, cancellationToken);
-                    if (!ready)
-                    {
-                        var reason = $"{label}模板分支未就绪：等待 {BranchReadyTimeout.TotalSeconds:F0}s 后，"
-                                     + $"{repository.RepositoryName}（id {remoteRepoId}）仍无分支 {repository.TemplateBranch}。"
-                                     + "远端仓库已保留，可稍后重跑本步（同名复用，不会重复建库）。";
-                        EndOperation(Step, $"等待模板分支就绪（{label}）", reason, StepStatus.Failed, readyWatch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    EndOperation(Step, $"等待模板分支就绪（{label}）",
-                        $"pin {repository.TemplateBranch} 已就绪（{readyWatch.Elapsed.TotalSeconds:F1}s）",
-                        StepStatus.Succeeded, readyWatch.Elapsed);
-
-                    // ── 5b. 克隆（失败时 git 会留下残骸，按「是否本步新建」决定是否清理，RC3）──────
-                    var cloneWatch = BeginOperation(Step, $"克隆仓库（{label}）", $"git clone -b {repository.TemplateBranch} {cloneUrl}");
-
-                    var parent = Path.GetDirectoryName(repository.LocalPath);
-                    if (!string.IsNullOrEmpty(parent))
-                        Directory.CreateDirectory(parent);
-
-                    // 只有本步新建的目录才允许在失败时清理；原本就存在的目录交由三选一处置，不越权删除
-                    var dirPreExisted = Directory.Exists(repository.LocalPath);
-
-                    var clone = await codeup.CloneToLocalAsync(
-                        cloneUrl!, repository.LocalPath, repository.TemplateBranch, cancellationToken);
-                    if (!clone.Success)
-                    {
-                        var cleaned = TryCleanPartialClone(repository.LocalPath, dirPreExisted);
-                        var reason = $"克隆失败：{label} {cloneUrl}（-b {repository.TemplateBranch}）—— {clone.FailureSummary()}。"
-                                     + (cleaned ? "已清理本次克隆留下的残留目录。" : string.Empty)
-                                     + "远端仓库已保留，可稍后重跑本步（同名复用，不会重复建库）。";
-                        EndOperation(Step, $"克隆仓库（{label}）", reason, StepStatus.Failed, cloneWatch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    EndOperation(Step, $"克隆仓库（{label}）", $"已克隆到 {repository.LocalPath}", StepStatus.Succeeded, cloneWatch.Elapsed);
-                }
-
-                // ── 6. 占位符替换：命名空间 / 项目名 / 缩写（PRD §4.3 Step 3）───────────────
-                var replaceWatch = BeginOperation(Step, $"替换占位符（{label}）", "命名空间 / 项目名 / 缩写（配置驱动，区分大小写）");
-                var replaced = PlaceholderReplacer.Apply(repository.LocalPath, _settings.BuildReplacements(spec.Code, spec.Name));
-                EndOperation(Step, $"替换占位符（{label}）",
-                    $"改写 {replaced.FilesChanged} 个文件 · 重命名 {replaced.EntriesRenamed} 项 · 跳过 {replaced.FilesSkipped} 项",
-                    StepStatus.Succeeded, replaceWatch.Elapsed);
-
-                // ── 7. 落库：仓库信息 + 远端产物（每条即时持久化，中途失败也不丢账）───────────
-                // Cloned 语义＝「本地目录已就绪」：真克隆成功，或「复用已克隆」经健康校验通过
-                // （两条路径的失败分支均已提前 return，故走到这里必然可用）。
-                repository.Cloned = true;
-                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Repository);
-                if (artifact is not null)
-                    artifacts.Add(artifact);
-
-                SaveSpec(spec);
+                failReason = await ResolveCloneConflictsAsync(plan, input, resolvedInputs, cancellationToken);
+                if (failReason is not null)
+                    break;
             }
 
-            // 本步重跑成功＝本地代码可能已随模板 / pin / 占位符替换而变：作废上一轮编译结论。
-            // 不作废就会出现「改完代码不重编也能推」——闸门按档案事实判定，会误放行。
-            InvalidateBuildConclusion(spec);
+            if (failReason is null && report is null)
+            {
+                failReason = string.IsNullOrWhiteSpace(readError)
+                    ? "助手未产出可解析的结论文件（step3-*.json）。"
+                    : readError;
+            }
 
-            // 同理作废上一轮流水线结论：流水线 YAML 里写死了代码源地址与分支，仓库改名 / 重建后旧结论是误导。
-            // 只清结论，不删云效上的流水线本体（远端产物一律不自动删除，PRD §4.5）。
-            InvalidatePipelineConclusion(spec);
+            if (failReason is null && rounds >= MaxRepositoryRounds
+                && StepReportEvaluator.ResolveStatus(report!) == StepReportStatus.NeedsInput)
+            {
+                failReason = $"连续 {MaxRepositoryRounds} 轮仍停留在「需要用户补充输入」："
+                             + "请确认交互项后重跑本步。";
+            }
 
-            spec.AdvanceTo(WizardStep.Database);
+            var ok = false;
+            var message = failReason ?? string.Empty;
+            IReadOnlyList<string> localIssues = Array.Empty<string>();
+
+            if (failReason is null)
+            {
+                // §6.1.4：对结论自报的产物做插件侧可独立核对项（目录 / .git / refs / 占位符残余）
+                localIssues = StepLocalVerifier.VerifyRepositories(report!, spec.Ends);
+                (ok, _, message) = StepReportEvaluator.EvaluateRepositorySetup(
+                    report, spec.Ends, lastOutcome!.Errors, localIssues, requireCloned: true);
+            }
+
+            IReadOnlyList<RemoteArtifact> artifacts = Array.Empty<RemoteArtifact>();
+            if (ok)
+            {
+                artifacts = ApplyRepositoryArtifacts(spec, plan, report!);
+
+                // §6.6 / C7′：本步重跑成功＝本地代码可能已随模板 / pin / 占位符替换而变，作废上一轮编译结论
+                InvalidateBuildConclusion(spec);
+
+                // 同理作废上一轮流水线结论：YAML 里写死了代码源地址与分支，仓库改名 / 重建后旧结论是误导。
+                // 只清结论，不删云效上的流水线本体（远端产物一律不自动删除，PRD §4.5）。
+                InvalidatePipelineConclusion(spec);
+
+                spec.AdvanceTo(WizardStep.Database);
+            }
+
+            var lines = lastOutcome is null
+                ? new List<string> { "本步未下发（无执行读数）。" }
+                : DescribeTurn(lastOutcome, lastResultFile ?? string.Empty);
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                lines.Add($"结论文件解析：{reportPath}");
+            if (localIssues.Count > 0)
+                lines.Add("　本地复核：" + string.Join("；", localIssues.Take(3)));
+            lines.Add($"结论：{message}");
+
+            EndOperation(Step, Action, string.Join("\n", lines),
+                ok ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 硬纪律：EndOperation 必须在 SaveSpec 之前（终态快照按内存操作记录回放，只回放终态记录）
             SaveSpec(spec);
 
-            total.Stop();
-            var message = $"Step 3 完成：{plan.Count} 端仓库就绪（建库 / 复用 + 克隆 + 占位符替换）· 耗时 {total.Elapsed.TotalSeconds:F1}s";
-            Record(Step, "Step 3 完成", message, StepStatus.Succeeded, total.Elapsed);
-            _host?.Log($"[newproject] {message}");
-
-            return StepResult.Ok(Step, message, artifacts);
+            return ok
+                ? StepResult.Ok(Step, message, artifacts)
+                : StepResult.Fail(Step, message);
         }
         catch (OperationCanceledException)
         {
-            FailRunningOperation(Step, "用户取消。", total.Elapsed);
+            EndOperation(Step, Action,
+                "已取消（远端产物一律保留，可稍后重跑本步：同名复用不会重复建库）。", StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
             return StepResult.Fail(Step, "Step 3 建库并克隆已取消。");
         }
         catch (Exception ex)
         {
             _host?.LogError("[newproject] Step 3 建库并克隆失败", ex);
-            FailRunningOperation(Step, ex.Message, total.Elapsed);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
             return StepResult.Fail(Step,
                 $"Step 3 失败：{ex.Message}（远端产物一律保留，可在云效控制台确认；修正后可直接重跑本步）");
         }
+    }
+
+    /// <summary>
+    /// 就 <c>inputs[]</c> 里的「克隆冲突三选一」逐端征询用户，把答复拼进 <paramref name="resolvedInputs"/>（§6.1.3 / §6.3）。
+    /// </summary>
+    /// <param name="plan">本次建库计划（按端）。</param>
+    /// <param name="input">助手给出的 <c>id=clone-conflict</c> 交互项。</param>
+    /// <param name="resolvedInputs">累积的答复行（拼进下一轮执行续跑提示词）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>失败原因（可继续续跑时返回 <c>null</c>）。</returns>
+    private async Task<string?> ResolveCloneConflictsAsync(
+        IReadOnlyList<EndRepository> plan,
+        StepReportInput input,
+        List<string> resolvedInputs,
+        CancellationToken cancellationToken)
+    {
+        if (input.Ends.Count == 0)
+            return "助手请求处置目录冲突，但未指明是哪一端（inputs[].ends 为空）：请在面板重跑本步。";
+
+        foreach (var end in input.Ends)
+        {
+            var repository = plan.FirstOrDefault(one => one.End == end);
+            if (repository is null)
+                return $"助手要求处置 {EndLabel(end)} 的目录冲突，但该项目不在建库计划中。";
+
+            var choice = await AskCloneConflictAsync(repository, cancellationToken);
+            if (choice is null)
+                return $"目标目录已存在且非空（{EndLabel(end)}：{repository.LocalPath}），但没有可用的交互通道："
+                     + "请从向导面板重跑本步并选择「复用已克隆 / 清空后重克隆 / 中止」。";
+
+            if (choice == CloneConflictChoice.Abort)
+                return $"用户选择「中止」：{EndLabel(end)} 保持原样（远端产物保留，本地目录未改动）。";
+
+            var answer = choice switch
+            {
+                CloneConflictChoice.Reuse =>
+                    "复用已克隆（先做健康校验：工作树可用且 refs/heads/<pin> 存在，再继续）",
+                CloneConflictChoice.Reclone =>
+                    "清空目录后重新克隆（清理含只读 pack 文件的目录用 RunPythonAsync 的 shutil.rmtree(..., onerror=清只读后重试)）",
+                _ => choice.ToString()
+            };
+
+            resolvedInputs.Add($"clone-conflict · {EndLabel(end)}（目录 {repository.LocalPath}）：{answer}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案（§5.2 末段 + §6.1.1）：<c>kind=group</c> 登记代码组产物，
+    /// <c>kind=repository</c> 逐端回写仓库事实并登记远端产物。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="plan">本次建库计划（按端）。</param>
+    /// <param name="report">已解析的执行续跑结论。</param>
+    /// <returns>本次新登记的远端产物（供操作记录 / 结果回传）。</returns>
+    /// <remarks>
+    /// 只回写「结论文件给了事实」的字段：缺失项保留档案原值，避免助手漏写某项时把用户确认过的计划清空。
+    /// 调用方（<see cref="CreateRepositoriesAsync"/>）已在本地复核 + 判定通过后才会走到这里。
+    /// </remarks>
+    private static IReadOnlyList<RemoteArtifact> ApplyRepositoryArtifacts(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> plan,
+        StepReport report)
+    {
+        var registered = new List<RemoteArtifact>();
+
+        var group = report.Artifacts.FirstOrDefault(one =>
+            string.Equals(one.Kind?.Trim(), "group", StringComparison.OrdinalIgnoreCase));
+        if (group is not null)
+        {
+            var groupArtifact = ApplyGroupArtifact(spec, group);
+            if (groupArtifact is not null)
+                registered.Add(groupArtifact);
+        }
+
+        foreach (var repository in plan)
+        {
+            var fact = StepReportEvaluator.RepositoryArtifact(report, repository.End);
+            if (fact is null)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(fact.Name))
+                repository.RepositoryName = fact.Name!.Trim();
+            if (!string.IsNullOrWhiteSpace(fact.ExternalId))
+                repository.ExternalId = fact.ExternalId!.Trim();
+            if (!string.IsNullOrWhiteSpace(fact.CloneUrl))
+                repository.CloneUrl = fact.CloneUrl!.Trim();
+            if (!string.IsNullOrWhiteSpace(fact.LocalPath))
+                repository.LocalPath = fact.LocalPath!.Trim();
+            if (!string.IsNullOrWhiteSpace(fact.TemplateBranch))
+                repository.TemplateBranch = fact.TemplateBranch!.Trim();
+
+            // 结论给了页面链接就用它；否则由克隆地址推导（去尾 .git），再退回档案原值
+            repository.WebUrl = !string.IsNullOrWhiteSpace(fact.WebUrl)
+                ? fact.WebUrl!.Trim()
+                : string.IsNullOrWhiteSpace(repository.CloneUrl) ? repository.WebUrl : BuildWebUrl(repository.CloneUrl);
+
+            if (fact.Extra is RepositoryArtifactExtra extra)
+            {
+                if (!string.IsNullOrWhiteSpace(extra.TemplateRepository))
+                    repository.TemplateRepository = extra.TemplateRepository!.Trim();
+                if (!string.IsNullOrWhiteSpace(extra.Visibility))
+                    repository.Visibility = extra.Visibility!.Trim();
+                if (!string.IsNullOrWhiteSpace(extra.DefaultBranch))
+                    repository.DefaultBranch = extra.DefaultBranch!.Trim();
+
+                // Cloned 语义＝「本地目录已就绪」（真克隆成功，或「复用已克隆」经健康校验通过）
+                repository.Cloned = extra.Cloned;
+            }
+
+            var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Repository);
+            if (artifact is not null)
+                registered.Add(artifact);
+        }
+
+        return registered;
+    }
+
+    /// <summary>
+    /// 登记项目级远端产物「代码组」（重跑幂等：同名只更新地址，不重复入册）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="artifact">结论文件里的 <c>kind=group</c> 产物。</param>
+    /// <returns>新登记的产物；已存在或不可命名时为 <c>null</c>。</returns>
+    private static RemoteArtifact? ApplyGroupArtifact(ProjectSpec spec, StepReportArtifact artifact)
+    {
+        var name = string.IsNullOrWhiteSpace(artifact.Name)
+            ? (artifact.ExternalId ?? string.Empty).Trim()
+            : artifact.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        var webUrl = artifact.WebUrl ?? string.Empty;
+        var externalId = string.IsNullOrWhiteSpace(artifact.ExternalId) ? null : artifact.ExternalId!.Trim();
+
+        var existing = spec.RemoteArtifacts.FirstOrDefault(one =>
+            one.Kind == RemoteArtifactKind.Group
+            && string.Equals(one.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            existing.WebUrl = webUrl;
+            existing.ExternalId = externalId;
+            return null;
+        }
+
+        var created = new RemoteArtifact
+        {
+            Kind = RemoteArtifactKind.Group,
+            End = null,
+            Name = name,
+            WebUrl = webUrl,
+            ExternalId = externalId
+        };
+
+        spec.RemoteArtifacts.Add(created);
+        return created;
     }
 
     /// <inheritdoc />
@@ -1437,19 +1459,29 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>执行形态（路线 ② · v0.3）</b>：分支整理 / 暂存 / 提交 / 推送全部由助手用<b>框架 git 工具组</b>完成，
+    /// 插件只把「待推送的端」下发、回读结论、做插件侧本地复核（§5.3 / §6.1.4）。</para>
+    /// <para><b>凭据由用户在外部环境配置</b>（credential helper / 系统凭据管理器）：插件不提供凭据通路、不拼鉴权 URL，
+    /// 也不再有 <c>CodeupClient.PushAsync</c> 直连。</para>
+    /// <para><b>限流退避</b>：线性 10s / 20s / 30s、最多 3 次（原 <c>PushRetryPolicy</c> 口径迁 <c>docs/step6-push.md</c>），
+    /// 由助手按 docs 执行；插件不重试。</para>
+    /// </remarks>
     public async Task<StepResult> PushAsync(CancellationToken cancellationToken = default)
     {
         const WizardStep Step = WizardStep.Push;
+        const string Action = "推送改动到自有仓库";
 
         var spec = Current;
         if (spec is null)
         {
-            Record(Step, "推送改动到自有仓库", "尚未建立项目档案，请先完成第 1 步。", StepStatus.Failed, TimeSpan.Zero);
+            Record(Step, Action, "尚未建立项目档案，请先完成第 1 步。", StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
 
-        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7）：向导的步骤顺序只是界面约束——常驻「重新推送」、
-        // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验（判据见 StepGate.CanPush）。
+        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7 / 设计 §6.7 C7′）：向导的步骤顺序只是界面约束——常驻「重新推送」、
+        // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验；判据已改为读 Step 5 最近一份结论文件
+        // （见 StepGate.CanPush），StepStates 降级为仅界面进度显示。
         // 位置在前置检查之前：顺序约束比参数齐备更根本，报错先给最该修的那一条。
         // 拒绝不记操作记录——一次「未执行的拒绝」不是本步的终态，记了会被 SnapshotStepStates 回放写进档案，
         // 把早已成功的 Push 状态改写成失败（提示由调用方按 StepResult.Message 呈现）。
@@ -1462,175 +1494,102 @@ public sealed class NewProjectService : INewProjectService
 
         using var permissionScope = EnterPermissionScope();
 
-        var codeup = Resolve<CodeupClient>();
-        var runner = Resolve<ProcessRunner>();
-        if (codeup is null || runner is null)
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
         {
-            const string Tip = "宿主能力不完整：云效连接器或进程执行器（用于本机 git）不可用，无法执行 Step 6。";
-            Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
 
-        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
-        {
-            const string Tip = "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重跑本步（PRD §4.9）。";
-            Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
-            return StepResult.Fail(Step, Tip);
-        }
-
-        var pushable = PlanRepositories(spec)
+        var targets = PlanRepositories(spec)
             .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.LocalPath))
             .ToList();
-        if (pushable.Count == 0)
+        if (targets.Count == 0)
         {
             const string Tip = "没有任何已克隆的仓库可推送：请先完成 Step 3（按模板建库并克隆）。";
-            Record(Step, "推送改动到自有仓库", Tip, StepStatus.Failed, TimeSpan.Zero);
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
 
-        var total = Stopwatch.StartNew();
-        var artifacts = new List<RemoteArtifact>();
+        var watch = BeginOperation(Step, Action, $"{targets.Count} 端 · 推送分支 {_settings.PushBranch}");
 
         try
         {
-            foreach (var repository in pushable)
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 6);
+            StepResultFile.EnsureDirectory(resultFile);
+
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            var startedAt = DateTime.UtcNow;
+            var outcome = await CreateBridge()
+                .RunAsync(spec, StepPrompts.BuildPushPrompt(spec, targets, resultFile), resultFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
+
+            var (report, reportPath, _, readError) = ReadFreshReport(spec.LocalPath!, 6, startedAt);
+
+            var ok = false;
+            var message = string.Empty;
+            IReadOnlyList<string> localIssues = Array.Empty<string>();
+
+            if (report is null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var label = EndLabel(repository.End);
-                var branch = ResolvePushBranch(repository);
-
-                // 本机 git 出口门禁（PRD §3.7）已内置于 RunGitAsync；连接器内的 push 由其自身门禁覆盖
-
-                if (!Directory.Exists(repository.LocalPath) || !Directory.Exists(Path.Combine(repository.LocalPath, ".git")))
-                {
-                    var reason = $"{label}本地目录不是 git 工作区：{repository.LocalPath}（请重跑 Step 3 完成克隆）。";
-                    Record(Step, $"准备推送（{label}）", reason, StepStatus.Failed, TimeSpan.Zero);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                // ── 1. 切到目标分支（PRD §6 #17：pushBranch 优先、v0.28 起默认 develop）────────────
-                var branchWatch = BeginOperation(Step, $"整理分支（{label}）", $"目标分支 {branch}");
-                var hasBranch = await RunGitAsync(runner, repository.LocalPath,
-                    new[] { "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}" }, cancellationToken);
-
-                var checkoutArgs = hasBranch.ExitCode == 0
-                    ? new[] { "checkout", branch }
-                    : new[] { "checkout", "-b", branch };
-                var checkout = await RunGitAsync(runner, repository.LocalPath, checkoutArgs, cancellationToken);
-                if (checkout.ExitCode != 0)
-                {
-                    var reason = $"{label}切换分支失败：{Summarize(checkout)}";
-                    EndOperation(Step, $"整理分支（{label}）", reason, StepStatus.Failed, branchWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                EndOperation(Step, $"整理分支（{label}）",
-                    hasBranch.ExitCode == 0
-                        ? $"已在 {branch} 分支。"
-                        : $"已创建并切换到 {branch}（自模板 pin {repository.TemplateBranch}）。",
-                    StepStatus.Succeeded, branchWatch.Elapsed);
-
-                // ── 2. 暂存 + 提交（PRD §6 #17：推送前至少一次提交）────────────────────────
-                var commitWatch = BeginOperation(Step, $"提交改动（{label}）", "git add -A → 有改动则 commit");
-                var add = await RunGitAsync(runner, repository.LocalPath, new[] { "add", "-A" }, cancellationToken);
-                if (add.ExitCode != 0)
-                {
-                    var reason = $"{label}暂存改动失败：{Summarize(add)}";
-                    EndOperation(Step, $"提交改动（{label}）", reason, StepStatus.Failed, commitWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                var diff = await RunGitAsync(runner, repository.LocalPath, new[] { "diff", "--cached", "--quiet" }, cancellationToken);
-                if (diff.ExitCode == 0)
-                {
-                    EndOperation(Step, $"提交改动（{label}）", "工作区无改动，跳过提交。", StepStatus.Skipped, commitWatch.Elapsed);
-                }
-                else
-                {
-                    var (authorName, authorEmail) = await ResolveCommitAuthorAsync(runner, repository.LocalPath, cancellationToken);
-                    var commitMessage = $"chore: 初始化 {spec.Name}（{label}）——由「新建项目」向导按模板 {repository.TemplateRepository} 生成";
-                    var commit = await RunGitAsync(runner, repository.LocalPath, new[]
-                    {
-                        "-c", $"user.name={authorName}",
-                        "-c", $"user.email={authorEmail}",
-                        "commit", "-m", commitMessage
-                    }, cancellationToken);
-
-                    if (commit.ExitCode != 0)
-                    {
-                        var reason = $"{label}提交失败：{Summarize(commit)}";
-                        EndOperation(Step, $"提交改动（{label}）", reason, StepStatus.Failed, commitWatch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, reason);
-                    }
-
-                    EndOperation(Step, $"提交改动（{label}）",
-                        $"已提交（{authorName} <{authorEmail}>）：{commitMessage}", StepStatus.Succeeded, commitWatch.Elapsed);
-                }
-
-                // ── 3. 推送（连接器负责带鉴权的 URL 与自身出口门禁；v0.29：云效限流退避重试）──
-                var pushWatch = BeginOperation(Step, $"推送到自有仓库（{label}）", $"{repository.RepositoryName} · {branch}");
-                var pushed = await codeup.PushAsync(repository.CloneUrl, repository.LocalPath, branch, force: false, cancellationToken);
-
-                // 只对「服务端限流」退避重试（10s → 20s → 30s，最多 3 次）；非快进 / 鉴权 / 权限类失败一律不重试。
-                // 等待期间原地改写同一条「进行中」记录的说明，用户能看见「在等什么、还要等多久」。
-                var retried = 0;
-                while (retried < PushRetryPolicy.MaxRetries && PushRetryPolicy.ShouldRetry(pushed))
-                {
-                    retried++;
-                    UpdateRunningOperation(Step, $"推送到自有仓库（{label}）",
-                        PushRetryPolicy.WaitingDetail(repository.RepositoryName, branch, retried, pushed.FailureSummary()));
-
-                    await Task.Delay(PushRetryPolicy.DelayBefore(retried), cancellationToken);
-
-                    pushed = await codeup.PushAsync(repository.CloneUrl, repository.LocalPath, branch, force: false, cancellationToken);
-                }
-
-                if (!pushed.Success)
-                {
-                    var reason = PushRetryPolicy.DescribeFailure(repository.RepositoryName, branch, pushed, retried);
-                    EndOperation(Step, $"推送到自有仓库（{label}）", reason, StepStatus.Failed, pushWatch.Elapsed);
-                    SaveSpec(spec);
-                    return StepResult.Fail(Step, reason);
-                }
-
-                EndOperation(Step, $"推送到自有仓库（{label}）",
-                    retried == 0
-                        ? $"已推送 {branch} → {repository.WebUrl}"
-                        : $"已推送 {branch} → {repository.WebUrl}（云效限流后，第 {retried} 次重试成功）",
-                    StepStatus.Succeeded, pushWatch.Elapsed);
-
-                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch, branch);
-                if (artifact is not null)
-                    artifacts.Add(artifact);
-
-                SaveSpec(spec);
+                message = string.IsNullOrWhiteSpace(readError)
+                    ? "助手未产出可解析的结论文件（step6-*.json）。"
+                    : readError;
+            }
+            else
+            {
+                // §6.1.4：核对远端跟踪分支 refs/remotes/origin/<pushBranch> 与自报 commit id 是否一致
+                localIssues = StepLocalVerifier.VerifyPush(report, spec.Ends);
+                (ok, _, message) = StepReportEvaluator.EvaluatePush(report, spec.Ends, outcome.Errors, localIssues);
             }
 
-            spec.AdvanceTo(WizardStep.Pipeline);
+            IReadOnlyList<RemoteArtifact> artifacts = Array.Empty<RemoteArtifact>();
+            if (ok)
+            {
+                var registered = new List<RemoteArtifact>();
+                foreach (var repository in targets)
+                {
+                    // 产物名取「实际推送的分支」（结论里的 templateBranch），缺失时由 AddArtifact 退回仓库默认分支
+                    var pushedBranch = StepReportEvaluator.RepositoryArtifact(report!, repository.End)?.TemplateBranch;
+                    var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch, pushedBranch);
+                    if (artifact is not null)
+                        registered.Add(artifact);
+                }
+
+                artifacts = registered;
+                spec.AdvanceTo(WizardStep.Pipeline);
+            }
+
+            var lines = DescribeTurn(outcome, resultFile);
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                lines.Add($"结论文件解析：{reportPath}");
+            if (localIssues.Count > 0)
+                lines.Add("　本地复核：" + string.Join("；", localIssues.Take(3)));
+            lines.Add($"结论：{message}");
+
+            EndOperation(Step, Action, string.Join("\n", lines),
+                ok ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 硬纪律：EndOperation 必须在 SaveSpec 之前（终态快照按内存操作记录回放，只回放终态记录）
             SaveSpec(spec);
 
-            total.Stop();
-            var message = $"Step 6 完成：{pushable.Count} 端改动已推送 · 耗时 {total.Elapsed.TotalSeconds:F1}s";
-            Record(Step, "Step 6 完成", message, StepStatus.Succeeded, total.Elapsed);
-            _host?.Log($"[newproject] {message}");
-
-            return StepResult.Ok(Step, message, artifacts);
+            return ok
+                ? StepResult.Ok(Step, message, artifacts)
+                : StepResult.Fail(Step, message);
         }
         catch (OperationCanceledException)
         {
-            FailRunningOperation(Step, "用户取消。", total.Elapsed);
+            EndOperation(Step, Action, "已取消（已推送的端不受影响，可直接重跑本步）。", StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
             return StepResult.Fail(Step, "Step 6 推送已取消。");
         }
         catch (Exception ex)
         {
             _host?.LogError("[newproject] Step 6 推送失败", ex);
-            FailRunningOperation(Step, ex.Message, total.Elapsed);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
             return StepResult.Fail(Step, $"Step 6 失败：{ex.Message}（已推送的端不受影响；修正后可直接重跑本步）");
         }
@@ -1639,46 +1598,212 @@ public sealed class NewProjectService : INewProjectService
     /// <inheritdoc />
     public Task<StepResult> CreatePipelinesAsync(
         IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets = null,
         CancellationToken cancellationToken = default)
-        => RunPipelineStepAsync(includeDeployStage: false, yamlOverrides, cancellationToken);
+        => RunPipelineStepAsync(update: false, yamlOverrides, deployTargets, cancellationToken);
 
     /// <inheritdoc />
-    public Task<StepResult> AppendDeployStagesAsync(
+    public Task<StepResult> UpdatePipelinesAsync(
         IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets = null,
         CancellationToken cancellationToken = default)
-        => RunPipelineStepAsync(includeDeployStage: true, yamlOverrides, cancellationToken);
+        => RunPipelineStepAsync(update: true, yamlOverrides, deployTargets, cancellationToken);
 
     /// <inheritdoc />
-    public IReadOnlyList<PipelinePreview> PreviewPipelines(IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null)
+    /// <remarks>
+    /// <para><b>执行形态（路线 ② · v0.3）</b>：YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，
+    /// 由助手按文档渲染并写入结论文件（<c>results/step7-*.json</c>），插件回读 <c>artifacts[]</c> 映射成预览——
+    /// <b>不在插件内渲染模板</b>（C10′）。</para>
+    /// <para><b>只读准备</b>：本阶段<b>不创建 / 不更新</b>云效流水线（写入动作在用户确认后的执行续跑，
+    /// 见 <see cref="CreatePipelinesAsync"/>）；助手给出的部署目标候选写在结论文件的 <c>inputs[]</c> 里，
+    /// 面板据此预选、聊天路径据此提问（C15′）。</para>
+    /// <para>读数缓存在服务实例上，供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。</para>
+    /// </remarks>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>准备读数（预览 + 交互项 + 映射缺口）。</returns>
+    public async Task<PipelinePrepareResult> PreparePipelinesAsync(CancellationToken cancellationToken = default)
     {
+        const WizardStep Step = WizardStep.Pipeline;
+        const string Action = "Step 7 准备（只读）";
+
         var spec = Current;
         if (spec is null)
+        {
+            const string Tip = "尚未建立项目档案，请先完成第 1 步。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+
+        using var permissionScope = EnterPermissionScope();
+
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
+        {
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+
+        var targets = PlanRepositories(spec)
+            .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.CloneUrl))
+            .ToList();
+        if (targets.Count == 0)
+        {
+            const string Tip = "没有任何已建库并克隆的仓库可建流水线：请先完成 Step 3（按模板建库并克隆）。";
+            Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+
+        var watch = BeginOperation(Step, Action, $"{targets.Count} 端 · 只读准备（不触网写入）");
+
+        try
+        {
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 7);
+            StepResultFile.EnsureDirectory(resultFile);
+
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            var startedAt = DateTime.UtcNow;
+            var outcome = await CreateBridge()
+                .RunAsync(spec, StepPrompts.BuildPipelinePreparePrompt(spec, targets, resultFile), resultFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
+
+            var (report, reportPath, _, readError) = ReadFreshReport(spec.LocalPath!, 7, startedAt);
+
+            // 记住本次准备结论路径：执行续跑据它下发「事实来源」（进程重启后为空才回退取最新一份）
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                _pipelinePrepareResultFile = reportPath;
+
+            var errors = new List<string>();
+            IReadOnlyList<PipelinePreview> previews = Array.Empty<PipelinePreview>();
+            IReadOnlyList<StepReportInput> inputs = Array.Empty<StepReportInput>();
+            var message = string.Empty;
+
+            if (report is null)
+            {
+                message = string.IsNullOrWhiteSpace(readError)
+                    ? "助手未产出可解析的结论文件（step7-*.json）。"
+                    : readError;
+                errors.Add(message);
+            }
+            else
+            {
+                // 判定复用 Step 7 的判定入口（口径单一来源）。准备阶段的 needsInput（缺部署目标）属正常形态——
+                // 部署目标本来就要用户来选（面板下拉 / 对话回复），故不阻断预览渲染；但仍要求逐端产物齐备。
+                var (ok, status, evaluateMessage) = StepReportEvaluator.EvaluatePipeline(report, spec.Ends, outcome.Errors);
+                if (status == StepReportStatus.NeedsInput)
+                {
+                    var missing = spec.Ends.Where(end => !StepReportEvaluator.HasPipelineArtifact(report, end)).ToList();
+                    if (missing.Count > 0)
+                        errors.Add("结论缺少端流水线产物：" + string.Join("、", missing.Select(EndLabel))
+                                   + "（逐端完备性要求每端一条 kind=pipeline）。");
+                }
+                else if (!ok)
+                {
+                    errors.Add(evaluateMessage);
+                }
+
+                var mapped = ArtifactViewModelMapper.ToPipelinePreviews(report);
+                if (mapped.Errors.Count > 0)
+                    errors.AddRange(mapped.Errors);
+
+                previews = mapped.Previews;
+                inputs = report.Inputs;
+                message = string.IsNullOrWhiteSpace(evaluateMessage) ? "Step 7 准备就绪。" : evaluateMessage;
+            }
+
+            var lines = DescribeTurn(outcome, resultFile);
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                lines.Add($"结论文件解析：{reportPath}");
+            if (inputs.Count > 0)
+                lines.Add("　交互项：" + string.Join("、", inputs.Select(one => one.Id)));
+            if (errors.Count > 0)
+                lines.Add("　未就绪：" + string.Join("；", errors.Take(3)));
+            lines.Add($"结论：{message}");
+
+            EndOperation(Step, Action, string.Join("\n", lines),
+                errors.Count == 0 && previews.Count > 0 ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 硬纪律：EndOperation 必须在 SaveSpec 之前（终态快照按内存操作记录回放，只回放终态记录）
+            SaveSpec(spec);
+
+            return CachePrepare(new PipelinePrepareResult
+            {
+                Previews = previews,
+                Inputs = inputs,
+                Errors = errors,
+                Message = message
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            EndOperation(Step, Action, "已取消（只读准备未产生远端改动，可直接重跑本步）。", StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            const string Tip = "Step 7 准备已取消。";
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
+        }
+        catch (Exception ex)
+        {
+            _host?.LogError("[newproject] Step 7 准备失败", ex);
+            EndOperation(Step, Action, ex.Message, StepStatus.Failed, watch.Elapsed);
+            SaveSpec(spec);
+            var tip = $"Step 7 准备失败：{ex.Message}";
+            return CachePrepare(new PipelinePrepareResult { Errors = new[] { tip }, Message = tip });
+        }
+    }
+
+    /// <summary>
+    /// 缓存准备读数并回传（供同步的 <see cref="PreviewPipelines"/> 应用微调后回显）。
+    /// </summary>
+    /// <param name="result">准备读数。</param>
+    /// <returns>同一实例。</returns>
+    private PipelinePrepareResult CachePrepare(PipelinePrepareResult result)
+    {
+        _pipelinePrepareResult = result;
+        return result;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <b>纯读缓存</b>：数据源是最近一次 <see cref="PreparePipelinesAsync"/> 的结论映射（不触网、不再下发助手）；
+    /// 尚无准备结论时返回空列表（界面应先调 <see cref="PreparePipelinesAsync"/>）。命中 <paramref name="yamlOverrides"/>
+    /// 时回显微调后的原文并置 <see cref="PipelinePreview.Edited"/>；<paramref name="deployTargets"/> 仅用于回显
+    /// <see cref="PipelinePreview.RecommendedDeployTargetUuid"/>（用户已选目标优先）。
+    /// </remarks>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c> 或空字典＝全部用准备结论的 YAML）。</param>
+    /// <param name="deployTargets">按端选定的部署目标（用于推荐目标回显）。</param>
+    /// <returns>按端预览。</returns>
+    public IReadOnlyList<PipelinePreview> PreviewPipelines(
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides = null,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets = null)
+    {
+        var cached = _pipelinePrepareResult;
+        if (cached is null || cached.Previews.Count == 0)
             return Array.Empty<PipelinePreview>();
 
-        // 与创建口径同源：同一渲染器、同一过滤条件（已建库且已克隆的所选端），只是不调云效、不落档案。
-        return PlanRepositories(spec)
-            .Where(repository => repository.Cloned && !string.IsNullOrWhiteSpace(repository.CloneUrl))
-            .Select(repository =>
-            {
-                var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage: false);
-                var overridden = TryGetYamlOverride(yamlOverrides, repository.End);
-                var existing = spec.PipelineResults.FirstOrDefault(item => item.End == repository.End);
+        return cached.Previews.Select(preview =>
+        {
+            var overridden = TryGetYamlOverride(yamlOverrides, preview.End);
+            var selected = TryGetDeployTarget(deployTargets, preview.End);
 
-                return new PipelinePreview
-                {
-                    End = repository.End,
-                    PipelineName = rendered.PipelineName,
-                    // 预览是「首次创建」口径（只含构建阶段），故不追加部署阶段片段；
-                    // 补齐时由执行体在微调文本末尾追加（PipelineYamlOverride.Compose）。
-                    Yaml = PipelineYamlOverride.Compose(rendered.Yaml, overridden, deployStageYaml: null),
-                    Edited = overridden is not null,
-                    PendingBindings = rendered.PendingBindings,
-                    PipelineId = existing?.PipelineId ?? string.Empty,
-                    WebUrl = existing?.WebUrl ?? string.Empty,
-                    DeployStageIncluded = existing?.DeployStageIncluded ?? false
-                };
-            })
-            .ToList();
+            return new PipelinePreview
+            {
+                End = preview.End,
+                PipelineName = preview.PipelineName,
+                // 与创建同源：预览到什么就提交什么（微调优先，否则用准备结论的 YAML）
+                Yaml = overridden ?? preview.Yaml,
+                Edited = overridden is not null,
+                PendingBindings = preview.PendingBindings,
+                PipelineId = preview.PipelineId,
+                WebUrl = preview.WebUrl,
+                YamlIncludesDeployStage = preview.YamlIncludesDeployStage,
+                // 用户已选目标优先；否则回显准备结论里的推荐 uuid（面板据此预选下拉）
+                RecommendedDeployTargetUuid = selected is not null && !string.IsNullOrWhiteSpace(selected.Uuid)
+                    ? selected.Uuid
+                    : preview.RecommendedDeployTargetUuid
+            };
+        }).ToList();
     }
 
     /// <summary>
@@ -1693,41 +1818,128 @@ public sealed class NewProjectService : INewProjectService
             : null;
 
     /// <summary>
-    /// Step 7 执行体（PRD §4.3 Step 7 <b>v0.30 口径</b>）：内嵌模板渲染新版 YAML → 同名幂等检索 → 创建 / 更新。
+    /// 取出某端本次选定的部署目标（uuid 为空的项按「未选」处理）。
+    /// </summary>
+    /// <param name="deployTargets">按端目标表（可为 <c>null</c>）。</param>
+    /// <param name="end">端。</param>
+    /// <returns>选中的主机组；未选返回 <c>null</c>。</returns>
+    private static DeployHostGroup? TryGetDeployTarget(
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets,
+        ProjectEnd end)
+        => deployTargets is not null
+           && deployTargets.TryGetValue(end, out var target)
+           && !string.IsNullOrWhiteSpace(target.Uuid)
+            ? target
+            : null;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <b>失败即抛</b>（不返回空列表）：口径是「读不到主机组列表就不许创建流水线」，界面据异常文案显示红字并阻断创建。
+    /// 真机口径：列表是<b>裸数组</b>、不带机器明细（<c>hostInfos</c> 恒 <c>null</c>），且查询参数不生效（一律全量返回）。
+    /// </remarks>
+    public async Task<IReadOnlyList<DeployHostGroup>> ListDeployTargetsAsync(CancellationToken cancellationToken = default)
+    {
+        using var permissionScope = EnterPermissionScope();
+
+        var flow = Resolve<FlowClient>()
+            ?? throw new InvalidOperationException(
+                "宿主能力不完整：云效流水线客户端（FlowClient）不可用，读不到部署主机组列表。");
+
+        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
+            throw new InvalidOperationException(
+                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试（PRD §4.9）。");
+
+        var groups = await flow.ListHostGroupsAsync(organizationId: null, cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("云效返回了空响应，未读到部署主机组列表（请稍后重试）。");
+
+        var list = groups
+            .Select(group => new DeployHostGroup
+            {
+                HostGroupId = group.Id ?? 0,
+                Uuid = group.Uuid ?? string.Empty,
+                Name = group.Name ?? string.Empty,
+                HostNum = group.HostNum ?? 0,
+                Region = group.AliyunRegion
+            })
+            .ToList();
+
+        _host?.Log($"[newproject] Step 7 读到 {list.Count} 个部署主机组，其中 {list.Count(item => string.IsNullOrWhiteSpace(item.Uuid))} 个缺 uuid（不可用于部署）。");
+        return list;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <b>失败即抛</b>，理由同 <see cref="ListDeployTargetsAsync"/>。真机口径：明细只在详情接口的 <c>hostInfos</c> 里，
+    /// 且路径键<b>必须是数字 id</b>（用 uuid 当路径键会 400 <c>NumberFormatException</c>）。
+    /// </remarks>
+    public async Task<IReadOnlyList<DeployHostMachine>> ListDeployTargetMachinesAsync(
+        long hostGroupId,
+        CancellationToken cancellationToken = default)
+    {
+        if (hostGroupId <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(hostGroupId), hostGroupId, "主机组 ID 必须是正数（云效详情接口的路径键只认数字 id，不是 uuid）。");
+
+        using var permissionScope = EnterPermissionScope();
+
+        var flow = Resolve<FlowClient>()
+            ?? throw new InvalidOperationException(
+                "宿主能力不完整：云效流水线客户端（FlowClient）不可用，读不到主机组机器明细。");
+
+        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
+            throw new InvalidOperationException(
+                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试（PRD §4.9）。");
+
+        var detail = await flow.GetHostGroupAsync(hostGroupId, organizationId: null, cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException($"云效未返回主机组 {hostGroupId} 的详情（该主机组可能已被删除）。");
+
+        // 真机观测：hostNum=0 的空组详情里 hostInfos 为空列表或 null，两种情况都按「无机器」处理（不报错）。
+        return (detail.HostInfos ?? new List<YunxiaoHostInfo>())
+            .Select(info => new DeployHostMachine
+            {
+                InstanceName = info.InstanceName,
+                Ip = info.Ip,
+                Status = info.Status
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Step 7 执行体（v0.3 助手驱动）：把「准备结论 + 用户确认（含微调与部署目标）」下发，助手创建 / 覆盖更新云效流水线，
+    /// 插件回读结论、做本地复核与判定，再把流水线事实落档案（§5.3 / §6.1.4）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么是「渲染后创建」而不是「克隆参考流水线」</b>：云效 OpenAPI 既没有「复制流水线」接口，
-    /// 也只收顶层 <c>stages:</c> 的新版 YAML（喂 tb 形态 <c>flow</c> 原文必报 <c>1209300</c>）；组织内 70 条流水线
-    /// 全是 tb 形态，取不到可提交范本。故改为「按企服版语义翻译成新版 YAML 模板 → 本地渲染 → 提交创建」，
-    /// 变量与缓存由模板直接生成（见 <see cref="PipelineTemplateLibrary"/>）。
+    /// <b>为什么不再由插件渲染 YAML、也不再直连 CodeupClient</b>：YAML 正文与待绑定清单由随包
+    /// <c>docs/pipeline-*.yml.md</c> 交给助手按项目值渲染并写进结论文件（C10′）；云效写入也由助手用框架 MCP 工具组完成，
+    /// 插件只负责判定与落账（§6.1.1）。
     /// </para>
     /// <para>
-    /// <b>两条入口共用本执行体</b>：<c>includeDeployStage=false</c> 为首次创建（<b>只含构建阶段</b>，
-    /// 部署阶段以注释块附末尾，PRD §6 #14）；<c>true</c> 为「一键补齐部署阶段」（对该端已有流水线做
-    /// <c>UpdatePipeline</c>，把部署阶段并入 YAML）。
+    /// <b>两条入口共用本执行体</b>：<paramref name="update"/><c>=false</c> 为创建（要求 Step 6 已成功，
+    /// 闸门见 <see cref="StepGate.CanCreatePipelines"/>）；<c>true</c> 为「覆盖更新」（按档案里的
+    /// <see cref="EndPipelineResult.PipelineId"/> 直改已有流水线，不设闸门）。
     /// </para>
     /// <para>
-    /// <b>幂等</b>：创建前按流水线名精确检索，命中即复用（不再重复建），与 Step 3 建库同口径。
+    /// <b>前置＝准备结论</b>：执行续跑以准备阶段结论文件为事实来源，缺它就不下发（引导用户先在面板执行准备并复核预览）。
     /// </para>
-    /// <para><b>建完不自动运行</b>（PRD §6 #14）：本步不发 <c>CreatePipelineRun</c>。</para>
     /// <para>
-    /// <b>手工微调（v0.31）</b>：<paramref name="yamlOverrides"/> 命中该端时以微调文本替换模板渲染结果；
-    /// 补齐模式下若微调文本没有自备 <c>VMDockerDeploy</c>，则把部署阶段片段追加到末尾
-    /// （见 <see cref="PipelineYamlOverride.Compose"/>）。微调文本提交前只做最小校验，语法错误由云效原样报回。
+    /// <b>幂等与不自动运行</b>：创建前按流水线名精确检索、命中同名即覆盖更新本次 YAML，全部由助手按 docs 执行
+    /// （插件不重试、不检索）；本步<b>不发</b> <c>flow_run_pipeline</c>（PRD §6 #14）。
     /// </para>
     /// </remarks>
-    /// <param name="includeDeployStage">是否包含部署阶段。</param>
-    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c>＝全部走模板）。</param>
+    /// <param name="update">是否为「覆盖更新」口径。</param>
+    /// <param name="yamlOverrides">按端手工微调的 YAML 原文（<c>null</c>＝全部走准备结论）。</param>
+    /// <param name="deployTargets">按端选定的部署目标（<c>null</c>／缺项＝用准备结论里的推荐值）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>步骤结果（含逐端流水线地址）。</returns>
     private async Task<StepResult> RunPipelineStepAsync(
-        bool includeDeployStage,
+        bool update,
         IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets,
         CancellationToken cancellationToken)
     {
         const WizardStep Step = WizardStep.Pipeline;
-        var action = includeDeployStage ? "补齐部署阶段" : "创建云效流水线";
+        var action = update ? "覆盖更新云效流水线" : "创建云效流水线";
 
         var spec = Current;
         if (spec is null)
@@ -1737,8 +1949,10 @@ public sealed class NewProjectService : INewProjectService
         }
 
         // 闸门：与「编译失败阻断推送」同口径，只认档案事实（界面顺序 / 常驻入口 / 聊天入口都能绕开）。
-        // 首次创建要求 Step 6 已成功；补齐要求该端流水线已存在（尚无流水线时无从补齐，按端另行提示）。
-        if (!includeDeployStage && !StepGate.CanCreatePipelines(spec))
+        // 创建要求 Step 6 已成功；覆盖更新不设闸门（目标是档案里那条，重跑即纠偏）。
+        // 拒绝不记操作记录——一次「未执行的拒绝」不是本步的终态，记了会被 SnapshotStepStates 回放写进档案、
+        // 把早已成功的 Step 7 状态改写成失败（提示由调用方按 StepResult.Message 呈现）。
+        if (!update && !StepGate.CanCreatePipelines(spec))
         {
             const string Tip = "推送（Step 6）尚未全部成功，已拒绝创建流水线：仓库里还没有可构建的代码，"
                                + "请先完成 Step 6（推送）再执行本步（结论见 Step 6 的逐端状态行与右侧操作记录）。";
@@ -1747,17 +1961,23 @@ public sealed class NewProjectService : INewProjectService
 
         using var permissionScope = EnterPermissionScope();
 
-        var flow = Resolve<FlowClient>();
-        if (flow is null)
+        if (string.IsNullOrWhiteSpace(spec.LocalPath))
         {
-            const string Tip = "宿主能力不完整：云效流水线客户端（FlowClient）不可用，无法执行 Step 7。";
+            const string Tip = "档案缺少本地目录，无法落结论文件：请重跑 Step 1 / Step 2。";
             Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
 
-        if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
+        // 执行续跑以「准备（只读）」结论为事实来源（§5.3）：优先用 PreparePipelinesAsync 记下的那一份；
+        // 进程重启导致字段为空时，才回退取最新一份 step7-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
+        var prepareResultFile = !string.IsNullOrWhiteSpace(_pipelinePrepareResultFile)
+                                && File.Exists(_pipelinePrepareResultFile)
+            ? _pipelinePrepareResultFile
+            : StepResultFile.FindLatest(spec.LocalPath!, 7);
+        if (string.IsNullOrWhiteSpace(prepareResultFile) || !File.Exists(prepareResultFile))
         {
-            const string Tip = "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重跑本步（PRD §4.9）。";
+            const string Tip = "缺少 Step 7 准备结论文件（step7-*.json）：请先在面板执行「准备（只读）」，"
+                               + "复核预览后再执行本步。";
             Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
@@ -1772,184 +1992,159 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, Tip);
         }
 
-        var total = Stopwatch.StartNew();
-        var artifacts = new List<RemoteArtifact>();
-        var summary = new List<string>();
+        var watch = BeginOperation(Step, action,
+            $"{targets.Count} 端 · 准备结论 {Path.GetFileName(prepareResultFile)}");
 
         try
         {
-            foreach (var repository in targets)
+            var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 7);
+            StepResultFile.EnsureDirectory(resultFile);
+
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            var startedAt = DateTime.UtcNow;
+            var outcome = await CreateBridge()
+                .RunAsync(spec,
+                    StepPrompts.BuildPipelineExecutePrompt(
+                        spec, targets, prepareResultFile!, resultFile, yamlOverrides, deployTargets, update),
+                    resultFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (outcome.SessionCreated && !string.IsNullOrWhiteSpace(outcome.SessionId))
+                spec.SessionId = outcome.SessionId;
+
+            var (report, reportPath, _, readError) = ReadFreshReport(spec.LocalPath!, 7, startedAt);
+
+            var ok = false;
+            var message = string.Empty;
+            IReadOnlyList<string> localIssues = Array.Empty<string>();
+
+            if (report is null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var label = EndLabel(repository.End);
-                var previous = spec.PipelineResults.FirstOrDefault(item => item.End == repository.End);
-
-                // 补齐：只对「已有流水线」且「该端确实有部署阶段模板」的端生效。
-                // 前端两端无独立部署阶段（企服版参考流水线取证：OSS 上传即发布），按端跳过并如实说明。
-                if (includeDeployStage)
-                {
-                    if (previous is null || string.IsNullOrWhiteSpace(previous.PipelineId))
-                    {
-                        summary.Add($"{label}尚未创建流水线，跳过补齐");
-                        continue;
-                    }
-
-                    if (PipelineTemplateLibrary.DeployStageYaml(repository.End) is null)
-                    {
-                        summary.Add($"{label}无独立部署阶段（构建产物上传 OSS 即发布），跳过补齐");
-                        continue;
-                    }
-
-                    // 补齐前置（真机口径）：VMDockerDeploy.machineGroup 必须是**主机组 uuid**（tb 的数字 id 会被拒）。
-                    // 未绑定就直接给可读失败、不发请求——否则必然是 400「该机器组uuid[]不存在」，白跑一次。
-                    if (string.IsNullOrWhiteSpace(_settings.FindPipelineDefault(repository.End)?.DeployMachineGroup))
-                    {
-                        const string Tip = "补齐部署阶段前需先绑定部署主机组：请在插件配置 newproject.settings.json 的 "
-                                           + "pipelineDefaults[Service].deployMachineGroup 填入**主机组 uuid**"
-                                           + "（云效控制台主机组详情可见；企服版 tb 的数字 id 226948 不被新版 YAML 接受，"
-                                           + "报「该机器组uuid[226948]不存在」），再重跑「一键补齐部署阶段」。"
-                                           + "该端其余人工项（Harbor 凭据 HARBOR_USER / HARBOR_PASSWORD、代码源服务连接）见「待人工绑定清单」。";
-                        Record(Step, $"{action}（{label}）", Tip, StepStatus.Failed, TimeSpan.Zero);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, Tip);
-                    }
-                }
-
-                var rendered = PipelineRenderer.Render(spec, repository, _settings, includeDeployStage);
-                var watch = BeginOperation(Step, $"{action}（{label}）", $"流水线名 {rendered.PipelineName}");
-
-                // ── 0. 手工微调（v0.31）：微调文本优先；**只有补齐**才把部署阶段追加到微调文本之后 ──────────
-                var overrideYaml = TryGetYamlOverride(yamlOverrides, repository.End);
-                // 创建口径不追加部署阶段（PRD 2A：首次创建只含构建段）；与 PreviewPipelines 的
-                // deployStageYaml: null 同源，保证「预览到什么就提交什么」（2026-10-22 代码审查 D1）。
-                var yaml = PipelineYamlOverride.Compose(
-                    rendered.Yaml,
-                    overrideYaml,
-                    includeDeployStage ? rendered.DeployStageYaml : null);
-
-                if (overrideYaml is not null)
-                {
-                    // 幂等检索与 UpdatePipeline 都以「该端最终流水线名」为准：补齐时名称取自档案里的现名。
-                    var expectedName = includeDeployStage && previous is not null && !string.IsNullOrWhiteSpace(previous.PipelineName)
-                        ? previous.PipelineName
-                        : rendered.PipelineName;
-
-                    var invalid = PipelineYamlOverride.Validate(yaml, expectedName);
-                    if (invalid is not null)
-                    {
-                        EndOperation(Step, $"{action}（{label}）", "手工微调的 YAML 未通过提交前校验", StepStatus.Failed, watch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, invalid);
-                    }
-                }
-
-                // ── 1. 幂等：按名精确检索，命中即复用（PRD §4.3 Step 7）──────────────────
-                var listed = await flow.ListPipelinesAsync(
-                    pipelineName: rendered.PipelineName,
-                    page: 1,
-                    perPage: 10,
-                    cancellationToken: cancellationToken);
-
-                var hit = (listed ?? new List<YunxiaoPipeline>())
-                    .FirstOrDefault(item => string.Equals(item.DisplayName, rendered.PipelineName, StringComparison.OrdinalIgnoreCase));
-
-                var pipelineId = hit?.DisplayId;
-                var created = false;
-
-                // ── 2. 创建 / 更新 ───────────────────────────────────────────────────
-                if (includeDeployStage)
-                {
-                    // 补齐：对该端已有流水线做整体覆盖更新（UpdatePipeline 会一并覆盖名称，故回传现名）
-                    var updated = await flow.UpdatePipelineAsync(
-                        previous!.PipelineId,
-                        new YunxiaoUpdatePipelineRequest
-                        {
-                            PipelineName = previous.PipelineName,
-                            Content = yaml
-                        },
-                        cancellationToken: cancellationToken);
-
-                    if (!updated)
-                    {
-                        EndOperation(Step, $"{action}（{label}）", "云效未接受更新请求", StepStatus.Failed, watch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, $"{action}失败（{label}）：云效未接受更新请求，请稍后重试。");
-                    }
-
-                    pipelineId = previous.PipelineId;
-                }
-                else if (string.IsNullOrWhiteSpace(pipelineId))
-                {
-                    pipelineId = await flow.CreatePipelineAsync(
-                        new YunxiaoCreatePipelineRequest
-                        {
-                            PipelineName = rendered.PipelineName,
-                            Content = yaml
-                        },
-                        cancellationToken: cancellationToken);
-
-                    if (string.IsNullOrWhiteSpace(pipelineId))
-                    {
-                        EndOperation(Step, $"{action}（{label}）", "云效未返回流水线 id", StepStatus.Failed, watch.Elapsed);
-                        SaveSpec(spec);
-                        return StepResult.Fail(Step, $"{action}失败（{label}）：云效未返回流水线 id，请稍后重试。");
-                    }
-
-                    created = true;
-                }
-
-                var webUrl = BuildPipelineWebUrl(pipelineId);
-
-                // ── 3. 落档案（重跑幂等：同端覆盖，不重复入册）────────────────────────
-                var result = previous ?? new EndPipelineResult { End = repository.End };
-                result.PipelineId = pipelineId!;
-                result.PipelineName = created || previous is null ? rendered.PipelineName : previous.PipelineName;
-                result.WebUrl = webUrl;
-                result.Created = created;
-                result.DeployStageIncluded = includeDeployStage ? true : previous?.DeployStageIncluded ?? false;
-                result.PendingBindings = rendered.PendingBindings.ToList();
-                result.Yaml = yaml;
-
-                if (previous is null)
-                    spec.PipelineResults.Add(result);
-
-                var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Pipeline, name: rendered.PipelineName, externalId: pipelineId, webUrl: webUrl);
-                if (artifact is not null)
-                    artifacts.Add(artifact);
-
-                var outcome = created
-                    ? $"已创建（{rendered.PendingBindings.Count} 项待人工绑定）"
-                    : includeDeployStage ? "已并入部署阶段" : "命中同名流水线，已复用";
-                EndOperation(Step, $"{action}（{label}）", $"{outcome} · {webUrl}", StepStatus.Succeeded, watch.Elapsed);
-                summary.Add($"{label}{outcome}");
-
-                SaveSpec(spec);
+                message = string.IsNullOrWhiteSpace(readError)
+                    ? "助手未产出可解析的结论文件（step7-*.json）。"
+                    : readError;
+            }
+            else
+            {
+                // §6.1.4：流水线在云效远端，无本地可独立核对的证据，只取一条如实的残余风险说明（不作为失败依据）
+                localIssues = StepLocalVerifier.PipelineResidualNotes(report, spec.Ends);
+                (ok, _, message) = StepReportEvaluator.EvaluatePipeline(report, spec.Ends, outcome.Errors);
             }
 
-            spec.AdvanceTo(WizardStep.Pipeline);
+            IReadOnlyList<RemoteArtifact> artifacts = Array.Empty<RemoteArtifact>();
+            if (ok)
+            {
+                artifacts = ApplyPipelineArtifacts(spec, targets, report!, deployTargets);
+                spec.AdvanceTo(WizardStep.Pipeline);
+            }
+
+            var lines = DescribeTurn(outcome, resultFile);
+            if (report is not null && !string.IsNullOrWhiteSpace(reportPath))
+                lines.Add($"结论文件解析：{reportPath}");
+            if (localIssues.Count > 0)
+                lines.Add("　残余风险：" + string.Join("；", localIssues.Take(3)));
+            lines.Add($"结论：{message}");
+
+            EndOperation(Step, action, string.Join("\n", lines),
+                ok ? StepStatus.Succeeded : StepStatus.Failed, watch.Elapsed);
+
+            // 硬纪律：EndOperation 必须在 SaveSpec 之前（终态快照按内存操作记录回放，只回放终态记录）
             SaveSpec(spec);
 
-            total.Stop();
-            var message = $"Step 7 完成：{summary.Count} 端流水线已就绪（{string.Join(" · ", summary)}）· 耗时 {total.Elapsed.TotalSeconds:F1}s";
-            Record(Step, "Step 7 完成", message, StepStatus.Succeeded, total.Elapsed);
-            _host?.Log($"[newproject] {message}");
-
-            return StepResult.Ok(Step, message, artifacts);
+            return ok
+                ? StepResult.Ok(Step, message, artifacts)
+                : StepResult.Fail(Step, message);
         }
         catch (OperationCanceledException)
         {
-            FailRunningOperation(Step, "用户取消。", total.Elapsed);
+            EndOperation(Step, action, "已取消（远端产物一律保留，可直接重跑本步）。", StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
             return StepResult.Fail(Step, "Step 7 已取消。");
         }
         catch (Exception ex)
         {
-            _host?.LogError("[newproject] Step 7 创建流水线失败", ex);
-            FailRunningOperation(Step, ex.Message, total.Elapsed);
+            _host?.LogError($"[newproject] Step 7 {action}失败", ex);
+            EndOperation(Step, action, ex.Message, StepStatus.Failed, watch.Elapsed);
             SaveSpec(spec);
-            return StepResult.Fail(Step, $"Step 7 失败：{ex.Message}（已创建的端不受影响；修正后可直接重跑本步）");
+            return StepResult.Fail(Step, $"Step 7 失败：{ex.Message}（已处理的端不受影响；修正后可直接重跑本步）");
         }
+    }
+
+    /// <summary>
+    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案（§5.3 + §6.1.1）：逐端 <c>kind=pipeline</c> 回写流水线事实并登记远端产物。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="targets">本次要建流水线的端（已克隆）。</param>
+    /// <param name="report">已解析的执行续跑结论。</param>
+    /// <param name="deployTargets">按端选定的部署目标（用于回写本次实际用的主机组）。</param>
+    /// <returns>本次新登记的远端产物（供操作记录 / 结果回传）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 只回写「结论文件给了事实」的字段：缺失项保留档案原值，避免助手漏写某项时把用户确认过的预览清空。
+    /// </para>
+    /// <para>
+    /// <b>Created 的推导</b>：<see cref="PipelineArtifactExtra"/> 没有「本次是创建还是覆盖」标记，故
+    /// <see cref="EndPipelineResult.Created"/> 只能由「档案里原先有没有该端 <see cref="EndPipelineResult.PipelineId"/>」推导
+    /// ——首次落账为 <c>true</c>，此后重跑（含命中同名覆盖）为 <c>false</c>。这是一处轻微保真损失（见交付汇报）。
+    /// </para>
+    /// <para>调用方（<see cref="RunPipelineStepAsync"/>）已在本地复核 + 判定通过后才会走到这里。</para>
+    /// </remarks>
+    private static IReadOnlyList<RemoteArtifact> ApplyPipelineArtifacts(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> targets,
+        StepReport report,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets)
+    {
+        var registered = new List<RemoteArtifact>();
+
+        foreach (var repository in targets)
+        {
+            var fact = StepReportEvaluator.PipelineArtifact(report, repository.End);
+            if (fact is null)
+                continue;
+
+            var extra = StepReportEvaluator.PipelineExtra(report, repository.End);
+            var selected = TryGetDeployTarget(deployTargets, repository.End);
+
+            // 流水线名：结论给了就用它；否则退回仓库名（不做名称格式再推导，避免与远端实际不符）
+            var name = string.IsNullOrWhiteSpace(fact.Name) ? repository.RepositoryName : fact.Name!.Trim();
+            var pipelineId = fact.ExternalId?.Trim() ?? string.Empty;
+            var webUrl = string.IsNullOrWhiteSpace(fact.WebUrl)
+                ? BuildPipelineWebUrl(pipelineId)
+                : fact.WebUrl!.Trim();
+
+            var result = spec.PipelineResults.FirstOrDefault(one => one.End == repository.End);
+
+            // Created 只能由「档案里原先没有该端流水线 id」推导（extra 无创建 / 覆盖标记）
+            var created = string.IsNullOrWhiteSpace(result?.PipelineId);
+            if (result is null)
+            {
+                result = new EndPipelineResult { End = repository.End };
+                spec.PipelineResults.Add(result);
+            }
+
+            result.PipelineId = pipelineId;
+            result.PipelineName = name;
+            result.WebUrl = webUrl;
+            result.Created = created;
+            result.DeployStageIncluded = extra?.YamlIncludesDeployStage ?? false;
+            // 本次实际用的主机组：用户已选优先，否则用结论里的推荐 uuid（名称只认用户选择）
+            result.DeployMachineGroupUuid = selected is not null && !string.IsNullOrWhiteSpace(selected.Uuid)
+                ? selected.Uuid
+                : extra?.RecommendedDeployTargetUuid?.Trim() ?? string.Empty;
+            result.DeployMachineGroupName = selected is not null ? selected.Name : string.Empty;
+            if (extra is not null)
+                result.PendingBindings = extra.PendingBindings?.ToList() ?? new List<string>();
+            if (!string.IsNullOrWhiteSpace(fact.Yaml))
+                result.Yaml = fact.Yaml!;
+
+            var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Pipeline,
+                name: name, externalId: pipelineId, webUrl: webUrl);
+            if (artifact is not null)
+                registered.Add(artifact);
+        }
+
+        return registered;
     }
 
     /// <inheritdoc />
@@ -2112,6 +2307,56 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
+    /// 把插件包内的 <c>docs/</c> 知识正文复制进项目工作区（<c>{工作区}\.luban-agent\plugin-newproject\docs\</c>）。
+    /// </summary>
+    /// <param name="workspaceRoot">项目工作区根目录。</param>
+    /// <returns>已复制份数 + 目标目录；插件包无 <c>docs/</c>（或为内置插件无独立目录）时返回 <c>null</c>。</returns>
+    /// <remarks>
+    /// 覆盖式复制：同名文件以插件包为准（升级即生效），但**不删除**用户手工补充的文件（§4.2）。
+    /// </remarks>
+    private (int Count, string Target)? CopyPluginDocs(string workspaceRoot)
+    {
+        try
+        {
+            var pluginId = _host?.PluginId;
+            if (string.IsNullOrWhiteSpace(pluginId))
+                return null;
+
+            var manager = _host!.Services.GetService(typeof(PluginManager)) as PluginManager;
+            var packageRoot = manager?.GetPlugin(pluginId)?.Directory;
+            if (string.IsNullOrWhiteSpace(packageRoot))
+                return null;
+
+            var sourceDir = Path.Combine(packageRoot, "docs");
+            if (!Directory.Exists(sourceDir))
+                return null;
+
+            var targetDir = Path.Combine(workspaceRoot, ".luban-agent", "plugin-newproject", "docs");
+            Directory.CreateDirectory(targetDir);
+
+            var copied = 0;
+            foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(sourceDir, file);
+                var destination = Path.Combine(targetDir, relative);
+                var destinationFolder = Path.GetDirectoryName(destination);
+                if (!string.IsNullOrEmpty(destinationFolder))
+                    Directory.CreateDirectory(destinationFolder);
+
+                File.Copy(file, destination, overwrite: true);
+                copied++;
+            }
+
+            return (copied, targetDir);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("[newproject] 铺装 docs 知识正文失败（本步按失败呈现）。", ex);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 探测目录可写性（只读语义：探针文件写完即删，不留残留）。
     /// </summary>
     /// <param name="path">目录路径。</param>
@@ -2255,22 +2500,6 @@ public sealed class NewProjectService : INewProjectService
             RaiseChanged();
         else
             Record(step, action, detail, status, duration);
-    }
-
-    /// <summary>
-    /// 原地改写最近一条同名「进行中」记录的说明，**不改状态**（用于「还需等待 N 秒」这类进度文案）。
-    /// </summary>
-    /// <remarks>
-    /// 退避重试期间调用（v0.29 Step 6 推送）：一次推送仍是一条动作记录，只把说明改成当前退避进度，
-    /// 避免时间线里出现「推送到自有仓库 ×4」这种把重试摊成多条记录的噪声。
-    /// </remarks>
-    /// <param name="step">步骤。</param>
-    /// <param name="action">动作标题。</param>
-    /// <param name="detail">新的说明。</param>
-    private void UpdateRunningOperation(WizardStep step, string action, string detail)
-    {
-        if (TryMutateRunningOperation(step, action, operation => operation.Detail = detail))
-            RaiseChanged();
     }
 
     /// <summary>
@@ -2426,296 +2655,6 @@ public sealed class NewProjectService : INewProjectService
         => (_settings.BuildGroupName(spec.Code, spec.Name) ?? string.Empty).Trim();
 
     /// <summary>
-    /// 在组织内按名精确查找目标代码组（<b>只读</b>）。
-    /// </summary>
-    /// <remarks>
-    /// 云效 <c>namespaces.search</c> 是「组名包含」语义，故命中后还要做一次精确名比较；
-    /// 未登记父级（组织根）时可能存在嵌套同名组，此时取层级最浅的一个，避免误复用深层同名组。
-    /// </remarks>
-    /// <param name="codeup">云效客户端。</param>
-    /// <param name="groupName">组名（精确匹配，忽略大小写）。</param>
-    /// <param name="parentId">父级组 ID（<c>null</c>＝组织根）。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>命中的代码组；未命中为 <c>null</c>。</returns>
-    private static async Task<YunxiaoNamespace?> FindGroupByNameAsync(
-        CodeupClient codeup,
-        string groupName,
-        long? parentId,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(groupName))
-            return null;
-
-        var list = await codeup.ListNamespacesAsync(
-            search: groupName,
-            parentId: parentId,
-            page: 1,
-            perPage: 100,
-            organizationId: organizationId,
-            cancellationToken: cancellationToken);
-
-        var candidates = (list ?? new List<YunxiaoNamespace>())
-            .Where(item => string.IsNullOrWhiteSpace(item.Kind)
-                           || string.Equals(item.Kind, "group", StringComparison.OrdinalIgnoreCase))
-            .Where(item => string.Equals(item.Name, groupName, StringComparison.OrdinalIgnoreCase));
-
-        if (parentId.HasValue)
-            candidates = candidates.Where(item => item.ParentId == parentId);
-
-        return candidates
-            .OrderBy(item => (item.PathWithNamespace ?? item.Path ?? string.Empty).Count(ch => ch == '/'))
-            .FirstOrDefault();
-    }
-
-    /// <summary>
-    /// 确保目标代码组存在（先查后建，PRD §4.3 Step 3）：命中即复用，未命中才创建。
-    /// </summary>
-    /// <param name="codeup">云效客户端。</param>
-    /// <param name="groupName">组名。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>可用的代码组（新建或复用）。</returns>
-    /// <exception cref="InvalidOperationException">组名为空，或云效未返回新建组 id。</exception>
-    private async Task<YunxiaoNamespace> EnsureGroupAsync(
-        CodeupClient codeup,
-        string groupName,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(groupName))
-            throw new InvalidOperationException("项目代码组名为空：请检查插件配置 groupNameFormat。");
-
-        var parentId = _settings.TryGetGroupParentId();
-        var existing = await FindGroupByNameAsync(codeup, groupName, parentId, organizationId, cancellationToken);
-        if (existing is not null)
-            return existing;
-
-        var created = await codeup.CreateNamespaceAsync(
-            new YunxiaoCreateNamespaceRequest
-            {
-                Name = groupName,
-                Path = groupName,
-                ParentId = parentId,
-                Visibility = NormalizeVisibility(_settings.DefaultVisibility),
-                Description = $"由「新建项目」插件自动创建的项目代码组（{groupName}）"
-            },
-            organizationId,
-            cancellationToken);
-
-        if (created is null || created.Id <= 0)
-            throw new InvalidOperationException($"云效未返回新建代码组 id（{groupName}）。");
-
-        return created;
-    }
-
-    /// <summary>
-    /// 在云效<b>模板库</b>（<c>templateType=1</c>）中定位某端的模板仓（PRD §6 #5）。
-    /// </summary>
-    /// <remarks>
-    /// 优先用配置登记的 <c>templates[].projectId</c>（整数）精确匹配；未登记则按模板仓名匹配。
-    /// 走模板库列表而不是按名搜普通仓库：只有登记为模板的仓库才能用作 <c>templateProjectId</c>。
-    /// </remarks>
-    /// <param name="codeup">云效客户端。</param>
-    /// <param name="repository">按端仓库信息。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>命中的模板仓；失败时给出可读原因（不抛异常）。</returns>
-    private async Task<(YunxiaoTemplateRepository? Template, string? Error)> LocateTemplateAsync(
-        CodeupClient codeup,
-        EndRepository repository,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        var binding = _settings.FindTemplate(repository.End);
-        var wanted = (repository.TemplateRepository ?? string.Empty).Trim();
-        if (wanted.Length == 0)
-            wanted = (binding?.Repository ?? string.Empty).Trim();
-
-        var configuredId = long.TryParse(binding?.ProjectId?.Trim(), out var parsedId) && parsedId > 0
-            ? parsedId
-            : (long?)null;
-
-        List<YunxiaoTemplateRepository> templates;
-        try
-        {
-            templates = await codeup.ListTemplateRepositoriesAsync(
-                templateType: 1,
-                page: 1,
-                perPage: 100,
-                organizationId: organizationId,
-                cancellationToken: cancellationToken)
-                ?? new List<YunxiaoTemplateRepository>();
-        }
-        catch (Exception ex)
-        {
-            return (null, $"读取云效模板库失败：{ex.Message}");
-        }
-
-        if (templates.Count == 0)
-            return (null, "云效自定义模板库为空（templateType=1）：请先在云效把模板仓登记为模板（PRD §6 #5）。");
-
-        if (configuredId.HasValue)
-        {
-            var byId = templates.FirstOrDefault(item => item.ProjectId == configuredId.Value);
-            return byId is not null
-                ? (byId, null)
-                : (null, $"配置登记的模板仓 ID {configuredId} 不在云效模板库中。"
-                         + $"模板库现有：{string.Join(" / ", templates.Select(TemplateLabel))}");
-        }
-
-        var byName = templates.FirstOrDefault(item =>
-            string.Equals(item.Name, wanted, StringComparison.OrdinalIgnoreCase));
-        return byName is not null
-            ? (byName, null)
-            : (null, $"模板库中没有名为「{wanted}」的模板仓。"
-                     + $"模板库现有：{string.Join(" / ", templates.Select(TemplateLabel))}");
-    }
-
-    /// <summary>
-    /// 解析某端的模板 pin 分支（PRD §6 #5）。
-    /// </summary>
-    /// <remarks>
-    /// 配置 <c>templates[].branch</c> 登记了值则以登记值为准（不存在即报错，不静默回退）；
-    /// 留空则运行期实时取模板仓分支，按 <c>develop → master → main → 模板默认分支</c> 顺序择一。
-    /// </remarks>
-    /// <param name="codeup">云效客户端。</param>
-    /// <param name="templateId">模板仓 ID。</param>
-    /// <param name="end">所属端。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>pin 分支、来源说明、模板仓分支清单、失败原因。</returns>
-    private async Task<(string? Branch, string Source, List<string> Branches, string? Error)> ResolvePinAsync(
-        CodeupClient codeup,
-        long templateId,
-        ProjectEnd end,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        var empty = new List<string>();
-
-        List<YunxiaoBranch> branches;
-        try
-        {
-            branches = await codeup.ListBranchesAsync(
-                templateId,
-                page: 1,
-                perPage: 100,
-                organizationId: organizationId,
-                cancellationToken: cancellationToken)
-                ?? new List<YunxiaoBranch>();
-        }
-        catch (Exception ex)
-        {
-            return (null, string.Empty, empty, $"读取模板仓分支失败：{ex.Message}");
-        }
-
-        var names = branches
-            .Select(item => item.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name!)
-            .ToList();
-
-        if (names.Count == 0)
-            return (null, string.Empty, names, "模板仓没有任何分支（模板全量同步可能尚未完成）。");
-
-        var configured = _settings.FindTemplate(end)?.Branch?.Trim();
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return names.Contains(configured, StringComparer.Ordinal)
-                ? (configured, "配置登记", names, null)
-                : (null, string.Empty, names,
-                    $"配置登记的 pin「{configured}」在模板仓中不存在（模板仓现有：{string.Join(" / ", names)}）。");
-        }
-
-        foreach (var candidate in PreferredPins)
-        {
-            if (names.Contains(candidate, StringComparer.Ordinal))
-                return (candidate, $"按开发约定取模板 {candidate}", names, null);
-        }
-
-        var fallback = branches.FirstOrDefault(item => item.DefaultBranch)?.Name;
-        if (!string.IsNullOrWhiteSpace(fallback))
-            return (fallback, $"取模板默认分支 {fallback}", names, null);
-
-        return (null, string.Empty, names,
-            "模板仓既没有 develop / master / main，也未标记默认分支："
-            + $"请在插件配置 templates[].branch 显式登记 pin（模板仓现有：{string.Join(" / ", names)}）。");
-    }
-
-    /// <summary>模板库条目的展示名（名称缺失时退回路径 / id）。</summary>
-    /// <param name="template">模板库条目。</param>
-    /// <returns>展示名。</returns>
-    private static string TemplateLabel(YunxiaoTemplateRepository template)
-        => string.IsNullOrWhiteSpace(template.Name)
-            ? (string.IsNullOrWhiteSpace(template.Path) ? $"#{template.ProjectId}" : template.Path!)
-            : template.Name!;
-
-    /// <summary>
-    /// 登记项目级远端产物「代码组」（重跑幂等：同名只更新地址，不重复入册）。
-    /// </summary>
-    /// <param name="spec">项目档案。</param>
-    /// <param name="group">云效代码组。</param>
-    /// <returns>新登记的产物；已存在时为 <c>null</c>。</returns>
-    private static RemoteArtifact? AddGroupArtifact(ProjectSpec spec, YunxiaoNamespace group)
-    {
-        var name = string.IsNullOrWhiteSpace(group.PathWithNamespace)
-            ? (string.IsNullOrWhiteSpace(group.Name) ? group.Id.ToString(CultureInfo.InvariantCulture) : group.Name!)
-            : group.PathWithNamespace!;
-
-        var webUrl = group.WebUrl ?? string.Empty;
-        var externalId = group.Id.ToString(CultureInfo.InvariantCulture);
-
-        var existing = spec.RemoteArtifacts.FirstOrDefault(artifact =>
-            artifact.Kind == RemoteArtifactKind.Group
-            && string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (existing is not null)
-        {
-            existing.WebUrl = webUrl;
-            existing.ExternalId = externalId;
-            return null;
-        }
-
-        var created = new RemoteArtifact
-        {
-            Kind = RemoteArtifactKind.Group,
-            End = null,
-            Name = name,
-            WebUrl = webUrl,
-            ExternalId = externalId
-        };
-
-        spec.RemoteArtifacts.Add(created);
-        return created;
-    }
-
-    /// <summary>
-    /// 按仓库名精确检索云效仓库（幂等①）：列表接口不含克隆地址，只用于「是否存在 + 取 id」。
-    /// </summary>
-    /// <param name="codeup">云效客户端。</param>
-    /// <param name="name">仓库名（精确匹配，忽略大小写）。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>命中的仓库；未命中为 <c>null</c>。</returns>
-    private static async Task<YunxiaoRepository?> FindRepositoryByNameAsync(
-        CodeupClient codeup,
-        string name,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        var page = await codeup.SearchRepositoriesAsync(
-            name,
-            page: 1,
-            perPage: 100,
-            organizationId: organizationId,
-            cancellationToken: cancellationToken);
-
-        return page?.Items?.FirstOrDefault(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
     /// 读取云效 PAT（只用于「是否已配置」的前置判定；真正的出口门禁在连接器内）。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -2786,88 +2725,6 @@ public sealed class NewProjectService : INewProjectService
         }
     }
 
-    /// <summary>
-    /// 等待「建库后模板同步」把 pin 分支真的推到新仓（RC1：建库返回 ≠ 分支就绪）。
-    /// </summary>
-    /// <param name="codeup">云效连接器。</param>
-    /// <param name="repositoryId">云效仓库 id（本步新建或同名复用的那条）。</param>
-    /// <param name="branch">pin 分支名（精确匹配，区分大小写）。</param>
-    /// <param name="organizationId">组织 ID。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>在 <see cref="BranchReadyTimeout"/> 内命中分支返回 <c>true</c>，超时返回 <c>false</c>。</returns>
-    /// <remarks>
-    /// 建库接口返回只代表仓库已登记，模板分支由服务端异步同步；此时立刻 <c>git clone -b</c> 必然失败，
-    /// 且 git 会在目标目录留下 <c>.git/HEAD = ref: refs/heads/.invalid</c> 的残骸。故克隆前先轮询到位。
-    /// </remarks>
-    private static async Task<bool> WaitForBranchReadyAsync(
-        CodeupClient codeup,
-        long repositoryId,
-        string branch,
-        string organizationId,
-        CancellationToken cancellationToken)
-    {
-        var watch = Stopwatch.StartNew();
-        while (watch.Elapsed < BranchReadyTimeout)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var branches = await codeup.ListBranchesAsync(
-                repositoryId,
-                page: 1,
-                perPage: 100,
-                organizationId: organizationId,
-                cancellationToken: cancellationToken);
-
-            if (branches is not null
-                && branches.Any(item => string.Equals(item.Name, branch, StringComparison.Ordinal)))
-                return true;
-
-            await Task.Delay(BranchReadyPollInterval, cancellationToken);
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// 克隆失败时清理本次新建的残留目录（RC3：失败留下的坏 <c>.git</c> 会在重跑时被误当成「已克隆」）。
-    /// </summary>
-    /// <param name="path">目标目录。</param>
-    /// <param name="dirPreExisted">克隆前该目录是否已存在（已存在则不动，交由三选一处置，不越权删除）。</param>
-    /// <returns>是否执行了清理。</returns>
-    /// <remarks>
-    /// 删除走 <see cref="DirectoryCleaner.DeleteForce"/>（RC5）：<c>git</c> 的 pack 文件是<b>只读</b>的，
-    /// 裸 <c>Directory.Delete</c> 必抛 <c>UnauthorizedAccessException</c>，且抛错前已删掉 HEAD / config / refs，
-    /// 只会把残留越搞越烂。
-    /// </remarks>
-    private static bool TryCleanPartialClone(string path, bool dirPreExisted)
-    {
-        if (dirPreExisted)
-            return false;
-
-        try
-        {
-            if (Directory.Exists(path))
-                DirectoryCleaner.DeleteForce(path);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[newproject] 清理克隆残留目录失败：{path}", ex);
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Step 6 的推送目标分支：配置 <c>pushBranch</c> 优先（v0.28 起包内默认 <c>develop</c>，PRD §6 #17 改口径）；
-    /// 配置留空才退回该端仓库的默认分支，仍为空则 <c>main</c>。
-    /// </summary>
-    /// <param name="repository">按端仓库信息。</param>
-    /// <returns>目标分支名。</returns>
-    private string ResolvePushBranch(EndRepository repository)
-        => !string.IsNullOrWhiteSpace(_settings.PushBranch)
-            ? _settings.PushBranch
-            : string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "main" : repository.DefaultBranch!;
-
     /// <summary>由 HTTPS 克隆地址推导仓库 Web 地址（去掉尾部 <c>.git</c>）。</summary>
     /// <param name="cloneUrl">克隆地址。</param>
     /// <returns>Web 地址。</returns>
@@ -2886,7 +2743,7 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="spec">项目档案。</param>
     /// <param name="repository">按端仓库信息。</param>
     /// <param name="kind">产物类别。</param>
-    /// <param name="branch">分支产物的分支名（Step 6 实际推送的分支，见 <see cref="ResolvePushBranch"/>）。</param>
+    /// <param name="branch">分支产物的分支名（Step 6 实际推送的分支，见 <c>docs/step6-push.md</c>）。</param>
     /// <param name="name">
     /// 产物名覆盖（仅流水线用：名字是「流水线名」而不是分支名）；为空则按 <paramref name="kind"/> 推导。
     /// </param>
@@ -2973,12 +2830,6 @@ public sealed class NewProjectService : INewProjectService
         _ => end.ToString()
     };
 
-    /// <summary>可见性的中文标签。</summary>
-    /// <param name="visibility">可见性。</param>
-    /// <returns>标签。</returns>
-    private static string VisibilityLabel(string? visibility)
-        => string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase) ? "私有" : "组织内公开";
-
     /// <summary>是否为受支持的可见性取值（PRD §4.3 Step 3 确认区只提供这两档）。</summary>
     /// <param name="visibility">可见性。</param>
     /// <returns>是否受支持。</returns>
@@ -2991,181 +2842,6 @@ public sealed class NewProjectService : INewProjectService
     /// <returns>归一化结果。</returns>
     private static string NormalizeVisibility(string? visibility)
         => string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase) ? "private" : "internal";
-
-    /// <summary>
-    /// 执行本机 git 命令，并在**唯一出口**处过权限门禁（PRD §3.7）：插件自行拉起的 git 进程
-    /// 不得借连接器之名绕过检查。操作名取**子命令**（<c>clone</c> / <c>push</c> / <c>add</c> /
-    /// <c>commit</c> / <c>rev-parse</c> …），会跳过 <c>-c</c> / <c>-C</c> / <c>--git-dir</c> 等前置全局选项；
-    /// 由宿主按 git 能力组判定
-    /// （见框架 <c>PluginSecurityOptions.GitWhitelist</c>：<c>clone_push</c> / <c>commit</c> / <c>inspect</c>）。
-    /// </summary>
-    /// <param name="runner">进程执行器。</param>
-    /// <param name="workingDirectory">仓库目录。</param>
-    /// <param name="arguments">参数列表（不经 shell，避免引号转义问题）。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>执行结果。</returns>
-    private Task<ProcessResult> RunGitAsync(
-        ProcessRunner runner,
-        string workingDirectory,
-        IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
-    {
-        var operation = ResolveGitOperation(arguments);
-        var guard = Resolve<PluginPermissionGuard>() ?? PluginPermissionGuard.Default;
-        guard.RequireGit(operation, $"NewProjectService.RunGitAsync({operation})");
-        guard.RequireProcess("git", $"NewProjectService.RunGitAsync({operation})");
-
-        return runner.RunAsync(
-            "git",
-            string.Empty,
-            workingDirectory,
-            stdin: null,
-            timeoutMs: 120_000,
-            cancellationToken: cancellationToken,
-            argumentList: arguments,
-            outputEncoding: Encoding.UTF8);
-    }
-
-    /// <summary>
-    /// 从 git 参数列表里取出**子命令名**作为权限操作名：跳过 <c>-c name=value</c> / <c>-C path</c> /
-    /// <c>--git-dir=</c> 这类前置全局选项（含其取值），取第一个非选项参数。
-    /// </summary>
-    /// <param name="arguments">git 参数列表。</param>
-    /// <returns>子命令名（取不到时回落 <c>git</c>，由宿主判为越界）。</returns>
-    private static string ResolveGitOperation(IReadOnlyList<string> arguments)
-    {
-        for (var i = 0; i < arguments.Count; i++)
-        {
-            var argument = arguments[i];
-            if (string.IsNullOrWhiteSpace(argument))
-                continue;
-
-            if (!argument.StartsWith('-'))
-                return argument.Trim();
-
-            // --opt=value 自带取值，无需再跳一项
-            if (argument.Contains('='))
-                continue;
-
-            // -c <name=value> / -C <path> / --git-dir <path> / --work-tree <path> / --namespace <name>
-            if (GitGlobalOptionsWithValue.Contains(argument))
-                i++;
-        }
-
-        return "git";
-    }
-
-    /// <summary>自带取值的 git 前置全局选项（用于跳过其值，避免把取值当成子命令）。</summary>
-    private static readonly HashSet<string> GitGlobalOptionsWithValue = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "-c",
-        "-C",
-        "--git-dir",
-        "--work-tree",
-        "--namespace",
-        "--config-env",
-        "--super-prefix"
-    };
-
-    /// <summary>
-    /// 校验本地目录是否为可复用的 Git 工作树（RC4）：HEAD 可解析，且给定分支在本地 refs 中存在。
-    /// </summary>
-    /// <param name="runner">进程执行器。</param>
-    /// <param name="repositoryPath">本地仓库目录。</param>
-    /// <param name="branch">要求存在的本地分支（可为空，只校验 HEAD）。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>可复用返回 <c>null</c>；否则返回可展示的失败原因。</returns>
-    /// <remarks>
-    /// git 克隆中途失败会留下 <c>.git/HEAD = ref: refs/heads/.invalid</c> 的残骸，
-    /// 仅凭「目录非空」无法识别，必须让 git 自己判断。
-    /// </remarks>
-    private async Task<string?> VerifyWorktreeAsync(
-        ProcessRunner runner,
-        string repositoryPath,
-        string? branch,
-        CancellationToken cancellationToken)
-    {
-        if (!Directory.Exists(repositoryPath))
-            return $"本地目录不存在：{repositoryPath}";
-
-        // ① HEAD 必须可解析（--verify --quiet：不存在时不输出，仅以非 0 退出码表示）
-        var head = await RunGitAsync(
-            runner, repositoryPath, new[] { "rev-parse", "--verify", "--quiet", "HEAD" }, cancellationToken);
-        if (head.ExitCode != 0)
-            return $"HEAD 无法解析（{Summarize(head)}）";
-
-        // ② 要求的分支必须真实存在
-        if (!string.IsNullOrWhiteSpace(branch))
-        {
-            var exists = await RunGitAsync(
-                runner, repositoryPath, new[] { "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}" }, cancellationToken);
-            if (exists.ExitCode != 0)
-                return $"缺少分支 {branch}（{Summarize(exists)}）";
-        }
-
-        return null;
-    }
-
-    /// <summary>把 git 执行结果压成一行可展示的失败摘要（优先 stderr）。</summary>
-    /// <param name="result">执行结果。</param>
-    /// <returns>摘要。</returns>
-    private static string Summarize(ProcessResult result)
-    {
-        var text = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
-        var line = (text ?? string.Empty)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(item => item.Trim())
-            .FirstOrDefault(item => item.Length > 0);
-
-        if (string.IsNullOrEmpty(line))
-            return $"git 退出码 {result.ExitCode}";
-
-        return line.Length > 200 ? line[..200] + "…" : line;
-    }
-
-    /// <summary>
-    /// 解析提交身份（F5=A：优先本机 <c>git config</c>，缺失时用插件配置兜底）。
-    /// </summary>
-    /// <param name="runner">进程执行器。</param>
-    /// <param name="repositoryPath">仓库目录。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>提交者姓名与邮箱。</returns>
-    private async Task<(string Name, string Email)> ResolveCommitAuthorAsync(
-        ProcessRunner runner,
-        string repositoryPath,
-        CancellationToken cancellationToken)
-    {
-        var name = await TryGetGitConfigAsync(runner, repositoryPath, "user.name", cancellationToken);
-        var email = await TryGetGitConfigAsync(runner, repositoryPath, "user.email", cancellationToken);
-
-        return (
-            string.IsNullOrWhiteSpace(name) ? _settings.CommitAuthorName : name!,
-            string.IsNullOrWhiteSpace(email) ? _settings.CommitAuthorEmail : email!);
-    }
-
-    /// <summary>读一条本机 git 配置（全局或仓库级，<c>git config --get</c> 已含继承语义）。</summary>
-    /// <param name="runner">进程执行器。</param>
-    /// <param name="repositoryPath">仓库目录。</param>
-    /// <param name="key">配置键。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>配置值；缺失或读取失败时为 <c>null</c>。</returns>
-    private async Task<string?> TryGetGitConfigAsync(
-        ProcessRunner runner,
-        string repositoryPath,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await RunGitAsync(runner, repositoryPath, new[] { "config", "--get", key }, cancellationToken);
-            return result.ExitCode == 0 ? result.StandardOutput.Trim() : null;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[newproject] 读取本机 git 配置 {key} 失败（改用插件配置兜底）。", ex);
-            return null;
-        }
-    }
 
     /// <summary>
     /// 触发变更通知（面板据此刷新）。

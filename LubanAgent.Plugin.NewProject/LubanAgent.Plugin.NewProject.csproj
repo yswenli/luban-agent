@@ -44,19 +44,24 @@
     <None Include="newproject.settings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="skills\**\*" CopyToOutputDirectory="PreserveNewest" />
     <PluginSkillFile Include="skills\**\*.md" />
+    <!-- 知识正文（docs/*.md）：随包分发到插件包 docs/，再由 Step 2 由插件复制进项目工作区。
+         与 skills/ 不同，docs 不注册成技能（见设计 §4.2 C1）。 -->
+    <None Include="docs\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <PluginDocFile Include="docs\**\*.md" />
   </ItemGroup>
 
   <!--
-    插件包铺装：把 plugin.json + 插件自身 dll/deps.json + skills/ 铺到 codex 运行目录的 plugins/<id>/。
+    插件包铺装：把 plugin.json + 插件自身 dll/deps.json + skills/ + docs/ 铺到 codex 运行目录的 plugins/<id>/。
     刻意不整目录复制：输出目录里还有 LubanAgentCore.dll 等宿主程序集，复制进去会破坏 ALC 类型标识。
   -->
   <Target Name="StagePluginPackage" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
-    <MakeDir Directories="$(PluginPackageDir)lib;$(PluginPackageDir)skills" />
+    <MakeDir Directories="$(PluginPackageDir)lib;$(PluginPackageDir)skills;$(PluginPackageDir)docs" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginPackageDir)lib" />
     <Copy SourceFiles="$(TargetDir)$(AssemblyName).deps.json" DestinationFolder="$(PluginPackageDir)lib" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)plugin.json" DestinationFolder="$(PluginPackageDir)" />
     <Copy SourceFiles="$(MSBuildThisFileDirectory)newproject.settings.json" DestinationFolder="$(PluginPackageDir)" />
     <Copy SourceFiles="@(PluginSkillFile)" DestinationFolder="$(PluginPackageDir)skills" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PluginDocFile)" DestinationFolder="$(PluginPackageDir)docs" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="插件包已铺到：$(PluginPackageDir)" />
   </Target>
 

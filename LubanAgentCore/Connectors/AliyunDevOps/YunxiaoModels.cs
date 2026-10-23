@@ -714,3 +714,140 @@ public class YunxiaoPipelineRun
 }
 
 #endregion
+
+#region 主机组 / 部署目标（Flow）
+
+/// <summary>
+/// 云效主机组（流水线部署阶段的目标机器组）
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>真机口径（2026-10-22 取证）</b>：<c>GET /flow/organizations/{orgId}/hostGroups</c> 成功响应是<b>裸数组</b>；
+/// 元素字段为 <c>id</c>（<b>JSON 数字</b>，故用整型）、<c>uuid</c>（<b>部署阶段 <c>machineGroup</c> 要填的就是它</b>）、
+/// <c>name</c> / <c>type</c> / <c>ecsType</c> / <c>hostNum</c>（机器台数，可能为 <c>0</c>）/
+/// <c>aliyunRegion</c>（可能为 <c>null</c>）/ <c>serviceConnectionId</c>（ECS 服务连接，可能为 <c>null</c>）/ <c>description</c>。
+/// </para>
+/// <para>
+/// <b>列表里 <c>hostInfos</c> 恒为 <c>null</c></b>——机器明细只能另调
+/// <c>GET /flow/organizations/{orgId}/hostGroups/{数字id}</c>（<see cref="YunxiaoHostInfo"/>）。
+/// 该详情接口的<b>路径键必须是数字 <c>id</c></b>：真机用 <c>uuid</c> 当路径键会 400
+/// （<c>NumberFormatException</c>）；也不存在 <c>/hostGroups/{id}/hosts</c> 之类子资源（404）。
+/// </para>
+/// <para>
+/// 列表接口的 <c>perPage</c> / 名称过滤等查询参数<b>真机不生效</b>（一律返回全量），故调用方不要指望服务端过滤。
+/// </para>
+/// </remarks>
+public class YunxiaoHostGroup
+{
+    /// <summary>
+    /// 主机组数字 ID（云效返回 JSON 数字，故用整型）；
+    /// <b>详情接口的路径键就是它</b>（不是 <see cref="Uuid"/>）。
+    /// </summary>
+    [JsonPropertyName("id")]
+    public long? Id { get; set; }
+
+    /// <summary>
+    /// 主机组 UUID（<b>部署阶段 YAML 里 <c>machineGroup</c> 要填的值</b>；真机为 16 位大小写混合串）。
+    /// </summary>
+    [JsonPropertyName("uuid")]
+    public string? Uuid { get; set; }
+
+    /// <summary>
+    /// 主机组名称（如「移动云DEV主机组」）。
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// 主机组类型（真机观测为 <c>ECS</c>）。
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    /// <summary>
+    /// ECS 类型（真机观测为 <c>ECS_ALIYUN</c>）。
+    /// </summary>
+    [JsonPropertyName("ecsType")]
+    public string? EcsType { get; set; }
+
+    /// <summary>
+    /// 机器台数（真机观测有 <c>0</c> 值，即空组可用但无机器）。
+    /// </summary>
+    [JsonPropertyName("hostNum")]
+    public int? HostNum { get; set; }
+
+    /// <summary>
+    /// 地域（如 <c>cn-shanghai</c>；真机观测可为 <c>null</c>）。
+    /// </summary>
+    [JsonPropertyName("aliyunRegion")]
+    public string? AliyunRegion { get; set; }
+
+    /// <summary>
+    /// ECS 服务连接 ID（数字；真机观测可为 <c>null</c>）。
+    /// </summary>
+    [JsonPropertyName("serviceConnectionId")]
+    public long? ServiceConnectionId { get; set; }
+
+    /// <summary>
+    /// 描述（真机观测为 <c>null</c>）。
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// 机器明细（<b>仅详情接口返回</b>；列表接口恒为 <c>null</c>）。
+    /// </summary>
+    [JsonPropertyName("hostInfos")]
+    public List<YunxiaoHostInfo>? HostInfos { get; set; }
+}
+
+/// <summary>
+/// 主机组内的机器明细
+/// </summary>
+/// <remarks>
+/// <b>真机口径（2026-10-22 取证）</b>：只在主机组<b>详情</b>接口
+/// <c>GET /flow/organizations/{orgId}/hostGroups/{数字id}</c> 的 <c>hostInfos</c> 里出现；
+/// 元素含 <c>instanceName</c>（实例名）/ <c>ip</c> / <c>status</c>（真机 <c>ok</c>）/
+/// <c>machineSn</c> / <c>objectType</c>（<c>MachineInfo</c>）/ <c>aliyunRegionId</c>（如 <c>PUBLIC</c>）。
+/// 用于创建流水线之前让用户确认「部署到底打哪台机器」。
+/// </remarks>
+public class YunxiaoHostInfo
+{
+    /// <summary>
+    /// 实例名（真机如 <c>tjc-sh-100-dev-all-in-one</c>）。
+    /// </summary>
+    [JsonPropertyName("instanceName")]
+    public string? InstanceName { get; set; }
+
+    /// <summary>
+    /// 内网 IP（真机如 <c>10.10.0.214</c>）。
+    /// </summary>
+    [JsonPropertyName("ip")]
+    public string? Ip { get; set; }
+
+    /// <summary>
+    /// 机器状态（真机观测为 <c>ok</c>）。
+    /// </summary>
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    /// <summary>
+    /// 机器序列号（真机如 <c>s-a488bcdf54aa4745ae33</c>）。
+    /// </summary>
+    [JsonPropertyName("machineSn")]
+    public string? MachineSn { get; set; }
+
+    /// <summary>
+    /// 对象类型（真机观测为 <c>MachineInfo</c>）。
+    /// </summary>
+    [JsonPropertyName("objectType")]
+    public string? ObjectType { get; set; }
+
+    /// <summary>
+    /// 云效侧地域标识（真机观测为 <c>PUBLIC</c>）。
+    /// </summary>
+    [JsonPropertyName("aliyunRegionId")]
+    public string? AliyunRegionId { get; set; }
+}
+
+#endregion

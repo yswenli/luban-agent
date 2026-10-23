@@ -25,7 +25,19 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>何时被回调</b>：Default 模式下工作区内的路径读写由框架直接放行（不回调），回调只发生在
 /// ①删除 / 技能写删 / MCP 写删类工具；②无路径语义的脚本工具（<c>RunShellAsync</c> / <c>RunPythonAsync</c> / <c>RunLuaAsync</c>）；
-/// ③越界路径的文件工具。因此本策略是「补漏」而非「全量把关」。
+/// ③越界路径的文件工具；④<b>全部 MCP 工具</b>（<c>MCPToolPlugin</c> 以 <c>path=null</c> 调用确认服务，必然回调）。
+/// 因此本策略是「补漏」而非「全量把关」。
+/// </para>
+/// <para>
+/// <b>云效 MCP 子策略</b>：Step 3 / 6 / 7 的云效动作全走 <c>mcp_yunxiao_*</c>，若不加子策略会被末尾
+/// <c>Deny</c> 全拒、链路一步走不动。故按<b>工具名段</b>表驱动放行本项目所需的 12 个云效工具
+/// （8 只读 + 4 写入），并拒绝 <c>flow_run_pipeline</c>（<c>codeup_clone</c> / <c>codeup_push</c> 已从工具面删除，保留 <c>Deny</c> 双保险）。
+/// 匹配不锁死 <c>client</c> 名，连接器实例改名不失效（详见 <see cref="TryMatchYunxiaoMcpTool"/>）。
+/// </para>
+/// <para>
+/// <b>删除放行</b>：<c>DeleteDirectoryAsync</c> 原本无条件拒绝，现改为<b>工作区内按路径放行</b>
+/// （Step 3 \"清空后重克隆\" 由助手执行，实际用 <c>RunPythonAsync</c> 的 <c>rmtree(清只读)</c> 兜底，见 <see cref="WorkspaceDeleteTools"/>）。
+/// 其余删除 / 技能 / MCP 写删类工具维持无条件拒绝。
 /// </para>
 /// <para>
 /// <b>已知残余风险（如实记录）</b>：<c>runpython</c> 被放行（Step 4 探活依赖 pymysql，框架内没有 MySQL 工具），
@@ -88,11 +100,55 @@ public static class AssistantToolPolicy
         ["MoveFileAsync"] = new[] { "destPath" }
     };
 
-    /// <summary>删除类工具名（本项目 Step 4/5 从不删除，一律拒绝）。</summary>
+    /// <summary>删除类工具名（一律拒绝；<c>DeleteDirectoryAsync</c> 例外见 <see cref="WorkspaceDeleteTools"/>）。</summary>
     private static readonly HashSet<string> DeleteTools = new(StringComparer.Ordinal)
     {
-        "DeleteFileAsync", "DeleteDirectoryAsync", "DeletePageAsync",
+        "DeleteFileAsync", "DeletePageAsync",
         "WriteSkillAsync", "DeleteSkillAsync", "WriteMcpServerAsync", "DeleteMcpServerAsync"
+    };
+
+    /// <summary>
+    /// 删除类工具中<b>按工作区内路径放行</b>的（C5′：Step 3 \"清空后重克隆\" 由助手执行）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="WorkspaceWriteTools"/> 同判法（<see cref="IsUnderWorkspace"/>）：目标路径落在工作区内即放行，
+    /// 越界或未给出路径一律拒绝。单列一张表（而不是并入写类）是为了不让「删除」混进「写入」的语义与依据文案。
+    /// <para>
+    /// <b>执行机制</b>：框架 <c>FileSystemToolPlugin.DeleteDirectoryAsync</c> 是裸 <c>Directory.Delete(recursive:true)</c>，
+    /// 不处理 Windows 只读位（git pack 文件即只读，RC5）。故实际删除由助手改用
+    /// <c>RunPythonAsync</c> 的 <c>shutil.rmtree(path, onerror=清只读后重试)</c> 完成；此处的放行是「契约兜底 + 文案一致」。
+    /// </para>
+    /// </remarks>
+    private static readonly Dictionary<string, string[]> WorkspaceDeleteTools = new(StringComparer.Ordinal)
+    {
+        ["DeleteDirectoryAsync"] = new[] { "path" }
+    };
+
+    /// <summary>MCP 工具名前缀（框架 <c>MCPToolPlugin</c> 的拼法：<c>mcp_{client}_{tool}</c>）。</summary>
+    private const string McpToolPrefix = "mcp_";
+
+    /// <summary>
+    /// 云效 MCP 只读工具（按<b>工具名段</b>匹配，放行）。连接器实例改名（<c>mcp_yunxiao*_*</c>）不影响判定。
+    /// </summary>
+    private static readonly HashSet<string> YunxiaoReadOnlyMcpTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "codeup_search_repos", "codeup_list_template_repos", "codeup_get_repo", "codeup_list_groups",
+        "codeup_list_branches", "flow_list_pipelines", "flow_list_host_groups", "flow_get_host_group"
+    };
+
+    /// <summary>云效 MCP 写入工具（Step 3 / Step 7 的执行动作，放行）。</summary>
+    private static readonly HashSet<string> YunxiaoWriteMcpTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "codeup_create_group", "codeup_create_repo", "flow_create_pipeline", "flow_update_pipeline"
+    };
+
+    /// <summary>
+    /// 云效 MCP 拒绝工具：<c>flow_run_pipeline</c>（建完不自动运行）；
+    /// <c>codeup_clone</c> / <c>codeup_push</c> 已从工具面删除（git 操作一律走 git 工具组），此处保留 <c>Deny</c> 作双保险。
+    /// </summary>
+    private static readonly HashSet<string> YunxiaoDeniedMcpTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "flow_run_pipeline", "codeup_clone", "codeup_push"
     };
 
     /// <summary>
@@ -137,6 +193,59 @@ public static class AssistantToolPolicy
         if (Equals(toolName, RunLuaTool))
         {
             reason = "拒绝：脚本工具 runlua 不在 Step 4/5 白名单内。";
+            return ConfirmResult.Deny;
+        }
+
+        // ── 云效 MCP 子策略（Step 3/6/7 的云效动作全走 MCP，默认模式下必触发回调）────────
+        if (toolName.StartsWith(McpToolPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryMatchYunxiaoMcpTool(toolName, out var mcpTool))
+            {
+                if (YunxiaoDeniedMcpTools.Contains(mcpTool))
+                {
+                    reason = Equals(mcpTool, "flow_run_pipeline")
+                        ? "拒绝：云效工具 flow_run_pipeline 不在本项目白名单内（建完不自动运行）。"
+                        : $"拒绝：云效工具 {mcpTool} 已从工具面删除（git 操作一律走 git 工具组）。";
+                    return ConfirmResult.Deny;
+                }
+
+                if (YunxiaoReadOnlyMcpTools.Contains(mcpTool))
+                {
+                    reason = $"放行：云效只读工具 {mcpTool}（查证类，无副作用）。";
+                    return ConfirmResult.Allow;
+                }
+
+                if (YunxiaoWriteMcpTools.Contains(mcpTool))
+                {
+                    reason = $"放行：云效写入工具 {mcpTool}（Step 3 / Step 7 的执行动作）。";
+                    return ConfirmResult.Allow;
+                }
+            }
+
+            reason = $"拒绝：MCP 工具 {toolName} 不在本项目白名单内（只放行云效 MCP 子策略列举的工具）。";
+            return ConfirmResult.Deny;
+        }
+
+        // ── 工作区内目录删除（C5′：Step 3 \"清空后重克隆\" 由助手执行）────────────────
+        if (WorkspaceDeleteTools.TryGetValue(toolName, out var deletePathKeys))
+        {
+            foreach (var key in deletePathKeys)
+            {
+                var path = ReadArgument(arguments, key);
+                if (string.IsNullOrWhiteSpace(path))
+                    continue;
+
+                if (IsUnderWorkspace(path!, workspaceRoot))
+                {
+                    reason = "放行：删除类工具的目标路径落在本项目工作区内。";
+                    return ConfirmResult.Allow;
+                }
+
+                reason = $"拒绝：删除类工具目标路径越出本项目工作区（{path}）。";
+                return ConfirmResult.Deny;
+            }
+
+            reason = $"拒绝：{toolName} 未给出目标路径，无法确认是否落在工作区内。";
             return ConfirmResult.Deny;
         }
 
@@ -199,6 +308,55 @@ public static class AssistantToolPolicy
     /// <returns>是守卫拒绝 / 取消返回 <c>true</c>。</returns>
     public static bool IsGuardDenial(string? error) =>
         !string.IsNullOrWhiteSpace(error) && error.Contains(DeniedOrCancelledMessage, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 判定一个 MCP 工具名是否属于本项目用到的云效工具集，并给出<b>工具名段</b>。
+    /// </summary>
+    /// <remarks>
+    /// 框架把工具名拼成 <c>mcp_{client}_{tool}</c>（<c>MCPToolPlugin.cs:113</c>）。<b>不得</b>逐字锁死
+    /// <c>mcp_yunxiao_xxx</c>——连接器实例可被改名 / 多实例，逐字匹配会让整张白名单全线失效。
+    /// 故这里先剥 <c>mcp_</c> 前缀，再按「工具名段」后缀匹配（要求段前是 <c>_</c>），
+    /// <c>{client}</c> 只要求非空，不要求等于 <c>yunxiao</c>。
+    /// </remarks>
+    /// <param name="toolName">完整工具名（如 <c>mcp_yunxiao_codeup_get_repo</c>）。</param>
+    /// <param name="toolSegment">命中的工具名段（如 <c>codeup_get_repo</c>）；未命中为空串。</param>
+    /// <returns>命中云效工具集返回 <c>true</c>。</returns>
+    public static bool TryMatchYunxiaoMcpTool(string? toolName, out string toolSegment)
+    {
+        toolSegment = string.Empty;
+        if (string.IsNullOrWhiteSpace(toolName)
+            || !toolName!.StartsWith(McpToolPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var remainder = toolName[McpToolPrefix.Length..];
+        if (remainder.Length == 0)
+            return false;
+
+        foreach (var candidate in EnumerateYunxiaoMcpTools())
+        {
+            if (remainder.EndsWith("_" + candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                toolSegment = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>枚举本项目涉及的云效 MCP 工具名段（放行 + 拒绝全集）。</summary>
+    /// <returns>工具名段。</returns>
+    private static IEnumerable<string> EnumerateYunxiaoMcpTools()
+    {
+        foreach (var tool in YunxiaoReadOnlyMcpTools)
+            yield return tool;
+        foreach (var tool in YunxiaoWriteMcpTools)
+            yield return tool;
+        foreach (var tool in YunxiaoDeniedMcpTools)
+            yield return tool;
+    }
 
     /// <summary>
     /// 判定一条 Shell 命令是否<b>每一段</b>都由白名单可执行文件 / 内置命令打头。

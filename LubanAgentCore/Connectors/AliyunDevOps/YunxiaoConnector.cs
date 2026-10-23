@@ -35,7 +35,6 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
 
     private readonly YunxiaoApiOptions _options;
     private readonly IYunxiaoCredentialProvider _credentialProvider;
-    private readonly ProcessRunner? _processRunner;
     private readonly PluginPermissionGuard _guard;
 
     private CodeupClient? _codeupClient;
@@ -46,17 +45,14 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
     /// </summary>
     /// <param name="options">API 配置</param>
     /// <param name="credentialProvider">凭据提供者</param>
-    /// <param name="processRunner">进程执行器（用于 Git 操作，可选）</param>
     /// <param name="permissionGuard">插件权限门禁（可选；不传则用进程级兜底实例）。</param>
     public YunxiaoConnector(
         YunxiaoApiOptions options,
         IYunxiaoCredentialProvider credentialProvider,
-        ProcessRunner? processRunner = null,
         PluginPermissionGuard? permissionGuard = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _credentialProvider = credentialProvider ?? throw new ArgumentNullException(nameof(credentialProvider));
-        _processRunner = processRunner;
         _guard = permissionGuard ?? PluginPermissionGuard.Default;
 
         // 实例名由连接器工厂按配置注入；未注入时为默认名（与历史行为一致）。
@@ -89,7 +85,7 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
     {
         ThrowIfDisposed();
 
-        return _codeupClient ??= new CodeupClient(_options, _credentialProvider, _processRunner, _guard, Name);
+        return _codeupClient ??= new CodeupClient(_options, _credentialProvider, _guard, Name);
     }
 
     /// <summary>
@@ -101,6 +97,34 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
 
         return _flowClient ??= new FlowClient(_options, _credentialProvider, _guard, Name);
     }
+
+    /// <summary>
+    /// 列出主机组（流水线部署阶段的目标机器组）——供向导在「创建流水线之前」选部署目标。
+    /// </summary>
+    /// <remarks>
+    /// <b>能力方法直连</b>（不新增 MCP 往返）：向导要的是结构化数据（含机器明细）与明确的失败语义，
+    /// 由宿主直接调用本方法；MCP 侧另有等价只读工具 <c>flow_list_host_groups</c> 供聊天式入口使用。
+    /// </remarks>
+    /// <param name="organizationId">组织 ID（可选，优先于配置）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>主机组列表；响应体为空时返回 <c>null</c>。</returns>
+    public Task<List<YunxiaoHostGroup>?> ListHostGroupsAsync(
+        string? organizationId = null,
+        CancellationToken cancellationToken = default)
+        => GetFlowClient().ListHostGroupsAsync(organizationId, cancellationToken);
+
+    /// <summary>
+    /// 获取主机组详情（含机器明细 <c>hostInfos</c>）。
+    /// </summary>
+    /// <param name="hostGroupId">主机组<b>数字 id</b>（真机路径键为数字，传 uuid 会 400）。</param>
+    /// <param name="organizationId">组织 ID（可选，优先于配置）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>主机组详情。</returns>
+    public Task<YunxiaoHostGroup?> GetHostGroupAsync(
+        long hostGroupId,
+        string? organizationId = null,
+        CancellationToken cancellationToken = default)
+        => GetFlowClient().GetHostGroupAsync(hostGroupId, organizationId, cancellationToken);
 
     /// <summary>
     /// 获取凭据提供者

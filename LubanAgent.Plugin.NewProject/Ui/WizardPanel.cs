@@ -145,7 +145,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     // ── Step 1 表单 ──────────────────────────────────────────────────────────────
     private readonly TextBox _nameBox = new() { PlaceholderText = "例如：津南民生实事" };
-    private readonly TextBox _codeBox = new() { PlaceholderText = "例如：jnms（小写字母开头，只能小写字母或数字）" };
+    private readonly TextBox _codeBox = new() { PlaceholderText = "例如：jnms（只能是小写字母 a-z，不含数字）" };
     private readonly TextBox _introBox = new()
     {
         PlaceholderText = "一句话说明项目用途（将写入项目助手上下文）",
@@ -274,7 +274,54 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     // ── Step 7 操作区（v0.30 接入）──────────────────────────────────────────────
     private readonly Button _pipelineButton = new() { Content = "创建流水线（逐端）" };
-    private readonly Button _appendDeployButton = new() { Content = "一键补齐部署阶段" };
+    /// <summary>Step 7「覆盖更新（逐端）」：按当前口径重推已有流水线（含部署段）。</summary>
+    private readonly Button _updatePipelineButton = new() { Content = "覆盖更新（逐端）" };
+
+    /// <summary>Step 7「准备预览（只读，不创建）」：下发一次只读准备，产出将要提交的 YAML 与绑定清单。</summary>
+    private readonly Button _pipelinePrepareButton = new() { Content = "准备预览（只读，不创建）" };
+
+    /// <summary>Step 7 准备读数展示（就绪 / 未就绪 / 失败）。</summary>
+    private readonly TextBlock _pipelinePrepareText = new()
+    {
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+    /// <summary>
+    /// Step 7「部署目标」区的按端行容器（v0.32）：后端＝下拉 + 机器明细；前端＝固定文案（无独立部署阶段）。
+    /// </summary>
+    private readonly StackPanel _deployTargetRowsPanel = new() { Spacing = 6 };
+
+    /// <summary>Step 7「刷新主机组」：重新拉取云效主机组列表（只读接口）。</summary>
+    private readonly Button _deployRefreshButton = new() { Content = "刷新主机组", FontSize = 12 };
+
+    /// <summary>Step 7 部署目标下拉（当前只有后端有独立部署阶段）。</summary>
+    private readonly ComboBox _serviceDeployPicker = new()
+    {
+        FontSize = 12,
+        MinWidth = 220,
+        HorizontalAlignment = HorizontalAlignment.Left
+    };
+
+    /// <summary>选中主机组的机器明细（创建之前先让用户看清「到底部署到哪台机器」）。</summary>
+    private readonly TextBlock _serviceDeployMachinesText = new()
+    {
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
+    /// <summary>部署目标区的状态 / 失败提示（拉取失败时红字，并据此阻断创建）。</summary>
+    private readonly TextBlock _deployTargetStatusText = new()
+    {
+        FontSize = 11,
+        Foreground = MutedText,
+        TextWrapping = TextWrapping.Wrap,
+        IsVisible = false
+    };
+
     private readonly StackPanel _pipelineRowsPanel = new() { Spacing = 6 };
     private readonly TextBlock _pipelineResultText = new()
     {
@@ -349,16 +396,43 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>Step 7 逐端状态行（端 → 流水线结论）。</summary>
     private readonly List<EndPipelineRowView> _pipelineRows = new();
 
-    /// <summary>「一键补齐部署阶段」的破坏性确认（Step 3「我已确认」同一姿势；<c>UpdatePipeline</c> 会整体覆盖 YAML）。</summary>
-    private readonly CheckBox _appendDeployConfirm = new()
+    /// <summary>「覆盖更新」的破坏性确认（Step 3「我已确认」同一姿势；<c>UpdatePipeline</c> 会整体覆盖 YAML）。</summary>
+    private readonly CheckBox _updatePipelineConfirm = new()
     {
-        Content = "我已确认：一键补齐部署阶段会整体覆盖该端流水线 YAML（控制台上的人工改动会被抹掉）",
+        Content = "我已确认：覆盖更新会整体覆盖该端流水线 YAML（云效控制台上的人工改动会被抹掉）",
         FontSize = 12,
         Foreground = MutedText
     };
 
     /// <summary>Step 7 最近一次预览（<c>null</c>＝尚未预览）。</summary>
     private IReadOnlyList<PipelinePreview> _pipelinePreviews = Array.Empty<PipelinePreview>();
+
+    /// <summary>
+    /// Step 7 部署目标候选（云效主机组列表；<c>null</c>＝尚未拉到）。
+    /// </summary>
+    /// <remarks>
+    /// 拉取失败时保持 <c>null</c> 并把原因记在 <see cref="_deployTargetsError"/>：口径是「读不到列表就不许创建流水线」，
+    /// 绝不降级成让用户手填 uuid（填错云效只回「该机器组uuid[x]不存在」，白跑一次还污染远端）。
+    /// </remarks>
+    private IReadOnlyList<DeployHostGroup>? _deployTargets;
+
+    /// <summary>部署目标下拉首次填充时抑制 <c>SelectionChanged</c> 回流（避免把默认选中当成用户改选）。</summary>
+    private bool _deployPickerPopulating;
+
+    /// <summary>部署目标列表拉取失败的原因（<c>null</c>＝没失败或还没拉）。</summary>
+    private string? _deployTargetsError;
+
+    /// <summary>部署目标列表是否正在拉取。</summary>
+    private bool _deployTargetsLoading;
+
+    /// <summary>Step 7 本次选定的部署目标（按端；只有「有独立部署阶段」的端会出现在这里）。</summary>
+    private readonly Dictionary<ProjectEnd, DeployHostGroup> _deploySelections = new();
+
+    /// <summary>部署目标下拉当前列出的候选（下标与 <see cref="_serviceDeployPicker"/> 的项一一对应）。</summary>
+    private readonly List<DeployHostGroup> _deployPickerGroups = new();
+
+    /// <summary>换过部署目标后的一次性附注（提醒「该端手工微调已丢弃」），随下一次区渲染显示后清空。</summary>
+    private string? _deployTargetNote;
 
     /// <summary>Step 3 运行期待决的克隆冲突三选一（面板与能力层之间的挂起点）。</summary>
     private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
@@ -522,8 +596,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _repushButton.PointerExited += (_, _) => _repushButton.ClearValue(Button.BackgroundProperty);
         _probeButton.Click += OnProbeClicked;
         _buildButton.Click += OnBuildClicked;
+        _pipelinePrepareButton.Click += OnPreparePipelinesClicked;
         _pipelineButton.Click += OnPipelineClicked;
-        _appendDeployButton.Click += OnAppendDeployClicked;
+        _updatePipelineButton.Click += OnUpdatePipelinesClicked;
+        _deployRefreshButton.Click += OnRefreshDeployTargetsClicked;
+        _serviceDeployPicker.SelectionChanged += OnServiceDeployTargetChanged;
         _pipelineEditButton.Click += OnEditPipelineYamlClicked;
         _pipelineResetButton.Click += OnResetPipelineYamlClicked;
         _pipelinePreviewPicker.SelectionChanged += OnPipelinePreviewChanged;
@@ -1061,7 +1138,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock
             {
                 Text = "逐端执行：切到目标分支（配置 pushBranch，v0.28 起默认 develop；不存在则从模板 pin 分支创建）"
-                     + "→ git add -A → 有改动则提交 → 推送。"
+                     + "→ 暂存全部改动（git add .）→ 有改动则提交 → 推送。"
                      + "不强制推送；提交身份优先取本机 git 配置，缺失时用插件配置兜底。",
                 FontSize = 12,
                 Foreground = MutedText,
@@ -1078,12 +1155,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.31 口径</b>）：逐端流水线状态 + YAML 预览（可手工微调）+ 创建 / 一键补齐部署阶段。
+    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.32 口径</b>）：逐端流水线状态 + <b>部署目标选择</b> + YAML 预览（可手工微调）+ 创建 / 覆盖更新。
     /// </summary>
     /// <remarks>
-    /// 面板零业务规则：模板、变量与缓存、待绑定清单、微调校验全部由能力层（<c>PipelineRenderer</c> /
-    /// <c>PipelineYamlOverride</c>）算出，这里只呈现 <see cref="INewProjectService.PreviewPipelines"/> 的结果、
-    /// 收集微调原文并投递动作。
+    /// 面板零业务规则：模板、变量与缓存、待绑定清单、<b>「哪端需要部署阶段」与推荐目标</b>全部来自 Step 7 准备阶段的结论文件
+    /// （助手产出 → 能力层映射为视图模型，见 <see cref="INewProjectService.PreparePipelinesAsync"/> /
+    /// <see cref="INewProjectService.PreviewPipelines"/>），这里只呈现结果、收集选择与微调原文并投递动作。
     /// </remarks>
     /// <returns>操作区。</returns>
     private Border BuildStep7Area()
@@ -1117,6 +1194,45 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             _pipelineRows.Add(new EndPipelineRowView(end, row, status));
         }
 
+        // 「部署目标」区（v0.32）：后端可选主机组；前端无独立部署阶段（真机取证：上传 OSS 即发布），给固定文案。
+        _deployTargetRowsPanel.Children.Add(new StackPanel
+        {
+            Spacing = 4,
+            Children =
+            {
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "后端：",
+                            FontSize = 12,
+                            Foreground = PrimaryText,
+                            Width = 64,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        _serviceDeployPicker,
+                        _deployRefreshButton
+                    }
+                },
+                _serviceDeployMachinesText
+            }
+        });
+
+        foreach (var front in new[] { ProjectEnd.Admin, ProjectEnd.Mobile })
+        {
+            _deployTargetRowsPanel.Children.Add(new TextBlock
+            {
+                Text = $"{EndLabel(front)}：无独立部署阶段（构建产物上传 OSS 即发布）",
+                FontSize = 12,
+                Foreground = MutedText,
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
         return Card(new StackPanel
         {
             Spacing = 10,
@@ -1125,20 +1241,37 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 new TextBlock { Text = "Step 7 · 创建流水线", FontSize = 14, Foreground = PrimaryText },
                 new TextBlock
                 {
-                    Text = "按企服版语义翻译的**新版 YAML 模板**逐端创建云效流水线（云效 OpenAPI 只收顶层 stages: 的新版 YAML，"
-                         + "且没有「复制流水线」接口，故不再克隆参考流水线原文）。模板已内嵌变量（variables）与缓存（cache）："
-                         + "后端写入 DOCKER_IMAGE_NAME / APP_PORT / DOCKER_CONTAINER_NAME 等；前端写入 npm 缓存目录。"
-                         + "创建前按流水线名精确检索，命中即复用（幂等）；建完不自动运行。"
-                         + "**只含构建阶段**——部署阶段按口径默认禁用，确认资源绑定后可点「一键补齐部署阶段」并入。"
-                         + "下方 YAML 可点「编辑 YAML…」手工微调（按端、会话内保留）：提交内容与预览原文一致，"
-                         + "名称与顶层 stages 必须保留（提交前会拦下明显改坏的文本）。",
+                    Text = "先点「准备预览（只读，不创建）」：助手按 docs 的三端 YAML 模板拉主机组候选并渲染各端将要提交的"
+                         + "新版 YAML（云效 OpenAPI 只收顶层 stages: 的新版 YAML，且没有「复制流水线」接口，故不再克隆参考流水线原文），"
+                         + "写进结论文件后由面板复核。"
+                         + "创建前按流水线名精确检索，命中同名即按当前口径**覆盖更新**该条（幂等，全端）；建完不自动运行。"
+                         + "**部署阶段在创建时就写入**：先在下方「部署目标」里选定主机组（可展开机器明细核对），创建即把 deploy 段写进 YAML；"
+                         + "读不到主机组列表时本步直接阻断（不降级成手填 uuid）。已有旧流水线可用「覆盖更新（逐端）」按当前口径整体重推。"
+                         + "下方 YAML 可点「编辑 YAML…」手工微调（按端、会话内保留）：提交内容与预览原文一致；"
+                         + "面板不做 YAML 校验，明显改坏的文本由云效创建时原样报回。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap
                 },
                 new Border { Height = 1, Background = DividerBrush },
+                _pipelinePrepareText,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children = { _pipelinePrepareButton }
+                },
                 _pipelineRowsPanel,
                 _pipelineResultText,
+                new TextBlock
+                {
+                    Text = "部署目标（创建前选定；写进 YAML 的 deploy 段）：",
+                    FontSize = 12,
+                    Foreground = PrimaryText,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                _deployTargetRowsPanel,
+                _deployTargetStatusText,
                 new TextBlock
                 {
                     Text = "待人工绑定清单（云效不做资源重绑定，需你在控制台确认）：",
@@ -1162,12 +1295,12 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     Spacing = 8,
                     Children = { _pipelineEditButton, _pipelineResetButton, _pipelineEditedText }
                 },
-                _appendDeployConfirm,
+                _updatePipelineConfirm,
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Spacing = 8,
-                    Children = { _pipelineButton, _appendDeployButton }
+                    Children = { _pipelineButton, _updatePipelineButton }
                 }
             }
         });
@@ -1672,7 +1805,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <param name="spec">项目档案。</param>
     private void PopulateStep7Area(ProjectSpec spec)
     {
-        _pipelinePreviews = _service.PreviewPipelines(_pipelineYamlOverrides);
+        // v0.32：预览必须带上本会话已选的部署目标，否则「预览的 YAML」与「创建的 YAML」会不一致。
+        _pipelinePreviews = _service.PreviewPipelines(_pipelineYamlOverrides, _deploySelections);
 
         foreach (var row in _pipelineRows)
         {
@@ -1686,18 +1820,23 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
             if (result is null || string.IsNullOrWhiteSpace(result.PipelineId))
             {
+                var cloned = spec.Repositories.Any(item => item.End == row.End && item.Cloned);
                 row.Status.Foreground = MutedText;
                 row.Status.Text = preview is null
-                    ? "未创建（该端尚未建库 / 克隆，本步会被跳过）"
+                    ? cloned
+                        ? "未创建（尚未执行『准备（只读）』：先点该按钮生成预览，确认后再创建）"
+                        : "未创建（该端尚未建库 / 克隆，本步会被跳过）"
                     : $"未创建｜将创建 {preview.PipelineName}";
                 continue;
             }
 
             row.Status.Foreground = SuccessBrush;
             row.Status.Text = "✔ 已创建"
-                              + (result.Created ? "（本次新建）" : "（命中同名，复用）")
+                              + (result.Created ? "（本次新建）" : "（命中同名，已覆盖更新）")
                               + $"｜{result.PipelineName}｜id {result.PipelineId}"
-                              + (result.DeployStageIncluded ? "｜已并入部署阶段" : "｜部署阶段未并入")
+                              + (result.DeployStageIncluded
+                                  ? $"｜含部署阶段（{result.DeployMachineGroupName} / {result.DeployMachineGroupUuid}）"
+                                  : "｜未含部署阶段")
                               + (result.WebUrl.Length == 0 ? string.Empty : $"｜{result.WebUrl}");
         }
 
@@ -1717,6 +1856,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         }
 
         PopulatePipelinePreviewPicker();
+        PopulateDeployTargetArea(spec);
 
         var lastFailed = spec.StepStates.TryGetValue(nameof(WizardStep.Pipeline), out var raw)
                          && string.Equals(raw, nameof(StepStatus.Failed), StringComparison.Ordinal);
@@ -1735,8 +1875,298 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         var withDeploy = spec.PipelineResults.Count(item => item.DeployStageIncluded);
         _pipelineResultText.IsVisible = true;
         _pipelineResultText.Foreground = lastFailed ? DangerBrush : SuccessBrush;
-        _pipelineResultText.Text = $"档案里已有 {created} 端流水线（{withDeploy} 端已并入部署阶段）"
+        _pipelineResultText.Text = $"档案里已有 {created} 端流水线（{withDeploy} 端含部署阶段）"
                                    + (lastFailed ? "；最近一次执行仍有失败项，详见右侧操作记录。" : "。");
+    }
+
+    /// <summary>
+    /// 刷新「部署目标」区（v0.32）：拉取（首帧触发）/ 填充候选、回显默认与已选目标、摊出机器明细、给失败红字。
+    /// </summary>
+    /// <remarks>
+    /// <b>阻断口径</b>：列表读不到（未配 PAT / 无权限 / 网络失败）或没有可用主机组时，只在此处与执行入口
+    /// （<see cref="RunCreatePipelinesAsync"/>）给红字并拒绝创建，<b>不降级成手填 uuid</b>。
+    /// 「哪端需要部署阶段」一律由能力层 <see cref="PipelinePreview.YamlIncludesDeployStage"/> 给出，面板不复制判断。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    private void PopulateDeployTargetArea(ProjectSpec spec)
+    {
+        var serviceInScope = spec.Ends.Count == 0 || spec.Ends.Contains(ProjectEnd.Service);
+        var preview = _pipelinePreviews.FirstOrDefault(item => item.End == ProjectEnd.Service);
+
+        // 只有后端有独立部署阶段（真机取证：前端两端上传 OSS 即发布）；后端未选中时本区无需交互。
+        if (!serviceInScope || preview?.YamlIncludesDeployStage != true)
+        {
+            _serviceDeployPicker.SelectedIndex = -1;
+            _serviceDeployPicker.ItemsSource = Array.Empty<string>();
+            _serviceDeployPicker.IsEnabled = false;
+            _deployPickerGroups.Clear();
+            _deploySelections.Remove(ProjectEnd.Service);
+            _deployRefreshButton.IsEnabled = false;
+            _serviceDeployMachinesText.IsVisible = false;
+            _deployTargetStatusText.IsVisible = true;
+            _deployTargetStatusText.Foreground = MutedText;
+            _deployTargetStatusText.Text = serviceInScope
+                ? "该端没有独立部署阶段（构建产物上传 OSS 即发布），无需选择部署目标。"
+                : "本端未选（Step 1 未勾选后端），无需部署目标。";
+            return;
+        }
+
+        _deployRefreshButton.IsEnabled = !_deployTargetsLoading;
+
+        if (_deployTargetsLoading)
+        {
+            _deployTargetStatusText.IsVisible = true;
+            _deployTargetStatusText.Foreground = MutedText;
+            _deployTargetStatusText.Text = "正在读取云效主机组列表…";
+            return;
+        }
+
+        if (_deployTargetsError is not null)
+        {
+            _serviceDeployPicker.IsEnabled = false;
+            _serviceDeployMachinesText.IsVisible = false;
+            _deployTargetStatusText.IsVisible = true;
+            _deployTargetStatusText.Foreground = DangerBrush;
+            _deployTargetStatusText.Text = "✖ 读不到云效主机组列表，已阻断创建：" + _deployTargetsError
+                                          + "（本步不做「手填 uuid」降级——uuid 填错云效只回「该机器组uuid[x]不存在」。"
+                                          + "确认凭据 / 权限后点「刷新主机组」。）";
+            return;
+        }
+
+        if (_deployTargets is null)
+        {
+            _deployTargetStatusText.IsVisible = true;
+            _deployTargetStatusText.Foreground = MutedText;
+            _deployTargetStatusText.Text = "正在读取云效主机组列表…";
+            _ = LoadDeployTargetsAsync();
+            return;
+        }
+
+        FillDeployPicker(preview.RecommendedDeployTargetUuid);
+    }
+
+    /// <summary>
+    /// 用已拉到的候选填充部署目标下拉：保持用户已选（按 uuid 认），没选则默认选中配置推荐值。
+    /// </summary>
+    /// <remarks>
+    /// <b>不默认选第一项</b>：组织里有多个主机组（含 UAT / PRD），默认选第一项极容易把发布打到别的主机组。
+    /// </remarks>
+    /// <param name="recommendedUuid">插件配置里的推荐 uuid（空＝没有默认，保持未选）。</param>
+    private void FillDeployPicker(string recommendedUuid)
+    {
+        var groups = (_deployTargets ?? Array.Empty<DeployHostGroup>())
+            .Where(group => !string.IsNullOrWhiteSpace(group.Uuid))
+            .ToList();
+
+        _deployPickerGroups.Clear();
+        _deployPickerGroups.AddRange(groups);
+
+        _deployPickerPopulating = true;
+        try
+        {
+            _serviceDeployPicker.ItemsSource = groups.Select(group => group.DisplayLabel).ToList();
+
+            var current = _deploySelections.TryGetValue(ProjectEnd.Service, out var selected) ? selected.Uuid : string.Empty;
+            var index = groups.FindIndex(group => string.Equals(group.Uuid, current, StringComparison.Ordinal));
+            if (index < 0 && !string.IsNullOrWhiteSpace(recommendedUuid))
+                index = groups.FindIndex(group => string.Equals(group.Uuid, recommendedUuid.Trim(), StringComparison.Ordinal));
+
+            _serviceDeployPicker.SelectedIndex = index;
+
+            if (index >= 0)
+                _deploySelections[ProjectEnd.Service] = groups[index];
+            else
+                _deploySelections.Remove(ProjectEnd.Service);
+        }
+        finally
+        {
+            _deployPickerPopulating = false;
+        }
+
+        _serviceDeployPicker.IsEnabled = groups.Count > 0;
+
+        if (groups.Count == 0)
+        {
+            _serviceDeployMachinesText.IsVisible = false;
+            _deployTargetStatusText.IsVisible = true;
+            _deployTargetStatusText.Foreground = DangerBrush;
+            _deployTargetStatusText.Text = "云效返回的主机组列表里没有带 uuid 的可用目标，已阻断创建："
+                                           + "请到云效控制台确认主机组后点「刷新主机组」。";
+            return;
+        }
+
+        var chosen = _serviceDeployPicker.SelectedIndex >= 0;
+        _deployTargetStatusText.IsVisible = true;
+        _deployTargetStatusText.Foreground = chosen ? MutedText : DangerBrush;
+        _deployTargetStatusText.Text = chosen
+            ? $"共 {groups.Count} 个可用主机组；写进 YAML 的 machineGroup 是主机组 uuid（不是列表里的数字 ID）。"
+              + (string.IsNullOrWhiteSpace(recommendedUuid) ? string.Empty : "（已按插件配置默认选中）")
+            : $"共 {groups.Count} 个可用主机组，但你尚未选择——创建前必须先选一个（可展开机器明细核对落点）。";
+
+        // 刚换过目标的一次性提示（旧微调已丢弃）。
+        if (_deployTargetNote is { } note)
+        {
+            _deployTargetStatusText.Text += note;
+            _deployTargetNote = null;
+        }
+
+        SyncDeployMachinesText();
+    }
+
+    /// <summary>
+    /// 显示当前选中主机组的机器明细（已缓存则直接显示，否则异步拉取；0 台机器给告警而不是报错）。
+    /// </summary>
+    private void SyncDeployMachinesText()
+    {
+        var index = _serviceDeployPicker.SelectedIndex;
+        if (index < 0 || index >= _deployPickerGroups.Count)
+        {
+            _serviceDeployMachinesText.IsVisible = false;
+            return;
+        }
+
+        var group = _deployPickerGroups[index];
+
+        if (group.Machines.Count > 0)
+        {
+            _serviceDeployMachinesText.IsVisible = true;
+            _serviceDeployMachinesText.Foreground = MutedText;
+            _serviceDeployMachinesText.Text = "机器明细：\n"
+                                              + string.Join("\n", group.Machines.Select(machine => "    · " + machine.DisplayLabel));
+            return;
+        }
+
+        // 真机观测存在 hostNum=0 的空组（UAT / 公众版 / 专业版主机组均为 0）：可以选，但要让用户看清「没机器」。
+        if (group.HostNum == 0)
+        {
+            _serviceDeployMachinesText.IsVisible = true;
+            _serviceDeployMachinesText.Foreground = WarningBrush;
+            _serviceDeployMachinesText.Text = "该主机组当前 0 台机器：部署会找不到落点，请确认是否选错主机组。";
+            return;
+        }
+
+        _serviceDeployMachinesText.IsVisible = true;
+        _serviceDeployMachinesText.Foreground = MutedText;
+        _serviceDeployMachinesText.Text = $"正在读取「{group.Name}」的机器明细…";
+        _ = LoadDeployMachinesAsync(group);
+    }
+
+    /// <summary>
+    /// 拉取云效主机组列表（只读，v0.32）。失败只把原因记在 <see cref="_deployTargetsError"/> 上（界面据此阻断创建）。
+    /// </summary>
+    private async Task LoadDeployTargetsAsync()
+    {
+        if (_deployTargetsLoading)
+            return;
+
+        _deployTargetsLoading = true;
+        try
+        {
+            _deployTargets = await _service.ListDeployTargetsAsync().ConfigureAwait(true);
+            _deployTargetsError = null;
+        }
+        catch (Exception ex)
+        {
+            _deployTargets = null;
+            _deployTargetsError = ex.Message;
+        }
+        finally
+        {
+            _deployTargetsLoading = false;
+        }
+
+        // 回填界面：期间用户可能已切走步骤（面板卸载）或档案被清空，两种情况都只更新状态、不碰控件。
+        if (!_unloaded && _service.Current is { } spec)
+            PopulateDeployTargetArea(spec);
+    }
+
+    /// <summary>
+    /// 拉取某主机组的机器明细（只读）。失败<b>不阻断</b>创建（阻断判据只看列表能否读到），只在明细行给提示。
+    /// </summary>
+    /// <param name="group">主机组（取到明细后缓存在该实例上，避免重复请求）。</param>
+    private async Task LoadDeployMachinesAsync(DeployHostGroup group)
+    {
+        try
+        {
+            group.Machines = await _service.ListDeployTargetMachinesAsync(group.HostGroupId).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+            {
+                _serviceDeployMachinesText.IsVisible = true;
+                _serviceDeployMachinesText.Foreground = WarningBrush;
+                _serviceDeployMachinesText.Text = $"机器明细读取失败：{ex.Message}";
+            }
+
+            return;
+        }
+
+        // 只有该组仍被选中时才回写界面（等待期间用户可能改选别的组）。
+        var index = _serviceDeployPicker.SelectedIndex;
+        if (!_unloaded
+            && index >= 0
+            && index < _deployPickerGroups.Count
+            && ReferenceEquals(_deployPickerGroups[index], group))
+        {
+            SyncDeployMachinesText();
+        }
+    }
+
+    /// <summary>Step 7「刷新主机组」：丢弃旧读数并重新拉取主机组列表（只读）。</summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    private async void OnRefreshDeployTargetsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_unloaded || _service.Current is null || _deployTargetsLoading)
+            return;
+
+        _deployTargets = null;
+        _deployTargetsError = null;
+        _serviceDeployPicker.SelectedIndex = -1;
+        _serviceDeployPicker.ItemsSource = Array.Empty<string>();
+        _deployPickerGroups.Clear();
+        _serviceDeployMachinesText.IsVisible = false;
+
+        await LoadDeployTargetsAsync();
+    }
+
+    /// <summary>
+    /// 部署目标改选（v0.32）：记住选择、刷新机器明细，并<b>丢弃该端的手工微调</b>。
+    /// </summary>
+    /// <param name="sender">事件源。</param>
+    /// <param name="e">事件参数。</param>
+    /// <remarks>
+    /// 为什么必须丢弃微调：手工微调原文里写着旧的 <c>machineGroup</c> uuid，留着会出现「下拉显示 A 主机组、
+    /// 提交的 YAML 却打 B 主机组」的自相矛盾；提示语由 <see cref="_deployTargetNote"/> 随下一次渲染给出。
+    /// </remarks>
+    private void OnServiceDeployTargetChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_deployPickerPopulating || _unloaded)
+            return;
+
+        var index = _serviceDeployPicker.SelectedIndex;
+        if (index < 0 || index >= _deployPickerGroups.Count)
+        {
+            _deploySelections.Remove(ProjectEnd.Service);
+            _serviceDeployMachinesText.IsVisible = false;
+            return;
+        }
+
+        var group = _deployPickerGroups[index];
+        if (_deploySelections.TryGetValue(ProjectEnd.Service, out var previous)
+            && string.Equals(previous.Uuid, group.Uuid, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _deploySelections[ProjectEnd.Service] = group;
+
+        if (_pipelineYamlOverrides.Remove(ProjectEnd.Service))
+            _deployTargetNote = $"。注意：部署目标已变更，已丢弃 {EndLabel(ProjectEnd.Service)} 的手工微调 YAML（旧文本里的 machineGroup 已过期）";
+
+        if (_service.Current is { } spec)
+            PopulateStep7Area(spec);
     }
 
     /// <summary>
@@ -2033,6 +2463,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         // Step 3 / Step 6 / 占位区（P3）：忙碌时只锁动作按钮；冲突三选一必须保持可点
         // —— 它回答的正是「Step 3 正在运行」时的问题，锁掉会直接把能力层挂死到超时。
         _precheckButton.IsEnabled = !_busy;
+        _pipelinePrepareButton.IsEnabled = !_busy;
         SyncCreateEnabled();
         _pushButton.IsEnabled = !_busy;
         _repushButton.IsEnabled = !_busy;
@@ -2631,8 +3062,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>Step 7「创建流水线（逐端）」（PRD §4.3 Step 7 v0.30）。</summary>
     private async void OnPipelineClicked(object? sender, RoutedEventArgs e) => await RunCreatePipelinesAsync();
 
-    /// <summary>Step 7「一键补齐部署阶段」。</summary>
-    private async void OnAppendDeployClicked(object? sender, RoutedEventArgs e) => await RunAppendDeployStagesAsync();
+    /// <summary>Step 7「覆盖更新（逐端）」：按当前口径整体重推已有流水线（含部署段，破坏性、需先勾选确认）。</summary>
+    private async void OnUpdatePipelinesClicked(object? sender, RoutedEventArgs e) => await RunUpdatePipelinesAsync();
 
     /// <summary>Step 7 YAML 预览切换端。</summary>
     /// <param name="sender">事件源。</param>
@@ -2665,8 +3096,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// Step 7 手工微调入口：在独立窗口里编辑选中端 YAML，保存后回填内存字典并刷新预览。
     /// </summary>
     /// <remarks>
-    /// 面板只负责传递文本：校验由能力层 <c>PipelineYamlOverride.Validate</c> 负责（弹窗内即时拦、提交前再拦一次），
-    /// 既不解析 YAML 也不猜云效规则。
+    /// 面板只负责传递文本：<b>不做任何 YAML 校验</b>（C10′），既不解析 YAML 也不猜云效规则；
+    /// 明显改坏的文本由云效在创建时原样报回。
     /// </remarks>
     private async Task EditPipelineYamlAsync()
     {
@@ -2676,7 +3107,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         var preview = CurrentPipelinePreview();
         if (preview is null)
         {
-            ShowWarnings(new[] { "当前没有可微调的流水线预览：请先完成 Step 3 建库并克隆，再回到本步。" });
+            ShowWarnings(new[] { "当前没有可微调的流水线预览：请先在本步点『准备（只读）』生成预览后再微调（未建库 / 克隆的端需先完成 Step 3）。" });
             return;
         }
 
@@ -2704,6 +3135,63 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             PopulateStep7Area(spec);
     }
 
+    /// <summary>
+    /// Step 7「准备预览（只读，不创建）」：下发一次只读准备，让助手拉主机组候选并按 docs 渲染各端 YAML，
+    /// 产出结论文件后刷新复核界面（YAML 预览 / 待绑定清单 / 部署目标）。
+    /// </summary>
+    /// <remarks>
+    /// <b>只读</b>：本阶段不创建 / 不更新云效流水线（写入动作在用户确认后的「创建流水线 / 覆盖更新」）。
+    /// 界面据此渲染复核界面；部署目标缺选由执行入口自行阻断，准备阶段只负责把候选与预览摊开（C15′）。
+    /// </remarks>
+    private async void OnPreparePipelinesClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || _unloaded)
+            return;
+
+        var spec = _service.Current;
+        if (spec is null)
+        {
+            ShowErrors(new[] { "尚未建立项目档案，请先完成 Step 1。" });
+            return;
+        }
+
+        ShowErrors(Array.Empty<string>());
+
+        SetBusy(true, "正在准备 Step 7（只读：拉主机组候选 + 按 docs 渲染各端 YAML）…");
+        try
+        {
+            var prepare = await _service.PreparePipelinesAsync().ConfigureAwait(true);
+            if (_unloaded)
+                return;
+
+            _pipelinePrepareText.IsVisible = true;
+            _pipelinePrepareText.Foreground = prepare.IsReady ? MutedText : DangerBrush;
+            _pipelinePrepareText.Text = prepare.IsReady
+                ? "准备就绪：" + prepare.Message
+                : "准备未就绪：" + (prepare.Errors.Count > 0 ? string.Join("；", prepare.Errors) : prepare.Message);
+
+            if (!prepare.IsReady)
+                ShowErrors(prepare.Errors.Count > 0 ? prepare.Errors : new[] { prepare.Message });
+
+            PopulateStep7Area(spec);
+        }
+        catch (Exception ex)
+        {
+            if (!_unloaded)
+            {
+                _pipelinePrepareText.IsVisible = true;
+                _pipelinePrepareText.Foreground = DangerBrush;
+                _pipelinePrepareText.Text = "Step 7 准备失败：" + ex.Message;
+                ShowErrors(new[] { $"Step 7 准备失败：{ex.Message}" });
+            }
+        }
+        finally
+        {
+            if (!_unloaded)
+                SetBusy(false, null);
+        }
+    }
+
     /// <summary>取当前选中端对应的流水线预览（无预览时为 <c>null</c>）。</summary>
     /// <returns>预览；未命中返回 <c>null</c>。</returns>
     private PipelinePreview? CurrentPipelinePreview()
@@ -2713,18 +3201,21 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 7 执行入口（创建流水线）：交能力层渲染内嵌模板并逐端创建。
+    /// Step 7 执行入口（创建流水线）：按准备结论的 YAML（<b>含部署段</b>）逐端创建。
     /// </summary>
     private async Task RunCreatePipelinesAsync()
     {
         if (_busy || _unloaded || _service.Current is null)
             return;
 
+        if (BlockPipelineActionByDeployTarget())
+            return;
+
         ShowErrors(Array.Empty<string>());
-        SetBusy(true, "正在逐端创建云效流水线（渲染内嵌新版 YAML → 同名检索 → 创建）…");
+        SetBusy(true, "正在逐端创建云效流水线（准备结论原文（含部署段）→ 同名检索 → 创建）…");
         try
         {
-            var result = await _service.CreatePipelinesAsync(_pipelineYamlOverrides).ConfigureAwait(true);
+            var result = await _service.CreatePipelinesAsync(_pipelineYamlOverrides, _deploySelections).ConfigureAwait(true);
             if (_unloaded)
                 return;
 
@@ -2744,40 +3235,88 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 7 补充入口（一键补齐部署阶段）：对该端已有流水线做覆盖更新，把部署阶段并入 YAML。
+    /// 创建 / 覆盖更新的<b>前置阻断</b>（v0.32）：需要部署阶段却没选到目标时给红字并拒绝执行。
     /// </summary>
-    private async Task RunAppendDeployStagesAsync()
+    /// <returns>命中阻断返回 <c>true</c>（调用方直接返回，不发请求）。</returns>
+    /// <remarks>
+    /// 面板只是<b>早一步</b>拦下并把原因摊给用户；真正的守卫在能力层执行体里（那里同样 <c>fail</c> 且不发请求），
+    /// 两条通路都会拦，避免「界面点得下去、结果把一个占位符 uuid 提交到云效」。
+    /// 「没选但准备结论里有推荐目标」不算阻断——与 <c>PipelinePreview.RecommendedDeployTargetUuid</c> 的预选口径一致。
+    /// </remarks>
+    private bool BlockPipelineActionByDeployTarget()
+    {
+        var needsDeploy = _pipelinePreviews.Where(item => item.YamlIncludesDeployStage).ToList();
+        if (needsDeploy.Count == 0)
+            return false;
+
+        if (_deployTargetsError is not null)
+        {
+            ShowErrors(new[]
+            {
+                "读不到云效主机组列表，已阻断执行：" + _deployTargetsError
+                + " 请确认云效凭据 / 权限后点「刷新主机组」再执行。本步不做「手填 uuid」降级（uuid 填错云效只回「该机器组uuid[x]不存在」）。"
+            });
+            return true;
+        }
+
+        foreach (var preview in needsDeploy)
+        {
+            var chosen = _deploySelections.TryGetValue(preview.End, out var target) && !string.IsNullOrWhiteSpace(target.Uuid);
+            if (chosen || !string.IsNullOrWhiteSpace(preview.RecommendedDeployTargetUuid))
+                continue;
+
+            ShowErrors(new[]
+            {
+                $"{EndLabel(preview.End)}尚未选定部署主机组：请在「部署目标」区点「刷新主机组」，"
+                + "再从下拉里选一个（或到插件配置 pipelineDefaults[Service].deployMachineGroup 填默认值）后再执行本步。"
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Step 7 补充入口（覆盖更新）：对该端已有流水线做整体覆盖更新，把<b>当前口径的完整 YAML（含部署段）</b>推上去。
+    /// </summary>
+    /// <remarks>
+    /// 用途（v0.32）：把 v0.31 及更早建的「只含构建段、末尾带注释块」的流水线补成含部署段的完整 YAML，
+    /// 或用户换了部署目标 / 改了配置后纠偏。破坏性，故卡内先勾选确认（同 Step 3 姿势，不弹模态框）。
+    /// </remarks>
+    private async Task RunUpdatePipelinesAsync()
     {
         if (_busy || _unloaded || _service.Current is null)
             return;
 
-        // 破坏性提示：UpdatePipeline 会整体覆盖该端流水线 YAML，控制台上的人工改动会被抹掉。
-        // 与 Step 3 同一姿势（卡内先勾选再执行），不弹模态框。
-        if (_appendDeployConfirm.IsChecked != true)
+        if (BlockPipelineActionByDeployTarget())
+            return;
+
+        if (_updatePipelineConfirm.IsChecked != true)
         {
             ShowWarnings(new[]
             {
-                "「一键补齐部署阶段」会对已有流水线做整体覆盖更新（UpdatePipeline）：若你已在云效控制台手工改过 "
-                + "YAML，那些改动会被抹掉。确认后请先勾选按钮上方那句确认再执行。"
+                "「覆盖更新」会对已有流水线做整体覆盖更新（UpdatePipeline）：若你已在云效控制台手工改过 YAML，"
+                + "那些改动会被抹掉；v0.32 起还会把部署段一并写入（machineGroup 按当前「部署目标」的选择）。"
+                + "确认后请先勾选按钮上方那句确认再执行。"
             });
             return;
         }
 
         ShowWarnings(Array.Empty<string>());
-        SetBusy(true, "正在把部署阶段并入已有流水线（UpdatePipeline 覆盖更新）…");
+        SetBusy(true, "正在按当前口径整体覆盖更新已有流水线（UpdatePipeline，含部署段）…");
         try
         {
-            var result = await _service.AppendDeployStagesAsync(_pipelineYamlOverrides).ConfigureAwait(true);
+            var result = await _service.UpdatePipelinesAsync(_pipelineYamlOverrides, _deploySelections).ConfigureAwait(true);
             if (_unloaded)
                 return;
 
             if (result.Status != StepStatus.Succeeded)
-                ShowErrors(new[] { result.Message ?? "补齐部署阶段未完成，详见右侧操作记录。" });
+                ShowErrors(new[] { result.Message ?? "覆盖更新未完成，详见右侧操作记录。" });
         }
         catch (Exception ex)
         {
             if (!_unloaded)
-                ShowErrors(new[] { $"补齐部署阶段失败：{ex.Message}" });
+                ShowErrors(new[] { $"覆盖更新失败：{ex.Message}" });
         }
         finally
         {

@@ -141,7 +141,7 @@ public static class StepPrompts
 
         builder.AppendLine("【本组织已知构建姿势】（本组织各端仓库的既有做法；与你按工程类型的默认判断冲突时，以这里为准）");
         builder.AppendLine("- 管理端（Admin，Vite + Vue）：本仓库用 npm 系构建，**不要用 pnpm**；Node 版本必须是 16。");
-        builder.AppendLine("  1) 分支：本仓库的工作分支是 develop；若当前不在 develop 且工作树干净，先 git checkout develop。");
+        builder.AppendLine("  1) 分支：本仓库的工作分支是 develop；若当前不在 develop 且工作树干净，先在该端仓库目录里 git checkout develop。");
         builder.AppendLine("  2) Node 16：用 fnm 把命令包一层——fnm exec --using=16 -- npm.cmd <子命令>"
                            + "（Windows 下 fnm 直接 spawn npm 会报 program not found，必须写成 npm.cmd；"
                            + "不要用 fnm env | Invoke-Expression 这类管道 / 求值写法，会被守卫拒绝）。");
@@ -158,8 +158,9 @@ public static class StepPrompts
         builder.AppendLine();
 
         builder.AppendLine("【执行要求】");
-        builder.AppendLine("1) 每个端先看清目录里有什么（.sln / .csproj / package.json / pubspec.yaml 等），"
-                           + "再自行判断该用什么命令编译——编译方式由你按工程类型决定。");
+        builder.AppendLine("1) 每个端先看清目录里有什么（.sln / .csproj / package.json / pubspec.yaml 等）——"
+                           + "**命令一律在该端的「本地目录」（＝该端仓库目录）执行**（先 cd 或用工具的工作目录参数，"
+                           + "不要在项目工作区根执行）；编译方式由你按工程类型决定。");
         builder.AppendLine("2) 后端一般是 .NET 解决方案：在仓库目录里 dotnet build 对应的 .sln（或 .csproj）。");
         builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：装依赖用 npm / cnpm"
                            + "（本组织管理端仓库不要用 pnpm），构建优先用仓库里真实存在的开发态脚本"
@@ -186,6 +187,534 @@ public static class StepPrompts
 
         return builder.ToString();
     }
+
+    // ── Step 3 / 6 / 7（v0.3 助手驱动）────────────────────────────────────────
+
+    /// <summary>
+    /// 构造 Step 3「建库前准备（只读）」提示词（一次只读准备下发）。
+    /// </summary>
+    /// <remarks>
+    /// 本阶段<b>只读</b>：只拉模板库 / 分支 / 代码组 / 同名仓库的事实，写进结论文件的 <c>artifacts[]</c>，
+    /// 面板据此渲染确认界面；建组、建库、克隆都发生在用户确认后的执行续跑（
+    /// <see cref="BuildRepositoryExecutePrompt"/>）。
+    /// </remarks>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="plan">建库计划（按端）。</param>
+    /// <param name="resultFile">结论文件绝对路径。</param>
+    /// <returns>提示词。</returns>
+    public static string BuildRepositoryPreparePrompt(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> plan,
+        string resultFile)
+    {
+        var docs = DocsDirectory(spec);
+        var builder = new StringBuilder();
+
+        builder.AppendLine($"你是本项目（{Display(spec)}）的项目助手。");
+        builder.AppendLine();
+        builder.AppendLine("本次由「新建项目」向导的 Step 3 驱动你执行【建库前准备（只读）】。");
+        builder.AppendLine("本阶段**只读**：只把事实查清楚写进结论文件，面板据此给用户确认；"
+                           + "**建组 / 建库 / 克隆 / 改文件都不在本阶段**（唯一例外＝结论文件）。");
+        builder.AppendLine();
+
+        AppendHardBoundaries(builder, new[]
+        {
+            "本阶段只读：**禁止**任何写入动作——云效侧禁止 codeup_create_group / codeup_create_repo / "
+                + "flow_create_pipeline / flow_update_pipeline / flow_run_pipeline；git 侧禁止 GitCloneAsync / "
+                + "GitAddAsync / GitCommitAsync / GitPushAsync；文件侧禁止写入 / 删除项目文件。",
+            $"先读知识正文再干活：`{docs}\\org-reference.md`（组织专有值与会话约定）与 "
+                + $"`{docs}\\step3-repositories.md`（本步口径与失败处置）。**不得**凭记忆臆造组织专有值。",
+            "云效只读工具用 MCP：mcp_yunxiao_codeup_list_template_repos / mcp_yunxiao_codeup_list_branches / "
+                + "mcp_yunxiao_codeup_list_groups / mcp_yunxiao_codeup_search_repos / mcp_yunxiao_codeup_get_repo。"
+        });
+
+        builder.AppendLine("【建库计划】（用户已在面板确认；仓库名与可见性以这里为准）");
+        foreach (var repository in plan)
+        {
+            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库名 = {repository.RepositoryName}"
+                               + $" · 可见性 = {repository.Visibility} · 仓库目录 = {repository.LocalPath}"
+                               + "（已含仓库名，勿再拼一次）"
+                               + $" · 模板仓 = {(string.IsNullOrWhiteSpace(repository.TemplateRepository) ? "（未登记，按 docs 按端名称约定匹配）" : repository.TemplateRepository)}");
+        }
+        builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
+        builder.AppendLine();
+
+        builder.AppendLine("【要查清的事实】（逐端）");
+        builder.AppendLine("1) 模板库：`mcp_yunxiao_codeup_list_template_repos`（templateType=1、perPage=100）**全量拉取**后"
+                           + "在本地按各端名称约定匹配（该接口**没有 search 入参**，别指望服务端按名过滤）；取 templateProjectId；");
+        builder.AppendLine("2) 模板仓分支：`mcp_yunxiao_codeup_list_branches`（repositoryId=templateProjectId），"
+                           + "按 docs 的 pin 择优顺序（develop → master → main → 模板默认分支）解析 pin；");
+        builder.AppendLine("3) 代码组：`mcp_yunxiao_codeup_list_groups`（search=组名）查目标代码组是否已存在（决定「新建 / 复用」）；");
+        builder.AppendLine("4) 同名仓库：`mcp_yunxiao_codeup_search_repos`（search=仓库名）；**若命中，再调 "
+                           + "`mcp_yunxiao_codeup_get_repo`（repositoryId=命中项 id）取 httpUrlToRepo 与 defaultBranch**"
+                           + "（列表接口不含克隆地址；仓库页面地址由克隆地址去掉尾部 .git 推导）；");
+        builder.AppendLine("5) 仓库目录：检查 `<仓库目录>`（上面各端的完整目录，**已含仓库名**，不要再拼一次）是否已存在且非空"
+                           + "（只读判断，不要删）。");
+        builder.AppendLine();
+
+        AppendArtifactSchema(builder, 3, @"{
+  ""step"": 3,
+  ""status"": ""done"",
+  ""ok"": true,
+  ""artifacts"": [
+    { ""kind"": ""group"", ""name"": ""<代码组名>"", ""externalId"": ""<组 id 或 null>"", ""webUrl"": ""<链接或 null>"",
+      ""extra"": { ""kind"": ""group"", ""exists"": false, ""parentId"": null, ""organizationId"": ""<组织 ID>"" } },
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": null,
+      ""webUrl"": ""<仓库页面链接或 null>"", ""cloneUrl"": ""<已存在时的 httpUrlToRepo 或 null>"",
+      ""localPath"": ""<仓库目录>"", ""templateBranch"": ""<pin 分支>"",
+      ""extra"": { ""kind"": ""repository"", ""templateRepository"": ""<模板仓名>"", ""templateProjectId"": 123,
+        ""templatePath"": ""<模板库全路径>"", ""templateBranches"": [""develop"", ""master""],
+        ""resolvedBranchSource"": ""<pin 来源说明>"", ""repositoryExists"": false, ""localPathOccupied"": false,
+        ""visibility"": ""internal"", ""error"": null } }
+  ],
+  ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""模板与 pin 已解析"" } ],
+  ""message"": ""<一句话总结>""
+}");
+
+        builder.AppendLine("要点：`end` 必须用端标识字符串（Service / Admin / Mobile，**不是**数字）；"
+                           + "每端一条 `kind=repository` 产物；`extra.kind` 必须与 `kind` 一致（多态判别属性）；"
+                           + "某端查不通时把原因写进该端 `extra.error` 并把 `checks` 里该项记为 ok=false，**不要**编造事实。");
+        builder.AppendLine();
+
+        AppendResultContract(builder, resultFile, "DONE 或 FAILED: <一句话原因>");
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 构造 Step 3「执行续跑」提示词（用户确认后，在同一会话里落地下发）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="plan">用户确认后的建库计划（按端）。</param>
+    /// <param name="prepareResultFile">准备阶段结论文件路径（事实来源）。</param>
+    /// <param name="resultFile">本次结论文件绝对路径。</param>
+    /// <param name="resolvedInputs">已解决的交互答复（如「Service 的克隆冲突＝reclone」；可为空）。</param>
+    /// <returns>提示词。</returns>
+    public static string BuildRepositoryExecutePrompt(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> plan,
+        string prepareResultFile,
+        string resultFile,
+        IReadOnlyList<string>? resolvedInputs = null)
+    {
+        var docs = DocsDirectory(spec);
+        var builder = new StringBuilder();
+
+        builder.AppendLine($"你是本项目（{Display(spec)}）的项目助手。");
+        builder.AppendLine();
+        builder.AppendLine("本次由「新建项目」向导的 Step 3 驱动你执行【建组建库并克隆】。用户已在面板确认下面的计划。");
+        builder.AppendLine();
+
+        AppendHardBoundaries(builder, new[]
+        {
+            "云效侧写入用 MCP：mcp_yunxiao_codeup_create_group（组不存在时）/ mcp_yunxiao_codeup_create_repo"
+                + "（同名仓库已存在则**跳过创建直接复用**，重跑幂等）；只读事实仍用 codeup_list_* / codeup_get_repo。",
+            "git 侧一律用**框架 git 工具组**（云效 MCP **已不再提供** git 类工具）：克隆用 GitCloneAsync(url, branch, directory)，"
+                + "变换分支用 GitCheckoutAsync，复核用 GitStatusAsync / GitBranchListAsync。**不要**用 codeup_clone / codeup_push（已删除）。"
+                + "**每个 git 调用都必须显式带 `workingDirectory=<该端仓库目录>`**（不传时框架在项目工作区根执行，会操作到别的目录 / 报「不是 git 仓库」）；"
+                + "需要暂存全部时传 `GitAddAsync(paths=[\".\"], …)`，**不要**传 `-A`（工具会拼成 `git add -- -A` 当 pathspec，必然失败）。",
+            $"先读知识正文：`{docs}\\step3-repositories.md`（建库 / 克隆 / 占位符 / 三选一 / 失败处置）与 "
+                + $"`{docs}\\org-reference.md`（组织专有值）。",
+            "**建库后模板分支是服务端异步同步的**（实证 10–17s）：必须按 docs 轮询 `mcp_yunxiao_codeup_list_branches` "
+                + "等 pin 分支出现（上限 120s / 间隔 3s）后才克隆，否则 git 会在目标目录留下 `.git/HEAD = ref: refs/heads/.invalid` 的残骸。",
+            "git 凭据由用户在**外部环境**自行配置（credential helper / 系统凭据管理器）：克隆地址用 "
+                + "`httpUrlToRepo`（**不要**把令牌拼进 URL）。凭据缺失时把 git 原文报错带出来，并提示"
+                + "「请先在外部环境配好 codeup HTTPS 凭据」。"
+        });
+
+        builder.AppendLine("【事实来源：准备阶段结论文件】");
+        builder.AppendLine(prepareResultFile);
+        builder.AppendLine("（模板仓 / pin / 代码组是否存在 / 仓库是否已存在，都以它为准；需要复核可再调只读 MCP。）");
+        builder.AppendLine();
+
+        builder.AppendLine("【本次建库计划（用户已确认）】");
+        foreach (var repository in plan)
+        {
+            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库名 = {repository.RepositoryName}"
+                               + $" · 可见性 = {repository.Visibility} · 仓库目录 = {repository.LocalPath}"
+                               + "（已含仓库名，勿再拼一次）"
+                               + $" · 模板仓 = {repository.TemplateRepository}"
+                               + $" · pin = {(string.IsNullOrWhiteSpace(repository.TemplateBranch) ? "（按 docs 现场解析）" : repository.TemplateBranch)}");
+        }
+        builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
+        builder.AppendLine();
+
+        if (resolvedInputs is { Count: > 0 })
+        {
+            builder.AppendLine("【用户对本次交互项的答复】（据此继续，不要重复询问）");
+            foreach (var line in resolvedInputs)
+                builder.AppendLine($"- {line}");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine("【执行步骤】（逐端）");
+        builder.AppendLine("1) 代码组：查不到就 `mcp_yunxiao_codeup_create_group` 建（父级按 docs），查到就复用；");
+        builder.AppendLine("2) 仓库：同名已存在则复用其 id；否则 `mcp_yunxiao_codeup_create_repo`（以模板创建、落在项目代码组下、"
+                           + "`syncAllBranches=true`；参数名按工具 schema 原样小驼峰，写错即静默走默认值）；"
+                           + "建完**必须**再 `mcp_yunxiao_codeup_get_repo` 取 `httpUrlToRepo` 与 `defaultBranch`；");
+        builder.AppendLine("3) 等 pin 分支就绪（轮询 list_branches，上限 120s / 间隔 3s，超时即该端失败）；");
+        builder.AppendLine("4) 目标目录已存在且非空：按 docs 的三选一处置——能自行判定就用脚本工具清理"
+                           + "（**清理只读 pack 文件**：用 `RunPythonAsync` 的 `shutil.rmtree(..., onerror=清只读后重试)`，"
+                           + "不要用裸删）；**无法自行判定时**写 `status=\"needsInput\"` 并在 `inputs[]` 里给出 "
+                           + "`id=\"clone-conflict\"`（`kind=\"choice\"`、`options[].value` 取 reuse / reclone / abort）后**停止**；");
+        builder.AppendLine("5) 克隆：`GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)`"
+                           + "（`<仓库目录>` 就是上面给的完整目录，**不要再拼仓库名**）；"
+                           + "失败时若目录是本次新建的可清理残骸（用同一 Python 删法）；");
+        builder.AppendLine("6) 占位符替换：按 docs 的规则表把模板占位符替换成项目命名空间 / 项目名 / 缩写（区分大小写、幂等），"
+                           + "替换后残余必须为 0；把**实际替换的来源令牌**写进该端 `extra.placeholderSources`"
+                           + "（令牌取值见 docs，逐字写实际命中的那几个，例如 `[\"<令牌原文>\", …]`；"
+                           + "**至少写一项**——插件要按它独立扫描残余，空列表会被判为「无法复核」＝本步失败）；");
+        builder.AppendLine("7) 复核（**全部带 `workingDirectory=<仓库目录>`**）："
+                           + "`GitStatusAsync(workingDirectory=<仓库目录>)` / "
+                           + "`GitBranchListAsync(workingDirectory=<仓库目录>)` 确认工作树可用且 `refs/heads/<pin>` 存在，"
+                           + "再写 `extra.cloned=true`、`extra.defaultBranch`。");
+        builder.AppendLine();
+
+        AppendArtifactSchema(builder, 3, @"{
+  ""step"": 3,
+  ""status"": ""done"",
+  ""ok"": true,
+  ""artifacts"": [
+    { ""kind"": ""group"", ""name"": ""<代码组名>"", ""externalId"": ""<组 id>"", ""webUrl"": ""<链接>"",
+      ""extra"": { ""kind"": ""group"", ""exists"": true, ""parentId"": null, ""organizationId"": ""<组织 ID>"" } },
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": ""<仓库 id>"",
+      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库目录>"",
+      ""templateBranch"": ""<pin 分支>"",
+      ""extra"": { ""kind"": ""repository"", ""templateRepository"": ""<模板仓名>"", ""templateProjectId"": 123,
+        ""templatePath"": ""<模板库全路径>"", ""templateBranches"": [""develop""], ""resolvedBranchSource"": ""<pin 来源>"",
+        ""repositoryExists"": false, ""localPathOccupied"": false, ""visibility"": ""internal"", ""error"": null,
+        ""placeholderSources"": [""<令牌原文>"", ""<令牌原文>""], ""cloned"": true, ""defaultBranch"": ""<默认分支>"" } }
+  ],
+  ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""已建库并克隆，占位符残余 0"" } ],
+  ""message"": ""<一句话总结>""
+}");
+
+        builder.AppendLine("需要用户答复时（无法自行判定的克隆冲突）用这个形态，并**停止**不要继续：");
+        builder.AppendLine("```json");
+        builder.AppendLine("{ \"step\": 3, \"status\": \"needsInput\", \"ok\": false,");
+        builder.AppendLine("  \"inputs\": [ { \"id\": \"clone-conflict\", \"kind\": \"choice\", \"prompt\": \"目标目录已存在且非空，请选择处置方式\",");
+        builder.AppendLine("      \"ends\": [\"Service\"], \"options\": [");
+        builder.AppendLine("        { \"value\": \"reuse\", \"label\": \"复用已克隆\" },");
+        builder.AppendLine("        { \"value\": \"reclone\", \"label\": \"清空后重新克隆\" },");
+        builder.AppendLine("        { \"value\": \"abort\", \"label\": \"中止本步\" } ],");
+        builder.AppendLine("      \"details\": { \"path\": \"<目标目录>\", \"entryCount\": 12 } } ],");
+        builder.AppendLine("  \"message\": \"等待用户选择目录处置方式\" }");
+        builder.AppendLine("```");
+        builder.AppendLine();
+
+        AppendResultContract(builder, resultFile, "DONE / NEEDS_INPUT / FAILED: <一句话原因>");
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 构造 Step 6「推送改动」提示词（git 工具组，一次下发完成）。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="targets">本次要推送的端（已克隆且带本地目录）。</param>
+    /// <param name="resultFile">结论文件绝对路径。</param>
+    /// <returns>提示词。</returns>
+    public static string BuildPushPrompt(ProjectSpec spec, IReadOnlyList<EndRepository> targets, string resultFile)
+    {
+        var docs = DocsDirectory(spec);
+        var builder = new StringBuilder();
+
+        builder.AppendLine($"你是本项目（{Display(spec)}）的项目助手。");
+        builder.AppendLine();
+        builder.AppendLine("本次由「新建项目」向导的 Step 6 驱动你执行【推送改动到自有仓库】。");
+        builder.AppendLine();
+
+        AppendHardBoundaries(builder, new[]
+        {
+            "只做推送相关动作：分支整理 / 暂存 / 提交 / 推送；**不要**改业务源码、不要建库、不要动云效流水线。",
+            "git 动作一律用**框架 git 工具组**：GitStatusAsync / GitCheckoutAsync / GitAddAsync / GitCommitAsync / "
+                + "GitPushAsync / GitLogAsync（云效 MCP 已无 git 类工具；**不要**用 codeup_push）。"
+                + "**每个 git 调用都必须显式带 `workingDirectory=<该端仓库目录>`**（不传时框架在项目工作区根执行，会报「不是 git 仓库」或操作到别的目录）。",
+            $"先读 `{docs}\\step6-push.md`（分支口径、提交身份、提交信息格式、**报错→处置对照表**、"
+                + "限流退避：线性 10/20/30s 最多 3 次）。",
+            "**git 凭据由用户在外部环境配置**（插件与技能都不提供凭据通路）：推送失败是凭据问题时，"
+                + "把 git 原文报错带进结论，并固定提示「请先在外部环境配好 codeup HTTPS 凭据」；"
+                + "**不要**把令牌拼进 URL、不要尝试改写 remote。",
+            "禁止 `--force` / `git reset --hard` / `git clean -fd`；不要动其它分支、不要建标签。"
+        });
+
+        builder.AppendLine("【待推送的端】（目标分支按 docs 第 2 节解析：配置 `pushBranch` 有值用它，留空退回该端仓库默认分支）");
+        foreach (var repository in targets)
+        {
+            var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch)
+                ? "（未配置，按 docs 解析该端仓库默认分支）"
+                : repository.DefaultBranch;
+            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
+                               + $" · 仓库目录 = {repository.LocalPath} · 克隆地址 = {repository.CloneUrl}"
+                               + $" · 本次目标分支 = {branch}");
+        }
+        builder.AppendLine();
+
+        builder.AppendLine("【执行步骤】（逐端；下面所有 git 调用都要带 `workingDirectory=<该端仓库目录>`）");
+        builder.AppendLine("1) `GitStatusAsync(workingDirectory=<仓库目录>)` 看工作树；无改动就跳过提交"
+                           + "（如实报告，不产生空提交），仍继续推送；");
+        builder.AppendLine("2) 切分支：已存在则 `GitCheckoutAsync(target=<目标分支>, workingDirectory=<仓库目录>)`；"
+                           + "否则 `GitCheckoutAsync(target=<目标分支>, createBranch=true, workingDirectory=<仓库目录>)`"
+                           + "（对应 `git checkout -b`）；");
+        builder.AppendLine("3) `GitAddAsync(paths=[\".\"], workingDirectory=<仓库目录>)` 暂存全部改动"
+                           + "（**不要**传 `-A`：工具会拼成 `git add -- -A` 当 pathspec，必然失败）；");
+        builder.AppendLine("4) `GitCommitAsync(message=<消息>, workingDirectory=<仓库目录>)`（提交信息格式与提交身份按 docs："
+                           + "优先本机 git config，缺失用 docs 的兜底身份）；");
+        builder.AppendLine("5) `GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库目录>)`；"
+                           + "限流类失败按 docs 线性退避重试（10/20/30s，最多 3 次），其余失败不重试；");
+        builder.AppendLine("6) 推送后取本次提交 id（`GitLogAsync(maxCount=1, workingDirectory=<仓库目录>)`），写进 `extra.commitId`。");
+        builder.AppendLine();
+
+        AppendArtifactSchema(builder, 6, @"{
+  ""step"": 6,
+  ""status"": ""done"",
+  ""ok"": true,
+  ""artifacts"": [
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": ""<仓库 id>"",
+      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库目录>"",
+      ""templateBranch"": ""<实际推送的分支>"",
+      ""extra"": { ""kind"": ""repository"", ""cloned"": true, ""commitId"": ""<本次提交 id>"", ""error"": null } }
+  ],
+  ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""已推送 <分支>（提交 <短 id>）"" } ],
+  ""message"": ""<一句话总结>""
+}");
+
+        builder.AppendLine("注意：本步每端都要有 `kind=repository` 产物与同名 `checks` 项；"
+                           + "`templateBranch` 填**实际推送的分支**；漏端会被判为「该端未给结论」＝本步失败。");
+        builder.AppendLine();
+
+        AppendResultContract(builder, resultFile, "DONE 或 FAILED: <失败端与原因>");
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 构造 Step 7「流水线准备（只读）」提示词：渲染将要提交的 YAML 与待绑定清单，并列出部署目标候选。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="targets">本次要建流水线的端（已克隆）。</param>
+    /// <param name="resultFile">结论文件绝对路径。</param>
+    /// <returns>提示词。</returns>
+    public static string BuildPipelinePreparePrompt(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> targets,
+        string resultFile)
+    {
+        var docs = DocsDirectory(spec);
+        var builder = new StringBuilder();
+
+        builder.AppendLine($"你是本项目（{Display(spec)}）的项目助手。");
+        builder.AppendLine();
+        builder.AppendLine("本次由「新建项目」向导的 Step 7 驱动你执行【流水线准备（只读）】：把「将要提交的 YAML」"
+                           + "与「待人工绑定清单」算出来给用户复核。**本阶段不创建 / 不更新云效流水线**。");
+        builder.AppendLine();
+
+        AppendHardBoundaries(builder, new[]
+        {
+            "本阶段只读：**禁止** flow_create_pipeline / flow_update_pipeline / flow_run_pipeline；"
+                + "只允许只读的 flow_list_pipelines / flow_list_host_groups / flow_get_host_group。",
+            $"先读 `{docs}\\pipeline-conventions.md`（名称格式 / 待人工绑定清单 / 覆盖更新口径 / 哪端有部署阶段）与"
+                + $" 三端模板 `{docs}\\pipeline-service.yml.md` / `pipeline-admin.yml.md` / `pipeline-mobile.yml.md`。"
+                + "**YAML 正文以这些 md 里的 `yaml` 代码块为准**，按 docs 的占位符表把项目值填进去。",
+            "部署目标只在**后端**（含独立部署阶段）需要：用 `mcp_yunxiao_flow_list_host_groups` 列出候选，"
+                + "把候选**同时带数字 id 与 uuid**写进 `inputs[]`（数字 id 用于拉机器明细，uuid 才是写进 YAML machineGroup 的值）。"
+        });
+
+        builder.AppendLine("【待建流水线的端】（`{branch}` 按 docs 解析：配置 `pushBranch` 有值用它，留空退回该端仓库默认分支）");
+        foreach (var repository in targets)
+        {
+            var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch)
+                ? "（未配置，按 docs 解析该端仓库默认分支）"
+                : repository.DefaultBranch;
+            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
+                               + $" · 克隆地址 = {repository.CloneUrl} · 本项目推送分支 = {branch}");
+        }
+        builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
+        builder.AppendLine();
+
+        builder.AppendLine("【要做的事】");
+        builder.AppendLine("1) 按 docs 的三端模板，为每端生成将要提交的完整新版 YAML（顶层 `stages:` 形态），"
+                           + "把项目值（代码源地址 = 克隆地址、分支 = 上面的推送分支、镜像 / 桶 / 目录前缀等）按 docs 占位符表替换；");
+        builder.AppendLine("2) 列出该端的**待人工绑定清单**（已展开占位符，逐条写清「在哪绑、绑什么」）；");
+        builder.AppendLine("3) 后端：列出部署主机组候选（flow_list_host_groups），写进 `inputs[]` 的 `deploy-target` 项；"
+                           + "按 docs 的默认口径（或唯一合理候选）选一个作为推荐值，在 `details.defaultValue` 给数字 id，"
+                           + "并把该候选的 uuid 填进 `extra.recommendedDeployTargetUuid`、写进 YAML 的 `machineGroup`"
+                           + "（后端 YAML 必须能直接提交，不能留占位符）；用户在面板改选后，由执行续跑按新 uuid 覆盖改写；");
+        builder.AppendLine("4) `flow_list_pipelines`（pipelineName=本端流水线名）看是否已存在，已存在则填 `externalId`。");
+        builder.AppendLine();
+
+        AppendArtifactSchema(builder, 7, @"{
+  ""step"": 7,
+  ""status"": ""done"",
+  ""ok"": true,
+  ""artifacts"": [
+    { ""kind"": ""pipeline"", ""end"": ""Service"", ""name"": ""<流水线名>"", ""externalId"": ""<已存在的流水线 id 或 null>"",
+      ""webUrl"": ""<链接或空>"", ""yaml"": ""<将要提交的完整 YAML 正文>"",
+      ""extra"": { ""kind"": ""pipeline"", ""yamlIncludesDeployStage"": true,
+        ""pendingBindings"": [""<待绑定项 1>"", ""<待绑定项 2>""],
+        ""recommendedDeployTargetHostGroupId"": 123, ""recommendedDeployTargetUuid"": ""<uuid>"" } }
+  ],
+  ""inputs"": [
+    { ""id"": ""deploy-target"", ""kind"": ""select"", ""prompt"": ""请为后端选择部署主机组"", ""ends"": [""Service""],
+      ""options"": [ { ""value"": ""123"", ""uuid"": ""<uuid>"", ""label"": ""<主机组名 · 台数 · 地域>"" } ],
+      ""details"": { ""defaultValue"": ""123"", ""required"": true } }
+  ],
+  ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""YAML 已渲染，含部署阶段"" } ],
+  ""message"": ""<一句话总结>""
+}");
+
+        builder.AppendLine("要点：`yaml` 必须是**完整可提交**的正文（不是片段、不是占位符残留）；"
+                           + "`extra.pendingBindings` 逐条可操作；只有后端给部署目标输入项（前端端 `yamlIncludesDeployStage=false`）。");
+        builder.AppendLine();
+
+        AppendResultContract(builder, resultFile, "DONE 或 FAILED: <一句话原因>");
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 构造 Step 7「执行续跑」提示词：按用户确认（含手工微调与部署目标）创建 / 覆盖更新流水线。
+    /// </summary>
+    /// <param name="spec">项目档案。</param>
+    /// <param name="targets">本次要建流水线的端（已克隆）。</param>
+    /// <param name="prepareResultFile">准备阶段结论文件路径。</param>
+    /// <param name="resultFile">本次结论文件绝对路径。</param>
+    /// <param name="yamlOverrides">按端手工微调的 YAML（<c>null</c>／缺项＝用准备阶段的 YAML）。</param>
+    /// <param name="deployTargets">按端选定的部署目标（<c>null</c>／缺项＝用准备阶段的推荐值）。</param>
+    /// <param name="update"><c>true</c>＝显式覆盖更新（按档案里的流水线 id 直改）。</param>
+    /// <returns>提示词。</returns>
+    public static string BuildPipelineExecutePrompt(
+        ProjectSpec spec,
+        IReadOnlyList<EndRepository> targets,
+        string prepareResultFile,
+        string resultFile,
+        IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides,
+        IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets,
+        bool update)
+    {
+        var docs = DocsDirectory(spec);
+        var builder = new StringBuilder();
+
+        builder.AppendLine($"你是本项目（{Display(spec)}）的项目助手。");
+        builder.AppendLine();
+        builder.AppendLine(update
+            ? "本次由「新建项目」向导的 Step 7 驱动你执行【覆盖更新云效流水线】。"
+            : "本次由「新建项目」向导的 Step 7 驱动你执行【创建云效流水线】。");
+        builder.AppendLine();
+
+        AppendHardBoundaries(builder, new[]
+        {
+            $"先读 `{docs}\\pipeline-conventions.md` 与 `{docs}\\pipeline-service.yml.md` / `pipeline-admin.yml.md` / "
+                + "`pipeline-mobile.yml.md`（模板与覆盖更新口径）。",
+            "写入只允许 flow_create_pipeline / flow_update_pipeline；**禁止** flow_run_pipeline（建完不自动运行）。",
+            "创建前按流水线名精确检索（flow_list_pipelines）：**命中同名即对该条覆盖更新本次 YAML**（不要「命中即复用旧条」——"
+                + "旧流水线可能缺部署段或残留旧占位符）；未命中才创建。**显式覆盖更新**则直接改档案里那条 id，不检索。",
+            "需要部署阶段的端（后端）若没有可用目标 uuid，**不要**把占位符提交到云效：写 `status=\"failed\"` 并说明缺部署目标。"
+        });
+
+        builder.AppendLine("【事实来源：准备阶段结论文件】");
+        builder.AppendLine(prepareResultFile);
+        builder.AppendLine("（YAML 正文 / 待绑定清单 / 推荐部署目标以它为准；用户手工微调的端以本轮内联的微调正文优先。）");
+        builder.AppendLine();
+
+        builder.AppendLine("【本次要处理的端】");
+        foreach (var repository in targets)
+        {
+            var overrideYaml = TryGetOverride(yamlOverrides, repository.End);
+            var target = TryGetTarget(deployTargets, repository.End);
+
+            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
+                               + $" · 克隆地址 = {repository.CloneUrl}"
+                               + $" · 推送分支 = {(string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "（按 docs 解析该端默认分支）" : repository.DefaultBranch)}");
+            if (target is not null)
+                builder.AppendLine($"　部署目标（用户已选）：名称 = {target.Name} · uuid = {target.Uuid} · 数字 id = {target.HostGroupId}"
+                                   + $"（写进 YAML machineGroup 的是 **uuid**）");
+            if (overrideYaml is not null)
+            {
+                builder.AppendLine("　用户手工微调后的 YAML（**以此为准**，原样提交）：");
+                builder.AppendLine("```yaml");
+                builder.AppendLine(overrideYaml);
+                builder.AppendLine("```");
+            }
+        }
+        builder.AppendLine();
+
+        builder.AppendLine("【执行步骤】（逐端）");
+        builder.AppendLine("1) 定 YAML：用户微调则用微调正文，否则用准备阶段结论里该端的 `yaml`；"
+                           + "后端：用户已选部署目标就用它的 uuid 覆盖 `machineGroup`，未选则沿用准备阶段 YAML 里的 uuid"
+                           + "（**不得**留空或留占位符；两者都没有 ⇒ 按硬边界写 `failed`），缩进与键名按 docs；");
+        builder.AppendLine("2) 创建入口：`flow_list_pipelines`（pipelineName=流水线名）→ 命中则 `flow_update_pipeline`"
+                           + "（`pipelineId`=命中 id、`name`=该流水线现名、`content`=完整 YAML；三个键名按 schema 原样，"
+                           + "**漏 `name` 会被拒、键名写错取不到值**），未命中则 `flow_create_pipeline`（`name` + `content`）；"
+                           + "覆盖更新入口：直接 `flow_update_pipeline`（`pipelineId`=档案里的现 id、`name`=现名、`content`=YAML）；");
+        builder.AppendLine("3) 取流水线 id 与页面链接（由 id 推导），写进产物 `externalId` / `webUrl`；"
+                           + "`extra.yamlIncludesDeployStage` 与 `extra.pendingBindings` 照准备阶段口径；");
+        builder.AppendLine("4) **建完不自动运行**（不要调 flow_run_pipeline）。");
+        builder.AppendLine();
+
+        AppendArtifactSchema(builder, 7, @"{
+  ""step"": 7,
+  ""status"": ""done"",
+  ""ok"": true,
+  ""artifacts"": [
+    { ""kind"": ""pipeline"", ""end"": ""Service"", ""name"": ""<流水线名>"", ""externalId"": ""<流水线 id>"",
+      ""webUrl"": ""<流水线链接>"", ""yaml"": ""<本次提交的完整 YAML>"",
+      ""extra"": { ""kind"": ""pipeline"", ""yamlIncludesDeployStage"": true,
+        ""pendingBindings"": [""<待绑定项>""], ""recommendedDeployTargetUuid"": ""<uuid>"" } }
+  ],
+  ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""已创建（含部署阶段；2 项待人工绑定）"" } ],
+  ""message"": ""<一句话总结>""
+}");
+
+        AppendResultContract(builder, resultFile, "DONE 或 FAILED: <失败端与原因>");
+
+        return builder.ToString();
+    }
+
+    /// <summary>追加结论文件的 <c>artifacts[]</c> / <c>status</c> 契约与 JSON 骨架。</summary>
+    /// <param name="builder">缓冲。</param>
+    /// <param name="step">步骤号。</param>
+    /// <param name="sample">JSON 骨架（原文）。</param>
+    private static void AppendArtifactSchema(StringBuilder builder, int step, string sample)
+    {
+        builder.AppendLine("【结论文件 JSON 契约】（把下面的 JSON 写入结论文件，UTF-8；用 WriteFileAsync 或 Python 写出均可）");
+        builder.AppendLine("```json");
+        builder.AppendLine(sample);
+        builder.AppendLine("```");
+        builder.AppendLine("字段说明：`status` ∈ done / needsInput / failed；`ok` 仅在 `status=done` 且全部通过时为 true；"
+                           + "`artifacts[].extra` 是**具名类型**（由 `extra.kind` 判别，只有 group / repository / pipeline 三选一）；"
+                           + "`checks[]` 逐项记录（Step 6/7 的 `name` 用端标识 Service / Admin / Mobile）；"
+                           + "`inputs[]` 仅在 `status=needsInput` 时给。");
+        builder.AppendLine();
+    }
+
+    /// <summary>docs 知识正文在运行期的目录（Step 2 已复制进项目工作区）。</summary>
+    /// <param name="spec">项目档案。</param>
+    /// <returns>目录绝对路径（工作区未就绪时给出占位提示）。</returns>
+    private static string DocsDirectory(ProjectSpec spec)
+        => string.IsNullOrWhiteSpace(spec.LocalPath)
+            ? @"<项目工作区>\.luban-agent\plugin-newproject\docs"
+            : Path.Combine(spec.LocalPath, ".luban-agent", "plugin-newproject", "docs");
+
+    /// <summary>取某端的手工微调 YAML（空白视为未微调）。</summary>
+    /// <param name="yamlOverrides">按端微调表（可为 <c>null</c>）。</param>
+    /// <param name="end">端。</param>
+    /// <returns>微调原文；未提供返回 <c>null</c>。</returns>
+    private static string? TryGetOverride(IReadOnlyDictionary<ProjectEnd, string>? yamlOverrides, ProjectEnd end)
+        => yamlOverrides is not null && yamlOverrides.TryGetValue(end, out var text) && !string.IsNullOrWhiteSpace(text)
+            ? text
+            : null;
+
+    /// <summary>取某端选定的部署目标（uuid 空视为未选）。</summary>
+    /// <param name="deployTargets">按端目标表（可为 <c>null</c>）。</param>
+    /// <param name="end">端。</param>
+    /// <returns>目标；未选返回 <c>null</c>。</returns>
+    private static DeployHostGroup? TryGetTarget(IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets, ProjectEnd end)
+        => deployTargets is not null
+           && deployTargets.TryGetValue(end, out var target)
+           && !string.IsNullOrWhiteSpace(target.Uuid)
+            ? target
+            : null;
 
     /// <summary>追加三条共用硬边界。</summary>
     /// <param name="builder">缓冲。</param>

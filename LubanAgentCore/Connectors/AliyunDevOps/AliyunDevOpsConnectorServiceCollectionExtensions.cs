@@ -76,7 +76,6 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
         services.TryAddSingleton(sp => new CodeupClient(
             sp.GetRequiredService<YunxiaoApiOptions>(),
             sp.GetRequiredService<IYunxiaoCredentialProvider>(),
-            sp.GetService<ProcessRunner>(),
             sp.GetService<PluginPermissionGuard>() ?? PluginPermissionGuard.Default));
 
         services.TryAddSingleton(sp => new FlowClient(
@@ -116,7 +115,6 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
         return new YunxiaoConnector(
             services.GetRequiredService<YunxiaoApiOptions>(),
             services.GetRequiredService<IYunxiaoCredentialProvider>(),
-            services.GetService<ProcessRunner>(),
             services.GetService<PluginPermissionGuard>() ?? PluginPermissionGuard.Default);
     }
 }

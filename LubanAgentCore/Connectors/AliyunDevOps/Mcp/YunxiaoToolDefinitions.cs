@@ -11,7 +11,7 @@
 *创建人： yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/15
-*描述：云效 MCP 工具定义（10 个，对应 PRD §4.11.3）
+*描述：云效 MCP 工具定义（13 个，对应 PRD §4.11.3）
 *
 *****************************************************************************/
 
@@ -53,22 +53,41 @@ public static class YunxiaoToolDefinitions
     };
 
     /// <summary>
-    /// 复制代码到本地（Git clone）
+    /// 查询模板代码库列表（ListTemplateRepositories）
     /// </summary>
-    public static readonly MCPTool CodeupClone = new()
+    public static readonly MCPTool CodeupListTemplateRepos = new()
     {
-        Name = "codeup_clone",
-        Description = "把云效代码仓库克隆到本地（Git over HTTPS，鉴权 oauth2:&lt;PAT&gt;@）。httpsUrl 需取自仓库详情的 httpUrlToRepo。",
+        Name = "codeup_list_template_repos",
+        Description = "列出云效「模板库」条目（id / name / path / description）。只有登记在模板库中的仓库才能作为建库的 templateProjectId。注意：本接口**没有 search 入参、不支持按名过滤**，请全量拉取（perPage=100）后在客户端按 name 匹配；模板库 ≠ 普通仓库，勿用 codeup_search_repos 代替。",
         InputSchema = new
         {
             type = "object",
             properties = new
             {
-                httpsUrl = new { type = "string", description = "仓库 HTTPS 克隆地址（取自仓库详情的 httpUrlToRepo）" },
-                localPath = new { type = "string", description = "本地目标目录" },
-                branch = new { type = "string", description = "要克隆的分支或标签（对应 git clone -b，可选）" }
+                templateType = new { type = "integer", description = "模板类型：1 自定义模板（组织登记，默认）/ 2 系统预置模板", @default = 1 },
+                page = new { type = "integer", description = "页码（从 1 开始，默认 1）", @default = 1 },
+                perPage = new { type = "integer", description = "每页条数（默认 100）", @default = 100 },
+                organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
+            }
+        }.ToJson()
+    };
+
+    /// <summary>
+    /// 查询仓库详情（GetRepository，返回 httpUrlToRepo）
+    /// </summary>
+    public static readonly MCPTool CodeupGetRepo = new()
+    {
+        Name = "codeup_get_repo",
+        Description = "按仓库 ID 查询云效仓库详情，返回 httpUrlToRepo（HTTPS 克隆地址，git 克隆用）/ sshUrlToRepo / defaultBranch / id / name / path / visibility，并额外返回由克隆地址推导的 webUrl（页面地址）。注意：只接受 repositoryId（数字 id），没有「命名空间 + 路径」重载；新建仓库后若响应缺 httpUrlToRepo，也用本工具按建库返回的 id 补查。",
+        InputSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                repositoryId = new { type = "string", description = "仓库 ID（数字 id，取自建库响应或 codeup_search_repos 命中项）" },
+                organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
             },
-            required = new[] { "httpsUrl", "localPath" }
+            required = new[] { "repositoryId" }
         }.ToJson()
     };
 
@@ -100,23 +119,25 @@ public static class YunxiaoToolDefinitions
     };
 
     /// <summary>
-    /// 上传代码到代码仓库（Git push）
+    /// 查询代码组 / 命名空间列表（ListNamespaces）
     /// </summary>
-    public static readonly MCPTool CodeupPush = new()
+    public static readonly MCPTool CodeupListGroups = new()
     {
-        Name = "codeup_push",
-        Description = "把本地改动推送到云效代码仓库（Git over HTTPS，鉴权 oauth2:&lt;PAT&gt;@）。",
+        Name = "codeup_list_groups",
+        Description = "查询云效代码组 / 命名空间列表（返回 id / name / path / pathWithNamespace / parentId）。用于建库前「先查后建」判断目标代码组是否已存在；不传 search 时列出全部。",
         InputSchema = new
         {
             type = "object",
             properties = new
             {
-                localPath = new { type = "string", description = "本地仓库工作目录" },
-                remoteUrl = new { type = "string", description = "远端仓库 HTTPS 地址" },
-                branch = new { type = "string", description = "要推送的分支（可选，默认当前分支）" },
-                force = new { type = "boolean", description = "是否强制推送（默认 false）", @default = false }
-            },
-            required = new[] { "localPath", "remoteUrl" }
+                search = new { type = "string", description = "代码组名关键字（可选）" },
+                parentId = new { type = "integer", description = "父级代码组 ID 过滤（可选）" },
+                page = new { type = "integer", description = "页码（从 1 开始，默认 1）", @default = 1 },
+                perPage = new { type = "integer", description = "每页条数（默认 100）", @default = 100 },
+                orderBy = new { type = "string", description = "排序字段（可选）" },
+                sort = new { type = "string", description = "排序方向：asc / desc（可选）" },
+                organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
+            }
         }.ToJson()
     };
 
@@ -149,7 +170,7 @@ public static class YunxiaoToolDefinitions
     public static readonly MCPTool CodeupCreateGroup = new()
     {
         Name = "codeup_create_group",
-        Description = "在云效创建代码组（命名空间），返回含 id / pathWithNamespace。注意：本工具直接创建、不做重名查重；先查后建由向导后端负责，聊天路径请自行先确认同名组不存在。parentId 留空表示建在组织根下。",
+        Description = "在云效创建代码组（命名空间），返回含 id / pathWithNamespace。注意：本工具直接创建、不做重名查重；先查后建由调用方（助手）负责——请先用 codeup_list_groups 确认同名组不存在。parentId 留空表示建在组织根下。",
         InputSchema = new
         {
             type = "object",
@@ -188,6 +209,42 @@ public static class YunxiaoToolDefinitions
                 statusList = new { type = "string", description = "状态过滤（可选，逗号分隔）" },
                 organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
             }
+        }.ToJson()
+    };
+
+    /// <summary>
+    /// 列出主机组（部署目标，ListHostGroups）
+    /// </summary>
+    public static readonly MCPTool FlowListHostGroups = new()
+    {
+        Name = "flow_list_host_groups",
+        Description = "列出云效主机组（流水线部署阶段的目标机器组）。注意：返回体只有 id（数字）/ uuid / 名称 / 机器台数 / 地域，**不含**具体机器（hostInfos 恒为 null），要机器明细请再用 flow_get_host_group；列表接口的 perPage / 名称过滤等参数真机不生效，一律返回全量。",
+        InputSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
+            }
+        }.ToJson()
+    };
+
+    /// <summary>
+    /// 查询主机组详情（GetHostGroup，含机器明细）
+    /// </summary>
+    public static readonly MCPTool FlowGetHostGroup = new()
+    {
+        Name = "flow_get_host_group",
+        Description = "查询云效主机组详情，返回该组机器明细（instanceName / ip / status / machineSn）。注意：hostGroupId 必须是**数字 id**（flow_list_host_groups 返回的 id），传 uuid 会报 400。",
+        InputSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                hostGroupId = new { type = "integer", description = "主机组数字 id（必填，不是 uuid）" },
+                organizationId = new { type = "string", description = "组织 ID（中心版必带）" }
+            },
+            required = new[] { "hostGroupId" }
         }.ToJson()
     };
 
@@ -263,17 +320,22 @@ public static class YunxiaoToolDefinitions
     #endregion
 
     /// <summary>
-    /// 获取所有工具列表（PRD §4.11.3 定义的 10 个）
+    /// 获取所有工具列表（共 13 个：PRD §4.11.3 定义 10 个 + v0.32 新增 2 个只读部署目标工具，
+    /// 本次删 <c>codeup_clone</c> / <c>codeup_push</c> 2 个、补 <c>codeup_list_template_repos</c> /
+    /// <c>codeup_get_repo</c> / <c>codeup_list_groups</c> 3 个）。
     /// </summary>
     public static IEnumerable<MCPTool> GetAllTools()
     {
         yield return CodeupSearchRepos;
-        yield return CodeupClone;
+        yield return CodeupListTemplateRepos;
+        yield return CodeupGetRepo;
         yield return CodeupCreateRepo;
-        yield return CodeupPush;
         yield return CodeupListBranches;
         yield return CodeupCreateGroup;
+        yield return CodeupListGroups;
         yield return FlowListPipelines;
+        yield return FlowListHostGroups;
+        yield return FlowGetHostGroup;
         yield return FlowCreatePipeline;
         yield return FlowUpdatePipeline;
         yield return FlowRunPipeline;

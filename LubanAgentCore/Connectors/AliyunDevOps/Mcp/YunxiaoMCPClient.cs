@@ -20,7 +20,7 @@ using System.Globalization;
 namespace LubanAgentCore.Connectors.AliyunDevOps.Mcp;
 
 /// <summary>
-/// 云效进程内 MCP 客户端 - 包装 <see cref="YunxiaoConnector"/> 暴露 10 个工具。
+/// 云效进程内 MCP 客户端 - 包装 <see cref="YunxiaoConnector"/> 暴露 13 个工具。
 /// </summary>
 /// <remarks>
 /// 采用进程内形态（而非 stdio 子进程）是为了避免把 PAT 明文写进
@@ -100,12 +100,15 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
             return baseName switch
             {
                 "codeup_search_repos" => await CodeupSearchReposAsync(arguments, cancellationToken),
-                "codeup_clone" => await CodeupCloneAsync(arguments, cancellationToken),
+                "codeup_list_template_repos" => await CodeupListTemplateReposAsync(arguments, cancellationToken),
+                "codeup_get_repo" => await CodeupGetRepoAsync(arguments, cancellationToken),
                 "codeup_create_repo" => await CodeupCreateRepoAsync(arguments, cancellationToken),
-                "codeup_push" => await CodeupPushAsync(arguments, cancellationToken),
                 "codeup_list_branches" => await CodeupListBranchesAsync(arguments, cancellationToken),
                 "codeup_create_group" => await CodeupCreateGroupAsync(arguments, cancellationToken),
+                "codeup_list_groups" => await CodeupListGroupsAsync(arguments, cancellationToken),
                 "flow_list_pipelines" => await FlowListPipelinesAsync(arguments, cancellationToken),
+                "flow_list_host_groups" => await FlowListHostGroupsAsync(arguments, cancellationToken),
+                "flow_get_host_group" => await FlowGetHostGroupAsync(arguments, cancellationToken),
                 "flow_create_pipeline" => await FlowCreatePipelineAsync(arguments, cancellationToken),
                 "flow_update_pipeline" => await FlowUpdatePipelineAsync(arguments, cancellationToken),
                 "flow_run_pipeline" => await FlowRunPipelineAsync(arguments, cancellationToken),
@@ -159,25 +162,54 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         return Ok(result.ToJson());
     }
 
-    private async Task<MCPToolResult> CodeupCloneAsync(
+    private async Task<MCPToolResult> CodeupListTemplateReposAsync(
         Dictionary<string, object?> arguments,
         CancellationToken cancellationToken)
     {
-        var httpsUrl = GetString(arguments, "httpsUrl");
-        var localPath = GetString(arguments, "localPath");
-        if (string.IsNullOrWhiteSpace(httpsUrl))
-            return Fail("缺少参数: httpsUrl");
-        if (string.IsNullOrWhiteSpace(localPath))
-            return Fail("缺少参数: localPath");
-
-        var branch = GetString(arguments, "branch");
+        var templateType = GetInt(arguments, "templateType", 1);
+        var page = GetInt(arguments, "page", 1);
+        var perPage = GetInt(arguments, "perPage", 100);
+        var organizationId = GetString(arguments, "organizationId");
 
         var client = _connector.GetCodeupClient();
-        var result = await client.CloneToLocalAsync(httpsUrl!, localPath!, branch, cancellationToken);
+        var templates = await client.ListTemplateRepositoriesAsync(
+            templateType, page, perPage, organizationId, cancellationToken);
 
-        return result.Success
-            ? Ok(new { localPath, commitId = (string?)null, branch }.ToJson())
-            : Fail($"克隆失败：{result.FailureSummary()}");
+        if (templates == null)
+            return Fail("查询模板库失败");
+
+        return Ok(templates.ToJson());
+    }
+
+    private async Task<MCPToolResult> CodeupGetRepoAsync(
+        Dictionary<string, object?> arguments,
+        CancellationToken cancellationToken)
+    {
+        var repositoryId = GetString(arguments, "repositoryId");
+        if (string.IsNullOrWhiteSpace(repositoryId))
+            return Fail("缺少参数: repositoryId");
+
+        var organizationId = GetString(arguments, "organizationId");
+
+        var client = _connector.GetCodeupClient();
+        var repository = await client.GetRepositoryAsync(repositoryId!, organizationId, cancellationToken);
+
+        if (repository == null)
+            return Fail("查询仓库详情失败");
+
+        // 云效仓库模型不带 webUrl，这里由 httpUrlToRepo 推导后一并返回，避免助手自行拼接。
+        return Ok(new
+        {
+            id = repository.Id,
+            name = repository.Name,
+            path = repository.Path,
+            httpUrlToRepo = repository.HttpUrlToRepo,
+            sshUrlToRepo = repository.SSHUrlToRepo,
+            webUrl = BuildWebUrl(repository.HttpUrlToRepo),
+            defaultBranch = repository.DefaultBranch,
+            visibility = repository.Visibility,
+            description = repository.Description
+        }.ToJson());
     }
 
     private async Task<MCPToolResult> CodeupCreateRepoAsync(
@@ -235,31 +267,26 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         return Ok(created.ToJson());
     }
 
-    private async Task<MCPToolResult> CodeupPushAsync(
+    private async Task<MCPToolResult> CodeupListGroupsAsync(
         Dictionary<string, object?> arguments,
         CancellationToken cancellationToken)
     {
-        var localPath = GetString(arguments, "localPath");
-        var remoteUrl = GetString(arguments, "remoteUrl");
-
-        if (string.IsNullOrWhiteSpace(localPath))
-            return Fail("缺少参数: localPath");
-        if (string.IsNullOrWhiteSpace(remoteUrl))
-            return Fail("缺少参数: remoteUrl");
-
-        var branch = GetString(arguments, "branch");
-        var force = GetBool(arguments, "force") ?? false;
+        var search = GetString(arguments, "search");
+        var parentId = GetLong(arguments, "parentId");
+        var page = GetInt(arguments, "page", 1);
+        var perPage = GetInt(arguments, "perPage", 100);
+        var orderBy = GetString(arguments, "orderBy");
+        var sort = GetString(arguments, "sort");
+        var organizationId = GetString(arguments, "organizationId");
 
         var client = _connector.GetCodeupClient();
-        var result = await client.PushAsync(remoteUrl!, localPath!, branch, force, cancellationToken);
+        var groups = await client.ListNamespacesAsync(
+            search, parentId, page, perPage, orderBy, sort, organizationId, cancellationToken);
 
-        return result.Success
-            ? Ok(new { localPath, remoteUrl = SecretMasker.MaskUrlCredentials(remoteUrl), branch }.ToJson())
-            : Fail(result.IsRateLimited
-                // v0.29：限流与权限 / 分支保护分开措辞——真机里两者曾被混为一谈（同一条 PAT 11 秒后重推即成功）
-                ? $"推送失败：{result.FailureSummary()}"
-                  + "（云效服务端限流：请等约 1 分钟后再推，已推送内容不受影响；不要据此判定 PAT 或分支保护有问题）"
-                : $"推送失败：{result.FailureSummary()}");
+        if (groups == null)
+            return Fail("查询代码组失败");
+
+        return Ok(groups.ToJson());
     }
 
     private async Task<MCPToolResult> CodeupListBranchesAsync(
@@ -341,6 +368,52 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
 
         if (result == null)
             return Fail("列出流水线失败");
+
+        return Ok(result.ToJson());
+    }
+
+    /// <summary>
+    /// 列出主机组（<b>只读</b>：供「创建流水线之前选部署目标」；真机口径 = 裸数组，<c>hostInfos</c> 恒为 <c>null</c>）。
+    /// </summary>
+    /// <param name="arguments">参数（organizationId）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工具结果。</returns>
+    private async Task<MCPToolResult> FlowListHostGroupsAsync(
+        Dictionary<string, object?> arguments,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = GetString(arguments, "organizationId");
+
+        var client = _connector.GetFlowClient();
+        var result = await client.ListHostGroupsAsync(organizationId, cancellationToken);
+
+        if (result == null)
+            return Fail("列出主机组失败");
+
+        return Ok(result.ToJson());
+    }
+
+    /// <summary>
+    /// 查询主机组详情（<b>只读</b>：含机器明细 <c>hostInfos</c>；<c>hostGroupId</c> 必须是数字 id）。
+    /// </summary>
+    /// <param name="arguments">参数（hostGroupId / organizationId）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工具结果。</returns>
+    private async Task<MCPToolResult> FlowGetHostGroupAsync(
+        Dictionary<string, object?> arguments,
+        CancellationToken cancellationToken)
+    {
+        var hostGroupId = GetLong(arguments, "hostGroupId");
+        if (!hostGroupId.HasValue || hostGroupId.Value <= 0)
+            return Fail("缺少参数: hostGroupId（必须是数字 id，不是 uuid）");
+
+        var organizationId = GetString(arguments, "organizationId");
+
+        var client = _connector.GetFlowClient();
+        var result = await client.GetHostGroupAsync(hostGroupId.Value, organizationId, cancellationToken);
+
+        if (result == null)
+            return Fail("查询主机组详情失败");
 
         return Ok(result.ToJson());
     }
@@ -505,6 +578,18 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
 
         return null;
     }
+
+    /// <summary>
+    /// 由 HTTPS 克隆地址推导仓库 Web 地址（去掉尾部 <c>.git</c>）。
+    /// </summary>
+    /// <param name="cloneUrl">克隆地址（可为空）。</param>
+    /// <returns>Web 地址；入参为空时返回空串。</returns>
+    private static string BuildWebUrl(string? cloneUrl)
+        => string.IsNullOrWhiteSpace(cloneUrl)
+            ? string.Empty
+            : cloneUrl!.EndsWith(".git", StringComparison.OrdinalIgnoreCase)
+                ? cloneUrl[..^4]
+                : cloneUrl;
 
     #endregion
 

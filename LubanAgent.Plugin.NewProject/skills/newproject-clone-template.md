@@ -1,7 +1,10 @@
 # 按模板建库并克隆（newproject-clone-template）
 
-> 「新建项目」插件原子技能 · 对应 **Step 3** · **M4-P3**（能力层已实现：`INewProjectService.CreateRepositoriesAsync`；
-> 向导与聊天入口共用同一实现，云效逻辑零分叉）
+> 「新建项目」插件原子技能 · 对应 **Step 3** · **助手驱动口径**：
+> 「**一次只读准备下发 + 用户确认后同会话执行续跑**」。
+> 组织专有值（模板仓名 / 代码组名格式 / pin 择优 / 占位符规则 …）**不在本正文复述**——
+> 编排约定读工作区 `.luban-agent/plugin-newproject/docs/step3-repositories.md`，
+> 值总表读 `docs/org-reference.md`。
 
 ## 何时使用
 
@@ -10,72 +13,138 @@
 
 ## 前置条件
 
-- 已有项目档案（`ProjectSpec`），且第 2 步「初始化」已完成（工作区与会话就绪、云效凭据可取用）。
-- 三个模板仓 `TJCES-Service` / `TJCES-Admin` / `TJCES-Mobile` 在组织内可见，且已登记在插件配置 `templates[]`
-  （能拿到模板仓 ID 时用 `templates[].projectId` 精确指定最稳）。
-- **模板 pin 语义（PRD §6 #5）**：`templates[].branch` 是**可选覆盖**——
-  登记了值就**必须真实存在**，否则预检直接阻断；**留空＝运行期解析**，在模板仓现有分支中按
-  `develop → master → main → 模板默认分支` 取第一个存在的，并把「取到哪个、依据是什么」写入档案
-  `repositories[].templateBranch`、回显在预检里。**不要**把某个分支名当成普适默认值硬猜。
-- 引导用户到 codex「设置 → 云效连接」填好组织 ID 与 PAT（中心版 `organizationId` 必填）。
+- 已有项目档案（`ProjectSpec`），且第 2 步「初始化」已完成（工作区 / 会话就绪、`docs/` 快照已复制、
+  云效凭据可取用）。
+- 云效组织 ID 与 PAT 已在 codex「设置 → 云效连接」配好；PAT 由连接器注入 MCP，
+  **不进工具入参、不进提示词、不落结论文件**。
+- **git 凭据**由用户在**外部环境**自行配好（git credential helper / 系统凭据管理器 / 预置 remote）；
+  助手不提供凭据通路，也不在 URL 里拼 `oauth2:<PAT>@`。
+- 模板仓必须登记为**模板库**（`templateType = 1`）条目——普通仓库搜索**不保证**命中模板。
+- 模板定位与 pin 择优、占位符令牌语义的**具体约定与取值**：读 `docs/step3-repositories.md` 与
+  `docs/org-reference.md`。
 
-## 执行（首选：能力层一次到底）
+## 术语：一次只读准备下发 + 同会话执行续跑
 
-调用 `INewProjectService.CreateRepositoriesAsync`——与向导**同一实现**，内部顺序固定，逐端执行：
+本步在宿主 API 上表现为「先下发一次**只读准备** → 用户确认 → 再下发一次**执行续跑**」。
+这是**同一个步骤**的两个阶段（框架没有「轮内提问」工具，答复后由插件再发一次提示词），
+**不是两个各自独立的步骤**；执行续跑只做增量，**不重跑准备阶段**。
 
-1. **只读预检**：把即将使用的参数摊开核对——目标代码组（「已存在将复用（含 ID）」/「不存在将新建」）、
-   逐端模板库命中项（`templateProjectId` / 全路径）、模板仓现有分支与 pin 解析结论、仓库名、落地目录。
-   **预检不创建任何云效资源**；不通过就停，不要带着错误参数往下走。
-2. **建项目代码组（先查后建）**：按 `groupNameFormat`（默认 `{CODE}`，如 `csxmy` → `CSXMY`）在组织内
-   **先查后建**——同名即复用（不重复建、不报重名错）；父级取 `groupParentId`（**留空＝组织根**），
-   可见性沿用 `defaultVisibility`（默认 `internal`＝组织内公开）。
-3. **建库**：`templateProject{ templateProjectId, templateType = 1, syncAllBranches = true }`、
-   `namespaceId` ＝代码组 ID、`path` ＝ `repositoryNameFormat` 展开值（默认 `{code}-{end}`，如 `csxmy-Service`）。
-   **同名仓库已存在即复用**（重跑幂等，不重复建库）。
-4. **补查 HTTPS 地址**：创建接口**不返回** `httpUrlToRepo`，必须再查一次单仓详情。
-5. **等 pin 分支就绪再克隆**：`syncAllBranches` 是**服务端异步**（实测建库后 10–17s 才补齐模板分支），
-   须轮询分支列表等 pin 分支出现（上限 120s / 间隔 3s）；**超时即失败**，不要盲目 clone。
-6. **克隆**：`git clone -b <pin> <HTTPS 地址>` 到 `<本地目录>/<仓库名>`。
-   **克隆失败必须清理本次新建的目录**——失败会留下 `.git/HEAD = ref: refs/heads/.invalid` 的空工作树残骸，
-   不清理的话重跑会被误判为「已克隆」而假成功；失败文案要带 git 原始报错摘要（URL 内嵌凭据已脱敏）。
-7. **复用前健康校验**：目标目录已存在且非空时，给用户「**复用已克隆 / 清空后重克隆 / 中止**」三选一，
-   不静默覆盖；选「复用」**必须校验**工作树与 `.git/refs/heads/<pin>` 均可用才算通过。
-   档案 `cloned` **只在「真克隆成功」或「经健康校验的复用」时置真**。
-8. **占位符替换**：内容 + 文件/目录名（PRD §4.3 Step 3）；规则取自插件配置 `placeholderRules`，
-   默认 `TJCES→{CODE}` / `Tjces→{Code}` / `tjces→{code}`，区分大小写、按 `From` 长度降序替换。
+## 阶段一 · 准备（只读，不建任何云效资源）
 
-## 聊天路径的 MCP 直编（仅用于补做单点动作）
+助手动作（全部只读）：
 
-- **查分支 / 解析 pin**：`mcp_yunxiao_codeup_list_branches`（`repositoryId` 必填，返回裸数组，总数在响应头 `x-total`）。
-- **定位模板仓**：优先用配置里已登记的 `templates[].projectId`；`mcp_yunxiao_codeup_search_repos` 只搜**普通仓库**，
-  **不保证返回模板库条目**（模板库查询暂无对应 MCP 工具，需要时经能力层）。
-- **建代码组**：`mcp_yunxiao_codeup_create_group`（`name` / `path` 必填，`parentId` 留空＝组织根）——
-  该工具**直接创建、不做重名查重**，只有确认无同名组时才用；需要「先查后建」一律走能力层。
-- **建库 / 克隆 / 占位符**：同上面第 3~8 步。**建库与克隆建议仍走能力层**（含等分支就绪、残骸清理、
-  健康校验、git 报错摘要），MCP 单点工具不附带这些保护。
-- 拿不到用户对「三选一」的回答时，**中止本步**并给出引导文案。
+1. `mcp_yunxiao_codeup_list_template_repos`（`templateType=1`、`perPage=100`）**全量拉取模板库条目**，
+   再**在客户端按各端名称约定**匹配出 `templateProjectId`
+   （该接口**没有 `search` 入参**，不能指望服务端按名过滤；名称约定见 `docs/step3-repositories.md`）。
+2. `mcp_yunxiao_codeup_list_branches`（`repositoryId = templateProjectId`）取模板仓分支，
+   按 `docs/org-reference.md` 的 **pin 择优顺序**解析出 pin；解析不出**即阻塞，不猜默认分支**。
+3. `mcp_yunxiao_codeup_list_groups`（`search = 代码组名`）查目标代码组是否已存在（决定「新建 / 复用」）。
+4. `mcp_yunxiao_codeup_search_repos`（`search = 仓库名`）查目标仓库是否已存在；
+   **若已存在，再调 `mcp_yunxiao_codeup_get_repo`（`repositoryId = 命中项 id`）取 `httpUrlToRepo`**。
+5. 检查该端**仓库目录**（`<工作区>\<仓库名>`，**已含仓库名**）是否已存在且非空。
 
-## 结果
+产出结论文件 `results/step3-*.json`：`status = "done"`，把上面的事实写进 **`artifacts[]`**
+（`kind=group` 一条 + `kind=repository` 每端一条），`checks[]` 逐项记录。面板据此渲染**确认界面**，
+用户可改仓库名 / 可见性。
 
-- 档案字段：`Repositories[].ExternalId` / `WebUrl` / `CloneUrl` / `LocalPath` / `TemplateBranch`（pin 解析结论）/
-  `Cloned`（语义：**本地确已就绪**）。
-- 远端产物清单追加：**代码组**（`RemoteArtifactKind.Group`）、**各端仓库**（`RemoteArtifactKind.Repository`），带云效控制台链接。
+`artifacts[]` 要点（**判别属性是 `kind`，`extra` 是具名强类型**）：
+
+- `kind=group`：`name` / `externalId`（组 id）/ `webUrl`；`extra` 为 `GroupArtifactExtra`
+  （`exists` / `parentId` / `organizationId`）。
+- `kind=repository`：`end` / `name` / `webUrl` / `cloneUrl` / `localPath` / `templateBranch`；
+  `extra` 为 `RepositoryArtifactExtra`（`templateRepository` / `templateProjectId` / `templatePath` /
+  `templateBranches` / `resolvedBranchSource` / `repositoryExists` / `localPathOccupied` / `visibility` /
+  `error`）。
+- **逐端完备性**：`kind=repository` **每端一条**（`Service` / `Admin` / `Mobile`），缺端即整步 `failed`。
+
+> 准备阶段**不得**出现任何「新建」类产物——结论文件里若出现新建的组 / 仓库即为不通过。
+
+## 阶段二 · 执行续跑（用户确认后，同一会话）
+
+提示词带上用户确认后的建库计划 + 准备阶段结论文件**绝对路径** + 用户答复（`answers`）。助手动作：
+
+1. 代码组不存在 → `mcp_yunxiao_codeup_create_group`（**先查后建由助手守**：确认无同名组才建）。
+2. 仓库不存在 → `mcp_yunxiao_codeup_create_repo`（`templateProjectId` / `templateType=1` /
+   `syncAllBranches=true` / `namespaceId` / `path`）。
+3. **新建仓库后必须再调一次 `mcp_yunxiao_codeup_get_repo`（`repositoryId` = 建库响应里的 id）取
+   `httpUrlToRepo`**——建库响应不保证带该字段；仅「复用已存在仓库」时才能直接用准备阶段拿到的地址。
+4. 轮询 `mcp_yunxiao_codeup_list_branches` 等 pin 分支就绪（上限 120s / 间隔 3s，**超时即 `failed`**，
+   不盲目 clone）。
+5. `GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)`（框架 git 工具组；
+   仓库目录 = `<工作区>\<仓库名>`，**已含仓库名，勿再拼一次**；克隆地址取自 `httpUrlToRepo`，**不带凭据**）。
+6. 克隆失败 → 记录 **git 原文摘要**（**不内嵌凭据**），**不自行删目录**，写 `status="failed"`
+   （残余目录清理见下「冲突三选一」）。
+7. 目标目录非空（准备阶段已发现或 clone 时报错）→ 写 `status="needsInput"`，`inputs[]` 带**克隆冲突
+   三选一**（见下）。
+8. **占位符替换**：用 `RunPythonAsync` 现场脚本完成「内容 + 文件 / 目录名」批量替换
+   （跳过 `.git` / `bin` / `obj` / `node_modules`；按 `From` 长度降序；区分大小写；**幂等**）；
+   替换前统计命中、替换后复查「**残余命中 = 0**」，`checks[]` 必须含 `placeholder-residual` 且
+   `ok=true`。规则与令牌语义读 `docs/org-reference.md` 与 `docs/step3-repositories.md`；
+   把**实际命中的来源令牌**逐字写进该端 `extra.placeholderSources`（**至少一项**，插件按它独立扫残余）。
+9. **复核**（`GitStatusAsync` / `GitBranchListAsync` 都要带 `workingDirectory=<仓库目录>`，不传会在项目
+   工作区根执行）确认工作树与 `refs/heads/<pin>` 可用后，把 `cloned=true` 与产物账目写进
+   `artifacts[kind=repository].extra`（`cloned` / `defaultBranch` / `commitId`）。
+
+执行续跑结论文件同样落 `results/step3-*.json`：`status = "done"` / `"needsInput"` / `"failed"`，
+`checks[]` **逐端一条**（`name` 取端标识 `Service` / `Admin` / `Mobile`，失败时 `detail` 给原文摘要），
+`artifacts[kind=repository].extra` 逐端如实记录 `cloned` / `commitId`；**任一端失败 → 整步 `failed`**，
+但已成功落账的条目**照常写进档案**，便于重跑只补缺失。
+
+## 交互项 `inputs[]`（克隆冲突三选一）
+
+目标目录非空时写 `status="needsInput"`，`inputs[]`：
+
+```jsonc
+{
+  "id": "clone-conflict",
+  "kind": "choice",
+  "prompt": "目标目录非空，如何处理？",
+  "ends": ["Service"],
+  "options": [
+    { "value": "reuse",   "label": "复用已克隆（健康校验通过才算就绪）" },
+    { "value": "reclone", "label": "清空目录后重新克隆" },
+    { "value": "abort",   "label": "中止本步" }
+  ],
+  "details": { "path": "<仓库目录>", "entryCount": 42 }
+}
+```
+
+- `reuse` → **先做健康校验**（工作树 + `.git/refs/heads/<pin>`）通过才算就绪；校验不通过回到三选一，
+  不把坏目录盖章成「已克隆」。
+- `reclone` → **由助手删除目录**：用 `RunPythonAsync` 现场脚本
+  `shutil.rmtree(path, onerror=清只读后重试)`——克隆出来的仓库里 git 的 pack 文件是**只读**的，
+  框架 `DeleteDirectoryAsync` 是裸 `Directory.Delete`、**不处理 Windows 只读位**，直接删大概率失败；
+  删干净后再进入执行续跑。
+- `abort` → 本步结束为 `failed`（文案取用户选择），不推进；远端仓库保留（登记为孤儿产物）。
+- **用户不回复** → 停在本步 `needsInput`（可重试），**不发创建 / 克隆请求**。
+- 聊天路径（无面板）：三选一**直接在对话里回复**，助手在同一会话继续。
+
+## 结果（落账）
+
+- 档案字段：`Repositories[].ExternalId` / `WebUrl` / `CloneUrl` / `LocalPath` / `TemplateBranch`
+  （pin 解析结论）/ `Cloned`（语义：**本地确已就绪**）。
+- 远端产物清单追加：**代码组**（`kind=group`，`end = null`）、**各端仓库**（`kind=repository`）。
 - 每条产物**即时持久化**：中途失败时已成功端的账目不会丢，重跑只补缺失。
+- 插件回读 `artifacts[]` 后做**本地复核**（目录存在且非空 / `<localPath>/.git` 有效 /
+  `refs/heads/<pin>` 存在 / 占位符残余 = 0，逐项独立再扫一遍）；通过后作废最近一份
+  Step 5 编译结论与 Step 7 流水线结论（仓库改名 / 重建后旧结论是误导）。
 
 ## 失败处理
 
 | 现象 | 处理 |
 |------|------|
-| 401 / 令牌失效 | 引导用户到 codex 云效配置重录 PAT |
-| 403 非组织成员 | 提示无组织 / 资源权限，不要重试硬闯 |
-| 429 | 退避重试（次数有限），仍失败则中断并提示 |
-| pin 登记值不存在 | 阻断并提示 pin 值失效（**不自动改用默认分支**、不猜测） |
-| 模板仓无可用分支 | 阻断：说明已按 `develop → master → main → 模板默认分支` 全试过，请确认模板仓内容 |
-| 新建仓库后 pin 分支迟迟不出现 | 等满 120s 即失败并提示「模板分支未就绪」，**不盲目 clone** |
-| 克隆失败 | 清理本次新建目录（不留 `.git/HEAD = ref: refs/heads/.invalid` 残骸）+ 回显 git 报错摘要 |
+| 云效 401 / 令牌失效 | **不重试**，引导用户到 codex 云效配置重录 PAT |
+| 云效 403 非组织成员 | **不重试**（无权限，硬闯无用），`failed` |
+| 云效 429 / 限流 | 按 `docs/step3-repositories.md` 的退避约定重试，仍失败即 `failed` |
+| pin 登记值不存在 / 模板仓无可用分支 | **阻断**，不猜默认分支，`failed` |
+| 建库后 pin 分支 120s 未出现 | **阻断**，不盲目 clone，`failed` |
+| git 凭据缺失 / 认证失败 | 提示「请先在外部环境配好凭据」+ git 原文摘要，`failed` |
+| 克隆失败残骸（`.git/HEAD = ref: refs/heads/.invalid`） | **不自行删**；写 `needsInput` 或 `failed`，由用户选清理 |
+| 目标目录非空 | 三选一（`reuse` / `reclone` / `abort`）；选 `reclone` 后**由助手删除**（注意只读位） |
 | 复用目录健康校验不通过 | 视为**未就绪**，回到「三选一」让用户决定，不当作已克隆 |
-| 模板仓定位不到 | 阻断：优先改登记 `templates[].projectId`，再确认模板仓在组织内可见 |
-| 仓库名已存在 | **复用**（幂等）；各端仓库名互不相同由建库计划校验保证 |
-| 目标目录非空 | 三选一（复用已克隆 / 清空后重克隆 / 中止本步） |
+| 仓库名已存在 | **复用**（幂等），`checks[]` 注明「复用」 |
+| 模板仓定位不到 | 阻断：确认模板仓在组织内可见且已登记为模板库条目 |
+| 占位符残余 ≠ 0 | 本步 `failed`（本地复核也会独立再扫一遍） |
 
+**幂等总原则**：所有「建」动作**先查后建**；所有产物即时写进结论文件；不做静默覆盖。
 中止 / 清理时**远端仓库不自动删除**，只保留孤儿清单（PRD §4.7）。

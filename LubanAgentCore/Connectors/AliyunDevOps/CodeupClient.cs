@@ -24,14 +24,16 @@ using System.Text.Json.Serialization;
 namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
-/// 云效代码管理客户端 - 提供仓库管理、Git 操作等能力
+/// 云效代码管理客户端 - 提供仓库管理（查询 / 创建 / 模板库 / 代码组 / 分支）等能力。
 /// </summary>
+/// <remarks>
+/// <b>不再承担 Git 操作</b>：克隆 / 推送一律改由助手经 git 工具组完成（v0.3 设计 §5.5）。
+/// </remarks>
 public class CodeupClient : IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly YunxiaoApiOptions _options;
     private readonly IYunxiaoCredentialProvider _credentialProvider;
-    private readonly ProcessRunner? _processRunner;
     private readonly PluginPermissionGuard _guard;
     private readonly string? _connectorName;
     private bool _disposed;
@@ -47,19 +49,16 @@ public class CodeupClient : IDisposable
     /// </summary>
     /// <param name="options">API 配置</param>
     /// <param name="credentialProvider">凭据提供者</param>
-    /// <param name="processRunner">进程执行器（用于 Git 操作，可选）</param>
     /// <param name="permissionGuard">插件权限门禁（可选；不传则用进程级兜底实例）。</param>
     /// <param name="connectorName">所属连接器实例名（可选，Q15）；决定 PAT 凭据键，<c>null</c> 视为默认实例。</param>
     public CodeupClient(
         YunxiaoApiOptions options,
         IYunxiaoCredentialProvider credentialProvider,
-        ProcessRunner? processRunner = null,
         PluginPermissionGuard? permissionGuard = null,
         string? connectorName = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _credentialProvider = credentialProvider ?? throw new ArgumentNullException(nameof(credentialProvider));
-        _processRunner = processRunner;
         _guard = permissionGuard ?? PluginPermissionGuard.Default;
         _connectorName = connectorName;
 
@@ -390,150 +389,6 @@ public class CodeupClient : IDisposable
 
     #endregion
 
-    #region Git 操作
-
-    /// <summary>
-    /// 克隆仓库到本地（使用 GitToolPlugin 能力）
-    /// </summary>
-    /// <param name="repositoryUrl">仓库 URL</param>
-    /// <param name="targetDirectory">目标目录</param>
-    /// <param name="branch">要克隆的分支或标签（对应 git clone -b，可选）</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>
-    /// 克隆结果（<see cref="GitCommandResult"/>）：<c>Success</c> 为假时，
-    /// <see cref="GitCommandResult.FailureSummary"/> 给出 git 原始报错摘要（已脱敏），供调用方带进失败文案。
-    /// </returns>
-    /// <remarks>
-    /// 克隆失败时 git 会在目标目录留下残骸（<c>.git/HEAD = ref: refs/heads/.invalid</c>）；
-    /// 本方法<b>不</b>清理该目录（是否删除由调用方按「本次新建 / 原本已存在」判定），
-    /// 但调用方若判定目录本步新建，应删除以免重跑时被误判为「已克隆」。
-    /// </remarks>
-    public async Task<GitCommandResult> CloneToLocalAsync(
-        string repositoryUrl,
-        string targetDirectory,
-        string? branch = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (_processRunner == null)
-            throw new InvalidOperationException("未配置 ProcessRunner，无法执行 Git 操作");
-
-        // 出口门禁（PRD §3.7）：Git 能力 + git 进程 + 目标主机 + PAT 凭据
-        _guard.RequireGit("clone", "CodeupClient.CloneToLocalAsync");
-        _guard.RequireProcess("git", "CodeupClient.CloneToLocalAsync");
-        _guard.RequireNetwork(ExtractHost(repositoryUrl), "CodeupClient.CloneToLocalAsync");
-        _guard.RequireCredential(PatCredentialKey, "CodeupClient.CloneToLocalAsync");
-
-        var pat = await _credentialProvider.GetPatAsync(_connectorName, cancellationToken);
-        if (string.IsNullOrWhiteSpace(pat))
-            throw new InvalidOperationException("未配置 PAT，无法克隆仓库");
-
-        // 构建带鉴权的 URL
-        using var credential = new PatCredential(pat);
-        var authenticatedUrl = credential.GetAuthenticatedGitUrl(repositoryUrl);
-
-        // 组装 git clone 参数：按 pin 版本克隆时必须带 -b（PRD §6 #17）
-        var cloneArgs = new List<string> { "clone" };
-        if (!string.IsNullOrWhiteSpace(branch))
-        {
-            cloneArgs.Add("-b");
-            cloneArgs.Add(branch!);
-        }
-        cloneArgs.Add(authenticatedUrl);
-        cloneArgs.Add(targetDirectory);
-
-        var result = await _processRunner.RunAsync(
-            "git",
-            string.Empty,
-            workingDir: null,
-            stdin: null,
-            timeoutMs: _options.TimeoutSeconds * 1000,
-            argumentList: cloneArgs,
-            outputEncoding: Encoding.UTF8);
-
-        return ToGitCommandResult(result);
-    }
-
-    /// <summary>
-    /// 推送到远程仓库
-    /// </summary>
-    /// <param name="repositoryUrl">仓库 URL</param>
-    /// <param name="workingDirectory">仓库工作目录</param>
-    /// <param name="branch">分支名</param>
-    /// <param name="force">是否强制推送（--force）</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>
-    /// 推送结果（<see cref="GitCommandResult"/>）：<c>Success</c> 为假时，
-    /// <see cref="GitCommandResult.FailureSummary"/> 给出 git 原始报错摘要（已脱敏）。
-    /// </returns>
-    public async Task<GitCommandResult> PushAsync(
-        string repositoryUrl,
-        string workingDirectory,
-        string? branch = null,
-        bool force = false,
-        CancellationToken cancellationToken = default)
-    {
-        if (_processRunner == null)
-            throw new InvalidOperationException("未配置 ProcessRunner，无法执行 Git 操作");
-
-        // 出口门禁（PRD §3.7）：Git 能力 + git 进程 + 目标主机 + PAT 凭据
-        _guard.RequireGit("push", "CodeupClient.PushAsync");
-        _guard.RequireProcess("git", "CodeupClient.PushAsync");
-        _guard.RequireNetwork(ExtractHost(repositoryUrl), "CodeupClient.PushAsync");
-        _guard.RequireCredential(PatCredentialKey, "CodeupClient.PushAsync");
-
-        var pat = await _credentialProvider.GetPatAsync(_connectorName, cancellationToken);
-        if (string.IsNullOrWhiteSpace(pat))
-            throw new InvalidOperationException("未配置 PAT，无法推送仓库");
-
-        // 构建带鉴权的 URL
-        using var credential = new PatCredential(pat);
-        var authenticatedUrl = credential.GetAuthenticatedGitUrl(repositoryUrl);
-
-        // 更新远程 URL
-        var args = new List<string> { "remote", "set-url", "origin", authenticatedUrl };
-        await _processRunner.RunAsync(
-            "git",
-            string.Empty,
-            workingDirectory,
-            stdin: null,
-            timeoutMs: _options.TimeoutSeconds * 1000,
-            argumentList: args,
-            outputEncoding: Encoding.UTF8);
-
-        // 执行 git push
-        var pushArgs = new List<string> { "push", "origin" };
-        if (!string.IsNullOrWhiteSpace(branch))
-            pushArgs.Add(branch!);
-        if (force)
-            pushArgs.Add("--force");
-
-        var result = await _processRunner.RunAsync(
-            "git",
-            string.Empty,
-            workingDirectory,
-            stdin: null,
-            timeoutMs: _options.TimeoutSeconds * 1000,
-            argumentList: pushArgs,
-            outputEncoding: Encoding.UTF8);
-
-        return ToGitCommandResult(result);
-    }
-
-    /// <summary>
-    /// 把 <see cref="ProcessResult"/> 转成 <see cref="GitCommandResult"/>，并对诊断信息做 URL 内嵌凭据脱敏。
-    /// </summary>
-    /// <param name="result">进程执行结果。</param>
-    /// <returns>Git 命令结果（标准输出 / 标准错误均已脱敏）。</returns>
-    private static GitCommandResult ToGitCommandResult(ProcessResult result)
-        => new(
-            result.ExitCode == 0,
-            result.ExitCode,
-            SecretMasker.MaskUrlCredentials(result.StandardOutput),
-            SecretMasker.MaskUrlCredentials(result.StandardError),
-            result.TimedOut);
-
-    #endregion
-
     #region HTTP 请求
 
     /// <summary>
@@ -687,21 +542,6 @@ public class CodeupClient : IDisposable
             : fallback;
 
     #endregion
-
-    /// <summary>
-    /// 从仓库 URL 中提取主机（用于出口门禁的域名判定）。
-    /// </summary>
-    /// <param name="url">仓库 URL（http/https，可能带鉴权信息）。</param>
-    /// <returns>主机名；无法解析时返回原字符串。</returns>
-    private static string ExtractHost(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-            return string.Empty;
-
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
-            ? uri.Host
-            : url;
-    }
 
     /// <inheritdoc />
     public void Dispose()

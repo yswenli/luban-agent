@@ -302,6 +302,75 @@ public class FlowClient : IDisposable
 
     #endregion
 
+    #region 主机组（部署目标）API
+
+    /// <summary>
+    /// 列出主机组（流水线部署阶段的目标机器组）
+    /// </summary>
+    /// <remarks>
+    /// <b>真机口径（2026-10-22 取证）</b>：成功响应是<b>裸数组</b>（与 <c>/pipelines</c> 同口径）；
+    /// 元素字段 <c>id</c>（<b>JSON 数字</b>）、<c>uuid</c>（部署阶段 <c>machineGroup</c> 用值）、
+    /// <c>name</c> / <c>hostNum</c> / <c>aliyunRegion</c> / <c>serviceConnectionId</c>；
+    /// <b>列表里 <c>hostInfos</c> 恒为 <c>null</c></b>，机器明细要另调 <see cref="GetHostGroupAsync"/>。
+    /// <c>perPage</c> / 名称过滤等查询参数<b>真机不生效</b>（一律返回全量 10 条），故本方法不暴露过滤参数。
+    /// </remarks>
+    /// <param name="organizationId">组织 ID（可选，优先于配置）</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>主机组列表；响应体为空时返回 <c>null</c>。</returns>
+    public async Task<List<YunxiaoHostGroup>?> ListHostGroupsAsync(
+        string? organizationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = organizationId ?? _options.OrganizationId;
+        if (string.IsNullOrWhiteSpace(orgId))
+            throw new InvalidOperationException("未配置组织 ID");
+
+        var path = $"/oapi/v1/flow/organizations/{orgId}/hostGroups";
+
+        var responseBody = await SendRawAsync(
+            HttpMethod.Get,
+            path,
+            null,
+            cancellationToken);
+
+        return YunxiaoResponseParser.DeserializeList<YunxiaoHostGroup>(responseBody);
+    }
+
+    /// <summary>
+    /// 获取主机组详情（含机器明细 <c>hostInfos</c>）
+    /// </summary>
+    /// <remarks>
+    /// <b>真机口径（2026-10-22 取证）</b>：成功响应是<b>裸对象</b>；<b>路径键必须是数字 <c>id</c></b>——
+    /// 真机用 <c>uuid</c> 当路径键会 400（<c>NumberFormatException: For input string: "…"</c>）。
+    /// 也不存在 <c>/hostGroups/{id}/hosts</c> / <c>/machines</c> / <c>/hostList</c> 之类子资源（一律 404），
+    /// 机器明细只能从本接口的 <c>hostInfos</c> 拿。
+    /// </remarks>
+    /// <param name="hostGroupId">主机组<b>数字 id</b>（来自 <see cref="ListHostGroupsAsync"/>）。</param>
+    /// <param name="organizationId">组织 ID（可选，优先于配置）</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>主机组详情（含 <c>hostInfos</c>）。</returns>
+    public async Task<YunxiaoHostGroup?> GetHostGroupAsync(
+        long hostGroupId,
+        string? organizationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (hostGroupId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(hostGroupId), hostGroupId, "主机组 ID 必须是正数（真机路径键为数字 id）");
+
+        var orgId = organizationId ?? _options.OrganizationId;
+        if (string.IsNullOrWhiteSpace(orgId))
+            throw new InvalidOperationException("未配置组织 ID");
+
+        var path = $"/oapi/v1/flow/organizations/{orgId}/hostGroups/{hostGroupId}";
+
+        return await SendRequestAsync<YunxiaoHostGroup>(
+            HttpMethod.Get,
+            path,
+            cancellationToken: cancellationToken);
+    }
+
+    #endregion
+
     #region HTTP 请求
 
     /// <summary>

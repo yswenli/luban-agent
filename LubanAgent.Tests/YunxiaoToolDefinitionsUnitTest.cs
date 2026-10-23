@@ -3,7 +3,9 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgent.Tests
 *文件名： YunxiaoToolDefinitionsUnitTest
-*描述：验证云效 MCP 工具定义（10 个，PRD §4.11.3）的名称、数量与 schema 形状
+*描述：验证云效 MCP 工具定义（13 个，PRD §4.11.3）的名称、数量与 schema 形状
+*      v0.3 助手驱动：删 codeup_clone / codeup_push（git 一律走 git 工具组），
+*      补 codeup_list_template_repos / codeup_get_repo / codeup_list_groups 三个只读工具
 *      迁自框架 LuBan.XTestProject（W3 去厂商化：厂商用例随实现迁入产品测试项目）
 *****************************************************************************/
 
@@ -18,24 +20,36 @@ public class YunxiaoToolDefinitionsUnitTest
     private static readonly string[] ExpectedNames =
     [
         "codeup_search_repos",
-        "codeup_clone",
+        "codeup_list_template_repos",
+        "codeup_get_repo",
         "codeup_create_repo",
-        "codeup_push",
+        "codeup_list_groups",
         "codeup_list_branches",
         "codeup_create_group",
         "flow_list_pipelines",
+        "flow_list_host_groups",
+        "flow_get_host_group",
         "flow_create_pipeline",
         "flow_update_pipeline",
         "flow_run_pipeline"
     ];
 
     [TestMethod]
-    public void GetAllTools_ReturnsTenTools_WithExpectedBaseNames()
+    public void GetAllTools_ReturnsExpectedBaseNames()
     {
         var tools = YunxiaoToolDefinitions.GetAllTools().ToList();
 
-        Assert.AreEqual(10, tools.Count, "工具总数应为 10（PRD §4.11.3）");
+        Assert.AreEqual(13, tools.Count, "工具总数应为 13（v0.3 助手驱动：删 codeup_clone / codeup_push，补 3 个只读工具）");
         CollectionAssert.AreEquivalent(ExpectedNames, tools.Select(t => t.Name).ToList());
+    }
+
+    [TestMethod]
+    public void GetAllTools_不含克隆与推送工具_git操作一律走git工具组()
+    {
+        var names = YunxiaoToolDefinitions.GetAllTools().Select(t => t.Name).ToList();
+
+        Assert.IsFalse(names.Contains("codeup_clone"), "codeup_clone 已删除（git 操作走 git 工具组）。");
+        Assert.IsFalse(names.Contains("codeup_push"), "codeup_push 已删除（git 操作走 git 工具组）。");
     }
 
     [TestMethod]
@@ -111,6 +125,58 @@ public class YunxiaoToolDefinitionsUnitTest
         foreach (var name in new[] { "name", "path", "parentId", "visibility", "description", "organizationId" })
         {
             Assert.IsTrue(properties.TryGetProperty(name, out _), $"codeup_create_group 缺少参数 {name}");
+        }
+    }
+
+    // ── v0.3 新增的三个只读工具 ─────────────────────────────────────────────
+
+    /// <summary>模板库查询（v0.3）：定位模板仓以取 <c>templateProjectId</c>；按注释「无 search、需全量拉取」。</summary>
+    [TestMethod]
+    public void CodeupListTemplateRepos_Schema_支持模板类型与分页()
+    {
+        var tool = YunxiaoToolDefinitions.GetAllTools().Single(t => t.Name == "codeup_list_template_repos");
+
+        using var doc = JsonDocument.Parse(tool.InputSchema!);
+        var properties = doc.RootElement.GetProperty("properties");
+        foreach (var name in new[] { "templateType", "page", "perPage", "organizationId" })
+        {
+            Assert.IsTrue(properties.TryGetProperty(name, out _), $"codeup_list_template_repos 缺少参数 {name}");
+        }
+
+        Assert.IsFalse(properties.TryGetProperty("search", out _), "本接口没有 search 入参（不支持按名过滤，需客户端全量匹配）");
+        StringAssert.Contains(tool.Description, "codeup_search_repos");
+    }
+
+    /// <summary>仓库详情（v0.3）：唯一返回 <c>httpUrlToRepo</c> 的入口，克隆地址取自这里。</summary>
+    [TestMethod]
+    public void CodeupGetRepo_Schema_RequiresRepositoryId()
+    {
+        var tool = YunxiaoToolDefinitions.GetAllTools().Single(t => t.Name == "codeup_get_repo");
+
+        using var doc = JsonDocument.Parse(tool.InputSchema!);
+        var required = doc.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        CollectionAssert.AreEquivalent(new[] { "repositoryId" }, required);
+
+        var properties = doc.RootElement.GetProperty("properties");
+        foreach (var name in new[] { "repositoryId", "organizationId" })
+        {
+            Assert.IsTrue(properties.TryGetProperty(name, out _), $"codeup_get_repo 缺少参数 {name}");
+        }
+
+        StringAssert.Contains(tool.Description, "httpUrlToRepo");
+    }
+
+    /// <summary>代码组列表（v0.3）：建库前「先查后建」判断目标组是否已存在。</summary>
+    [TestMethod]
+    public void CodeupListGroups_Schema_支持搜索与父级过滤()
+    {
+        var tool = YunxiaoToolDefinitions.GetAllTools().Single(t => t.Name == "codeup_list_groups");
+
+        using var doc = JsonDocument.Parse(tool.InputSchema!);
+        var properties = doc.RootElement.GetProperty("properties");
+        foreach (var name in new[] { "search", "parentId", "page", "perPage", "orderBy", "sort", "organizationId" })
+        {
+            Assert.IsTrue(properties.TryGetProperty(name, out _), $"codeup_list_groups 缺少参数 {name}");
         }
     }
 }

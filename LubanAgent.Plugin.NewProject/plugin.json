@@ -3,7 +3,7 @@
   "name": "新建项目插件",
   "version": "1.0.0",
   "author": "Walle",
-  "description": "以 TJCES 三端模板仓新建项目：七步向导 + 聊天式入口，共享同一 INewProjectService",
+  "description": "以三端模板仓新建项目：七步向导 + 聊天式入口；Step 3/6/7 由助手按技能驱动执行并回读结论文件",
   "entryAssembly": "LubanAgent.Plugin.NewProject.dll",
   "targetApp": "LubanAgentCodex",
   "minHostVersion": "2026.10.0",
@@ -19,42 +19,42 @@
     {
       "id": "newproject-create",
       "name": "新建项目",
-      "description": "七步流程总入口：收集项目档案并逐步执行向导各步（PRD §4.10.3）",
+      "description": "七步流程总入口：收集项目档案、逐步骤执行向导各步；Step 3/6/7 下发助手按技能执行并回读结论文件（PRD §4.10.3）",
       "entry": "skills/newproject-create.md",
       "category": "newproject"
     },
     {
       "id": "newproject-clone-template",
       "name": "按模板建库并克隆",
-      "description": "Step 3：以 TJCES 模板仓创建各端专属仓库并克隆到本地（PRD §4.10.4）",
+      "description": "Step 3：助手一次只读准备 + 用户确认后同会话执行续跑——以模板仓创建各端专属仓库、克隆到本地、占位符替换，产出结论文件（PRD §4.10.4）",
       "entry": "skills/newproject-clone-template.md",
       "category": "newproject"
     },
     {
       "id": "newproject-setup-db",
       "name": "数据库探活",
-      "description": "Step 4：只读探活，确认能连上且库存在；不建库、不写任何文件（PRD §4.3，v0.22）",
+      "description": "Step 4：只读探活，确认能连上且库存在；不建库、不写任何文件（本步不走助手执行链路，口径不变；PRD §4.3，v0.22）",
       "entry": "skills/newproject-setup-db.md",
       "category": "newproject"
     },
     {
       "id": "newproject-build",
       "name": "编译检查",
-      "description": "Step 5：逐端编译并汇总结果，编译方式由助手按工程类型判断（PRD §4.3，v0.22）",
+      "description": "Step 5：逐端编译并汇总结果，编译方式由助手按工程类型判断（本步不走助手执行链路，口径不变；PRD §4.3，v0.22）",
       "entry": "skills/newproject-build.md",
       "category": "newproject"
     },
     {
       "id": "newproject-push-repo",
       "name": "推送改动到自有仓库",
-      "description": "Step 6：提交并推送本地最终改动到各端专属仓库（PRD §4.10.4）",
+      "description": "Step 6：助手调框架 git 工具组看工作树、建/切分支、提交并推送各端改动到专属仓库，产出结论文件（PRD §4.10.4）",
       "entry": "skills/newproject-push-repo.md",
       "category": "newproject"
     },
     {
       "id": "newproject-create-pipeline",
       "name": "创建流水线",
-      "description": "Step 7：逐端按内嵌新版 YAML 模板渲染并创建流水线，YAML 可手工微调后再提交（PRD §4.10.4；v0.31）",
+      "description": "Step 7：助手一次只读准备（拉主机组 + 按 docs 模板渲染 YAML）+ 用户确认后同会话执行续跑，逐端创建或覆盖更新流水线（PRD §4.10.4；v0.32）",
       "entry": "skills/newproject-create-pipeline.md",
       "category": "newproject"
     }

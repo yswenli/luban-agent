@@ -122,7 +122,7 @@ public sealed class EndRepository
     /// <summary>所属端。</summary>
     public ProjectEnd End { get; set; }
 
-    /// <summary>模板仓名（固定：<c>TJCES-Service</c> / <c>TJCES-Admin</c> / <c>TJCES-Mobile</c>）。</summary>
+    /// <summary>模板仓名（v0.33 起由助手按 <c>docs/org-reference.md</c> 的按端名称约定在模板库匹配后回填，插件不再硬编码）。</summary>
     public string TemplateRepository { get; set; } = string.Empty;
 
     /// <summary>
@@ -131,7 +131,7 @@ public sealed class EndRepository
     /// </summary>
     public string TemplateBranch { get; set; } = string.Empty;
 
-    /// <summary>目标仓库名，默认 <c>{缩写}-Service</c> / <c>-Admin</c> / <c>-Mobile</c>，可在 Step 3 改。</summary>
+    /// <summary>目标仓库名，默认 <c>{Code}-Service</c> / <c>-Admin</c> / <c>-Mobile</c>（如 <c>Csxmy-Service</c>），可在 Step 3 改。</summary>
     public string RepositoryName { get; set; } = string.Empty;
 
     /// <summary>可见性：<c>internal</c>＝组织内公开（默认），<c>private</c>＝私有。</summary>
@@ -149,7 +149,7 @@ public sealed class EndRepository
     /// <summary>本地代码目录。</summary>
     public string LocalPath { get; set; } = string.Empty;
 
-    /// <summary>默认分支（Step 6 统一推 <c>main</c>，PRD §6 #17）。</summary>
+    /// <summary>默认/推送分支（建库时的默认分支，Step 6 与流水线 <c>{branch}</c> 都用它；配置留空时按 docs 退回仓库默认分支）。</summary>
     public string DefaultBranch { get; set; } = "main";
 
     /// <summary>该端是否已建库并克隆完成。</summary>
@@ -303,11 +303,23 @@ public sealed class EndPipelineResult
     /// <summary>云效控制台链接。</summary>
     public string WebUrl { get; set; } = string.Empty;
 
-    /// <summary>本次是<b>新建</b>（true）还是命中同名<b>复用</b>（false，幂等，PRD §4.3 Step 7）。</summary>
+    /// <summary>本次是<b>新建</b>（true）还是<b>命中同名后覆盖更新</b>（false，幂等；编排 B · 全端，PRD §4.3 Step 7）。</summary>
     public bool Created { get; set; }
 
-    /// <summary>该流水线当前是否已包含部署阶段（「一键补齐部署阶段」后为 true）。</summary>
+    /// <summary>
+    /// 本次提交的 YAML <b>是否含部署阶段</b>（v0.32 口径变更：部署段在创建时就写入，仅后端为 <c>true</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 旧档案里该字段是「事后用『一键补齐部署阶段』补过」的意思；v0.32 起改为「本次提交即含部署段」。
+    /// 旧档案 JSON 仍可反序列化（同名同义可近似对应），只是旧值可能为 <c>false</c>（当时确实只提交了构建段）。
+    /// </remarks>
     public bool DeployStageIncluded { get; set; }
+
+    /// <summary>本次写进 deploy 段的部署主机组 uuid（仅后端；未含部署段时为空串）。</summary>
+    public string DeployMachineGroupUuid { get; set; } = string.Empty;
+
+    /// <summary>本次写进 deploy 段的部署主机组名（仅后端；未含部署段或来自配置兜底时为空串 / 标注来源）。</summary>
+    public string DeployMachineGroupName { get; set; } = string.Empty;
 
     /// <summary>该端的待人工绑定清单（已展开占位符）。</summary>
     public List<string> PendingBindings { get; set; } = new();
@@ -325,7 +337,7 @@ public sealed class ProjectSpec
     /// <summary>项目中文名称。</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>英文缩写（小写字母开头，可含数字），用于目录 / 仓库名 / 流水线名，需唯一。</summary>
+    /// <summary>英文缩写（<b>只能是小写字母 a-z</b>，不含数字），用于目录 / 仓库名 / 流水线名，需唯一。</summary>
     public string Code { get; set; } = string.Empty;
 
     /// <summary>一句话项目介绍（用于初始化项目助手与 README 占位）。</summary>

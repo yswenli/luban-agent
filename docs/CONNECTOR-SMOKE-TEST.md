@@ -23,6 +23,7 @@ R4（未声明即告警跳过）/ R5（按名解析 + 初始化契约）/ O1 / O
 - **可用性**由 `config.json:Connectors` 决定（声明了才算「可用」）；**启用**由工作区 `connectors/<名>.json` 决定。
 - 只声明未启用 / 工作区启用但宿主未声明 → 均**不暴露** MCP 工具（后者额外记一条 warn）。
 - 暴露面名 = 连接器**实例名**（默认实例沿用 `yunxiao`），工具名前缀 `mcp_<mcp名>_*`。
+- **（v0.33）云效连接器 MCP 面共 13 个工具**：`codeup_*` 侧 `search_repos` / `list_template_repos` / `get_repo` / `create_repo` / `list_groups` / `create_group` / `list_branches`，`flow_*` 侧 `list_pipelines` / `create_pipeline` / `update_pipeline` / `run_pipeline` / `list_host_groups` / `get_host_group`。**已删 `codeup_clone` / `codeup_push`**——克隆 / 推送改由**框架 git 工具组**（`GitCloneAsync` / `GitPushAsync`）承担，git 凭据由用户在外部环境自行配置（连接器不再拼含 PAT 的地址）。
 - 任何失败路径都**只告警不中断**（未知/不可用连接器 = 告警 + 跳过）。
 
 冒烟前请先备份 `config.json` 与工作区 `.luban-agent/`（S1–S7 会反复改写两者）。
@@ -61,7 +62,7 @@ R4（未声明即告警跳过）/ R5（按名解析 + 初始化契约）/ O1 / O
 
 **操作**：`config.json` 声明 `yunxiao`（`Provider: aliyunDevOps`）+ `Integrations` 只保留旧键 `yunxiao_pat`（**不**新增
 `connector:yunxiao:token`）→ 工作区写 `.luban-agent/connectors/yunxiao.json` = `{"enabled": true}` → 启动宿主并使用云效能力
-（如插件里执行建库/克隆/推送）。
+（如经 MCP 建库、经框架 git 工具组克隆/推送——**v0.33 起克隆/推送不再由连接器提供**）。
 
 **预期证据**：
 

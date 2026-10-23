@@ -182,4 +182,99 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "\"ok\"");
         StringAssert.Contains(prompt, "pymysql");
     }
+
+    /// <summary>Step 3 准备：仓库目录术语必须明确「已含仓库名」，避免助手再拼一次仓库名。</summary>
+    [TestMethod]
+    public void BuildRepositoryPreparePrompt_仓库目录术语与只读边界()
+    {
+        var plan = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                TemplateRepository = "TJCES-Service"
+            }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
+
+        StringAssert.Contains(prompt, "仓库目录 = D:\\ws\\jnms\\Csxmy-Service（已含仓库名，勿再拼一次）");
+        StringAssert.Contains(prompt, "mcp_yunxiao_codeup_list_template_repos");
+        StringAssert.Contains(prompt, "mcp_yunxiao_codeup_get_repo");
+        StringAssert.Contains(prompt, "本阶段只读");
+    }
+
+    /// <summary>Step 3 执行：git 调用必须带 workingDirectory，且暂存全部不能传 -A。</summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_git调用带工作目录且禁用A()
+    {
+        var plan = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        StringAssert.Contains(prompt, "GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)");
+        StringAssert.Contains(prompt, "workingDirectory=<仓库目录>");
+        StringAssert.Contains(prompt, "GitAddAsync(paths=[\".\"], …)");
+        StringAssert.Contains(prompt, "-A");
+        StringAssert.Contains(prompt, "syncAllBranches=true");
+        StringAssert.Contains(prompt, "至少写一项");
+    }
+
+    /// <summary>Step 6：分支不写死 develop、git 调用带 workingDirectory、暂存用 paths=["."]。</summary>
+    [TestMethod]
+    public void BuildPushPrompt_推送分支与git参数口径正确()
+    {
+        var targets = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Service.git",
+                DefaultBranch = "develop"
+            }
+        };
+
+        var prompt = StepPrompts.BuildPushPrompt(Spec(), targets, ResultFile);
+
+        StringAssert.Contains(prompt, "本次目标分支 = develop");
+        StringAssert.Contains(prompt, "GitStatusAsync(workingDirectory=<仓库目录>)");
+        StringAssert.Contains(prompt, "GitAddAsync(paths=[\".\"], workingDirectory=<仓库目录>)");
+        StringAssert.Contains(prompt, "GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库目录>)");
+        Assert.IsFalse(prompt.Contains("GitAddAsync(paths=[\"-A\"])", StringComparison.Ordinal));
+    }
+
+    /// <summary>Step 7：准备必须给出可直接提交的 uuid；执行必须带 pipelineId / name / content 三个键名。</summary>
+    [TestMethod]
+    public void BuildPipelinePrompts_部署目标与flow参数口径正确()
+    {
+        var targets = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service,
+                RepositoryName = "Csxmy-Service",
+                LocalPath = @"D:\ws\jnms\Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Service.git",
+                DefaultBranch = "develop"
+            }
+        };
+
+        var prepare = StepPrompts.BuildPipelinePreparePrompt(Spec(), targets, ResultFile);
+        StringAssert.Contains(prepare, "flow_list_host_groups");
+        StringAssert.Contains(prepare, "不能留占位符");
+        StringAssert.Contains(prepare, "recommendedDeployTargetUuid");
+        StringAssert.Contains(prepare, "本项目推送分支 = develop");
+
+        var execute = StepPrompts.BuildPipelineExecutePrompt(Spec(), targets, ResultFile, ResultFile, null, null, false);
+        StringAssert.Contains(execute, "`pipelineId`=命中 id、`name`=该流水线现名、`content`=完整 YAML");
+        StringAssert.Contains(execute, "推送分支 = develop");
+        StringAssert.Contains(execute, "留空或留占位符");
+    }
 }

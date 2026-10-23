@@ -48,7 +48,7 @@ public sealed class NewProjectPlugin : PluginBase
     public override string Version => "1.0.0";
 
     /// <inheritdoc />
-    public override string Description => "以 TJCES 三端模板仓新建项目：七步向导 + 聊天式入口（PRD §4）";
+    public override string Description => "以 TJCES 三端模板仓新建项目：七步向导 + 聊天式入口";
 
     /// <inheritdoc />
     protected override Task OnInitializeAsync(IPluginHost host, CancellationToken cancellationToken)

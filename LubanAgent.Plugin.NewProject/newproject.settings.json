@@ -1,145 +1,32 @@
 // 「新建项目」插件配置（包内默认值）。
 // 允许 // 行注释。宿主配置节点可覆盖同名项（P2 起接入）。
 //
-// 【真机联调后可调的四项】
-//   ① templates[].branch —— 模板 pin 的**可选覆盖**（分支 / 标签）。留空＝运行期实时解析：
-//      在模板仓现有分支里按 develop → master → main → 模板默认分支 取第一个存在的，
-//      并把「取到了哪个、为什么」回显在 Step 3 预检里（无需人工登记即可跑通）。
-//      登记了值则必须真实存在，否则 Step 3 预检直接阻断（不静默回退）。
-//   ② templates[].projectId —— 可选的模板仓 ID 覆盖（整数，留空则按 repository 名在**模板库**中匹配）。
-//   ③ groupNameFormat / groupParentId —— 运行期自动建的项目代码组名格式与父级组 ID；
-//      groupParentId 留空＝建在组织根下（云效：parentId 空即在组织路径下创建）。
-//   ④ pipelineReferences[].pipelineId —— Step 7 **溯源标注**（已填真机取证值；模板内嵌在程序集内）。
-//   ⑤ pipelineDefaults[] —— Step 7 流水线按端默认值（端口 / 容器名 / 服务连接 / 构建集群 / OSS 目录），
-//      界面只读回显；现场需要改端口或换服务连接时改这里即可，不必重发插件。
+// 【v0.33 瘦身口径】本文件只留「建单前面板就要回显 / 预填的**格式与兜底值**」（C3）。
+//   组织专有值（模板仓对照、三端流水线默认值、参考流水线 id、占位符替换规则、代码组父级组 ID）
+//   已全部迁到随包分发的 docs/（见 docs/org-reference.md、docs/pipeline-conventions.md、
+//   docs/pipeline-*.yml.md），Step 3 / Step 6 / Step 7 由助手按那里的证据判定，本文件不再承载。
 {
+  // 默认可见性（PRD §4.5：默认＝组织内公开）
   "defaultVisibility": "internal",
 
   // Step 6 推送目标分支：本组织口径为 develop（v0.28 起；PRD §6 #17 定案改口径）。
-  // 理由：Step 3 克隆的 pin 按 develop → master → main 择优（NewProjectService.PreferredPins），
-  //      各端仓库实际都落在 develop；推送分支若仍取 main 就成了「在 develop 编译、推 main」。
+  // 理由：Step 3 克隆的 pin 按 develop → master → main 择优，各端仓库实际都落在 develop；
+  //      推送分支若仍取 main 就成了「在 develop 编译、推 main」。
   // 该值同时用作云效建仓的默认分支，故 Step 3 建仓与 Step 6 推送两处口径一致。
   // 留空则退回各端仓库的默认分支（仍为空则 main）。
   "pushBranch": "develop",
-  "repositoryNameFormat": "{code}-{end}",
 
-  // 项目代码组名格式（{code}/{Code}/{CODE}/{name}）；默认全大写缩写，如 jnms → JNMS。
-  // 该名字先在组织内查、命中即复用、未命中才创建；同时用作云效 path，勿含 "/"。
+  // 代码库名称格式（令牌 {code} 原文 / {Code} 首字母大写 / {CODE} 全大写 / {end} 端后缀）。
+  // 默认 {Code}-{end} ⇒ 首字母大写，如 csxmy → Csxmy-Service / Csxmy-Admin / Csxmy-Mobile；
+  // 本地目录名与云端仓库名同源（Step 2 目录 = {localPath}\{展开值}），故本地也是 Csxmy-Service。
+  // 与代码组名（groupNameFormat，默认全大写）刻意区分：组名 CSXMY、库名 Csxmy-Service。
+  "repositoryNameFormat": "{Code}-{end}",
+
+  // 项目代码组名格式（{code}/{Code}/{CODE}/{name}）；默认全大写缩写，如 csxmy → CSXMY。
+  // 该名字由助手在 Step 3 于组织内先查后建（命中即复用），同时用作云效 path，勿含 "/"。
   "groupNameFormat": "{CODE}",
-
-  // 代码组父级组 ID（可选，整数）：留空＝直接建在组织根下（如 tjc 下）
-  "groupParentId": "",
 
   // Step 6 提交身份兜底（F5=A）：优先读本机 git config user.name/user.email，缺失时用这里的值
   "commitAuthorName": "LuBan Agent",
-  "commitAuthorEmail": "luban-agent@local",
-
-  // 占位符替换规则（F3=A）：字面量、区分大小写；From 为空或 To 展开后为空的规则会被丢弃。
-  // To 支持令牌：{code} 缩写原文 / {Code} 首字母大写 / {CODE} 全大写 / {name} 项目中文名。
-  // 留空则使用内置默认（TJCES / Tjces / tjces 三种大小写变体）。
-  "placeholderRules": [
-    { "from": "TJCES", "to": "{CODE}" },
-    { "from": "Tjces", "to": "{Code}" },
-    { "from": "tjces", "to": "{code}" }
-  ],
-
-  "templates": [
-    // 后端：以 TJCES-Service 为模板（PRD §4.5）；branch 留空＝运行期解析 pin
-    { "end": "Service", "repository": "TJCES-Service", "branch": "", "projectId": "" },
-    // 管理端：以 TJCES-Admin 为模板
-    { "end": "Admin", "repository": "TJCES-Admin", "branch": "", "projectId": "" },
-    // 移动端：以 TJCES-Mobile 为模板（仅当 Step 1 勾选时才参与）
-    { "end": "Mobile", "repository": "TJCES-Mobile", "branch": "", "projectId": "" }
-  ],
-  "pipelineReferences": [
-    // 企服版三端参考流水线标识（Step 7 **溯源标注**：模板已内嵌在插件程序集内，
-    // 此处填真实 id 只用于「这条模板是从哪条企服版流水线翻译来的」可追溯）。
-    // 真机取证（2026-10-22）：Service = 3481236、Admin = 3489337、Mobile = 3489317
-    //   （名称 CME_DEV_Deploy_TJCES-Service(7000) / -Admin / -Mobile；旧组 DEV_Deploy_TJCES-* 不作模板）。
-    { "end": "Service", "pipelineId": "3481236" },
-    { "end": "Admin", "pipelineId": "3489337" },
-    { "end": "Mobile", "pipelineId": "3489317" }
-  ],
-
-  // Step 7 流水线名称格式（占位符 {code}/{Code}/{CODE}/{name}/{repository}）；
-  // 对齐本组织既有命名习惯（如 CME_DEV_Deploy_TJCES-Service(7000)）。
-  "pipelineNameFormat": "{CODE}_DEV_Deploy_{repository}",
-
-  // Step 7 流水线模板的按端默认值（裁决 3A：包内按端默认 + 界面只读回显 + 此处可覆盖）。
-  // 值支持项目令牌 {code}/{Code}/{CODE}/{name}/{branch}（如 containerName = "{code}-service"）。
-  //
-  // 【真机取证依据】2026-10-22 取企服版三端参考流水线的 flow + settings + sources：
-  //   · 后端：DOCKER_IMAGE_NAME=tjces-service、APP_PORT=7000、DOCKER_CONTAINER_NAME=tjces-service、
-  //     DOCKER_REPO_NAME=develop、Harbor=harbor.tjingcai.com、构建集群 buildNodeGroup=PM-SielV3Iovlo4Au4J、
-  //     部署主机组 226948；caches 见模板内 cache: 段。
-  //   · 前端：node_build + OSS delete/upload（服务连接 520828 → sm7mho5x9ex945rp、bucket=tejingcai、
-  //     region=cn-shanghai、目录 DEV/TJCES-Admin/、DEV/TJCES-Mobile/；源目录 dist、dist/dev/h5），
-  //     构建集群 K8S-4（公共集群）。
-  //   · 代码源服务连接：组织内 codeup 服务连接 496035 → r3x6es4esgbsn6ur（本轮建库/推送用的同一条）。
-  //
-  // 【buildCluster】整串照写（模板不再拼 private/ 前缀）：留空＝不写 runsOn ⇒ 云效默认北京公共集群
-  // （cacheMode 自动取 remote）；填 private/<集群ID> 或 public/cn-beijing 则原样写入（private 前缀取 local）。
-  // 真机核：OpenAPI 校验对私有集群一律报「runsOn {} 不存在」，故企服版的私有集群值此处**故意留空**，
-  // 由人工在控制台确认后回填（见「待人工绑定清单」）。前端两端企服版用的是公共构建集群，同样留空。
-  //
-  // 【deployMachineGroup】必须是**主机组 uuid**（真机核：tb 数字 id 226948 报「该机器组uuid[226948]不存在」）；
-  // 留空时 YAML 给「待绑定：主机组 uuid」占位，且「一键补齐部署阶段」会直接给可读失败（不发请求）。
-  //
-  // 【Service 已填真机值】tIPKOJBbwwOVKVia = 移动云DEV主机组（主机组 id 226948）。
-  // 来源：只读探针 GET /oapi/v1/flow/organizations/{org}/hostGroups（2026-10-22 发现，此前误以为无 API）；
-  //      与企服版参考流水线 3481236 的 tb `machine_group_id: 226948` 一一对应。
-  // 前端（Admin/Mobile）无独立部署阶段（构建产物上传 OSS 即发布），此处保持留空。
-  "pipelineDefaults": [
-    {
-      "end": "Service",
-      "appPort": "7000",
-      "containerName": "{code}-service",
-      "imageName": "{code}-service",
-      "imageTag": "latest",
-      "dockerRepo": "{branch}",
-      "harborHost": "harbor.tjingcai.com",
-      "buildCluster": "",
-      "codeupServiceConnection": "r3x6es4esgbsn6ur",
-      "ossServiceConnection": "",
-      "ossBucket": "",
-      "ossRegion": "",
-      "ossPrefix": "",
-      "uploadPath": "",
-      "deployMachineGroup": "tIPKOJBbwwOVKVia"
-    },
-    {
-      "end": "Admin",
-      "appPort": "",
-      "containerName": "",
-      "imageName": "",
-      "imageTag": "latest",
-      "dockerRepo": "",
-      "harborHost": "harbor.tjingcai.com",
-      "buildCluster": "",
-      "codeupServiceConnection": "r3x6es4esgbsn6ur",
-      "ossServiceConnection": "sm7mho5x9ex945rp",
-      "ossBucket": "tejingcai",
-      "ossRegion": "cn-shanghai",
-      "ossPrefix": "DEV/{CODE}-Admin/",
-      "uploadPath": "dist",
-      "deployMachineGroup": ""
-    },
-    {
-      "end": "Mobile",
-      "appPort": "",
-      "containerName": "",
-      "imageName": "",
-      "imageTag": "latest",
-      "dockerRepo": "",
-      "harborHost": "harbor.tjingcai.com",
-      "buildCluster": "",
-      "codeupServiceConnection": "r3x6es4esgbsn6ur",
-      "ossServiceConnection": "sm7mho5x9ex945rp",
-      "ossBucket": "tejingcai",
-      "ossRegion": "cn-shanghai",
-      "ossPrefix": "DEV/{CODE}-Mobile/",
-      "uploadPath": "dist/dev/h5",
-      "deployMachineGroup": ""
-    }
-  ]
+  "commitAuthorEmail": "luban-agent@local"
 }
