@@ -4,17 +4,17 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： BasicInfoValidation
 *创建时间：2026/10/16
-*描述：Step 1 基本信息校验结果（PRD §4.3）；字段级错误由能力层统一给出，面板与聊天入口共用
+*描述：Step 1 基本信息校验结果；字段级错误由能力层统一给出，面板与聊天入口共用
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
 
 /// <summary>
-/// Step 1 基本信息校验结果（PRD §4.3）。
+/// Step 1 基本信息校验结果。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 校验规则放在<b>共享能力层</b>而非面板：PRD §4.10.2 要求向导面板与聊天式入口零逻辑分叉，
+/// 校验规则放在<b>共享能力层</b>而非面板：向导面板与聊天式入口必须零逻辑分叉，
 /// 若校验只存在于面板，聊天路径必然要复刻一遍同一套规则。
 /// </para>
 /// <para>
@@ -22,7 +22,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// 与 <see cref="Errors"/> 区分：<see cref="Warnings"/> <b>不</b>阻断流程，用于「已在别处处理」的情形—— 
-/// 例如目标仓库目录已存在且非空，PRD §4.3 Step 3 要求届时给「复用已克隆 / 清空后重克隆 / 中止」三选一，
+/// 例如目标仓库目录已存在且非空，届时给用户「复用已克隆 / 清空后重克隆 / 中止」三选一，
 /// 因此 Step 1 只提示、不拦截（否则用户会被挡在一个该步并不负责的判断上）。
 /// </para>
 /// </remarks>

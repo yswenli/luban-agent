@@ -106,7 +106,8 @@ public sealed class A2AWorkspaceFile
 }
 
 /// <summary>
-/// A2A 配置解析器。按 Rev.7 §4.7 合并算法把 appsettings 基线与工作区文件并集，
+/// A2A 配置解析器。把 appsettings 的基线与工作区 <c>.luban-agent/a2a/*.json</c> 合并：
+/// server 文件按字段覆盖基线（文件里没写的字段保留基线值），client 文件按文件追加为新的客户端条目，
 /// 得出有效 <see cref="Agent2AgentOptions"/>。
 /// </summary>
 public static class Agent2AgentConfigResolver

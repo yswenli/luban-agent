@@ -6,7 +6,7 @@
 *版本号： V1.0.0.0
 *唯一标识：新建
 *创建时间：2026/10/15
-*描述：插件对会话级组件的贡献回放（PRD §3.11）
+*描述：插件对会话级组件的贡献回放
 *
 *****************************************************************************/
 
@@ -17,7 +17,7 @@ namespace LubanAgentCore.Plugins;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 插件程序集与清单是<b>应用级</b>，而插件贡献的 Skill / MCP 是<b>工作区级</b>（PRD §3.3）。
+/// 插件程序集与清单是<b>应用级</b>，而插件贡献的 Skill / MCP 是<b>工作区级</b>。
 /// Skill 走文件式（<c>.luban-agent/skills</c>），新会话经 <c>SkillRegistry.LoadFromWorkspace</c>
 /// 天然可见；但进程内 MCP 客户端（如 <c>YunxiaoMCPClient</c>）无法用文件描述，且
 /// <c>MCPRegistry</c> 为会话 scope 注册（每会话一份），故必须在每次会话构建 Agent 时回放。

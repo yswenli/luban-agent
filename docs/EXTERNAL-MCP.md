@@ -133,10 +133,12 @@ $credential:<凭据键>
 **失败判据**
 
 - 工具不出现且日志报鉴权失败 → 检查凭据键是否能解析（`connector:yunxiao:token` / 旧键 `yunxiao_pat`）。
-- 若把 `Authorization` 写成明文令牌 → 用对话让 agent 写入时应被**拒绝**（见 §2 写入门禁）；
+- 若把 `Authorization` 写成明文令牌 → 用对话让 agent 写入时应被**拒绝**（写入门禁 `McpConfigSecurityValidator`
+  要求名含 authorization / token / secret / password 等特征的值必须是 `$credential:` 引用）；
   手工落盘虽不会被拒（读取不做校验），但**不要**这么做。
 
-**stdio 版**（3.2）：重复上述步骤，把文件名换成 `yunxiao-remote-stdio.json`，预期同上，
+**stdio 版**（示例见「云效官方 MCP（stdio，本机 Node 路线）」一节的 `yunxiao-remote-stdio.json`）：重复上述步骤，
+把文件名换成 `yunxiao-remote-stdio.json`，预期同上，
 差别是官方 MCP 作为 `npx` 子进程运行（任务管理器可观察到 node 进程）。
 
 **边界验证**

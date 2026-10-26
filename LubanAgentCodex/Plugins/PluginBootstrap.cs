@@ -22,7 +22,7 @@ namespace LubanAgentCodex.Plugins;
 /// <remarks>
 /// 框架 <c>PluginManager.ScanAsync</c> / <c>RestoreEnabledAsync</c> 不会自动触发，
 /// 由宿主在启动时（工作区就绪之后，便于插件技能直接落到当前工作区）显式调用。
-/// 插件根目录固定为 <c>&lt;AppContext.BaseDirectory&gt;/plugins</c>（应用级，PRD §3.3）。
+/// 插件根目录固定为 <c>&lt;AppContext.BaseDirectory&gt;/plugins</c>。
 /// </remarks>
 internal static class PluginBootstrap
 {

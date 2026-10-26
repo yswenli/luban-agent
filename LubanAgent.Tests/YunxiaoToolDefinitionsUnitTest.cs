@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgent.Tests
 *文件名： YunxiaoToolDefinitionsUnitTest
-*描述：验证云效 MCP 工具定义（13 个，PRD §4.11.3）的名称、数量与 schema 形状
+*描述：验证云效 MCP 工具定义（共 13 个）的名称、数量与 schema 形状
 *      v0.3 助手驱动：删 codeup_clone / codeup_push（git 一律走 git 工具组），
 *      补 codeup_list_template_repos / codeup_get_repo / codeup_list_groups 三个只读工具
 *      迁自框架 LuBan.XTestProject（W3 去厂商化：厂商用例随实现迁入产品测试项目）

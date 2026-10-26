@@ -28,7 +28,7 @@
                                    x:Name="InputBox" />
             </Grid>
 
-            <!-- 插件面板挂载区（PRD §3.4）：默认隐藏，选中插件侧栏入口时覆盖聊天区 -->
+            <!-- 插件面板挂载区：默认隐藏，选中插件侧栏入口时覆盖聊天区 -->
             <Grid Grid.Column="1"
                   x:Name="PluginContentHost"
                   RowDefinitions="Auto,*"

@@ -26,7 +26,7 @@ mcp_yunxiao_codeup_list_template_repos(templateType=1, page=1, perPage=100)
 - 判定：
   - 模板库列表**为空** ⇒ **阻断**，`status="failed"`，message 写「云效自定义模板库为空（templateType=1）：请先在云效把模板仓登记为模板」。
   - 未命中名称 ⇒ **阻断**，message 里**列出模板库现有条目**（`name` / `path` / `projectId`），让用户能一眼看出该改哪个值。
-- 三端模板仓名见 [`org-reference.md` §1](./org-reference.md)；`templatePath` 与「模板默认分支名」**运行期从模板库条目 / 分支列表解析**，不要臆造。
+- 三端模板仓名见 [`org-reference.md`](./org-reference.md) 的「模板仓（Step 3）」表；`templatePath` 与「模板默认分支名」**运行期从模板库条目 / 分支列表解析**，不要臆造。
 - 移动端**仅当 Step 1 勾选了 Mobile** 才参与（未勾选则不拉 Mobile 条目、不产出该端 artifact）。
 
 ### 1.2 解析 pin 分支
@@ -35,7 +35,7 @@ mcp_yunxiao_codeup_list_template_repos(templateType=1, page=1, perPage=100)
 mcp_yunxiao_codeup_list_branches(repositoryId=<templateProjectId>, page=1, perPage=100)
 ```
 
-按 [`org-reference.md` §3](./org-reference.md) 择优：
+按 [`org-reference.md`](./org-reference.md)「pin 择优」表给出的顺序择优：
 
 1. 若登记了 pin（`templates[].branch`）：**必须精确存在**（区分大小写）⇒ 命中即用（`resolvedBranchSource="配置登记"`）；**不存在即阻断**，列出模板仓现有分支，**不静默回退**。
 2. 未登记：依次找 `develop` → `master` → `main`（精确、区分大小写；文案如 `按开发约定取模板 develop`）。
@@ -45,7 +45,7 @@ mcp_yunxiao_codeup_list_branches(repositoryId=<templateProjectId>, page=1, perPa
 ### 1.3 查代码组 / 查仓库 / 查仓库目录
 
 ```
-mcp_yunxiao_codeup_list_groups(search=<代码组名>)      # 代码组名格式见 org-reference §2
+mcp_yunxiao_codeup_list_groups(search=<代码组名>)      # 代码组名格式见 org-reference.md「项目命名」表
 mcp_yunxiao_codeup_search_repos(search=<仓库名>)        # 逐端
 mcp_yunxiao_codeup_get_repo(repositoryId=<命中项 id>)   # 仅当 search 命中时：取 httpUrlToRepo 与 defaultBranch
 ```
@@ -94,7 +94,7 @@ mcp_yunxiao_codeup_get_repo(repositoryId=<命中项 id>)   # 仅当 search 命�
 mcp_yunxiao_codeup_create_group(name=<组名格式展开值>, path=<同 name>, parentId=<留空＝组织根>)
 ```
 
-- `name` / `path` 均为 [`org-reference.md` §2](./org-reference.md) 的代码组名格式展开值（例 `CSXMY`）；**勿含 `/`**。
+- `name` / `path` 均为 [`org-reference.md`](./org-reference.md)「项目命名」表里的代码组名格式展开值（例 `CSXMY`）；**勿含 `/`**。
 - 已存在 ⇒ **复用**，`checks[]` 注明「复用」，不重复建。
 - 可见性沿用 `internal`（组织内公开）。
 
@@ -152,7 +152,7 @@ git clone -b <pin> <httpUrlToRepo> "<仓库目录>"      # 仓库目录 = <工�
 > 克隆之后的所有 git 调用（status / branch / checkout / add / commit / push / log）**必须显式带
 > `workingDirectory=<仓库目录>`**——不传时框架在项目工作区根执行，会报「不是 git 仓库」或操作到别的目录。
 
-- 目标目录是 [`org-reference.md` §2](./org-reference.md) 的仓库名格式展开值，与云端仓库名同源。
+- 目标目录是 [`org-reference.md`](./org-reference.md)「项目命名」表里的仓库名格式展开值，与云端仓库名同源。
 - **不做浅克隆**（保持模板默认行为）；**不内嵌凭据**（凭据由用户在外部环境配置，见 [`step6-push.md`](./step6-push.md)）。
 - 克隆失败 ⇒ 记 git **原文摘要**（脱敏）后写 `status="failed"`；**不自行删目录**（清理由用户在面板三选一决定，见 2.6）。
 - 若 git 留下 `.git/HEAD = ref: refs/heads/.invalid` 之类的残骸，属**已知现象**：如实报告，不要当作"已克隆"。
@@ -187,7 +187,7 @@ git clone -b <pin> <httpUrlToRepo> "<仓库目录>"      # 仓库目录 = <工�
 
 ### 2.7 占位符替换
 
-对**每个已克隆**的仓库执行"内容 + 文件/目录名"批量替换。规则表见 [`org-reference.md` §4](./org-reference.md)（`TJCES`→`{CODE}` / `Tjces`→`{Code}` / `tjces`→`{code}`，字面量、区分大小写、按 `From` 长度降序）。
+对**每个已克隆**的仓库执行"内容 + 文件/目录名"批量替换。规则表见 [`org-reference.md`](./org-reference.md) 的「占位符规则」表（`TJCES`→`{CODE}` / `Tjces`→`{Code}` / `tjces`→`{code}`，字面量、区分大小写、按 `From` 长度降序）。
 
 执行姿势（助手侧脚本，`RunPythonAsync`）：
 

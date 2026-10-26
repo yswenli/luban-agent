@@ -19,7 +19,7 @@ namespace LubanAgentCodex.Security;
 
 /// <summary>
 /// 云效连接配置读写门面：组织 ID 落 <see cref="YunxiaoApiOptions"/>（运行时即时生效）并持久化，
-/// PAT 落 <see cref="ICredentialStore"/>（PRD §3.7 / §4.9）。
+/// PAT 落 <see cref="ICredentialStore"/>。
 /// </summary>
 /// <remarks>
 /// <para>

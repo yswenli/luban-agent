@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： NewProjectService
 *创建时间：2026/10/16
-*描述：共享能力层实现（PRD §4.10.2）。向导面板与聊天入口共用同一实例。
+*描述：共享能力层实现。向导面板与聊天入口共用同一实例。
 *****************************************************************************/
 
 using System.Diagnostics;
@@ -41,7 +41,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 向导面板直接持有它，聊天路径（P6）经同一实例暴露，保证「同一个实例、零逻辑分叉」。
 /// </para>
 /// <para>
-/// <b>依赖解析（PRD §3.9 DI 硬约束）</b>：宿主容器里的工作区 / 会话 / 连接器服务
+/// <b>依赖解析（DI 硬约束）</b>：宿主容器里的工作区 / 会话 / 连接器服务
 /// 一律<b>按需解析</b>，<b>不</b>长期持有（Scoped 服务不得被单例提升）。
 /// </para>
 /// <para>
@@ -53,14 +53,14 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </remarks>
 public sealed class NewProjectService : INewProjectService
 {
-    /// <summary>英文缩写命名规范（PRD §4.3：<b>只允许小写字母 a-z</b>，不允许数字 / 大写 / 符号）。</summary>
+    /// <summary>英文缩写命名规范（<b>只允许小写字母 a-z</b>，不允许数字 / 大写 / 符号）。</summary>
     private static readonly Regex CodePattern = new("^[a-z]+$", RegexOptions.Compiled);
 
     /// <summary>云效仓库名规范（字母 / 数字 / 下划线 / 中划线 / 点，且以字母或数字开头）。</summary>
     private static readonly Regex RepositoryNamePattern = new("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.Compiled);
 
     /// <summary>
-    /// Step 3 执行续跑的最大轮数（§5.0 / §6.1.3）：<c>needsInput</c> 时把用户答复拼进下一轮同会话续跑；
+    /// Step 3 执行续跑的最大轮数：<c>needsInput</c> 时把用户答复拼进下一轮同会话续跑；
     /// 连续 <c>needsInput</c> 超过本上限即判失败，防止无限往返。
     /// </summary>
     private const int MaxRepositoryRounds = 3;
@@ -81,14 +81,14 @@ public sealed class NewProjectService : INewProjectService
     /// <summary>
     /// 最近一次 Step 7「准备（只读）」的读数（v0.3）：供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。
     /// </summary>
-    /// <remarks>随读随用、不落档案（§5.3）；<c>null</c>＝本次进程尚未跑过准备，面板应先调 <see cref="PreparePipelinesAsync"/>。</remarks>
+    /// <remarks>随读随用、不落档案；<c>null</c>＝本次进程尚未跑过准备，面板应先调 <see cref="PreparePipelinesAsync"/>。</remarks>
     private PipelinePrepareResult? _pipelinePrepareResult;
 
     /// <summary>
-    /// 最近一次 Step 3「准备（只读）」结论文件路径（执行续跑的<b>事实来源</b>，§5.2）。
+    /// 最近一次 Step 3「准备（只读）」结论文件路径（执行续跑的<b>事实来源</b>）。
     /// </summary>
     /// <remarks>
-    /// <b>为什么记住路径而不是取最新一份</b>：准备与执行共用 <c>results/step3-*.json</c> 命名（设计 §4.3 第 78 行），
+    /// <b>为什么记住路径而不是取最新一份</b>：准备与执行共用 <c>results/step3-*.json</c> 这套命名，
     /// 执行成功后再回取「最新一份」拿到的会是<b>执行</b>结论；把执行结论当准备结论下发会跑偏事实来源。
     /// 本字段跨调用有效；进程重启后为空，才回退到「取最新一份」（尽力而为）。
     /// </remarks>
@@ -275,7 +275,7 @@ public sealed class NewProjectService : INewProjectService
             }
 
             // 唯一性口径 ②：目标仓库目录已存在且非空——**只提示不拦截**：
-            // PRD §4.3 Step 3 要求「克隆前判断目标目录，非空时给复用已克隆 / 清空后重克隆 / 中止 三选一」，
+            // 克隆前必须判断目标目录：非空时给用户「复用已克隆 / 清空后重克隆 / 中止」三选一，
             // 该判断属于 Step 3；在 Step 1 硬拦截会把用户挡在本步并不负责的决策上（P2 冒烟缺陷）。
             if (CodePattern.IsMatch(trimmedCode))
             {
@@ -287,7 +287,7 @@ public sealed class NewProjectService : INewProjectService
                     {
                         if (Directory.Exists(repoDir) && Directory.EnumerateFileSystemEntries(repoDir).Any())
                             warnings.Add($"本地目录：{repoName} 已存在且非空；Step 3 克隆前会让你选择"
-                                         + "「复用已克隆 / 清空后重克隆 / 中止」（PRD §4.3 Step 3）。");
+                                         + "「复用已克隆 / 清空后重克隆 / 中止」。");
                     }
                     catch (Exception ex)
                     {
@@ -378,11 +378,11 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
 
-        // 面板事件回调不在框架的权限包裹范围内，此处显式进入本插件的权限环境（PRD §3.7）：
+        // 面板事件回调不在框架的权限包裹范围内，此处显式进入本插件的权限环境
         // 否则后续连接器 / 进程 / 凭据出口会按「宿主自身调用」放行，越界检查形同虚设。
         using var permissionScope = EnterPermissionScope();
 
-        // 依赖按需解析：不长期持有 scoped 服务（PRD §3.9 DI 硬约束）
+        // 依赖按需解析：不长期持有 scoped 服务（DI 硬约束）
         var workspaceManager = ResolveWorkspaceManager();
         var sessionManager = ResolveSessionManager();
         if (workspaceManager is null || sessionManager is null)
@@ -420,7 +420,8 @@ public sealed class NewProjectService : INewProjectService
                     $"复用已有工作区「{workspace.Name}」：{workspace.RootPath}（重跑幂等）", StepStatus.Succeeded, watch.Elapsed);
             }
 
-            // ── 2. 授权（必须显式调用以落库 IsAuthorized=true，见 PRD Step 2 P0 纠错）───────
+            // ── 2. 授权（必须显式调用以落库 IsAuthorized=true——只建工作区不写这个标记，
+            //        后续按「未授权」处理会直接卡住）───────
             watch = BeginOperation(Step, "工作区授权", "落库 IsAuthorized=true");
             if (!await workspaceManager.EnsureAuthorizedAsync(workspace))
             {
@@ -464,12 +465,12 @@ public sealed class NewProjectService : INewProjectService
             EndOperation(Step, "准备执行会话",
                 $"会话「{sessionTitle}」已就绪（{sessionId}）", StepStatus.Succeeded, watch.Elapsed);
 
-            // ── 5. 档案快照写入本工作区（PRD §4.3 Step 2 第 1 项）─────────────────────────
+            // ── 5. 档案快照写入本工作区 ─────────────────────────
             watch = BeginOperation(Step, "写入项目档案快照", SnapshotRelativePath);
             var snapshotPath = WriteSnapshot(workspace.RootPath, spec);
             EndOperation(Step, "写入项目档案快照", $"已写入 {snapshotPath}", StepStatus.Succeeded, watch.Elapsed);
 
-            // ── 6. 技能：把 newproject-* 装配到本工作区（§3.11 三件套）──────────────────
+            // ── 6. 技能：把 newproject-* 装配到本工作区 ──────────────────
             var manifest = ResolveManifest();
             var skills = manifest?.Skills ?? new List<SkillDefinition>();
             var mcps = manifest?.EnabledMcpServers.ToList() ?? new List<PluginMcpServerDeclaration>();
@@ -489,7 +490,7 @@ public sealed class NewProjectService : INewProjectService
                 $"{mounted} 个技能已写入 {Path.Combine(workspace.RootPath, ".luban-agent", "skills")}",
                 StepStatus.Succeeded, watch.Elapsed);
 
-            // ── 6b. 知识正文：把插件包 docs/ 复制进项目工作区（§4.2；覆盖式，不删用户补充）────
+            // ── 6b. 知识正文：把插件包 docs/ 复制进项目工作区（覆盖式，不删用户补充）────
             // 宿主不会自动铺 docs（TryWriteSkillFile 只处理技能单文件），故由插件自铺；
             // 目标目录与 StepPrompts.DocsDirectory 保持同一约定。
             watch = BeginOperation(Step, "铺装知识正文", @"docs\ → .luban-agent\plugin-newproject\docs");
@@ -510,11 +511,11 @@ public sealed class NewProjectService : INewProjectService
                     _host!.RegisterMcpServer(mcp.Name);
 
                 EndOperation(Step, "接通云效 MCP",
-                    $"已声明 {string.Join("/", mcps.Select(mcp => mcp.Name))}：该会话首次对话时注入（§3.11）",
+                    $"已声明 {string.Join("/", mcps.Select(mcp => mcp.Name))}：该会话首次对话时注入",
                     StepStatus.Succeeded, watch.Elapsed);
             }
 
-            // ── 8. 项目级 Agent：首次对话时由 EnsureRuntimeAsync 惰性创建（PRD Step 2 第 5 项）──
+            // ── 8. 项目级 Agent：首次对话时由 EnsureRuntimeAsync 惰性创建 ──
             Record(Step, "项目级 Agent",
                 "延迟到该会话首次对话时由 EnsureRuntimeAsync 惰性创建（本步无需触网）。", StepStatus.Succeeded, TimeSpan.Zero);
 
@@ -688,7 +689,7 @@ public sealed class NewProjectService : INewProjectService
             result.Errors.Add("建库计划为空：Step 1 至少要选择后端与管理端。");
 
         if (string.IsNullOrWhiteSpace(result.OrganizationId))
-            result.Errors.Add("未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。");
+            result.Errors.Add("未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备。");
 
         if (string.IsNullOrWhiteSpace(result.GroupName))
             result.Errors.Add("项目代码组名为空：请检查插件配置 groupNameFormat（默认 {CODE} 需能由项目缩写展开出非空名字）。");
@@ -726,7 +727,7 @@ public sealed class NewProjectService : INewProjectService
             var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 3, StepResultFile.PreparePhase);
             StepResultFile.EnsureDirectory(resultFile);
 
-            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出
             var startedAt = DateTime.UtcNow;
             var outcome = await CreateBridge()
                 .RunAsync(spec, StepPrompts.BuildRepositoryPreparePrompt(spec, plan, resultFile), resultFile, cancellationToken)
@@ -817,7 +818,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 回读「本次下发之后」产出的结论文件（时效口径，§6.1.3）。
+    /// 回读「本次下发之后」产出的结论文件。
     /// </summary>
     /// <remarks>
     /// <see cref="HostAssistantBridge.RunAsync"/> 只按传入路径回读、<b>不做</b>修改时间过滤；助手写结论文件用的是
@@ -873,11 +874,11 @@ public sealed class NewProjectService : INewProjectService
     /// <remarks>
     /// <para><b>执行形态（路线 ② · v0.3）</b>：Step 3 的「准备（只读）」由 <see cref="PrecheckRepositoriesAsync"/> 产出结论文件；
     /// 本方法是用户确认后的<b>执行续跑</b>——把确认后的建库计划 + 准备结论文件路径下发，助手在<b>同一会话</b>里
-    /// 建组 / 建库 / 克隆 / 替换占位符，插件再回读 <c>artifacts[]</c> 落账 + 本地复核（§5.2 / §6.1.4）。</para>
-    /// <para><b>needsInput 往返（§6.1.3）</b>：目录非空等助手无法自行判定的情形，助手写 <c>status=needsInput</c> +
+    /// 建组 / 建库 / 克隆 / 替换占位符，插件再回读 <c>artifacts[]</c> 落账 + 本地复核。</para>
+    /// <para><b>needsInput 往返</b>：目录非空等助手无法自行判定的情形，助手写 <c>status=needsInput</c> +
     /// <c>inputs[]</c>；插件就 <c>id=clone-conflict</c> 征询用户三选一，把答复拼进下一轮执行续跑（最多 <see cref="MaxRepositoryRounds"/> 轮）。
     /// 「清空后重克隆」的目录删除由<b>助手</b>执行（C5′），插件不再介入。</para>
-    /// <para><b>重跑联动（§6.6 / C7′）</b>：通过后作废上一轮 Step 5 编译结论与 Step 7 流水线结论——本地代码与仓库地址都可能已变，
+    /// <para><b>重跑联动</b>：通过后作废上一轮 Step 5 编译结论与 Step 7 流水线结论——本地代码与仓库地址都可能已变，
     /// 旧结论会误放行 / 误指向。</para>
     /// </remarks>
     public async Task<StepResult> CreateRepositoriesAsync(CancellationToken cancellationToken = default)
@@ -920,12 +921,12 @@ public sealed class NewProjectService : INewProjectService
         // 执行续跑仍要显式把组织 ID 下发（旧档案可能没写过；提示词拿不到值助手就会传空串）。
         if (!EnsureOrganizationId(spec))
         {
-            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
 
-        // 执行续跑以「准备（只读）」结论为事实来源（§5.2）：优先用 PrecheckRepositoriesAsync 记下的那一份；
+        // 执行续跑以「准备（只读）」结论为事实来源：优先用 PrecheckRepositoriesAsync 记下的那一份；
         // 进程重启导致字段为空时，才回退取最新一份 step3-prepare-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
         // 方案 A：准备结论与执行结论分名，绝不能再回退到最新一份执行结论（旧执行结论会被当成本次预检事实）。
         var prepareResultFile = !string.IsNullOrWhiteSpace(_repositoryPrepareResultFile)
@@ -954,7 +955,7 @@ public sealed class NewProjectService : INewProjectService
             HostAssistantBridge.TurnOutcome? lastOutcome = null;
             var rounds = 0;
 
-            // 一次只读准备下发 + 用户确认后同会话执行续跑：needsInput 时把答复拼进下一轮（§6.1.3）
+            // 一次只读准备下发 + 用户确认后同会话执行续跑：needsInput 时把答复拼进下一轮
             while (rounds < MaxRepositoryRounds)
             {
                 rounds++;
@@ -964,7 +965,7 @@ public sealed class NewProjectService : INewProjectService
                 StepResultFile.EnsureDirectory(resultFile);
                 lastResultFile = resultFile;
 
-                // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+                // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出
                 var startedAt = DateTime.UtcNow;
                 var outcome = await CreateBridge()
                     .RunAsync(spec,
@@ -982,7 +983,7 @@ public sealed class NewProjectService : INewProjectService
                 if (status != StepReportStatus.NeedsInput)
                     break;
 
-                // needsInput：只认「克隆冲突三选一」这一项（§6.3）
+                // needsInput：只认「克隆冲突三选一」这一项
                 var input = report!.Inputs.FirstOrDefault(one =>
                     string.Equals(one.Id?.Trim(), "clone-conflict", StringComparison.OrdinalIgnoreCase));
                 if (input is null)
@@ -1017,7 +1018,7 @@ public sealed class NewProjectService : INewProjectService
 
             if (failReason is null)
             {
-                // §6.1.4：对结论自报的产物做插件侧可独立核对项（目录 / .git / refs / 占位符残余）
+                // 对结论自报的产物做插件侧可独立核对项（目录 / .git / refs / 占位符残余）
                 localIssues = StepLocalVerifier.VerifyRepositories(report!, spec.Ends);
                 (ok, _, message) = StepReportEvaluator.EvaluateRepositorySetup(
                     report, spec.Ends, lastOutcome!.Errors, localIssues, requireCloned: true);
@@ -1028,11 +1029,11 @@ public sealed class NewProjectService : INewProjectService
             {
                 artifacts = ApplyRepositoryArtifacts(spec, plan, report!);
 
-                // §6.6 / C7′：本步重跑成功＝本地代码可能已随模板 / pin / 占位符替换而变，作废上一轮编译结论
+                // 本步重跑成功＝本地代码可能已随模板 / pin / 占位符替换而变，作废上一轮编译结论
                 InvalidateBuildConclusion(spec);
 
                 // 同理作废上一轮流水线结论：YAML 里写死了代码源地址与分支，仓库改名 / 重建后旧结论是误导。
-                // 只清结论，不删云效上的流水线本体（远端产物一律不自动删除，PRD §4.5）。
+                // 只清结论，不删云效上的流水线本体（远端产物一律不自动删除）。
                 InvalidatePipelineConclusion(spec);
 
                 spec.AdvanceTo(WizardStep.Database);
@@ -1075,7 +1076,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 就 <c>inputs[]</c> 里的「克隆冲突三选一」逐端征询用户，把答复拼进 <paramref name="resolvedInputs"/>（§6.1.3 / §6.3）。
+    /// 就 <c>inputs[]</c> 里的「克隆冲突三选一」逐端征询用户，把答复拼进 <paramref name="resolvedInputs"/>。
     /// </summary>
     /// <param name="plan">本次建库计划（按端）。</param>
     /// <param name="input">助手给出的 <c>id=clone-conflict</c> 交互项。</param>
@@ -1121,7 +1122,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案（§5.2 末段 + §6.1.1）：<c>kind=group</c> 登记代码组产物，
+    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案：<c>kind=group</c> 登记代码组产物，
     /// <c>kind=repository</c> 逐端回写仓库事实并登记远端产物。
     /// </summary>
     /// <param name="spec">项目档案。</param>
@@ -1538,7 +1539,7 @@ public sealed class NewProjectService : INewProjectService
     /// <inheritdoc />
     /// <remarks>
     /// <para><b>执行形态（路线 ② · v0.3）</b>：分支整理 / 暂存 / 提交 / 推送全部由助手用<b>框架 git 工具组</b>完成，
-    /// 插件只把「待推送的端」下发、回读结论、做插件侧本地复核（§5.3 / §6.1.4）。</para>
+    /// 插件只把「待推送的端」下发、回读结论、做插件侧本地复核。</para>
     /// <para><b>凭据由用户在外部环境配置</b>（credential helper / 系统凭据管理器）：插件不提供凭据通路、不拼鉴权 URL，
     /// 也不再有 <c>CodeupClient.PushAsync</c> 直连。</para>
     /// <para><b>限流退避</b>：线性 10s / 20s / 30s、最多 3 次（原 <c>PushRetryPolicy</c> 口径迁 <c>docs/step6-push.md</c>），
@@ -1556,7 +1557,7 @@ public sealed class NewProjectService : INewProjectService
             return StepResult.Fail(Step, "尚未建立项目档案，请先在 Step 1 填写项目基本信息。");
         }
 
-        // 编译失败阻断 Step 6（PRD §4.3 Step 5 / §4.7 / 设计 §6.7 C7′）：向导的步骤顺序只是界面约束——常驻「重新推送」、
+        // 编译失败阻断 Step 6：向导的步骤顺序只是界面约束——常驻「重新推送」、
         // 步骤条回退、聊天入口都能绕开，故此处按档案事实做硬校验；判据已改为读 Step 5 最近一份结论文件
         // （见 StepGate.CanPush），StepStates 降级为仅界面进度显示。
         // 位置在前置检查之前：顺序约束比参数齐备更根本，报错先给最该修的那一条。
@@ -1603,7 +1604,7 @@ public sealed class NewProjectService : INewProjectService
             var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 6);
             StepResultFile.EnsureDirectory(resultFile);
 
-            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出
             var startedAt = DateTime.UtcNow;
             var outcome = await CreateBridge()
                 .RunAsync(spec, StepPrompts.BuildPushPrompt(spec, targets, resultFile), resultFile, cancellationToken)
@@ -1626,7 +1627,7 @@ public sealed class NewProjectService : INewProjectService
             }
             else
             {
-                // §6.1.4：核对远端跟踪分支 refs/remotes/origin/<pushBranch> 与自报 commit id 是否一致
+                // 核对远端跟踪分支 refs/remotes/origin/<pushBranch> 与自报 commit id 是否一致
                 localIssues = StepLocalVerifier.VerifyPush(report, spec.Ends);
                 (ok, _, message) = StepReportEvaluator.EvaluatePush(report, spec.Ends, outcome.Errors, localIssues);
             }
@@ -1731,7 +1732,7 @@ public sealed class NewProjectService : INewProjectService
         // 流水线 MCP（flow_*）同样要求组织 ID：旧档案没写过时按当前连接配置回填，仍空则不下发。
         if (!EnsureOrganizationId(spec))
         {
-            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备。";
             Record(Step, Action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return CachePrepare(new PipelinePrepareResult { Errors = new[] { Tip }, Message = Tip });
         }
@@ -1761,7 +1762,7 @@ public sealed class NewProjectService : INewProjectService
             var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 7);
             StepResultFile.EnsureDirectory(resultFile);
 
-            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出
             var startedAt = DateTime.UtcNow;
             var outcome = await CreateBridge()
                 .RunAsync(spec, StepPrompts.BuildPipelinePreparePrompt(spec, targets, resultFile), resultFile, cancellationToken)
@@ -1948,7 +1949,7 @@ public sealed class NewProjectService : INewProjectService
 
         if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
             throw new InvalidOperationException(
-                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试（PRD §4.9）。");
+                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试。");
 
         var groups = await flow.ListHostGroupsAsync(organizationId: null, cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("云效返回了空响应，未读到部署主机组列表（请稍后重试）。");
@@ -1989,7 +1990,7 @@ public sealed class NewProjectService : INewProjectService
 
         if (string.IsNullOrWhiteSpace(await TryGetPatAsync(cancellationToken)))
             throw new InvalidOperationException(
-                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试（PRD §4.9）。");
+                "未配置云效个人令牌（PAT）：请到 codex「设置 → 云效连接」填写后重试。");
 
         var detail = await flow.GetHostGroupAsync(hostGroupId, organizationId: null, cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException($"云效未返回主机组 {hostGroupId} 的详情（该主机组可能已被删除）。");
@@ -2007,13 +2008,13 @@ public sealed class NewProjectService : INewProjectService
 
     /// <summary>
     /// Step 7 执行体（v0.3 助手驱动）：把「准备结论 + 用户确认（含微调与部署目标）」下发，助手创建 / 覆盖更新云效流水线，
-    /// 插件回读结论、做本地复核与判定，再把流水线事实落档案（§5.3 / §6.1.4）。
+    /// 插件回读结论、做本地复核与判定，再把流水线事实落档案。
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>为什么不再由插件渲染 YAML、也不再直连 CodeupClient</b>：YAML 正文与待绑定清单由随包
     /// <c>docs/pipeline-*.yml.md</c> 交给助手按项目值渲染并写进结论文件（C10′）；云效写入也由助手用框架 MCP 工具组完成，
-    /// 插件只负责判定与落账（§6.1.1）。
+    /// 插件只负责判定与落账。
     /// </para>
     /// <para>
     /// <b>两条入口共用本执行体</b>：<paramref name="update"/><c>=false</c> 为创建（要求 Step 6 已成功，
@@ -2025,7 +2026,7 @@ public sealed class NewProjectService : INewProjectService
     /// </para>
     /// <para>
     /// <b>幂等与不自动运行</b>：创建前按流水线名精确检索、命中同名即覆盖更新本次 YAML，全部由助手按 docs 执行
-    /// （插件不重试、不检索）；本步<b>不发</b> <c>flow_run_pipeline</c>（PRD §6 #14）。
+    /// （插件不重试、不检索）；本步只创建或更新流水线定义，<b>不</b>触发 <c>flow_run_pipeline</c> 跑一次构建。
     /// </para>
     /// </remarks>
     /// <param name="update">是否为「覆盖更新」口径。</param>
@@ -2072,12 +2073,12 @@ public sealed class NewProjectService : INewProjectService
         // 流水线 MCP（flow_*）同样要求组织 ID：旧档案没写过时按当前连接配置回填，仍空则不下发。
         if (!EnsureOrganizationId(spec))
         {
-            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备（PRD §4.9）。";
+            const string Tip = "未配置云效组织 ID：请到 codex「设置 → 云效连接」填写后重新准备。";
             Record(Step, action, Tip, StepStatus.Failed, TimeSpan.Zero);
             return StepResult.Fail(Step, Tip);
         }
 
-        // 执行续跑以「准备（只读）」结论为事实来源（§5.3）：优先用 PreparePipelinesAsync 记下的那一份；
+        // 执行续跑以「准备（只读）」结论为事实来源：优先用 PreparePipelinesAsync 记下的那一份；
         // 进程重启导致字段为空时，才回退取最新一份 step7-*.json（尽力而为）。缺它就不下发，引导用户先跑准备。
         var prepareResultFile = !string.IsNullOrWhiteSpace(_pipelinePrepareResultFile)
                                 && File.Exists(_pipelinePrepareResultFile)
@@ -2117,7 +2118,7 @@ public sealed class NewProjectService : INewProjectService
             var resultFile = StepResultFile.BuildPath(spec.LocalPath!, 7);
             StepResultFile.EnsureDirectory(resultFile);
 
-            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出（§6.1.3）
+            // 时效基线：只有「本次下发之后」写出的结论文件才算本次产出
             var startedAt = DateTime.UtcNow;
             var outcome = await CreateBridge()
                 .RunAsync(spec,
@@ -2143,7 +2144,7 @@ public sealed class NewProjectService : INewProjectService
             }
             else
             {
-                // §6.1.4：流水线在云效远端，无本地可独立核对的证据，只取一条如实的残余风险说明（不作为失败依据）
+                // 流水线在云效远端，无本地可独立核对的证据，只取一条如实的残余风险说明（不作为失败依据）
                 localIssues = StepLocalVerifier.PipelineResidualNotes(report, spec.Ends);
                 (ok, _, message) = StepReportEvaluator.EvaluatePipeline(report, spec.Ends, outcome.Errors);
             }
@@ -2188,7 +2189,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案（§5.3 + §6.1.1）：逐端 <c>kind=pipeline</c> 回写流水线事实并登记远端产物。
+    /// 把执行续跑结论的 <c>artifacts[]</c> 回写档案：逐端 <c>kind=pipeline</c> 回写流水线事实并登记远端产物。
     /// </summary>
     /// <param name="spec">项目档案。</param>
     /// <param name="targets">本次要建流水线的端（已克隆）。</param>
@@ -2280,7 +2281,7 @@ public sealed class NewProjectService : INewProjectService
         var removedSkills = 0;
         var removedMcps = 0;
 
-        // ── 1. 显式删除本插件写入的技能与 MCP 文件（PRD §3.5 卸载语义 / §4.7）──────────
+        // ── 1. 显式删除本插件写入的技能与 MCP 文件 ──────────
         //     必须排在注销工作区之前：宿主删技能时优先按本进程记录的技能根目录定位，记录为空
         //     （重启后再清理）才退化到「当前工作区」——Step 2 刚把项目工作区置为当前，此刻定位最准；
         //     先注销工作区会切走当前工作区，反而让退化路径指向错误目录。
@@ -2299,7 +2300,7 @@ public sealed class NewProjectService : INewProjectService
             }
         }
 
-        // ── 2. 注销本项目工作区（逻辑删；**不删** LocalPath 目录，PRD §4.7 / Step 2 陷阱②）──
+        // ── 2. 注销本项目工作区（逻辑删；**不删** LocalPath 目录）──
         var unregistered = false;
         var workspaceId = spec?.WorkspaceId;
         if (!string.IsNullOrWhiteSpace(workspaceId))
@@ -2318,7 +2319,7 @@ public sealed class NewProjectService : INewProjectService
             }
         }
 
-        // ── 3. 远端产物一律不自动删除，只列孤儿清单（PRD §4.7 / §6 #15）────────────────
+        // ── 3. 远端产物一律不自动删除，只列孤儿清单 ────────────────
         var orphans = spec?.RemoteArtifacts.Count ?? 0;
 
         // ── 4. 清空档案与操作记录（等价于「标记未完成」：不留误导性进度）────────────────
@@ -2331,7 +2332,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 记一条操作记录（右侧时间线数据源，PRD §4.6）。
+    /// 记一条操作记录（右侧时间线数据源）。
     /// </summary>
     /// <param name="step">步骤。</param>
     /// <param name="action">动作标题。</param>
@@ -2360,7 +2361,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 档案快照在工作区内的相对路径（PRD §4.3 Step 2 第 1 项）。
+    /// 档案快照在工作区内的相对路径。
     /// </summary>
     internal static string SnapshotRelativePath => Path.Combine(".luban-agent", "plugin-newproject", "spec.json");
 
@@ -2375,7 +2376,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 按需解析当前用户的工作区管理器（宿主 scoped 服务的唯一合法通路，PRD §3.9）。
+    /// 按需解析当前用户的工作区管理器（宿主 scoped 服务的唯一合法通路）。
     /// </summary>
     /// <remarks>
     /// <c>IWorkspaceManager</c> / <c>ISessionManager</c> 在宿主里是 <b>scoped 转发</b>（按用户桶隔离），
@@ -2433,7 +2434,7 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="workspaceRoot">项目工作区根目录。</param>
     /// <returns>已复制份数 + 目标目录。</returns>
     /// <remarks>
-    /// <para>覆盖式复制：同名文件以插件包为准（升级即生效），但**不删除**用户手工补充的文件（§4.2）。</para>
+    /// <para>覆盖式复制：同名文件以插件包为准（升级即生效），但**不删除**用户手工补充的文件。</para>
     /// <para>
     /// <b>方案 A</b>：插件包缺 <c>docs/</c> 或复制失败一律<b>抛异常</b>（Step 2 按失败呈现），不再静默 Skipped——
     /// 知识正文缺失时后续各步的助手只能凭记忆执行，必须在本步就暴露。
@@ -2563,7 +2564,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 记一条「进行中」操作（PRD §4.3 Step 2：每条初始化动作实时呈现「进行中 → 成功/失败」）。
+    /// 记一条「进行中」操作（每条初始化动作实时呈现「进行中 → 成功/失败」）。
     /// </summary>
     /// <param name="step">步骤。</param>
     /// <param name="action">动作标题。</param>
@@ -2719,7 +2720,7 @@ public sealed class NewProjectService : INewProjectService
     /// <remarks>
     /// 与 <see cref="InvalidateBuildConclusion"/> 同源理由：流水线 YAML 里写死了代码源地址与分支，
     /// 仓库一旦重建 / 改名，旧结论就是误导（面板会继续回显一条指向旧仓库的流水线链接）。
-    /// 本方法<b>只清结论</b>，不动云效上的流水线本体——远端产物一律不自动删除（PRD §4.5）。
+    /// 本方法<b>只清结论</b>，不动云效上的流水线本体——远端产物一律不自动删除。
     /// </remarks>
     /// <param name="spec">项目档案。</param>
     private void InvalidatePipelineConclusion(ProjectSpec spec)
@@ -2803,7 +2804,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 就「目标目录非空」征询用户三选一（PRD §4.3 Step 3）。
+    /// 就「目标目录非空」征询用户三选一。
     /// </summary>
     /// <param name="repository">按端仓库信息。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -2956,7 +2957,7 @@ public sealed class NewProjectService : INewProjectService
         _ => end.ToString()
     };
 
-    /// <summary>是否为受支持的可见性取值（PRD §4.3 Step 3 确认区只提供这两档）。</summary>
+    /// <summary>是否为受支持的可见性取值（确认区只提供这两档）。</summary>
     /// <param name="visibility">可见性。</param>
     /// <returns>是否受支持。</returns>
     private static bool IsSupportedVisibility(string? visibility)

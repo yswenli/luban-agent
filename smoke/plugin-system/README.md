@@ -35,12 +35,12 @@ pwsh -File luban-agent\smoke\plugin-system\build.ps1 -SkipCodex
 
 | 场景 | 命令 | 断言要点 |
 |------|------|----------|
-| 正向 | `dotnet run --project framework-harness -- unload <artifacts/plugins>` | 启用 → 停用后 `RequiresRestart=false`：ALC/实例/程序集/类型弱引用全部死亡（§3.12 第 7 步真回收）；侧栏/面板工厂/Skill/MCP 全部精确注销；无残留 UI 回调 |
+| 正向 | `dotnet run --project framework-harness -- unload <artifacts/plugins>` | 启用 → 停用后 `RequiresRestart=false`：ALC/实例/程序集/类型弱引用全部死亡（卸载流程走到最后一步的真回收断言）；侧栏/面板工厂/Skill/MCP 全部精确注销；无残留 UI 回调 |
 | 反向 | `... --token <artifacts/plugins>` | 宿主故意保留 UI 委托 → 卸载被**检出失败**并降级为 `Disabled + RequiresRestart=true`（不静默通过）；`PostToUi` 失效令牌拦下卸载后追补的回调，副作用未发生 |
 | 二分定位 | `... --unload <artifacts/plugins-timer>` | 定时器变体走正向模式仍能真回收 → 排除「周期性 UI 投递钉住 ALC」 |
 
 三场景均为「启用 → 停用 → 二次启用 → 二次停用」，覆盖可重复装载。
-`com.demo.hello` 的 `permissions` 故意写成数组简写的**裸维度** `["filesystem:workspace","network"]`，用于覆盖 §3.7「裸维度 ≡ 通配、声明期放行 + 记警告、运行期以宿主白名单为上限」这条路径。
+`com.demo.hello` 的 `permissions` 故意写成数组简写的**裸维度** `["filesystem:workspace","network"]`，用于覆盖「裸维度 ≡ 通配、声明期放行 + 记警告、运行期以宿主白名单为上限」这条路径。
 
 ## 3. codex 宿主手工回归（M2 + M3 + 问题 C）
 
@@ -59,13 +59,15 @@ pwsh -File luban-agent\smoke\plugin-system\build.ps1 -SkipCodex
 
 已知限制：codex 侧无自动化（app 无测试工程），只能按上表手工回归；`logs/warn.txt` 仅在产生 warn 级条目时才写入/更新时间戳，故「时间戳未变」即「本次零警告」。
 
-## 4. 与需求文档的对应
+## 4. 每个冒烟资产守的是哪条要求
 
-| 资产 | PRD 章节 |
-|------|----------|
-| harness 七步卸载 / 降级 / 弱引用断言 | §3.12、§3.12.5 |
-| `PostToUi` 失效令牌 | §6 #22 |
-| 三条 Skill 通道 + 工作区落盘 + 会话回放 | §3.11、§4.10 |
-| 权限声明（裸维度 ≡ 通配、白名单为上限） | §3.7 |
-| codex 侧栏 / 内容区 / 插件管理器 | §3.4、§3.9 |
-| M1 ~ M3 验收 | §5 |
+下表把资产还原成「它在验证什么」，便于脱离设计文档单独阅读（可勾选的断言与证据见上面第 2、3 节）。
+
+| 资产 | 它要保住的那条要求 |
+|------|--------------------|
+| harness 七步卸载 / 降级 / 弱引用断言 | 卸载必须逐级走完并逐步断言：任一步不过要如实<b>检出失败</b>并降级为 `Disabled + RequiresRestart=true`，不得静默通过；真正到位时 ALC / 实例 / 程序集 / 类型的弱引用必须全部死亡 |
+| `PostToUi` 失效令牌 | UI 投递令牌在卸载完成的那一刻必须失效：卸载后追补的回调一律不得执行，副作用不得发生 |
+| 三条 Skill 通道 + 工作区落盘 + 会话回放 | 清单声明、运行期贡献、仅元信息三种技能来源都要落到工作区 `.luban-agent/skills/`，并在每次会话构建（含工作区切换）时补齐缺失的技能 |
+| 权限声明（裸维度 ≡ 通配、白名单为上限） | 权限写成裸维度时按通配处理：声明期放行并记警告，运行期仍以宿主白名单为上限，不得越界 |
+| codex 侧栏 / 内容区 / 插件管理器 | codex 宿主的侧栏入口、内容区挂载与插件管理窗口（应用级插件的安装 / 启用 / 停用 / 升级 / 卸载）三条 UI 通路都可用且工程序集可被干净卸载 |
+| M1 ~ M3 验收 | M1 框架侧卸载能力见「framework-harness 三场景」的自动断言；M2 codex 宿主集成与 M3 凭据基线见「codex 宿主手工回归」清单 |

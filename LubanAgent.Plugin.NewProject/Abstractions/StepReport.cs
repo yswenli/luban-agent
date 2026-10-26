@@ -98,11 +98,11 @@ public sealed class StepReport
     /// <summary>逐项检查结论（Step 5 为逐端结论）。</summary>
     public List<StepReportCheck> Checks { get; set; } = new();
 
-    /// <summary>需要用户补充的交互项（仅 <c>status=needsInput</c> 时非空，见 §6.3）。</summary>
+    /// <summary>需要用户补充的交互项（仅 <c>status=needsInput</c> 时非空）。</summary>
     public List<StepReportInput> Inputs { get; set; } = new();
 
     /// <summary>
-    /// 产物账目（v0.3）：<b>唯一的面板数据源 + 落账来源</b>（C11′，见 §6.1.1 映射表）。
+    /// 产物账目（v0.3）：<b>唯一的面板数据源 + 落账来源</b>。
     /// </summary>
     public List<StepReportArtifact> Artifacts { get; set; } = new();
 
@@ -264,9 +264,9 @@ public sealed class RepositoryArtifactExtra : ArtifactExtra
     /// 本次占位符替换<b>实际使用的来源令牌</b>（如 <c>["TJCES","Tjces","tjces"]</c>）。
     /// </summary>
     /// <remarks>
-    /// <b>为什么由助手给出</b>：占位符规则已迁入 <c>docs/step3-repositories.md</c>，插件不再持有规则表（§4.4 瘦身），
+    /// <b>为什么由助手给出</b>：占位符规则已迁入 <c>docs/step3-repositories.md</c>，插件不再持有规则表，
     /// 故插件无法自行推导令牌。助手把"我替换了哪些来源令牌"写进这里，<c>StepLocalVerifier</c> 据此对本地文件
-    /// 独立再扫一遍"残余命中 = 0"——令牌集合虽为自报，但"替换是否真的生效"是插件可独立核对的证据（§6.1.4）。
+    /// 独立再扫一遍"残余命中 = 0"——令牌集合虽为自报，但"替换是否真的生效"是插件可独立核对的证据。
     /// </remarks>
     public List<string> PlaceholderSources { get; set; } = new();
 
@@ -297,7 +297,7 @@ public sealed class PipelineArtifactExtra : ArtifactExtra
 }
 
 /// <summary>
-/// 结论文件 <c>inputs[]</c> 的单个交互项（v0.3，仅 <c>status=needsInput</c> 时非空，见 §6.3）。
+/// 结论文件 <c>inputs[]</c> 的单个交互项（v0.3，仅 <c>status=needsInput</c> 时非空）。
 /// </summary>
 public sealed class StepReportInput
 {

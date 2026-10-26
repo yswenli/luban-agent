@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： PipelinePreview
 *创建时间：2026/10/22
-*描述：Step 7 流水线预览（PRD §4.3 Step 7 v0.30）：建之前把将提交的新版 YAML 摊给用户看，并支持手工微调
+*描述：Step 7 流水线预览：建之前把将提交的新版 YAML 摊给用户看，并支持手工微调
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
@@ -16,7 +16,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// <para>
 /// <b>为什么要预览</b>：docs 里的模板是与企服版语义对齐后<b>重写</b>的新版 YAML（云效只收 <c>stages:</c> 顶层形态），
 /// 其中的步骤参数键名 / 构建集群等仍需真机校正。让用户在建之前就能看到原文，比「建完再发现不对」可省一次
-/// 远端资源往返（远端产物一律不自动删除，PRD §4.5）。
+/// 远端资源往返（远端产物一律不自动删除）。
 /// </para>
 /// <para>
 /// 预览口径与创建口径<b>同源</b>：预览就是助手只读准备阶段产出的结论文件

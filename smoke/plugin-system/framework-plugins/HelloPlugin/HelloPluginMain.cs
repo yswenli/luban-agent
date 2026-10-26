@@ -21,7 +21,7 @@ public sealed class HelloPluginMain : PluginBase
     {
         host.Log("HelloPlugin 初始化");
 
-        // ① 排一个 UI 回调，随后立即卸载：断言其副作用不再发生（PRD §3.12.5 v0.18）
+        // ① 排一个 UI 回调，随后立即卸载：断言其副作用不再发生
         //    副作用写进程级环境变量，便于跨 ALC 观测。
         PostToUi(() =>
         {

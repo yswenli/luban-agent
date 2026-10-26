@@ -59,7 +59,7 @@
                 </ListBox>
             </StackPanel>
 
-            <!-- 插件贡献的侧栏入口（PRD §3.2 uiContributions）：无贡献时整块隐藏 -->
+            <!-- 插件贡献的侧栏入口（uiContributions）：无贡献时整块隐藏 -->
             <StackPanel Grid.Row="3" Name="PluginSection" Margin="0,8,0,0" IsVisible="False">
                 <TextBlock Text="插件"
                            FontSize="11"
@@ -153,7 +153,7 @@
                             <TextBlock Text="设置" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <!-- 插件管理入口（应用级插件，PRD §3.9） -->
+                    <!-- 插件管理入口：应用级插件的安装 / 启用 / 停用 / 升级 / 卸载 -->
                     <Button Name="PluginManageBtn"
                             FontSize="12"
                             Padding="8,6"

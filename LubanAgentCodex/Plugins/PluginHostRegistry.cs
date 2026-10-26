@@ -23,7 +23,7 @@ namespace LubanAgentCodex.Plugins;
 /// 刻意<b>不引用任何 UI 类型</b>，便于单测；UI 挂载由 <see cref="CodexPluginHost"/> 通知主窗口完成。
 /// </para>
 /// <para>
-/// 键统一使用 <c>entryId</c>（PRD §3.2：侧栏条目 id 同时是面板注册键）。框架
+/// 键统一使用 <c>entryId</c>（侧栏条目 id 同时是面板注册键）。框架
 /// <c>PluginHostScope</c> 在 <c>UnregisterPanel</c> 时只传 <c>entryId</c>，故跨插件同名条目按
 /// 「后注册者胜出」处理并记警告——插件应保证 id 全局唯一。
 /// </para>
@@ -237,7 +237,7 @@ public sealed class PluginHostRegistry
     /// </summary>
     /// <remarks>
     /// 清单声明的技能可由 <c>plugin.json</c> 随时重建，而运行期贡献的技能只存在于插件代码中，
-    /// 宿主必须记账才能在会话构建（含工作区切换）时补齐（PRD §3.11「回放」）。
+    /// 宿主必须记账，才能在会话构建（含工作区切换）时按记账把缺失的技能重新补齐（即「回放」）。
     /// 定义按值快照，避免插件复用 / 改写同一实例导致回放内容漂移。
     /// </remarks>
     /// <param name="definition">技能定义。</param>

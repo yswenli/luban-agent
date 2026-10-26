@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Harness;
 
 /// <summary>
-/// M1 插件体系冒烟测试宿主（PRD §3.4 / §3.12 / §3.12.5）。
+/// M1 插件体系冒烟测试宿主。
 /// </summary>
 /// <remarks>
 /// 两种模式：
@@ -17,7 +17,7 @@ namespace Harness;
 /// 卸载被<b>检出失败</b>并降级（Disabled + RequiresRestart=true），而不是静默通过；
 /// 同时断言 <c>PostToUi</c> 失效令牌拦截了卸载后追补的回调。</item>
 /// <item><c>unload -- &lt;plugins-timer&gt;</c> —— 二分定位：把「周期 PostToUi 定时器」变体插件跑正向模式，
-/// 用来排除「定时器钉住 ALC」这一嫌疑（见 README §2）。</item>
+/// 用来排除「定时器钉住 ALC」这一嫌疑（对照 README「framework-harness 三场景」表中的二分定位行）。</item>
 /// </list>
 /// </remarks>
 internal static class Program
@@ -100,7 +100,7 @@ internal static class Program
         Check(failures, testHost.Skills.Count == 0, $"【第 3 步】全部 Skill 已反注册（实际 [{string.Join(",", testHost.Skills)}]）");
         Check(failures, testHost.McpServers.Count == 0, $"【第 3 步】MCP 已反注册（实际 [{string.Join(",", testHost.McpServers)}]）");
 
-        // ── UI 投递令牌（PRD §3.12.5 v0.18）──
+        // ── UI 投递令牌：令牌必须在卸载完成时失效，卸载后追补的回调一律不得执行 ──
         var flushed = testHost.FlushUi();
         var leaked = Environment.GetEnvironmentVariable("HELLO_PLUGIN_UI_CALLBACK");
 

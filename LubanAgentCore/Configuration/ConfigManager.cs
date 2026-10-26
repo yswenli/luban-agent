@@ -304,7 +304,7 @@ public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
     /// 外部集成配置与凭据（云效 PAT / 组织 ID 等），键由调用方归一化。
     /// </summary>
     /// <remarks>
-    /// PRD §4.9.3：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线）。
+    /// 凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线）。
     /// </remarks>
     public IReadOnlyDictionary<string, string> Integrations => _config.Integrations;
 

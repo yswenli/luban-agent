@@ -19,7 +19,7 @@ namespace LubanAgent.Plugin.NewProject.Configuration;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 取值顺序（PRD §4.5 的「来自插件配置」）：
+/// 取值顺序（面板上标注「来自插件配置」的那些值都按此顺序取）：
 /// ① 包内 <c>newproject.settings.json</c> 默认值（随插件包分发，现场改不需要重发插件时可用）
 /// ② 宿主配置节点覆盖（<c>IPluginHost.GetConfig</c>，P2 起接入）。
 /// </para>
@@ -40,10 +40,10 @@ namespace LubanAgent.Plugin.NewProject.Configuration;
 /// </remarks>
 public sealed class NewProjectSettings
 {
-    /// <summary>默认可见性（PRD §4.5：默认＝组织内公开）。</summary>
+    /// <summary>默认可见性（默认＝组织内公开）。</summary>
     public string DefaultVisibility { get; set; } = "internal";
 
-    /// <summary>Step 6 统一推送的分支（PRD §6 #17；v0.28 起默认 <c>develop</c>，与 Step 3 克隆 pin 的择优结果对齐）。</summary>
+    /// <summary>Step 6 统一推送的分支（v0.28 起默认 <c>develop</c>，与 Step 3 克隆 pin 的择优结果对齐）。</summary>
     /// <remarks>
     /// 该值同时用作云效建仓的默认分支（<c>DefaultBranch</c>），故 Step 3 与 Step 6 口径一致；
     /// 这里的默认值只是<b>兜底</b>——正常路径取包内 <c>newproject.settings.json</c>（同样是 <c>develop</c>），

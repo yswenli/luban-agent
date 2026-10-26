@@ -4,13 +4,13 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： ProjectSpec
 *创建时间：2026/10/16
-*描述：新建项目「项目档案」与相关模型（PRD §4.5）
+*描述：新建项目「项目档案」与相关模型
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
 
 /// <summary>
-/// 项目所选端（PRD §4.5）：后端、管理端**必选**，移动端可选。
+/// 项目所选端：后端、管理端**必选**，移动端可选。
 /// </summary>
 public enum ProjectEnd
 {
@@ -25,7 +25,7 @@ public enum ProjectEnd
 }
 
 /// <summary>
-/// 向导步骤（PRD §4.3，第 1 步为表单采集，其余 6 步由共享能力层承载）。
+/// 向导步骤（第 1 步为表单采集，其余 6 步由共享能力层承载）。
 /// </summary>
 public enum WizardStep
 {
@@ -65,7 +65,7 @@ public enum StepStatus
     /// <summary>成功。</summary>
     Succeeded,
 
-    /// <summary>失败（可重试，不影响已成功步骤的产物，PRD §4.7）。</summary>
+    /// <summary>失败（可重试，不影响已成功步骤的产物）。</summary>
     Failed,
 
     /// <summary>已跳过（如未勾选该端）。</summary>
@@ -73,7 +73,7 @@ public enum StepStatus
 }
 
 /// <summary>
-/// 远端产物类别（PRD §4.5 / §4.7：远端产物一律<b>不自动删除</b>，只列孤儿清单）。
+/// 远端产物类别。这类产物已在云效上创建、本地删不掉，故<b>一律不自动删除</b>，只列孤儿清单供用户手动处置。
 /// </summary>
 public enum RemoteArtifactKind
 {
@@ -91,7 +91,7 @@ public enum RemoteArtifactKind
 }
 
 /// <summary>
-/// 远端产物条目：已在云效上创建、本地删除撤不掉，故必须可观测（PRD §4.5 v0.18）。
+/// 远端产物条目：已在云效上创建、本地删除撤不掉，故必须可观测。
 /// </summary>
 public sealed class RemoteArtifact
 {
@@ -115,7 +115,7 @@ public sealed class RemoteArtifact
 }
 
 /// <summary>
-/// 按端的目标代码仓库信息（PRD §4.5「目标代码仓库（按端）」）。
+/// 按端的目标代码仓库信息。
 /// </summary>
 public sealed class EndRepository
 {
@@ -127,7 +127,7 @@ public sealed class EndRepository
 
     /// <summary>
     /// 实际使用的模板 pin 分支（运行期解析后写入：配置登记的覆盖值，或按
-    /// <c>develop → master → main → 模板默认分支</c> 解析出的分支；PRD §6 #5）。
+    /// <c>develop → master → main → 模板默认分支</c> 的顺序择优解析出的分支）。
     /// </summary>
     public string TemplateBranch { get; set; } = string.Empty;
 
@@ -165,8 +165,8 @@ public sealed class EndRepository
 /// 不执行任何 SQL；本对象只记「界面填了什么（非敏感项）」与「探活结论」，用于表单回填与重启后复核。
 /// </para>
 /// <para>
-/// <b>口令不落档案</b>：口令只在内存中随本轮提示词交给助手（PRD §4.8 已记录该口径及其残余影响），
-/// 一律不写入本档案、日志与操作记录。
+/// <b>口令不落档案</b>：口令只在内存中随本轮提示词交给助手，一律不写入本档案、日志与操作记录。
+/// 已知代价：本轮提示词会随框架会话历史落进本地会话库（该残余风险已记录在 README 的 Step 4 要点里）。
 /// </para>
 /// </remarks>
 public sealed class DatabaseOptions
@@ -207,7 +207,7 @@ public sealed class StepResult
     /// <summary>状态。</summary>
     public StepStatus Status { get; set; }
 
-    /// <summary>结果说明（失败时为引导文案，如「个人令牌无效」，PRD §4.7）。</summary>
+    /// <summary>结果说明（失败时为引导文案，如「个人令牌无效」）。</summary>
     public string? Message { get; set; }
 
     /// <summary>本步产生的远端产物。</summary>
@@ -223,10 +223,10 @@ public sealed class StepResult
 }
 
 /// <summary>
-/// Agent 操作记录条目（PRD §4.6 右侧「Agent 操作记录区」时间线）。
+/// Agent 操作记录条目（右侧「Agent 操作记录区」时间线）。
 /// </summary>
 /// <remarks>
-/// 记录中<b>不得</b>出现明文 PAT（PRD §4.8 #6/#7/#11）：涉及凭据的参数一律以 <c>***</c> 呈现。
+/// 记录中<b>不得</b>出现明文 PAT：涉及凭据的参数一律以 <c>***</c> 呈现。
 /// </remarks>
 public sealed class OperationRecord
 {
@@ -250,7 +250,7 @@ public sealed class OperationRecord
 }
 
 /// <summary>
-/// 克隆冲突处理方式（PRD §4.3 Step 3 重跑幂等②）：目标目录非空时<b>必须</b>由用户选择，不静默覆盖、也不直接失败。
+/// 克隆冲突处理方式：目标目录非空时<b>必须</b>由用户选择，不静默覆盖、也不直接失败。
 /// </summary>
 public enum CloneConflictChoice
 {
@@ -283,7 +283,7 @@ public sealed class CloneConflict
 }
 
 /// <summary>
-/// 逐端流水线结果（Step 7，PRD §4.3 Step 7 v0.30）。
+/// 逐端流水线结果（Step 7）。
 /// </summary>
 /// <remarks>
 /// 落档案的理由与 <see cref="ProjectSpec.BuildResults"/> 同源：流水线是<b>远端产物</b>，必须跨重启可复核
@@ -303,7 +303,7 @@ public sealed class EndPipelineResult
     /// <summary>云效控制台链接。</summary>
     public string WebUrl { get; set; } = string.Empty;
 
-    /// <summary>本次是<b>新建</b>（true）还是<b>命中同名后覆盖更新</b>（false，幂等；编排 B · 全端，PRD §4.3 Step 7）。</summary>
+    /// <summary>本次是<b>新建</b>（true）还是<b>命中同名后覆盖更新</b>（false，幂等；编排 B · 全端）。</summary>
     public bool Created { get; set; }
 
     /// <summary>
@@ -329,7 +329,7 @@ public sealed class EndPipelineResult
 }
 
 /// <summary>
-/// 新建项目「项目档案」（PRD §4.5）：从上到下贯穿七步，并持久化以支持残留检测与孤儿清单展示。
+/// 新建项目「项目档案」：从上到下贯穿七步，并持久化以支持残留检测与孤儿清单展示。
 /// </summary>
 public sealed class ProjectSpec
 {
@@ -375,7 +375,7 @@ public sealed class ProjectSpec
     public List<EndBuildResult> BuildResults { get; set; } = new();
 
     // ── 云效相关 ─────────────────────────────────────────────────────
-    /// <summary>云效 PAT 的凭据键名（<b>不含</b>令牌明文，PRD §4.5）。</summary>
+    /// <summary>云效 PAT 的凭据键名（<b>不含</b>令牌明文）。</summary>
     /// <remarks>
     /// 规范键为 <c>connector:yunxiao:token</c>（= <c>AliyunCredentialKeyAliases.DefaultTokenKey</c>）；
     /// 历史档案里的 <c>yunxiao_pat</c> 仍由产品别名表回退读取。
@@ -389,7 +389,7 @@ public sealed class ProjectSpec
     public List<string> PipelineReferenceIds { get; set; } = new();
 
     /// <summary>
-    /// 逐端流水线结果（最近一次 Step 7；PRD §4.3 Step 7 v0.30）。
+    /// 逐端流水线结果（最近一次 Step 7）。
     /// </summary>
     /// <remarks>Step 3 建库重跑会作废本结论（仓库地址可能已变，见 <c>NewProjectService.InvalidatePipelineConclusion</c>）。</remarks>
     public List<EndPipelineResult> PipelineResults { get; set; } = new();

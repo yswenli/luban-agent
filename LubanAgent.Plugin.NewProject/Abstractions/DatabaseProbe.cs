@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： DatabaseProbe
 *创建时间：2026/10/21
-*描述：Step 4「数据库探活」参数（PRD §4.3 Step 4，v0.22 口径）
+*描述：Step 4「数据库探活」参数
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
@@ -19,7 +19,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// <b>口令只在内存</b>：本对象<b>不落档案</b>（<see cref="ProjectSpec.Database"/> 只记非敏感项）、
-/// 不写日志、操作记录里一律以 <c>***</c> 呈现（PRD §4.8 #6/#7/#11）。
+/// 不写日志、操作记录里一律以 <c>***</c> 呈现。
 /// </para>
 /// <para>
 /// <b>库名与账号逐项目单独给</b>：不使用任何模板默认库名；库由用户手工创建，插件不承担建库职责。

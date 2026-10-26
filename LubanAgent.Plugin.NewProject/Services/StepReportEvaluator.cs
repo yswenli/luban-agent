@@ -246,8 +246,8 @@ public static class StepReportEvaluator
     /// 归并 Step 7 流水线结论（阻断性：<c>status=done</c> 且逐端 <c>kind=pipeline</c> 齐备）。
     /// </summary>
     /// <remarks>
-    /// Step 7 的流水线在<b>远端</b>，插件回读时不触网 ⇒ 没有可独立核对的本地证据（§6.1.4）：
-    /// 通过判定 = 助手自报，属残余风险（C12/C13）。本入口能做的最强核对是「含部署阶段的端不得留
+    /// Step 7 的流水线在<b>远端</b>，插件回读时不触网 ⇒ 没有可独立核对的本地证据，
+    /// 通过判定只能以助手自报为准，属残余风险。本入口能做的最强核对是「含部署阶段的端不得留
     /// <c>&lt;未选择&gt;</c> 占位」与「YAML 非空」。
     /// </remarks>
     /// <param name="report">已解析的结论。</param>

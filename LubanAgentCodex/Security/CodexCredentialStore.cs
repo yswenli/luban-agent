@@ -19,7 +19,7 @@ using LubanAgentCore.Hosting;
 namespace LubanAgentCodex.Security;
 
 /// <summary>
-/// Codex 宿主凭据存储：读写全局 <c>config.json</c> 的 <c>Integrations</c> 节（PRD §3.7 / §4.9.3）。
+/// Codex 宿主凭据存储：读写全局 <c>config.json</c> 的 <c>Integrations</c> 节。
 /// </summary>
 /// <remarks>
 /// <para>

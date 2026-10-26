@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： PipelinePrepareResult
 *创建时间：2026/10/22
-*描述：Step 7「只读准备」读数（v0.3 助手驱动，设计 §5.3）：预览 + 待用户答复的交互项 + 映射缺口
+*描述：Step 7「只读准备」读数（v0.3 助手驱动）：预览 + 待用户答复的交互项 + 映射缺口
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;

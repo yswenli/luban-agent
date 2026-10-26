@@ -218,7 +218,7 @@ public partial class MainWindow : Window
             _knowledgeTasks = services.GetService<KnowledgeTaskService>();
             if (_knowledgeTasks != null) _knowledgeTasks.Updated += OnKnowledgeTaskUpdated;
 
-            // 插件宿主：面板注销时必须由宿主 UI 同步解绑内容区（PRD §3.12 第 2 步），
+            // 插件宿主：面板注销时必须由宿主 UI 同步解绑内容区，
             // 否则插件程序集被视觉树钉住，卸载会降级为 RequiresRestart
             _pluginHost = services.GetService<CodexPluginHost>();
             if (_pluginHost != null) _pluginHost.PanelDetaching += OnPluginPanelDetaching;
@@ -577,7 +577,7 @@ public partial class MainWindow : Window
         IPluginPanel? panel;
         try
         {
-            // 面板工厂在此首次实例化（延迟创建，PRD §3.4）
+            // 面板工厂在此首次实例化（延迟到真正选中该侧栏入口时才创建，注册期不实例化）
             panel = _pluginHost.GetPanel(row.Id);
         }
         catch (Exception ex)

@@ -112,7 +112,7 @@ public static class StepResultFile
     }
 
     /// <summary>
-    /// 作废（删除）某步最近一份<b>执行</b>结论文件（§6.6 Step 3 重跑联动；准备结论不受影响）。
+    /// 作废（删除）某步最近一份<b>执行</b>结论文件（重跑联动；准备结论不受影响）。
     /// </summary>
     /// <param name="workspaceRoot">项目工作区根。</param>
     /// <param name="step">步骤号。</param>

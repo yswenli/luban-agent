@@ -8,7 +8,7 @@ namespace CodexSmokePlugin;
 
 /// <summary>
 /// 冒烟面板：同时实现 Avalonia <see cref="UserControl"/> 与框架 <see cref="IPluginPanel"/>，
-/// 由宿主内容区强转挂载（PRD §3.4）。
+/// 由宿主内容区强转挂载。
 /// </summary>
 public sealed class CodexSmokePanel : UserControl, IPluginPanel
 {

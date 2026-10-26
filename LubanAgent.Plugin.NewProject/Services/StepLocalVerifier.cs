@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepLocalVerifier
 *创建时间：2026/10/22
-*描述：Step 3/6/7 的插件侧本地复核器（设计 §6.1.4「独立证据策略」第 4 环）
+*描述：Step 3/6/7 的插件侧本地复核器——用文件系统证据补上「助手自报」之外的独立判据
 *****************************************************************************/
 
 using System.Text;
@@ -20,11 +20,12 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>为什么需要它</b>：Step 3/6/7 的云效与 git <b>业务失败</b>都不进 <c>TurnOutcome.Errors</c>
 /// （MCP 失败返回普通字符串、git 业务失败返回 <c>Fail</c>，都不发 <c>ToolCallFailedEvent</c>），
-/// 判定第 4 环恒空 ⇒ 会退化为「助手自报」。本复核器补上插件能独立核对的部分（§6.1.4）：
+/// 「本轮事件流无错误事件」这一条判据恒为空 ⇒ 通过判定会退化为「助手说什么就是什么」。
+/// 本复核器补上插件能独立核对的部分：
 /// </para>
 /// <list type="bullet">
 /// <item>Step 3：目录存在且非空、<c>.git/HEAD</c> 有效、<c>refs/heads/&lt;pin&gt;</c> 存在、
-/// <b>占位符残余命中 = 0</b>（最有价值的一项独立证据，§6.2）；</item>
+/// <b>占位符残余命中 = 0</b>（最有价值的一项独立证据）；</item>
 /// <item>Step 6：<c>refs/remotes/origin/&lt;pushBranch&gt;</c> 存在且提交 id 与自报一致；</item>
 /// <item>Step 7：流水线在远端 ⇒ <b>没有可独立核对的本地证据</b>，如实返回一条残余风险说明。</item>
 /// </list>
@@ -34,7 +35,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </remarks>
 public static class StepLocalVerifier
 {
-    /// <summary>占位符残余扫描时跳过的目录（与 <c>docs/org-reference.md</c> §4 的约定一致）。</summary>
+    /// <summary>占位符残余扫描时跳过的目录（与 <c>docs/org-reference.md</c>「占位符规则」表的「跳过目录」一致）。</summary>
     private static readonly HashSet<string> ExcludedDirectories =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -43,7 +44,8 @@ public static class StepLocalVerifier
         };
 
     /// <summary>
-    /// 残余扫描的文本扩展名白名单（与 <c>docs/org-reference.md</c> §4、<c>docs/step3-repositories.md</c> §2.7 一致）。
+    /// 残余扫描的文本扩展名白名单（与 <c>docs/org-reference.md</c>「占位符规则」表的「只改文本」、
+    /// <c>docs/step3-repositories.md</c> 的占位符替换步骤一致）。
     /// </summary>
     /// <remarks>
     /// <b>为什么必须同口径</b>：助手只改「文本白名单」内的文件，复核器若扫全部文件，
@@ -228,7 +230,7 @@ public static class StepLocalVerifier
     }
 
     /// <summary>
-    /// Step 7 的本地复核：流水线在远端，<b>没有可独立核对的本地证据</b>（§6.1.4）——
+    /// Step 7 的本地复核：流水线在远端，<b>没有可独立核对的本地证据</b>——
     /// 返回一条如实的残余风险说明，仅供操作记录展示，<b>不作为失败依据</b>。
     /// </summary>
     /// <param name="report">已解析的流水线结论。</param>
@@ -245,7 +247,7 @@ public static class StepLocalVerifier
             : new[]
             {
                 $"流水线在云效远端，插件回读结论文件时不触网 ⇒ {created.Count} 端流水线的创建结果"
-                + "没有可独立核对的本地证据（设计 §6.1.4 / C12/C13），仅以助手自报 + 工具调用记录为凭。"
+                + "没有可独立核对的本地证据，仅以助手自报 + 工具调用记录为凭。"
             };
     }
 

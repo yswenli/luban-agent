@@ -34,7 +34,7 @@ namespace LubanAgentCodex.Plugins;
 /// 其中需要触达的 scoped 服务统一经 <see cref="PluginHostContext"/> 的会话 scope 解析。
 /// </para>
 /// <para>
-/// 贡献落地遵循 PRD §3.11 / §3.12：
+/// 贡献落地分三条通道，各自落到不同的归宿：
 /// <list type="bullet">
 /// <item>侧栏条目 / 面板 / 命令 → 记账于 <see cref="PluginHostRegistry"/>，由主窗口渲染与挂载；</item>
 /// <item>Skill → 写工作区文件 <c>.luban-agent/skills/&lt;id&gt;/SKILL.md</c> → <c>SkillRegistry.LoadFromWorkspace</c> → 重建 Agent；</item>
@@ -78,8 +78,8 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// 面板即将被注销：宿主须在 <b>UI 线程同步</b>把面板控件从内容区解绑（参数：entryId、面板实例）。
     /// </summary>
     /// <remarks>
-    /// 面板实例由插件 ALC 定义，UI 树上的残留引用会钉住程序集导致卸载降级为 <c>RequiresRestart</c>
-    /// （PRD §3.12 第 2 步「宿主须先解绑内容区再调用 UnregisterPanel」）。
+    /// 面板实例由插件 ALC 定义，UI 树上的残留引用会钉住程序集，导致卸载降级为 <c>RequiresRestart</c>；
+    /// 因此卸载流程要求宿主<b>先</b>把面板控件从内容区解绑，<b>再</b>调用 <c>UnregisterPanel</c>。
     /// </remarks>
     public event Action<string, IPluginPanel>? PanelDetaching;
 
@@ -89,7 +89,8 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <remarks>
     /// 返回<b>根容器</b>：插件可解析身份无关的进程级单例（配置、Provider 工厂等）；
     /// 按用户/会话隔离的 scoped 服务在 <c>ValidateScopes=true</c> 下不能从根容器取，
-    /// 插件应改为经 <c>SessionRuntime.Services</c> 获取（PRD §3.9 DI 硬约束）。
+    /// 插件应改为经 <c>SessionRuntime.Services</c> 获取——这是 DI 硬约束：单例宿主的构造链与解析链里
+    /// 不得出现 scoped 服务，否则容器会在 <c>ValidateScopes=true</c> 下直接抛错。
     /// </remarks>
     public IServiceProvider Services => _context.Root;
 
@@ -228,7 +229,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
 
         var sourceDirectory = ResolveSourceDirectory(definition);
 
-        // 先记账再落盘：运行期技能只存在于插件代码中，记账后才能在会话构建 / 工作区切换时补齐（PRD §3.11）
+        // 先记账再落盘：运行期技能只存在于插件代码中，记账后才能在会话构建 / 工作区切换时补齐
         _registry.TrackSkill(definition, sourceDirectory);
 
         var workspaceRoot = _context.CurrentWorkspaceRoot;
@@ -382,7 +383,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
 
     /// <inheritdoc />
     /// <remarks>
-    /// 会话级回放（PRD §3.11）：进程内 MCP 客户端无法用文件描述，且 <c>MCPRegistry</c> 为会话 scope，
+    /// 会话级回放：进程内 MCP 客户端无法用文件描述，且 <c>MCPRegistry</c> 为会话 scope，
     /// 故每次构建 Agent 前都要按当前<b>启用中</b>插件的清单重新注入；同时补齐本会话工作区缺失的
     /// 插件技能文件（工作区切换后自愈）。技能有两条来源：清单声明的 <c>plugin.json</c>，
     /// 以及运行期贡献（<c>RegisterSkill</c> / <c>ContributeSkills</c>，由宿主记账），两者都只补缺失、
@@ -469,7 +470,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <summary>把一项插件 MCP 注册进指定会话的注册表（幂等）。</summary>
     /// <remarks>
     /// 插件身份取自当前权限环境（<see cref="PluginHostScope.RegisterMcpServer"/> 在委派前已进入），
-    /// 使 MCP 客户端出口调用按插件声明判定越界（PRD §3.7）；无环境时按「未声明权限」处理（默认拒绝）。
+    /// 使 MCP 客户端出口调用按插件声明判定越界；无环境时按「未声明权限」处理（默认拒绝）。
     /// </remarks>
     private void TryRegisterMcpInSession(IServiceProvider sessionServices, string name)
     {
@@ -593,7 +594,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <summary>按技能定义反查来源插件目录（插件包内 <c>entry</c> 文件所在目录）。</summary>
     /// <remarks>
     /// <para>
-    /// 技能有两条来源通道，解析必须都覆盖（PRD §4.10）：
+    /// 技能有两条来源通道，反查来源插件目录时必须都覆盖：
     /// <list type="number">
     /// <item><b>清单声明</b>的技能 → 直接取声明它的插件目录（精确、权威）；</item>
     /// <item><b>运行期贡献</b>的技能（<c>host.RegisterSkill</c> / <c>ContributeSkills</c>）不在任何清单里，

@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： INewProjectService
 *创建时间：2026/10/16
-*描述：共享能力层契约（PRD §4.10.2）：向导面板与聊天入口共用同一实例，零逻辑分叉
+*描述：共享能力层契约：向导面板与聊天入口共用同一实例，零逻辑分叉
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
@@ -14,7 +14,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// PRD §4.10.2 要求向导面板与聊天式入口（<c>newproject-*</c> 技能）调用<b>同一个实例</b>，
+/// 向导面板与聊天式入口（<c>newproject-*</c> 技能）必须调用<b>同一个实例</b>，
 /// 因此本契约的所有方法都必须以「当前项目档案」为唯一状态载体，不得各自持有流程状态。
 /// </para>
 /// <para>
@@ -36,7 +36,7 @@ public interface INewProjectService
     WizardStep CurrentStep { get; }
 
     /// <summary>
-    /// Agent 操作记录（时间线，供右侧「操作记录区」渲染，PRD §4.6）。
+    /// Agent 操作记录（时间线，供右侧「操作记录区」渲染）。
     /// </summary>
     IReadOnlyList<OperationRecord> Operations { get; }
 
@@ -51,14 +51,14 @@ public interface INewProjectService
     string? OrganizationHint { get; }
 
     /// <summary>
-    /// 克隆冲突决策入口（PRD §4.3 Step 3 重跑幂等②）：由向导面板注入「三选一」内联选择；
+    /// 克隆冲突决策入口：由向导面板注入「三选一」内联选择；
     /// 为 <c>null</c>（如聊天入口、面板未创建）时 Step 3 遇到非空目标目录<b>即中止本步</b>并给出引导文案，
     /// 绝不静默覆盖、也不静默复用。
     /// </summary>
     Func<CloneConflict, Task<CloneConflictChoice>>? CloneConflictResolver { get; set; }
 
     /// <summary>
-    /// 校验 Step 1 基本信息（PRD §4.3）：必填项、缩写命名规范、端必选、本地目录可写与唯一性。
+    /// 校验 Step 1 基本信息：必填项、缩写命名规范、端必选、本地目录可写与唯一性。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -105,7 +105,7 @@ public interface INewProjectService
         string localPath);
 
     /// <summary>
-    /// 清空当前档案与操作记录（「中止并清理」的本地部分之后调用，PRD §4.7）。
+    /// 清空当前档案与操作记录（「中止并清理」的本地部分之后调用）。
     /// </summary>
     void Reset();
 
@@ -113,7 +113,7 @@ public interface INewProjectService
     /// Step 2 · 初始化项目环境：建工作区 → 授权 → 置为当前（内部建新会话）→ 装配技能 → 接通云效 → 生成项目助手。
     /// </summary>
     /// <remarks>
-    /// <b>重跑幂等（PRD §4.3 陷阱①②③）</b>：先探测同路径工作区是否已存在；已存在则走「复用」分支
+    /// <b>重跑幂等</b>：先探测同路径工作区是否已存在；已存在则走「复用」分支
     /// （<b>禁止</b>再次 <c>CreateWorkspaceAsync</c>），且在 <c>SetCurrentAsync</c> 之后<b>显式新建会话</b>，
     /// <b>不</b>使用它恢复的旧会话；失败仅回滚本步（新建的工作区用 <c>DeleteWorkspaceAsync</c> 注销，
     /// <b>不删</b> <c>LocalPath</c> 目录）。
@@ -126,14 +126,14 @@ public interface INewProjectService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>重跑幂等（PRD §4.3 Step 3 / §6 #15）</b>：①目标代码组先查后建（同名组已存在则复用）；
+    /// <b>重跑幂等</b>：①目标代码组先查后建（同名组已存在则复用）；
     /// ②建库前先按目标仓库名检索，同名已存在则跳过创建、直接复用；
     /// ③克隆前判断目标目录是否非空，非空时助手回 <c>status=needsInput</c> + <c>inputs[id=clone-conflict]</c>，
     /// 插件经 <see cref="CloneConflictResolver"/> 让用户三选一后<b>同会话续跑</b>（「清空后重克隆」的目录删除由助手执行，C5′）；
     /// ④各端创建的仓库 id / 地址由结论 <c>artifacts[]</c> 回写档案的 <see cref="ProjectSpec.RemoteArtifacts"/>。
     /// </para>
     /// <para>
-    /// <b>模板与 pin（PRD §6 #5）</b>：模板仓在云效<b>模板库</b>（<c>templateType=1</c>）中按 <c>docs/org-reference.md</c>
+    /// <b>模板与 pin</b>：模板仓在云效<b>模板库</b>（<c>templateType=1</c>）中按 <c>docs/org-reference.md</c>
     /// 登记的模板定位、pin 按 <c>docs/step3-repositories.md</c> 的择优口径实时解析；两者任一解析不出即整步失败
     /// ——不跟随升级、不跳过、不猜测。判定＝结论文件（逐端完备）+ 事件流无错误 + 插件侧本地复核
     /// （<c>StepLocalVerifier.VerifyRepositories</c>：目录 / <c>.git</c> / <c>refs</c> / 占位符残余）。
@@ -149,7 +149,7 @@ public interface INewProjectService
     /// <remarks>
     /// <para>
     /// 准备<b>不创建任何云效资源、不克隆</b>：代码组只查不建，仓库只查不建。真正的建组 / 建库 / 克隆都在用户确认后的
-    /// <see cref="CreateRepositoriesAsync"/> 里发生（PRD §4.3「用户确认界面」）。读数由 <c>artifacts[]</c> 映射而来。
+    /// <see cref="CreateRepositoriesAsync"/> 里发生——那一步之前必须先摆出确认界面让用户核对。读数由 <c>artifacts[]</c> 映射而来。
     /// </para>
     /// <para>
     /// 任何一环出错都<b>不抛异常</b>，而是收集进 <see cref="RepositoryPrecheck.Errors"/> 供界面逐条展示。
@@ -160,7 +160,7 @@ public interface INewProjectService
     Task<RepositoryPrecheck> PrecheckRepositoriesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 校验 Step 3 建库计划（PRD §4.3「用户确认界面」）：仓库名非空 / 合法 / 同批不重复，可见性取值合法。
+    /// 校验用户在 Step 3「用户确认界面」上改过的建库计划：仓库名非空 / 合法 / 同批不重复，可见性取值合法。
     /// </summary>
     /// <remarks>本方法<b>只读</b>：通过校验不产生副作用；面板在「我已确认」后调用，通过后再 <see cref="ApplyRepositoryPlan"/>。</remarks>
     /// <param name="plan">用户在确认区改过的建库计划（逐端仓库名 + 可见性）。</param>
@@ -330,7 +330,7 @@ public interface INewProjectService
     /// <remarks>
     /// <para>
     /// 让用户在<b>创建流水线之前</b>看清「能部署到哪些机器」。失败时<b>抛可读异常</b>（不返回空列表）：
-    /// 界面据此显示红字并<b>阻断创建</b>，绝不静默降级成手填 uuid（口径见 PRD §4.3 Step 7 v0.32）。
+    /// 界面据此显示红字并<b>阻断创建</b>，绝不静默降级成手填 uuid。
     /// </para>
     /// <para>机器明细不在列表里（真机观测列表恒不带 <c>hostInfos</c>），需要时调 <see cref="ListDeployTargetMachinesAsync"/>。</para>
     /// </remarks>
@@ -349,7 +349,7 @@ public interface INewProjectService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 「中止并清理」（PRD §4.7）：注销本项目工作区（<b>不删</b> <c>LocalPath</c> 目录）、
+    /// 「中止并清理」：注销本项目工作区（<b>不删</b> <c>LocalPath</c> 目录）、
     /// 删除已写入的 <c>newproject-*</c> 技能与 <c>yunxiao</c> MCP 文件、清空档案（等价于「未完成」，不留误导性进度）；
     /// <b>远端产物一律不自动删除</b>，只保留孤儿清单。
     /// </summary>

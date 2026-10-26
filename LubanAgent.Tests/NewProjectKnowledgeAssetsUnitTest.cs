@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectKnowledgeAssetsUnitTest
 *创建时间：2026/10/22
-*描述：随包分发的知识资产（docs/ 与 skills/）的「存在性与结构」单测（设计 §6.5 / §12-2）：
+*描述：随包分发的知识资产（docs/ 与 skills/）的「存在性与结构」单测：
 *      ① 三端流水线 YAML 模板齐备且为云效可收的 stages: 顶层形态；
 *      ② docs/README.md 索引覆盖全部 docs/*.md（不漏文件）；
 *      ③ skills/*.md、plugin.json 与 docs/（org-reference.md 除外）的「组织专有值禁用扫描」——唯一副本原则的可执行检查。
@@ -17,7 +17,7 @@ namespace LubanAgent.Tests;
 [TestClass]
 public class NewProjectKnowledgeAssetsUnitTest
 {
-    /// <summary>技能正文不得复述的组织专有值 / 已删类型名（§6.5）。</summary>
+    /// <summary>技能正文不得复述的组织专有值 / 已删类型名。</summary>
     private static readonly string[] ForbiddenInSkills =
     [
         "harbor.tjingcai.com",

@@ -19,7 +19,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 现在改为每步下发前由 <see cref="Sync"/> 自愈，且<b>不可用即判失败、不下发</b>。
 /// </para>
 /// <para>
-/// <b>覆盖式、不删除</b>：同名文件以插件包为准（升级即生效），用户手工补充的文件保留（§4.2）。
+/// <b>覆盖式、不删除</b>：同名文件以插件包为准（升级即生效），用户手工补充的文件保留。
 /// </para>
 /// </remarks>
 public static class KnowledgeDocs

@@ -18,7 +18,7 @@ namespace LubanAgentCodex.Security;
 
 /// <summary>
 /// Codex 宿主的云效 PAT 提供者：从 <see cref="ICredentialStore"/> 按<b>连接器实例名</b>读 PAT
-/// （键 <c>connector:&lt;实例名&gt;:token</c>，默认实例即 <c>yunxiao_pat</c>；PRD §3.7 / §4.9）。
+/// （键 <c>connector:&lt;实例名&gt;:token</c>，默认实例即 <c>yunxiao_pat</c>）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +26,7 @@ namespace LubanAgentCodex.Security;
 /// <b>即时生效</b>（无需重启）：设置页写入 <see cref="ICredentialStore"/> → 本提供者在每次请求时读取。
 /// </para>
 /// <para>
-/// <b>不缓存、不日志回显</b>明文 PAT（PRD §4.9.3）。插件能否读到 PAT 由连接器出口门禁另行判定
+/// <b>不缓存、不日志回显</b>明文 PAT。插件能否读到 PAT 由连接器出口门禁另行判定
 /// （须声明 <c>credential: ["yunxiao_pat"]</c>）。
 /// </para>
 /// </remarks>

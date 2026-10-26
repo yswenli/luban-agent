@@ -116,7 +116,7 @@ public class App : Application
                     services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
                         sp => sp.GetRequiredService<HostOrchestrationProgressSink>()));
 
-                    // 插件体系（PRD §3）：宿主实现必须为单例——框架 PluginManager 为单例并经根容器
+                    // 插件体系：宿主实现必须为单例——框架 PluginManager 为单例并经根容器
                     // 延迟解析 IPluginHost，其构造链不得含 scoped 服务（SkillRegistry/MCPRegistry 等
                     // 均按会话 scope 隔离，只能经 PluginHostContext 的会话 scope 触达）。
                     services.AddSingleton<Plugins.PluginHostRegistry>();
@@ -125,7 +125,7 @@ public class App : Application
                     services.AddSingleton<IPluginHost>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
                     services.AddSingleton<IPluginSessionContributor>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
 
-                    // 云效集成凭据与设置（PRD §3.7 / §4.9）：
+                    // 云效集成凭据与设置：
                     // 宿主凭据存储沿用全局 config.json（与 Provider.ApiKey 同基线），覆盖框架默认只读实现；
                     // PAT 提供者改为读凭据存储，使设置页录入后即时生效。三者皆为单例，
                     // 供单例的云效连接器消费（CodexCredentialStore 经 UserContextRegistry 取配置，不跨 scope）。

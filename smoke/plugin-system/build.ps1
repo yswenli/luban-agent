@@ -1,5 +1,5 @@
 <##############################################################################
-# 插件体系冒烟资产一键构建与运行（PRD §5 M1~M3 复现入口）
+# 插件体系冒烟资产一键构建与运行（M1~M3 复现入口）
 #
 #   1) 构建 framework 冒烟插件包（含二分定位变体）到 artifacts/
 #   2) 跑 framework-harness 三种模式（unload / token / unload+timer）并汇总结果
@@ -108,7 +108,7 @@ if (-not $SkipCodex)
     Copy-Item $packageRoot $deployRoot -Recurse -Force
 
     Write-Host "已铺到运行目录：$deployRoot"
-    Write-Host '（重启 LubanAgentCodex 后，按 README §3 手工回归）' -ForegroundColor Yellow
+    Write-Host '（重启 LubanAgentCodex 后，按 README 的「codex 宿主手工回归」一节逐条走一遍）' -ForegroundColor Yellow
 }
 
 Write-Step '结果'

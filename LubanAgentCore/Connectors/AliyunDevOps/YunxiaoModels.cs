@@ -543,7 +543,7 @@ public class YunxiaoPipeline
     public long? GroupId { get; set; }
 
     /// <summary>
-    /// 创建人账号 id（列表接口字段；真机有此值但<b>无运行状态</b>，见 PRD §4.11.3 注⑦）。
+    /// 创建人账号 id（列表接口字段；真机有此值但<b>无运行状态</b>）。
     /// </summary>
     [JsonPropertyName("createAccountId")]
     public string? CreateAccountId { get; set; }

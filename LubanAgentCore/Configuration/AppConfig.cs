@@ -83,7 +83,7 @@ public class AppConfig
     /// <c>connector:yunxiao:organizationid</c>；历史拼写由产品侧别名表回退读取）。
     /// </summary>
     /// <remarks>
-    /// PRD §4.9.3 放宽裁决：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线），
+    /// 已裁决放宽：凭据沿用宿主现有配置存储基线（与 <c>Provider.ApiKey</c> 同基线），
     /// 不引入额外加密层。本字段即该基线的落点，由 <c>CodexCredentialStore</c> 经
     /// <c>ICredentialStore</c> 读写，供云效 PAT 与组织 ID 使用。
     /// </remarks>

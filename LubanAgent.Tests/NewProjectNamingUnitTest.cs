@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectNamingUnitTest
-*描述：项目命名令牌单测（PRD §4.3 Step 1/Step 3：缩写**首字母大写** → 代码库名 Csxmy-Service；
+*描述：项目命名令牌单测（对应向导 Step 1 与 Step 3：缩写**首字母大写** → 代码库名 Csxmy-Service；
 *      缩写**全大写** → 代码组名 CSXMY；令牌 {code}/{Code}/{CODE} 区分大小写）
 *****************************************************************************/
 

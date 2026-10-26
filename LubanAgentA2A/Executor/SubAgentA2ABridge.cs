@@ -78,7 +78,7 @@ internal static class SubAgentA2ABridge
     }
 
     /// <summary>
-    /// 组装子任务标识 <c>"{GraphId}:{nodeId}"</c>（§4.3 节点映射）。
+    /// 组装子任务标识 <c>"{GraphId}:{nodeId}"</c>。
     /// <see cref="SubAgentSpec.ParentSessionId"/> 由调度器填充为图谱 Id（<c>graph.GraphId</c>）；
     /// 缺少任一要素时返回 null，交由处理器生成随机标识。
     /// </summary>

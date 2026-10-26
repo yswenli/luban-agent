@@ -27,7 +27,7 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// 云效代码管理客户端 - 提供仓库管理（查询 / 创建 / 模板库 / 代码组 / 分支）等能力。
 /// </summary>
 /// <remarks>
-/// <b>不再承担 Git 操作</b>：克隆 / 推送一律改由助手经 git 工具组完成（v0.3 设计 §5.5）。
+/// <b>不再承担 Git 操作</b>：克隆 / 推送一律改由助手经 git 工具组完成。
 /// </remarks>
 public class CodeupClient : IDisposable
 {
@@ -413,7 +413,7 @@ public class CodeupClient : IDisposable
         object? body,
         CancellationToken cancellationToken)
     {
-        // 出口门禁（PRD §3.7）：目标主机 + PAT 凭据
+        // 出口门禁：目标主机 + PAT 凭据
         _guard.RequireNetwork(_options.Endpoint, "CodeupClient.SendRawAsync");
         _guard.RequireCredential(PatCredentialKey, "CodeupClient.SendRawAsync");
 

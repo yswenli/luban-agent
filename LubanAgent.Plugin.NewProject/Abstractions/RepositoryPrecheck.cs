@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： RepositoryPrecheck
 *创建时间：2026/10/19
-*描述：Step 3 预检读数（PRD §4.3「用户确认界面」）：执行前把「将要发生什么」摆给用户核对
+*描述：Step 3 预检读数：执行前把「将要发生什么」摆到确认界面上让用户核对
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;

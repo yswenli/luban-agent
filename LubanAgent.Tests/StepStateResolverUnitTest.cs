@@ -92,7 +92,7 @@ public class StepStateResolverUnitTest
     [TestMethod]
     public void Resolve_FailedThenSucceeded_ReportsSucceeded()
     {
-        // 失败重试成功后不得继续显示失败（PRD §4.7 可重试）
+        // 失败重试成功后不得继续显示失败
         var records = new[]
         {
             Record(WizardStep.Repositories, StepStatus.Failed),

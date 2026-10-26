@@ -11,7 +11,7 @@
 *创建人： yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/15
-*描述：云效连接器与进程内 MCP 客户端的 DI 注册扩展（PRD §3.10 / §4.11）
+*描述：云效连接器与进程内 MCP 客户端的 DI 注册扩展
 *
 *****************************************************************************/
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -30,7 +30,7 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// 同时以 <see cref="AliyunCredentialKeyAliases"/> 覆盖框架默认的空凭据键别名实现。
 /// </para>
 /// <para>
-/// 注意：<b>不</b>把 <c>YunxiaoMCPClient</c> 注册进容器。按 PRD §4.11，MCP 生命周期跟随插件/工作区——
+/// 注意：<b>不</b>把 <c>YunxiaoMCPClient</c> 注册进容器——MCP 生命周期跟随插件/工作区，
 /// 由 <c>ConnectorRegistry</c> 从 <see cref="YunxiaoConnector.McpExposures"/> 按需派生并注册进会话的
 /// <c>MCPRegistry</c>，停用/卸载时反注册。
 /// </para>
@@ -124,13 +124,13 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
 /// </summary>
 /// <remarks>
 /// <para>
-/// 依次尝试：① <see cref="ICredentialStore"/>（宿主可写凭据存储，PRD §3.7），键为
+/// 依次尝试：① <see cref="ICredentialStore"/>（宿主可写凭据存储），键为
 /// <c>connector:&lt;实例名&gt;:token</c>（默认实例即 <c>connector:yunxiao:token</c>，
 /// 由 <see cref="CredentialKeys.ForConnectorToken"/> 拼出，历史拼写键由
 /// <see cref="AliyunCredentialKeyAliases"/> 回退读取）；
 /// ② 配置节点 <c>LuBanAgent:Connectors:Yunxiao:AccessToken</c>（其它实例为
 /// <c>LuBanAgent:Connectors:&lt;实例名&gt;:AccessToken</c>）。均未命中时返回 <c>null</c>，
-/// 连接器会给出明确错误。<b>不缓存、不日志回显</b>明文 PAT（PRD §4.9.3）。
+/// 连接器会给出明确错误。<b>不缓存、不日志回显</b>明文 PAT。
 /// </para>
 /// </remarks>
 internal sealed class ConfigurationYunxiaoCredentialProvider : IYunxiaoCredentialProvider

@@ -119,7 +119,7 @@ remote: Invalid username or password.
 
 | git / 云效现象 | 处置 | 是否自动重试 | 结论文件 |
 |----------------|------|--------------|----------|
-| 云效限流：`remote: 请求过于频繁，请稍后重试!` / HTTP 429 | **退避重试**（见第 4 节） | ✅ 线性 10/20/30s，最多 3 次 | 重试过程记 `checks[]`，用尽仍失败则 `failed` |
+| 云效限流：`remote: 请求过于频繁，请稍后重试!` / HTTP 429 | **退避重试**（退避间隔与次数见本文「限流退避口径」一节） | ✅ 线性 10/20/30s，最多 3 次 | 重试过程记 `checks[]`，用尽仍失败则 `failed` |
 | `Authentication failed` / `could not read Username` / `Invalid username or password` | 第 2 节固定提示 | ❌ | `failed` + 原文摘要 + 固定提示 |
 | 401 / 令牌失效 | 引导到 codex「设置 → 云效连接」重配 PAT | ❌ | `failed` |
 | 403 / 权限不足 | 检查仓库可见性、PAT 所属用户权限、目标分支是否被保护 | ❌ | `failed` |

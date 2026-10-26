@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectArtifactMappingUnitTest
 *创建时间：2026/10/22
-*描述：结论文件 artifacts[] → 面板视图模型的逐字段映射（设计 §6.1.1，C11′）单测：
+*描述：把结论文件 artifacts[] 逐字段映射到面板视图模型的单测：
 *      Step 3 准备结论 → RepositoryPrecheck（建组读数 + 逐端行 + checks 归并）；
 *      Step 7 准备结论 → PipelinePreview 列表；缺端 / 缺字段 / extra 类型不符一律明确报错。
 *

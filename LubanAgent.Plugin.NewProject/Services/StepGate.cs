@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepGate
 *创建时间：2026/10/21
-*描述：步骤前置闸门（PRD §4.3 / §4.7 / 设计 §6.7）：判据改读「结论文件」，收成纯函数
+*描述：步骤前置闸门：判据改读「结论文件」，收成纯函数
 *****************************************************************************/
 
 using LubanAgent.Plugin.NewProject.Abstractions;
@@ -28,7 +28,8 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <b>仅界面进度显示</b>，不再作闸门依据。
 /// </para>
 /// <para>
-/// 判据取「最近一份」结论文件（按 <c>mtime</c>），与 §6.7 一致；「本轮起始时刻之后」的时效过滤在能力层下发/回读时完成。
+/// 判据取「最近一份」结论文件（按 <c>mtime</c> 排），「本轮起始时刻之后」的时效过滤不在这里做，
+/// 由能力层在下发 / 回读时完成。
 /// </para>
 /// </remarks>
 public static class StepGate
@@ -84,11 +85,11 @@ public static class StepGate
     }
 
     /// <summary>
-    /// 作废流水线（Step 7）结论：Step 3 重跑成功后调用（§6.6）——流水线 YAML 写死代码源地址与分支，
+    /// 作废流水线（Step 7）结论：Step 3 重跑成功后调用——流水线 YAML 写死代码源地址与分支，
     /// 仓库改名/重建后旧结论是误导。
     /// </summary>
     /// <remarks>
-    /// <b>只清结论与档案记录，不删云效上的流水线本体</b>（远端产物一律不自动删除，PRD §4.5）。
+    /// <b>只清结论与档案记录，不删云效上的流水线本体</b>（远端产物一律不自动删除）。
     /// </remarks>
     /// <param name="spec">项目档案。</param>
     public static void InvalidatePipelineConclusion(ProjectSpec spec)

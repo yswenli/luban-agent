@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepStateResolver
 *创建时间：2026/10/20
-*描述：步骤状态归并（PRD §4.6.1 步骤条）：档案里的终态快照 ⊕ 本次运行的操作记录。
+*描述：步骤状态归并：档案里的终态快照 ⊕ 本次运行的操作记录。
 *****************************************************************************/
 
 using LubanAgent.Plugin.NewProject.Abstractions;

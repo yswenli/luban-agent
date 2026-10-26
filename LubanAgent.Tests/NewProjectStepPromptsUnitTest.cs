@@ -121,7 +121,7 @@ public class NewProjectStepPromptsUnitTest
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
 
-        // PRD §4.3 Step 5（v0.22）：编译方式由助手按工程类型决定
+        // Step 5：编译方式由助手按工程类型决定
         StringAssert.Contains(prompt, "编译方式由你按工程类型决定");
         StringAssert.Contains(prompt, "dotnet build");
 

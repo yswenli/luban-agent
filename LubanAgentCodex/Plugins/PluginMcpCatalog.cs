@@ -24,11 +24,11 @@ namespace LubanAgentCodex.Plugins;
 /// <para>
 /// 插件清单的 <c>mcpServers</c> 只声明<b>名称</b>（如 <c>yunxiao</c>），实际客户端由框架
 /// <see cref="ConnectorRegistry"/> 按「连接器暴露面」解析：进程内客户端无法用
-/// <c>.luban-agent/mcps/*.json</c> 描述（<c>Command</c> 必填、PAT 需明文落盘，PRD §4.11.3 注②）。
+/// <c>.luban-agent/mcps/*.json</c> 描述（该文件形态要求 <c>Command</c> 必填、PAT 需明文落盘）。
 /// </para>
 /// <para>
-/// 宿主<b>不再</b>按名称硬编码 <c>switch</c>：新增连接器只需在 <c>config.json:connectors</c> 声明
-/// 并注册工厂（PRD §3.10 连接器配置化）。
+/// 宿主<b>不再</b>按名称硬编码 <c>switch</c>：连接器完全由配置驱动——新增连接器只需在 <c>config.json:connectors</c>
+/// 声明并注册工厂即可，宿主侧无需为此改动任何解析代码。
 /// </para>
 /// <para>
 /// <b>每次调用都新建客户端实例</b>：<c>MCPRegistry</c> 为会话 scope（每会话一份），若把同一实例注册进
@@ -66,7 +66,7 @@ internal static class PluginMcpCatalog
 
         try
         {
-            // 显式注入权限环境：该 MCP 客户端经连接器发起的请求将按插件声明判定越界（PRD §3.7）
+            // 显式注入权限环境：该 MCP 客户端经连接器发起的请求将按插件声明判定越界
             var client = registry.CreateMcpClient(name, new PluginPermissionScope(pluginId, permissions));
             if (client is null)
             {

@@ -6,10 +6,10 @@
 //   已全部迁到随包分发的 docs/（见 docs/org-reference.md、docs/pipeline-conventions.md、
 //   docs/pipeline-*.yml.md），Step 3 / Step 6 / Step 7 由助手按那里的证据判定，本文件不再承载。
 {
-  // 默认可见性（PRD §4.5：默认＝组织内公开）
+  // 默认可见性（默认＝组织内公开）
   "defaultVisibility": "internal",
 
-  // Step 6 推送目标分支：本组织口径为 develop（v0.28 起；PRD §6 #17 定案改口径）。
+  // Step 6 推送目标分支：本组织取 develop（早期曾取 main，已定案改为 develop）。
   // 理由：Step 3 克隆的 pin 按 develop → master → main 择优，各端仓库实际都落在 develop；
   //      推送分支若仍取 main 就成了「在 develop 编译、推 main」。
   // 该值同时用作云效建仓的默认分支，故 Step 3 建仓与 Step 6 推送两处口径一致。

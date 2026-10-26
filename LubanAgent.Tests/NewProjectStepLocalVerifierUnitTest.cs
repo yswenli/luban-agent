@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectStepLocalVerifierUnitTest
 *创建时间：2026/10/22
-*描述：Step 3/6/7 插件侧本地独立复核器（设计 §6.1.4 第 4 环）单测——
+*描述：Step 3/6/7 插件侧本地独立复核器单测——
 *      用临时目录造出「像 git 仓」的目录结构，锁死：
 *      Step 3：目录 / .git/HEAD / refs/heads/<pin> / 占位符残余 = 0；
 *      Step 6：refs/remotes/origin/<branch> 就位且提交 id 与自报一致；

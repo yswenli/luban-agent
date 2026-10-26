@@ -393,7 +393,7 @@ public class FlowClient : IDisposable
         object? body,
         CancellationToken cancellationToken)
     {
-        // 出口门禁（PRD §3.7）：目标主机 + PAT 凭据
+        // 出口门禁：目标主机 + PAT 凭据
         _guard.RequireNetwork(_options.Endpoint, "FlowClient.SendRawAsync");
         _guard.RequireCredential(PatCredentialKey, "FlowClient.SendRawAsync");
 

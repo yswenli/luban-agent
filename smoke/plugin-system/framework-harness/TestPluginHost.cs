@@ -8,7 +8,7 @@ namespace Harness;
 /// </summary>
 /// <remarks>
 /// 真实宿主（luban-agent-codex）需把 <see cref="RegisterSkill"/> / <see cref="RegisterMcpServer"/>
-/// 落到工作区作用域的 <c>SkillRegistry</c> / <c>MCPRegistry</c>（PRD §3.11 三件套），
+/// 落到工作区作用域的 <c>SkillRegistry</c> / <c>MCPRegistry</c>，
 /// 本实现只用于验证框架侧的调用顺序与记账。
 /// </remarks>
 internal sealed class TestPluginHost : IPluginHost
@@ -86,7 +86,7 @@ internal sealed class TestPluginHost : IPluginHost
 
     /// <summary>
     /// 模拟 UI 线程追上队列：执行全部残留回调，返回执行个数。
-    /// 卸载后残留数必须为 0，否则说明失效令牌未生效（PRD §3.12.5 v0.18）。
+    /// 卸载后残留数必须为 0，否则说明失效令牌未生效。
     /// </summary>
     public int FlushUi()
     {

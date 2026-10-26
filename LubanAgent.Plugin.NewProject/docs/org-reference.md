@@ -15,12 +15,12 @@
 
 | 项 | 值 | 取值来源 | 生效位置 |
 |----|----|----------|----------|
-| 模板库定位约定 | **必须先全量拉取模板库列表**（`templateType=1`，`page=1`，`perPage=100`），再在客户端按名匹配；**没有 `search` 入参，不能指望服务端按名过滤** | 设计文档 §5.2 第 1 条 | Step 3 准备阶段定位 `templateProjectId` |
+| 模板库定位约定 | **必须先全量拉取模板库列表**（`templateType=1`，`page=1`，`perPage=100`），再在客户端按名匹配；**没有 `search` 入参，不能指望服务端按名过滤** | 真机取证（接口无 `search` 入参） | Step 3 准备阶段定位 `templateProjectId` |
 | 后端模板仓名 | `TJCES-Service` | `templates[end=Service].repository` | 建库时作 `templateProjectId` |
 | 管理端模板仓名 | `TJCES-Admin` | `templates[end=Admin].repository` | 同上 |
 | 移动端模板仓名 | `TJCES-Mobile` | `templates[end=Mobile].repository` | 同上（**仅当 Step 1 勾选了移动端才参与**） |
 | 模板仓 ID 登记（可选） | **留空** ⇒ 按名匹配；登记了整数 ID 则以 ID 精确匹配（**必须命中模板库，否则阻断**） | `templates[].projectId` | 与上面同名，登记优先 |
-| 模板 pin 登记（可选） | **留空** ⇒ 运行期解析（见第 3 节）；登记了值则**必须真实存在**，否则阻断 | `templates[].branch` | 建库后的 `git clone -b <pin>` |
+| 模板 pin 登记（可选） | **留空** ⇒ 运行期按本文「pin 择优」一节给出的顺序择优；登记了值则**必须真实存在**，否则阻断 | `templates[].branch` | 建库后的 `git clone -b <pin>` |
 
 > 模板仓的**全路径**（如 `tjc/TJCES-Service`）与**默认分支名**不在此登记：**运行期从模板库条目 / 模板仓分支列表解析**，不要臆造。
 
@@ -47,7 +47,7 @@
 | 项 | 值 | 取值来源 | 生效位置 |
 |----|----|----------|----------|
 | 择优顺序 | `develop` → `master` → `main` → **模板默认分支**（`list_branches` 里 `defaultBranch=true` 的那条） | 代码 `PreferredPins` | 决定克隆用哪个分支 |
-| 登记值校验 | 登记了 `templates[].branch` 时**必须真实存在**（**区分大小写**），否则**阻断**、不静默回退 | 设计文档 §11 | Step 3 准备阶段即判失败 |
+| 登记值校验 | 登记了 `templates[].branch` 时**必须真实存在**（**区分大小写**），否则**阻断**、不静默回退 | 组织约定（**不静默回退**） | Step 3 准备阶段即判失败 |
 | 全无可用 | 既无 `develop` / `master` / `main`，也无默认分支标记 ⇒ **阻断**，不猜测 | 代码 `ResolvePinAsync` | 同上 |
 | 结论回显 | 记「取到了哪个、依据是什么」（如 `按开发约定取模板 develop`） | 代码 `Source` 文案 | `artifacts[].extra.resolvedBranchSource` |
 
@@ -65,7 +65,7 @@
 | 单文件上限 | 4 MB（超过即跳过） | 助手按本节执行 | 同上 |
 | 编码边界 | **UTF-16 / UTF-32（BOM）跳过**；前 8 KB 出现 `NUL` 的二进制跳过；**UTF-8 BOM 原样保留** | 助手按本节执行 | 宁可漏改也不破坏文件 |
 | 改名冲突 | 改名目标已存在 ⇒ **放弃该次改名**并告警（不覆盖） | 助手按本节执行 | 同上 |
-| 幂等要求 | 替换前统计命中数、替换后**复查「残余命中 = 0」**（**复查范围必须与替换范围一致**：同一套跳过目录 + 同一套文本白名单）；结论文件 `checks[]` 必须含 `placeholder-residual` 且 `ok=true` | 设计文档 §6.2 | Step 3 执行续跑的通过判定 |
+| 幂等要求 | 替换前统计命中数、替换后**复查「残余命中 = 0」**（**复查范围必须与替换范围一致**：同一套跳过目录 + 同一套文本白名单）；结论文件 `checks[]` 必须含 `placeholder-residual` 且 `ok=true` | 组织约定（复查范围同替换范围） | Step 3 执行续跑的通过判定 |
 
 ---
 
@@ -83,7 +83,7 @@
 | codeup 服务连接 | `r3x6es4esgbsn6ur`（组织内 codeup 服务连接，受理编号 496035） | `codeupServiceConnection` | `sources.repo.certificate.serviceConnection` |
 | 构建集群 `buildCluster` | **留空** ⇒ 不写 `runsOn`（云效默认北京公共集群，`cacheMode: remote`）。企服版取证私有集群值（注释记载 `buildNodeGroup=PM-SielV3Iovlo4Au4J`）**故意留空**，需人工在控制台确认形态后回填（形如 `private/<集群ID>`，回填后 `cacheMode` 取 `local`） | `buildCluster` | `jobs.<id>.runsOn`（可选行） |
 | 部署主机组（默认） | `tIPKOJBbwwOVKVia`（主机组 id `226948`，名称「移动云DEV主机组」，1 台机器） | `deployMachineGroup`（**必须是主机组 uuid**） | `deploy` 段 `VMDockerDeploy.machineGroup` |
-| 部署目标下拉 | 创建**之前**在 Step 7「部署目标」区从主机组列表选；会话未选且配置留空 ⇒ **创建被阻断** | 设计文档 §5.4 | 同上一行 |
+| 部署目标下拉 | 创建**之前**在 Step 7「部署目标」区从主机组列表选；会话未选且配置留空 ⇒ **创建被阻断** | 组织约定（**未选即阻断**） | 同上一行 |
 
 ---
 
@@ -101,7 +101,7 @@
 | Node 运行时 | `versionType: custom` + `customNodeVersion: lts/gallium`（= Node 16，对齐企服版 `CI_RUNTIME_VERSION`） | 模板出厂值 | `NodeBuild` 的 `with` |
 | 构建集群 | **留空** ⇒ 不写 `runsOn`（云效默认北京公共集群）；企服版前端用公共集群 `K8S-4` | `buildCluster` | 与后端同口径 |
 | codeup 服务连接 | `r3x6es4esgbsn6ur`（与后端同一条） | `codeupServiceConnection` | `sources.repo.certificate.serviceConnection` |
-| 独立部署阶段 | **无**（构建产物上传 OSS 即发布） | 设计文档 §5.4 / 代码 `DeployStageYaml` | `yamlIncludesDeployStage = false` |
+| 独立部署阶段 | **无**（构建产物上传 OSS 即发布） | 代码 `DeployStageYaml` | `yamlIncludesDeployStage = false` |
 
 ---
 
@@ -137,7 +137,7 @@
 |----|----|----------|----------|
 | 提交者姓名 | 优先本机 `git config user.name`；缺失时兜底 `LuBan Agent` | `commitAuthorName` | `git -c user.name=... commit` |
 | 提交者邮箱 | 优先本机 `git config user.email`；缺失时兜底 `luban-agent@local` | `commitAuthorEmail` | `git -c user.email=... commit` |
-| 兜底设置方式 | **在本仓库级**设置（不碰用户全局配置） | 设计文档 §5.3 | Step 6 |
+| 兜底设置方式 | **在本仓库级**设置（不碰用户全局配置） | 组织约定（**不写用户全局 git 配置**） | Step 6 |
 | 提交信息格式 | `chore: 初始化 {项目名}（{端标签}）——由「新建项目」向导按模板 {模板仓名} 生成`<br>端标签取中文：`后端` / `管理端` / `移动端` | 代码 `EndLabel` + 提交信息模板 | Step 6 commit |
 
 ---

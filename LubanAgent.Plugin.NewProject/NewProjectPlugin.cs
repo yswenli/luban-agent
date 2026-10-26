@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject
 *文件名： NewProjectPlugin
 *创建时间：2026/10/16
-*描述：「新建项目」插件入口（PRD §5 M4）
+*描述：「新建项目」插件入口
 *****************************************************************************/
 
 using LuBan.AIAgent.Plugins;
@@ -23,7 +23,7 @@ namespace LubanAgent.Plugin.NewProject;
 /// 持有共享能力层实例（<see cref="INewProjectService"/>）供面板与聊天两条入口复用。
 /// </para>
 /// <para>
-/// 云效能力全部经产品连接器 <c>LubanAgentCore.Connectors.AliyunDevOps</c>，插件内不自行拼 REST（PRD §4.11.1）。
+/// 云效能力全部经产品连接器 <c>LubanAgentCore.Connectors.AliyunDevOps</c>，插件内不自行拼 REST。
 /// </para>
 /// </remarks>
 public sealed class NewProjectPlugin : PluginBase
@@ -58,7 +58,7 @@ public sealed class NewProjectPlugin : PluginBase
         _service.Attach(host);
 
         // 面板延迟创建：宿主内容区挂载时才实例化（保证在 UI 线程上创建控件）。
-        // UI 投递经 PostToUi（带卸载即失效令牌），插件不直接触碰 Dispatcher（PRD §6 #22）。
+        // UI 投递经 PostToUi（带卸载即失效令牌），插件不直接触碰 Dispatcher。
         host.RegisterPanel(WizardEntryId, () => _panel ??= new WizardPanel(_service, PostToUi));
 
         return Task.CompletedTask;

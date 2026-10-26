@@ -24,7 +24,7 @@ namespace LubanAgentCore.Connectors.AliyunDevOps.Mcp;
 /// </summary>
 /// <remarks>
 /// 采用进程内形态（而非 stdio 子进程）是为了避免把 PAT 明文写进
-/// <c>.luban-agent/mcps/*.json</c> 的 Args 字段（PRD §4.11.3 注②）。
+/// <c>.luban-agent/mcps/*.json</c> 的 Args 字段。
 /// 对 Agent 的工具名由 <c>MCPToolPlugin</c> 加前缀得到 <c>mcp_yunxiao_*</c>。
 /// </remarks>
 public class YunxiaoMCPClient : MCPClientBase, IDisposable
@@ -52,7 +52,7 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
     }
 
     /// <summary>
-    /// 本实例的权限环境（由宿主在创建时注入，PRD §3.7）。
+    /// 本实例的权限环境（由宿主在创建时注入）。
     /// </summary>
     /// <remarks>
     /// 进程内 MCP 客户端由宿主按插件创建（<c>PluginMcpCatalog</c> 每次调用新建），
@@ -88,7 +88,7 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         Dictionary<string, object?> arguments,
         CancellationToken cancellationToken = default)
     {
-        // 以插件身份执行：出口门禁据此判定越界（PRD §3.7）
+        // 以插件身份执行：出口门禁据此判定越界
         using var _ = PluginScopeContext.Enter(PermissionScope);
 
         try
@@ -251,7 +251,7 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
         if (created == null)
             return Fail("创建仓库失败");
 
-        // 创建接口返回不含 HTTPS 克隆地址，补查仓库详情取 httpUrlToRepo（PRD §4.11.3 注③）
+        // 创建接口返回不含 HTTPS 克隆地址，补查仓库详情取 httpUrlToRepo
         if (string.IsNullOrWhiteSpace(created.HttpUrlToRepo) && created.Id.HasValue)
         {
             var detail = await client.GetRepositoryAsync(
@@ -419,7 +419,7 @@ public class YunxiaoMCPClient : MCPClientBase, IDisposable
     }
 
     /// <summary>
-    /// 创建流水线：提交 <c>name</c> + 新版 YAML <c>content</c>（PRD §4.11.3 注⑤ v0.30）。
+    /// 创建流水线：提交 <c>name</c> + 新版 YAML <c>content</c>。
     /// </summary>
     /// <remarks>
     /// 云效 OpenAPI <b>没有</b>「复制流水线」接口，且 <c>content</c> 只收顶层 <c>stages:</c> 的新版 YAML

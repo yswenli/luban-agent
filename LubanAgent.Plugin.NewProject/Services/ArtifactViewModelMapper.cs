@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： ArtifactViewModelMapper
 *创建时间：2026/10/22
-*描述：结论文件 artifacts[] → 面板视图模型的逐字段映射（设计 §6.1.1，C11′）
+*描述：结论文件 artifacts[] → 面板视图模型的逐字段映射
 *****************************************************************************/
 
 using System.Globalization;

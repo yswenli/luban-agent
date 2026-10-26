@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Ui
 *文件名： WizardPanel
 *创建时间：2026/10/16
-*描述：新建项目向导面板（PRD §4.6）：左侧步骤条 + 表单区，右侧 Agent 操作记录区
+*描述：新建项目向导面板：左侧步骤条 + 表单区，右侧 Agent 操作记录区
 *****************************************************************************/
 
 using Avalonia;
@@ -24,11 +24,11 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 
 /// <summary>
 /// 新建项目向导面板：同时实现 Avalonia <see cref="UserControl"/> 与框架 <see cref="IPluginPanel"/>，
-/// 由宿主内容区强转挂载（PRD §3.4「面板约定」）。
+/// 由宿主内容区强转挂载。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>布局（PRD §4.6）</b>：左侧七步步骤条 + 当前步表单；右侧「Agent 操作记录」实时时间线，
+/// <b>布局</b>：左侧七步步骤条 + 当前步表单；右侧「Agent 操作记录」实时时间线，
 /// 让用户看到每一步做了什么、结果如何，并可就地在失败步骤重试。
 /// </para>
 /// <para>
@@ -38,7 +38,7 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// Step 6 推送区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
 /// Step 4 / 5 的实际动作由项目助手执行（路线②），面板只负责采集参数与呈现结论。Step 7 的操作区在 P5 接入。
 /// 面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
-/// <c>PostToUi</c> 令牌（PRD §6 #22）。
+/// <c>PostToUi</c> 令牌。
 /// </para>
 /// <para>
 /// 纯代码构建 UI（无 XAML）：插件以独立 ALC 加载，避免 XAML 编译产物带来的额外加载面。
@@ -57,7 +57,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private static readonly IBrush WarningBrush = new SolidColorBrush(Color.Parse("#F9E2AF"));
     private static readonly IBrush HoverBrush = new SolidColorBrush(Color.Parse("#313244"));
 
-    /// <summary>七步定义（PRD §4.3）。标题不含序号：序号由左侧徽标承载，避免「③ 3 建库」重复。</summary>
+    /// <summary>七步定义。标题不含序号：序号由左侧徽标承载，避免「③ 3 建库」重复。</summary>
     private static readonly (WizardStep Step, string Title, string Summary)[] Steps =
     {
         (WizardStep.BasicInfo, "基本信息", "名称 / 缩写 / 介绍 / 端 / 本地目录"),
@@ -76,7 +76,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private readonly TextBlock _archiveText;
     private readonly TextBlock _stepHint;
     private readonly StackPanel _timeline;
-    /// <summary>右列时间线的滚动宿主：内容变化后用它滚到最新一条（PRD §4.6）。</summary>
+    /// <summary>右列时间线的滚动宿主：内容变化后用它滚到最新一条。</summary>
     private ScrollViewer? _timelineScroll;
     /// <summary>待滚动标记：<see cref="Refresh"/> 置位，由 <see cref="OnTimelineLayoutUpdated"/> 消费。</summary>
     private bool _pendingScrollToEnd;
@@ -113,7 +113,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// </remarks>
     private WizardStep _lastKnownReached = WizardStep.BasicInfo;
 
-    /// <summary>「上一步」按钮（PRD §4.6 草图项）：视图游标 −1。</summary>
+    /// <summary>「上一步」按钮：视图游标 −1。</summary>
     private readonly Button _backButton = new() { Content = "← 上一步" };
 
     /// <summary>回退导航说明（步骤条行同样可点击）。</summary>
@@ -128,7 +128,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     /// <summary>
     /// Step 1 重提确认横幅：已建档案后从步骤条回到 Step 1、改填<b>另一个本地目录</b>再点「下一步」＝
-    /// 清空档案并按新目录从 Step 2 重来，属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
+    /// 清空档案并按新目录从 Step 2 重来，属破坏性动作，必须先让用户显式确认才能执行。
     /// </summary>
     /// <remarks>
     /// 本地目录与档案相同的情形<b>不弹</b>此横幅：那不是「另建项目」而是「沿用同一工作区」，正确入口是
@@ -217,7 +217,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>最近一次预检结果（<c>null</c>＝尚未预检）。</summary>
     private RepositoryPrecheck? _precheck;
 
-    /// <summary>预检时的输入签名：与当前输入不一致即表示预检已作废（PRD §4.3 Step 3）。</summary>
+    /// <summary>预检时的输入签名：与当前输入不一致即表示预检已作废。</summary>
     private string? _precheckSignature;
 
     /// <summary>回填档案期间抑制「输入变更即作废预检」的误判（回填不是用户输入）。</summary>
@@ -236,7 +236,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// 向导没有「返回上一步」的导航，Step 6 执行过后若要重推，得有个随时可达的入口。
     /// 原实现把它做成 Step 7 占位区的临时出口（文案「跳过 Step 7」），语义不实——P5 未实现前它并不是
     /// 「跳过」，而是「重跑」。故收口为常驻卡里的正式入口。
-    /// Step 6 本身幂等（无改动则跳过提交、推送照常收尾，PRD §4.8 第 18 条⑥），重跑安全。
+    /// Step 6 本身幂等（无改动则跳过提交，但推送照常收尾），所以重跑是安全的。
     /// </remarks>
     /// <remarks>
     /// 可见性＝<b>推进指针 ≥ Step 6</b>（v0.23 起；原口径「至少一端已克隆」在 Step 3 一完成就给出一条
@@ -445,7 +445,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private TaskCompletionSource<CloneConflictChoice>? _conflictChoice;
 
     /// <summary>
-    /// 残留档案是否已由用户明确处置（PRD §4.7：禁止静默覆盖上一次未完成的档案）。
+    /// 残留档案是否已由用户明确处置（禁止静默覆盖上一次未完成的档案）。
     /// </summary>
     private bool _resumeResolved = true;
 
@@ -574,7 +574,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         _timeline = new StackPanel { Spacing = 8 };
 
-        // 残留档案未处置前禁止「下一步」，避免静默覆盖（PRD §4.7）
+        // 残留档案未处置前禁止「下一步」，避免静默覆盖
         _resumeResolved = _service.Current is null;
 
         _browseButton.Click += OnBrowseClicked;
@@ -631,7 +631,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             Background = PageBackground,
             Child = new Grid
             {
-                // 左：向导区（更宽）· 中：1px 分隔 · 右：Agent 操作记录（PRD §4.6.1 草图）
+                // 左：向导区（更宽）· 中：1px 分隔 · 右：Agent 操作记录
                 ColumnDefinitions = new ColumnDefinitions("3*,1,2*"),
                 Children = { left, divider, right }
             }
@@ -649,13 +649,13 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
     /// <inheritdoc />
     /// <remarks>
-    /// 卸载前由宿主调用：解绑共享能力层事件，避免卸载后回调触碰已卸载程序集（PRD §6 #20 / #22）。
+    /// 卸载前由宿主调用：解绑共享能力层事件，避免卸载后回调触碰已卸载程序集。
     /// </remarks>
     public void OnUnloading()
     {
         _unloaded = true;
 
-        // 清掉指向本面板的决策回调：能力层是长生命周期实例，不得在卸载后回调已卸载程序集（PRD §6 #20 / #22）
+        // 清掉指向本面板的决策回调：能力层是长生命周期实例，不得在卸载后回调已卸载程序集
         _service.CloneConflictResolver = null;
         _conflictChoice?.TrySetResult(CloneConflictChoice.Abort);
         _conflictChoice = null;
@@ -877,7 +877,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// 常驻「档案与维护」卡：任何步骤下都能重跑 Step 2 / 重新推送 / 中止并清理（PRD §4.7）。
+    /// 常驻「档案与维护」卡：任何步骤下都能重跑 Step 2 / 重新推送 / 中止并清理。
     /// </summary>
     /// <returns>维护卡。</returns>
     private Border BuildMaintenanceCard() => Card(new StackPanel
@@ -890,7 +890,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             {
                 Text = "「重跑 Step 2」复用同一工作区并新建执行会话；「重新推送」= 重跑 Step 6（已有改动才提交，"
                      + "推送照常收尾；推进到「推送」步后才出现，且编译未全部通过时会被拒绝）；「中止并清理」注销工作区、"
-                     + "删除已写入的技能与 MCP、清空档案——本地目录与云效上的远端产物都不会被删除（PRD §4.7）。",
+                     + "删除已写入的技能与 MCP、清空档案——本地目录与云效上的远端产物都不会被删除。",
                 FontSize = 11,
                 Foreground = MutedText,
                 TextWrapping = TextWrapping.Wrap
@@ -905,7 +905,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 3 操作区（PRD §4.3「用户确认界面」）：逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 建库按钮，
+    /// Step 3「用户确认界面」操作区：逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 建库按钮，
     /// 以及运行期出现的克隆冲突三选一。
     /// </summary>
     /// <returns>操作区。</returns>
@@ -1021,7 +1021,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 4 操作区（PRD §4.3 Step 4，v0.22 口径）：数据库参数表单 + 「开始探活」。
+    /// Step 4 操作区：数据库参数表单 + 「开始探活」。
     /// </summary>
     /// <remarks>
     /// 本步<b>只探活</b>：真正的连接由项目助手执行（路线②），面板只采集参数并呈现结论；
@@ -1047,7 +1047,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock
             {
                 Text = "口令只在内存：不写入项目档案、不写日志，操作记录里以 *** 呈现。"
-                     + "（已记录口径：本轮提示词会随框架会话历史落进本地会话库，详见 PRD §4.8）",
+                     + "（注意：本轮提示词会随框架会话历史落进本地会话库）",
                 FontSize = 11,
                 Foreground = MutedText,
                 TextWrapping = TextWrapping.Wrap
@@ -1069,7 +1069,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 5 操作区（PRD §4.3 Step 5）：逐端编译状态列表 + 「开始编译」。
+    /// Step 5 操作区：逐端编译状态列表 + 「开始编译」。
     /// </summary>
     /// <remarks>
     /// 编译方式<b>由助手按工程类型决定</b>（后端 .NET / 前端 Vite 的构建命令不同），面板不做判断，
@@ -1137,7 +1137,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，v0.28 起默认 develop）→ 暂存 → 有改动则提交 → 推送到各端自有仓库（PRD §4.3 Step 6）。
+    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，v0.28 起默认 develop）→ 暂存 → 有改动则提交 → 推送到各端自有仓库。
     /// </summary>
     /// <returns>操作区。</returns>
     private Border BuildStep6Area() => Card(new StackPanel
@@ -1166,7 +1166,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 7 操作区（PRD §4.3 Step 7 <b>v0.32 口径</b>）：逐端流水线状态 + <b>部署目标选择</b> + YAML 预览（可手工微调）+ 创建 / 覆盖更新。
+    /// Step 7 操作区：逐端流水线状态 + <b>部署目标选择</b> + YAML 预览（可手工微调）+ 创建 / 覆盖更新。
     /// </summary>
     /// <remarks>
     /// 面板零业务规则：模板、变量与缓存、待绑定清单、<b>「哪端需要部署阶段」与推荐目标</b>全部来自 Step 7 准备阶段的结论文件
@@ -1413,7 +1413,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 new TextBlock
                 {
                     Text = "每一步执行（云效调用、克隆、编译、建流水线…）都会实时记录在此，"
-                         + "失败时可就地查看原因并在左侧重试；凭据一律以 *** 呈现（PRD §4.6 / §4.8）。",
+                         + "失败时可就地查看原因并在左侧重试；凭据一律以 *** 呈现。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap
@@ -1433,7 +1433,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// 时间线内容变化后把日志滚到最新一条。
     /// </summary>
     /// <remarks>
-    /// 面板不得直接触碰 <c>Dispatcher</c>（PRD §6 #22），故不按优先级另行投递，而是借
+    /// 面板不得直接触碰 <c>Dispatcher</c>，故不按优先级另行投递，而是借
     /// <c>LayoutUpdated</c> 在布局完成后再滚动——此时内容高度（<c>Extent</c>）已按新记录更新，
     /// <c>ScrollToEnd</c> 才能准确定位到底部（<see cref="Refresh"/> 内同步调用会读到旧高度而滚不到底）。
     /// </remarks>
@@ -1452,7 +1452,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private void OnServiceChanged(object? sender, EventArgs e)
     {
         // 合并密集刷新：一次动作至少会触发 2~3 次 Changed（Running / 完成 / 追加），
-        // 排队期间只保留一次 UI 刷新，避免整表重复刷新（PRD §4.6 时间线）。
+        // 排队期间只保留一次 UI 刷新，避免整表重复刷新。
         if (Interlocked.Exchange(ref _refreshQueued, 1) != 0) return;
 
         _postToUi(() =>
@@ -1724,7 +1724,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <param name="Button">行按钮（回退导航入口；未到达的步骤由 <see cref="SyncFormEnabled"/> 灰化）。</param>
     private sealed record StepView(WizardStep Step, Border Badge, TextBlock BadgeText, TextBlock Status, Button Button);
 
-    /// <summary>步骤状态中文名（PRD §4.6.1 草图用语）。</summary>
+    /// <summary>步骤状态中文名。</summary>
     /// <param name="status">状态。</param>
     /// <returns>中文状态。</returns>
     private static string StatusText(StepStatus status) => status switch
@@ -1799,7 +1799,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         => _viewStep is { } pinned && (int)pinned <= (int)reached ? pinned : reached;
 
     /// <summary>
-    /// 切到指定步骤（PRD §4.6「步骤条可点击 / 上一步」）。
+    /// 切到指定步骤：步骤条可点击，「上一步」按钮回退一步。
     /// </summary>
     /// <remarks>
     /// 只移动面板的视图游标，不改档案推进指针，也不触发任何步骤动作——动作必须由用户在该步的操作区显式触发。
@@ -1825,7 +1825,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         Refresh();
     }
 
-    /// <summary>「上一步」（PRD §4.6 草图项）：视图游标 −1，只在「已到达」步之间移动。</summary>
+    /// <summary>「上一步」：视图游标 −1，只在「已到达」步之间移动。</summary>
     /// <param name="sender">事件源。</param>
     /// <param name="e">事件参数。</param>
     private void OnBackClicked(object? sender, RoutedEventArgs e)
@@ -2441,7 +2441,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private void OnPlanCheckedChanged(object? sender, RoutedEventArgs e) => MarkPrecheckStale();
 
     /// <summary>
-    /// 「创建并克隆」的可用性＝「预检已通过」且「预检未被输入变更作废」（PRD §4.3 Step 3）。
+    /// 「创建并克隆」的可用性＝「预检已通过」且「预检未被输入变更作废」。
     /// </summary>
     private void SyncCreateEnabled()
     {
@@ -2452,7 +2452,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 输入变更即作废预检（PRD §4.3 Step 3）：预检读的是一组具体参数，参数变了读数就不再可信。
+    /// 输入变更即作废预检：预检读的是一组具体参数，参数变了读数就不再可信。
     /// </summary>
     private void MarkPrecheckStale()
     {
@@ -2626,7 +2626,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             row.NameBox.IsEnabled = !_busy;
 
         // 回退导航（P4 收尾）：只放开「已到达」的步骤（回看 / 重跑）；超过推进指针的必须按顺序执行。
-        // 步骤条行与「上一步」同受此约束；残留档案未处置时一并锁住（PRD §4.7）。
+        // 步骤条行与「上一步」同受此约束；残留档案未处置时一并锁住。
         var reached = _service.CurrentStep;
         var navigable = hasArchive && !_busy && !blockedByResidual;
         foreach (var view in _stepViews)
@@ -2762,7 +2762,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         ShowWarnings(Array.Empty<string>());
     }
 
-    /// <summary>「下一步」：校验 → 建档案 → 立即执行 Step 2（PRD §4.3）。</summary>
+    /// <summary>「下一步」：校验 → 建档案 → 立即执行 Step 2。</summary>
     private async void OnNextClicked(object? sender, RoutedEventArgs e) => await ProceedAsync(false);
 
     /// <summary>
@@ -2771,7 +2771,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private async void OnAdoptClicked(object? sender, RoutedEventArgs e) => await ProceedAsync(true);
 
     /// <summary>
-    /// Step 1 主流程：校验 → 建档案 → 立即执行 Step 2（PRD §4.3）。
+    /// Step 1 主流程：校验 → 建档案 → 立即执行 Step 2。
     /// </summary>
     /// <param name="allowExistingWorkspace">
     /// 是否放行唯一性口径①（该目录已被登记为工作区）；仅「复用该工作区继续」传 <c>true</c>。
@@ -2782,7 +2782,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             return;
 
         // 已建档案后从步骤条回退到 Step 1 再点「下一步」＝清空档案、从 Step 2 重来（Step 3-6 的进度会重置）。
-        // 属破坏性动作，必须先显式确认（PRD §4.7「禁止静默覆盖档案」）。
+        // 属破坏性动作，必须先让用户显式确认，不允许静默覆盖已有档案。
         if (!allowExistingWorkspace && _service.Current is { } existing && !_restartConfirmed)
         {
             // 同目录不是「另建项目」而是「沿用当前工作区」：该目录已被登记（Step 2 建过），重提必被唯一性
@@ -2891,7 +2891,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _restartConfirmBanner.IsVisible = false;
     }
 
-    /// <summary>「重跑 Step 2」：重跑幂等（复用已有工作区、显式新建会话，PRD §4.3 陷阱①③）。</summary>
+    /// <summary>「重跑 Step 2」：重跑幂等（复用已有工作区、显式新建会话）。</summary>
     private async void OnRerunClicked(object? sender, RoutedEventArgs e)
     {
         if (_busy || _unloaded || _service.Current is null)
@@ -2921,7 +2921,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 「中止并清理」（PRD §4.7）：注销本项目工作区（不删本地目录）、删除已写入的 <c>newproject-*</c> 技能与
+    /// 「中止并清理」：注销本项目工作区（不删本地目录）、删除已写入的 <c>newproject-*</c> 技能与
     /// <c>yunxiao</c> MCP 文件、清空档案与操作记录；远端产物一律不自动删除。
     /// </summary>
     /// <remarks>
@@ -2982,7 +2982,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         Refresh();
     }
 
-    /// <summary>残留档案：清理后重来（本地完整回收 + 清空档案，不含远端产物，PRD §4.7）。</summary>
+    /// <summary>残留档案：清理后重来（本地完整回收 + 清空档案，不含远端产物）。</summary>
     private async void OnResumeDiscardClicked(object? sender, RoutedEventArgs e)
     {
         if (_unloaded)
@@ -3114,11 +3114,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 3「创建并克隆」（PRD §4.3 Step 3）：确认勾选 → 校验建库计划 → 回写档案 → 执行。
+    /// Step 3「创建并克隆」：确认勾选 → 校验建库计划 → 回写档案 → 执行。
     /// </summary>
     /// <remarks>
     /// <b>必须先通过预检</b>：未预检、或预检后被输入变更作废，都会在动作前阻断——
-    /// 本步会在云效组织内创建真实仓库，确认区读数与实际执行参数必须一致（PRD §4.3）。
+    /// 本步会在云效组织内创建真实仓库，确认区读数与实际执行参数必须一致。
     /// </remarks>
     private async void OnCreateReposClicked(object? sender, RoutedEventArgs e)
     {
@@ -3148,7 +3148,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             return;
         }
 
-        // 显式确认：本步会在云效组织内创建真实仓库（PRD §4.3「用户确认界面」）
+        // 显式确认：本步会在云效组织内创建真实仓库，故先摆出确认界面让用户核对再执行
         if (_confirmedCheck.IsChecked != true)
         {
             ShowErrors(new[] { "请先勾选「我已确认仓库名称与可见性」：本步会在云效组织内创建真实仓库。" });
@@ -3202,16 +3202,16 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         }
     }
 
-    /// <summary>Step 6「提交并推送」（PRD §4.3 Step 6）——与维护卡里的「重新推送（重跑 Step 6）」共用。</summary>
+    /// <summary>Step 6「提交并推送」——与维护卡里的「重新推送（重跑 Step 6）」共用。</summary>
     private async void OnPushClicked(object? sender, RoutedEventArgs e) => await RunPushAsync();
 
-    /// <summary>Step 4「开始探活」（PRD §4.3 Step 4，v0.22：只探活、不建库、不写文件）。</summary>
+    /// <summary>Step 4「开始探活」（本步只探活，不建库、不写文件）。</summary>
     private async void OnProbeClicked(object? sender, RoutedEventArgs e) => await RunProbeAsync();
 
-    /// <summary>Step 5「开始编译」（PRD §4.3 Step 5）。</summary>
+    /// <summary>Step 5「开始编译」。</summary>
     private async void OnBuildClicked(object? sender, RoutedEventArgs e) => await RunBuildAsync();
 
-    /// <summary>Step 7「创建流水线（逐端）」（PRD §4.3 Step 7 v0.30）。</summary>
+    /// <summary>Step 7「创建流水线（逐端）」。</summary>
     private async void OnPipelineClicked(object? sender, RoutedEventArgs e) => await RunCreatePipelinesAsync();
 
     /// <summary>Step 7「覆盖更新（逐端）」：按当前口径整体重推已有流水线（含部署段，破坏性、需先勾选确认）。</summary>
@@ -3604,7 +3604,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 克隆冲突三选一（PRD §4.3 Step 3）：能力层在运行中挂起等待本面板回答；
+    /// 克隆冲突三选一：能力层在运行中挂起等待本面板回答；
     /// 面板未创建（聊天入口）时能力层中止本步并给出引导文案（<see cref="INewProjectService.CloneConflictResolver"/> 为 <c>null</c>）。
     /// </summary>
     /// <param name="conflict">冲突上下文。</param>
