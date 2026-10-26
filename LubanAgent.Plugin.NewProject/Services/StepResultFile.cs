@@ -4,13 +4,13 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepResultFile
 *创建时间：2026/10/21
-*描述：Step 3 / 4 / 5 / 6 / 7 助手结论文件的路径约定（M4-P4 定案，v0.33 扩到 3/6/7）
+*描述：Step 3 / 4 / 5 / 6 / 7 助手结论文件的路径约定
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
-/// 助手结论文件的路径约定（M4-P4 定案）。
+/// 助手结论文件的路径约定。
 /// </summary>
 /// <remarks>
 /// <para>

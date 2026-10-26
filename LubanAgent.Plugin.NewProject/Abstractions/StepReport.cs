@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： StepReport
 *创建时间：2026/10/21
-*描述：Step 3/4/5/6/7「助手结论文件」契约（M4-P4 定案 + v0.3 助手驱动扩展）
+*描述：Step 3/4/5/6/7「助手结论文件」契约（助手驱动扩展）
 *****************************************************************************/
 
 using System.Text.Json.Serialization;
@@ -12,7 +12,7 @@ using System.Text.Json.Serialization;
 namespace LubanAgent.Plugin.NewProject.Abstractions;
 
 /// <summary>
-/// 结论文件的 <see cref="StepReport.Status"/> 取值（v0.3 助手驱动扩展）。
+/// 结论文件的 <see cref="StepReport.Status"/> 取值（助手驱动扩展）。
 /// </summary>
 /// <remarks>
 /// <b>为什么用 <c>string</c> 而不是枚举</b>：枚举遇未知值会在源生成反序列化阶段直接抛异常，
@@ -56,11 +56,11 @@ public static class StepReportPhase
 }
 
 /// <summary>
-/// 助手结论文件（<c>step{N}-*.json</c>）的 schema（M4-P4 定案 + v0.3 扩展）。
+/// 助手结论文件（<c>step{N}-*.json</c>）的 schema。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么用结论文件而不是解析对话</b>：路线② 下插件驱动助手跑一轮提示词，助手的正文与工具结果
+/// <b>为什么用结论文件而不是解析对话</b>：插件驱动助手跑一轮提示词，助手的正文与工具结果
 /// 都不适合做机器判定（正文会被截断、工具结果只回前 200 字符）。故约定助手把结论写成结构化 JSON，
 /// 插件回读后解析——判定口径 = 文件存在 + schema 可解析 + <see cref="Ok"/>（且 <see cref="Status"/>
 /// 为 <c>done</c>）+ 事件流无错误事件（+ Step 3/6/7 的本地复核），齐才算通过。
@@ -102,7 +102,7 @@ public sealed class StepReport
     public List<StepReportInput> Inputs { get; set; } = new();
 
     /// <summary>
-    /// 产物账目（v0.3）：<b>唯一的面板数据源 + 落账来源</b>。
+    /// 产物账目：<b>唯一的面板数据源 + 落账来源</b>。
     /// </summary>
     public List<StepReportArtifact> Artifacts { get; set; } = new();
 
@@ -153,7 +153,7 @@ public sealed class EndBuildResult
 }
 
 /// <summary>
-/// 结论文件 <c>artifacts[]</c> 的单个产物条目（v0.3 定案）。
+/// 结论文件 <c>artifacts[]</c> 的单个产物条目。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -161,7 +161,7 @@ public sealed class EndBuildResult
 /// </para>
 /// <para>
 /// <see cref="Extra"/> 按 <see cref="Kind"/> 对应一个<b>具名强类型</b>（<see cref="GroupArtifactExtra"/> /
-/// <see cref="RepositoryArtifactExtra"/> / <see cref="PipelineArtifactExtra"/>），<b>不得</b>用自由字典（C11′）。
+/// <see cref="RepositoryArtifactExtra"/> / <see cref="PipelineArtifactExtra"/>），<b>不得</b>用自由字典。
 /// </para>
 /// </remarks>
 public sealed class StepReportArtifact
@@ -198,7 +198,7 @@ public sealed class StepReportArtifact
 }
 
 /// <summary>
-/// <c>artifacts[].extra</c> 的多态基类（v0.3 C11′）。
+/// <c>artifacts[].extra</c> 的多态基类。
 /// </summary>
 /// <remarks>
 /// <b>判别属性名 = <c>kind</c></b>：助手在 <c>extra</c> 对象里同样写 <c>"kind"</c>（与产物条目的
@@ -297,7 +297,7 @@ public sealed class PipelineArtifactExtra : ArtifactExtra
 }
 
 /// <summary>
-/// 结论文件 <c>inputs[]</c> 的单个交互项（v0.3，仅 <c>status=needsInput</c> 时非空）。
+/// 结论文件 <c>inputs[]</c> 的单个交互项（仅 <c>status=needsInput</c> 时非空）。
 /// </summary>
 public sealed class StepReportInput
 {

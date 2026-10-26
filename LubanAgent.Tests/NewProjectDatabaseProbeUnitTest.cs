@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectDatabaseProbeUnitTest
 *创建时间：2026/10/21
-*描述：Step 4 探活参数与默认值单测——锁死 M4-P4 定案：
+*描述：Step 4 探活参数与默认值单测：
 *      ①参数校验口径；②Describe 口令脱敏；③连接串解析「绝不回填口令」；
 *      ④appsettings.json 容错（注释 / 尾随逗号 / 缺键）；⑤结论文件路径约定。
 *

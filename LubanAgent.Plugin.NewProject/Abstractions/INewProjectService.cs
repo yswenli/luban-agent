@@ -18,7 +18,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// 因此本契约的所有方法都必须以「当前项目档案」为唯一状态载体，不得各自持有流程状态。
 /// </para>
 /// <para>
-/// 云效 / git 步骤（Step 3 / 6 / 7）为<b>助手驱动（v0.3）</b>：codeup / flow 操作由项目会话助手经云效 MCP 工具执行，
+/// 云效 / git 步骤（Step 3 / 6 / 7）为<b>助手驱动</b>：codeup / flow 操作由项目会话助手经云效 MCP 工具执行，
 /// git 操作（克隆 / 推送）走框架 git 工具组；插件只做薄校验 + 下发提示词 + 回读结论文件 + 独立复核 + 更新档案，
 /// <b>不</b>在插件内自行拼 REST，也<b>不</b>在插件内渲染 YAML 模板（组织专有值随包分发在 <c>docs/</c>）。
 /// </para>
@@ -129,7 +129,7 @@ public interface INewProjectService
     /// <b>重跑幂等</b>：①目标代码组先查后建（同名组已存在则复用）；
     /// ②建库前先按目标仓库名检索，同名已存在则跳过创建、直接复用；
     /// ③克隆前判断目标目录是否非空，非空时助手回 <c>status=needsInput</c> + <c>inputs[id=clone-conflict]</c>，
-    /// 插件经 <see cref="CloneConflictResolver"/> 让用户三选一后<b>同会话续跑</b>（「清空后重克隆」的目录删除由助手执行，C5′）；
+    /// 插件经 <see cref="CloneConflictResolver"/> 让用户三选一后<b>同会话续跑</b>（「清空后重克隆」的目录删除由助手执行）；
     /// ④各端创建的仓库 id / 地址由结论 <c>artifacts[]</c> 回写档案的 <see cref="ProjectSpec.RemoteArtifacts"/>。
     /// </para>
     /// <para>
@@ -177,7 +177,7 @@ public interface INewProjectService
     void ApplyRepositoryPlan(IEnumerable<EndRepository> plan);
 
     /// <summary>
-    /// Step 4 · 数据库探活（<b>v0.22 口径</b>）：把界面填的参数交给项目助手执行<b>只读</b>探活，回报结论；
+    /// Step 4 · 数据库探活：把界面填的参数交给项目助手执行<b>只读</b>探活，回报结论；
     /// <b>不建库、不写任何项目文件 / <c>appsettings</c></b>，结论<b>不阻断</b>流程。
     /// </summary>
     /// <remarks>
@@ -218,7 +218,7 @@ public interface INewProjectService
     /// Step 6 · 推送改动到自有仓库：提交本地最终改动并推送到各端专属仓库。
     /// </summary>
     /// <remarks>
-    /// <b>v0.3 助手驱动</b>：提交与推送由项目会话助手按 <c>docs/step6-push.md</c> 的口径调用框架 git 工具组
+    /// <b>助手驱动</b>：提交与推送由项目会话助手按 <c>docs/step6-push.md</c> 的口径调用框架 git 工具组
     /// （<c>GitAddAsync</c> / <c>GitCommitAsync</c> / <c>GitPushAsync</c> 等），插件回读结论文件并做独立复核
     /// （<c>StepLocalVerifier.VerifyPush</c>：本地 <c>refs/remotes/origin/&lt;pushBranch&gt;</c> 与自报提交 id 比对）。
     /// <b>前置闸门</b>：Step 5 编译未全部通过时拒绝执行（<c>StepGate.CanPush</c>，判据读 Step 5 结论文件）。
@@ -232,13 +232,13 @@ public interface INewProjectService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>v0.30 口径保留</b>：云效 OpenAPI 没有「复制流水线」接口，且只收顶层 <c>stages:</c> 的新版 YAML
+    /// <b>口径保留</b>：云效 OpenAPI 没有「复制流水线」接口，且只收顶层 <c>stages:</c> 的新版 YAML
     /// （喂 tb 形态 <c>flow</c> 原文必报 <c>1209300</c>），故仍是「按企服版语义写成新版 YAML → 提交创建」；
-    /// 变化只在<b>谁来渲染</b>——v0.3 起 YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，由助手渲染（C10′）。
+    /// 变化只在<b>谁来渲染</b>——YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，由助手渲染。
     /// </para>
     /// <para>
-    /// <b>v0.32 口径保留（部署阶段随创建写入）</b>：有独立部署阶段的端（仅后端）在<b>创建时就写入</b> <c>deploy</c> 段，
-    /// 目标主机组由用户在<b>创建之前</b>从云效主机组列表里选（<see cref="ListDeployTargetsAsync"/>，或聊天路径在对话里选，C15′）。
+    /// <b>口径保留（部署阶段随创建写入）</b>：有独立部署阶段的端（仅后端）在<b>创建时就写入</b> <c>deploy</c> 段，
+    /// 目标主机组由用户在<b>创建之前</b>从云效主机组列表里选（<see cref="ListDeployTargetsAsync"/>，或聊天路径在对话里选）。
     /// <b>建完不自动运行</b>（不发 <c>flow_run_pipeline</c>）。
     /// </para>
     /// <para>
@@ -246,7 +246,7 @@ public interface INewProjectService
     /// <c>'&lt;未选择：主机组 uuid&gt;'</c> 占位符提交到云效（不回退成手填 uuid：填错云效只回「该机器组uuid[x]不存在」，白跑一次且污染远端）。
     /// </para>
     /// <para>
-    /// <b>幂等（编排 B · 全端）</b>：创建前按流水线名精确检索，<b>命中同名即对该条覆盖更新本次 YAML</b>
+    /// <b>幂等（全端）</b>：创建前按流水线名精确检索，<b>命中同名即对该条覆盖更新本次 YAML</b>
     /// （不再「命中即复用旧的那条」——旧流水线可能缺部署段或残留上一版模板 / 占位符，复用会让本次 YAML 与远端不一致）。
     /// 未命中才创建。<b>副作用</b>：普通重跑也会覆盖远端（含控制台上的人工改动）。
     /// </para>
@@ -270,7 +270,7 @@ public interface INewProjectService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 用途（v0.32 沿用）：把 v0.31 及更早建的「只含构建段、末尾带注释块」的旧流水线补成含部署段的完整 YAML；
+    /// 用途：把更早建的「只含构建段、末尾带注释块」的旧流水线补成含部署段的完整 YAML；
     /// 或用户换了部署目标后纠偏。<b>按档案里的 <c>PipelineId</c> 直改</b>，不做按名检索。
     /// </para>
     /// <para>
@@ -293,8 +293,8 @@ public interface INewProjectService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>v0.3 助手驱动</b>：YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，由助手按文档渲染并写成结论文件
-    /// （<c>results/step7-*.json</c>），插件回读映射——<b>不在插件内渲染模板</b>（C10′）。
+    /// <b>助手驱动</b>：YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，由助手按文档渲染并写成结论文件
+    /// （<c>results/step7-*.json</c>），插件回读映射——<b>不在插件内渲染模板</b>。
     /// </para>
     /// <para>
     /// <b>不建 / 不改云效流水线</b>：本阶段只读，创建 / 覆盖更新发生在用户确认后的执行续跑
@@ -325,7 +325,7 @@ public interface INewProjectService
         IReadOnlyDictionary<ProjectEnd, DeployHostGroup>? deployTargets = null);
 
     /// <summary>
-    /// Step 7 · 拉取<b>部署目标候选</b>（云效主机组列表，v0.32 只读能力）。
+    /// Step 7 · 拉取<b>部署目标候选</b>（云效主机组列表）。
     /// </summary>
     /// <remarks>
     /// <para>

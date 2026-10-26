@@ -14,7 +14,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>v0.22 口径（用户定案）</b>：本步<b>只探活</b>——不写任何项目文件、不改 <c>appsettings*.json</c>、
+/// <b>口径（用户定案）</b>：本步<b>只探活</b>——不写任何项目文件、不改 <c>appsettings*.json</c>、
 /// 不建库、不执行任何 SQL；判定只看「能连上且该库存在」，结论<b>不阻断</b>流程。
 /// </para>
 /// <para>

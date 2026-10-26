@@ -435,7 +435,7 @@ public partial class Sidebar : UserControl
             wsFlyout.Items.Add(initItem);
             wsRow.ContextFlyout = wsFlyout;
 
-            // 单击切换工作区；双击工作区名进入行内重命名（D2，替代原菜单里的「重命名」弹窗）
+            // 单击切换工作区；双击工作区名进入行内重命名（替代原菜单里的「重命名」弹窗）
             wsRow.PointerPressed += (s, e) =>
             {
                 if (e.GetCurrentPoint(wsRow).Properties.IsRightButtonPressed)

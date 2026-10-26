@@ -122,7 +122,7 @@ public sealed class EndRepository
     /// <summary>所属端。</summary>
     public ProjectEnd End { get; set; }
 
-    /// <summary>模板仓名（v0.33 起由助手按 <c>docs/org-reference.md</c> 的按端名称约定在模板库匹配后回填，插件不再硬编码）。</summary>
+    /// <summary>模板仓名（由助手按 <c>docs/org-reference.md</c> 的按端名称约定在模板库匹配后回填，插件不再硬编码）。</summary>
     public string TemplateRepository { get; set; } = string.Empty;
 
     /// <summary>
@@ -143,25 +143,25 @@ public sealed class EndRepository
     /// <summary>云效仓库 Web 地址。</summary>
     public string WebUrl { get; set; } = string.Empty;
 
-    /// <summary>HTTPS 克隆地址（取自「查询单个仓库」的 <c>httpUrlToRepo</c>，PRD v0.14 订正）。</summary>
+    /// <summary>HTTPS 克隆地址（取自「查询单个仓库」的 <c>httpUrlToRepo</c>）。</summary>
     public string CloneUrl { get; set; } = string.Empty;
 
     /// <summary>本地代码目录。</summary>
     public string LocalPath { get; set; } = string.Empty;
 
     /// <summary>默认/推送分支（建库时的默认分支，Step 6 与流水线 <c>{branch}</c> 都用它；配置留空时按 docs 退回仓库默认分支）。</summary>
-    public string DefaultBranch { get; set; } = "main";
+    public string DefaultBranch { get; set; } = "develop";
 
     /// <summary>该端是否已建库并克隆完成。</summary>
     public bool Cloned { get; set; }
 }
 
 /// <summary>
-/// 数据库探活参数与结论（Step 4，<b>v0.22 口径</b>）。
+/// 数据库探活参数与结论（Step 4）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>v0.22 起 Step 4 只探活</b>：插件<b>不</b>生成连接串、<b>不</b>改 <c>appsettings*.json</c>、<b>不</b>建库、
+/// <b>Step 4 只探活</b>：插件<b>不</b>生成连接串、<b>不</b>改 <c>appsettings*.json</c>、<b>不</b>建库、
 /// 不执行任何 SQL；本对象只记「界面填了什么（非敏感项）」与「探活结论」，用于表单回填与重启后复核。
 /// </para>
 /// <para>
@@ -303,14 +303,14 @@ public sealed class EndPipelineResult
     /// <summary>云效控制台链接。</summary>
     public string WebUrl { get; set; } = string.Empty;
 
-    /// <summary>本次是<b>新建</b>（true）还是<b>命中同名后覆盖更新</b>（false，幂等；编排 B · 全端）。</summary>
+    /// <summary>本次是<b>新建</b>（true）还是<b>命中同名后覆盖更新</b>（false，幂等；全端）。</summary>
     public bool Created { get; set; }
 
     /// <summary>
-    /// 本次提交的 YAML <b>是否含部署阶段</b>（v0.32 口径变更：部署段在创建时就写入，仅后端为 <c>true</c>）。
+    /// 本次提交的 YAML <b>是否含部署阶段</b>（部署段在创建时就写入，仅后端为 <c>true</c>）。
     /// </summary>
     /// <remarks>
-    /// 旧档案里该字段是「事后用『一键补齐部署阶段』补过」的意思；v0.32 起改为「本次提交即含部署段」。
+    /// 旧档案里该字段是「事后用『一键补齐部署阶段』补过」的意思；改为「本次提交即含部署段」。
     /// 旧档案 JSON 仍可反序列化（同名同义可近似对应），只是旧值可能为 <c>false</c>（当时确实只提交了构建段）。
     /// </remarks>
     public bool DeployStageIncluded { get; set; }
@@ -394,7 +394,7 @@ public sealed class ProjectSpec
     /// <remarks>Step 3 建库重跑会作废本结论（仓库地址可能已变，见 <c>NewProjectService.InvalidatePipelineConclusion</c>）。</remarks>
     public List<EndPipelineResult> PipelineResults { get; set; } = new();
 
-    /// <summary>远端产物清单（v0.18 新增）：向导与插件管理界面均可查看。</summary>
+    /// <summary>远端产物清单：向导与插件管理界面均可查看。</summary>
     public List<RemoteArtifact> RemoteArtifacts { get; set; } = new();
 
     // ── 过程状态 ─────────────────────────────────────────────────────

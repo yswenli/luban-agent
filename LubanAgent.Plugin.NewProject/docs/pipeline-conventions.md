@@ -30,7 +30,7 @@
 
 | 端 | 有独立部署阶段？ | 阶段内容 | `yamlIncludesDeployStage` | 是否必选部署目标 |
 |----|------------------|----------|---------------------------|------------------|
-| **Service（后端）** | ✅ 有 | `stages.deploy` · `VMDockerDeploy`（主机 Docker 部署，对应企服版 `docker-deploy`） | `true` | **必须选**（缺目标 ⇒ 不提交、写 `failed`；v0.33 由助手按提示词硬边界判定，插件无守卫） |
+| **Service（后端）** | ✅ 有 | `stages.deploy` · `VMDockerDeploy`（主机 Docker 部署，对应企服版 `docker-deploy`） | `true` | **必须选**（缺目标 ⇒ 不提交、写 `failed`；由助手按提示词硬边界判定，插件无守卫） |
 | Admin（管理端） | ❌ 无 | 构建产物上传 OSS 即发布 | `false` | 不需要 |
 | Mobile（移动端） | ❌ 无 | 同上 | `false` | 不需要 |
 
@@ -85,7 +85,7 @@
 | 同名已存在 / 重跑 | **按档案里的 `PipelineId` 直改** ⇒ `mcp_yunxiao_flow_update_pipeline`（覆盖更新），**不要**重复 `create` |
 | 改了部署目标 | 必须用「覆盖更新」把新 YAML 推上去（YAML 里写死了 uuid；旧 YAML 的 uuid 已失效） |
 | 面板手工微调 | 微调文本随 `answers` 进执行续跑；**面板不做即时校验**（`name:` 一致性 / Tab / 顶层 `stages:` 一律**交给云效报回**，失败即 `status="failed"`，文案取云效原文，如 `1209300`） |
-| 缺部署目标（后端） | **不提交、直接失败**（`status="failed"`）；v0.33 由助手按提示词硬边界判定——**不得**把 `'<未选择：主机组 uuid>'` 之类占位发到云效 |
+| 缺部署目标（后端） | **不提交、直接失败**（`status="failed"`）；由助手按提示词硬边界判定——**不得**把 `'<未选择：主机组 uuid>'` 之类占位发到云效 |
 | 远端产物 | **一律不自动删除**（重跑/中止都只留孤儿清单） |
 
 - 结论文件 `artifacts[kind=pipeline]` 的字段：`end` / `name`（→ 流水线名）/ `yaml` / `externalId`（→ `PipelineId`）/ `webUrl` / `extra.yamlIncludesDeployStage` / `extra.pendingBindings`。

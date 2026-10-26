@@ -21,7 +21,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 执行，Step 6 却推送成功，档案里出现「5 编译 未开始 / 6 推送 已完成」的自相矛盾状态。
 /// </para>
 /// <para>
-/// <b>C7′ 判定源（v0.3 定案）</b>：从「档案终态快照 <see cref="ProjectSpec.StepStates"/> + 逐端结果」改为
+/// <b>判定源</b>：从「档案终态快照 <see cref="ProjectSpec.StepStates"/> + 逐端结果」改为
 /// <b>读对应步骤最近一份结论文件</b>——<c>CanPush</c> 读 <c>results/step5-*.json</c> 的逐端编译结论、
 /// <c>CanCreatePipelines</c> 读 <c>results/step6-*.json</c> 的逐端推送结论。判定复用
 /// <see cref="StepReportEvaluator"/>（避免「两处口径各自漂移」）；<see cref="ProjectSpec.StepStates"/> 降级为
@@ -72,7 +72,7 @@ public static class StepGate
     /// 作废编译（Step 5）结论：Step 3（建库并克隆）重跑成功后调用——本地代码可能已变，旧结论不再代表当前工作树。
     /// </summary>
     /// <remarks>
-    /// C7′：删除（作废）最近一份 <c>results/step5-*.json</c> + 清档案 <see cref="ProjectSpec.BuildResults"/>，
+    /// 删除（作废）最近一份 <c>results/step5-*.json</c> + 清档案 <see cref="ProjectSpec.BuildResults"/>，
     /// 使 <see cref="CanPush"/> 立刻判否。不再维护 <c>StepStates["Build"]</c> 快照键（降级为仅界面进度）。
     /// </remarks>
     /// <param name="spec">项目档案。</param>

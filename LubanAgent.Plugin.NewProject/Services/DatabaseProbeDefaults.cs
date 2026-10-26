@@ -22,7 +22,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 预填到界面，用户只需按自己项目改库名 + 填口令即可，省掉对照配置文件抄参数的手工步骤。
 /// </para>
 /// <para>
-/// <b>只读且不越界</b>：本类只<b>读</b>该文件，<b>绝不</b>改写它（v0.22 口径：Step 4 不写任何项目文件）；
+/// <b>只读且不越界</b>：本类只<b>读</b>该文件，<b>绝不</b>改写它（Step 4 不写任何项目文件）；
 /// 解析出的口令一律丢弃——<see cref="DatabaseProbeRequest.Password"/> 由用户在界面手工填，不回填、不落档案。
 /// </para>
 /// <para>

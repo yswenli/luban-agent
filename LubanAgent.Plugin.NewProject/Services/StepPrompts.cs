@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepPrompts
 *创建时间：2026/10/21
-*描述：Step 4 / Step 5 交给助手执行的提示词构造（M4-P4 定案）
+*描述：Step 4 / Step 5 交给助手执行的提示词构造
 *****************************************************************************/
 
 using System.Text;
@@ -102,14 +102,14 @@ public static class StepPrompts
     /// 构造 Step 5「逐端编译检查」提示词。
     /// </summary>
     /// <remarks>
-    /// v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——允许修依赖树与环境（`fnm` 切 Node 16、
+    /// 边界由「只编译、不修复」放宽为「只编译、不改业务」——允许修依赖树与环境（`fnm` 切 Node 16、
     /// npm / cnpm 装依赖、重建 node_modules），仍禁止改业务源码与工程配置；
     /// 并按端写入【本组织已知构建姿势】（管理端：develop 分支 + Node 16 + `npm run build:dev`）。
-    /// v0.29：纠正「包入口缺失」的处置——半装包（如 element-plus 缺 <c>es/index.mjs</c>）只能删包目录重装，
+    /// 纠正「包入口缺失」的处置——半装包（如 element-plus 缺 <c>es/index.mjs</c>）只能删包目录重装，
     /// <c>npm rebuild</c> 无效；并要求装依赖独占一条命令跑完（管道截断会让子进程半途被杀）。
-    /// v0.30：管理端改为固定的 4 步流程（先构建 → 失败再核 Node 16 → <c>cnpm i</c> 修依赖 → 再构建），
+    /// 管理端改为固定的 4 步流程（先构建 → 失败再核 Node 16 → <c>cnpm i</c> 修依赖 → 再构建），
     /// 与真机验证过的成功路径一致；「全局装 vite」由用户明确授权。
-    /// v0.34：新增「postinstall 未跑」分支——<c>@vue-office/{docx,excel,pdf}</c> 这类包的 <c>main</c> 指向
+    /// 新增「postinstall 未跑」分支——<c>@vue-office/{docx,excel,pdf}</c> 这类包的 <c>main</c> 指向
     /// <c>lib/index.js</c>，而该文件靠 postinstall 按 Vue 大版本从 <c>lib/v3</c> 拷出；cnpm 装完不补跑，
     /// 删包重装无效。修法是跑包内自带的 <c>switch-cli.js 3</c>，且同族包要一次查全（真机：补完 docx 立刻被 excel 卡住）。
     /// </remarks>
@@ -217,7 +217,7 @@ public static class StepPrompts
         return builder.ToString();
     }
 
-    // ── Step 3 / 6 / 7（v0.3 助手驱动）────────────────────────────────────────
+    // ── Step 3 / 6 / 7（助手驱动）────────────────────────────────────────
 
     /// <summary>
     /// 构造 Step 3「建库前准备（只读）」提示词（一次只读准备下发）。

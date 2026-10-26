@@ -26,7 +26,7 @@ namespace LubanAgentA2A.Executor;
 /// 远程子代理执行器（client 角色）。把 <see cref="SubAgentSpec"/> 编为 A2A 消息，
 /// 经 <see cref="IA2AClient"/> 调用远端 Agent，再把远端 A2A 事件流反译为
 /// <see cref="SubAgentExecutionEvent"/> 流。
-/// <para>远端自行执行，本机 **不设置** 工具确认作用域（Rev.4 A3）。</para>
+/// <para>远端自行执行，本机 **不设置** 工具确认作用域。</para>
 /// </summary>
 public sealed class RemoteSubAgentExecutor : ISubAgentExecutor
 {

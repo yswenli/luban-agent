@@ -15,7 +15,7 @@ using LubanAgent.Plugin.NewProject.Serialization;
 namespace LubanAgent.Plugin.NewProject.Configuration;
 
 /// <summary>
-/// 插件配置：仓库命名、代码组命名与推送分支约定（v0.33 起只留 UI 预填用的短格式值）。
+/// 插件配置：仓库命名、代码组命名与推送分支约定（只留 UI 预填用的短格式值）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,7 +24,7 @@ namespace LubanAgent.Plugin.NewProject.Configuration;
 /// ② 宿主配置节点覆盖（<c>IPluginHost.GetConfig</c>，P2 起接入）。
 /// </para>
 /// <para>
-/// <b>v0.33 瘦身口径</b>：组织专有值（模板仓对照 / 三端流水线默认值 / 参考流水线 id / 占位符替换规则 /
+/// <b>瘦身口径</b>：组织专有值（模板仓对照 / 三端流水线默认值 / 参考流水线 id / 占位符替换规则 /
 /// 代码组父级组 ID）全部迁出到随包分发的 <c>docs/</c>（见 <c>docs/org-reference.md</c>、
 /// <c>docs/pipeline-conventions.md</c>），Step 3/7 由助手按那里的事实判定；本文件只留
 /// 「建单前面板就要回显 / 预填的格式与兜底值」，不含任何组织敏感值。
@@ -43,7 +43,7 @@ public sealed class NewProjectSettings
     /// <summary>默认可见性（默认＝组织内公开）。</summary>
     public string DefaultVisibility { get; set; } = "internal";
 
-    /// <summary>Step 6 统一推送的分支（v0.28 起默认 <c>develop</c>，与 Step 3 克隆 pin 的择优结果对齐）。</summary>
+    /// <summary>Step 6 统一推送的分支（默认 <c>develop</c>，与 Step 3 克隆 pin 的择优结果对齐）。</summary>
     /// <remarks>
     /// 该值同时用作云效建仓的默认分支（<c>DefaultBranch</c>），故 Step 3 与 Step 6 口径一致；
     /// 这里的默认值只是<b>兜底</b>——正常路径取包内 <c>newproject.settings.json</c>（同样是 <c>develop</c>），

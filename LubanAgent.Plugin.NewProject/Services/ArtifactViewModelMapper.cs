@@ -17,7 +17,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么不新增专用段</b>：C11′ 定案——<c>artifacts[]</c> 既是产物账目（落进档案），也是面板视图模型的
+/// <b>为什么不新增专用段</b>：<c>artifacts[]</c> 既是产物账目（落进档案），也是面板视图模型的
 /// <b>唯一来源</b>；面板不读 <c>extra</c> 的任意键，只读 <see cref="GroupArtifactExtra"/> /
 /// <see cref="RepositoryArtifactExtra"/> / <see cref="PipelineArtifactExtra"/> 的具名属性。
 /// </para>

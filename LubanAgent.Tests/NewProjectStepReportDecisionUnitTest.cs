@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectStepReportDecisionUnitTest
 *创建时间：2026/10/22
-*描述：v0.3 助手驱动扩展单测——锁死三件事：
+*描述：助手驱动扩展单测——锁死三件事：
 *      ① 结论文件扩展 schema（status / inputs / artifacts + 三个具名 extra）的源生成解析；
 *      ② 三个新判定入口（EvaluateRepositorySetup / EvaluatePush / EvaluatePipeline）的
 *         done / needsInput / failed 三态与逐端完备性；

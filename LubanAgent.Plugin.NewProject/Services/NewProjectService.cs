@@ -45,9 +45,9 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 一律<b>按需解析</b>，<b>不</b>长期持有（Scoped 服务不得被单例提升）。
 /// </para>
 /// <para>
-/// <b>当前进度（M4-P3）</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
-/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、v0.28 起默认 develop + 提交 + 推送）已落地；
-/// Step 4 / 5 已落地为「助手亲自执行」；Step 7（v0.32：内嵌新版 YAML 模板渲染 + 创建前选定部署目标、创建即写部署段 + 覆盖更新）见
+/// <b>当前进度</b>：Step 1 校验 + Step 2（工作区 / 会话 / 技能 / MCP / 档案快照）+
+/// Step 3（按模板建库 / 同名复用 + 克隆 + 占位符替换）+ Step 6（目标分支可配置：`pushBranch` 优先、默认 develop + 提交 + 推送）已落地；
+/// Step 4 / 5 已落地为「助手亲自执行」；Step 7（内嵌新版 YAML 模板渲染 + 创建前选定部署目标、创建即写部署段 + 覆盖更新）见
 /// <see cref="CreatePipelinesAsync"/> / <see cref="UpdatePipelinesAsync"/>。
 /// </para>
 /// </remarks>
@@ -79,7 +79,7 @@ public sealed class NewProjectService : INewProjectService
     private NewProjectSettings _settings = new();
 
     /// <summary>
-    /// 最近一次 Step 7「准备（只读）」的读数（v0.3）：供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。
+    /// 最近一次 Step 7「准备（只读）」的读数：供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。
     /// </summary>
     /// <remarks>随读随用、不落档案；<c>null</c>＝本次进程尚未跑过准备，面板应先调 <see cref="PreparePipelinesAsync"/>。</remarks>
     private PipelinePrepareResult? _pipelinePrepareResult;
@@ -88,7 +88,7 @@ public sealed class NewProjectService : INewProjectService
     /// 最近一次 Step 3「准备（只读）」结论文件路径（执行续跑的<b>事实来源</b>）。
     /// </summary>
     /// <remarks>
-    /// <b>为什么记住路径而不是取最新一份</b>：准备与执行共用 <c>results/step3-*.json</c> 这套命名，
+    /// <b>为什么记住路径而不是取最新一份</b>：准备与执行共用 <c>results/step3-*.json</c> 命名，
     /// 执行成功后再回取「最新一份」拿到的会是<b>执行</b>结论；把执行结论当准备结论下发会跑偏事实来源。
     /// 本字段跨调用有效；进程重启后为空，才回退到「取最新一份」（尽力而为）。
     /// </remarks>
@@ -324,7 +324,7 @@ public sealed class NewProjectService : INewProjectService
         };
 
         // 各端目标仓库（仓库名默认 {Code}-Service/-Admin/-Mobile，如 Csxmy-Service；本地目录同源，Step 3 可改）。
-        // 模板仓对照不再由插件配置提供：v0.33 起迁到 docs/org-reference.md，由助手在 Step 3 只读准备阶段按那里的
+        // 模板仓对照不再由插件配置提供：迁到 docs/org-reference.md，由助手在 Step 3 只读准备阶段按那里的
         // 按端名称约定定位模板仓，回填进 Step 3 预检产物（见 RepositoryPrecheck.TemplateRepository）。
         foreach (var end in selected)
         {
@@ -601,7 +601,7 @@ public sealed class NewProjectService : INewProjectService
             if (!IsSupportedVisibility(entry.Visibility))
                 errors.Add($"{label}可见性：取值非法（只能是「组织内公开」或「私有」）。");
 
-            // 模板仓不再由插件配置校验：v0.33 起由助手在 Step 3 只读准备阶段按 docs/org-reference.md 的
+            // 模板仓不再由插件配置校验：由助手在 Step 3 只读准备阶段按 docs/org-reference.md 的
             // 按端名称约定定位并回填（未定位到即 Step 3 预检失败），Step 2 此处不做模板仓必填校验。
 
             // pin 不再必填：留空＝助手在 Step 3 预检 / 执行续跑时按 docs/org-reference.md 的
@@ -661,7 +661,7 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>v0.3 口径（一次只读准备下发）</b>：插件<b>不再</b>自己拿 <c>CodeupClient</c> / PAT 去联网预检；
+    /// <para><b>口径（一次只读准备下发）</b>：插件<b>不再</b>自己拿 <c>CodeupClient</c> / PAT 去联网预检；
     /// 改为把「只读准备」下发到当前项目会话，由助手按 <c>docs/step3-repositories.md</c> 用云效只读 MCP 拉事实，
     /// 写进结论文件 <c>step3-*.json</c>；插件回读该结论并映射成确认界面读数。</para>
     /// <para><b>薄校验</b>：只做不联网的前置校验（档案 / 建库计划 / 本地目录 / 组织 ID 非空）；任一不满足即
@@ -872,12 +872,12 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ② · v0.3）</b>：Step 3 的「准备（只读）」由 <see cref="PrecheckRepositoriesAsync"/> 产出结论文件；
+    /// <para><b>执行形态</b>：Step 3 的「准备（只读）」由 <see cref="PrecheckRepositoriesAsync"/> 产出结论文件；
     /// 本方法是用户确认后的<b>执行续跑</b>——把确认后的建库计划 + 准备结论文件路径下发，助手在<b>同一会话</b>里
     /// 建组 / 建库 / 克隆 / 替换占位符，插件再回读 <c>artifacts[]</c> 落账 + 本地复核。</para>
     /// <para><b>needsInput 往返</b>：目录非空等助手无法自行判定的情形，助手写 <c>status=needsInput</c> +
     /// <c>inputs[]</c>；插件就 <c>id=clone-conflict</c> 征询用户三选一，把答复拼进下一轮执行续跑（最多 <see cref="MaxRepositoryRounds"/> 轮）。
-    /// 「清空后重克隆」的目录删除由<b>助手</b>执行（C5′），插件不再介入。</para>
+    /// 「清空后重克隆」的目录删除由<b>助手</b>执行，插件不再介入。</para>
     /// <para><b>重跑联动</b>：通过后作废上一轮 Step 5 编译结论与 Step 7 流水线结论——本地代码与仓库地址都可能已变，
     /// 旧结论会误放行 / 误指向。</para>
     /// </remarks>
@@ -1235,8 +1235,8 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ②）</b>：插件把参数交给项目会话的助手，由助手用脚本工具自己连库探活，并把结论写进约定文件；插件回读结论、给出可展示的判定。</para>
-    /// <para><b>v0.22 口径</b>：只探活——不写任何项目文件 / <c>appsettings</c>、不建库、不执行任何 SQL；判定只看「能连上且库存在」，结果<b>不阻断</b>，本步结束即推进到 Step 5。</para>
+    /// <para><b>执行形态</b>：插件把参数交给项目会话的助手，由助手用脚本工具自己连库探活，并把结论写进约定文件；插件回读结论、给出可展示的判定。</para>
+    /// <para>只探活——不写任何项目文件 / <c>appsettings</c>、不建库、不执行任何 SQL；判定只看「能连上且库存在」，结果<b>不阻断</b>，本步结束即推进到 Step 5。</para>
     /// <para><b>口令</b>：只在内存（内联进本轮提示词），不落档案、不写日志、操作记录一律 <c>***</c>。</para>
     /// </remarks>
     public async Task<StepResult> SetupDatabaseAsync(DatabaseProbeRequest request, CancellationToken cancellationToken = default)
@@ -1304,7 +1304,7 @@ public sealed class NewProjectService : INewProjectService
             spec.Database.ProbeMessage = message;
             spec.Database.ProbedAt = DateTimeOffset.Now;
 
-            // 探活结果不阻断（v0.22 定案）：无论通过与否都推进到 Step 5
+            // 探活结果不阻断：无论通过与否都推进到 Step 5
             spec.AdvanceTo(WizardStep.Build);
 
             var lines = DescribeTurn(outcome, resultFile);
@@ -1364,8 +1364,8 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ②）</b>：编译命令<b>由助手按工程类型自行判断</b>（后端 <c>dotnet build</c>、前端按本组织既有姿势 <c>fnm exec --using=16 -- npm.cmd run build:dev</c> 等），插件只提供白名单与结论契约。</para>
-    /// <para><b>边界（v0.28 放宽）</b>：只编译、<b>不改业务</b>——允许修依赖树与环境（装依赖 / <c>fnm</c> 切 Node /
+    /// <para><b>执行形态</b>：编译命令<b>由助手按工程类型自行判断</b>（后端 <c>dotnet build</c>、前端按本组织既有姿势 <c>fnm exec --using=16 -- npm.cmd run build:dev</c> 等），插件只提供白名单与结论契约。</para>
+    /// <para><b>边界</b>：只编译、<b>不改业务</b>——允许修依赖树与环境（装依赖 / <c>fnm</c> 切 Node /
     /// <c>npm rebuild X</c> 补跑依赖自身的构建脚本 / 必要时重建 <c>node_modules</c>），禁止改业务源码与工程配置。</para>
     /// <para><b>失败阻断</b>：只要有一端未通过（含「助手漏给某端结论」），档案就不推进到 Step 6；修好后重跑本步即可。</para>
     /// </remarks>
@@ -1458,7 +1458,7 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// 创建「插件 → 宿主会话助手」的桥接层（路线 ②）。
+    /// 创建「插件 → 宿主会话助手」的桥接层。
     /// </summary>
     /// <returns>桥接层实例（每次现建，用完即弃）。</returns>
     private HostAssistantBridge CreateBridge() => new(ResolveByType, ResolveSessionManager, _host);
@@ -1538,7 +1538,7 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ② · v0.3）</b>：分支整理 / 暂存 / 提交 / 推送全部由助手用<b>框架 git 工具组</b>完成，
+    /// <para><b>执行形态</b>：分支整理 / 暂存 / 提交 / 推送全部由助手用<b>框架 git 工具组</b>完成，
     /// 插件只把「待推送的端」下发、回读结论、做插件侧本地复核。</para>
     /// <para><b>凭据由用户在外部环境配置</b>（credential helper / 系统凭据管理器）：插件不提供凭据通路、不拼鉴权 URL，
     /// 也不再有 <c>CodeupClient.PushAsync</c> 直连。</para>
@@ -1697,12 +1697,12 @@ public sealed class NewProjectService : INewProjectService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>执行形态（路线 ② · v0.3）</b>：YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，
+    /// <para><b>执行形态</b>：YAML 正文来自随包分发的 <c>docs/pipeline-*.yml.md</c>，
     /// 由助手按文档渲染并写入结论文件（<c>results/step7-*.json</c>），插件回读 <c>artifacts[]</c> 映射成预览——
-    /// <b>不在插件内渲染模板</b>（C10′）。</para>
+    /// <b>不在插件内渲染模板</b>。</para>
     /// <para><b>只读准备</b>：本阶段<b>不创建 / 不更新</b>云效流水线（写入动作在用户确认后的执行续跑，
     /// 见 <see cref="CreatePipelinesAsync"/>）；助手给出的部署目标候选写在结论文件的 <c>inputs[]</c> 里，
-    /// 面板据此预选、聊天路径据此提问（C15′）。</para>
+    /// 面板据此预选、聊天路径据此提问。</para>
     /// <para>读数缓存在服务实例上，供同步的 <see cref="PreviewPipelines"/> 应用手工微调后回显。</para>
     /// </remarks>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -2007,13 +2007,13 @@ public sealed class NewProjectService : INewProjectService
     }
 
     /// <summary>
-    /// Step 7 执行体（v0.3 助手驱动）：把「准备结论 + 用户确认（含微调与部署目标）」下发，助手创建 / 覆盖更新云效流水线，
+    /// Step 7 执行体（助手驱动）：把「准备结论 + 用户确认（含微调与部署目标）」下发，助手创建 / 覆盖更新云效流水线，
     /// 插件回读结论、做本地复核与判定，再把流水线事实落档案。
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>为什么不再由插件渲染 YAML、也不再直连 CodeupClient</b>：YAML 正文与待绑定清单由随包
-    /// <c>docs/pipeline-*.yml.md</c> 交给助手按项目值渲染并写进结论文件（C10′）；云效写入也由助手用框架 MCP 工具组完成，
+    /// <c>docs/pipeline-*.yml.md</c> 交给助手按项目值渲染并写进结论文件；云效写入也由助手用框架 MCP 工具组完成，
     /// 插件只负责判定与落账。
     /// </para>
     /// <para>
@@ -2945,7 +2945,7 @@ public sealed class NewProjectService : INewProjectService
     /// <param name="end">端。</param>
     /// <returns>标签。</returns>
     /// <remarks>
-    /// v0.29：此前多处写作 <c>$"{EndLabel(end)}端"</c>，产出「后端端」「管理端端」「移动端端」，
+    /// 此前多处写作 <c>$"{EndLabel(end)}端"</c>，产出「后端端」「管理端端」「移动端端」，
     /// 并被拼进 Step 6 的提交信息（真机提交 <c>chore: 初始化 测试项目一（管理端端）——…</c>）。
     /// 一律直接用本方法的返回值。
     /// </remarks>

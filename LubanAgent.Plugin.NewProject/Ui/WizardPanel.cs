@@ -32,11 +32,11 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// 让用户看到每一步做了什么、结果如何，并可就地在失败步骤重试。
 /// </para>
 /// <para>
-/// <b>本阶段（M4-P4）范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
+/// <b>本阶段范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
 /// Step 2 初始化触发、Step 3 建库确认区（逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 克隆冲突三选一）、
 /// Step 4 数据库探活表单（服务器 / 端口 / 库名 / 账号 / 口令 + 「开始探活」）、Step 5 逐端编译区与
 /// Step 6 推送区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
-/// Step 4 / 5 的实际动作由项目助手执行（路线②），面板只负责采集参数与呈现结论。Step 7 的操作区在 P5 接入。
+/// Step 4 / 5 的实际动作由项目助手执行，面板只负责采集参数与呈现结论。Step 7 的操作区在 P5 接入。
 /// 面板不直接触碰 <c>Dispatcher</c>，UI 投递一律经插件传入的
 /// <c>PostToUi</c> 令牌。
 /// </para>
@@ -239,7 +239,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// Step 6 本身幂等（无改动则跳过提交，但推送照常收尾），所以重跑是安全的。
     /// </remarks>
     /// <remarks>
-    /// 可见性＝<b>推进指针 ≥ Step 6</b>（v0.23 起；原口径「至少一端已克隆」在 Step 3 一完成就给出一条
+    /// 可见性＝<b>推进指针 ≥ Step 6</b>（原口径「至少一端已克隆」在 Step 3 一完成就给出一条
     /// 编译前的越级通道）。可见只是「能点」，能不能真推由 <c>StepGate.CanPush</c> 在执行时复核——
     /// 编译未全部通过照样被拒。
     /// </remarks>
@@ -279,7 +279,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>Step 5 逐端状态行（端 → 最近一次编译结论）。</summary>
     private readonly List<EndBuildRowView> _buildRows = new();
 
-    // ── Step 7 操作区（v0.30 接入）──────────────────────────────────────────────
+    // ── Step 7 操作区───────────────────────────────────────────────────────
     private readonly Button _pipelineButton = new() { Content = "创建流水线（逐端）" };
     /// <summary>Step 7「覆盖更新（逐端）」：按当前口径重推已有流水线（含部署段）。</summary>
     private readonly Button _updatePipelineButton = new() { Content = "覆盖更新（逐端）" };
@@ -296,7 +296,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         IsVisible = false
     };
     /// <summary>
-    /// Step 7「部署目标」区的按端行容器（v0.32）：后端＝下拉 + 机器明细；前端＝固定文案（无独立部署阶段）。
+    /// Step 7「部署目标」区的按端行容器：后端＝下拉 + 机器明细；前端＝固定文案（无独立部署阶段）。
     /// </summary>
     private readonly StackPanel _deployTargetRowsPanel = new() { Spacing = 6 };
 
@@ -1024,7 +1024,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// Step 4 操作区：数据库参数表单 + 「开始探活」。
     /// </summary>
     /// <remarks>
-    /// 本步<b>只探活</b>：真正的连接由项目助手执行（路线②），面板只采集参数并呈现结论；
+    /// 本步<b>只探活</b>：真正的连接由项目助手执行，面板只采集参数并呈现结论；
     /// 不写任何项目文件 / <c>appsettings</c>、不建库，结论<b>不阻断</b>后续步骤。
     /// 口令只走内存（用 <see cref="TextBox.PasswordChar"/> 遮蔽），不回填、不落档案。
     /// </remarks>
@@ -1137,7 +1137,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，v0.28 起默认 develop）→ 暂存 → 有改动则提交 → 推送到各端自有仓库。
+    /// Step 6 操作区：切到目标分支（配置 <c>pushBranch</c>，默认 develop）→ 暂存 → 有改动则提交 → 推送到各端自有仓库。
     /// </summary>
     /// <returns>操作区。</returns>
     private Border BuildStep6Area() => Card(new StackPanel
@@ -1148,7 +1148,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock { Text = "Step 6 · 推送改动到自有仓库", FontSize = 14, Foreground = PrimaryText },
             new TextBlock
             {
-                Text = "逐端执行：切到目标分支（配置 pushBranch，v0.28 起默认 develop；不存在则从模板 pin 分支创建）"
+                Text = "逐端执行：切到目标分支（配置 pushBranch，默认 develop；不存在则从模板 pin 分支创建）"
                      + "→ 暂存全部改动（git add .）→ 有改动则提交 → 推送。"
                      + "不强制推送；提交身份优先取本机 git 配置，缺失时用插件配置兜底。",
                 FontSize = 12,
@@ -1205,7 +1205,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             _pipelineRows.Add(new EndPipelineRowView(end, row, status));
         }
 
-        // 「部署目标」区（v0.32）：后端可选主机组；前端无独立部署阶段（真机取证：上传 OSS 即发布），给固定文案。
+        // 「部署目标」区：后端可选主机组；前端无独立部署阶段（真机取证：上传 OSS 即发布），给固定文案。
         _deployTargetRowsPanel.Children.Add(new StackPanel
         {
             Spacing = 4,
@@ -1337,7 +1337,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <summary>端的中文标签（**已自带「端」字**：调用方不得再拼一个「端」；与能力层口径一致）。</summary>
     /// <param name="end">端。</param>
     /// <returns>标签。</returns>
-    /// <remarks>v0.29：与 <c>NewProjectService.EndLabel</c> 同步——此前多处拼「端」产出「管理端端」等重字。</remarks>
+    /// <remarks>与 <c>NewProjectService.EndLabel</c> 同步——此前多处拼「端」产出「管理端端」等重字。</remarks>
     private static string EndLabel(ProjectEnd end) => end switch
     {
         ProjectEnd.Service => "后端",
@@ -1943,7 +1943,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <param name="spec">项目档案。</param>
     private void PopulateStep7Area(ProjectSpec spec)
     {
-        // v0.32：预览必须带上本会话已选的部署目标，否则「预览的 YAML」与「创建的 YAML」会不一致。
+        // 预览必须带上本会话已选的部署目标，否则「预览的 YAML」与「创建的 YAML」会不一致。
         _pipelinePreviews = _service.PreviewPipelines(_pipelineYamlOverrides, _deploySelections);
 
         foreach (var row in _pipelineRows)
@@ -2018,7 +2018,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 刷新「部署目标」区（v0.32）：拉取（首帧触发）/ 填充候选、回显默认与已选目标、摊出机器明细、给失败红字。
+    /// 刷新「部署目标」区：拉取（首帧触发）/ 填充候选、回显默认与已选目标、摊出机器明细、给失败红字。
     /// </summary>
     /// <remarks>
     /// <b>阻断口径</b>：列表读不到（未配 PAT / 无权限 / 网络失败）或没有可用主机组时，只在此处与执行入口
@@ -2190,7 +2190,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 拉取云效主机组列表（只读，v0.32）。失败只把原因记在 <see cref="_deployTargetsError"/> 上（界面据此阻断创建）。
+    /// 拉取云效主机组列表（只读）。失败只把原因记在 <see cref="_deployTargetsError"/> 上（界面据此阻断创建）。
     /// </summary>
     private async Task LoadDeployTargetsAsync()
     {
@@ -2270,7 +2270,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 部署目标改选（v0.32）：记住选择、刷新机器明细，并<b>丢弃该端的手工微调</b>。
+    /// 部署目标改选：记住选择、刷新机器明细，并<b>丢弃该端的手工微调</b>。
     /// </summary>
     /// <param name="sender">事件源。</param>
     /// <param name="e">事件参数。</param>
@@ -2580,7 +2580,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// </summary>
     private void SyncFormEnabled()
     {
-        var hasArchive = _service.Current is not null;
+        var hasArchive = _service.Current is not null && !_service.Current.IsCompleted;
         var blockedByResidual = hasArchive && !_resumeResolved;
 
         _resumeBanner.IsVisible = blockedByResidual;
@@ -3248,7 +3248,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// Step 7 手工微调入口：在独立窗口里编辑选中端 YAML，保存后回填内存字典并刷新预览。
     /// </summary>
     /// <remarks>
-    /// 面板只负责传递文本：<b>不做任何 YAML 校验</b>（C10′），既不解析 YAML 也不猜云效规则；
+    /// 面板只负责传递文本：<b>不做任何 YAML 校验</b>，既不解析 YAML 也不猜云效规则；
     /// 明显改坏的文本由云效在创建时原样报回。
     /// </remarks>
     private async Task EditPipelineYamlAsync()
@@ -3293,7 +3293,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// </summary>
     /// <remarks>
     /// <b>只读</b>：本阶段不创建 / 不更新云效流水线（写入动作在用户确认后的「创建流水线 / 覆盖更新」）。
-    /// 界面据此渲染复核界面；部署目标缺选由执行入口自行阻断，准备阶段只负责把候选与预览摊开（C15′）。
+    /// 界面据此渲染复核界面；部署目标缺选由执行入口自行阻断，准备阶段只负责把候选与预览摊开。
     /// </remarks>
     private async void OnPreparePipelinesClicked(object? sender, RoutedEventArgs e)
     {
@@ -3387,7 +3387,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 创建 / 覆盖更新的<b>前置阻断</b>（v0.32）：需要部署阶段却没选到目标时给红字并拒绝执行。
+    /// 创建 / 覆盖更新的<b>前置阻断</b>：需要部署阶段却没选到目标时给红字并拒绝执行。
     /// </summary>
     /// <returns>命中阻断返回 <c>true</c>（调用方直接返回，不发请求）。</returns>
     /// <remarks>
@@ -3432,7 +3432,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// Step 7 补充入口（覆盖更新）：对该端已有流水线做整体覆盖更新，把<b>当前口径的完整 YAML（含部署段）</b>推上去。
     /// </summary>
     /// <remarks>
-    /// 用途（v0.32）：把 v0.31 及更早建的「只含构建段、末尾带注释块」的流水线补成含部署段的完整 YAML，
+    /// 用途：把更早建的「只含构建段、末尾带注释块」的流水线补成含部署段的完整 YAML，
     /// 或用户换了部署目标 / 改了配置后纠偏。破坏性，故卡内先勾选确认（同 Step 3 姿势，不弹模态框）。
     /// </remarks>
     private async Task RunUpdatePipelinesAsync()
@@ -3448,7 +3448,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             ShowWarnings(new[]
             {
                 "「覆盖更新」会对已有流水线做整体覆盖更新（UpdatePipeline）：若你已在云效控制台手工改过 YAML，"
-                + "那些改动会被抹掉；v0.32 起还会把部署段一并写入（machineGroup 按当前「部署目标」的选择）。"
+                + "那些改动会被抹掉；还会把部署段一并写入（machineGroup 按当前「部署目标」的选择）。"
                 + "确认后请先勾选按钮上方那句确认再执行。"
             });
             return;

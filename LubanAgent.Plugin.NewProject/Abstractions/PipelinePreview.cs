@@ -20,8 +20,8 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </para>
 /// <para>
 /// 预览口径与创建口径<b>同源</b>：预览就是助手只读准备阶段产出的结论文件
-/// <c>artifacts[kind=pipeline]</c>（每端一条，C11′），执行续跑提交的是同一份原文。
-/// <b>v0.31</b>：用户手工微调后，这里回显的就是微调后的原文（<see cref="Edited"/> 为 <c>true</c>）。
+/// <c>artifacts[kind=pipeline]</c>（每端一条），执行续跑提交的是同一份原文。
+/// 用户手工微调后，这里回显的就是微调后的原文（<see cref="Edited"/> 为 <c>true</c>）。
 /// </para>
 /// </remarks>
 public sealed class PipelinePreview
@@ -32,7 +32,7 @@ public sealed class PipelinePreview
     /// <summary>将使用的流水线名（结论文件 <c>artifacts[kind=pipeline].name</c>，按 docs/pipeline-conventions.md 的格式生成）。</summary>
     public string PipelineName { get; set; } = string.Empty;
 
-    /// <summary>将提交的<b>新版 YAML</b> 全文（<b>含部署段</b>，v0.32）。</summary>
+    /// <summary>将提交的<b>新版 YAML</b> 全文（<b>含部署段</b>）。</summary>
     public string Yaml { get; set; } = string.Empty;
 
     /// <summary>该端的待人工绑定清单（已展开占位符）。</summary>
@@ -48,7 +48,7 @@ public sealed class PipelinePreview
     /// 本次将提交的 YAML <b>是否含部署阶段</b>（<c>extra.yamlIncludesDeployStage</c>；模板口径：<b>仅后端</b>为 <c>true</c>）。
     /// </summary>
     /// <remarks>
-    /// v0.32：界面据此判断「哪些端必须先选到部署目标」——为 <c>true</c> 而没选到目标时阻断创建。
+    /// 界面据此判断「哪些端必须先选到部署目标」——为 <c>true</c> 而没选到目标时阻断创建。
     /// 该判定由助手在只读准备阶段依据 <c>docs/pipeline-conventions.md</c> 给出，面板不复制一份「哪端有部署阶段」的判断。
     /// </remarks>
     public bool YamlIncludesDeployStage { get; set; }

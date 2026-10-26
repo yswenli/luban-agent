@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepReportEvaluator
 *创建时间：2026/10/21
-*描述：Step 4 探活结论 / Step 5 逐端编译结论的归并与阻断判定（M4-P4）
+*描述：Step 4 探活结论 / Step 5 逐端编译结论的归并与阻断判定
 *****************************************************************************/
 
 using LubanAgent.Plugin.NewProject.Abstractions;
@@ -107,7 +107,7 @@ public static class StepReportEvaluator
         return (allOk, results, message);
     }
 
-    // ── v0.3 助手驱动：Step 3 / Step 6 / Step 7 判定入口（Step 4/5 入口不动）────────────
+    // ── 助手驱动：Step 3 / Step 6 / Step 7 判定入口（Step 4/5 入口不动）────────────
 
     /// <summary>
     /// 归并 Step 3 建库并克隆结论（准备阶段与执行续跑共用；由 <paramref name="requireCloned"/> 区分）。

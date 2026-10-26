@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectStepReportUnitTest
 *创建时间：2026/10/21
-*描述：Step 4 / Step 5 结论文件单测——锁死 M4-P4 判定口径：
+*描述：Step 4 / Step 5 结论文件单测：
 *      解析容错（正常 / 缺字段 / 坏 JSON 都不抛）、Step 4 失败不阻断、
 *      Step 5 逐端归并与「漏端即失败」「事件流有错即失败」。
 *

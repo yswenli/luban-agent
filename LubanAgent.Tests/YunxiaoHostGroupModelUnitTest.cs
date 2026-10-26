@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgent.Tests
 *文件名： YunxiaoHostGroupModelUnitTest
-*描述：云效主机组（部署目标）模型反序列化口径单测（v0.32）
+*描述：云效主机组（部署目标）模型反序列化口径单测
 *      口径：列表 = 裸数组且 hostInfos 恒为 null；详情 = 裸对象且带 hostInfos；
 *            id 是 JSON 数字（路径键必须是它，不是 uuid）
 *****************************************************************************/
@@ -17,7 +17,7 @@ namespace LubanAgent.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 这组用例是<b>真机口径</b>的回归护栏（v0.32「创建流水线之前选部署目标」的只读数据源）。
+/// 这组用例是<b>真机口径</b>的回归护栏（「创建流水线之前选部署目标」的只读数据源）。
 /// 2026-10-22 只读取证确认三件事：① <c>GET /flow/organizations/{orgId}/hostGroups</c> 是<b>裸数组</b>，
 /// 元素 <c>id</c> 是 <b>JSON 数字</b>、<c>hostInfos</c> <b>恒为 <c>null</c></b>、<c>serviceConnectionId</c>
 /// 与 <c>aliyunRegion</c> 都可为 <c>null</c>；② 机器明细只在<b>详情</b>接口

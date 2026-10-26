@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： AssistantToolPolicy
 *创建时间：2026/10/21
-*描述：路线② 助手的工具审批策略（M4-P4 决策点 D2：白名单过滤，不用 BypassPermissions）
+*描述：助手的工具审批策略（白名单过滤，不用 BypassPermissions）
 *****************************************************************************/
 
 using System.Text;
@@ -13,11 +13,11 @@ using LuBan.AIAgent.Abstractions;
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
-/// 插件驱动助手跑一轮提示词时的<b>工具审批白名单</b>（M4-P4 决策点 D2）。
+/// 插件驱动助手跑一轮提示词时的<b>工具审批白名单</b>。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么需要它</b>：路线② 下 Step 4 / Step 5 的实际动作由项目会话的助手执行。插件声明里的
+/// <b>为什么需要它</b>：Step 4 / Step 5 的实际动作由项目会话的助手执行。插件声明里的
 /// <c>process:dotnet</c> 只管插件自身发起的进程，<b>管不到助手执行的命令</b>；故由插件在
 /// 宿主 <c>AgentHostService.RunStreamingAsync</c> 的确认回调里按「工具名 + 命令行首词」补上等效约束，
 /// 且只用 <see cref="ToolPermissionMode.Default"/>（不使用 <c>BypassPermissions</c> 全放行）。
@@ -63,7 +63,7 @@ public static class AssistantToolPolicy
     /// 覆盖三端编译所需：.NET（<c>dotnet</c>）、Vite/Vue 前端（<c>node</c> / <c>npm</c> / <c>npx</c> / <c>pnpm</c> / <c>yarn</c>）、
     /// 依赖安装（<c>pip</c> / <c>pip3</c>）、脚本兜底（<c>python</c> / <c>py</c> / <c>python3</c>）与只读检查（<c>git</c>）。
     /// <para>
-    /// <b>v0.28 新增</b> <c>fnm</c> / <c>cnpm</c>：本组织管理端仓库要求 Node 16 + npm 系客户端，
+    /// <c>fnm</c> / <c>cnpm</c>：本组织管理端仓库要求 Node 16 + npm 系客户端，
     /// 助手需用 <c>fnm exec --using=16 -- npm.cmd …</c>（<c>fnm</c> 只做 Node 版本切换，本身不改仓库）
     /// 与 <c>cnpm</c>（内网 npm 镜像客户端）完成安装与构建。二者都只是「包管理器 / 版本管理器」，
     /// 不引入新的越界面；<c>fnm env | Out-String | Invoke-Expression</c> 那类管道 + 求值写法仍被拒
@@ -108,7 +108,7 @@ public static class AssistantToolPolicy
     };
 
     /// <summary>
-    /// 删除类工具中<b>按工作区内路径放行</b>的（C5′：Step 3 \"清空后重克隆\" 由助手执行）。
+    /// 删除类工具中<b>按工作区内路径放行</b>的（Step 3 \"清空后重克隆\" 由助手执行）。
     /// </summary>
     /// <remarks>
     /// 与 <see cref="WorkspaceWriteTools"/> 同判法（<see cref="IsUnderWorkspace"/>）：目标路径落在工作区内即放行，
@@ -226,7 +226,7 @@ public static class AssistantToolPolicy
             return ConfirmResult.Deny;
         }
 
-        // ── 工作区内目录删除（C5′：Step 3 \"清空后重克隆\" 由助手执行）────────────────
+        // ── 工作区内目录删除（Step 3 \"清空后重克隆\" 由助手执行）────────────────
         if (WorkspaceDeleteTools.TryGetValue(toolName, out var deletePathKeys))
         {
             foreach (var key in deletePathKeys)

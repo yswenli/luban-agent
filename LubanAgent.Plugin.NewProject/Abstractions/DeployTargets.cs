@@ -3,13 +3,13 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： DeployTargets
-*描述：Step 7「部署目标」（云效主机组）选项（v0.32）：创建流水线**之前**先把目标机器摊给用户选
+*描述：Step 7「部署目标」（云效主机组）选项：创建流水线**之前**先把目标机器摊给用户选
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
 
 /// <summary>
-/// 部署目标主机组（v0.32）：<b>创建流水线之前</b>供用户选择的部署落点。
+/// 部署目标主机组：<b>创建流水线之前</b>供用户选择的部署落点。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -67,7 +67,7 @@ public sealed class DeployHostGroup
 }
 
 /// <summary>
-/// 部署主机组里的单台机器（v0.32：让用户在创建流水线之前就看清「到底打哪台机器」）。
+/// 部署主机组里的单台机器（让用户在创建流水线之前就看清「到底打哪台机器」）。
 /// </summary>
 /// <remarks>
 /// 真机口径：字段来自主机组详情的 <c>hostInfos</c>（<c>instanceName</c> / <c>ip</c> / <c>status</c>）。

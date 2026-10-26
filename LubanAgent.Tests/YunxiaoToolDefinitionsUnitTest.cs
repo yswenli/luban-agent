@@ -4,9 +4,9 @@
 *命名空间：LubanAgent.Tests
 *文件名： YunxiaoToolDefinitionsUnitTest
 *描述：验证云效 MCP 工具定义（共 13 个）的名称、数量与 schema 形状
-*      v0.3 助手驱动：删 codeup_clone / codeup_push（git 一律走 git 工具组），
+*      助手驱动：删 codeup_clone / codeup_push（git 一律走 git 工具组），
 *      补 codeup_list_template_repos / codeup_get_repo / codeup_list_groups 三个只读工具
-*      迁自框架 LuBan.XTestProject（W3 去厂商化：厂商用例随实现迁入产品测试项目）
+*      迁自框架 LuBan.XTestProject（去厂商化：厂商用例随实现迁入产品测试项目）
 *****************************************************************************/
 
 using System.Text.Json;
@@ -39,7 +39,7 @@ public class YunxiaoToolDefinitionsUnitTest
     {
         var tools = YunxiaoToolDefinitions.GetAllTools().ToList();
 
-        Assert.AreEqual(13, tools.Count, "工具总数应为 13（v0.3 助手驱动：删 codeup_clone / codeup_push，补 3 个只读工具）");
+        Assert.AreEqual(13, tools.Count, "工具总数应为 13（助手驱动：删 codeup_clone / codeup_push，补 3 个只读工具）");
         CollectionAssert.AreEquivalent(ExpectedNames, tools.Select(t => t.Name).ToList());
     }
 
@@ -91,7 +91,7 @@ public class YunxiaoToolDefinitionsUnitTest
         }
     }
 
-    /// <summary>工具定义口径（v0.30）：`flow_create_pipeline` 取代 `flow_clone_pipeline`
+    /// <summary>工具定义口径：`flow_create_pipeline` 取代 `flow_clone_pipeline`
     /// （云效无「复制流水线」接口，且只收顶层 `stages:` 的新版 YAML）。</summary>
     [TestMethod]
     public void FlowCreatePipeline_Schema_RequiresNameAndContent()
@@ -128,9 +128,9 @@ public class YunxiaoToolDefinitionsUnitTest
         }
     }
 
-    // ── v0.3 新增的三个只读工具 ─────────────────────────────────────────────
+    // ── 新增的三个只读工具 ─────────────────────────────────────────────────
 
-    /// <summary>模板库查询（v0.3）：定位模板仓以取 <c>templateProjectId</c>；按注释「无 search、需全量拉取」。</summary>
+    /// <summary>模板库查询：定位模板仓以取 <c>templateProjectId</c>；按注释「无 search、需全量拉取」。</summary>
     [TestMethod]
     public void CodeupListTemplateRepos_Schema_支持模板类型与分页()
     {
@@ -147,7 +147,7 @@ public class YunxiaoToolDefinitionsUnitTest
         StringAssert.Contains(tool.Description, "codeup_search_repos");
     }
 
-    /// <summary>仓库详情（v0.3）：唯一返回 <c>httpUrlToRepo</c> 的入口，克隆地址取自这里。</summary>
+    /// <summary>仓库详情：唯一返回 <c>httpUrlToRepo</c> 的入口，克隆地址取自这里。</summary>
     [TestMethod]
     public void CodeupGetRepo_Schema_RequiresRepositoryId()
     {
@@ -166,7 +166,7 @@ public class YunxiaoToolDefinitionsUnitTest
         StringAssert.Contains(tool.Description, "httpUrlToRepo");
     }
 
-    /// <summary>代码组列表（v0.3）：建库前「先查后建」判断目标组是否已存在。</summary>
+    /// <summary>代码组列表：建库前「先查后建」判断目标组是否已存在。</summary>
     [TestMethod]
     public void CodeupListGroups_Schema_支持搜索与父级过滤()
     {

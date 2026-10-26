@@ -320,7 +320,7 @@ public static class YunxiaoToolDefinitions
     #endregion
 
     /// <summary>
-    /// 获取所有工具列表（共 13 个：初版定义的 10 个 + v0.32 新增 2 个只读部署目标工具，
+    /// 获取所有工具列表（共 13 个：初版定义的 10 个 + 新增 2 个只读部署目标工具，
     /// 本次删 <c>codeup_clone</c> / <c>codeup_push</c> 2 个、补 <c>codeup_list_template_repos</c> /
     /// <c>codeup_get_repo</c> / <c>codeup_list_groups</c> 3 个）。
     /// </summary>

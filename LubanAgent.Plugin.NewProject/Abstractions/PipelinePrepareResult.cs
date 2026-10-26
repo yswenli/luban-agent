@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： PipelinePrepareResult
 *创建时间：2026/10/22
-*描述：Step 7「只读准备」读数（v0.3 助手驱动）：预览 + 待用户答复的交互项 + 映射缺口
+*描述：Step 7「只读准备」读数（助手驱动）：预览 + 待用户答复的交互项 + 映射缺口
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;
@@ -18,7 +18,7 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// 与 <c>artifacts[]</c> 仍在结论文件里，落盘的是结论文件本身，不是本类型）。
 /// </para>
 /// <para>
-/// <b>交互项为什么要回传</b>：聊天路径（C15′）没有面板的部署目标下拉，只有
+/// <b>交互项为什么要回传</b>：聊天路径没有面板的部署目标下拉，只有
 /// <see cref="Inputs"/> 里的 <c>deploy-target</c> 候选；对话据此提问、面板据此预选默认值。
 /// </para>
 /// </remarks>

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    「新建项目」插件（PRD §5 M4 / §4）。
+    「新建项目」插件。
 
     ⚠️ 打包硬约束：插件包 lib/ 只放「插件自身程序集」，宿主程序集（LubanAgentCore 等，含其中并入的云效连接器）不得随包分发。
     原因：PluginLoadContext 只强制共享框架集（LuBan.* / Avalonia / Microsoft.* / System.*），
@@ -45,7 +45,7 @@
     <None Include="skills\**\*" CopyToOutputDirectory="PreserveNewest" />
     <PluginSkillFile Include="skills\**\*.md" />
     <!-- 知识正文（docs/*.md）：随包分发到插件包 docs/，再由 Step 2 由插件复制进项目工作区。
-         与 skills/ 不同，docs 不注册成技能（见设计 §4.2 C1）。 -->
+         与 skills/ 不同，docs 只作知识正文随包分发，不注册成技能。 -->
     <None Include="docs\**\*" CopyToOutputDirectory="PreserveNewest" />
     <PluginDocFile Include="docs\**\*.md" />
   </ItemGroup>

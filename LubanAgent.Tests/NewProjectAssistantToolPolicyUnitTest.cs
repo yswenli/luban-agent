@@ -4,11 +4,11 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectAssistantToolPolicyUnitTest
 *创建时间：2026/10/21
-*描述：路线② 助手工具审批白名单单测——锁死 M4-P4 决策点 D2 + v0.3 助手驱动扩展：
+*描述：助手工具审批白名单单测：
 *      Step 4/5 只允许「只读工具 + 白名单脚本 + 工作区内写入」；runlua / 删除类 / 越界写入 /
 *      白名单外命令一律拒绝，且复合命令逐段判定；
 *      Step 3/6/7 的云效动作走 mcp_* —— 表驱动放行 12 个（连接器改名不失效）/ 拒绝 flow_run_pipeline
-*      与已删除的 codeup_clone / codeup_push；C5′：DeleteDirectoryAsync 改为工作区内按路径放行。
+*      与已删除的 codeup_clone / codeup_push；DeleteDirectoryAsync 改为工作区内按路径放行。
 *
 *****************************************************************************/
 
@@ -66,7 +66,7 @@ public class NewProjectAssistantToolPolicyUnitTest
         }
     }
 
-    // ── C5′：DeleteDirectoryAsync 改为「工作区内按路径放行」 ─────────────────
+    // ── DeleteDirectoryAsync 改为「工作区内按路径放行」 ─────────────────
     // 背景：Step 3「清空后重克隆」由项目会话助手执行；实际删除走 RunPythonAsync 的 rmtree(清只读)，
     // 这里的放行是「契约兜底 + 文案一致」——但越界 / 无路径仍必须拒绝。
 
@@ -361,7 +361,7 @@ public class NewProjectAssistantToolPolicyUnitTest
     [TestMethod]
     public void IsAllowedShellCommand_fnm与cnpm在白名单内_管道求值形态仍拒()
     {
-        // v0.28 本组织管理端姿势：fnm 切 Node 16 + npm.cmd 子命令
+        // 本组织管理端姿势：fnm 切 Node 16 + npm.cmd 子命令
         Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(
             "fnm exec --using=16 -- npm.cmd run build:dev", out _));
         Assert.IsTrue(AssistantToolPolicy.IsAllowedShellCommand(

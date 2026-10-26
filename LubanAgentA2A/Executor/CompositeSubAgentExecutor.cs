@@ -22,7 +22,7 @@ namespace LubanAgentA2A.Executor;
 /// <summary>
 /// 组合子代理执行器。持有本机进程内执行器与「角色名 → 远端执行器」映射，
 /// 按 <see cref="SubAgentSpec.Role"/> 分发：命中远端 client 角色走远端执行器，
-/// 否则走本机进程内执行器（Rev.7 M6）。
+/// 否则走本机进程内执行器。
 /// <para>远端映射由运行时状态提供（实时只读视图），以便工作区确定后再注册远端角色，
 /// 无需在 DI 期固定。</para>
 /// </summary>

@@ -23,7 +23,7 @@
 | `{runsOn}` | 构建集群留空 ⇒ **整行不写**（云效默认北京公共集群）；非空 ⇒ 写 `        runsOn: <cluster>`（**8 空格缩进**，与 `steps:` 同级） | 可选行 |
 | `{machineGroup}` | 部署主机组 **uuid**（默认值见 [`org-reference.md`](./org-reference.md)「后端流水线（Service）」表里的部署主机组；本步由用户在「部署目标」区选定） | `deploy` 段 `VMDockerDeploy.machineGroup`，**必须带单引号** |
 
-> **（v0.33）部署目标兜底口径**：准备阶段就要把 `{machineGroup}` 填成**具体 uuid**（候选里的默认值 / 唯一合理项），
+> **部署目标兜底口径**：准备阶段就要把 `{machineGroup}` 填成**具体 uuid**（候选里的默认值 / 唯一合理项），
 > 并写进结论 `extra.recommendedDeployTargetUuid`——YAML 必须是**可直接提交**的正文，插件侧已无渲染器与守卫。
 > 执行阶段用户改选了目标就按新 uuid 覆盖改写；**仍没有可用 uuid 时不许提交**（不得写 `'<未选择：主机组 uuid>'` 之类占位）：
 > 写 `status="failed"` 并说明缺部署目标（提示词硬边界；部署目标取值见 pipeline-conventions.md）。

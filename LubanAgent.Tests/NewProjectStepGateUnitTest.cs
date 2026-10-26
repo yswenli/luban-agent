@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectStepGateUnitTest
 *创建时间：2026/10/21
-*描述：步骤前置闸门与推进指针单测——锁死 C7′ 收口口径：
+*描述：步骤前置闸门与推进指针单测：
 *      ① 档案 CurrentStep 单调只前进（回退重跑不得让进度倒退）；
 *      ② 推送（Step 6）必须复核「编译（Step 5）已全部通过」——判据改读最近一份
 *         results/step5-*.json 结论文件（含逐端完备性），绕开界面顺序也拦得住；
@@ -105,7 +105,7 @@ public class NewProjectStepGateUnitTest
         Assert.AreEqual(WizardStep.Database, spec.CurrentStep);
     }
 
-    // ── 推送闸门（C7′）：读 Step 5 结论文件，逐端全通过才放行 ───────────────
+    // ── 推送闸门：读 Step 5 结论文件，逐端全通过才放行 ───────────────
 
     [TestMethod]
     public void CanPush_无工作区根_拒绝()
@@ -214,7 +214,7 @@ public class NewProjectStepGateUnitTest
         Assert.IsTrue(StepGate.CanPush(spec), "按 mtime 取最近一份：重跑成功后应放行。");
     }
 
-    // ── 流水线闸门（C7′）：读 Step 6 结论文件 ─────────────────────────────
+    // ── 流水线闸门：读 Step 6 结论文件 ─────────────────────────────
 
     [TestMethod]
     public void CanCreatePipelines_未推送_拒绝()

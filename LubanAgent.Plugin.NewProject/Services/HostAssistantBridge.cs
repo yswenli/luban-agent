@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： HostAssistantBridge
 *创建时间：2026/10/21
-*描述：路线② 桥接层：让插件经宿主既有服务，在项目会话上自跑一轮提示词（M4-P4 决策点 D1）
+*描述：桥接层：让插件经宿主既有服务，在项目会话上自跑一轮提示词
 *****************************************************************************/
 
 using System.Diagnostics;
@@ -21,11 +21,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
-/// 插件 → 宿主会话助手的桥接层（M4-P4 技术路线 ②）。
+/// 插件 → 宿主会话助手的桥接层。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>为什么需要它</b>：Step 4 / Step 5 的判定要求「执行形态仍是路线 ②」——真正的动作（连库探活、逐端编译）
+/// <b>为什么需要它</b>：Step 4 / Step 5 的判定要求「执行形态仍是助手执行」——真正的动作（连库探活、逐端编译）
 /// 由项目会话里的助手执行，插件只负责「下发提示词 → 收集事件 → 回读结论文件 → 给出阻断或放行」。
 /// 插件不能直接解析宿主容器里的会话服务（scoped 转发 + <c>ValidateScopes=true</c> 会抛），
 /// 故一律经 <see cref="NewProjectService"/> 的按需解析入口（<c>UserContextRegistry</c> 用户桶）拿服务。

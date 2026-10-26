@@ -4,7 +4,7 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectStepPromptsUnitTest
 *创建时间：2026/10/21
-*描述：Step 4 / Step 5 提示词单测——锁死 M4-P4 定案：
+*描述：Step 4 / Step 5 提示词单测：
 *      「口令内联（方案 A）」「禁止回头调用 newproject-* 技能与服务（同会话回合自等死锁）」
 *      「结论文件路径原样下发」「Step 5 逐端清单与端标识」。
 *
@@ -125,7 +125,7 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "编译方式由你按工程类型决定");
         StringAssert.Contains(prompt, "dotnet build");
 
-        // v0.30：管理端固定 4 步（先构建 → 失败再核 Node16 → cnpm 修依赖 → 再构建）
+        // 管理端固定 4 步（先构建 → 失败再核 Node16 → cnpm 修依赖 → 再构建）
         StringAssert.Contains(prompt, "本组织已知构建姿势");
         StringAssert.Contains(prompt, "不要用 pnpm");
         StringAssert.Contains(prompt, "develop");
@@ -135,16 +135,16 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "不是 npm run build");
         StringAssert.Contains(prompt, "Failed to resolve entry for package");
 
-        // v0.29：半装包只能删目录重装，rebuild 无效（上一轮真机失败的对策纠正）
+        // 半装包只能删目录重装，rebuild 无效（上一轮真机失败的对策纠正）
         StringAssert.Contains(prompt, "删掉该包目录再装回来");
         StringAssert.Contains(prompt, "rmSync('node_modules/X'");
         StringAssert.Contains(prompt, "不要用 npm rebuild X");
 
-        // v0.30 兜底：环境缺件时如实上报；全局只授权装 vite，其余不自行安装、不改仓库配置
+        // 环境缺件时如实上报；全局只授权装 vite，其余不自行安装、不改仓库配置
         StringAssert.Contains(prompt, "自行安装除 vite 之外的全局工具链");
         StringAssert.Contains(prompt, "由用户补好环境后重跑");
 
-        // v0.28：边界由「只编译、不修复」放宽为「只编译、不改业务」——可修依赖树与环境，禁改业务源码与工程配置
+        // 边界由「只编译、不修复」放宽为「只编译、不改业务」——可修依赖树与环境，禁改业务源码与工程配置
         StringAssert.Contains(prompt, "允许修依赖树与环境");
         StringAssert.Contains(prompt, "禁止修改仓库里的业务源码与工程配置");
 
@@ -195,7 +195,7 @@ public class NewProjectStepPromptsUnitTest
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
 
-        // v0.34：Failed to resolve entry 先分两种，别急着重装
+        // Failed to resolve entry 先分两种，别急着重装
         StringAssert.Contains(prompt, "postinstall 未跑");
         StringAssert.Contains(prompt, "先分下面两种");
 
@@ -413,7 +413,7 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(execute, "留空或留占位符");
     }
 
-    /// <summary>v0.34：组织 ID 必须注入 Step 3 / Step 7 的准备与执行四段提示词（不得让助手猜 / 传空串）。</summary>
+    /// <summary>组织 ID 必须注入 Step 3 / Step 7 的准备与执行四段提示词（不得让助手猜 / 传空串）。</summary>
     [TestMethod]
     public void BuildRepositoryAndPipelinePrompts_注入组织ID并禁止空串()
     {
@@ -448,7 +448,7 @@ public class NewProjectStepPromptsUnitTest
         }
     }
 
-    /// <summary>v0.34：档案没有组织 ID 时，提示词明确禁止调用云效 MCP（避免助手瞎猜或传空串）。</summary>
+    /// <summary>档案没有组织 ID 时，提示词明确禁止调用云效 MCP（避免助手瞎猜或传空串）。</summary>
     [TestMethod]
     public void BuildRepositoryPreparePrompt_缺组织ID时禁止调用云效MCP()
     {
@@ -464,7 +464,7 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "设置 → 云效连接");
     }
 
-    /// <summary>v0.34：Step 3 执行提示词锁死脚本口径（目录判定 ListDirectoryAsync、扫描/替换 RunPythonAsync）。</summary>
+    /// <summary>Step 3 执行提示词锁死脚本口径（目录判定 ListDirectoryAsync、扫描/替换 RunPythonAsync）。</summary>
     [TestMethod]
     public void BuildRepositoryExecutePrompt_脚本口径避免被白名单拒()
     {

@@ -43,7 +43,7 @@ namespace LubanAgent.Plugin.NewProject.Serialization;
 [JsonSerializable(typeof(NewProjectSettings))]
 [JsonSerializable(typeof(ProjectSpec))]
 [JsonSerializable(typeof(StepReport))]
-// v0.3 扩 schema：结论文件新增的持久化类型必须逐个登记，否则运行期 NotSupportedException（C18）。
+// 扩 schema：结论文件新增的持久化类型必须逐个登记，否则运行期 NotSupportedException。
 [JsonSerializable(typeof(StepReportArtifact))]
 [JsonSerializable(typeof(ArtifactExtra))]
 [JsonSerializable(typeof(GroupArtifactExtra))]
