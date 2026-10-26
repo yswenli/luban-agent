@@ -519,7 +519,7 @@
 **前置条件 · 凭据与云效组织（中心版）**
 - **PAT 预配置**：用户需在 codex 设置中预先录入**云效个人访问令牌（PAT）**（详见 §4.9）。插件运行时从宿主安全凭据区按需取用，不落库明文、不回显日志。
 - **云效组织（中心版必填）**：`ProjectSpec.organizationId`（云效企业/组织 ID）取自 codex 设置中的云效连接配置（见 §4.5、§6 开放问题 #7，已确认本企业用**中心版**）；中心版所有 OpenAPI 路径均带 `/organizations/{organizationId}`，接入点固定 `openapi-rdc.aliyuncs.com`。`flowRegion` 在中心版下无需填写（region 已隐含于统一接入点，详见 §4.5）。当前以 PAT 为统一鉴权假设，AK/SK 方案待定（见 §6 #6）。
-- 若 PAT 未配置/已过期，或 `organizationId` 缺失，应在 Step 3 / Step 6 / Step 7 前阻断并给出明确引导（见 §4.7）。
+- 若 PAT 未配置/已过期，或 `organizationId` 缺失，应在 **Step 3 / Step 7** 前阻断并给出明确引导（**Step 6 只走 git 工具组、不调云效 MCP，无需组织 ID**，见 §4.7）。
 
 **Step 1 · 填写项目信息**
 - 必填：项目名称、英文缩写（唯一性校验；命名规范：**只能由小写字母组成（a-z，不含数字）**，不能有大写字母、数字、空格、中文或符号）、**项目介绍**（一句话描述项目用途，写入 `ProjectSpec.projectIntro`，并用于初始化项目级 Agent 上下文与生成 README 占位）、**本地目录**（`localPath`，通过目录选择器指定，作为 Step 2 工作区根目录，需做可写校验）。
@@ -553,8 +553,8 @@
 > `SwitchWorkspaceAsync`（`WorkspaceManager.cs:337-356`）在存在历史会话时会**恢复最近会话**；> 而本步第 2 项要求「必须新建而非复用」（原因见上文 P0 纠错：`AllowedRoots` 在 runtime 创建时一次性写入）。两者在**重跑路径**上打架。
 > **定案（§6 #16）——区分首次与重跑**：
 > - **首次**：工作区不存在 → `CreateWorkspaceAsync` → `SetCurrentAsync`（内部自动建新会话）；
-> - **重跑**：先探测工作区是否已存在；已存在则走「复用」分支（**禁止**再次 `CreateWorkspaceAsync`，见陷阱①），`SwitchWorkspaceAsync` 之后**显式再调 `CreateSessionAsync` 新建会话**，**不使用**它恢复的旧会话（旧会话的 `AllowedRoots` / 上下文可能停留在上次失败时的状态）。
-> - **残留检测（§6 #19）**：重开向导时若探测到同名工作区或同名云效资源，弹「检测到上次未完成的残留：**清理后重来** / **保留并继续**」，**不允许静默覆盖**。本期**不做断点续跑**（不持久化中间态以自动接续）。
+> - **重跑**：先探测工作区是否已存在；已存在则走「复用」分支（**禁止**再次 `CreateWorkspaceAsync`，见陷阱①），`SetCurrentAsync` 之后**显式再调 `CreateSessionAsync` 新建会话**，**不使用**它恢复的旧会话（旧会话的 `AllowedRoots` / 上下文可能停留在上次失败时的状态）。
+> - **残留检测（§6 #19）**：重开向导时若探测到**本地存在未完成的项目档案**，弹「检测到上次未完成的残留：**清理后重来** / **保留并继续**」，**不允许静默覆盖**（**同名云端资源不在残留检测范围内**——其可观测性由 §4.5 的远端产物清单承担）。本期**不做自动断点续跑**：档案持久化的 `CurrentStep` / `StepStates` 是只读快照，仅供显示与残留检测，不用于自动接续。
 
 **Step 3 · 创建代码仓库并克隆到本地（云效 Codeup）**
 - **做法**：**不直接克隆企服版模板仓库**来改，而是先在云效 Codeup **以企服版对应模板仓「为模板」创建新项目的专属仓库**，再把**新仓库**克隆到本地。这样企业 SDLC 从第一步起就落在项目自己的仓库上。
@@ -706,9 +706,9 @@ flowchart TD
 | 项目介绍 | 一句话描述项目用途 | Step 1 用户填写；用于初始化项目助手与 README 占位 |
 | 端选择 | 后端、管理端**必选**；移动端可选 | Step 1 用户勾选，决定后续各步范围 |
 | 本地目录 | 代码落到本机的位置 | Step 1 用户选择；即工作区根目录 |
-| 模板对照 | 后端←`TJCES-Service`、管理端←`TJCES-Admin`、移动端←`TJCES-Mobile` | 固定，插件配置 |
+| 模板对照 | 后端←`TJCES-Service`、管理端←`TJCES-Admin`、移动端←`TJCES-Mobile` | 来自**插件配置**；逐端实际命中值回写 `EndRepository.TemplateRepository`（**不落档案**作为对照表） |
 | **目标代码仓库（按端）** | 每个所选端各自的**专属仓库**：模板来源、仓库名（默认 `{Code}-Service` / `-Admin` / `-Mobile`，即缩写**首字母大写**＋端后缀，如 `Csxmy-Service`，可改）、可见性**默认＝组织内公开（组织可见）**，可在 Step 3 确认界面改为「私有」、创建后的 HTTPS 地址 | Step 3 创建并克隆；Step 6 推送改动；**各端仓库地址是 Step 7 对应流水线的代码来源** |
-| **项目代码组（v0.19 新增）** | 各端仓库归属的**代码组（命名空间）**：名字由 `groupNameFormat` 展开（默认 `{CODE}`，如 `csxmy` → `CSXMY`），父级取 `groupParentId`（留空＝组织根） | Step 3 预检**只读探测**、执行时**先查后建**（同名即复用，不重复建）；可见性沿用 `defaultVisibility`（默认组织内公开） |
+| **项目代码组（v0.19 新增）** | 各端仓库归属的**代码组（命名空间）**：名字由 `groupNameFormat` 展开（默认 `{CODE}`，如 `csxmy` → `CSXMY`），父级取 `groupParentId`（留空＝组织根） | Step 3 预检**只读探测**、执行时**先查后建**（同名即复用，不重复建）；可见性沿用 `defaultVisibility`（默认组织内公开）（**不落档案**：来自配置 + 运行期解析，重跑命中去重不读档案，由助手现调 `codeup_list_groups`） |
 | **推送目标分支（v0.19 新增）** | Step 6 推送的目标分支，**v0.28 起默认 `develop`**（此前 `main`） | 插件配置 `pushBranch`；留空才退回该端仓库默认分支，仓库为空时回退 `main` |
 | **本地就绪标记 `cloned`（v0.19 语义收紧）** | 该端是否「本地确已就绪」：**仅在真克隆成功、或经健康校验通过而复用时**置真 | 由 Step 3 维护；用于重跑时判定是否给出三选一（未就绪目录不被当作已克隆复用） |
 | 数据库探活参数（v0.22 收窄） | 服务器 / 端口 / 库名 / 账号（落档回写）；**口令不落档、不回填、不写日志** | Step 4 界面填写（默认值取自克隆下来的后端 `WebHost/appsettings.json` 连接串，口令须重填） |
@@ -721,8 +721,13 @@ flowchart TD
 | 地域（region） | **本期不支持**（仅中心版，region 已隐含于统一接入点域） | 无需用户填写，数据模型中不再保留该字段 |
 | 创建时间 | 项目创建时间 | 自动生成 |
 | **远端产物清单（v0.18 新增 · v0.19 细化为三类）** | 已在云效上创建、本地删除撤不掉的产物，按三类记账：①**代码组**（名称 + ID）；②**代码仓库**（端 + 名称 + ID + HTTPS 地址）；③**分支**（端 + 分支名，如 Step 6 的 `main`）；另含各端 Flow 流水线（ID + 名称 + 链接） | Step 3 / 6 / 7 创建成功即写入；用于**重跑复用**与**孤儿清单**展示（见 §4.7、§6 #15） |
+| 工作区 ID | 本项目绑定的工作区 ID | `ProjectSpec.WorkspaceId`（:354），由 `WorkspaceIdGenerator.Compute(localPath)` 派生（陷阱①：同路径已存在则走复用分支，不二次 `CreateWorkspaceAsync`） |
+| 会话 ID | 本项目绑定的会话 ID | `ProjectSpec.SessionId`（:357），重跑时显式 `CreateSessionAsync` 新建（不用 `SwitchWorkspaceAsync` 恢复的旧会话） |
+| 是否完成 | 七步是否全部完成 | `ProjectSpec.IsCompleted`（:405），用于残留检测判定（**已完成档案重开不弹残留横幅**） |
+| 模板分支 | 实际使用的 pin 分支 | `EndRepository.TemplateBranch`（:132），运行期择优（`develop → master → main → 模板默认分支`）后回写 |
+| 数据库类型 | 数据库引擎类型 | `DatabaseOptions.Provider`（:175，当前仅 `mysql`） |
 
-- 插件运行状态（当前步、日志、错误）另行存于宿主的插件状态记录中，便于中断后恢复。
+- 插件运行状态（当前步 `CurrentStep` 与步骤终态 `StepStates`）**落档案**——理由：操作记录仅存内存、进程重启即空，终态必须跨重启可复核；日志与错误仍留在宿主记录中。
 - 安全要点：**令牌明文不进入项目档案与任何数据库**，仅保存凭据区的键名。
 
 ### 4.6 界面（codex）
@@ -1138,7 +1143,7 @@ flowchart TD
 
 **4.11.2 云效 / git 动作一律由助手执行（v0.33 改写；原「插件后端直连连接器」已废弃）**
 向导与聊天两条入口的**云效 / git 动作都不再由插件后端直连执行**：Step 3 / 6 / 7 统一为「插件下发提示词 + 硬边界 → **助手在项目会话**调 `mcp_yunxiao_*`（云效）/ **框架 git 工具组**（克隆 / 推送）→ 插件回读结论文件判定 + 落账 + `StepLocalVerifier` 本地复核」。原「直连避免序列化与工具确认开销」的取舍（v0.19）**已被 v0.33 取代**——收益是**逻辑零分叉**（两条入口共用同一批 MCP 工具与同一套 git 工具组）、**组织口径 / 模板 / 退避全部可改文档改**（不必改代码 + 重发包）。
-- **Step 3**：助手调 `codeup_list_template_repos` / `codeup_list_groups` / `codeup_list_branches` / `codeup_search_repos`（→ `codeup_get_repo`）做**只读准备**，产出 `results/step3-*.json`；用户确认后用 `codeup_create_group` / `codeup_create_repo` + git 工具组 `GitCloneAsync` 执行；
+- **Step 3**：助手调 `codeup_list_template_repos` / `codeup_list_groups` / `codeup_list_branches` / `codeup_search_repos`（→ `codeup_get_repo`）做**只读准备**，产出 `results/step3-*.json`；用户确认后用 `codeup_create_group` / `codeup_create_repo` + git 工具组 `GitCloneAsync（克隆本端仓库，带 -b <pin>）` 执行；
 - **Step 6**：助手用 git 工具组 `GitPushAsync` 推送（退避口径见 `docs/step6-push.md`）；
 - **Step 7**：助手读工作区 `docs/pipeline-*.yml.md` 模板渲染 → `flow_list_pipelines` 幂等检索 → `flow_create_pipeline` 创建 / `flow_update_pipeline` 覆盖更新；**部署目标**由面板下拉（**唯一保留的只读直连**：`ListDeployTargetsAsync` / `ListDeployTargetMachinesAsync` 走 `FlowClient` 只读）选定后在创建时写入 `deploy` 段。
 - **闸门仍留插件**：`StepGate.CanPush` / `CanCreatePipelines` 由插件执行（**v0.33 判据改为读最近一份结论文件**，不再读 `StepStates`），保证「确定性闸门 + 用户确认」不被助手绕开。
@@ -1235,7 +1240,7 @@ flowchart TD
 17. **【已定案·v0.18 新增 · v0.19 落地修订 · v0.28 改口径】分支策略**：①Step 3 **必须按解析后的 pin 分支克隆**——**已落地**：框架 `CodeupClient.CloneToLocalAsync` 支持 `branch` 参数（`git clone -b <pin>`）并返回 `GitCommandResult`，不再需要扩展 `GitToolPlugin.GitCloneAsync`；且因 `syncAllBranches` 为服务端异步，克隆前须**轮询等 pin 分支就绪**（上限 120s / 间隔 3s）；②Step 6 目标分支＝配置 `pushBranch`（**v0.28 起默认 `develop`**，此前为 `main`），留空才退回该端仓库默认分支；仓库仍为空时以 `main` 为默认分支创建并推送；③**不设置分支保护规则**（需管理员权限、超出 PAT 能力范围）。（已落地 §4.3 Step 3 / Step 6、§1.4）**（v0.33）** `CodeupClient.CloneToLocalAsync` **已删除**——克隆改由**助手调框架 `GitCloneAsync(url, branch, …)`**（原生支持 `-b`，无需再扩展），连接器不再承载 git；pin 择优（`develop → master → main → 模板默认分支`）与「轮询等 pin 分支就绪」口径写入 `docs/step3-repositories.md`。
     - **v0.28 补记（为什么把默认改成 develop）**：Step 3 的 pin 是**运行期择优**的（`NewProjectService.PreferredPins = { develop, master, main }`），若模板仓有 `develop`，克隆出来的工作树就在 `develop` 上；而 Step 6 若仍按 `main` 推送，就形成「在 develop 编译、推 main」的口径错位（本轮真机叙事里管理端与后端两端的实际分支均为 `develop`）。故把包内默认值对齐为 `develop`，并让该值同时用于云效建仓的 `DefaultBranch`，使 Step 3 与 Step 6 一致。配置留空时仍退回该端仓库默认分支的兜底逻辑不变。
 18. **【已定案·v0.18 新增】PAT 归属与交接**：**使用使用者个人 PAT**，**不引入服务账号 / 机器人账号**。文档与向导前置提示须写明「新建的云效资源归属于当前 PAT 持有者」。不引入服务账号的理由：涉及组织治理与额外凭据托管，与 #3 的放宽定案冲突。（已落地 §4.9.3）
-19. **【已定案·v0.18 新增】中断恢复与向导单实例**：**不做断点续跑**（不持久化中间态以自动接续），改为**残留检测**——重开向导时探测到同名工作区 / 同名云效资源，弹「清理后重来 / 保留并继续」，**不允许静默覆盖**。同时**向导单实例**：进行中再点入口则置灰或提示，不允许同时开两个。（已落地 §1.4、§4.3 Step 2 陷阱③、§4.8 #15）
+19. **【已定案·v0.18 新增】中断恢复与向导单实例**：**不做自动断点续跑**——档案持久化的 `CurrentStep` / `StepStates` 是**只读快照**，仅供步骤条显示与残留检测，**不用于自动接续**；流程推进一律由用户在向导中显式触发。改为**残留检测**——重开向导时探测到**本地存在未完成的项目档案**，弹「清理后重来 / 保留并继续」，**不允许静默覆盖**（**同名云端资源不在残留检测范围内**——其可观测性由 §4.5 的远端产物清单承担，见 §4.7）。同时**向导单实例**：进行中再点入口则置灰或提示，不允许同时开两个。（已落地 §1.4、§4.3 Step 2 陷阱③、§4.8 #15）
 20. **【已定案·v0.18 新增】插件崩溃隔离边界**：ALC 隔离**程序集**、不隔离**线程**。**定案**：宿主在每个插件入口（初始化 / 面板渲染 / 命令执行 / Skill / MCP 调用）包 `try/catch`，捕获后置 `Error`、移除 UI 贡献、展示错误详情，**不让宿主崩溃**；**不做进程级隔离**。**限制**：插件自启的后台线程不在保护范围内。（已落地 §3.4、§4.8 #16）
 21. **【已定案·v0.18 新增】插件版本升级要不要热替换**：**支持热替换**——`Upgrade` = 对旧版执行 §3.5 完整 6 步卸载 → **验证通过**才装新版；**验证未通过则中止安装**并提示重启后再装。**不允许在降级态下继续加载新版本**（否则每次升级多泄漏一份程序集）。（已落地 §3.5）
 22. **【已定案·v0.18 新增】面板占位与插件 UI 投递令牌**：①`MainWindow.axaml:16-40` 中 `Grid.Column="1"` 的内层 Grid 是**匿名的**、且 `MainWindow.axaml.cs:45-51/:66-71` **无字段持有其引用**——挂载前必须先命名并加字段保存，卸载时原样还原；**直接替换 `ContentRoot` 会连侧栏一起移除、直接 `Add` 会与聊天区重叠**。②`Dispatcher.UIThread.Post` 投递**无撤销机制**，定案由 `PluginBase.PostToUi` 提供**卸载即失效**的令牌、禁止插件裸投递。（已落地 §3.9、§3.4、§3.12）
