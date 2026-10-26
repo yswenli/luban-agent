@@ -15,7 +15,7 @@
 *Enter 提交，Shift+Enter 换行。输入 / 时弹出命令补全菜单。
 *
 *****************************************************************************/
-using LubanAgentCore.Commands;
+using LuBan.AIAgent.Hosting.Commands;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Clipboard = Terminal.Gui.App.Clipboard;
 using Color = Terminal.Gui.Drawing.Color;

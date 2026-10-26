@@ -21,6 +21,7 @@ using LubanAgentCodex.Views;
 using LubanAgentCore.Services;
 using LubanAgentCore.Utils;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Errors;
 using LuBan.AIAgent.Orchestration;
 
@@ -37,7 +38,7 @@ public partial class SessionViewModel : ObservableObject
     // 避免长会话把消息项与视觉元素无界累积在内存中。
     private const int MaxMessageCount = UiConstants.MaxMessageCount;
 
-    private readonly AgentHostService _agentHost;
+    private readonly IAgentHost _agentHost;
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
     private readonly Func<ToolPermissionMode> _permissionModeProvider;
     private readonly Func<string, bool> _isCurrentProvider;
@@ -70,7 +71,7 @@ public partial class SessionViewModel : ObservableObject
     /// <param name="pendingConfirmationReporter">待确认状态上报（参数：会话、是否待确认），用于侧栏徽标。</param>
     public SessionViewModel(
         string sessionId,
-        AgentHostService agentHost,
+        IAgentHost agentHost,
         HostOrchestrationProgressSink? orchestrationSink,
         Func<ToolPermissionMode> permissionModeProvider,
         Func<string, bool> isCurrentProvider,
@@ -261,27 +262,28 @@ public partial class SessionViewModel : ObservableObject
 
         try
         {
-            await foreach (var evt in _agentHost.RunStreamingAsync(
-                input,
-                attachmentPaths,
-                ConfirmCallback,
-                _permissionModeProvider(),
-                onPlannedAction: (tool, args) =>
+            await foreach (var evt in _agentHost.RunStreamingAsync(new AgentRunRequest
+            {
+                Input = input,
+                AttachmentPaths = attachmentPaths,
+                SessionId = SessionId,
+                PermissionMode = _permissionModeProvider(),
+                ConfirmHandler = ConfirmCallback,
+                OnPlannedAction = (tool, args) =>
                 {
                     if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
                     Interlocked.Increment(ref plannedCount);
                     var content = $"📋 计划项（Plan 模式，未执行）: {tool} {ToolArgsFormatter.Summarize(args)}";
                     Dispatcher.UIThread.Post(() => Messages.Add(new SystemMessageItem { Content = content }));
                 },
-                onUserDenied: (tool, args) =>
+                OnUserDenied = (tool, args) =>
                 {
                     // 用户明确拒绝：标记并立即终止本轮（框架保证 token 未取消，即非 Esc）
                     if (runSeq != _activeRunSeq) return;
                     _deniedByUser = true;
                     _cts?.Cancel();
-                },
-                sessionId: SessionId,
-                ct: ct))
+                }
+            }, ct))
             {
                 var e = evt;
                 if (e is TextDeltaEvent delta)
@@ -323,7 +325,7 @@ public partial class SessionViewModel : ObservableObject
     /// UI 线程上串行处理流式事件，保证消息流显示顺序：
     /// 思考 → 工具调用 → 工具结果 → ... → 最终正文
     /// </summary>
-    private void HandleStreamEvent(StreamEvent evt, int runSeq)
+    private void HandleStreamEvent(AgentStreamEvent evt, int runSeq)
     {
         // 运行序号防护：取消或新对话发起后，迟到的旧事件一律丢弃，
         // 避免"按 Esc 取消后，下次输入仍继续执行上次对话"。

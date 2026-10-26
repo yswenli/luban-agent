@@ -25,6 +25,8 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using LuBan.AIAgent;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Configuration.Providers;
+using LuBan.AIAgent.Hosting;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Services;
 using LubanAgentCodex.Security;
@@ -1745,7 +1747,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            var host = _services!.GetRequiredService<AgentHostService>();
+            var host = _services!.GetRequiredService<IAgentHost>();
             host.Reset();
             SetHint("已重置 Agent 宿主，新配置将在下次对话时生效（不打断当前上下文）。", false);
         }

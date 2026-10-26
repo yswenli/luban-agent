@@ -14,6 +14,8 @@
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Context;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Defaults;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Skills;
 
 namespace LubanAgentCodex.Plugins;
@@ -25,7 +27,7 @@ namespace LubanAgentCodex.Plugins;
 /// <para>
 /// 插件宿主必须注册为<b>单例</b>（框架 <c>PluginManager</c> 为单例，经根容器延迟解析 <c>IPluginHost</c>），
 /// 而它需要触达的大多服务是按用户/会话隔离的 <b>scoped</b>（<c>SkillRegistry</c> / <c>MCPRegistry</c> /
-/// <c>IAgentReloadTrigger</c> / <c>SessionContextState</c>），不可直接构造注入。
+/// <c>IAgentReloadTrigger</c> / <c>DefaultContextState</c>），不可直接构造注入。
 /// </para>
 /// <para>
 /// 本类提供唯一合法通路：根单例 <see cref="UserContextRegistry"/> 取该用户的
@@ -97,7 +99,7 @@ public sealed class PluginHostContext
     /// <param name="runtime">会话运行时。</param>
     public string WorkspaceRootOf(SessionRuntime runtime)
     {
-        var state = runtime.Services.GetService<SessionContextState>();
+        var state = runtime.Services.GetService<DefaultContextState>();
         var root = state?.WorkspaceRoot;
         return string.IsNullOrWhiteSpace(root) ? CurrentWorkspaceRoot : root!;
     }
@@ -122,7 +124,7 @@ public sealed class PluginHostContext
 
         try
         {
-            runtime.Services.GetService<AgentHostService>()?.Reset(sessionId);
+            runtime.Services.GetService<IAgentHost>()?.Reset(sessionId);
         }
         catch (Exception ex)
         {

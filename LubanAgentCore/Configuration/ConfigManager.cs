@@ -17,6 +17,7 @@ using System.Text.Json;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
+using LuBan.AIAgent.Hosting;
 using LubanAgentCore.Connectors.AliyunDevOps;
 using Microsoft.Extensions.AI;
 
@@ -25,11 +26,27 @@ namespace LubanAgentCore.Configuration;
 /// <summary>
 /// 应用配置管理器，负责配置文件的加载与保存，并提供 Provider、Skill、规则、MCP 服务器及模型等配置项的读写操作
 /// </summary>
-public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
+public class ConfigManager : IAppConfigReader, IConnectorConfigWriter, IAgentModelSelection
 {
     private readonly string _configPath;
     private AppConfig _config = new();
     private readonly ProviderService? _providerService;
+
+    string? IAgentModelSelection.ProviderId => SplitSelectedModel().Provider;
+    string? IAgentModelSelection.ModelId => SplitSelectedModel().Model;
+    string IAgentModelSelection.QualifiedModelName => _config.SelectedModel ?? string.Empty;
+
+    /// <summary>拆分 <c>provider:model</c> 形式的当前选中模型。</summary>
+    private (string? Provider, string? Model) SplitSelectedModel()
+    {
+        var qualified = _config.SelectedModel;
+        if (string.IsNullOrWhiteSpace(qualified)) return (null, null);
+
+        var idx = qualified.IndexOf(':');
+        return idx > 0 && idx < qualified.Length - 1
+            ? (qualified[..idx], qualified[(idx + 1)..])
+            : (null, null);
+    }
 
     List<ProviderConfigData> IAppConfigReader.Providers =>
         _config.Providers.Select(p => new ProviderConfigData

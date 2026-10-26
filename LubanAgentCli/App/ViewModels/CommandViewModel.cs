@@ -20,7 +20,7 @@ using LuBan.AIAgent.A2A.Abstractions;
 using LuBan.AIAgent.Wiki;
 using LubanAgentA2A.Runtime;
 using LubanAgentCli.App.Models;
-using LubanAgentCore.Commands;
+using LuBan.AIAgent.Hosting.Commands;
 
 namespace LubanAgentCli.App.ViewModels;
 

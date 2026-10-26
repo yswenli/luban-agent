@@ -2,6 +2,7 @@ using LuBan.AIAgent;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.LocalMemory;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
@@ -12,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using LubanAgentCore.Agents;
-using LubanAgentCore.Commands;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
@@ -65,9 +65,7 @@ public static class AgentHostBuilder
         services.AddSingleton<LlmWikiChunkRepository>();
         services.AddSingleton<WorktreeSessionRepository>();
         services.AddSingleton<GitProcess>();
-        services.AddSingleton<SessionRuntimeManager>();
         services.AddSingleton<UserContextRegistry>();
-        services.AddSingleton<ICommandCatalog, CommandCatalog>();
 
         services.AddSingleton<ILocalMemoryStore>(sp =>
         {
@@ -75,7 +73,8 @@ public static class AgentHostBuilder
             return new SqliteLocalMemoryStore(ResolveMemoryDbPath(opts));
         });
 
-        services.AddLuBanAgent(configuration);
+        services.AddLuBanAgentDefaults(configuration);
+        services.AddLuBanAgentHost();
 
         // 产品侧厂商连接器（云效）：框架只保留「抽象连接器 + 连接器管理」，
         // 厂商实现由宿主显式注册（含提供方工厂与凭据键别名）。
@@ -85,9 +84,6 @@ public static class AgentHostBuilder
         services.AddScoped<UserContextState>();
         services.AddScoped<LuBan.AIAgent.Abstractions.IUserContext>(sp =>
             new UserContext(sp.GetRequiredService<UserContextState>()));
-        services.AddScoped<SessionContextState>();
-        services.AddScoped<ISessionContext, SessionContext>();
-        services.AddScoped<IWorkspaceContext, WorkspaceContext>();
         services.AddScoped<IAgentReloadTrigger, SessionRuntimeReloadTrigger>();
 
         services.AddScoped<Microsoft.Extensions.AI.IChatClient>(sp =>
@@ -119,14 +115,21 @@ public static class AgentHostBuilder
         // 连接器声明写入器：产品实现覆盖框架默认（TryAddScoped），统一「写入 → 失效 → 通知」链路
         services.AddScoped<IConnectorConfigWriter>(sp => sp.GetRequiredService<ConfigManager>());
 
-        services.AddScoped<LuBanAgentFactory>();
-        services.AddScoped<ILuBanAgentFactory>(sp => sp.GetRequiredService<LuBanAgentFactory>());
-
         services.AddScoped<IWorktreeCoordinator, WorktreeSessionManager>();
         services.AddScoped<WorktreeReconciler>();
-        services.AddScoped<AgentHostService>();
         services.AddScoped<AttachmentService>();
         services.AddScoped<IAgentsMdInitializer, AgentsMdInitializer>();
+
+        // ── 框架宿主接缝：产品实现（后注册者生效，覆盖框架 TryAdd 默认）─────
+        services.AddScoped<IAgentWorkspaceResolver, CoreWorkspaceResolver>();
+        services.AddScoped<IAgentProfileResolver, CoreAgentProfileResolver>();
+        services.AddScoped<IAgentUserResolver, CoreAgentUserResolver>();
+        services.AddScoped<IAgentModelSelection>(sp => sp.GetRequiredService<ConfigManager>());
+        services.AddScoped<IModelCapabilityGate, VisionModelCapabilityGate>();
+        services.AddScoped<IAgentAttachmentOrchestrator, CoreAttachmentOrchestrator>();
+        services.AddScoped<ISessionRuntimeInitializer, CoreSessionRuntimeInitializer>();
+        services.AddScoped<IAgentSessionExtension, PluginSessionExtension>();
+        services.AddScoped<IAgentSessionExtension, ConnectorSessionExtension>();
 
         services.AddScoped<IWorkspaceContextProvider>(sp =>
             new DelegateWorkspaceContextProvider(() => sp.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId));

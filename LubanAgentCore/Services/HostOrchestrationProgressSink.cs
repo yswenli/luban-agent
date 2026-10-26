@@ -13,6 +13,7 @@
 *描述：宿主编排进度出口：把框架编排进度转成 UI 无关的 OrchestrationProgressEvent 供宿主订阅。
 *
 *****************************************************************************/
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Orchestration;
 
 namespace LubanAgentCore.Services;

@@ -13,6 +13,8 @@
 *描述：Provider 管理命令（支持 add/update/delete 子命令）
 *
 *****************************************************************************/
+using LuBan.AIAgent.Configuration.Providers;
+
 namespace LubanAgentCli.Commands;
 
 /// <summary>

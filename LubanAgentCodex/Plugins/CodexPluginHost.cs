@@ -14,6 +14,8 @@
 using System.Text;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
+using LuBan.AIAgent.Defaults;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
 using LuBan.AIAgent.Plugins.Security;
@@ -397,7 +399,7 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
         if (manager is null) return;
 
         var registry = sessionServices.GetService<MCPRegistry>();
-        var workspaceRoot = sessionServices.GetService<SessionContextState>()?.WorkspaceRoot;
+        var workspaceRoot = sessionServices.GetService<DefaultContextState>()?.WorkspaceRoot;
 
         foreach (var plugin in manager.GetPlugins())
         {

@@ -11,12 +11,13 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
-*描述：单个会话的 ViewModel：绑定固定 sessionId，经 AgentHostService 按会话路由流式对话，
-*消费 UI 无关的 StreamEvent 序列并编排为 Block 文档；所有 UI 更新通过 IUiDispatcher
+*描述：单个会话的 ViewModel：绑定固定 sessionId，经 IAgentHost 按会话路由流式对话，
+*消费 UI 无关的 AgentStreamEvent 序列并编排为 Block 文档；所有 UI 更新通过 IUiDispatcher
 *编组到 UI 线程
 *
 *****************************************************************************/
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Orchestration;
 using LuBan.Common.IO;
 
@@ -26,8 +27,8 @@ namespace LubanAgentCli.App.ViewModels;
 
 /// <summary>
 /// 会话 ViewModel。每个活动会话持有独立实例，绑定固定 <c>sessionId</c>，
-/// 经 <see cref="AgentHostService"/> 按会话路由执行流式对话（会话隔离、后台并发互不干扰），
-/// 消费 UI 无关的 <see cref="StreamEvent"/> 序列并编排为 Block 追加到本会话文档。
+/// 经 <see cref="IAgentHost"/> 按会话路由执行流式对话（会话隔离、后台并发互不干扰），
+/// 消费 UI 无关的 <see cref="AgentStreamEvent"/> 序列并编排为 Block 追加到本会话文档。
 /// 所有 UI 更新通过 <see cref="IUiDispatcher.Invoke"/> 编组到 UI 线程，本类不直接持有 View 引用。
 /// </summary>
 internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
@@ -40,7 +41,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     private readonly TitleService _titleService;
     private readonly ISessionManager _iSessionManager;
     private readonly IWorkspaceManager _workspaceManager;
-    private readonly AgentHostService _agentHost;
+    private readonly IAgentHost _agentHost;
     private readonly SpinnerService _spinner;
 
     // 由 DI 解析并缓存的页脚引用（会话切换/初始化时刷新状态栏）
@@ -184,7 +185,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         _titleService = services.GetRequiredService<TitleService>();
         _iSessionManager = services.GetRequiredService<ISessionManager>();
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
-        _agentHost = services.GetRequiredService<AgentHostService>();
+        _agentHost = services.GetRequiredService<IAgentHost>();
 
         _configManager.SelectedModelChanged += OnSelectedModelChanged;
     }
@@ -347,7 +348,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     }
 
     /// <summary>
-    /// 处理用户输入。经 <see cref="AgentHostService"/> 启动本会话流式对话，输出以 Block 形式追加到文档。
+    /// 处理用户输入。经 <see cref="IAgentHost"/> 启动本会话流式对话，输出以 Block 形式追加到文档。
     /// </summary>
     /// <param name="input">用户输入文本。</param>
     /// <param name="attachments">附件草稿（含路径与文件名）。</param>
@@ -389,7 +390,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
                 return;
             }
 
-            // 追加用户消息（显示信息由草稿轻量构造，完整处理交由 AgentHostService）
+            // 追加用户消息（显示信息由草稿轻量构造，完整处理交由 IAgentHost）
             _dispatcher.Invoke(() => _doc.AppendBlock(
                 new UserMessageBlock(input, BuildDisplayInfos(attachments))));
 
@@ -481,7 +482,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
             }
             catch
             {
-                // 文件不存在/不可访问时体积记为 0，不阻断发送（真实处理由 AgentHostService 完成）
+                // 文件不存在/不可访问时体积记为 0，不阻断发送（真实处理由 IAgentHost 完成）
             }
 
             var isImage = MediaTypeUtil.IsImage(a.Path);
@@ -608,7 +609,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     }
 
     /// <summary>
-    /// 运行流式对话循环——消费 <see cref="AgentHostService"/> 输出的 <see cref="StreamEvent"/> 序列并转换为 Block。
+    /// 运行流式对话循环——消费 <see cref="IAgentHost"/> 输出的 <see cref="AgentStreamEvent"/> 序列并转换为 Block。
     /// 流式文本 token 先入缓冲并按 50ms 节流合批编组到 UI 线程；工具调用/结果先冲刷缓冲再追加，保证文档顺序。
     /// </summary>
     private async Task ConsumeStreamAsync(string input, IReadOnlyList<string> attachmentPaths, CancellationToken ct, int runSeq)
@@ -651,15 +652,16 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
 
         try
         {
-            await foreach (var evt in _agentHost.RunStreamingAsync(
-                input,
-                attachmentPaths,
-                ConfirmTool,
-                PermissionMode,
-                onPlannedAction: OnPlannedAction,
-                onUserDenied: OnUserDenied,
-                sessionId: _sessionId,
-                ct: ct))
+            await foreach (var evt in _agentHost.RunStreamingAsync(new AgentRunRequest
+            {
+                Input = input,
+                AttachmentPaths = attachmentPaths,
+                SessionId = _sessionId,
+                PermissionMode = PermissionMode,
+                ConfirmHandler = ConfirmTool,
+                OnPlannedAction = OnPlannedAction,
+                OnUserDenied = OnUserDenied
+            }, ct))
             {
                 // 运行已被取消/被新对话覆盖：停止消费流，丢弃后续（迟到的旧事件）
                 if (runSeq != Volatile.Read(ref _activeRunSeq))
@@ -752,7 +754,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// <summary>
     /// 处理单个流式事件，转换为 Block 追加。
     /// </summary>
-    private void HandleStreamEvent(StreamEvent evt)
+    private void HandleStreamEvent(AgentStreamEvent evt)
     {
         switch (evt)
         {

@@ -14,6 +14,7 @@
 *
 *****************************************************************************/
 using System.Text.Json;
+using LuBan.AIAgent.Configuration.Providers;
 using Microsoft.Extensions.Configuration;
 
 namespace LubanAgentCore.Configuration;
@@ -25,117 +26,6 @@ public static class ProviderHelper
 {
     private static Dictionary<string, ExtendedProviderInfo> _providerConfigs = new();
     private static bool _initialized = false;
-
-    private static readonly Dictionary<string, string> _defaultBaseUrls = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["openai"] = "https://api.openai.com/v1/",
-        ["deepseek"] = "https://api.deepseek.com/v1/",
-        ["kimi"] = "https://api.moonshot.cn/v1/",
-        ["glm"] = "https://open.bigmodel.cn/api/paas/v4/",
-        ["qwen"] = "https://dashscope.aliyuncs.com/compatible-mode/v1/",
-        ["doubao"] = "https://ark.cn-beijing.volces.com/api/v3/",
-        ["ollama"] = "http://localhost:11434/v1/",
-        ["ernie"] = "https://qianfan.baidubce.com/v2/",
-        ["minimax"] = "https://api.minimax.chat/v1/",
-        ["hunyuan"] = "https://api.hunyuan.cloud.tencent.com/v1/",
-        ["mimo"] = "https://api.xiaomi.com/v1/",
-        ["xai"] = "https://api.x.ai/v1/",
-        ["qianfan"] = "https://qianfan.baidubce.com/v2/",
-        ["tencent-ti"] = "https://api.lkeap.cloud.tencent.com/v1/",
-        ["huawei-pangu"] = "https://pangu.huaweicloud.com/v1/",
-        ["bedrock"] = "https://bedrock-runtime.us-east-1.amazonaws.com/",
-        ["openrouter"] = "https://openrouter.ai/api/v1/"
-    };
-
-    private static readonly Dictionary<string, List<string>> _models = new()
-    {
-        ["openai"] = new List<string>
-        {
-            "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
-            "gpt-4o", "gpt-4o-mini",
-            "o1", "o1-mini", "o1-pro",
-            "o3", "o3-mini", "o3-pro", "o4-mini"
-        },
-        ["azure"] = new List<string> { "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-35-turbo" },
-        ["deepseek"] = new List<string> { "deepseek-flash", "deepseek-v4-pro" },
-        ["kimi"] = new List<string> { "kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6" },
-        ["glm"] = new List<string>
-        {
-            "glm-5.3", "glm-5.3-flash", "glm-5.2", "glm-5.1", "glm-5", "glm-5-turbo",
-            "glm-4.7", "glm-4.7-flash", "glm-4.6", "glm-4.5-air", "glm-4.5-flash",
-            "glm-4-long", "glm-4-flash-250414",
-            "glm-5v-turbo", "glm-4.6v", "glm-4.6v-flash",
-            "glm-4.1v-thinking-flash", "glm-4.1v-thinking-flashx", "glm-4v-flash", "glm-ocr"
-        },
-        ["qwen"] = new List<string>
-        {
-            "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash",
-            "qwen3.6-plus", "qwen3.6-flash", "qwen3.5-plus", "qwen3.5-flash",
-            "qwen3.5-omni-plus", "qwen3-vl-plus", "qwen3-vl-flash",
-            "qwen-vl-max", "qwen-vl-plus", "qvq-max", "qvq-plus"
-        },
-        ["doubao"] = new List<string>
-        {
-            "doubao-1.5-vision-pro", "doubao-1.5-vision-lite",
-            "doubao-vision-pro", "doubao-vision-lite",
-            "Seed-Evolving", "deepseek-v4.1-flash"
-        },
-        ["claude"] = new List<string>
-        {
-            "claude-opus-4-20250514", "claude-sonnet-4-20250514",
-            "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022", "claude-3-haiku-20240307"
-        },
-        ["gemini"] = new List<string>
-        {
-            "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash",
-            "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"
-        },
-        ["ollama"] = new List<string> { "llama3.1", "llama3.2", "qwen2.5", "deepseek-coder-v2", "codellama" },
-        ["ernie"] = new List<string>
-        {
-            "ernie-4.5", "ernie-4.0-turbo", "ernie-4.0-vision",
-            "ernie-3.5-8k", "ernie-3.5-vision", "ernie-speed-pro", "ernie-lite-pro"
-        },
-        ["minimax"] = new List<string>
-        {
-            "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed",
-            "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-H3"
-        },
-        ["hunyuan"] = new List<string>
-        {
-            "hunyuan-turbos-vision", "hunyuan-t1-vision",
-            "hunyuan-turbos-vision-video", "tencent-hy-vision-1.5-instruct",
-            "hunyuan-turbo", "hunyuan-pro", "hunyuan-standard", "hunyuan-lite"
-        },
-        ["mimo"] = new List<string> { "mimo-v2.5-pro" },
-        ["xai"] = new List<string> { "grok-4", "grok-3", "grok-3-mini", "grok-3-fast", "grok-2-vision" },
-        ["qianfan"] = new List<string>
-        {
-            "ernie-4.5", "ernie-4.0-turbo", "ernie-4.0-vision",
-            "ernie-3.5-8k", "ernie-3.5-vision", "ernie-speed-pro", "ernie-lite-pro"
-        },
-        ["tencent-ti"] = new List<string>
-        {
-            "hunyuan-turbos-vision", "hunyuan-t1-vision",
-            "hunyuan-turbo", "hunyuan-pro", "hunyuan-standard", "hunyuan-lite"
-        },
-        ["huawei-pangu"] = new List<string> { "pangu-7b", "pangu-13b", "pangu-52b" },
-        ["bedrock"] = new List<string>
-        {
-            "anthropic.claude-opus-4-20250515-v1:0", "anthropic.claude-sonnet-4-20250515-v1:0",
-            "anthropic.claude-3-5-sonnet-20241022-v1:0", "anthropic.claude-3-7-sonnet-20250219-v1:0",
-            "meta.llama3-8b-instruct-v1:0", "meta.llama4-maverick-v1:0"
-        },
-        ["openrouter"] = new List<string>
-        {
-            "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-pro-latest",
-            "openai/gpt-4.1", "openai/o3",
-            "anthropic/claude-opus-4", "anthropic/claude-sonnet-4",
-            "google/gemini-2.5-pro", "google/gemini-2.5-flash",
-            "meta/llama-4-maverick"
-        }
-    };
 
     private static readonly Dictionary<string, string> _displayNames = new()
     {
@@ -214,7 +104,7 @@ public static class ProviderHelper
     public static List<string> GetModels(string providerName, ProviderCache cache)
     {
         var key = providerName.ToLowerInvariant();
-        var models = _models.TryGetValue(key, out var predefined) ? predefined.ToList() : new List<string>();
+        var models = ProviderDefaults.GetDefaultModels(key).ToList();
 
         foreach (var model in cache.GetFetched(key))
         {
@@ -268,7 +158,7 @@ public static class ProviderHelper
 
         if (!string.IsNullOrEmpty(baseUrl))
             baseUrl = NormalizeBaseUrl(baseUrl);
-        else if (_defaultBaseUrls.TryGetValue(key, out var defaultUrl))
+        else if (ProviderDefaults.GetDefaultBaseUrl(key) is { } defaultUrl)
             baseUrl = defaultUrl;
         else
             return GetModels(providerName, cache);

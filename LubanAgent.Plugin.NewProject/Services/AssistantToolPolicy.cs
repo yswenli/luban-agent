@@ -19,7 +19,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>为什么需要它</b>：Step 4 / Step 5 的实际动作由项目会话的助手执行。插件声明里的
 /// <c>process:dotnet</c> 只管插件自身发起的进程，<b>管不到助手执行的命令</b>；故由插件在
-/// 宿主 <c>AgentHostService.RunStreamingAsync</c> 的确认回调里按「工具名 + 命令行首词」补上等效约束，
+/// 宿主 <c>IAgentHost.RunStreamingAsync</c> 的确认回调里按「工具名 + 命令行首词」补上等效约束，
 /// 且只用 <see cref="ToolPermissionMode.Default"/>（不使用 <c>BypassPermissions</c> 全放行）。
 /// </para>
 /// <para>
@@ -291,7 +291,7 @@ public static class AssistantToolPolicy
     /// 宿主对「工具调用被拒绝 / 被取消」的统一文案。
     /// </summary>
     /// <remarks>
-    /// 字面量写在框架 <c>LuBan.AIAgent</c> 的 <c>AgentHostService</c> 里（拒绝与取消在结果层不可区分，故用同一条中性文案），
+    /// 字面量写在框架 <c>LuBan.AIAgent</c> 的 <c>IAgentHost</c> 里（拒绝与取消在结果层不可区分，故用同一条中性文案），
     /// 插件侧只能按字面量对齐；改框架时两处需同步（CLI 侧亦有一处同样的字面量比对）。
     /// </remarks>
     public const string DeniedOrCancelledMessage = "工具调用被拒绝或已取消";

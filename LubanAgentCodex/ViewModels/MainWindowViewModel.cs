@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCodex.ViewModels;
 
@@ -23,7 +24,7 @@ namespace LubanAgentCodex.ViewModels;
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
-    private readonly AgentHostService _agentHost;
+    private readonly IAgentHost _agentHost;
 
     /// <summary>
     /// 编排进度出口（DI 单例）。编排由工具调用触发、执行在工具内部，进度不经对话流，
@@ -272,7 +273,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <param name="services">服务提供者</param>
     public MainWindowViewModel(IServiceProvider services)
     {
-        _agentHost = services.GetRequiredService<AgentHostService>();
+        _agentHost = services.GetRequiredService<IAgentHost>();
         _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as HostOrchestrationProgressSink;
         CommandCatalog = services.GetRequiredService<ICommandCatalog>();
 
@@ -333,7 +334,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             try
             {
-                await _agentHost.InitializeAsync();
+                await _agentHost.InitializeAsync(session.SessionId);
             }
             catch (Exception ex)
             {
@@ -382,7 +383,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             try
             {
-                await _agentHost.InitializeAsync();
+                await _agentHost.InitializeAsync(session.SessionId);
             }
             catch (Exception ex)
             {

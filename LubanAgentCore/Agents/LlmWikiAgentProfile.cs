@@ -21,6 +21,7 @@
 *描述：由 RagAgentProfile 改名为 LlmWikiAgentProfile，配置文件名改为 llmwiki-config.json，提示词措辞统一为 LLM Wiki
 *
 *****************************************************************************/
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Wiki;
 
 namespace LubanAgentCore.Agents;
@@ -34,8 +35,11 @@ namespace LubanAgentCore.Agents;
 /// 检索工具行为（默认条数、单次返回字符上限）可通过 <c>retrieval</c> 节点覆盖。
 /// 构造时会追加 <see cref="WikiDefaults.Schema"/> 及工作区自定义 schema 到系统提示词。
 /// </remarks>
-public class LlmWikiAgentProfile : AgentProfile
+public class LlmWikiAgentProfile : AgentProfileBase
 {
+    /// <summary>工作区配置目录（相对工作区根）。</summary>
+    private const string ConfigDirectory = ".luban-agent";
+
     private const string RetrievalHardRules = """
         ## 知识库问答硬约束
         1. 回答知识库相关问题前**必须先调用检索工具**：先用 `retrieval.searchCode` 搜工作区原始资料，必要时用 `wiki.search` 搜 wiki 页；不得跳过检索直接作答。
@@ -43,7 +47,7 @@ public class LlmWikiAgentProfile : AgentProfile
         3. 检索无命中且无自动注入内容时，明确说明「知识库中未找到依据」，**不得凭记忆作答**；不得编造来源或页码。
         """;
 
-    private readonly WorkspaceInfo _workspace;
+    private readonly WorkspaceDescriptor _workspace;
     private string _systemPrompt;
     private string[]? _toolGroups;
     private WikiConfig _wiki = new();
@@ -52,8 +56,8 @@ public class LlmWikiAgentProfile : AgentProfile
     /// <summary>
     /// 创建 LlmWikiAgentProfile 实例，并加载工作区的 LLM Wiki 配置。
     /// </summary>
-    /// <param name="workspace">工作区信息</param>
-    public LlmWikiAgentProfile(WorkspaceInfo workspace)
+    /// <param name="workspace">工作区描述</param>
+    public LlmWikiAgentProfile(WorkspaceDescriptor workspace)
     {
         _workspace = workspace;
         _systemPrompt = "你是一个 LLM Wiki 知识库问答专家，维护并基于 wiki 知识库回答问题。优先使用 wiki 工具检索与沉淀知识；wiki 无相关内容时再回落原始资料。";
@@ -98,9 +102,7 @@ public class LlmWikiAgentProfile : AgentProfile
     /// </summary>
     private void LoadLlmWikiConfig()
     {
-        if (_workspace.ConfigPath == null) return;
-
-        var configPath = Path.Combine(_workspace.RootPath, _workspace.ConfigPath, "llmwiki-config.json");
+        var configPath = Path.Combine(_workspace.RootPath, ConfigDirectory, "llmwiki-config.json");
         if (!File.Exists(configPath)) return;
 
         try

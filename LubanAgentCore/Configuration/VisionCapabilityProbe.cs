@@ -1,10 +1,12 @@
+using LuBan.AIAgent.Hosting;
+
 namespace LubanAgentCore.Configuration;
 
 /// <summary>
 /// 首次带图调用时的视觉能力探针：观察本轮流式结果，据此回填模型能力记录。
 /// 无记录（未知）时才启用；成功记 true，命中「图片不支持」错误记 false，其余错误不写入。
 /// </summary>
-public sealed class VisionCapabilityProbe
+public sealed class VisionCapabilityProbe : IModelCapabilityProbe
 {
     private readonly string _modelId;
     private readonly ModelCapabilityCache _cache;

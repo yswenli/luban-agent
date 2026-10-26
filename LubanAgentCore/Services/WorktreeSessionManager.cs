@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Abstractions.Models;
+using LuBan.AIAgent.Defaults;
 
 namespace LubanAgentCore.Services;
 
@@ -25,7 +26,7 @@ namespace LubanAgentCore.Services;
 public sealed class WorktreeSessionManager : IWorktreeCoordinator
 {
     private readonly ISessionContext _sessionContext;
-    private readonly SessionContextState _state;
+    private readonly DefaultContextState _state;
     private readonly WorktreeSessionRepository _repo;
     private readonly GitProcess _git;
 
@@ -38,7 +39,7 @@ public sealed class WorktreeSessionManager : IWorktreeCoordinator
     /// <param name="git">git 命令封装。</param>
     public WorktreeSessionManager(
         ISessionContext sessionContext,
-        SessionContextState state,
+        DefaultContextState state,
         WorktreeSessionRepository repo,
         GitProcess git)
     {

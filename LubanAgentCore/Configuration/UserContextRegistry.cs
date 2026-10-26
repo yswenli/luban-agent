@@ -10,6 +10,7 @@
 *****************************************************************************/
 using System.Collections.Concurrent;
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Configuration.Providers;
 using LubanAgentCore.Hosting;
 
 namespace LubanAgentCore.Configuration;
@@ -125,6 +126,7 @@ public sealed class UserContextRegistry
             var credential = new System.ClientModel.ApiKeyCredential(p.ApiKey);
             providers[p.Name] = (new OpenAI.OpenAIClient(credential, clientOptions), clientOptions);
         }
-        return new LuBanChatClient(providers);
+        // Provider 路由统一走框架实现；请求落盘能力由产品装饰器(RequestDumpChatClient)注入
+        return new LuBanChatClient(providers, decorateClient: c => new RequestDumpChatClient(c));
     }
 }

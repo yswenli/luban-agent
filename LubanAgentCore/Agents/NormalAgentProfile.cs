@@ -16,13 +16,14 @@
 *****************************************************************************/
 
 using LuBan.AIAgent.Configuration;
+using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCore.Agents;
 
 /// <summary>
 /// 普通工作区的 Agent 配置，启用全部工具，不使用检索模式。
 /// </summary>
-public class NormalAgentProfile : AgentProfile
+public class NormalAgentProfile : AgentProfileBase
 {
     /// <summary>
     /// 普通工作区的系统提示词。

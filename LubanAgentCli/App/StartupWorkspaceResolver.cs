@@ -17,6 +17,7 @@
 *
 *****************************************************************************/
 using LubanAgentA2A.Runtime;
+using LuBan.AIAgent.Defaults;
 
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Context;
@@ -209,7 +210,7 @@ internal static class StartupWorkspaceResolver
         using var scope = services.CreateUserScope(services.ResolveUserKey());
         var agentFactory = scope.ServiceProvider.GetRequiredService<ILuBanAgentFactory>();
 
-        if (scope.ServiceProvider.GetService<SessionContextState>() is { } state)
+        if (scope.ServiceProvider.GetService<DefaultContextState>() is { } state)
         {
             state.WorkspaceId = workspace.WorkspaceId;
             state.WorkspaceRoot = workspace.RootPath;

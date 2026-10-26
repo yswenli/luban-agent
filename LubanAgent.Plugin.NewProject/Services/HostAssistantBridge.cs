@@ -9,6 +9,7 @@
 
 using System.Diagnostics;
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Sessions;
 using LubanAgentCore.Configuration;
@@ -33,7 +34,7 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <para>
 /// <b>会话与运行时的自愈</b>：档案里的 <c>SessionId</c> 可能为空（聊天入口 / 档案被手工清过），
 /// 或会话存在但运行时未构建（重启后未打开过该会话）——两种都由本层兜底：先自动建会话，
-/// 再经用户 scope 的 <see cref="AgentHostService.InitializeAsync"/> 唤起运行时。
+/// 再经用户 scope 的 <see cref="IAgentHost.InitializeAsync"/> 唤起运行时。
 /// </para>
 /// <para>
 /// <b>工具审批</b>：一律 <see cref="ToolPermissionMode.Default"/> + <see cref="AssistantToolPolicy"/> 白名单回调，
@@ -189,9 +190,9 @@ internal sealed class HostAssistantBridge
 
                 var factory = _resolve(typeof(IServiceScopeFactory)) as IServiceScopeFactory;
                 using var scope = factory?.CreateUserScope(LocalUserDefaults.DefaultUserId);
-                var bootstrap = scope?.ServiceProvider.GetService(typeof(AgentHostService)) as AgentHostService;
+                var bootstrap = scope?.ServiceProvider.GetService(typeof(IAgentHost)) as IAgentHost;
                 if (bootstrap is null)
-                    return Fail("无法解析 AgentHostService，项目会话运行时不可用。");
+                    return Fail("无法解析 IAgentHost，项目会话运行时不可用。");
 
                 await bootstrap.InitializeAsync(sessionId!, cancellationToken).ConfigureAwait(false);
                 bootstrapped = true;
@@ -203,17 +204,19 @@ internal sealed class HostAssistantBridge
 
             wasBusy = runtime.IsRunning;
 
-            var runner = runtime.Services.GetService(typeof(AgentHostService)) as AgentHostService;
+            var runner = runtime.Services.GetService(typeof(IAgentHost)) as IAgentHost;
             if (runner is null)
-                return Fail("项目会话 scope 内无法解析 AgentHostService。");
+                return Fail("项目会话 scope 内无法解析 IAgentHost。");
 
             // ── ④ 下发提示词：Default 模式 + 白名单确认回调 ────────────────────
             var workspaceRoot = spec.LocalPath;
 
-            await foreach (var evt in runner.RunStreamingAsync(
-                prompt,
-                Array.Empty<string>(),
-                (toolName, arguments) =>
+            var request = new AgentRunRequest
+            {
+                Input = prompt,
+                SessionId = sessionId,
+                PermissionMode = ToolPermissionMode.Default,
+                ConfirmHandler = (toolName, arguments) =>
                 {
                     var decision = AssistantToolPolicy.Decide(toolName, arguments, workspaceRoot, out var reason);
                     if (decision == ConfirmResult.Allow)
@@ -222,12 +225,10 @@ internal sealed class HostAssistantBridge
                         denials.Add($"{toolName}｜{reason}");
 
                     return decision;
-                },
-                ToolPermissionMode.Default,
-                onPlannedAction: null,
-                onUserDenied: null,
-                sessionId: sessionId,
-                ct: cancellationToken).ConfigureAwait(false))
+                }
+            };
+
+            await foreach (var evt in runner.RunStreamingAsync(request, cancellationToken).ConfigureAwait(false))
             {
                 switch (evt)
                 {

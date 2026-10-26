@@ -22,7 +22,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
-using LubanAgentCore.Commands;
+using LuBan.AIAgent.Hosting.Commands;
 using LubanAgentCore.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;

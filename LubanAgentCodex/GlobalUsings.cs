@@ -47,7 +47,7 @@ global using LubanAgentA2A.Runtime;
 global using LubanAgentCodex.ViewModels.Messages;
 global using LubanAgentCodex.Views;
 
-global using LubanAgentCore.Commands;
+global using LuBan.AIAgent.Hosting.Commands;
 // LubanAgentCore
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Hosting;

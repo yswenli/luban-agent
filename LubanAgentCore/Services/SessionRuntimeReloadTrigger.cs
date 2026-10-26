@@ -15,6 +15,7 @@
 *
 *****************************************************************************/
 using LuBan.AIAgent.Abstractions;
+using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCore.Services;
 
