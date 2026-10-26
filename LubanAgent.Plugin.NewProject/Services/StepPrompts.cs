@@ -109,6 +109,9 @@ public static class StepPrompts
     /// <c>npm rebuild</c> 无效；并要求装依赖独占一条命令跑完（管道截断会让子进程半途被杀）。
     /// v0.30：管理端改为固定的 4 步流程（先构建 → 失败再核 Node 16 → <c>cnpm i</c> 修依赖 → 再构建），
     /// 与真机验证过的成功路径一致；「全局装 vite」由用户明确授权。
+    /// v0.34：新增「postinstall 未跑」分支——<c>@vue-office/{docx,excel,pdf}</c> 这类包的 <c>main</c> 指向
+    /// <c>lib/index.js</c>，而该文件靠 postinstall 按 Vue 大版本从 <c>lib/v3</c> 拷出；cnpm 装完不补跑，
+    /// 删包重装无效。修法是跑包内自带的 <c>switch-cli.js 3</c>，且同族包要一次查全（真机：补完 docx 立刻被 excel 卡住）。
     /// </remarks>
     /// <param name="spec">项目档案。</param>
     /// <param name="targets">本次要编译的端（按端仓库，已带本地目录）。</param>
@@ -126,11 +129,11 @@ public static class StepPrompts
         AppendHardBoundaries(builder, new[]
         {
             "本步的边界是「只编译、不改业务」：**允许修依赖树与环境**（装依赖、切 Node 版本、删掉半装的单个依赖目录后重装、"
-                + "必要时重建 node_modules），但**禁止修改仓库里的业务源码与工程配置**（业务代码、package.json、"
-                + "vite.config、.csproj / .sln 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。"
+                + "跑依赖包**自带的** postinstall / 版本切换脚本补回缺失入口、必要时重建 node_modules），但**禁止修改仓库里的业务源码与工程配置**"
+                + "（业务代码、package.json、vite.config、.csproj / .sln 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。"
                 + "编译错误若是源码问题，如实报出来，由用户修完后再重跑本步。",
             "编译产物（bin / obj / dist）留在原处即可，**不要整体清理 node_modules**；唯一例外是修半装包时"
-                + "按【本组织已知构建姿势】第 5) 条删掉出问题的那一个包目录（如 node_modules/element-plus）。",
+                + "按【本组织已知构建姿势】的补充条删掉出问题的那一个包目录（如 node_modules/element-plus）。",
             "依赖未装就先装（dotnet restore / npm install / cnpm install / pnpm install 等），再编译；每个端最多重试 2 次。"
                 + "**装依赖必须独占一条命令并等它正常退出**：不要接管道截断输出，也不要在它跑的时候并行做别的事——"
                 + "中途被杀会留下「目录在、文件不全」的半装包，比没装更坑。",
@@ -161,11 +164,19 @@ public static class StepPrompts
                            + "也不要并行做别的——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑；"
                            + "若被中断，重跑同一命令直到正常退出。");
         builder.AppendLine("  4) 再跑一次构建：fnm exec --using=16 -- npm.cmd run build:dev，**以这一次的输出定结论**。");
-        builder.AppendLine("  补充：若第 4 步仍报 Failed to resolve entry for package \"X\"：判「半装」——包目录存在，但 package.json 里 "
-                           + "module / main / exports 指向的入口文件不存在（例：element-plus 缺 node_modules/element-plus/es/index.mjs）。"
-                           + "修法是删掉该包目录再装回来：node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\" "
-                           + "后重跑 cnpm.cmd i。**不要用 npm rebuild X**（对预构建包无效），也**不要**因安装几秒 exit 0 就认为修好——"
-                           + "包管理器只核对目录，不校验文件完整性。");
+        builder.AppendLine("  补充：若第 4 步仍报 Failed to resolve entry for package \"X\"，先分下面两种，**别急着重装**：");
+        builder.AppendLine("  a) 包内自带版本目录、入口文件只是没拷出来（**postinstall 未跑**）：package.json 的 main 是 lib/index.js，"
+                           + "而 lib/index.js 不存在，但 lib/v3/index.js（或 lib/v2/index.js）在。典型：**@vue-office/docx、excel、pdf**。"
+                           + "这类包靠 postinstall 按 Vue 大版本把 v3 产物拷成入口，cnpm 装完不补跑，**删包重装多少遍结果都一样**。"
+                           + "修法是跑包内自带脚本把入口补出来：在仓库目录执行 "
+                           + "node node_modules/@vue-office/docx/lib/script/switch-cli.js 3"
+                           + "（Vue 2 仓库用参数 2）。**同族包要一次查全**：docx / excel / pdf 三个常同时缺，"
+                           + "只补一个会立刻被下一个同类报错卡住，逐个确认 lib/index.js 都在了再构建。");
+        builder.AppendLine("  b) 否则才是真「半装」——包目录在，但 module / main / exports 指向的入口文件不存在且包内也没有可拷的产物"
+                           + "（例：element-plus 缺 node_modules/element-plus/es/index.mjs）：删掉该包目录再装回来，"
+                           + "node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\" 后重跑 cnpm.cmd i。");
+        builder.AppendLine("  **不要用 npm rebuild X**（对预构建包无效），也**不要**因安装几秒 exit 0 就认为修好——"
+                           + "包管理器只核对目录，不校验文件完整性。**改结论前必须再跑一次构建**。");
         builder.AppendLine("- 后端（Service，.NET）：dotnet build <解决方案>.sln。");
         builder.AppendLine("- 其它端（移动端等）：按工程类型自行判断。");
         builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装除 vite 之外的全局工具链、也不要改仓库配置——"

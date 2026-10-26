@@ -72,17 +72,39 @@
 ## 硬边界
 
 - **只编译、不改业务**（v0.28 放宽）：**允许修依赖树与环境**——装依赖、切换 Node 版本、
-  重建 `node_modules`（含删掉半装的单个包目录后重装）；
+  重建 `node_modules`（含删掉半装的单个包目录后重装）、跑依赖包**自带的** postinstall / 版本切换脚本补回缺失入口；
   但**禁止改业务源码与工程配置**（业务代码、`package.json`、`vite.config`、`.csproj` / `.sln` 等一律不改；
   锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。源码级编译错误如实报出，用户修完后再重跑本步。
 
 ### 半装包（`Failed to resolve entry for package "X"`）的判定与修法
 
-- **判定**：包目录存在，但 `package.json` 的 `module` / `main` / `exports` 指向的入口文件不存在
-  （例：`node_modules/element-plus/es/index.mjs` 缺失）——这是安装被中途打断留下的半装包。
-- **修法**：在本端仓库目录执行
+先分两种，**别急着重装**：
+
+**a) postinstall 未跑（入口文件只是没拷出来）**
+
+- 特征：`package.json` 的 `main` 是 `lib/index.js`，该文件不存在，但包内 `lib/v3/index.js`
+  （或 `lib/v2/index.js`）在——产物是完好的，只是没拷成入口。
+- 典型：**`@vue-office/docx` / `@vue-office/excel` / `@vue-office/pdf`**。这类包靠 `postinstall`
+  按 Vue 大版本把 v3 产物拷成入口；`cnpm i` 装完不补跑，**删包重装多少遍结果都一样**。
+- 修法：在本端仓库目录跑包内自带脚本（不联网、不重装、不改包源码）：
+
+  ```
+  node node_modules/@vue-office/docx/lib/script/switch-cli.js 3
+  ```
+
+  Vue 2 仓库传 `2`。**同族包要一次查全**：docx / excel / pdf 三个常同时缺，
+  只补一个会立刻被下一个同类报错卡住——逐个确认 `lib/index.js` 都在了再构建。
+
+**b) 真半装（安装被中途打断）**
+
+- 特征：包目录存在，但 `module` / `main` / `exports` 指向的入口不存在，且包内也没有可拷的产物
+  （例：`node_modules/element-plus/es/index.mjs` 缺失）。
+- 修法：在本端仓库目录执行
   `node -e "require('fs').rmSync('node_modules/X',{recursive:true,force:true})"`，
   再重跑 `fnm exec --using=16 -- cnpm.cmd i`（只补这一个包，秒级）。
+
+共同要求：
+
 - **无效做法**：`npm rebuild X`（只重跑包自身生命周期脚本，预构建包不会补回缺失文件）；
   也不要因安装几秒 exit 0 就认为修好——包管理器只核对包目录是否存在，不校验文件完整性。
 - 动过依赖后**必须重跑构建**，以最后一次构建输出定结论。

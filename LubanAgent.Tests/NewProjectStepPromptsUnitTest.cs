@@ -186,6 +186,36 @@ public class NewProjectStepPromptsUnitTest
     }
 
     [TestMethod]
+    public void BuildCompilePrompt_postinstall未跑按包内脚本补入口且同族包查全()
+    {
+        var targets = new List<EndRepository>
+        {
+            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+        };
+
+        var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
+
+        // v0.34：Failed to resolve entry 先分两种，别急着重装
+        StringAssert.Contains(prompt, "postinstall 未跑");
+        StringAssert.Contains(prompt, "先分下面两种");
+
+        // 判定依据：main 指 lib/index.js 缺失，但 lib/v3/index.js 在（产物完好、只是没拷出入口）
+        StringAssert.Contains(prompt, "lib/index.js");
+        StringAssert.Contains(prompt, "lib/v3/index.js");
+
+        // 修法：跑包内自带脚本补入口，删包重装无效（cnpm 不补跑 postinstall）
+        StringAssert.Contains(prompt, "node node_modules/@vue-office/docx/lib/script/switch-cli.js 3");
+        StringAssert.Contains(prompt, "删包重装多少遍结果都一样");
+
+        // 真机教训：补完 docx 立刻被 excel 卡住，同族包必须一次查全
+        StringAssert.Contains(prompt, "@vue-office/docx、excel、pdf");
+        StringAssert.Contains(prompt, "同族包要一次查全");
+
+        // 边界同步放开「跑依赖包自带的 postinstall / 版本切换脚本」
+        StringAssert.Contains(prompt, "自带的");
+    }
+
+    [TestMethod]
     public void BuildCompilePrompt_漏端即失败的口径写进提示词()
     {
         var targets = new List<EndRepository>
