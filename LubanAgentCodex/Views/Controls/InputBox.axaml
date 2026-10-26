@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
-             xmlns:commands="clr-namespace:LubanAgentCore.Commands;assembly=LubanAgentCore"
+             xmlns:commands="clr-namespace:LuBan.AIAgent.Hosting.Commands;assembly=LuBan.AIAgent"
              xmlns:conv="using:LubanAgentCodex.Converters"
              x:Class="LubanAgentCodex.Views.Controls.InputBox">
 
