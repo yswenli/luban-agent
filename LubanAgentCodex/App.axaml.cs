@@ -116,22 +116,18 @@ public class App : Application
                     services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
                         sp => sp.GetRequiredService<HostOrchestrationProgressSink>()));
 
-                    // 插件体系：宿主实现必须为单例——框架 PluginManager 为单例并经根容器
-                    // 延迟解析 IPluginHost，其构造链不得含 scoped 服务（SkillRegistry/MCPRegistry 等
-                    // 均按会话 scope 隔离，只能经 PluginHostContext 的会话 scope 触达）。
-                    services.AddSingleton<Plugins.PluginHostRegistry>();
-                    services.AddSingleton<Plugins.PluginHostContext>();
-                    services.AddSingleton<Plugins.CodexPluginHost>();
-                    services.AddSingleton<IPluginHost>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
-                    services.AddSingleton<IPluginSessionContributor>(sp => sp.GetRequiredService<Plugins.CodexPluginHost>());
+                    // 插件宿主三件套（PluginHostRegistry / PluginHostContext / AgentPluginHost）
+                    // 与 IPluginHost / IPluginSessionContributor 映射已由 AgentHostBuilder 统一注册；
+                    // 桌面端只需覆盖 UI 线程封送（默认 ImmediatePluginUiDispatcher 就地执行，不具备 UI 线程语义）。
+                    services.Replace(ServiceDescriptor.Singleton<IPluginUiDispatcher, Plugins.AvaloniaPluginUiDispatcher>());
 
                     // 云效集成凭据与设置：
                     // 宿主凭据存储沿用全局 config.json（与 Provider.ApiKey 同基线），覆盖框架默认只读实现；
                     // PAT 提供者改为读凭据存储，使设置页录入后即时生效。三者皆为单例，
-                    // 供单例的云效连接器消费（CodexCredentialStore 经 UserContextRegistry 取配置，不跨 scope）。
-                    services.AddSingleton<Security.CodexCredentialStore>();
+                    // 供单例的云效连接器消费（CredentialStore 经 UserContextRegistry 取配置，不跨 scope）。
+                    services.AddSingleton<CredentialStore>();
                     services.Replace(ServiceDescriptor.Singleton<ICredentialStore>(
-                        sp => sp.GetRequiredService<Security.CodexCredentialStore>()));
+                        sp => sp.GetRequiredService<CredentialStore>()));
                     services.Replace(ServiceDescriptor.Singleton<IYunxiaoCredentialProvider>(
                         sp => new Security.CodexYunxiaoCredentialProvider(sp.GetRequiredService<ICredentialStore>())));
                     services.AddSingleton<Security.YunxiaoSettingsService>();
@@ -180,7 +176,7 @@ public class App : Application
 
                 // 插件体系启动引导：扫描 <BaseDirectory>/plugins 并恢复启用状态
                 // （放在工作区就绪之后，插件贡献的工作区级 Skill 可直接落到当前工作区）
-                await Plugins.PluginBootstrap.InitializeAsync(_services.Root, msg => splash.SetStatus(msg));
+                await PluginBootstrap.InitializeAsync(_services.Root, msg => splash.SetStatus(msg));
 
                 // worktree 启动对账：登记与磁盘不一致时记录提示（不阻塞启动）
                 try

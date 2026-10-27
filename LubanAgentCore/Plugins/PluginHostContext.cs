@@ -1,7 +1,7 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Plugins
+*命名空间：LubanAgentCore.Plugins
 *文件名： PluginHostContext
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -13,12 +13,13 @@
 *****************************************************************************/
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Context;
+using LubanAgentCore.Hosting;
 using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Defaults;
 using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Skills;
 
-namespace LubanAgentCodex.Plugins;
+namespace LubanAgentCore.Plugins;
 
 /// <summary>
 /// 插件宿主的「作用域访问桥」。

@@ -4,16 +4,19 @@ using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.LocalMemory;
+using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Retrieval;
 using LuBan.AIAgent.Wiki;
 using LuBan.Logging;
 using LuBan.Orm;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using LubanAgentCore.Agents;
 using LubanAgentCore.Configuration;
+using LubanAgentCore.Plugins;
 using LubanAgentCore.Repositories;
 using LubanAgentCore.Services;
 
@@ -84,6 +87,18 @@ public static class AgentHostBuilder
         // 产品侧厂商连接器（云效）：框架只保留「抽象连接器 + 连接器管理」，
         // 厂商实现由宿主显式注册（含提供方工厂与凭据键别名）。
         services.AddAliyunDevOpsConnector(configuration);
+
+        // ── 插件宿主：贡献记账 + 作用域访问桥 + 宿主实现 ───────────────────
+        // 三者必须为单例：框架 PluginManager 为单例并经根容器延迟解析 IPluginHost，
+        // 其构造链不得含 scoped 服务（SkillRegistry / MCPRegistry 均按会话 scope 隔离，
+        // 只能经 PluginHostContext 的会话 scope 触达）。
+        services.AddSingleton<PluginHostRegistry>();
+        services.AddSingleton<PluginHostContext>();
+        // UI 线程封送：默认就地执行；桌面宿主用 Replace 覆盖为平台实现。
+        services.TryAddSingleton<IPluginUiDispatcher, ImmediatePluginUiDispatcher>();
+        services.AddSingleton<AgentPluginHost>();
+        services.AddSingleton<IPluginHost>(sp => sp.GetRequiredService<AgentPluginHost>());
+        services.AddSingleton<IPluginSessionContributor>(sp => sp.GetRequiredService<AgentPluginHost>());
 
         // ── user scope：身份与用户级服务 ──────────────────────────────
         services.AddScoped<UserContextState>();

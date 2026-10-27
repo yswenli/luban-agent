@@ -1,7 +1,7 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Plugins
+*命名空间：LubanAgentCore.Plugins
 *文件名： PluginMcpCatalog
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -15,7 +15,7 @@ using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Security;
 
-namespace LubanAgentCodex.Plugins;
+namespace LubanAgentCore.Plugins;
 
 /// <summary>
 /// 插件声明的进程内 MCP 客户端解析器。

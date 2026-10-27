@@ -18,7 +18,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
-using LubanAgentCodex.Plugins;
+using LubanAgentCore.Plugins;
 using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
 using LubanAgentCodex.ViewModels.Messages;
@@ -57,7 +57,7 @@ public partial class MainWindow : Window
     private TextBlock? _pluginPanelTitle;
     private string? _mountedPluginEntryId;
     private IServiceProvider? _services;
-    private CodexPluginHost? _pluginHost;
+    private AgentPluginHost? _pluginHost;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
     private bool _closing;
@@ -220,7 +220,7 @@ public partial class MainWindow : Window
 
             // 插件宿主：面板注销时必须由宿主 UI 同步解绑内容区，
             // 否则插件程序集被视觉树钉住，卸载会降级为 RequiresRestart
-            _pluginHost = services.GetService<CodexPluginHost>();
+            _pluginHost = services.GetService<AgentPluginHost>();
             if (_pluginHost != null) _pluginHost.PanelDetaching += OnPluginPanelDetaching;
         }
         else

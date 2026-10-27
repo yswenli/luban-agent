@@ -1,7 +1,7 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Plugins
+*命名空间：LubanAgentCore.Plugins
 *文件名： PluginBootstrap
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -14,7 +14,7 @@
 using LuBan.AIAgent.Plugins.Loading;
 using LuBan.AIAgent.Plugins.Lifecycle;
 
-namespace LubanAgentCodex.Plugins;
+namespace LubanAgentCore.Plugins;
 
 /// <summary>
 /// 插件启动引导。
@@ -24,7 +24,7 @@ namespace LubanAgentCodex.Plugins;
 /// 由宿主在启动时（工作区就绪之后，便于插件技能直接落到当前工作区）显式调用。
 /// 插件根目录固定为 <c>&lt;AppContext.BaseDirectory&gt;/plugins</c>。
 /// </remarks>
-internal static class PluginBootstrap
+public static class PluginBootstrap
 {
     /// <summary>
     /// 扫描插件并恢复启用状态。
@@ -44,7 +44,7 @@ internal static class PluginBootstrap
         {
             status?.Invoke("正在扫描插件…");
             // 刻意不使用 ConfigureAwait(false)：status 回调会直接触碰 UI（闪屏），
-            // 必须留在调用方的同步上下文（Avalonia UI 线程）上执行。
+            // 必须留在调用方的同步上下文（宿主 UI 线程）上执行。
             var scanned = await manager.ScanAsync();
             Logger.Info($"插件扫描完成：共登记 {scanned} 个插件（根目录 {PluginLocation.BuiltinRoot}）。");
         }

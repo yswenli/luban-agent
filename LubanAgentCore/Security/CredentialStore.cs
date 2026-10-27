@@ -1,14 +1,14 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Security
-*文件名： CodexCredentialStore
+*命名空间：LubanAgentCore.Security
+*文件名： CredentialStore
 *版本号： V1.0.0.0
 *唯一标识：新建
 *创建人： yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
-*描述：Codex 宿主凭据存储 - 落在全局 config.json（与 Provider.ApiKey 同基线）
+*描述：产品宿主凭据存储 - 落在全局 config.json（与 Provider.ApiKey 同基线）
 *
 *****************************************************************************/
 using LuBan.AIAgent.Plugins.Security;
@@ -16,10 +16,10 @@ using LubanAgentCore.Connectors.AliyunDevOps;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Hosting;
 
-namespace LubanAgentCodex.Security;
+namespace LubanAgentCore.Security;
 
 /// <summary>
-/// Codex 宿主凭据存储：读写全局 <c>config.json</c> 的 <c>Integrations</c> 节。
+/// 产品宿主凭据存储：读写全局 <c>config.json</c> 的 <c>Integrations</c> 节。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,23 +33,23 @@ namespace LubanAgentCodex.Security;
 /// <see cref="CredentialKeys.GetEnvironmentVariableName"/>。
 /// </para>
 /// </remarks>
-public sealed class CodexCredentialStore : ICredentialStore
+public sealed class CredentialStore : ICredentialStore
 {
     private readonly UserContextRegistry _users;
     private readonly ICredentialKeyAliases _aliases;
 
     /// <summary>
-    /// 创建 Codex 凭据存储。
+    /// 创建凭据存储。
     /// </summary>
     /// <param name="users">用户状态注册表（单例）。</param>
     /// <param name="aliases">凭据键别名（宿主注册的云效别名表；未注入时回落产品默认实现）。</param>
-    public CodexCredentialStore(UserContextRegistry users, ICredentialKeyAliases? aliases = null)
+    public CredentialStore(UserContextRegistry users, ICredentialKeyAliases? aliases = null)
     {
         _users = users ?? throw new ArgumentNullException(nameof(users));
         _aliases = aliases ?? AliyunCredentialKeyAliases.Instance;
     }
 
-    /// <summary>当前用户的配置管理器（Codex 为单用户，固定默认用户）。</summary>
+    /// <summary>当前用户的配置管理器（桌面端为单用户，固定默认用户）。</summary>
     private ConfigManager Config => _users.GetOrCreate(LocalUserDefaults.DefaultUserId).Config;
 
     /// <inheritdoc />

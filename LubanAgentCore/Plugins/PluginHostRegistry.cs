@@ -1,7 +1,7 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Plugins
+*命名空间：LubanAgentCore.Plugins
 *文件名： PluginHostRegistry
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -13,14 +13,14 @@
 *****************************************************************************/
 using LuBan.AIAgent.Plugins;
 
-namespace LubanAgentCodex.Plugins;
+namespace LubanAgentCore.Plugins;
 
 /// <summary>
 /// 插件贡献记账表：保存宿主侧真实持有的插件贡献（侧栏条目 / 面板工厂与实例 / 命令 / 技能）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 刻意<b>不引用任何 UI 类型</b>，便于单测；UI 挂载由 <see cref="CodexPluginHost"/> 通知主窗口完成。
+/// 刻意<b>不引用任何 UI 类型</b>，便于单测；UI 挂载由 <see cref="AgentPluginHost"/> 通知宿主界面完成。
 /// </para>
 /// <para>
 /// 键统一使用 <c>entryId</c>（侧栏条目 id 同时是面板注册键）。框架

@@ -1,14 +1,14 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Plugins
-*文件名： CodexPluginHost
+*命名空间：LubanAgentCore.Plugins
+*文件名： AgentPluginHost
 *版本号： V1.0.0.0
 *唯一标识：新建
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/15
-*描述：LubanCodex 的插件宿主实现（单例）：承接插件贡献并落到 UI / 工作区 / 会话注册表
+*描述：产品插件宿主实现（单例）：承接插件贡献并落到宿主界面 / 工作区 / 会话注册表
 *
 *****************************************************************************/
 using System.Text;
@@ -20,20 +20,19 @@ using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Lifecycle;
 using LuBan.AIAgent.Plugins.Security;
 using LuBan.AIAgent.Skills;
-using LubanAgentCore.Context;
-using LubanAgentCore.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace LubanAgentCodex.Plugins;
+namespace LubanAgentCore.Plugins;
 
 /// <summary>
-/// LubanCodex 插件宿主实现（<b>单例</b>）。
+/// 产品插件宿主实现（<b>单例</b>）。
 /// </summary>
 /// <remarks>
 /// <para>
 /// 框架 <c>PluginManager</c> 为单例，经根容器延迟解析 <c>IPluginHost</c>，故本类型必须以单例注册；
 /// 其中需要触达的 scoped 服务统一经 <see cref="PluginHostContext"/> 的会话 scope 解析。
+/// 与 UI 框架无关：UI 线程封送经 <see cref="IPluginUiDispatcher"/> 交由宿主程序实现。
 /// </para>
 /// <para>
 /// 贡献落地分三条通道，各自落到不同的归宿：
@@ -45,12 +44,13 @@ namespace LubanAgentCodex.Plugins;
 /// </list>
 /// </para>
 /// </remarks>
-public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
+public sealed class AgentPluginHost : IPluginHost, IPluginSessionContributor
 {
     private readonly PluginHostRegistry _registry;
     private readonly PluginHostContext _context;
     private readonly IConfiguration _configuration;
     private readonly IOptions<LuBanAgentOptions> _agentOptions;
+    private readonly IPluginUiDispatcher _ui;
 
     /// <summary>
     /// 创建插件宿主。
@@ -59,16 +59,19 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
     /// <param name="context">作用域访问桥。</param>
     /// <param name="configuration">宿主配置（供插件读取配置项）。</param>
     /// <param name="agentOptions">Agent 选项（取 Skill 文件大小上限等）。</param>
-    public CodexPluginHost(
+    /// <param name="ui">UI 线程封送实现（桌面端为 Dispatcher 实现，无 UI 宿主为就地执行）。</param>
+    public AgentPluginHost(
         PluginHostRegistry registry,
         PluginHostContext context,
         IConfiguration configuration,
-        IOptions<LuBanAgentOptions> agentOptions)
+        IOptions<LuBanAgentOptions> agentOptions,
+        IPluginUiDispatcher ui)
     {
         _registry = registry;
         _context = context;
         _configuration = configuration;
         _agentOptions = agentOptions;
+        _ui = ui ?? throw new ArgumentNullException(nameof(ui));
     }
 
     /// <summary>
@@ -445,25 +448,25 @@ public sealed class CodexPluginHost : IPluginHost, IPluginSessionContributor
 
     #region 内部实现
 
-    private static void RunOnUiThreadSync(Action action)
+    private void RunOnUiThreadSync(Action action)
     {
-        if (Dispatcher.UIThread.CheckAccess())
+        if (_ui.IsUiThread)
         {
             action();
             return;
         }
 
-        Dispatcher.UIThread.Invoke(action);
+        _ui.Invoke(action);
     }
 
-    private static void PostToUiCore(Action action)
+    private void PostToUiCore(Action action)
     {
         if (action is null) return;
 
-        if (Dispatcher.UIThread.CheckAccess())
+        if (_ui.IsUiThread)
             action();
         else
-            Dispatcher.UIThread.Post(action);
+            _ui.Post(action);
     }
 
     private void NotifySidebarEntriesChanged()

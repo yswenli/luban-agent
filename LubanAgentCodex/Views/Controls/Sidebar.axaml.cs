@@ -23,7 +23,7 @@ using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
-using LubanAgentCodex.Plugins;
+using LubanAgentCore.Plugins;
 using LubanAgentCore.Configuration;
 using LubanAgentCore.Entities;
 using LubanAgentCore.Repositories;
@@ -44,7 +44,7 @@ public partial class Sidebar : UserControl
     private IWorkspaceManager? _workspaceManager;
     private IChatSessionService? _sessionService;
     private IServiceProvider? _services;
-    private CodexPluginHost? _pluginHost;
+    private AgentPluginHost? _pluginHost;
 
     // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
     private readonly Dictionary<string, Border> _sessionRunningBadges = new(StringComparer.Ordinal);
@@ -167,7 +167,7 @@ public partial class Sidebar : UserControl
     {
         if (_pluginHost is null)
         {
-            _pluginHost = services.GetService<CodexPluginHost>();
+            _pluginHost = services.GetService<AgentPluginHost>();
             if (_pluginHost is not null)
             {
                 // 贡献变更可能来自后台线程（插件卸载），统一切回 UI 线程刷新

@@ -31,7 +31,7 @@ namespace LubanAgentCodex.Views;
 /// </summary>
 public partial class PluginManageWindow : Window
 {
-    private PluginManager? _manager;
+    private IPluginManagementService? _service;
     private ListBox? _list;
     private TextBlock? _status;
     private bool _busy;
@@ -47,19 +47,19 @@ public partial class PluginManageWindow : Window
     /// <summary>
     /// 带参构造函数。
     /// </summary>
-    /// <param name="services">宿主服务提供者（<c>PluginManager</c> 为单例，任意作用域可解析）。</param>
+    /// <param name="services">宿主服务提供者（插件管理服务为 scoped，随用户作用域解析）。</param>
     public PluginManageWindow(IServiceProvider services) : this()
     {
-        _manager = services.GetService<PluginManager>();
-        if (_manager is null)
+        _service = services.GetService<IPluginManagementService>();
+        if (_service is null)
         {
             SetStatus("插件体系未注册，无法管理插件。");
             return;
         }
 
-        _manager.Changed += OnPluginChanged;
-        Closing += (_, _) => _manager.Changed -= OnPluginChanged;
-        Refresh();
+        _service.Changed += OnPluginChanged;
+        Closing += (_, _) => _service.Changed -= OnPluginChanged;
+        _ = RefreshAsync();
     }
 
     private void InitializeComponent()
@@ -72,7 +72,7 @@ public partial class PluginManageWindow : Window
         if (this.FindControl<TextBlock>("RootPathText") is TextBlock rootText)
             rootText.Text = $"插件根目录：{PluginLocation.BuiltinRoot}";
 
-        Wire("RefreshBtn", Refresh);
+        Wire("RefreshBtn", () => _ = RefreshAsync());
         Wire("InstallBtn", () => _ = InstallAsync());
         Wire("EnableBtn", () => _ = EnableAsync());
         Wire("DisableBtn", () => _ = DisableAsync());
@@ -94,12 +94,25 @@ public partial class PluginManageWindow : Window
     /// <summary>
     /// 重新读取插件列表（保留当前选中项）。
     /// </summary>
-    public void Refresh()
+    public async Task RefreshAsync()
     {
-        if (_list is null || _manager is null) return;
+        if (_list is null || _service is null) return;
 
         var selectedId = Selected?.Id;
-        var rows = _manager.GetPlugins().Select(PluginRowModel.From).ToList();
+
+        IReadOnlyList<PluginDescriptor> plugins;
+        try
+        {
+            plugins = await _service.ListAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"读取插件列表失败：{ex.Message}");
+            Logger.Error("[插件管理] 读取插件列表失败", ex);
+            return;
+        }
+
+        var rows = plugins.Select(PluginRowModel.From).ToList();
         _list.ItemsSource = rows;
 
         if (selectedId is not null)
@@ -116,9 +129,9 @@ public partial class PluginManageWindow : Window
     {
         // 插件状态变更可能来自后台线程（卸载流程），统一切回 UI 线程刷新
         if (Dispatcher.UIThread.CheckAccess())
-            Refresh();
+            _ = RefreshAsync();
         else
-            Dispatcher.UIThread.Post(Refresh);
+            Dispatcher.UIThread.Post(() => _ = RefreshAsync());
     }
 
     private void SetStatus(string message)
@@ -135,20 +148,22 @@ public partial class PluginManageWindow : Window
 
     private async Task InstallAsync()
     {
-        if (_manager is null) return;
+        var service = _service;
+        if (service is null) return;
 
         var source = await PickDirectoryAsync("选择插件目录（需包含 plugin.json）");
         if (source is null) return;
 
         await RunAsync(
             $"正在安装：{source}",
-            () => _manager.InstallAsync(source),
+            () => service.InstallAsync(source),
             id => string.IsNullOrEmpty(id) ? "安装失败：目录不含有效 plugin.json 或清单校验未通过。" : $"插件 {id} 已安装，可点「启用」生效。");
     }
 
     private async Task EnableAsync()
     {
-        if (_manager is null) return;
+        var service = _service;
+        if (service is null) return;
 
         var row = Selected ?? RequireSelection();
         if (row is null) return;
@@ -161,13 +176,14 @@ public partial class PluginManageWindow : Window
 
         await RunAsync(
             $"正在启用 {row.Name}…",
-            () => _manager.EnableAsync(row.Id),
-            ok => ok ? $"插件 {row.Name} 已启用。" : $"启用失败：{DescribeError(row.Id)}");
+            () => service.SetEnabledAsync(row.Id, true),
+            async ok => ok ? $"插件 {row.Name} 已启用。" : $"启用失败：{await DescribeErrorAsync(row.Id)}");
     }
 
     private async Task DisableAsync()
     {
-        if (_manager is null) return;
+        var service = _service;
+        if (service is null) return;
 
         var row = Selected ?? RequireSelection();
         if (row is null) return;
@@ -188,13 +204,14 @@ public partial class PluginManageWindow : Window
 
         await RunAsync(
             $"正在停用 {row.Name}…",
-            () => _manager.DisableAsync(row.Id),
-            ok => ok ? $"插件 {row.Name} 已停用。" : $"停用失败：{DescribeError(row.Id)}");
+            () => service.SetEnabledAsync(row.Id, false),
+            async ok => ok ? $"插件 {row.Name} 已停用。" : $"停用失败：{await DescribeErrorAsync(row.Id)}");
     }
 
     private async Task UpgradeAsync()
     {
-        if (_manager is null) return;
+        var service = _service;
+        if (service is null) return;
 
         var row = Selected ?? RequireSelection();
         if (row is null) return;
@@ -212,13 +229,14 @@ public partial class PluginManageWindow : Window
         // 且在卸载验证未通过时中止安装（避免降级态下继续泄漏程序集）。
         await RunAsync(
             $"正在升级 {row.Name}…",
-            () => _manager.UpgradeAsync(row.Id, source),
-            ok => ok ? $"插件 {row.Name} 已升级到新版本。" : $"升级失败：{DescribeError(row.Id)}");
+            () => service.UpgradeAsync(row.Id, source),
+            async ok => ok ? $"插件 {row.Name} 已升级到新版本。" : $"升级失败：{await DescribeErrorAsync(row.Id)}");
     }
 
     private async Task UninstallAsync()
     {
-        if (_manager is null) return;
+        var service = _service;
+        if (service is null) return;
 
         var row = Selected ?? RequireSelection();
         if (row is null) return;
@@ -240,8 +258,8 @@ public partial class PluginManageWindow : Window
 
         await RunAsync(
             $"正在卸载 {row.Name}…",
-            () => _manager.UninstallAsync(row.Id),
-            ok => ok ? $"插件 {row.Name} 已卸载。" : $"卸载失败：{DescribeError(row.Id)}");
+            () => service.UninstallAsync(row.Id),
+            async ok => ok ? $"插件 {row.Name} 已卸载。" : $"卸载失败：{await DescribeErrorAsync(row.Id)}");
     }
 
     private PluginRowModel? RequireSelection()
@@ -256,7 +274,7 @@ public partial class PluginManageWindow : Window
     private async Task RunAsync(
         string busyMessage,
         Func<Task<bool>> action,
-        Func<bool, string> describe)
+        Func<bool, Task<string>> describe)
     {
         if (_busy)
         {
@@ -269,7 +287,7 @@ public partial class PluginManageWindow : Window
         try
         {
             var ok = await action();
-            SetStatus(describe(ok));
+            SetStatus(await describe(ok));
         }
         catch (Exception ex)
         {
@@ -279,7 +297,7 @@ public partial class PluginManageWindow : Window
         finally
         {
             _busy = false;
-            Refresh();
+            await RefreshAsync();
         }
     }
 
@@ -309,13 +327,14 @@ public partial class PluginManageWindow : Window
         finally
         {
             _busy = false;
-            Refresh();
+            await RefreshAsync();
         }
     }
 
-    private string DescribeError(string pluginId)
+    private async Task<string> DescribeErrorAsync(string pluginId)
     {
-        var descriptor = _manager?.GetPlugin(pluginId);
+        var service = _service;
+        var descriptor = service is null ? null : await service.GetAsync(pluginId);
         var error = descriptor?.LastError;
         var hint = descriptor?.RequiresRestart == true ? "；该插件需重启应用才能彻底生效" : string.Empty;
         return string.IsNullOrWhiteSpace(error) ? $"未通过，详见日志{hint}" : $"{error}{hint}";
