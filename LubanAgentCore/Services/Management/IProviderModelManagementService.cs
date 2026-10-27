@@ -25,7 +25,7 @@ public interface IProviderModelManagementService
     /// <summary>新增或更新 Provider 配置（已存在时更新 API Key 与 BaseUrl，保留其自定义模型）。</summary>
     Task UpsertProviderAsync(ProviderConfig config, CancellationToken ct = default);
 
-    /// <summary>删除 Provider 配置（删除后若当前模型属于该 Provider，会尝试清除选择）。</summary>
+    /// <summary>删除 Provider 配置（删除后若当前模型属于该 Provider，会清空模型选择）。</summary>
     Task DeleteProviderAsync(string providerId, CancellationToken ct = default);
 
     /// <summary>为 Provider 添加自定义模型。</summary>

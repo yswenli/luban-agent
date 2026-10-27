@@ -84,9 +84,10 @@ public sealed class ProviderModelManagementService : IProviderModelManagementSer
 
         if (_config.SelectedModel?.StartsWith($"{provider.Name}:", StringComparison.Ordinal) == true)
         {
-            // 保留原命令行为：原实现此处调用 SetSelectedModel("") 会抛 ArgumentException（模型不能为空），
-            // 由命令层 catch 后输出错误；是否修成 ClearSelectedModel 待决策，本 Task 只搬不改。
-            _config.SetSelectedModel("");
+            // 修正既有缺陷：原实现在此调用 SetSelectedModel("")，会抛 ArgumentException（模型不能为空），
+            // 导致命令层 catch 后只打印红色错误、丢失成功文案（Provider 实际已删除并保存）。
+            // 与 Codex 设置页删除供应商的实现保持一致：清空选择而非写入非法空值。
+            _config.ClearSelectedModel();
         }
 
         return Task.CompletedTask;

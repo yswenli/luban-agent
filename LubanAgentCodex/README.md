@@ -544,42 +544,67 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ```
 LubanAgentCodex/
-├── App.axaml(.cs)              # 应用程序入口
+├── App.axaml(.cs)              # 应用程序入口（DI 装配 + 插件 UI 分派器替换）
 ├── Program.cs                  # 主入口点
+├── GlobalUsings.cs             # 全局 using
+├── Assets/                     # 图标等静态资源
+├── Converters/                 # 值转换器（文件大小、缩略图路径）
 ├── Styles/
 │   └── Colors.axaml            # 主题配色资源
+├── Plugins/
+│   └── AvaloniaPluginUiDispatcher.cs  # IPluginUiDispatcher 的 Avalonia 实现（UI 线程封送）
+├── Security/
+│   ├── CodexYunxiaoCredentialProvider.cs  # 云效凭据提供者（走宿主凭据存储）
+│   └── YunxiaoSettingsService.cs          # 云效组织 ID / PAT 读写
 ├── Services/
-│   ├── AgentHostService.cs     # Agent 宿主服务
-│   ├── FooterDataProvider.cs   # 页脚数据提供者
-│   └── StreamEvent.cs          # 流式事件类型
+│   └── FooterDataProvider.cs   # 页脚数据提供者
 ├── ViewModels/
 │   ├── MainWindowViewModel.cs  # 主窗口 ViewModel
+│   ├── SessionViewModel.cs     # 会话 ViewModel（消费框架 AgentStreamEvent）
+│   ├── Settings/               # 设置窗分页 ViewModel（无 Avalonia 依赖，可单测）
 │   └── Messages/               # 消息数据模型
-│       ├── AssistantMessageItem.cs
+│       ├── MessageItemBase.cs
 │       ├── UserMessageItem.cs
+│       ├── AssistantMessageItem.cs
 │       ├── ToolCallItem.cs
-│       └── ThinkingMessageItem.cs
-├── Views/
-│   ├── MainWindow.axaml(.cs)   # 主窗口
-│   ├── RenameDialog            # 重命名对话框
-│   ├── SkillManageWindow       # 技能管理窗口
-│   ├── RuleManageWindow        # 规则管理窗口
-│   ├── MCPManageWindow         # MCP 服务管理窗口
-│   ├── SettingsWindow          # 统一设置中心（技能/规则/MCP/供应商/模型）
-│   ├── WorkManageWindow        # 工作区管理窗口
-│   ├── LlmWikiManageWindow         # LLM Wiki 管理窗口
-│   └── Controls/               # 自定义控件
-│       ├── Sidebar             # 左侧边栏
-│       ├── TitleBar            # 顶部标题栏
-│       ├── MessageStream       # 消息流
-│       ├── InputBox            # 输入框
-│       ├── FooterBar           # 页脚状态栏
-│       ├── UserMessageView     # 用户消息
-│       ├── AssistantMessageView# AI 消息
-│       ├── ThinkingMessageView # 思考过程
-│       ├── ToolCallCard        # 工具调用卡片
-│       └── SystemMessageView   # 系统消息
+│       ├── ThinkingMessageItem.cs
+│       ├── SystemMessageItem.cs
+│       ├── OrchestrationNodeItem.cs
+│       ├── NodeActivityDisplayItem.cs
+│       └── BoundedMessageCollection.cs
+└── Views/
+    ├── MainWindow.axaml(.cs)   # 主窗口
+    ├── SettingsWindow.axaml(.cs)  # 统一设置中心（窗口壳：状态装配 + 编辑器分发）
+    ├── Settings/               # 设置窗 UI partial（导航 / 动作 / 编辑器）
+    │   ├── SettingsTabKind.cs
+    │   ├── SettingsWindow.Navigation.cs
+    │   ├── SettingsWindow.Actions.cs
+    │   ├── SettingsWindow.Editors.Workspace.cs
+    │   └── SettingsWindow.Editors.Global.cs
+    ├── PluginManageWindow       # 插件管理窗口
+    ├── SkillManageWindow        # 技能管理窗口
+    ├── RuleManageWindow         # 规则管理窗口
+    ├── MCPManageWindow          # MCP 服务管理窗口
+    ├── WorkManageWindow         # 工作区管理窗口
+    ├── LlmWikiManageWindow      # LLM Wiki 管理窗口
+    ├── RenameDialog / NewWorkspaceDialog / NodeDetailWindow
+    │   / ImageViewerWindow / SplashWindow / InitAgentsMdDialog
+    └── Controls/               # 自定义控件
+        ├── Sidebar             # 左侧边栏
+        ├── MessageStream       # 消息流
+        ├── InputBox            # 输入框
+        ├── FooterBar           # 页脚状态栏
+        ├── BusyOverlay         # 忙碌遮罩
+        ├── UserMessageView     # 用户消息
+        ├── AssistantMessageView # AI 消息
+        ├── ThinkingMessageView # 思考过程
+        ├── ToolCallCard        # 工具调用卡片
+        ├── OrchestrationNodeCard # 编排节点卡片
+        └── SystemMessageView   # 系统消息
 ```
+
+> 注：Agent 宿主（`IAgentHost` / `AgentHost`）与流式事件类型（`AgentStreamEvent`）由框架 `LuBan.AIAgent` 提供，
+> 本工程只做 UI 消费；技能 / 规则 / MCP / 会话 / 工作区 / 插件 / 连接器的业务逻辑在 `LubanAgentCore.Services.Management`。
 
 ---
 

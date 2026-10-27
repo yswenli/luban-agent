@@ -544,42 +544,68 @@ You: Create a bug issue in the luban-agent repo
 
 ```
 LubanAgentCodex/
-├── App.axaml(.cs)              # Application entry point
+├── App.axaml(.cs)              # Application entry (DI wiring + plugin UI dispatcher replacement)
 ├── Program.cs                  # Main entry point
+├── GlobalUsings.cs             # Global usings
+├── Assets/                     # Static assets (icons)
+├── Converters/                 # Value converters (file size, thumbnail path)
 ├── Styles/
 │   └── Colors.axaml            # Theme color resources
+├── Plugins/
+│   └── AvaloniaPluginUiDispatcher.cs  # Avalonia implementation of IPluginUiDispatcher (UI-thread marshalling)
+├── Security/
+│   ├── CodexYunxiaoCredentialProvider.cs  # Yunxiao credential provider (via host credential store)
+│   └── YunxiaoSettingsService.cs          # Yunxiao organization ID / PAT access
 ├── Services/
-│   ├── AgentHostService.cs     # Agent host service
-│   ├── FooterDataProvider.cs   # Footer data provider
-│   └── StreamEvent.cs          # Stream event types
+│   └── FooterDataProvider.cs   # Footer data provider
 ├── ViewModels/
 │   ├── MainWindowViewModel.cs  # Main window ViewModel
+│   ├── SessionViewModel.cs     # Session ViewModel (consumes framework AgentStreamEvent)
+│   ├── Settings/               # Settings-tab ViewModels (no Avalonia dependency, unit-testable)
 │   └── Messages/               # Message data models
-│       ├── AssistantMessageItem.cs
+│       ├── MessageItemBase.cs
 │       ├── UserMessageItem.cs
+│       ├── AssistantMessageItem.cs
 │       ├── ToolCallItem.cs
-│       └── ThinkingMessageItem.cs
-├── Views/
-│   ├── MainWindow.axaml(.cs)   # Main window
-│   ├── RenameDialog            # Rename dialog
-│   ├── SkillManageWindow       # Skill management window
-│   ├── RuleManageWindow        # Rule management window
-│   ├── MCPManageWindow         # MCP service management window
-│   ├── SettingsWindow          # Unified settings center (skills/rules/MCP/providers/models)
-│   ├── WorkManageWindow        # Workspace management window
-│   ├── LlmWikiManageWindow         # LLM Wiki management window
-│   └── Controls/               # Custom controls
-│       ├── Sidebar             # Left sidebar
-│       ├── TitleBar            # Top title bar
-│       ├── MessageStream       # Message stream
-│       ├── InputBox            # Input box
-│       ├── FooterBar           # Footer status bar
-│       ├── UserMessageView     # User message
-│       ├── AssistantMessageView# AI message
-│       ├── ThinkingMessageView # Thinking process
-│       ├── ToolCallCard        # Tool call card
-│       └── SystemMessageView   # System message
+│       ├── ThinkingMessageItem.cs
+│       ├── SystemMessageItem.cs
+│       ├── OrchestrationNodeItem.cs
+│       ├── NodeActivityDisplayItem.cs
+│       └── BoundedMessageCollection.cs
+└── Views/
+    ├── MainWindow.axaml(.cs)   # Main window
+    ├── SettingsWindow.axaml(.cs)  # Unified settings center (window shell: state wiring + editor dispatch)
+    ├── Settings/               # Settings UI partials (navigation / actions / editors)
+    │   ├── SettingsTabKind.cs
+    │   ├── SettingsWindow.Navigation.cs
+    │   ├── SettingsWindow.Actions.cs
+    │   ├── SettingsWindow.Editors.Workspace.cs
+    │   └── SettingsWindow.Editors.Global.cs
+    ├── PluginManageWindow       # Plugin management window
+    ├── SkillManageWindow        # Skill management window
+    ├── RuleManageWindow         # Rule management window
+    ├── MCPManageWindow          # MCP service management window
+    ├── WorkManageWindow         # Workspace management window
+    ├── LlmWikiManageWindow      # LLM Wiki management window
+    ├── RenameDialog / NewWorkspaceDialog / NodeDetailWindow
+    │   / ImageViewerWindow / SplashWindow / InitAgentsMdDialog
+    └── Controls/               # Custom controls
+        ├── Sidebar             # Left sidebar
+        ├── MessageStream       # Message stream
+        ├── InputBox            # Input box
+        ├── FooterBar           # Footer status bar
+        ├── BusyOverlay         # Busy overlay
+        ├── UserMessageView     # User message
+        ├── AssistantMessageView # AI message
+        ├── ThinkingMessageView # Thinking process
+        ├── ToolCallCard        # Tool call card
+        ├── OrchestrationNodeCard # Orchestration node card
+        └── SystemMessageView   # System message
 ```
+
+> Note: the Agent host (`IAgentHost` / `AgentHost`) and stream event types (`AgentStreamEvent`) come from the framework
+> `LuBan.AIAgent`; this project only consumes them in the UI. Business logic for skills / rules / MCP / sessions /
+> workspaces / plugins / connectors lives in `LubanAgentCore.Services.Management`.
 
 ---
 
