@@ -41,7 +41,7 @@ public partial class InputBox : UserControl
     private ComboBox? _modelCombo;
     private ItemsControl? _attachmentBar;
     private ConfigManager? _configManager;
-    private ProviderService? _providerService;
+    private IProviderModelManagementService? _providers;
     private bool _suppressSelectionChanged;
 
     private Popup? _completionPopup;
@@ -99,9 +99,9 @@ public partial class InputBox : UserControl
     public void SetServiceProvider(IServiceProvider services)
     {
         _configManager = services.GetRequiredService<ConfigManager>();
-        _providerService = services.GetProviderService();
+        _providers = services.GetRequiredService<IProviderModelManagementService>();
         _commandCatalog = services.GetService<ICommandCatalog>();
-        LoadModels();
+        _ = LoadModelsAsync();
         RefreshModels();
     }
 
@@ -110,9 +110,17 @@ public partial class InputBox : UserControl
     /// 始终保证当前选中模型出现在下拉项中并处于选中状态；
     /// 同时纳入各 Provider 通过远程刷新获取的模型（按用户隔离的 Provider 缓存）。
     /// </summary>
-    private void LoadModels()
+    private async Task LoadModelsAsync()
     {
-        if (_modelCombo == null || _configManager == null) return;
+        if (_modelCombo == null || _configManager == null || _providers == null) return;
+
+        // 先取快照（Provider 列表与各自模型），避免在遍历时直接读可变配置
+        var providers = await _providers.GetProvidersAsync();
+        var modelsByProvider = new List<(string ProviderName, IReadOnlyList<string> Models)>(providers.Count);
+        foreach (var provider in providers)
+        {
+            modelsByProvider.Add((provider.Name, await _providers.GetModelsAsync(provider.Name)));
+        }
 
         _suppressSelectionChanged = true;
         try
@@ -120,12 +128,11 @@ public partial class InputBox : UserControl
             _modelCombo.Items.Clear();
             var allModels = new List<string>();
 
-            foreach (var provider in _configManager.Providers)
+            foreach (var (providerName, models) in modelsByProvider)
             {
-                var models = _configManager.GetAllModels(provider.Name);
                 foreach (var model in models)
                 {
-                    var fullName = $"{provider.Name}:{model}";
+                    var fullName = $"{providerName}:{model}";
                     allModels.Add(fullName);
                     _modelCombo.Items.Add(fullName);
                 }
@@ -158,11 +165,12 @@ public partial class InputBox : UserControl
     /// </summary>
     private void RefreshModels()
     {
-        if (_configManager == null || _providerService == null || _modelCombo == null) return;
+        if (_configManager == null || _providers == null || _modelCombo == null) return;
 
         _ = Task.Run(async () =>
         {
-            foreach (var provider in _configManager.Providers)
+            var providers = await _providers.GetProvidersAsync();
+            foreach (var provider in providers)
             {
                 if (string.IsNullOrWhiteSpace(provider.BaseUrl) &&
                     string.IsNullOrWhiteSpace(provider.ApiKey))
@@ -172,19 +180,16 @@ public partial class InputBox : UserControl
 
                 try
                 {
-                    await _providerService.RefreshModelsAsync(
-                        provider.Name,
-                        provider.ApiKey ?? string.Empty,
-                        provider.BaseUrl);
+                    await _providers.RefreshModelsAsync(provider.Name);
                 }
                 catch
                 {
-                    // 忽略单个 Provider 刷新失败，留给 LoadModels 的回退逻辑
+                    // 忽略单个 Provider 刷新失败，留给 LoadModelsAsync 的回退逻辑
                 }
             }
 
             // 回到 UI 线程重建下拉项
-            Avalonia.Threading.Dispatcher.UIThread.Post(LoadModels);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = LoadModelsAsync());
         });
     }
 
@@ -194,12 +199,15 @@ public partial class InputBox : UserControl
     private void OnModelSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressSelectionChanged) return;
-        if (_modelCombo?.SelectedItem is string model && _configManager != null)
+        if (_modelCombo?.SelectedItem is string model && _configManager != null && _providers != null)
         {
             // 幂等护栏：避免重复触发（如 ComboBox 下拉点选时重复引发 SelectionChanged）
             // 已与当前持久化模型相同则视为无变化，跳过
             if (model == _configManager.SelectedModel) return;
-            _configManager.SetSelectedModel(model);
+            var parts = model.Split(':', 2);
+            if (parts.Length != 2) return;
+            // SetSelectionAsync 内部同步完成持久化（返回已完成 Task），顺序与直接调用 SetSelectedModel 一致
+            _ = _providers.SetSelectionAsync(parts[0], parts[1]);
             ModelChanged?.Invoke(this, model);
         }
     }

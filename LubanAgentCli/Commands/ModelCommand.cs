@@ -20,7 +20,7 @@ namespace LubanAgentCli.Commands;
 /// </summary>
 public class ModelCommand : CommandBase
 {
-    private readonly ProviderService _providerService;
+    private readonly IProviderModelManagementService _providers;
 
     /// <summary>
     /// 命令名称
@@ -44,7 +44,7 @@ public class ModelCommand : CommandBase
         ITuiOutputWriter writer, ITuiUiService ui, IServiceProvider services)
         : base(configManager, configuration, writer, ui)
     {
-        _providerService = services.GetProviderService();
+        _providers = services.GetRequiredService<IProviderModelManagementService>();
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public class ModelCommand : CommandBase
     /// </summary>
     private async Task<bool> ExecuteListAsync()
     {
-        var providers = ConfigManager.Providers;
+        var providers = await _providers.GetProvidersAsync();
         if (providers.Count == 0)
         {
             Writer.WriteInfo("暂无配置的 Provider");
@@ -99,11 +99,14 @@ public class ModelCommand : CommandBase
         }
 
         // 检查是否有当前 provider
+        var (selectedProviderId, selectedModelId) = _providers.GetSelection();
+        var selectedFullName = selectedProviderId is null ? null : $"{selectedProviderId}:{selectedModelId}";
+
         string? currentProviderName = null;
-        if (!string.IsNullOrEmpty(ConfigManager.SelectedModel) && ConfigManager.SelectedModel.Contains(':'))
+        if (selectedProviderId is not null)
         {
-            currentProviderName = ConfigManager.SelectedModel.Split(':', 2)[0];
-            if (!ConfigManager.HasProvider(currentProviderName))
+            currentProviderName = selectedProviderId;
+            if (!providers.Any(p => p.Name == currentProviderName))
             {
                 currentProviderName = null;
             }
@@ -124,7 +127,7 @@ public class ModelCommand : CommandBase
         else
         {
             // 有当前 provider，直接使用
-            selectedProvider = ConfigManager.GetProvider(currentProviderName)!;
+            selectedProvider = providers.First(p => p.Name == currentProviderName);
             Writer.WriteInfo($"当前 Provider: {ProviderHelper.GetDisplayName(currentProviderName)}");
         }
 
@@ -136,7 +139,7 @@ public class ModelCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await _providerService.RefreshModelsAsync(providerName, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+                await _providers.RefreshModelsAsync(providerName, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -149,7 +152,7 @@ public class ModelCommand : CommandBase
         }
 
         // 显示该 Provider 的模型列表
-        var allModels = _providerService.GetAllModels(providerName, selectedProvider.CustomModels);
+        var allModels = await _providers.GetModelsAsync(providerName);
 
         if (allModels.Count == 0)
         {
@@ -167,7 +170,7 @@ public class ModelCommand : CommandBase
                 return true;
             }
 
-            ConfigManager.SetSelectedModel($"{providerName}:{modelName}");
+            await _providers.SetSelectionAsync(providerName, modelName);
             Writer.WriteSuccess($"已确认 LLM: {ProviderHelper.GetDisplayName(providerName)} - {modelName}");
             return true;
         }
@@ -176,7 +179,7 @@ public class ModelCommand : CommandBase
         var modelChosen = Ui.Choose($"{ProviderHelper.GetDisplayName(providerName)} 可用模型（回车确认，未选则默认第一个）",
             allModels.Select(m =>
             {
-                var isSelected = ConfigManager.SelectedModel == $"{providerName}:{m}" ? " (已选)" : "";
+                var isSelected = selectedFullName == $"{providerName}:{m}" ? " (已选)" : "";
                 return $"{m}{isSelected}";
             }).ToList());
 
@@ -192,7 +195,7 @@ public class ModelCommand : CommandBase
             selectedModel = allModels[modelChosen.Value];
         }
 
-        ConfigManager.SetSelectedModel($"{providerName}:{selectedModel}");
+        await _providers.SetSelectionAsync(providerName, selectedModel);
         Writer.WriteSuccess($"已确认 LLM: {ProviderHelper.GetDisplayName(providerName)} - {selectedModel}");
 
         return true;
@@ -202,15 +205,15 @@ public class ModelCommand : CommandBase
     /// 为 Provider 添加自定义模型
     /// </summary>
     /// <param name="args">可选的 provider 和 model 参数</param>
-    private Task<bool> ExecuteAddAsync(string[] args)
+    private async Task<bool> ExecuteAddAsync(string[] args)
     {
         Writer.WriteLine();
 
-        var providers = ConfigManager.Providers;
+        var providers = await _providers.GetProvidersAsync();
         if (providers.Count == 0)
         {
             Writer.WriteError("暂无配置的 Provider，请先使用 provider add 添加");
-            return Task.FromResult(true);
+            return true;
         }
 
         string providerName;
@@ -221,10 +224,10 @@ public class ModelCommand : CommandBase
             providerName = args[0].ToLower();
             modelName = args[1];
 
-            if (!ConfigManager.HasProvider(providerName))
+            if (!providers.Any(p => p.Name == providerName))
             {
                 Writer.WriteError($"Provider '{providerName}' 不存在");
-                return Task.FromResult(true);
+                return true;
             }
         }
         else
@@ -232,7 +235,7 @@ public class ModelCommand : CommandBase
             // 编号菜单 → Choose 对话框
             var chosen = Ui.Choose("选择 Provider",
                 providers.Select(p => ProviderHelper.GetDisplayName(p.Name)).ToList());
-            if (chosen is null) return Task.FromResult(true); // 用户取消
+            if (chosen is null) return true; // 用户取消
 
             providerName = providers[chosen.Value].Name;
 
@@ -240,7 +243,7 @@ public class ModelCommand : CommandBase
             {
                 new FormField("模型名称")
             });
-            if (values is null) return Task.FromResult(true); // 用户取消
+            if (values is null) return true; // 用户取消
 
             modelName = values[0].Trim();
         }
@@ -248,20 +251,19 @@ public class ModelCommand : CommandBase
         if (string.IsNullOrEmpty(modelName))
         {
             Writer.WriteError("模型名称不能为空");
-            return Task.FromResult(true);
+            return true;
         }
 
         try
         {
-            var provider = ConfigManager.GetProvider(providerName);
-            var existing = _providerService.GetAllModels(providerName, provider?.CustomModels);
+            var existing = await _providers.GetModelsAsync(providerName);
             if (existing.Contains(modelName))
             {
                 Writer.WriteInfo($"模型 '{modelName}' 已存在于 {ProviderHelper.GetDisplayName(providerName)}");
-                return Task.FromResult(true);
+                return true;
             }
 
-            ConfigManager.AddCustomModel(providerName, modelName);
+            await _providers.AddModelAsync(providerName, modelName);
             Writer.WriteSuccess($"已为 {ProviderHelper.GetDisplayName(providerName)} 添加模型: {modelName}");
         }
         catch (Exception ex)
@@ -270,42 +272,42 @@ public class ModelCommand : CommandBase
             Writer.WriteError(ex.Message);
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
     /// <summary>
     /// 更新自定义模型名称
     /// </summary>
     /// <param name="args">未使用的参数</param>
-    private Task<bool> ExecuteUpdateAsync(string[] args)
+    private async Task<bool> ExecuteUpdateAsync(string[] args)
     {
         Writer.WriteLine();
 
-        var providers = ConfigManager.Providers;
+        var providers = await _providers.GetProvidersAsync();
         if (providers.Count == 0)
         {
             Writer.WriteError("暂无配置的 Provider");
-            return Task.FromResult(true);
+            return true;
         }
 
         var providersWithCustom = providers.Where(p => p.CustomModels?.Count > 0).ToList();
         if (providersWithCustom.Count == 0)
         {
             Writer.WriteInfo("没有自定义模型可更新");
-            return Task.FromResult(true);
+            return true;
         }
 
         // 编号菜单 → Choose 对话框
         var chosen = Ui.Choose("选择包含自定义模型的 Provider",
             providersWithCustom.Select(p => ProviderHelper.GetDisplayName(p.Name)).ToList());
-        if (chosen is null) return Task.FromResult(true); // 用户取消
+        if (chosen is null) return true; // 用户取消
 
         var provider = providersWithCustom[chosen.Value];
 
         // 编号菜单 → Choose 对话框
         var modelChosen = Ui.Choose($"{ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型",
             provider.CustomModels.ToList());
-        if (modelChosen is null) return Task.FromResult(true); // 用户取消
+        if (modelChosen is null) return true; // 用户取消
 
         var oldModelName = provider.CustomModels[modelChosen.Value];
 
@@ -314,19 +316,19 @@ public class ModelCommand : CommandBase
         {
             new FormField("新的模型名称", InitialValue: oldModelName, Required: false)
         });
-        if (values is null) return Task.FromResult(true); // 用户取消
+        if (values is null) return true; // 用户取消
 
         var newModelName = values[0].Trim();
 
         if (string.IsNullOrEmpty(newModelName))
         {
             Writer.WriteError("模型名称不能为空");
-            return Task.FromResult(true);
+            return true;
         }
 
         try
         {
-            ConfigManager.UpdateCustomModel(provider.Name, oldModelName, newModelName);
+            await _providers.UpdateModelAsync(provider.Name, oldModelName, newModelName);
             Writer.WriteSuccess($"已更新模型: {oldModelName} -> {newModelName}");
         }
         catch (Exception ex)
@@ -335,42 +337,42 @@ public class ModelCommand : CommandBase
             Writer.WriteError(ex.Message);
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
     /// <summary>
     /// 删除自定义模型
     /// </summary>
     /// <param name="args">未使用的参数</param>
-    private Task<bool> ExecuteDeleteAsync(string[] args)
+    private async Task<bool> ExecuteDeleteAsync(string[] args)
     {
         Writer.WriteLine();
 
-        var providers = ConfigManager.Providers;
+        var providers = await _providers.GetProvidersAsync();
         if (providers.Count == 0)
         {
             Writer.WriteError("暂无配置的 Provider");
-            return Task.FromResult(true);
+            return true;
         }
 
         var providersWithCustom = providers.Where(p => p.CustomModels?.Count > 0).ToList();
         if (providersWithCustom.Count == 0)
         {
             Writer.WriteInfo("没有自定义模型可删除");
-            return Task.FromResult(true);
+            return true;
         }
 
         // 编号菜单 → Choose 对话框
         var chosen = Ui.Choose("选择包含自定义模型的 Provider",
             providersWithCustom.Select(p => ProviderHelper.GetDisplayName(p.Name)).ToList());
-        if (chosen is null) return Task.FromResult(true); // 用户取消
+        if (chosen is null) return true; // 用户取消
 
         var provider = providersWithCustom[chosen.Value];
 
         // 编号菜单 → Choose 对话框
         var modelChosen = Ui.Choose($"{ProviderHelper.GetDisplayName(provider.Name)} 的自定义模型",
             provider.CustomModels.ToList());
-        if (modelChosen is null) return Task.FromResult(true); // 用户取消
+        if (modelChosen is null) return true; // 用户取消
 
         var modelName = provider.CustomModels[modelChosen.Value];
 
@@ -378,12 +380,12 @@ public class ModelCommand : CommandBase
         if (!Ui.Confirm("删除模型", $"确定要删除模型 '{modelName}' 吗？", defaultValue: false))
         {
             Writer.WriteInfo("已取消");
-            return Task.FromResult(true);
+            return true;
         }
 
         try
         {
-            ConfigManager.RemoveCustomModel(provider.Name, modelName);
+            await _providers.DeleteModelAsync(provider.Name, modelName);
             Writer.WriteSuccess($"已删除模型: {modelName}");
         }
         catch (Exception ex)
@@ -392,7 +394,7 @@ public class ModelCommand : CommandBase
             Writer.WriteError(ex.Message);
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
     /// <summary>
@@ -401,7 +403,8 @@ public class ModelCommand : CommandBase
     /// <param name="args">可选的 provider:model 参数</param>
     private async Task<bool> ExecuteSwitchAsync(string[] args)
     {
-        if (ConfigManager.Providers.Count == 0)
+        var providers = await _providers.GetProvidersAsync();
+        if (providers.Count == 0)
         {
             Writer.WriteError("暂无配置的 Provider，请先使用 provider add 添加");
             return true;
@@ -417,7 +420,7 @@ public class ModelCommand : CommandBase
             }
 
             var parts = modelId.Split(':', 2);
-            if (!ConfigManager.HasProvider(parts[0]))
+            if (!providers.Any(p => p.Name == parts[0]))
             {
                 Writer.WriteError($"Provider '{parts[0]}' 不存在");
                 return true;
@@ -425,7 +428,7 @@ public class ModelCommand : CommandBase
 
             try
             {
-                ConfigManager.SetSelectedModel(modelId);
+                await _providers.SetSelectionAsync(parts[0], parts[1]);
                 Writer.WriteSuccess($"已切换模型: {modelId}");
             }
             catch (Exception ex)
@@ -439,13 +442,15 @@ public class ModelCommand : CommandBase
 
         Writer.WriteLine();
 
-        var providerList = ConfigManager.Providers.ToList();
+        var providerList = providers.ToList();
+        var (currentProviderId, currentModelId) = _providers.GetSelection();
+        var selectedFullName = currentProviderId is null ? null : $"{currentProviderId}:{currentModelId}";
 
         // 编号菜单 → Choose 对话框
         var providerChosen = Ui.Choose("选择 Provider",
             providerList.Select(p =>
             {
-                var selected = ConfigManager.SelectedModel?.StartsWith(p.Name + ":") == true ? " (当前)" : "";
+                var selected = currentProviderId == p.Name ? " (当前)" : "";
                 return $"{ProviderHelper.GetDisplayName(p.Name)}{selected}";
             }).ToList());
         if (providerChosen is null) return true; // 用户取消
@@ -458,7 +463,7 @@ public class ModelCommand : CommandBase
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
-                await _providerService.RefreshModelsAsync(selectedProvider.Name, selectedProvider.ApiKey, selectedProvider.BaseUrl, cts.Token);
+                await _providers.RefreshModelsAsync(selectedProvider.Name, cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -470,7 +475,7 @@ public class ModelCommand : CommandBase
             }
         }
 
-        var allModels = _providerService.GetAllModels(selectedProvider.Name, selectedProvider.CustomModels);
+        var allModels = await _providers.GetModelsAsync(selectedProvider.Name);
 
         if (allModels.Count > 0)
         {
@@ -478,7 +483,7 @@ public class ModelCommand : CommandBase
             var modelChosen = Ui.Choose($"{ProviderHelper.GetDisplayName(selectedProvider.Name)} 可用模型",
                 allModels.Select(m =>
                 {
-                    var selected = ConfigManager.SelectedModel == $"{selectedProvider.Name}:{m}" ? " (已选)" : "";
+                    var selected = selectedFullName == $"{selectedProvider.Name}:{m}" ? " (已选)" : "";
                     return $"{m}{selected}";
                 }).Append("手动输入其他模型").ToList());
             if (modelChosen is null) return true; // 用户取消
@@ -507,9 +512,8 @@ public class ModelCommand : CommandBase
 
             try
             {
-                var fullModel = $"{selectedProvider.Name}:{modelName}";
-                ConfigManager.SetSelectedModel(fullModel);
-                Writer.WriteSuccess($"已切换模型: {fullModel}");
+                await _providers.SetSelectionAsync(selectedProvider.Name, modelName);
+                Writer.WriteSuccess($"已切换模型: {selectedProvider.Name}:{modelName}");
             }
             catch (Exception ex)
             {
@@ -535,9 +539,8 @@ public class ModelCommand : CommandBase
 
             try
             {
-                var fullModel = $"{selectedProvider.Name}:{modelName}";
-                ConfigManager.SetSelectedModel(fullModel);
-                Writer.WriteSuccess($"已切换模型: {fullModel}");
+                await _providers.SetSelectionAsync(selectedProvider.Name, modelName);
+                Writer.WriteSuccess($"已切换模型: {selectedProvider.Name}:{modelName}");
             }
             catch (Exception ex)
             {

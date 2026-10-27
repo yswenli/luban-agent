@@ -1152,19 +1152,29 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        var providers = Services.GetService<IProviderModelManagementService>();
+        if (providers == null)
+        {
+            Messages.Add(new SystemMessageItem { Content = "模型管理服务未初始化", IsError = true });
+            return;
+        }
+
         if (args.Length == 0 || args[0] == "-list" || args[0] == "list")
         {
             // 列出所有模型
             var sb = new StringBuilder();
             sb.AppendLine("可用模型:");
 
-            foreach (var provider in configManager.Providers)
+            var (selectedProviderId, selectedModelId) = providers.GetSelection();
+            var selectedFullName = selectedProviderId is null ? null : $"{selectedProviderId}:{selectedModelId}";
+
+            foreach (var provider in await providers.GetProvidersAsync())
             {
-                var models = configManager.GetAllModels(provider.Name);
+                var models = await providers.GetModelsAsync(provider.Name);
                 foreach (var model in models)
                 {
                     var fullName = $"{provider.Name}:{model}";
-                    var selected = fullName == configManager.SelectedModel ? " (当前)" : "";
+                    var selected = fullName == selectedFullName ? " (当前)" : "";
                     sb.AppendLine($"  {fullName}{selected}");
                 }
             }
@@ -1189,9 +1199,20 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             var modelId = string.Join(' ', args.Skip(1));
+            var parts = modelId.Split(':', 2);
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+            {
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = "模型格式错误，应为 provider:model，例如 openai:gpt-4o",
+                    IsError = true
+                });
+                return;
+            }
+
             try
             {
-                configManager.SetSelectedModel(modelId);
+                await providers.SetSelectionAsync(parts[0], parts[1]);
                 Messages.Add(new SystemMessageItem { Content = $"已切换模型: {modelId}" });
             }
             catch (Exception ex)
