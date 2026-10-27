@@ -16,6 +16,7 @@
 *****************************************************************************/
 
 using LuBan.AIAgent.Hosting;
+using LubanAgentCodex.Diagnostics;
 
 namespace LubanAgentCodex.ViewModels;
 
@@ -232,6 +233,11 @@ public partial class MainWindowViewModel : ObservableObject
     /// 当前会话是否正在运行（转发自 <see cref="CurrentSession"/>；切换会话时同步通知）
     /// </summary>
     public bool IsRunning => _currentSession?.IsRunning ?? false;
+
+    /// <summary>
+    /// 当前会话是否处于"已请求取消、等待收尾"的停止中状态（转发自 <see cref="CurrentSession"/>）。
+    /// </summary>
+    public bool IsStopping => _currentSession?.IsStopping ?? false;
 
     /// <summary>
     /// 当前选中会话（其消息流即 <see cref="Messages"/>）
@@ -563,17 +569,25 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentSession));
         OnPropertyChanged(nameof(Messages));
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsStopping));
     }
 
     private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(SessionViewModel.IsRunning) || sender is not SessionViewModel session)
+        if (e.PropertyName is not (nameof(SessionViewModel.IsRunning) or nameof(SessionViewModel.IsStopping)))
+            return;
+
+        if (sender is not SessionViewModel session)
             return;
 
         if (ReferenceEquals(session, _currentSession))
+        {
             OnPropertyChanged(nameof(IsRunning));
+            OnPropertyChanged(nameof(IsStopping));
+        }
 
-        SessionRunningChanged?.Invoke(this, new SessionRunningChangedEventArgs(session.SessionId, session.IsRunning));
+        if (e.PropertyName == nameof(SessionViewModel.IsRunning))
+            SessionRunningChanged?.Invoke(this, new SessionRunningChangedEventArgs(session.SessionId, session.IsRunning));
     }
 
     /// <summary>
@@ -589,7 +603,13 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 重置 Agent，下次发送消息时按最新配置（如切换后的模型）重建
     /// </summary>
-    public void ResetAgent() => _agentHost.Reset();
+    public void ResetAgent()
+    {
+        var started = Environment.TickCount64;
+        UiFlowProbe.Always("RESET", $"重置 Agent 开始 线程={Environment.CurrentManagedThreadId} 当前会话={_currentSession?.SessionId} 该会话running={_currentSession?.IsRunning}");
+        _agentHost.Reset();
+        UiFlowProbe.Always("RESET", $"重置 Agent 完成 耗时={Environment.TickCount64 - started}ms 该会话running={_currentSession?.IsRunning} initialized={_agentHost.IsInitialized}");
+    }
 
     /// <summary>
     /// 执行 / 命令

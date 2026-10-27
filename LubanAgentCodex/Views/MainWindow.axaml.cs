@@ -18,6 +18,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using LubanAgentCodex.Diagnostics;
 using LubanAgentCore.Plugins;
 using LubanAgentCodex.Services;
 using LubanAgentCodex.ViewModels;
@@ -67,6 +68,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Closing += OnClosing;
+        UiFlowProbe.StartUiWatchdog();
     }
 
     private void InitializeComponent()
@@ -159,16 +161,24 @@ public partial class MainWindow : Window
                 // 处理模型切换事件：重置 Agent，下次发送消息时用新模型重建
                 _inputBox.ModelChanged += (s, model) =>
                 {
+                    UiFlowProbe.Always("MODEL", $"切换模型={model} 线程={Environment.CurrentManagedThreadId} 当前会话={_viewModel?.CurrentSession?.SessionId} running={_viewModel?.IsRunning} 消息数={_viewModel?.Messages.Count}");
                     _viewModel?.ResetAgent();
                     _viewModel?.Messages.Add(new SystemMessageItem { Content = $"已切换模型: {model}" });
                     UpdateAttachButtonState();
+                    UiFlowProbe.Always("MODEL", $"切换模型处理完毕 running={_viewModel?.IsRunning} 消息数={_viewModel?.Messages.Count}");
                 };
 
                 _viewModel.PropertyChanged += (s, e) =>
                 {
                     if (e.PropertyName == nameof(MainWindowViewModel.IsRunning))
                     {
+                        UiFlowProbe.Always("ISRUNNING", $"窗口收到 running={_viewModel.IsRunning} 会话={_viewModel.CurrentSession?.SessionId} 线程={Environment.CurrentManagedThreadId}");
                         _inputBox.IsRunning = _viewModel.IsRunning;
+                        UpdateRunState();
+                    }
+                    else if (e.PropertyName == nameof(MainWindowViewModel.IsStopping))
+                    {
+                        UpdateRunState();
                     }
                     else if (e.PropertyName == nameof(MainWindowViewModel.Messages))
                     {
@@ -438,6 +448,19 @@ public partial class MainWindow : Window
         _footerBar.UpdateWorkingDirectory(_footerDataProvider.GetWorkingDirectory());
         _footerBar.UpdateGitBranch(_footerDataProvider.GetGitBranch());
         _footerBar.UpdateTokenUsage(_footerDataProvider.GetTokenUsage());
+        UpdateRunState();
+    }
+
+    /// <summary>
+    /// 更新页脚运行态：运行中 / 正在停止（已请求取消、等待回合收尾）。
+    /// </summary>
+    private void UpdateRunState()
+    {
+        if (_footerBar == null || _viewModel == null) return;
+
+        _footerBar.UpdateRunState(_viewModel.IsStopping
+            ? "⠋ 正在停止…"
+            : _viewModel.IsRunning ? "⠋ 运行中" : null);
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)

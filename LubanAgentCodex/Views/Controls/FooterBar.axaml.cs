@@ -30,6 +30,7 @@ public partial class FooterBar : UserControl
     private TextBlock? _workingDirectoryText;
     private TextBlock? _gitBranchText;
     private TextBlock? _tokenUsageText;
+    private TextBlock? _runStateText;
     
     public FooterBar()
     {
@@ -43,6 +44,19 @@ public partial class FooterBar : UserControl
         _workingDirectoryText = this.FindControl<TextBlock>("WorkingDirectoryText");
         _gitBranchText = this.FindControl<TextBlock>("GitBranchText");
         _tokenUsageText = this.FindControl<TextBlock>("TokenUsageText");
+        _runStateText = this.FindControl<TextBlock>("RunStateText");
+    }
+
+    /// <summary>
+    /// 更新运行态显示（运行中 / 正在停止…）；传 null 或空表示空闲，隐藏该区域。
+    /// </summary>
+    /// <param name="text">运行态文案。</param>
+    public void UpdateRunState(string? text)
+    {
+        if (_runStateText == null) return;
+
+        _runStateText.Text = text;
+        _runStateText.IsVisible = !string.IsNullOrWhiteSpace(text);
     }
     
     /// <summary>

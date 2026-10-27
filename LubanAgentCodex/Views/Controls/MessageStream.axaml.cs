@@ -17,6 +17,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using LubanAgentCodex.Diagnostics;
 using LubanAgentCodex.ViewModels.Messages;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -74,6 +75,7 @@ public partial class MessageStream : UserControl
         // 切换会话/重新绑定后回到最新位置，并恢复"贴底"意图，
         // 否则上一会话用户上滚留下的 _autoScroll=false 会让新会话停在历史处。
         _autoScroll = true;
+        UiFlowProbe.Always("STREAM-BIND", $"绑定消息集合 集合={messages.GetHashCode()} 条数={messages.Count}");
         ScheduleScrollToEnd();
     }
 
@@ -88,6 +90,11 @@ public partial class MessageStream : UserControl
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_scroller == null) return;
+
+        var diagOffset = _scroller.Offset.Y;
+        var diagExtent = _scroller.Extent.Height;
+        var diagViewport = _scroller.Viewport.Height;
+        UiFlowProbe.Sample("SCROLL", $"offset={diagOffset:F1} extent={diagExtent:F1} viewport={diagViewport:F1} autoScroll={_autoScroll} offsetΔ={e.OffsetDelta.Y:F1} extentΔ={e.ExtentDelta.Y:F1} viewportΔ={e.ViewportDelta.Y:F1} 挂起追底={_scrollScheduled}");
 
         // 内容/尺寸变化（流式追加正文/思考、项裁剪、窗口缩放）不是用户滚动：
         // 保持原"贴底"意图并继续追底，避免按位置重算把贴底误判成上滚而永久关闭自动滚动。
@@ -104,7 +111,10 @@ public partial class MessageStream : UserControl
         var viewport = _scroller.Viewport.Height;
         var atBottom = (extent - offset - viewport) < 50;
 
+        var wasAutoScroll = _autoScroll;
         _autoScroll = atBottom || (e.OffsetDelta.Y > 0 && _autoScroll);
+        if (wasAutoScroll && !_autoScroll)
+            UiFlowProbe.Always("SCROLL-STOP", $"贴底意图被关闭 offset={offset:F1} extent={extent:F1} viewport={viewport:F1} offsetΔ={e.OffsetDelta.Y:F1}");
     }
 
     /// <summary>
@@ -121,7 +131,14 @@ public partial class MessageStream : UserControl
         {
             _scrollScheduled = false;
             if (_autoScroll)
+            {
                 _scroller?.ScrollToEnd();
+                UiFlowProbe.Sample("SCROLL-END", $"已追底 offset={_scroller?.Offset.Y ?? double.NaN:F1} extent={_scroller?.Extent.Height ?? double.NaN:F1} viewport={_scroller?.Viewport.Height ?? double.NaN:F1}");
+            }
+            else
+            {
+                UiFlowProbe.Sample("SCROLL-END", "跳过追底（贴底意图已关闭）");
+            }
         }, DispatcherPriority.Loaded);
     }
 }

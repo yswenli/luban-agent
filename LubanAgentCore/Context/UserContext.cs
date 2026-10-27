@@ -8,8 +8,6 @@
 *描述：用户作用域上下文（Scoped 只读视图，身份来自 UserContextState）
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
-
 namespace LubanAgentCore.Context;
 
 /// <summary>
