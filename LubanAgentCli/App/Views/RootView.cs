@@ -133,6 +133,8 @@ internal sealed class RootView : Runnable
         _active.Doc.AppendBlock(new SystemBlock("✻ LuBan Agent CLI", isBold: true, foreground: BlockColors.Accent));
         _active.Doc.AppendBlock(new SystemBlock(
             "  Enter 发送，Shift+Enter 或 Ctrl+Enter 换行，/exit 退出，Ctrl+Q 退出，Esc 取消，Ctrl+L 重绘，Shift+Tab 切换模式。"));
+        _active.Doc.AppendBlock(new SystemBlock(
+            "  附图：@路径 引用文件，或直接粘贴/拖入图片路径后跟问题（如 D:\\图片\\a.png 看看这个图），Ctrl+O 选文件。"));
         _active.Doc.AppendBlock(new SystemBlock("  正在初始化 Agent 并进入默认会话..."));
 
         if (startupNotices is not null)

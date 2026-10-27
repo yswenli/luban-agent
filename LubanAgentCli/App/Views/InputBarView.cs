@@ -449,6 +449,30 @@ internal sealed class InputBarView : View
                 if (!AddAttachment(p))
                     _ui?.Notify("附件过多", $"每条消息最多 5 个附件，已忽略: {Path.GetFileName(p)}");
             }
+
+            // 裸图片路径兜底：真机上用户多是「粘贴/拖入路径 + 紧跟问题」（不加 @），
+            // 只走 @ 解析会一条都命中不了，模型只能拿到文本路径并改用 ReadFile 读二进制。
+            var mentions = svc.FindBareImageMentions(body);
+            if (mentions.Count > 0)
+            {
+                var attached = new List<BareImageMention>();
+                var rejected = new List<string>();
+                foreach (var mention in mentions)
+                {
+                    if (AddAttachment(mention.Path))
+                        attached.Add(mention);
+                    else
+                        rejected.Add(Path.GetFileName(mention.Path));
+                }
+
+                // 只有真正附加成功的路径才从正文剥离，避免「没发出去也没提示」
+                if (attached.Count > 0)
+                    body = AttachmentService.StripBareImageMentions(body, attached);
+
+                if (rejected.Count > 0)
+                    _ui?.Notify("附件未全部附加",
+                        $"每条消息最多 5 个附件，未附加：{string.Join(", ", rejected)}；可改用 @路径 单独附加");
+            }
         }
 
         var drafts = _drafts.ToList();

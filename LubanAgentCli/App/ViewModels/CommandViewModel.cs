@@ -148,6 +148,11 @@ internal sealed class CommandViewModel
         }
 
         _writer.WriteLine();
+        _writer.WriteLine("附件:");
+        _writer.WriteLine("  @路径               引用文件作为附件，如 @D:\\图片\\a.png 或 @\"D:\\my file.pdf\"");
+        _writer.WriteLine("  图片路径直接跟问题   自动识别，如 D:\\图片\\a.png 看看这个图里面有什么");
+        _writer.WriteLine("  Ctrl+O              打开文件选择框添加附件（每条消息最多 5 个）");
+        _writer.WriteLine();
         _writer.WriteLine("快捷键:");
         _writer.WriteLine("  Enter               提交输入");
         _writer.WriteLine("  Ctrl+Q              退出（需确认）");

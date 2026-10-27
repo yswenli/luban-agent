@@ -132,7 +132,21 @@ public sealed class CoreAttachmentOrchestrator(
     /// <inheritdoc />
     public (string Text, IReadOnlyList<string> Paths) ExtractReferences(string input)
     {
-        var paths = attachments.ParseFileReferences(input, out var remainingText);
+        var paths = new List<string>(attachments.ParseFileReferences(input, out var remainingText));
+
+        // 裸图片路径兜底：真机上「路径 + 问题」不会命中 @引用（用户不知道要加 @），
+        // 若不在这里识别，模型只会拿到文本路径并改用 ReadFile 读二进制。
+        var mentions = attachments.FindBareImageMentions(remainingText);
+        if (mentions.Count > 0)
+        {
+            remainingText = AttachmentService.StripBareImageMentions(remainingText, mentions);
+            foreach (var mention in mentions)
+            {
+                if (!paths.Contains(mention.Path, StringComparer.OrdinalIgnoreCase))
+                    paths.Add(mention.Path);
+            }
+        }
+
         return (remainingText, paths);
     }
 
