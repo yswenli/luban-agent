@@ -63,6 +63,11 @@ public static class AgentHostBuilder
         services.AddSingleton<WorkspaceRepository>();
         services.AddSingleton<LlmWikiFileRepository>();
         services.AddSingleton<LlmWikiChunkRepository>();
+
+        // 管理服务只依赖最小仓储缝（便于脱离数据库做单测），由具体仓储解析
+        services.AddSingleton<ISessionWorkspaceQuery>(sp => sp.GetRequiredService<SessionRepository>());
+        services.AddSingleton<ILlmWikiFileStore>(sp => sp.GetRequiredService<LlmWikiFileRepository>());
+        services.AddSingleton<ILlmWikiChunkStore>(sp => sp.GetRequiredService<LlmWikiChunkRepository>());
         services.AddSingleton<WorktreeSessionRepository>();
         services.AddSingleton<GitProcess>();
         services.AddSingleton<UserContextRegistry>();

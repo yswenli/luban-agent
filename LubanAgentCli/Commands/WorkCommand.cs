@@ -21,7 +21,7 @@ namespace LubanAgentCli.Commands;
 /// </summary>
 public class WorkCommand : CommandBase
 {
-    private readonly IWorkspaceManager _workspaceManager;
+    private readonly IWorkspaceManagementService _workspaces;
     private readonly WorkspaceRepository _workspaceRepo;
     private readonly SessionRepository _sessionRepo;
     private readonly string _userId;
@@ -41,8 +41,8 @@ public class WorkCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="workspaceManager">工作区管理器</param>
-    /// <param name="workspaceRepo">工作区仓储</param>
+    /// <param name="workspaces">工作区管理服务</param>
+    /// <param name="workspaceRepo">工作区仓储（名称/路径解析与分析统计）</param>
     /// <param name="sessionRepo">会话仓储</param>
     /// <param name="userContext">当前用户上下文</param>
     /// <param name="writer">TUI 输出写入器</param>
@@ -50,7 +50,7 @@ public class WorkCommand : CommandBase
     public WorkCommand(
         ConfigManager configManager,
         IConfiguration configuration,
-        IWorkspaceManager workspaceManager,
+        IWorkspaceManagementService workspaces,
         WorkspaceRepository workspaceRepo,
         SessionRepository sessionRepo,
         IUserContext userContext,
@@ -58,7 +58,7 @@ public class WorkCommand : CommandBase
         ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
-        _workspaceManager = workspaceManager;
+        _workspaces = workspaces;
         _workspaceRepo = workspaceRepo;
         _sessionRepo = sessionRepo;
         _userId = userContext.ResolveUserKey();
@@ -127,14 +127,14 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task ListWorkspaces()
     {
-        var workspaces = (await _workspaceManager.GetUserWorkspacesAsync()).ToList();
+        var workspaces = (await _workspaces.ListAsync()).ToList();
         if (workspaces.Count == 0)
         {
             Writer.WriteInfo("暂无工作区");
             return;
         }
 
-        var current = _workspaceManager.CurrentWorkspace;
+        var current = await _workspaces.GetCurrentAsync();
         var rows = new List<IReadOnlyList<string>>();
         foreach (var ws in workspaces)
         {
@@ -156,7 +156,7 @@ public class WorkCommand : CommandBase
         if (selected >= 0 && selected < workspaces.Count)
         {
             var ws = workspaces[selected];
-            await _workspaceManager.SwitchWorkspaceAsync(ws.WorkspaceId);
+            await _workspaces.SwitchAsync(ws.WorkspaceId);
             Writer.WriteSuccess($"已切换到工作区: {ws.Name}");
             Writer.WriteInfo($"  根目录: {ws.RootPath}");
             Writer.WriteInfo($"  授权状态: {(ws.IsAuthorized ? "已授权" : "未授权")}");
@@ -199,7 +199,7 @@ public class WorkCommand : CommandBase
             return;
         }
 
-        var ws = await _workspaceManager.CreateWorkspaceAsync(path, type: WorkspaceTypes.Normal);
+        var ws = await _workspaces.CreateAsync(name: null, path, WorkspaceTypes.Normal);
         Writer.WriteSuccess($"已创建工作区: {ws.Name} - {ws.RootPath}");
         Writer.WriteInfo($"输入 /work -switch {ws.Name} 切换到此工作区");
     }
@@ -274,7 +274,7 @@ public class WorkCommand : CommandBase
             return;
         }
 
-        await _workspaceManager.SwitchWorkspaceAsync(target.WorkspaceId);
+        await _workspaces.SwitchAsync(target.WorkspaceId);
 
         Writer.WriteSuccess($"已切换到工作区: {target.Name}");
         Writer.WriteInfo($"  根目录: {target.RootPath}");
@@ -355,11 +355,11 @@ public class WorkCommand : CommandBase
         var confirm = Ui.Confirm("删除工作区", $"删除工作区将同时删除其下所有会话和索引，确认删除 '{target.Name}'？", defaultValue: false);
         if (!confirm) return;
 
-        var wasCurrent = _workspaceManager.CurrentWorkspace?.WorkspaceId == target.WorkspaceId;
+        var wasCurrent = (await _workspaces.GetCurrentAsync())?.WorkspaceId == target.WorkspaceId;
 
         // 统一删除入口：会话软删 → LLM Wiki 索引物理删 → 工作区逻辑删；
         // 删除当前工作区时还会移除 PathGuard 根目录、清空当前工作区与会话引用。
-        await _workspaceManager.DeleteWorkspaceAsync(target.WorkspaceId);
+        await _workspaces.DeleteAsync(target.WorkspaceId);
 
         if (wasCurrent)
         {
@@ -374,7 +374,7 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task ShowInfo()
     {
-        var ws = _workspaceManager.CurrentWorkspace;
+        var ws = await _workspaces.GetCurrentAsync();
         if (ws == null)
         {
             Writer.WriteError("当前无活动工作区");
@@ -395,7 +395,7 @@ public class WorkCommand : CommandBase
     /// </summary>
     private async Task Authorize()
     {
-        var ws = _workspaceManager.CurrentWorkspace;
+        var ws = await _workspaces.GetCurrentAsync();
         if (ws == null)
         {
             Writer.WriteError("当前无活动工作区");
@@ -408,7 +408,7 @@ public class WorkCommand : CommandBase
             return;
         }
 
-        await _workspaceManager.EnsureAuthorizedAsync(ws);
+        await _workspaces.GrantAccessAsync(ws.WorkspaceId);
     }
 
     /// <summary>

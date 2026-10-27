@@ -21,7 +21,6 @@
 *描述：由 RagCommand 与 WikiCommand 合并为 LlmWikiCommand，统一 /llmwiki，保留 /rag、/wiki 等别名
 *
 *****************************************************************************/
-using System.Text;
 using LuBan.AIAgent.Wiki;
 using LuBan.AIAgent.Wiki.Extractors;
 using LubanAgentCli.App.ViewModels;
@@ -31,16 +30,14 @@ namespace LubanAgentCli.Commands;
 /// <summary>
 /// LLM Wiki 知识库管理命令。
 /// 依赖内部 ConversationViewModel（-ingest 注入附件与指令），故命令本身为 internal。
+/// 业务（索引/检索/wiki 运维/工作区增删）全部经 <see cref="ILlmWikiManagementService"/>；
+/// 本层只保留授权门禁、关键字匹配、进度窗与提示文案。
 /// </summary>
 internal sealed class LlmWikiCommand : CommandBase
 {
     private readonly IWorkspaceManager _workspaceManager;
-    private readonly WorkspaceRepository _workspaceRepo;
-    private readonly string _userId;
-    private readonly IRetrievalService _retrievalService;
-    private readonly IWikiService _wiki;
-    private readonly LlmWikiFileRepository _wikiFileRepo;
-    private readonly KnowledgeTaskService? _knowledgeTasks;
+    private readonly IWorkspaceManagementService _workspaces;
+    private readonly ILlmWikiManagementService _wiki;
     private readonly ConversationViewModel? _conversation;
 
     /// <summary>
@@ -58,13 +55,9 @@ internal sealed class LlmWikiCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="workspaceManager">工作区管理器</param>
-    /// <param name="workspaceRepo">工作区仓储</param>
-    /// <param name="userContext">当前用户上下文</param>
-    /// <param name="retrievalService">检索服务</param>
-    /// <param name="wiki">wiki 知识库服务</param>
-    /// <param name="wikiFileRepo">LLM Wiki 文件仓储</param>
-    /// <param name="knowledgeTasks">后台知识库任务服务（可为 null，null 时退回同步执行）</param>
+    /// <param name="workspaceManager">工作区管理器（当前工作区与授权门禁）</param>
+    /// <param name="workspaces">工作区管理服务（-delete 的关键字匹配）</param>
+    /// <param name="wiki">LLM Wiki 管理服务</param>
     /// <param name="conversation">会话 ViewModel（可为 null）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
@@ -72,24 +65,16 @@ internal sealed class LlmWikiCommand : CommandBase
         ConfigManager configManager,
         IConfiguration configuration,
         IWorkspaceManager workspaceManager,
-        WorkspaceRepository workspaceRepo,
-        IUserContext userContext,
-        IRetrievalService retrievalService,
-        IWikiService wiki,
-        LlmWikiFileRepository wikiFileRepo,
-        KnowledgeTaskService? knowledgeTasks,
+        IWorkspaceManagementService workspaces,
+        ILlmWikiManagementService wiki,
         ConversationViewModel? conversation,
         ITuiOutputWriter writer,
         ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _workspaceManager = workspaceManager;
-        _workspaceRepo = workspaceRepo;
-        _userId = userContext.ResolveUserKey();
-        _retrievalService = retrievalService;
+        _workspaces = workspaces;
         _wiki = wiki;
-        _wikiFileRepo = wikiFileRepo;
-        _knowledgeTasks = knowledgeTasks;
         _conversation = conversation;
     }
 
@@ -235,7 +220,7 @@ internal sealed class LlmWikiCommand : CommandBase
 
         try
         {
-            var ws = await _workspaceManager.CreateWorkspaceAsync(path, name, type: WorkspaceTypes.LlmWiki);
+            var ws = await _wiki.CreateAsync(path, name);
             Writer.WriteSuccess($"已创建 LLM Wiki 知识库: {ws.Name} - {ws.RootPath}");
             Writer.WriteInfo($"使用 /work -switch {ws.Name} 切换到此知识库");
             Writer.WriteInfo("切换后使用 /llmwiki -index 索引文件，然后 /agi 进行问答");
@@ -274,12 +259,15 @@ internal sealed class LlmWikiCommand : CommandBase
         var glob = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
 
         // 后台模式：必需部分（校验/授权）同步完成即返回，索引进后台并由 Updated 事件反馈
-        if (!wait && _knowledgeTasks != null)
+        if (!wait)
         {
-            var task = _knowledgeTasks.StartIndex(workspace.WorkspaceId, workspace.RootPath, glob, workspace.UserId);
-            Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
-            Writer.WriteInfo("如需同步等待，请使用 /llmwiki -index --wait");
-            return;
+            var task = await _wiki.StartIndexAsync(workspace.WorkspaceId, glob);
+            if (task != null)
+            {
+                Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
+                Writer.WriteInfo("如需同步等待，请使用 /llmwiki -index --wait");
+                return;
+            }
         }
 
         Writer.WriteInfo($"开始索引工作区: {workspace.Name}");
@@ -301,8 +289,7 @@ internal sealed class LlmWikiCommand : CommandBase
                 status(RetrievalIndexPlanner.IndexEmbedStatus(fileCount));
                 if (fileCount == 0) return;
 
-                report = await _retrievalService.IndexDirectoryAsync(workspace.RootPath, glob, force: false,
-                    cancellationToken: default, workspaceId: workspace.WorkspaceId);
+                report = await _wiki.IndexFilesAsync(workspace.WorkspaceId, glob);
             }, closable: false);
 
             if (fileCount == 0)
@@ -369,9 +356,10 @@ internal sealed class LlmWikiCommand : CommandBase
 
         try
         {
-            IReadOnlyList<RetrievalResult> results = rawOnly
-                ? await _retrievalService.SearchAsync(query, topK: 5, workspaceId: workspace.WorkspaceId)
-                : await _wiki.SearchAsync(query, includeRaw: !wikiOnly, workspaceId: workspace.WorkspaceId);
+            var scope = rawOnly
+                ? WikiSearchScope.RawOnly
+                : wikiOnly ? WikiSearchScope.WikiOnly : WikiSearchScope.WikiThenRaw;
+            var results = await _wiki.SearchAsync(workspace.WorkspaceId, query, scope);
 
             if (results.Count == 0)
             {
@@ -406,7 +394,7 @@ internal sealed class LlmWikiCommand : CommandBase
         var workspace = EnsureWikiWorkspace();
         if (workspace == null) return;
 
-        var files = await _wikiFileRepo.GetByWorkspaceAsync(workspace.WorkspaceId);
+        var files = await _wiki.ListFilesAsync(workspace.WorkspaceId);
         if (files.Count == 0)
         {
             Writer.WriteInfo("当前知识库尚未索引任何文件，请使用 /llmwiki -index 索引文件");
@@ -436,7 +424,7 @@ internal sealed class LlmWikiCommand : CommandBase
         string? keyword = null;
         if (args.Length < 2)
         {
-            var allWorkspaces = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
+            var allWorkspaces = await _workspaces.ListAsync();
             var wikiWorkspaces = allWorkspaces.Where(w => w.Type == WorkspaceTypes.LlmWiki).ToList();
             if (wikiWorkspaces.Count == 0)
             {
@@ -455,7 +443,7 @@ internal sealed class LlmWikiCommand : CommandBase
             keyword = args[1];
         }
 
-        var allWorkspacesList = await _workspaceRepo.GetUserWorkspacesAsync(_userId);
+        var allWorkspacesList = await _workspaces.ListAsync();
 
         // 优先精确匹配名称
         var target = allWorkspacesList.FirstOrDefault(w =>
@@ -487,7 +475,7 @@ internal sealed class LlmWikiCommand : CommandBase
 
         // 统一删除入口（与 /work -delete 一致）：会话软删 → LLM Wiki 索引物理删 → 工作区逻辑删；
         // 删除当前工作区时还会移除 PathGuard 根目录、清空当前工作区与会话引用。
-        await _workspaceManager.DeleteWorkspaceAsync(target.WorkspaceId);
+        await _wiki.DeleteAsync(target.WorkspaceId);
 
         Writer.WriteSuccess($"已删除 LLM Wiki 知识库: {target.Name}");
     }
@@ -502,7 +490,7 @@ internal sealed class LlmWikiCommand : CommandBase
 
         try
         {
-            var stats = await _wiki.GetStatsAsync(workspaceId: workspace.WorkspaceId);
+            var stats = await _wiki.GetStatusAsync(workspace.WorkspaceId);
             Writer.WriteSuccess("wiki 状态");
             Writer.WriteInfo($"  页面数: {stats.PageCount}");
             Writer.WriteInfo($"  最近重建: {stats.LastRebuildSummary ?? "无"}");
@@ -532,12 +520,15 @@ internal sealed class LlmWikiCommand : CommandBase
         var target = string.Join(' ', args[1..].Where(a => !string.Equals(a, "--wait", StringComparison.OrdinalIgnoreCase)));
 
         // 后台模式：提取阶段转后台（提取是耗时大头），完成后由 Updated 事件继续交给 Agent 整理
-        if (!wait && _knowledgeTasks != null)
+        if (!wait)
         {
-            var task = _knowledgeTasks.StartWikiIngest(workspace.WorkspaceId, workspace.RootPath, target);
-            Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），提取完成后将自动交给 Agent 整理。");
-            Writer.WriteInfo("如需同步等待，请使用 /llmwiki -ingest <路径> --wait");
-            return;
+            var task = await _wiki.StartIngestAsync(workspace.WorkspaceId, target);
+            if (task != null)
+            {
+                Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），提取完成后将自动交给 Agent 整理。");
+                Writer.WriteInfo("如需同步等待，请使用 /llmwiki -ingest <路径> --wait");
+                return;
+            }
         }
 
         if (_conversation == null)
@@ -546,74 +537,44 @@ internal sealed class LlmWikiCommand : CommandBase
             return;
         }
 
-        var files = ResolveFiles(workspace.RootPath, target);
-        if (files.Count == 0)
+        // 提取阶段逐文件更新进度（不可关闭）：大文件/Office 转换可能明显耗时，
+        // 提取完成后关闭进度窗，再交回 Agent 正常流式展现。
+        WikiIngestDraft? draft = null;
+        try
         {
-            Writer.WriteError($"未找到匹配文件: {target}");
+            Ui.RunWithProgress("提取源文件", "正在提取源文件…", async status =>
+            {
+                draft = await _wiki.PrepareIngestAsync(
+                    workspace.WorkspaceId, target, new SynchronousProgress<string>(status));
+            }, closable: false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // 未找到匹配文件：与既有文案一致
+            Writer.WriteError(ex.Message);
             return;
         }
 
-        var rootFull = Path.GetFullPath(workspace.RootPath);
-        var registry = SourceExtractorRegistry.CreateDefault();
-        var sb = new StringBuilder();
-        sb.Append("# Wiki Ingest 源文件\n\n");
-        sb.Append($"- 生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}\n");
-        sb.Append($"- 源文件数：{files.Count}\n\n");
+        if (draft is null) return;
 
-        var merged = 0;
+        foreach (var skipped in draft.Skipped ?? Array.Empty<string>())
+            Writer.WriteWarning(skipped);
 
-        // 提取阶段逐文件更新进度（不可关闭）：大文件/Office 转换可能明显耗时，
-        // 提取完成后关闭进度窗，再交回 Agent 正常流式展现。
-        Ui.RunWithProgress("提取源文件", $"正在提取源文件 0/{files.Count}…", async status =>
-        {
-            var index = 0;
-            foreach (var file in files)
-            {
-                index++;
-                var rel = ToRelativePath(rootFull, file);
-                status($"正在提取源文件 {index}/{files.Count}：{rel}");
-                try
-                {
-                    var extracted = await registry.ExtractAsync(file);
-                    var body = string.IsNullOrWhiteSpace(extracted.Markdown) ? extracted.Text : extracted.Markdown;
-                    sb.Append("## ").Append(rel).Append("\n\n");
-                    if (extracted.Truncated) sb.Append("> （内容已截断）\n\n");
-                    sb.Append(body).Append("\n\n");
-                    merged++;
-                }
-                catch (Exception ex)
-                {
-                    Writer.WriteWarning($"跳过 {rel}: {ex.Message}");
-                }
-            }
-        }, closable: false);
-
-        if (merged == 0)
+        if (draft.MergedFiles == 0)
         {
             Writer.WriteError($"所有源文件均提取失败: {target}");
             return;
         }
 
-        var mergedText = sb.ToString();
-        if (mergedText.Length > TextExtractor.MaxChars)
-        {
-            mergedText = mergedText[..TextExtractor.MaxChars];
+        if (draft.Truncated)
             Writer.WriteWarning($"汇总内容超过 {TextExtractor.MaxChars} 字符，已截断");
-        }
 
-        var configDir = workspace.ConfigPath ?? ".luban-agent";
-        var tempDir = Path.Combine(workspace.RootPath, configDir, "temp");
-        Directory.CreateDirectory(tempDir);
-        var tempPath = Path.Combine(tempDir, $"wiki-ingest-{DateTime.Now:yyyyMMddHHmmss}.md");
-        await File.WriteAllTextAsync(tempPath, mergedText);
-
-        var relTemp = ToRelativePath(rootFull, tempPath);
-        var instruction = $"请读取附件中的源文件汇总（{relTemp}），按 wiki schema 将其沉淀为 wiki 页面（先读 index，必要时并页），并为相关实体/概念建页互链。";
-        Writer.WriteInfo($"开始 ingest：汇总 {merged} 个源文件 → {relTemp}");
+        var instruction = $"请读取附件中的源文件汇总（{draft.RelativePath}），按 wiki schema 将其沉淀为 wiki 页面（先读 index，必要时并页），并为相关实体/概念建页互链。";
+        Writer.WriteInfo($"开始 ingest：汇总 {draft.MergedFiles} 个源文件 → {draft.RelativePath}");
         try
         {
             await _conversation.ProcessInputAsync(instruction,
-                new[] { new AttachmentDraft(tempPath, Path.GetFileName(tempPath)) });
+                new[] { new AttachmentDraft(draft.TempPath, Path.GetFileName(draft.TempPath)) });
         }
         catch (Exception ex)
         {
@@ -623,44 +584,15 @@ internal sealed class LlmWikiCommand : CommandBase
     }
 
     /// <summary>
-    /// 解析工作区根下的文件：单文件 / glob / 目录，结果限制在工作区内
+    /// 同步转发的进度适配器：服务内的提取回调直接驱动 TUI 进度窗文案。
     /// </summary>
-    private static List<string> ResolveFiles(string rootPath, string target)
+    /// <remarks>
+    /// 不用 <see cref="Progress{T}"/>：它会把回调投递到同步上下文，进度窗关闭后仍可能触发并抛异常。
+    /// </remarks>
+    private sealed class SynchronousProgress<T>(Action<T> report) : IProgress<T>
     {
-        var rootFull = Path.GetFullPath(rootPath);
-        var full = Path.IsPathRooted(target) ? target : Path.Combine(rootFull, target);
-        if (!IsInsideRoot(rootFull, full)) return new List<string>();
-
-        if (File.Exists(full)) return new List<string> { full };
-
-        var dir = Path.GetDirectoryName(full);
-        var pattern = Path.GetFileName(full);
-        if (dir != null && Directory.Exists(dir) && (pattern.Contains('*') || pattern.Contains('?')))
-            return Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories)
-                .Where(f => IsInsideRoot(rootFull, f)).ToList();
-
-        return Directory.Exists(full)
-            ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
-                .Where(f => IsInsideRoot(rootFull, f)).ToList()
-            : new List<string>();
+        public void Report(T value) => report(value);
     }
-
-    /// <summary>
-    /// 判断候选路径是否位于工作区根目录内（防止 ../ 或绝对路径越界）
-    /// </summary>
-    private static bool IsInsideRoot(string rootFull, string candidate)
-    {
-        var full = Path.GetFullPath(candidate);
-        var root = rootFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return full.Equals(root, StringComparison.OrdinalIgnoreCase)
-            || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// 计算相对工作区根的展示路径（统一使用正斜杠）
-    /// </summary>
-    private static string ToRelativePath(string rootFull, string path)
-        => Path.GetRelativePath(rootFull, path).Replace('\\', '/');
 
     /// <summary>
     /// 检查孤儿页/死链/未收录/来源缺失
@@ -682,7 +614,7 @@ internal sealed class LlmWikiCommand : CommandBase
                 status(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在检查孤儿页/死链/未收录"));
                 if (pageCount == 0) return;
 
-                report = await _wiki.LintAsync(workspaceId: workspace.WorkspaceId);
+                report = await _wiki.LintAsync(workspace.WorkspaceId);
             }, closable: false);
 
             if (pageCount == 0)
@@ -713,12 +645,15 @@ internal sealed class LlmWikiCommand : CommandBase
 
         var wait = args.Any(a => string.Equals(a, "--wait", StringComparison.OrdinalIgnoreCase));
 
-        if (!wait && _knowledgeTasks != null)
+        if (!wait)
         {
-            var task = _knowledgeTasks.StartWikiRebuild(workspace.WorkspaceId, workspace.RootPath, workspace.UserId);
-            Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
-            Writer.WriteInfo("如需同步等待，请使用 /llmwiki -rebuild --wait");
-            return;
+            var task = await _wiki.StartRebuildAsync(workspace.WorkspaceId);
+            if (task != null)
+            {
+                Writer.WriteInfo($"已转入后台：{task.Label}（任务 {task.Id[..8]}），完成后会在此提示。");
+                Writer.WriteInfo("如需同步等待，请使用 /llmwiki -rebuild --wait");
+                return;
+            }
         }
 
         try
@@ -734,7 +669,7 @@ internal sealed class LlmWikiCommand : CommandBase
                 status(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在重建向量索引"));
                 if (pageCount == 0) return;
 
-                report = await _wiki.RebuildIndexAsync(workspaceId: workspace.WorkspaceId);
+                report = await _wiki.RebuildAsync(workspace.WorkspaceId);
             }, closable: false);
 
             if (pageCount == 0)

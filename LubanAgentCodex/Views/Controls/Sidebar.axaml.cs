@@ -42,7 +42,7 @@ public partial class Sidebar : UserControl
     private StackPanel? _pluginSection;
     private ListBox? _pluginEntryListBox;
     private IWorkspaceManager? _workspaceManager;
-    private SessionRepository? _sessionRepo;
+    private IChatSessionService? _sessionService;
     private IServiceProvider? _services;
     private CodexPluginHost? _pluginHost;
 
@@ -267,7 +267,7 @@ public partial class Sidebar : UserControl
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
-        _sessionRepo = services.GetRequiredService<SessionRepository>();
+        _sessionService = services.GetRequiredService<IChatSessionService>();
         EnsurePluginHost(services);
         LoadWorkspaces();
         LoadLlmWikiItems();
@@ -289,7 +289,7 @@ public partial class Sidebar : UserControl
     /// </summary>
     private async void LoadWorkspaces()
     {
-        if (_workspacePanel == null || _workspaceManager == null || _sessionRepo == null)
+        if (_workspacePanel == null || _workspaceManager == null || _sessionService == null)
             return;
 
         _workspacePanel.Children.Clear();
@@ -452,8 +452,8 @@ public partial class Sidebar : UserControl
             _workspacePanel.Children.Add(wsRow);
 
             // 加载该工作区的会话
-            var sessions = await _sessionRepo.GetByWorkspaceAsync(ws.WorkspaceId, _services!.ResolveUserKey());
-            foreach (var session in sessions.OrderByDescending(s => s.UpdateTime))
+            var sessions = await _sessionService.ListAsync(ws.WorkspaceId);
+            foreach (var session in sessions.OrderByDescending(s => s.UpdatedAt ?? s.CreatedAt))
             {
                 var sessRow = new Border
                 {
@@ -549,8 +549,7 @@ public partial class Sidebar : UserControl
                             null, "确定删除", danger: true);
                         if (result == true)
                         {
-                            var sessionRepo = _services!.GetRequiredService<SessionRepository>();
-                            await sessionRepo.SoftDeleteAsync(sessionCopy.SessionId, _services!.ResolveUserKey());
+                            await _sessionService!.DeleteAsync(sessionCopy.SessionId);
                             LoadWorkspaces(); // 刷新列表
                         }
                     }
@@ -685,27 +684,16 @@ public partial class Sidebar : UserControl
     /// </summary>
     private async Task CreateSessionForWorkspaceAsync(WorkspaceInfo ws)
     {
-        if (_sessionRepo == null) return;
+        if (_sessionService == null) return;
         try
         {
-            // 会话归属当前用户：直接插入仓储时仍需显式带上用户，否则新建会话按默认用户落库、当前用户列表查不到
-            var userId = _services?.ResolveUserKey() ?? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId;
-            var newSession = new DbSession
-            {
-                SessionId = Guid.NewGuid().ToString("N"),
-                UserId = userId,
-                Title = "新对话",
-                CreateTime = DateTime.Now,
-                UpdateTime = DateTime.Now,
-                IsDelete = false,
-                WorkspaceId = ws.WorkspaceId,
-            };
-            await _sessionRepo.InsertAsync(newSession);
+            // 会话归属当前用户由服务内部绑定，避免直接插库时漏带用户导致列表查不到
+            var newSession = await _sessionService.CreateAsync("新对话", ws.WorkspaceId);
             LoadWorkspaces();
             SessionSelected?.Invoke(this, new SessionItem
             {
                 SessionId = newSession.SessionId,
-                Title = newSession.Title,
+                Title = newSession.Title ?? "新对话",
             });
         }
         catch (Exception ex)
@@ -717,9 +705,9 @@ public partial class Sidebar : UserControl
     /// <summary>
     /// 双击会话项重命名
     /// </summary>
-    private async Task RenameSessionAsync(DbSession session)
+    private async Task RenameSessionAsync(SessionInfo session)
     {
-        if (_sessionRepo == null) return;
+        if (_sessionService == null) return;
         try
         {
             var parentWindow = TopLevel.GetTopLevel(this) as Window;
@@ -729,7 +717,7 @@ public partial class Sidebar : UserControl
             var result = await dialog.ShowDialog<string?>(parentWindow);
             if (!string.IsNullOrWhiteSpace(result) && result != session.Title)
             {
-                await _sessionRepo.UpdateTitleAsync(session.SessionId, result, _services!.ResolveUserKey());
+                await _sessionService.RenameAsync(session.SessionId, result);
                 LoadWorkspaces();
             }
         }

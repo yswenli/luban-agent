@@ -343,9 +343,10 @@ public sealed class KnowledgeTaskService
     }
 
     /// <summary>
-    /// 解析工作区根下的目标：单文件 / glob / 目录，结果限制在工作区内（防 ../ 越界）
+    /// 解析工作区根下的目标：单文件 / glob / 目录，结果限制在工作区内（防 ../ 越界）。
+    /// 供管理服务复用同一套校验，避免两处规则漂移。
     /// </summary>
-    private static List<string> ResolveFiles(string rootPath, string target)
+    internal static List<string> ResolveFiles(string rootPath, string target)
     {
         var rootFull = Path.GetFullPath(rootPath);
         var full = Path.IsPathRooted(target) ? target : Path.Combine(rootFull, target);
@@ -365,7 +366,7 @@ public sealed class KnowledgeTaskService
             : new List<string>();
     }
 
-    private static bool IsInsideRoot(string rootFull, string candidate)
+    internal static bool IsInsideRoot(string rootFull, string candidate)
     {
         var full = Path.GetFullPath(candidate);
         var root = rootFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -373,7 +374,7 @@ public sealed class KnowledgeTaskService
             || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ToRelativePath(string rootFull, string path)
+    internal static string ToRelativePath(string rootFull, string path)
         => Path.GetRelativePath(rootFull, path).Replace('\\', '/');
 
     /// <summary>

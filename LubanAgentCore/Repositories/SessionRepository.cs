@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// Session 仓储
 /// </summary>
-public class SessionRepository : BaseRepository<DbSession>
+public class SessionRepository : BaseRepository<DbSession>, ISessionWorkspaceQuery
 {
     /// <summary>
     /// 创建 Session 仓储实例。

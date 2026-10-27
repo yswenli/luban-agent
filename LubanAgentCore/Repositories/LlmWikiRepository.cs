@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// LLM Wiki 文件仓储
 /// </summary>
-public class LlmWikiFileRepository : BaseRepository<DbLlmWikiFile>
+public class LlmWikiFileRepository : BaseRepository<DbLlmWikiFile>, ILlmWikiFileStore
 {
     /// <summary>
     /// 创建 LLM Wiki 文件仓储实例。
@@ -58,7 +58,7 @@ public class LlmWikiFileRepository : BaseRepository<DbLlmWikiFile>
 /// <summary>
 /// LLM Wiki 切块仓储
 /// </summary>
-public class LlmWikiChunkRepository : BaseRepository<DbLlmWikiChunk>
+public class LlmWikiChunkRepository : BaseRepository<DbLlmWikiChunk>, ILlmWikiChunkStore
 {
     /// <summary>
     /// 创建 LLM Wiki 切块仓储实例。

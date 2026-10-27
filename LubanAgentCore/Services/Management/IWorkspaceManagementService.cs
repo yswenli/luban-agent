@@ -13,7 +13,11 @@ public interface IWorkspaceManagementService
     Task<WorkspaceInfo?> GetCurrentAsync(CancellationToken ct = default);
 
     /// <summary>创建工作区（<paramref name="type"/> 见 <see cref="WorkspaceTypes"/>）。</summary>
-    Task<WorkspaceInfo> CreateAsync(string name, string rootPath, string type, CancellationToken ct = default);
+    /// <param name="name">显示名；为 null 时按工作区类型取默认名。</param>
+    /// <param name="rootPath">根目录绝对路径。</param>
+    /// <param name="type">工作区类型。</param>
+    /// <param name="ct">取消令牌。</param>
+    Task<WorkspaceInfo> CreateAsync(string? name, string rootPath, string type, CancellationToken ct = default);
 
     /// <summary>删除工作区记录（不删除磁盘文件）。</summary>
     Task DeleteAsync(string workspaceId, CancellationToken ct = default);

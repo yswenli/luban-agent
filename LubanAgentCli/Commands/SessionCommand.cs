@@ -22,10 +22,9 @@ namespace LubanAgentCli.Commands;
 public class SessionCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
-    private readonly SessionRepository _sessionRepo;
+    private readonly IChatSessionService _sessions;
     private readonly SessionMessageRepository _messageRepo;
-    private readonly IWorkspaceManager _workspaceManager;
-    private readonly string _userId;
+    private readonly IWorkspaceManagementService _workspaces;
 
     /// <summary>
     /// 命令名称
@@ -42,22 +41,20 @@ public class SessionCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="sessionManager">会话管理器</param>
-    /// <param name="sessionRepo">会话仓储</param>
-    /// <param name="messageRepo">会话消息仓储</param>
-    /// <param name="workspaceManager">工作区管理器（提供当前工作区ID）</param>
-    /// <param name="userContext">当前用户上下文</param>
+    /// <param name="sessionManager">会话管理器（提供「当前会话」标记）</param>
+    /// <param name="sessions">会话管理服务</param>
+    /// <param name="messageRepo">会话消息仓储（列表预览）</param>
+    /// <param name="workspaces">工作区管理服务（提供当前工作区ID）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
-    public SessionCommand(ConfigManager configManager, IConfiguration configuration, ISessionManager sessionManager, SessionRepository sessionRepo, SessionMessageRepository messageRepo,
-        IWorkspaceManager workspaceManager, IUserContext userContext, ITuiOutputWriter writer, ITuiUiService ui)
+    public SessionCommand(ConfigManager configManager, IConfiguration configuration, IChatSessionService sessions, ISessionManager sessionManager, SessionMessageRepository messageRepo,
+        IWorkspaceManagementService workspaces, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
+        _sessions = sessions;
         _sessionManager = sessionManager;
-        _sessionRepo = sessionRepo;
         _messageRepo = messageRepo;
-        _workspaceManager = workspaceManager;
-        _userId = userContext.ResolveUserKey();
+        _workspaces = workspaces;
     }
 
     /// <summary>
@@ -117,14 +114,14 @@ public class SessionCommand : CommandBase
     /// </summary>
     private async Task ListSessionsAsync()
     {
-        var wsId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
+        var wsId = (await _workspaces.GetCurrentAsync())?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
             Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId, _userId);
+        var sessions = await _sessions.ListAsync(wsId);
 
         if (sessions.Count == 0)
         {
@@ -143,7 +140,7 @@ public class SessionCommand : CommandBase
             var isCurrent = _sessionManager.CurrentSession?.SessionId == session.SessionId;
             var marker = isCurrent ? " (当前)" : "";
             var title = (session.Title ?? "未命名") + marker;
-            var updateTime = session.UpdateTime.ToString("yyyy-MM-dd HH:mm");
+            var updateTime = session.UpdatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "-";
             var messageCount = session.MessageCount.ToString();
             var tokens = session.TotalTokens.ToString();
             var preview = previews.TryGetValue(session.SessionId, out var p) ? p : "";
@@ -160,7 +157,7 @@ public class SessionCommand : CommandBase
         if (selected >= 0 && selected < sessions.Count)
         {
             var session = sessions[selected];
-            await _sessionManager.SetCurrentSessionAsync(session.SessionId);
+            await _sessions.SwitchAsync(session.SessionId);
             Writer.WriteSuccess($"已切换到会话: {session.Title}（下一轮对话自动加载该会话历史）");
         }
     }
@@ -188,7 +185,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        var session = await _sessionManager.CreateSessionAsync(title: title);
+        var session = await _sessions.CreateAsync(title, workspaceId: null);
         Writer.WriteSuccess($"已创建并切换到新会话: {session.Title}");
     }
 
@@ -198,14 +195,14 @@ public class SessionCommand : CommandBase
     /// <param name="identifier">会话标识</param>
     private async Task SwitchSessionAsync(string? identifier)
     {
-        var wsId = _workspaceManager.CurrentWorkspace?.WorkspaceId;
+        var wsId = (await _workspaces.GetCurrentAsync())?.WorkspaceId;
         if (string.IsNullOrEmpty(wsId))
         {
             Writer.WriteError("请先使用 /work -switch 切换到工作区");
             return;
         }
 
-        var sessions = await _sessionRepo.GetByWorkspaceAsync(wsId, _userId);
+        var sessions = await _sessions.ListAsync(wsId);
         if (sessions.Count == 0)
         {
             Writer.WriteError("当前工作区没有会话");
@@ -224,12 +221,12 @@ public class SessionCommand : CommandBase
             if (chosen is null) return;
 
             var session = sessions[chosen.Value];
-            await _sessionManager.SetCurrentSessionAsync(session.SessionId);
+            await _sessions.SwitchAsync(session.SessionId);
             Writer.WriteSuccess($"已切换到会话: {session.Title}（下一轮对话自动加载该会话历史）");
             return;
         }
 
-        DbSession? matched = null;
+        SessionInfo? matched = null;
 
         if (int.TryParse(identifier, out var index) && index >= 1 && index <= sessions.Count)
         {
@@ -259,7 +256,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        await _sessionManager.SetCurrentSessionAsync(matched.SessionId);
+        await _sessions.SwitchAsync(matched.SessionId);
         Writer.WriteSuccess($"已切换到会话: {matched.Title}（下一轮对话自动加载该会话历史）");
     }
 
@@ -274,7 +271,7 @@ public class SessionCommand : CommandBase
             return;
         }
 
-        await _sessionManager.ClearAllSessionsAsync(_workspaceManager.CurrentWorkspace?.WorkspaceId);
+        await _sessions.ClearAllAsync((await _workspaces.GetCurrentAsync())?.WorkspaceId);
         Writer.WriteSuccess("已删除全部会话数据");
     }
 }

@@ -1,31 +1,54 @@
 namespace LubanAgentCore.Services.Management;
 
-/// <summary>工作区管理实现。</summary>
+/// <summary>
+/// 工作区管理实现：严格转发 <see cref="IWorkspaceManager"/>，不承载关键字解析、会话数聚合与渲染。
+/// </summary>
+/// <remarks>
+/// 授权确认依赖 UI 委托（<see cref="IWorkspaceManager.AuthorizationPrompt"/>），故 <see cref="GrantAccessAsync"/>
+/// 仍走 <see cref="IWorkspaceManager.EnsureAuthorizedAsync"/>，由宿主设置确认回调。
+/// </remarks>
 public sealed class WorkspaceManagementService : IWorkspaceManagementService
 {
-    private const string Source = "WorkCommand / Codex 工作区面板";
+    private readonly IWorkspaceManager _workspaces;
+
+    /// <summary>创建工作区管理服务。</summary>
+    /// <param name="workspaces">工作区管理器。</param>
+    public WorkspaceManagementService(IWorkspaceManager workspaces)
+    {
+        _workspaces = workspaces ?? throw new ArgumentNullException(nameof(workspaces));
+    }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<WorkspaceInfo>> ListAsync(CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+    public async Task<IReadOnlyList<WorkspaceInfo>> ListAsync(CancellationToken ct = default)
+    {
+        var workspaces = await _workspaces.GetUserWorkspacesAsync();
+        return workspaces.ToList();
+    }
 
     /// <inheritdoc />
     public Task<WorkspaceInfo?> GetCurrentAsync(CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+        => Task.FromResult(_workspaces.CurrentWorkspace);
 
     /// <inheritdoc />
-    public Task<WorkspaceInfo> CreateAsync(string name, string rootPath, string type, CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+    public Task<WorkspaceInfo> CreateAsync(string? name, string rootPath, string type, CancellationToken ct = default)
+        => _workspaces.CreateWorkspaceAsync(rootPath, name, type);
 
     /// <inheritdoc />
-    public Task DeleteAsync(string workspaceId, CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+    public async Task DeleteAsync(string workspaceId, CancellationToken ct = default)
+    {
+        await _workspaces.DeleteWorkspaceAsync(workspaceId);
+    }
 
     /// <inheritdoc />
     public Task SwitchAsync(string workspaceId, CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+        => _workspaces.SwitchWorkspaceAsync(workspaceId);
 
     /// <inheritdoc />
-    public Task GrantAccessAsync(string workspaceId, CancellationToken ct = default)
-        => throw NotYetImplemented.For("Task 17", Source);
+    public async Task GrantAccessAsync(string workspaceId, CancellationToken ct = default)
+    {
+        var workspace = await _workspaces.GetWorkspaceAsync(workspaceId);
+        if (workspace is null) return;
+
+        await _workspaces.EnsureAuthorizedAsync(workspace);
+    }
 }
