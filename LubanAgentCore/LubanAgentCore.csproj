@@ -18,6 +18,9 @@
 		     显式钉低版本会触发 NU1605 包降级（NuGet 直接引用最近者优先）。 -->
 		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
 		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+		<!-- DPAPI 凭据保护（Security/DpapiCredentialProtector）：net10.0 为平台中立 TFM，
+		     ProtectedData 不在共享框架内，必须显式引用；非 Windows 平台运行时 IsAvailable=false。 -->
+		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.5" />
 		<PackageReference Include="SqlSugarCore" Version="5.1.4.221" />
 	</ItemGroup>
 

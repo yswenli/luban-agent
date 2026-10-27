@@ -26,7 +26,10 @@ global using LubanAgentCore.Models;
 // Global using 引用 - 内部命名空间
 global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Retrieval;
+global using LubanAgentCore.Security;
 global using LubanAgentCore.Services;
+global using LubanAgentCore.Services.Management;
+global using LubanAgentCore.Services.Management.Models;
 
 global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.AI;

@@ -131,6 +131,18 @@ public static class AgentHostBuilder
         services.AddScoped<IAgentSessionExtension, PluginSessionExtension>();
         services.AddScoped<IAgentSessionExtension, ConnectorSessionExtension>();
 
+        // ── 管理服务：CLI 与 Codex 共用的唯一业务入口（Task 13 建契约，14–19 填业务）──
+        services.AddScoped<IProviderModelManagementService, ProviderModelManagementService>();
+        services.AddScoped<ISkillManagementService, SkillManagementService>();
+        services.AddScoped<IRuleManagementService, RuleManagementService>();
+        services.AddScoped<IMcpManagementService, McpManagementService>();
+        services.AddScoped<IConnectorManagementService, ConnectorManagementService>();
+        services.AddScoped<IWorkspaceManagementService, WorkspaceManagementService>();
+        services.AddScoped<IChatSessionService, ChatSessionService>();
+        services.AddScoped<ILlmWikiManagementService, LlmWikiManagementService>();
+        services.AddScoped<IPluginManagementService, PluginManagementService>();
+        services.AddSingleton<ICredentialProtector, DpapiCredentialProtector>();
+
         services.AddScoped<IWorkspaceContextProvider>(sp =>
             new DelegateWorkspaceContextProvider(() => sp.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId));
 
