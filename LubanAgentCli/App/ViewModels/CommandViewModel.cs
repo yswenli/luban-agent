@@ -251,7 +251,7 @@ internal sealed class CommandViewModel
             nameof(RuleCommand) => (TCommand)(object)new RuleCommand(configManager, configuration,
                 _services.GetRequiredService<IRuleManagementService>(), _writer, _ui),
             nameof(MCPCommand) => (TCommand)(object)new MCPCommand(configManager, configuration,
-                _services.GetRequiredService<MCPRegistry>(), _writer, _ui),
+                _services.GetRequiredService<IMcpManagementService>(), _writer, _ui),
             nameof(SessionCommand) => (TCommand)(object)new SessionCommand(configManager, configuration,
                 _services.GetRequiredService<ISessionManager>(),
                 _services.GetRequiredService<SessionRepository>(),

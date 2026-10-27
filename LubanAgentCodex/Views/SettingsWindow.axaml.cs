@@ -33,7 +33,6 @@ using LubanAgentCodex.Security;
 using LubanAgentA2A.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text;
-using System.Text.Json;
 
 namespace LubanAgentCodex.Views;
 
@@ -96,7 +95,8 @@ public partial class SettingsWindow : Window
     /// <summary>规则管理服务（容器不可用时为 null）。</summary>
     private IRuleManagementService? RuleManagement => _services?.GetService<IRuleManagementService>();
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+    /// <summary>MCP 管理服务（容器不可用时为 null）。</summary>
+    private IMcpManagementService? McpManagement => _services?.GetService<IMcpManagementService>();
 
     private readonly Dictionary<string, Control> _editorFields = new(StringComparer.Ordinal);
 
@@ -230,19 +230,6 @@ public partial class SettingsWindow : Window
 
         var baseDir = Path.Combine(_selectedWorkspace!.RootPath, ".luban-agent");
         return (Path.Combine(baseDir, "skills"), Path.Combine(baseDir, "rules"), Path.Combine(baseDir, "mcps"));
-    }
-
-    /// <summary>当前类型对应的目录（仅工作区配置类）。</summary>
-    private string CurrentDir()
-    {
-        var dirs = ResolveDirs();
-        return _tab switch
-        {
-            SettingsTabKind.Skill => dirs.skills,
-            SettingsTabKind.Rule => dirs.rules,
-            SettingsTabKind.A2A => CurrentA2ADir() ?? "",
-            _ => dirs.mcps,
-        };
     }
 
     /// <summary>当前工作区的 A2A 配置目录；未选工作区时为 null。</summary>
@@ -380,15 +367,8 @@ public partial class SettingsWindow : Window
         if (_tab == SettingsTabKind.Rule)
             return RuleManagement?.ListFileIds(ScopeRoot).ToList() ?? new List<string>();
 
-        var dir = CurrentDir();
-        if (!Directory.Exists(dir)) return new List<string>();
-
-        return Directory.GetFiles(dir, "*.json")
-            .Select(f => Path.GetFileNameWithoutExtension(f))
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Select(n => n!)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // MCP：目录约定由管理服务统一持有
+        return McpManagement?.ListFileIds(ScopeRoot).ToList() ?? new List<string>();
     }
 
     private void RefreshItems()
@@ -499,7 +479,7 @@ public partial class SettingsWindow : Window
 
     private bool ItemExists(string name)
     {
-        if (_tab is SettingsTabKind.Skill or SettingsTabKind.Rule)
+        if (_tab is SettingsTabKind.Skill or SettingsTabKind.Rule or SettingsTabKind.Mcp)
             return EnumerateItems().Contains(name, StringComparer.OrdinalIgnoreCase);
 
         var dirs = ResolveDirs();
@@ -590,10 +570,8 @@ public partial class SettingsWindow : Window
             }
             else
             {
-                var dir = CurrentDir();
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, name2 + ".json"),
-                    JsonSerializer.Serialize(new McpServerConfig { Name = name2 }, JsonOpts));
+                (McpManagement ?? throw new InvalidOperationException("MCP 管理服务不可用"))
+                    .SaveFile(null, new McpServerConfig { Name = name2 }, ScopeRoot);
             }
         }
         catch (Exception ex)
@@ -709,19 +687,9 @@ public partial class SettingsWindow : Window
 
     private void BuildMcpEditor(StackPanel host, string key)
     {
-        var dirs = ResolveDirs();
-        var path = Path.Combine(dirs.mcps, key + ".json");
-
-        McpServerConfig cfg;
-        if (File.Exists(path))
-        {
-            var json = File.ReadAllText(path);
-            cfg = JsonSerializer.Deserialize<McpServerConfig>(json) ?? new McpServerConfig();
-        }
-        else
-        {
-            cfg = new McpServerConfig { Name = key };
-        }
+        var cfg = (McpManagement ?? throw new InvalidOperationException("MCP 管理服务不可用"))
+                      .ReadFile(key, ScopeRoot)
+                  ?? new McpServerConfig { Name = key };
 
         SetField("Name", AddField(host, "Name（必填，即文件名）", cfg.Name));
         SetField("Description", AddField(host, "Description", cfg.Description));
@@ -1385,13 +1353,13 @@ public partial class SettingsWindow : Window
         return Task.CompletedTask;
     }
 
-    private async Task SaveMcpAsync()
+    private Task SaveMcpAsync()
     {
         var name = GetText("Name").Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
             SetHint("MCP 服务的 Name 不能为空。", true);
-            return;
+            return Task.CompletedTask;
         }
 
         var args = McpArgsParser.Parse(GetText("Args"));
@@ -1406,23 +1374,14 @@ public partial class SettingsWindow : Window
             Enabled = GetToggle("Enabled"),
         };
 
-        var dirs = ResolveDirs();
-        Directory.CreateDirectory(dirs.mcps);
-
-        var oldKey = _selectedItemKey;
-        if (!string.IsNullOrEmpty(oldKey) && oldKey != name)
-        {
-            var oldPath = Path.Combine(dirs.mcps, oldKey + ".json");
-            if (File.Exists(oldPath)) File.Delete(oldPath);
-        }
-
-        await File.WriteAllTextAsync(Path.Combine(dirs.mcps, name + ".json"),
-            JsonSerializer.Serialize(cfg, JsonOpts));
+        (McpManagement ?? throw new InvalidOperationException("MCP 管理服务不可用"))
+            .SaveFile(_selectedItemKey, cfg, ScopeRoot);
 
         _selectedItemKey = name;
         RefreshItems();
         BuildEditor();
         SetSavedHint();
+        return Task.CompletedTask;
     }
 
     private async Task SaveA2AAsync()
@@ -1635,9 +1594,8 @@ public partial class SettingsWindow : Window
                     break;
 
                 default:
-                    var dirs = ResolveDirs();
-                    var file = Path.Combine(dirs.mcps, key + ".json");
-                    if (File.Exists(file)) File.Delete(file);
+                    await (McpManagement ?? throw new InvalidOperationException("MCP 管理服务不可用"))
+                        .DeleteAsync(key, ManagedOrigin.File, ScopeRoot);
                     break;
             }
         }

@@ -19,9 +19,13 @@ namespace LubanAgentCli.Commands;
 /// <summary>
 /// MCP 命令 - 查看和管理 MCP 客户端 (list/add/update/delete/switch/connect/tools)
 /// </summary>
+/// <remarks>
+/// 所有读写都经 <see cref="IMcpManagementService"/>；命令层只保留交互编排与面向用户的文案，
+/// 读取原始配置（<see cref="ConfigManager.McpServers"/>）仅用于填充表单初值（沿用 /skill、/rule 口径）。
+/// </remarks>
 public class MCPCommand : CommandBase
 {
-    private readonly MCPRegistry _mcpRegistry;
+    private readonly IMcpManagementService _mcpManagement;
 
     /// <summary>
     /// 命令名称
@@ -38,14 +42,14 @@ public class MCPCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="mcpRegistry">MCP 注册表</param>
+    /// <param name="mcpManagement">MCP 管理服务</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
-    public MCPCommand(ConfigManager configManager, IConfiguration configuration, MCPRegistry mcpRegistry,
-        ITuiOutputWriter writer, ITuiUiService ui)
+    public MCPCommand(ConfigManager configManager, IConfiguration configuration,
+        IMcpManagementService mcpManagement, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
-        _mcpRegistry = mcpRegistry;
+        _mcpManagement = mcpManagement ?? throw new ArgumentNullException(nameof(mcpManagement));
     }
 
     /// <summary>
@@ -107,55 +111,30 @@ public class MCPCommand : CommandBase
     /// <summary>
     /// 列出所有 MCP 客户端（已连接、已禁用）
     /// </summary>
-    private Task ListClientsAsync()
+    private async Task ListClientsAsync()
     {
-        var clients = _mcpRegistry.GetAll();
-        var disabledExternal = ConfigManager.McpServers
-            .Where(s => !s.Enabled)
-            .ToList();
+        var items = await _mcpManagement.ListAsync();
 
-        var disabledBuiltin = ConfigManager.DisabledBuiltinMcpClients;
-
-        if (clients.Count == 0 && disabledExternal.Count == 0 && disabledBuiltin.Count == 0)
+        if (items.Count == 0)
         {
             Writer.WriteInfo("暂无 MCP 客户端");
-            return Task.CompletedTask;
+            return;
         }
 
-        var rows = new List<IReadOnlyList<string>>();
-
-        foreach (var client in clients)
+        var rows = items.Select(item =>
         {
-            var status = client.IsConnected ? "已连接" : "未连接";
-            var type = _mcpRegistry.IsBuiltin(client.Name) ? "内置" : "外部";
-            rows.Add(new[] { $"[{status}]", $"[{type}]", client.Name, client.Description });
-        }
-
-        if (disabledExternal.Count > 0)
-        {
-            foreach (var cfg in disabledExternal)
-            {
-                rows.Add(new[] { "[已禁用]", "[外部]", cfg.Name, cfg.Description });
-            }
-        }
-
-        if (disabledBuiltin.Count > 0)
-        {
-            foreach (var name in disabledBuiltin)
-            {
-                rows.Add(new[] { "[已禁用]", "[内置]", name, "" });
-            }
-        }
+            var status = item.IsEnabled ? (item.IsConnected ? "已连接" : "未连接") : "已禁用";
+            var type = item.IsBuiltin ? "内置" : "外部";
+            return (IReadOnlyList<string>)new[] { $"[{status}]", $"[{type}]", item.Name, item.Description };
+        }).ToList();
 
         Ui.ShowTable("MCP 客户端", new[] { "状态", "类型", "名称", "描述" }, rows);
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 添加外部 MCP 服务器
     /// </summary>
-    private Task AddServerAsync()
+    private async Task AddServerAsync()
     {
         var values = Ui.ShowForm("添加外部 MCP 服务器", new[]
         {
@@ -164,25 +143,26 @@ public class MCPCommand : CommandBase
             new FormField("启动命令 (如 npx)"),
             new FormField("命令参数（一行一个，可含空格）", Required: false, Multiline: true)
         });
-        if (values is null) return Task.CompletedTask;
+        if (values is null) return;
 
         var name = values[0].Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(name))
         {
             Writer.WriteError("名称不能为空");
-            return Task.CompletedTask;
+            return;
         }
 
-        if (_mcpRegistry.IsBuiltin(name))
+        var all = await _mcpManagement.ListAsync();
+        if (all.Any(i => i.IsBuiltin && i.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
             Writer.WriteError($"名称 '{name}' 与内置客户端冲突");
-            return Task.CompletedTask;
+            return;
         }
 
         if (ConfigManager.McpServers.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
             Writer.WriteError($"名称 '{name}' 已存在");
-            return Task.CompletedTask;
+            return;
         }
 
         var description = values[1].Trim() ?? "";
@@ -191,7 +171,7 @@ public class MCPCommand : CommandBase
         if (string.IsNullOrEmpty(command))
         {
             Writer.WriteError("启动命令不能为空");
-            return Task.CompletedTask;
+            return;
         }
 
         var argsInput = values[3].Trim() ?? "";
@@ -208,7 +188,7 @@ public class MCPCommand : CommandBase
                 Enabled = true
             };
 
-            ConfigManager.AddMcpServer(cfg);
+            await _mcpManagement.AddAsync(cfg);
             Writer.WriteSuccess($"外部 MCP 服务器 '{name}' 已添加");
             Writer.WriteInfo($"使用 /mcp connect {name} 连接");
         }
@@ -217,25 +197,23 @@ public class MCPCommand : CommandBase
             Logger.Error("MCPCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 更新外部 MCP 服务器配置
     /// </summary>
-    private Task UpdateServerAsync()
+    private async Task UpdateServerAsync()
     {
         var externalServers = ConfigManager.McpServers;
         if (externalServers.Count == 0)
         {
             Writer.WriteInfo("没有外部 MCP 服务器可更新");
-            return Task.CompletedTask;
+            return;
         }
 
         var chosen = Ui.Choose("选择要更新的外部 MCP 服务器",
             externalServers.Select(s => $"{s.Name}{(s.Enabled ? "" : " [已禁用]")}").ToList());
-        if (chosen is null) return Task.CompletedTask;
+        if (chosen is null) return;
 
         var selected = externalServers[chosen.Value];
 
@@ -245,7 +223,7 @@ public class MCPCommand : CommandBase
             new FormField("启动命令", Required: false, InitialValue: selected.Command),
             new FormField("命令参数（一行一个，可含空格）", Required: false, InitialValue: McpArgsParser.Format(selected.Args), Multiline: true)
         });
-        if (values is null) return Task.CompletedTask;
+        if (values is null) return;
 
         var newDesc = values[0].Trim();
         if (!string.IsNullOrEmpty(newDesc)) selected.Description = newDesc;
@@ -261,7 +239,7 @@ public class MCPCommand : CommandBase
 
         try
         {
-            ConfigManager.UpdateMcpServer(selected);
+            await _mcpManagement.UpdateAsync(selected);
             Writer.WriteSuccess($"MCP 服务器 '{selected.Name}' 已更新");
         }
         catch (Exception ex)
@@ -269,8 +247,6 @@ public class MCPCommand : CommandBase
             Logger.Error("MCPCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -297,19 +273,9 @@ public class MCPCommand : CommandBase
             return;
         }
 
-        var client = _mcpRegistry.Get(targetName);
-        if (client != null && client.IsConnected)
-        {
-            try
-            {
-                await client.DisconnectAsync();
-            }
-            catch { }
-        }
-
         try
         {
-            ConfigManager.RemoveMcpServer(targetName);
+            await _mcpManagement.DeleteAsync(targetName, ManagedOrigin.Config);
             Writer.WriteSuccess($"MCP 服务器 '{targetName}' 已删除");
         }
         catch (Exception ex)
@@ -324,29 +290,7 @@ public class MCPCommand : CommandBase
     /// </summary>
     private async Task SwitchServerAsync()
     {
-        var allItems = new List<(string Name, string DisplayName, bool IsBuiltin, bool IsEnabled)>();
-
-        foreach (var client in _mcpRegistry.GetAll())
-        {
-            var isBuiltin = _mcpRegistry.IsBuiltin(client.Name);
-            allItems.Add((client.Name, client.Name, isBuiltin, true));
-        }
-
-        foreach (var name in ConfigManager.DisabledBuiltinMcpClients)
-        {
-            if (!allItems.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((name, name, true, false));
-            }
-        }
-
-        foreach (var cfg in ConfigManager.McpServers.Where(s => !s.Enabled))
-        {
-            if (!allItems.Any(a => a.Name.Equals(cfg.Name, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((cfg.Name, cfg.Name, false, false));
-            }
-        }
+        var allItems = await _mcpManagement.ListAsync();
 
         if (allItems.Count == 0)
         {
@@ -359,7 +303,7 @@ public class MCPCommand : CommandBase
             {
                 var status = item.IsEnabled ? "已启用" : "已禁用";
                 var type = item.IsBuiltin ? "内置" : "外部";
-                return $"{item.DisplayName} [{type}] [{status}]";
+                return $"{item.Name} [{type}] [{status}]";
             }).ToList());
         if (chosen is null) return;
 
@@ -367,22 +311,7 @@ public class MCPCommand : CommandBase
 
         try
         {
-            if (selected.IsBuiltin)
-            {
-                ConfigManager.SetBuiltinMcpClientEnabled(selected.Name, !selected.IsEnabled);
-            }
-            else
-            {
-                if (selected.IsEnabled)
-                {
-                    var client = _mcpRegistry.Get(selected.Name);
-                    if (client != null && client.IsConnected)
-                    {
-                        try { await client.DisconnectAsync(); } catch { }
-                    }
-                }
-                ConfigManager.SetMcpServerEnabled(selected.Name, !selected.IsEnabled);
-            }
+            await _mcpManagement.SetEnabledAsync(selected.Name, !selected.IsEnabled);
 
             var newState = selected.IsEnabled ? "已禁用" : "已启用";
             Writer.WriteSuccess($"MCP 客户端 '{selected.Name}' {newState}");
@@ -400,35 +329,44 @@ public class MCPCommand : CommandBase
     /// <param name="clientName">客户端名称</param>
     private async Task ConnectAsync(string? clientName)
     {
+        var items = await _mcpManagement.ListAsync();
+
         if (string.IsNullOrEmpty(clientName))
         {
-            var clients = _mcpRegistry.GetAll();
-            if (clients.Count == 0)
+            var candidates = items.Where(i => i.IsEnabled).ToList();
+            if (candidates.Count == 0)
             {
                 Writer.WriteError("暂无 MCP 客户端");
                 return;
             }
 
             var chosen = Ui.Choose("选择要连接的 MCP 客户端",
-                clients.Select(c => $"{c.Name} - {c.Description}").ToList());
+                candidates.Select(c => $"{c.Name} - {c.Description}").ToList());
             if (chosen is null) return;
 
-            clientName = clients[chosen.Value].Name;
+            clientName = candidates[chosen.Value].Name;
         }
 
-        var client = _mcpRegistry.Get(clientName);
-        if (client == null)
+        if (items.All(i => !i.IsEnabled || !i.Name.Equals(clientName, StringComparison.OrdinalIgnoreCase)))
         {
             Writer.WriteError($"未找到客户端: {clientName}");
             return;
         }
 
-        Writer.WriteLine($"正在连接 {clientName}...");
-        var success = await client.ConnectAsync();
-        if (success)
-            Writer.WriteSuccess("连接成功");
-        else
-            Writer.WriteError("连接失败");
+        try
+        {
+            Writer.WriteLine($"正在连接 {clientName}...");
+            var success = await _mcpManagement.ConnectAsync(clientName);
+            if (success)
+                Writer.WriteSuccess("连接成功");
+            else
+                Writer.WriteError("连接失败");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("MCPCommand 操作异常", ex);
+            Writer.WriteError(ex.Message);
+        }
     }
 
     /// <summary>
@@ -437,30 +375,32 @@ public class MCPCommand : CommandBase
     /// <param name="clientName">客户端名称</param>
     private async Task ListToolsAsync(string? clientName)
     {
+        var items = await _mcpManagement.ListAsync();
+
         if (string.IsNullOrEmpty(clientName))
         {
-            var clients = _mcpRegistry.GetAll();
-            if (clients.Count == 0)
+            var candidates = items.Where(i => i.IsEnabled).ToList();
+            if (candidates.Count == 0)
             {
                 Writer.WriteError("暂无 MCP 客户端");
                 return;
             }
 
             var chosen = Ui.Choose("选择要查看工具的 MCP 客户端",
-                clients.Select(c => $"{c.Name} - {c.Description}").ToList());
+                candidates.Select(c => $"{c.Name} - {c.Description}").ToList());
             if (chosen is null) return;
 
-            clientName = clients[chosen.Value].Name;
+            clientName = candidates[chosen.Value].Name;
         }
 
-        var client = _mcpRegistry.Get(clientName);
-        if (client == null)
+        var entry = items.FirstOrDefault(i => i.IsEnabled && i.Name.Equals(clientName, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
         {
             Writer.WriteError($"未找到客户端: {clientName}");
             return;
         }
 
-        if (!client.IsConnected)
+        if (!entry.IsConnected)
         {
             Writer.WriteError($"客户端 {clientName} 未连接，请先连接");
             return;
@@ -470,10 +410,18 @@ public class MCPCommand : CommandBase
         Writer.WriteHeader($"{clientName} 可用的工具：");
         Writer.WriteLine();
 
-        var tools = await client.ListToolsAsync();
-        foreach (var tool in tools)
+        try
         {
-            Writer.WriteLine($"  - {tool.Name}: {tool.Description}");
+            var tools = await _mcpManagement.ListToolsAsync(clientName);
+            foreach (var tool in tools)
+            {
+                Writer.WriteLine($"  - {tool.Name}: {tool.Description}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("MCPCommand 操作异常", ex);
+            Writer.WriteError(ex.Message);
         }
     }
 }
