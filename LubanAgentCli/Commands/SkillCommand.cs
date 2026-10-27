@@ -19,6 +19,7 @@ namespace LubanAgentCli.Commands;
 public class SkillCommand : CommandBase
 {
     private readonly SkillRegistry _skillRegistry;
+    private readonly ISkillManagementService _skillManagement;
     private readonly SpinnerService _spinner;
 
     /// <summary>
@@ -36,15 +37,17 @@ public class SkillCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="skillRegistry">Skill 注册表</param>
+    /// <param name="skillRegistry">Skill 注册表（仅用于执行 Skill）</param>
+    /// <param name="skillManagement">Skill 管理服务</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     /// <param name="spinner">会话级加载指示器</param>
     public SkillCommand(ConfigManager configManager, IConfiguration configuration, SkillRegistry skillRegistry,
-        ITuiOutputWriter writer, ITuiUiService ui, SpinnerService spinner)
+        ISkillManagementService skillManagement, ITuiOutputWriter writer, ITuiUiService ui, SpinnerService spinner)
         : base(configManager, configuration, writer, ui)
     {
         _skillRegistry = skillRegistry;
+        _skillManagement = skillManagement ?? throw new ArgumentNullException(nameof(skillManagement));
         _spinner = spinner ?? throw new ArgumentNullException(nameof(spinner));
     }
 
@@ -99,65 +102,62 @@ public class SkillCommand : CommandBase
     /// <summary>
     /// 列出所有 Skill（按分类分组）
     /// </summary>
-    private Task ListSkillsAsync()
+    private async Task ListSkillsAsync()
     {
-        var skills = _skillRegistry.GetAll();
-        var customIds = new HashSet<string>(ConfigManager.CustomSkills.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
-        var disabledBuiltin = new HashSet<string>(ConfigManager.DisabledBuiltinSkills, StringComparer.OrdinalIgnoreCase);
+        var items = await _skillManagement.ListAsync();
 
-        if (skills.Count == 0 && ConfigManager.CustomSkills.Count == 0 && disabledBuiltin.Count == 0)
+        if (items.Count == 0)
         {
             Writer.WriteInfo("暂无可用 Skill");
-            return Task.CompletedTask;
+            return;
         }
 
         var rows = new List<IReadOnlyList<string>>();
+        var enabled = items.Where(i => i.IsEnabled).ToList();
 
-        foreach (var category in skills.Select(s => s.Category).Distinct())
+        foreach (var category in enabled.Select(s => s.Category).Distinct())
         {
-            foreach (var skill in skills.Where(s => s.Category == category))
+            foreach (var skill in enabled.Where(s => s.Category == category))
             {
-                var tags = new List<string>();
-                if (customIds.Contains(skill.Id))
-                {
-                    tags.Add("自定义");
-                    var cfg = ConfigManager.CustomSkills.First(c => c.Id == skill.Id);
-                    if (!cfg.Enabled) tags.Add("已禁用");
-                }
-
                 rows.Add(new[]
                 {
                     category,
                     skill.Id,
                     skill.Name,
                     skill.Description,
-                    string.Join("/", tags),
-                    skill.Examples.Any() ? skill.Examples.First() : ""
+                    OriginTag(skill.Origin),
+                    skill.Examples.Count > 0 ? skill.Examples[0] : ""
                 });
             }
         }
 
-        foreach (var id in disabledBuiltin)
+        foreach (var item in items.Where(i => !i.IsEnabled && i.IsBuiltin))
         {
-            rows.Add(new[] { "已禁用的内置 Skill", id, "", "", "已禁用", "" });
+            rows.Add(new[] { "已禁用的内置 Skill", item.Id, "", "", "已禁用", "" });
         }
 
-        foreach (var cfg in ConfigManager.CustomSkills.Where(c => !c.Enabled))
+        foreach (var item in items.Where(i => !i.IsEnabled && i.IsCustom))
         {
-            rows.Add(new[] { "已禁用的自定义 Skill", cfg.Id, cfg.Name, "", "自定义/已禁用", "" });
+            rows.Add(new[] { "已禁用的自定义 Skill", item.Id, item.Name, "", "自定义/已禁用", "" });
         }
 
         Ui.ShowTable("所有 Skill", new[] { "分类", "ID", "名称", "描述", "标记", "示例" }, rows);
-
-        return Task.CompletedTask;
     }
+
+    /// <summary>来源显示文案（内置 / 文件 / 自定义）。</summary>
+    private static string OriginTag(ManagedOrigin origin) => origin switch
+    {
+        ManagedOrigin.Builtin => "内置",
+        ManagedOrigin.File => "文件",
+        _ => "自定义",
+    };
 
     /// <summary>
     /// 添加自定义 Skill
     /// </summary>
-    private Task AddSkillAsync()
+    private async Task AddSkillAsync()
     {
-        // 一次完整表单；ID 重复校验在表单返回后进行（失败即终止，与原行为一致）
+        // 一次完整表单；ID 重复校验在表单返回后由服务完成（失败即终止，与原行为一致）
         var values = Ui.ShowForm("添加自定义 Skill", new[]
         {
             new FormField("Skill ID"),
@@ -167,22 +167,9 @@ public class SkillCommand : CommandBase
             new FormField("提示词模板", Multiline: true),
             new FormField("示例（可选，逗号分隔）", Required: false)
         });
-        if (values is null) return Task.CompletedTask; // 用户取消
+        if (values is null) return; // 用户取消
 
         var id = values[0].Trim().ToLowerInvariant();
-
-        if (_skillRegistry.Get(id) != null)
-        {
-            Writer.WriteError($"ID '{id}' 已存在");
-            return Task.CompletedTask;
-        }
-
-        if (ConfigManager.CustomSkills.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-        {
-            Writer.WriteError($"ID '{id}' 已存在于自定义 Skill 中");
-            return Task.CompletedTask;
-        }
-
         var name = values[1].Trim();
         var description = values[2].Trim();
 
@@ -191,11 +178,6 @@ public class SkillCommand : CommandBase
             category = "custom";
 
         var promptTemplate = values[4];
-        if (string.IsNullOrEmpty(promptTemplate))
-        {
-            Writer.WriteError("提示词模板不能为空");
-            return Task.CompletedTask;
-        }
 
         var examplesInput = values[5].Trim();
         var examples = string.IsNullOrEmpty(examplesInput)
@@ -215,7 +197,7 @@ public class SkillCommand : CommandBase
                 Enabled = true
             };
 
-            ConfigManager.AddCustomSkill(cfg);
+            await _skillManagement.AddAsync(cfg);
             Writer.WriteSuccess($"自定义 Skill '{name}' ({id}) 已添加");
         }
         catch (Exception ex)
@@ -223,26 +205,24 @@ public class SkillCommand : CommandBase
             Logger.Error("SkillCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 更新自定义 Skill
     /// </summary>
-    private Task UpdateSkillAsync()
+    private async Task UpdateSkillAsync()
     {
         var customSkills = ConfigManager.CustomSkills;
         if (customSkills.Count == 0)
         {
             Writer.WriteInfo("没有自定义 Skill 可更新");
-            return Task.CompletedTask;
+            return;
         }
 
         // 编号菜单 → Choose 对话框
         var chosen = Ui.Choose("选择要更新的自定义 Skill",
             customSkills.Select(s => $"{s.Name} ({s.Id}){(s.Enabled ? "" : " [已禁用]")}").ToList());
-        if (chosen is null) return Task.CompletedTask; // 用户取消
+        if (chosen is null) return; // 用户取消
 
         var selected = customSkills[chosen.Value];
 
@@ -255,7 +235,7 @@ public class SkillCommand : CommandBase
             new FormField($"提示词模板（当前长度 {selected.PromptTemplate.Length} 字符，留空保持不变）",
                 Required: false, InitialValue: selected.PromptTemplate, Multiline: true)
         });
-        if (values is null) return Task.CompletedTask; // 用户取消
+        if (values is null) return; // 用户取消
 
         var newName = values[0].Trim();
         if (!string.IsNullOrEmpty(newName)) selected.Name = newName;
@@ -271,7 +251,7 @@ public class SkillCommand : CommandBase
 
         try
         {
-            ConfigManager.UpdateCustomSkill(selected);
+            await _skillManagement.UpdateAsync(selected);
             Writer.WriteSuccess($"Skill '{selected.Name}' 已更新");
         }
         catch (Exception ex)
@@ -279,26 +259,24 @@ public class SkillCommand : CommandBase
             Logger.Error("SkillCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 删除自定义 Skill
     /// </summary>
-    private Task DeleteSkillAsync()
+    private async Task DeleteSkillAsync()
     {
         var customSkills = ConfigManager.CustomSkills;
         if (customSkills.Count == 0)
         {
             Writer.WriteInfo("没有自定义 Skill 可删除");
-            return Task.CompletedTask;
+            return;
         }
 
         // 编号菜单 → Choose 对话框
         var chosen = Ui.Choose("选择要删除的自定义 Skill",
             customSkills.Select(s => $"{s.Name} ({s.Id})").ToList());
-        if (chosen is null) return Task.CompletedTask; // 用户取消
+        if (chosen is null) return; // 用户取消
 
         var targetId = customSkills[chosen.Value].Id;
 
@@ -306,12 +284,12 @@ public class SkillCommand : CommandBase
         if (!Ui.Confirm("删除 Skill", $"确定要删除 Skill '{targetId}' 吗？", defaultValue: false))
         {
             Writer.WriteInfo("已取消");
-            return Task.CompletedTask;
+            return;
         }
 
         try
         {
-            ConfigManager.RemoveCustomSkill(targetId);
+            await _skillManagement.DeleteAsync(targetId, ManagedOrigin.Config);
             Writer.WriteSuccess($"Skill '{targetId}' 已删除");
         }
         catch (Exception ex)
@@ -319,67 +297,34 @@ public class SkillCommand : CommandBase
             Logger.Error("SkillCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 启用/禁用 Skill
     /// </summary>
-    private Task SwitchSkillAsync()
+    private async Task SwitchSkillAsync()
     {
-        var allItems = new List<(string Id, string DisplayName, bool IsBuiltin, bool IsEnabled)>();
-
-        foreach (var skill in _skillRegistry.GetAll())
-        {
-            var isCustom = ConfigManager.CustomSkills.Any(c => c.Id == skill.Id);
-            allItems.Add((skill.Id, skill.Name, !isCustom, true));
-        }
-
-        foreach (var id in ConfigManager.DisabledBuiltinSkills)
-        {
-            if (!allItems.Any(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((id, id, true, false));
-            }
-        }
-
-        foreach (var cfg in ConfigManager.CustomSkills.Where(c => !c.Enabled))
-        {
-            if (!allItems.Any(a => a.Id.Equals(cfg.Id, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((cfg.Id, cfg.Name, false, false));
-            }
-        }
-
-        if (allItems.Count == 0)
+        var items = await _skillManagement.ListAsync();
+        if (items.Count == 0)
         {
             Writer.WriteInfo("暂无 Skill 可切换");
-            return Task.CompletedTask;
+            return;
         }
 
         // 编号菜单 → Choose 对话框
         var chosen = Ui.Choose("选择要启用/禁用的 Skill",
-            allItems.Select(item =>
+            items.Select(item =>
             {
                 var status = item.IsEnabled ? "已启用" : "已禁用";
-                var type = item.IsBuiltin ? "内置" : "自定义";
-                return $"{item.DisplayName} ({item.Id}) [{type}] [{status}]";
+                return $"{item.Name} ({item.Id}) [{OriginTag(item.Origin)}] [{status}]";
             }).ToList());
-        if (chosen is null) return Task.CompletedTask; // 用户取消
+        if (chosen is null) return; // 用户取消
 
-        var selected = allItems[chosen.Value];
+        var selected = items[chosen.Value];
 
         try
         {
-            if (selected.IsBuiltin)
-            {
-                ConfigManager.SetBuiltinSkillEnabled(selected.Id, !selected.IsEnabled);
-            }
-            else
-            {
-                ConfigManager.SetCustomSkillEnabled(selected.Id, !selected.IsEnabled);
-            }
+            await _skillManagement.SetEnabledAsync(selected.Id, !selected.IsEnabled);
 
             var newState = selected.IsEnabled ? "已禁用" : "已启用";
             Writer.WriteSuccess($"Skill '{selected.Id}' {newState}");
@@ -389,8 +334,6 @@ public class SkillCommand : CommandBase
             Logger.Error("SkillCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>

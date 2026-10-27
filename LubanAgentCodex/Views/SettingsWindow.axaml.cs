@@ -87,6 +87,15 @@ public partial class SettingsWindow : Window
 
     private bool IsGlobal => _selectedWorkspace == null;
 
+    /// <summary>当前作用区根目录：null 表示用户级（全局）<c>~/.luban-agent</c>。</summary>
+    private string? ScopeRoot => IsGlobal ? null : _selectedWorkspace?.RootPath;
+
+    /// <summary>Skill 管理服务（容器不可用时为 null）。</summary>
+    private ISkillManagementService? SkillManagement => _services?.GetService<ISkillManagementService>();
+
+    /// <summary>规则管理服务（容器不可用时为 null）。</summary>
+    private IRuleManagementService? RuleManagement => _services?.GetService<IRuleManagementService>();
+
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
     private readonly Dictionary<string, Control> _editorFields = new(StringComparer.Ordinal);
@@ -364,19 +373,15 @@ public partial class SettingsWindow : Window
 
     private List<string> EnumerateItems()
     {
+        // 技能 / 规则：目录约定由管理服务统一持有
+        if (_tab == SettingsTabKind.Skill)
+            return SkillManagement?.ListFileIds(ScopeRoot).ToList() ?? new List<string>();
+
+        if (_tab == SettingsTabKind.Rule)
+            return RuleManagement?.ListFileIds(ScopeRoot).ToList() ?? new List<string>();
+
         var dir = CurrentDir();
         if (!Directory.Exists(dir)) return new List<string>();
-
-        if (_tab == SettingsTabKind.Skill)
-        {
-            return Directory.GetDirectories(dir)
-                .Where(d => File.Exists(Path.Combine(d, "SKILL.md")))
-                .Select(d => Path.GetFileName(d))
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Select(n => n!)
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
 
         return Directory.GetFiles(dir, "*.json")
             .Select(f => Path.GetFileNameWithoutExtension(f))
@@ -494,13 +499,11 @@ public partial class SettingsWindow : Window
 
     private bool ItemExists(string name)
     {
+        if (_tab is SettingsTabKind.Skill or SettingsTabKind.Rule)
+            return EnumerateItems().Contains(name, StringComparer.OrdinalIgnoreCase);
+
         var dirs = ResolveDirs();
-        return _tab switch
-        {
-            SettingsTabKind.Skill => Directory.Exists(Path.Combine(dirs.skills, name)),
-            SettingsTabKind.Rule => File.Exists(Path.Combine(dirs.rules, name + ".json")),
-            _ => File.Exists(Path.Combine(dirs.mcps, name + ".json")),
-        };
+        return File.Exists(Path.Combine(dirs.mcps, name + ".json"));
     }
 
     private void NewItem()
@@ -562,17 +565,6 @@ public partial class SettingsWindow : Window
         }
 
         // 工作区配置（技能 / 规则 / MCP）
-        var dir = CurrentDir();
-        try
-        {
-            Directory.CreateDirectory(dir);
-        }
-        catch (Exception ex)
-        {
-            SetHint($"创建目录失败：{ex.Message}", true);
-            return;
-        }
-
         var baseName = _tab switch
         {
             SettingsTabKind.Skill => "new-skill",
@@ -588,18 +580,18 @@ public partial class SettingsWindow : Window
         {
             if (_tab == SettingsTabKind.Skill)
             {
-                var d = Path.Combine(dir, name2);
-                Directory.CreateDirectory(d);
-                File.WriteAllText(Path.Combine(d, "SKILL.md"),
-                    BuildSkillMarkdown(name2, "", "custom", "", ""));
+                (SkillManagement ?? throw new InvalidOperationException("Skill 管理服务不可用"))
+                    .SaveFile(null, new SkillFileContent(name2, "", "custom", "", ""), ScopeRoot);
             }
             else if (_tab == SettingsTabKind.Rule)
             {
-                File.WriteAllText(Path.Combine(dir, name2 + ".json"),
-                    JsonSerializer.Serialize(new CustomRuleConfig { Id = name2, Name = name2 }, JsonOpts));
+                (RuleManagement ?? throw new InvalidOperationException("规则管理服务不可用"))
+                    .SaveFile(null, new CustomRuleConfig { Id = name2, Name = name2 }, ScopeRoot);
             }
             else
             {
+                var dir = CurrentDir();
+                Directory.CreateDirectory(dir);
                 File.WriteAllText(Path.Combine(dir, name2 + ".json"),
                     JsonSerializer.Serialize(new McpServerConfig { Name = name2 }, JsonOpts));
             }
@@ -685,35 +677,20 @@ public partial class SettingsWindow : Window
 
     private void BuildSkillEditor(StackPanel host, string key)
     {
-        var dirs = ResolveDirs();
-        var mdPath = Path.Combine(dirs.skills, key, "SKILL.md");
-        var md = File.Exists(mdPath) ? File.ReadAllText(mdPath) : "";
-        var parsed = ParseSkillMarkdown(md);
+        var content = SkillManagement?.ReadFile(key, ScopeRoot);
 
         SetField("name", AddField(host, "name（必填）",
-            string.IsNullOrWhiteSpace(parsed.name) ? key : parsed.name));
-        SetField("description", AddField(host, "description（必填）", parsed.desc));
+            string.IsNullOrWhiteSpace(content?.Name) ? key : content!.Name));
+        SetField("description", AddField(host, "description（必填）", content?.Description ?? ""));
         SetField("category", AddField(host, "category",
-            string.IsNullOrWhiteSpace(parsed.category) ? "custom" : parsed.category));
-        SetField("triggers", AddField(host, "triggers（逗号分隔，可选）", parsed.triggers));
-        SetField("body", AddField(host, "正文 Markdown", parsed.body, multiline: true, height: 220));
+            string.IsNullOrWhiteSpace(content?.Category) ? "custom" : content!.Category));
+        SetField("triggers", AddField(host, "triggers（逗号分隔，可选）", content?.Triggers ?? ""));
+        SetField("body", AddField(host, "正文 Markdown", content?.Body ?? "", multiline: true, height: 220));
     }
 
     private void BuildRuleEditor(StackPanel host, string key)
     {
-        var dirs = ResolveDirs();
-        var path = Path.Combine(dirs.rules, key + ".json");
-
-        CustomRuleConfig cfg;
-        if (File.Exists(path))
-        {
-            var json = File.ReadAllText(path);
-            cfg = JsonSerializer.Deserialize<CustomRuleConfig>(json) ?? new CustomRuleConfig();
-        }
-        else
-        {
-            cfg = new CustomRuleConfig { Id = key };
-        }
+        var cfg = RuleManagement?.ReadFile(key, ScopeRoot) ?? new CustomRuleConfig { Id = key };
 
         SetField("Id", AddField(host, "Id（必填，即文件名）", cfg.Id));
         SetField("Name", AddField(host, "Name", cfg.Name));
@@ -1291,64 +1268,6 @@ public partial class SettingsWindow : Window
 
     private static string MaskApiKey(string apiKey) => SecretMasker.MaskApiKey(apiKey);
 
-    // ---------------- 技能 Markdown 拼装 / 解析 ----------------
-
-    private static string BuildSkillMarkdown(string name, string desc, string category, string triggers, string body)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"name: {name}");
-        sb.AppendLine($"description: {desc}");
-        if (!string.IsNullOrWhiteSpace(category)) sb.AppendLine($"category: {category}");
-        if (!string.IsNullOrWhiteSpace(triggers)) sb.AppendLine($"triggers: {triggers}");
-        sb.AppendLine("---");
-        sb.AppendLine();
-        sb.AppendLine(body ?? "");
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// 解析 SKILL.md：仅识别 SkillMdParser 支持的四个 frontmatter 键
-    /// （name / description / category / triggers），其余键忽略。
-    /// </summary>
-    private static (string name, string desc, string category, string triggers, string body) ParseSkillMarkdown(string md)
-    {
-        var name = "";
-        var desc = "";
-        var category = "";
-        var triggers = "";
-
-        var lines = md.Replace("\r\n", "\n").Split('\n');
-        var i = 0;
-
-        if (lines.Length > 0 && lines[0].Trim() == "---")
-        {
-            i = 1;
-            while (i < lines.Length && lines[i].Trim() != "---")
-            {
-                var line = lines[i];
-                var idx = line.IndexOf(':');
-                if (idx > 0)
-                {
-                    var k = line[..idx].Trim();
-                    var v = line[(idx + 1)..].Trim();
-                    switch (k)
-                    {
-                        case "name": name = v; break;
-                        case "description": desc = v; break;
-                        case "category": category = v; break;
-                        case "triggers": triggers = v; break;
-                    }
-                }
-                i++;
-            }
-            i++; // 跳过结束分隔符
-        }
-
-        var body = string.Join("\n", lines.Skip(i));
-        return (name, desc, category, triggers, body);
-    }
-
     // ---------------- 保存 / 删除 / 应用 ----------------
 
     private async void OnSaveClick(object? sender, RoutedEventArgs e)
@@ -1388,7 +1307,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private async Task SaveSkillAsync()
+    private Task SaveSkillAsync()
     {
         var name = GetText("name").Trim();
         var desc = GetText("description").Trim();
@@ -1399,47 +1318,36 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(desc))
         {
             SetHint("技能的 name 与 description 不能为空。", true);
-            return;
+            return Task.CompletedTask;
         }
-
-        var dirs = ResolveDirs();
-        Directory.CreateDirectory(dirs.skills);
 
         var oldKey = _selectedItemKey;
-        var targetDir = Path.Combine(dirs.skills, name);
 
-        // 改名：移动目录
-        if (!string.IsNullOrEmpty(oldKey) && oldKey != name)
+        try
         {
-            var oldDir = Path.Combine(dirs.skills, oldKey);
-            if (Directory.Exists(oldDir))
-            {
-                if (Directory.Exists(targetDir))
-                {
-                    SetHint($"已存在同名技能 \"{name}\"，请更换 name。", true);
-                    return;
-                }
-                Directory.Move(oldDir, targetDir);
-            }
+            (SkillManagement ?? throw new InvalidOperationException("Skill 管理服务不可用"))
+                .SaveFile(oldKey, new SkillFileContent(name, desc, category, triggers, body), ScopeRoot);
         }
-
-        Directory.CreateDirectory(targetDir);
-        await File.WriteAllTextAsync(Path.Combine(targetDir, "SKILL.md"),
-            BuildSkillMarkdown(name, desc, category, triggers, body));
+        catch (Exception ex)
+        {
+            SetHint($"保存失败：{ex.Message}", true);
+            return Task.CompletedTask;
+        }
 
         _selectedItemKey = name;
         RefreshItems();
         BuildEditor();
         SetSavedHint();
+        return Task.CompletedTask;
     }
 
-    private async Task SaveRuleAsync()
+    private Task SaveRuleAsync()
     {
         var id = GetText("Id").Trim();
         if (string.IsNullOrWhiteSpace(id))
         {
             SetHint("规则的 Id 不能为空。", true);
-            return;
+            return Task.CompletedTask;
         }
 
         _ = int.TryParse(GetText("Priority").Trim(), out var priority);
@@ -1457,24 +1365,24 @@ public partial class SettingsWindow : Window
             Content = GetText("Content"),
         };
 
-        var dirs = ResolveDirs();
-        Directory.CreateDirectory(dirs.rules);
-
-        // 改名：删除旧文件
         var oldKey = _selectedItemKey;
-        if (!string.IsNullOrEmpty(oldKey) && oldKey != id)
-        {
-            var oldPath = Path.Combine(dirs.rules, oldKey + ".json");
-            if (File.Exists(oldPath)) File.Delete(oldPath);
-        }
 
-        await File.WriteAllTextAsync(Path.Combine(dirs.rules, id + ".json"),
-            JsonSerializer.Serialize(cfg, JsonOpts));
+        try
+        {
+            (RuleManagement ?? throw new InvalidOperationException("规则管理服务不可用"))
+                .SaveFile(oldKey, cfg, ScopeRoot);
+        }
+        catch (Exception ex)
+        {
+            SetHint($"保存失败：{ex.Message}", true);
+            return Task.CompletedTask;
+        }
 
         _selectedItemKey = id;
         RefreshItems();
         BuildEditor();
         SetSavedHint();
+        return Task.CompletedTask;
     }
 
     private async Task SaveMcpAsync()
@@ -1714,17 +1622,23 @@ public partial class SettingsWindow : Window
 
         try
         {
-            var dirs = ResolveDirs();
-            if (_tab == SettingsTabKind.Skill)
+            switch (_tab)
             {
-                var dir = Path.Combine(dirs.skills, key);
-                if (Directory.Exists(dir)) Directory.Delete(dir, true);
-            }
-            else
-            {
-                var dir = _tab == SettingsTabKind.Rule ? dirs.rules : dirs.mcps;
-                var file = Path.Combine(dir, key + ".json");
-                if (File.Exists(file)) File.Delete(file);
+                case SettingsTabKind.Skill:
+                    await (SkillManagement ?? throw new InvalidOperationException("Skill 管理服务不可用"))
+                        .DeleteAsync(key, ManagedOrigin.File, ScopeRoot);
+                    break;
+
+                case SettingsTabKind.Rule:
+                    await (RuleManagement ?? throw new InvalidOperationException("规则管理服务不可用"))
+                        .DeleteAsync(key, ManagedOrigin.File, ScopeRoot);
+                    break;
+
+                default:
+                    var dirs = ResolveDirs();
+                    var file = Path.Combine(dirs.mcps, key + ".json");
+                    if (File.Exists(file)) File.Delete(file);
+                    break;
             }
         }
         catch (Exception ex)

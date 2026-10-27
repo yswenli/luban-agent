@@ -56,6 +56,7 @@ global using LubanAgentCore.Models;
 global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Services;
 global using LubanAgentCore.Services.Management;
+global using LubanAgentCore.Services.Management.Models;
 global using LubanAgentCore.Utils;
 // Microsoft
 global using Microsoft.Extensions.DependencyInjection;

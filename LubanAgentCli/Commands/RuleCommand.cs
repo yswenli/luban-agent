@@ -21,7 +21,7 @@ namespace LubanAgentCli.Commands;
 /// </summary>
 public class RuleCommand : CommandBase
 {
-    private readonly RuleEngine _ruleEngine;
+    private readonly IRuleManagementService _ruleManagement;
 
     /// <summary>
     /// 命令名称
@@ -38,14 +38,14 @@ public class RuleCommand : CommandBase
     /// </summary>
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
-    /// <param name="ruleEngine">规则引擎</param>
+    /// <param name="ruleManagement">规则管理服务</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
-    public RuleCommand(ConfigManager configManager, IConfiguration configuration, RuleEngine ruleEngine,
-        ITuiOutputWriter writer, ITuiUiService ui)
+    public RuleCommand(ConfigManager configManager, IConfiguration configuration,
+        IRuleManagementService ruleManagement, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
-        _ruleEngine = ruleEngine;
+        _ruleManagement = ruleManagement ?? throw new ArgumentNullException(nameof(ruleManagement));
     }
 
     /// <summary>
@@ -98,55 +98,53 @@ public class RuleCommand : CommandBase
     /// <summary>
     /// 列出所有规则（内置 + 自定义）
     /// </summary>
-    private Task ListRulesAsync()
+    private async Task ListRulesAsync()
     {
-        var rules = _ruleEngine.GetAllRules();
-        var customIds = new HashSet<string>(ConfigManager.CustomRules.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
+        var items = await _ruleManagement.ListAsync();
 
-        if (rules.Count == 0 && ConfigManager.CustomRules.Count == 0)
+        // 与旧行为一致：只展示进入合并视图的规则，外加「已禁用的自定义规则」（config 禁用项仍在合并视图内）
+        var visible = items.Where(i => i.IsEnabled || i.IsCustom).ToList();
+        if (visible.Count == 0)
         {
             Writer.WriteInfo("暂无可用规则");
-            return Task.CompletedTask;
+            return;
         }
 
         var rows = new List<IReadOnlyList<string>>();
 
-        foreach (var rule in rules)
+        foreach (var rule in visible)
         {
             var status = rule.IsEnabled ? "✅" : "❌";
-            var isCustom = customIds.Contains(rule.Id);
-            var tag = isCustom ? "自定义" : "";
 
-            string detail;
-            if (isCustom)
-            {
-                var cfg = ConfigManager.CustomRules.First(c => c.Id.Equals(rule.Id, StringComparison.OrdinalIgnoreCase));
-                detail = $"ATP: {cfg.ActionTypePattern}  TP: {cfg.TargetPattern}  Action: {cfg.Action}";
-            }
-            else
-            {
-                detail = rule.Description;
-            }
+            var detail = rule.IsCustom
+                ? $"ATP: {rule.ActionTypePattern}  TP: {rule.TargetPattern}  Action: {rule.Action}"
+                : rule.Description;
 
             rows.Add(new[]
             {
                 $"{status} {rule.Id}",
                 rule.Name,
-                tag,
+                OriginTag(rule.Origin),
                 $"优先级: {rule.Priority}",
                 detail
             });
         }
 
         Ui.ShowTable("所有规则", new[] { "规则", "名称", "标记", "优先级", "详情" }, rows);
-
-        return Task.CompletedTask;
     }
+
+    /// <summary>来源显示文案（内置 / 文件 / 自定义）。</summary>
+    private static string OriginTag(ManagedOrigin origin) => origin switch
+    {
+        ManagedOrigin.Builtin => "内置",
+        ManagedOrigin.File => "文件",
+        _ => "自定义",
+    };
 
     /// <summary>
     /// 添加自定义规则
     /// </summary>
-    private Task AddRuleAsync()
+    private async Task AddRuleAsync()
     {
         var values = Ui.ShowForm("添加自定义规则", new[]
         {
@@ -157,32 +155,20 @@ public class RuleCommand : CommandBase
             new FormField("Action (allow/deny)", Required: false, InitialValue: "deny"),
             new FormField("优先级 (默认 100)", Required: false, InitialValue: "100")
         });
-        if (values is null) return Task.CompletedTask;
+        if (values is null) return;
 
         var id = values[0].Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(id))
         {
             Writer.WriteError("ID 不能为空");
-            return Task.CompletedTask;
-        }
-
-        if (_ruleEngine.GetRule(id) != null)
-        {
-            Writer.WriteError($"ID '{id}' 已存在");
-            return Task.CompletedTask;
-        }
-
-        if (ConfigManager.CustomRules.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-        {
-            Writer.WriteError($"ID '{id}' 已存在于自定义规则中");
-            return Task.CompletedTask;
+            return;
         }
 
         var name = values[1].Trim();
         if (string.IsNullOrEmpty(name))
         {
             Writer.WriteError("名称不能为空");
-            return Task.CompletedTask;
+            return;
         }
 
         var actionTypePattern = values[2].Trim();
@@ -200,7 +186,7 @@ public class RuleCommand : CommandBase
         if (action != "allow" && action != "deny")
         {
             Writer.WriteError("Action 只能是 allow 或 deny");
-            return Task.CompletedTask;
+            return;
         }
 
         var priorityInput = values[5].Trim();
@@ -208,7 +194,7 @@ public class RuleCommand : CommandBase
         if (!string.IsNullOrEmpty(priorityInput) && !int.TryParse(priorityInput, out priority))
         {
             Writer.WriteError("优先级必须是整数");
-            return Task.CompletedTask;
+            return;
         }
 
         try
@@ -224,7 +210,7 @@ public class RuleCommand : CommandBase
                 Enabled = true
             };
 
-            ConfigManager.AddCustomRule(cfg);
+            await _ruleManagement.AddAsync(cfg);
             Writer.WriteSuccess($"自定义规则 '{name}' ({id}) 已添加");
         }
         catch (Exception ex)
@@ -232,25 +218,23 @@ public class RuleCommand : CommandBase
             Logger.Error("RuleCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 更新自定义规则
     /// </summary>
-    private Task UpdateRuleAsync()
+    private async Task UpdateRuleAsync()
     {
         var customRules = ConfigManager.CustomRules;
         if (customRules.Count == 0)
         {
             Writer.WriteInfo("没有自定义规则可更新");
-            return Task.CompletedTask;
+            return;
         }
 
         var chosen = Ui.Choose("选择要更新的自定义规则",
             customRules.Select(r => $"{r.Name} ({r.Id}){(r.Enabled ? "" : " [已禁用]")}").ToList());
-        if (chosen is null) return Task.CompletedTask;
+        if (chosen is null) return;
 
         var selected = customRules[chosen.Value];
 
@@ -262,7 +246,7 @@ public class RuleCommand : CommandBase
             new FormField("Action (allow/deny)", Required: false, InitialValue: selected.Action),
             new FormField("优先级", Required: false, InitialValue: selected.Priority.ToString())
         });
-        if (values is null) return Task.CompletedTask;
+        if (values is null) return;
 
         var newName = values[0].Trim();
         if (!string.IsNullOrEmpty(newName)) selected.Name = newName;
@@ -279,7 +263,7 @@ public class RuleCommand : CommandBase
             if (newAction != "allow" && newAction != "deny")
             {
                 Writer.WriteError("Action 只能是 allow 或 deny");
-                return Task.CompletedTask;
+                return;
             }
             selected.Action = newAction;
         }
@@ -290,14 +274,14 @@ public class RuleCommand : CommandBase
             if (!int.TryParse(newPriorityInput, out var newPriority))
             {
                 Writer.WriteError("优先级必须是整数");
-                return Task.CompletedTask;
+                return;
             }
             selected.Priority = newPriority;
         }
 
         try
         {
-            ConfigManager.UpdateCustomRule(selected);
+            await _ruleManagement.UpdateAsync(selected);
             Writer.WriteSuccess($"规则 '{selected.Name}' 已更新");
         }
         catch (Exception ex)
@@ -305,37 +289,35 @@ public class RuleCommand : CommandBase
             Logger.Error("RuleCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 删除自定义规则
     /// </summary>
-    private Task DeleteRuleAsync()
+    private async Task DeleteRuleAsync()
     {
         var customRules = ConfigManager.CustomRules;
         if (customRules.Count == 0)
         {
             Writer.WriteInfo("没有自定义规则可删除");
-            return Task.CompletedTask;
+            return;
         }
 
         var chosen = Ui.Choose("选择要删除的自定义规则",
             customRules.Select(r => $"{r.Name} ({r.Id})").ToList());
-        if (chosen is null) return Task.CompletedTask;
+        if (chosen is null) return;
 
         var targetId = customRules[chosen.Value].Id;
 
         if (!Ui.Confirm("删除规则", $"确定要删除规则 '{targetId}' 吗？", defaultValue: false))
         {
             Writer.WriteInfo("已取消");
-            return Task.CompletedTask;
+            return;
         }
 
         try
         {
-            ConfigManager.RemoveCustomRule(targetId);
+            await _ruleManagement.DeleteAsync(targetId, ManagedOrigin.Config);
             Writer.WriteSuccess($"规则 '{targetId}' 已删除");
         }
         catch (Exception ex)
@@ -343,66 +325,33 @@ public class RuleCommand : CommandBase
             Logger.Error("RuleCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// 启用/禁用规则
     /// </summary>
-    private Task SwitchRuleAsync()
+    private async Task SwitchRuleAsync()
     {
-        var allItems = new List<(string Id, string DisplayName, bool IsBuiltin, bool IsEnabled)>();
-
-        foreach (var rule in _ruleEngine.GetAllRules())
-        {
-            var isCustom = ConfigManager.CustomRules.Any(c => c.Id == rule.Id);
-            allItems.Add((rule.Id, rule.Name, !isCustom, rule.IsEnabled));
-        }
-
-        foreach (var id in ConfigManager.DisabledBuiltinRules)
-        {
-            if (!allItems.Any(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((id, id, true, false));
-            }
-        }
-
-        foreach (var cfg in ConfigManager.CustomRules.Where(c => !c.Enabled))
-        {
-            if (!allItems.Any(a => a.Id.Equals(cfg.Id, StringComparison.OrdinalIgnoreCase)))
-            {
-                allItems.Add((cfg.Id, cfg.Name, false, false));
-            }
-        }
-
-        if (allItems.Count == 0)
+        var items = await _ruleManagement.ListAsync();
+        if (items.Count == 0)
         {
             Writer.WriteInfo("暂无规则可切换");
-            return Task.CompletedTask;
+            return;
         }
 
         var chosen = Ui.Choose("选择要启用/禁用的规则",
-            allItems.Select(item =>
+            items.Select(item =>
             {
                 var status = item.IsEnabled ? "已启用" : "已禁用";
-                var type = item.IsBuiltin ? "内置" : "自定义";
-                return $"{item.DisplayName} ({item.Id}) [{type}] [{status}]";
+                return $"{item.Name} ({item.Id}) [{OriginTag(item.Origin)}] [{status}]";
             }).ToList());
-        if (chosen is null) return Task.CompletedTask;
+        if (chosen is null) return;
 
-        var selected = allItems[chosen.Value];
+        var selected = items[chosen.Value];
 
         try
         {
-            if (selected.IsBuiltin)
-            {
-                ConfigManager.SetBuiltinRuleEnabled(selected.Id, !selected.IsEnabled);
-            }
-            else
-            {
-                ConfigManager.SetCustomRuleEnabled(selected.Id, !selected.IsEnabled);
-            }
+            await _ruleManagement.SetEnabledAsync(selected.Id, !selected.IsEnabled);
 
             var newState = selected.IsEnabled ? "已禁用" : "已启用";
             Writer.WriteSuccess($"规则 '{selected.Id}' {newState}");
@@ -412,7 +361,5 @@ public class RuleCommand : CommandBase
             Logger.Error("RuleCommand 操作异常", ex);
             Writer.WriteError(ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 }
