@@ -45,7 +45,7 @@
 | 10 | WebApplication1 最小端点 | ✅ 完成 | 3 文件 36 行；需用户填 API Key 后运行验证；`bd6bef4` |
 | 11 | Core 切宿主 | ✅ 完成 | 删除 15 个重复类型 + 新增 2 个接缝文件；构建 ✅、`LubanAgent.Tests` 276 passed；`bec42e0` |
 | 12 | UI 类型替换 + 冒烟 | 🟡 自动化部分完成 | 机械替换已在 `bec42e0`；补齐 XAML 命名空间（`1aa132e`）；容器 38 项解析全通过、CLI/Codex 实启动存活；7 项 TUI/GUI 交互冒烟待人工 |
-| 13 | 9 服务接口骨架 | pending | |
+| 13 | 9 服务接口骨架 | ✅ 完成 | 10 接口 + 4 record + 9 实现桩 + DPAPI 凭据保护；构建退出码 0；`06e9216`（R47–R49） |
 | 14 | P1 模型 | pending | |
 | 15 | P2 Skill/Rule | pending | |
 | 16 | P3 MCP/Connector | pending | |
@@ -116,3 +116,7 @@
 - R44（复核 P1-2 修复）：裸路径扫描先算「受保护区」——围栏代码块（` ``` ` / `~~~`，未闭合则其后全部视为代码）与行内反引号代码；命中区间与受保护区相交则跳过。另加同行前文代码特征判定（前文 trim 末尾为 `=`/`(`/`[`/`{`/`,`，或为 `"`/`'` 且其前一字符是 `@`/`$` 或同行含 `=`/`(`），拦掉 `var p = @"D:\imgs\logo.png";` 这类示例路径。修的是「代码里的路径被当附件附加、随后又被 `StripBareImageMentions` 从代码里删掉」。
 - R45（复核 P1-3 修复）：`AgentAttachmentResolver.Merge` 删掉 `refCount == 0` 早退（原来只有 UI 路径时直接透传宿主原始列表，跳过 `Trim`/`GetFullPath`/去重）。现在两路都走 `Append`：归一 → 丢弃空项 → `OrdinalIgnoreCase` 去重，UI 优先。
 - R46：复核后验证——框架 `AgentAttachmentResolverUnitTest` 5/5、产品 `AttachmentBareImageMentionUnitTest` 13/13，`LubanAgent.Tests` 289 passed / 0 failed；`LuBan.FrameWork.sln` 与 `LubanAgent.slnx` 构建退出码均为 0。
+- R47（Task 13 类型策略，用户拍板 **B**）：计划原文的 7 个新 record 有 4 个是臆造——`SkillInfo`（框架 `Tools/Skill/SkillToolGroup.cs:91`）、`ProviderInfo`（`Configuration/IProviderRouter.cs:46`）、`McpTestResult`（`Tools/McpManage/McpManageToolGroup.cs:267`）、`PluginDescriptor`/`PluginPermissions`/`PluginChangedEventArgs`（`Plugins/{Lifecycle,Contracts}`）、`ConnectorStatus`（`Connectors/ConnectorRegistry.cs:44`）、`SessionInfo`/`SessionMessage`（`Sessions/ISessionManager.cs:153/194`）、`ConnectorConfig`/`McpServerConfig`（`Configuration/`）、`WorkspaceInfo`（产品 `Services/WorkspaceManager.cs:29`）全部**复用**；真正新建只有 `RuleInfo`/`McpInfo`/`ConnectorTestResult`/`WikiStatus`。计划里的 `McpConfig` 实际叫 `McpServerConfig`。
+- R48（Task 13 骨架策略，用户拍板 **E1**）：不用计划原文的 `services.AddScoped<I>(_ => throw new NotImplementedException("P1"))`——那会让任何解析都炸、且 Task 14–19 必须回改 `AgentHostBuilder`（与并行规则冲突）。改为 9 个**真实实现类**（方法体 `throw NotYetImplemented.For("Task 14", "ModelCommand / …")` 保留任务号与业务来源）+ DI 注册真实类型；`ValidateOnBuild` 下容器依然可用，Task 14–19 只改方法体。
+- R49（Task 13 凭据策略，用户拍板 **F1**）：`System.Security.Cryptography.ProtectedData` 9.0.5（本机 NuGet 缓存最高版，10.x 未缓存；net10.0 平台中立 TFM 必须显式引用）。接口签名由计划的 `byte[] Protect(byte[])` 改为 **string**：密文以 `dpapi:` 前缀 + Base64 直接可落 JSON 配置，非加密值原样返回便于渐进迁移；`Entropy = "LuBan.AIAgent.Credential.v1"`；非 Windows `IsAvailable=false` 且加解密抛 `InvalidOperationException`（不降级明文）。CA1416 通过在每个方法内直接 `if (!OperatingSystem.IsWindows()) throw` 消除。
+- R50：Task 13 构建实测 `LubanAgent.slnx` 退出码 0、0 错误、16 警告；其中 `NU1902/NU1903 System.Security.Cryptography.Pkcs 8.0.1` 来自 `LuBan.Orm → SqlSugarCore → Oracle.ManagedDataAccess.Core`（`dotnet nuget why` 已确认），**非本次引入**，不在 Task 13 处理范围。
