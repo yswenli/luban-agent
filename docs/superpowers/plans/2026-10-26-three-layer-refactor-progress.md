@@ -44,14 +44,14 @@
 | 9 | 框架 DI 扩展 | ✅ 完成 | 4 文件 251 行 + 4 测试；钉 OpenAI 2.14.0；`a7a6c49` |
 | 10 | WebApplication1 最小端点 | ✅ 完成 | 3 文件 36 行；需用户填 API Key 后运行验证；`bd6bef4` |
 | 11 | Core 切宿主 | ✅ 完成 | 删除 15 个重复类型 + 新增 2 个接缝文件；构建 ✅、`LubanAgent.Tests` 276 passed；`bec42e0` |
-| 12 | UI 类型替换 + 冒烟 | 🟡 自动化部分完成 | 机械替换已在 `bec42e0`；补齐 XAML 命名空间（`1aa132e`）；容器 38 项解析全通过、CLI/Codex 实启动存活；7 项 TUI/GUI 交互冒烟待人工 |
+| 12 | UI 类型替换 + 冒烟 | ✅ 完成 | 机械替换已在 `bec42e0`；补齐 XAML 命名空间（`1aa132e`）；容器 38 项解析全通过、CLI/Codex 实启动存活；2026-10-27 用户实机冒烟 TUI + Codex 通过 |
 | 13 | 9 服务接口骨架 | ✅ 完成 | 10 接口 + 4 record + 9 实现桩 + DPAPI 凭据保护；构建退出码 0；`06e9216`（R47–R49） |
 | 14 | P1 模型 | ✅ 完成 | 契约补到 10 方法（R51）；CLI 两命令 + Codex 三处数据源切换；构建退出码 0、`LubanAgent.Tests` 289 passed、DI 冒烟 54/54；`ef0785d`（R51–R55） |
-| 15 | P2 Skill/Rule | pending | |
-| 16 | P3 MCP/Connector | pending | |
-| 17 | P4 Workspace/Session/Wiki | pending | |
-| 18 | P5 插件/凭据 | pending | |
-| 19 | P6 Codex 设置页 | pending | |
+| 15 | P2 Skill/Rule | ✅ 完成 | 两服务各 8 方法；`LubanAgent.Tests` 301 passed；`7ba6c8d` + `510c940`（R56–R61） |
+| 16 | P3 MCP/Connector | ✅ 完成 | MCP 11 方法 / Connector 5 方法（不接 UI）；`LubanAgent.Tests` 310 passed；`d1613d0` + `d9bfc2b`（R62–R67） |
+| 17 | P4 Workspace/Session/Wiki | ✅ 完成 | Workspace 6 / Session 8 / LLMWiki 13；3 个仓储缝；`LubanAgent.Tests` 335 passed；`27bf800` + `ee75eeb`（R68–R72） |
+| 18 | P5 插件/凭据 | ✅ 完成 | 插件服务 6 方法 + `Changed`；Host/凭据搬 Core；`LubanAgent.Tests` 347 passed；`d431c6c`（R73–R77） |
+| 19 | P6 Codex 设置页 | ✅ 完成 | 1722→192 行 + 5 partial + 7 VM + 15 用例；`LubanAgent.Tests` 365 passed；`2af4103` + `1b8a4d8`（R78–R89）；用户实机冒烟通过 |
 | 20 | 收尾 | pending | 需人工发版，必停 |
 
 ## Rulings
@@ -161,3 +161,8 @@
 - R87：新增 `LubanAgent.Tests/ProviderModelManagementUnitTest.cs` **3 用例**（此前该服务无任何单测）——①删当前 Provider：不抛异常 + `SelectedModel` 为 null + 磁盘配置不残留该 Provider；②删无关 Provider：当前选择 `p1:m1` 保持不变；③删不存在的 Provider：抛 `InvalidOperationException` 且消息含该 Id。构造用临时路径 `ConfigManager` + `ProviderService(new ProviderCache())`，无 DB/无网络。
 - R88：Codex README **中英结构块同步**（用户拍板「只修 Codex 中英结构块」）——删掉已不存在的 `Services/AgentHostService.cs`、`Services/StreamEvent.cs`、`Views/Controls/TitleBar`；补齐 `Plugins/`（`AvaloniaPluginUiDispatcher`）、`Security/`（云效凭据与设置服务）、`ViewModels/Settings/`、`ViewModels/SessionViewModel.cs`、`Views/Settings/`（5 个 partial）、`PluginManageWindow`、`BusyOverlay`、`OrchestrationNodeCard` 等实际存在的项；并加一句注：宿主与 `AgentStreamEvent` 由框架 `LuBan.AIAgent` 提供，业务在 `LubanAgentCore.Services.Management`。
 - R89：上述两项验证——`LubanAgent.slnx` 构建退出码 **0**；`LubanAgent.Tests` **365 passed / 0 failed**（362 + 3 新增）。
+- R90（复核审查，2026-10-27）：按 `code-review` 双轴（Standards / Spec）各派子代理审 `agent 46fa6a7...HEAD` 与 `framework 25ac101...HEAD`，逐条对源码核实后结论：**0 项功能缺陷、1 项误报、4 项应修、5 项判断项**。误报：子代理称设置页「创建目录失败」文案被改，实测旧文件 `SettingsWindow.orig.cs:579` 原本就是「新建失败：{ex.Message}」，新树 `McpTabViewModel.cs:98`、`SkillRuleTabViewModel.cs:153` 逐字一致。核心链路（宿主下沉、9 管理服务、附件通道、厂商中立、DI 注册、已删类型 0 引用）复核通过。
+- R91（P1 四项修复，用户拍板全修）：① 台账 Task 15–19 由 `pending` 改为完成并补提交号（R56–R89），Task 12/19 手工冒烟按 2026-10-27 用户实机结论置 `✅`；② 框架 `LuBan.AIAgent/README.md` / `README.en.md` 补「宿主层（Hosting，opt-in）」章节（`AddLuBanAgentHost` / `AddLuBanAgentOpenAI` / `IAgentHost` / `AgentRunRequest` / `AgentStreamEvent` / `SessionRuntime(Manager)` / 各接缝 / `ICommandCatalog` / 确认上下文扩展）+ 代码示例 + 项目结构 `Hosting/` 与两个扩展文件条目 + 「方式二」补一句指向宿主层；③ 删除零引用的骨架残留 `LubanAgentCore/Services/Management/NotYetImplemented.cs`（R48 后 9 个服务已全部接真实实现）；④ 公开类型 `IChatClientFactoryWarning` → `ChatClientFactoryWarning`（record 不该带 `I` 前缀；产品侧 0 消费，改名无兼容影响）。
+- R92（判断题 5 / 9 修复，用户拍板）：⑤ `Hosting/` 下 19 个缺版权头的源文件统一补标准头（命名空间/文件名/唯一标识/描述按实际内容填写），与邻近文件风格一致；⑨ `ProviderModelManagementUnitTest` 增 `GetProvidersAsync_CopiesEverySettableProperty`——反射枚举 `ProviderConfig` 全部可写属性填非默认值后比对克隆快照，并断言两个 List 为独立副本、遇未覆盖属性类型直接失败，防止后续加字段时 `Clone()` 漏搬。
+- R93（本轮验证）：`dotnet build luban-framework/LuBan.FrameWork.sln` 退出码 **0**（0 错误）；`dotnet build luban-agent/LubanAgent.slnx` 退出码 **0**（0 错误，警告仍为既有 `NU1902/NU1903`）；`dotnet test LubanAgent.Tests` **366 passed / 0 failed**（365 + 1 新用例）。
+- R94（复核留档、本轮不改的判断题及理由）：⑥ `ICredentialProtector` 已在 `AgentHostBuilder.cs:164` 注册但零消费、无 `UnsupportedCredentialProtector`——按 R74 与用户拍板「凭据不接 DPAPI，保持明文基线」，当前无运行时影响；⑦ `AgentProfileBase.cs:134` 硬编码 `.luban-agent/temp/`——与重构前 `LubanAgentCore/Agents/AgentProfile.cs:133-137` 逐字相同，属只搬不改，非回归；⑧ Codex `FooterDataProvider` 未删——计划 Task 14 Step 3 条件是「若与 Core 版重复」，实测两者职责不同（Core 版为状态容器，Codex 版为 `IServiceProvider` 查询服务），条件不成立。三项留待后续单独评估。
