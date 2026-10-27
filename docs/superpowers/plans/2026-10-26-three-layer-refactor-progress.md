@@ -46,7 +46,7 @@
 | 11 | Core 切宿主 | ✅ 完成 | 删除 15 个重复类型 + 新增 2 个接缝文件；构建 ✅、`LubanAgent.Tests` 276 passed；`bec42e0` |
 | 12 | UI 类型替换 + 冒烟 | 🟡 自动化部分完成 | 机械替换已在 `bec42e0`；补齐 XAML 命名空间（`1aa132e`）；容器 38 项解析全通过、CLI/Codex 实启动存活；7 项 TUI/GUI 交互冒烟待人工 |
 | 13 | 9 服务接口骨架 | ✅ 完成 | 10 接口 + 4 record + 9 实现桩 + DPAPI 凭据保护；构建退出码 0；`06e9216`（R47–R49） |
-| 14 | P1 模型 | pending | |
+| 14 | P1 模型 | ✅ 完成 | 契约补到 10 方法（R51）；CLI 两命令 + Codex 三处数据源切换；构建退出码 0、`LubanAgent.Tests` 289 passed、DI 冒烟 54/54；`ef0785d`（R51–R55） |
 | 15 | P2 Skill/Rule | pending | |
 | 16 | P3 MCP/Connector | pending | |
 | 17 | P4 Workspace/Session/Wiki | pending | |
@@ -120,3 +120,8 @@
 - R48（Task 13 骨架策略，用户拍板 **E1**）：不用计划原文的 `services.AddScoped<I>(_ => throw new NotImplementedException("P1"))`——那会让任何解析都炸、且 Task 14–19 必须回改 `AgentHostBuilder`（与并行规则冲突）。改为 9 个**真实实现类**（方法体 `throw NotYetImplemented.For("Task 14", "ModelCommand / …")` 保留任务号与业务来源）+ DI 注册真实类型；`ValidateOnBuild` 下容器依然可用，Task 14–19 只改方法体。
 - R49（Task 13 凭据策略，用户拍板 **F1**）：`System.Security.Cryptography.ProtectedData` 9.0.5（本机 NuGet 缓存最高版，10.x 未缓存；net10.0 平台中立 TFM 必须显式引用）。接口签名由计划的 `byte[] Protect(byte[])` 改为 **string**：密文以 `dpapi:` 前缀 + Base64 直接可落 JSON 配置，非加密值原样返回便于渐进迁移；`Entropy = "LuBan.AIAgent.Credential.v1"`；非 Windows `IsAvailable=false` 且加解密抛 `InvalidOperationException`（不降级明文）。CA1416 通过在每个方法内直接 `if (!OperatingSystem.IsWindows()) throw` 消除。
 - R50：Task 13 构建实测 `LubanAgent.slnx` 退出码 0、0 错误、16 警告；其中 `NU1902/NU1903 System.Security.Cryptography.Pkcs 8.0.1` 来自 `LuBan.Orm → SqlSugarCore → Oracle.ManagedDataAccess.Core`（`dotnet nuget why` 已确认），**非本次引入**，不在 Task 13 处理范围。
+- R51（Task 14 契约补齐，用户拍板 **H2**）：`IProviderModelManagementService` 的方法数 7 → 10，`GetProvidersAsync` 返回 `IReadOnlyList<ProviderConfig>`（**不**保留 `ProviderInfo`，因为 CLI/Codex 需要 `ApiKey`/`BaseUrl`/`CustomModels`）；新增 `AddModelAsync`/`UpdateModelAsync`/`DeleteModelAsync`，把 `/model -add/-update/-delete` 的自定义模型增删改一并收口。
+- R52：`ProviderModelManagementService` 只做编排，业务规则全部委托 `ConfigManager`（持久化）与 `ProviderService`（按用户隔离的模型缓存）；`GetAllModels` 走 `_providers.GetAllModels(id, _config.GetProvider(id)?.CustomModels)`，与原命令 `_providerService.GetAllModels(name, provider.CustomModels)` 等价。`GetProvidersAsync` 返回**深拷贝快照**（7 个属性逐个复制 + 两个 List 复制），调用方误改不会漏 `Save()`。
+- R53：`SetSelectionAsync` **不做会话运行时重建**。计划原文写「含会话重置」，与现状不符：`ConfigManager.SetSelectedModel` 的 `SelectedModelChanged` 全仓无订阅者，切模型对已建会话本就不生效，本 Task 只搬不改。
+- R54：`DeleteProviderAsync` **保留**既有缺陷：删除的正是当前选中 Provider 时，`SetSelectedModel("")` 会抛 `ArgumentException("模型不能为空")`，命令层 catch 后打印红色错误、不输出成功文案（Provider 实际已删除并保存）。是否改 `ClearSelectedModel` 待用户拍板；命令层的「注意: 已清除当前选择的模型」提示按删除前归属判断，行为与原实现一致。
+- R55：唯一有意偏差——Codex `/model -switch` 此前把任意字符串直接写入 `SelectedModel`（无 `:` 也照写），现走 `SetSelectionAsync(providerId, modelId)` 必须先拆分，故对不含 `:` 的输入改为报错「模型格式错误，应为 provider:model，例如 openai:gpt-4o」（与 CLI 同文案）。合法输入行为不变。另 `InputBox` 下拉切换改为调 `SetSelectionAsync`（该方法同步完成持久化后返回已完成 Task，顺序与直接调 `SetSelectedModel` 一致）。
