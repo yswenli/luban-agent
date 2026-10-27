@@ -38,6 +38,8 @@
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
     <!-- 「新建项目」插件的共享能力层（步骤状态归并等纯逻辑，供单测覆盖；UI 部分不参与测试） -->
     <ProjectReference Include="..\LubanAgent.Plugin.NewProject\LubanAgent.Plugin.NewProject.csproj" />
+    <!-- Codex 设置窗的分页 ViewModel（Task 19：业务已从窗口下沉到 ViewModels/Settings，纯逻辑无 Avalonia 依赖） -->
+    <ProjectReference Include="..\LubanAgentCodex\LubanAgentCodex.csproj" />
   </ItemGroup>
 
   <ItemGroup>
