@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.ViewModels.Messages
 *文件名： ToolCallItem
 *版本号： V1.0.0.0
-*唯一标识：工具调用消息项
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：工具调用消息数据模型，包含工具名称、参数和执行状态
 *
 *****************************************************************************/
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 

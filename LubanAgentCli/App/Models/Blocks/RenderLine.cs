@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： RenderLine
 *版本号： V1.0.0.0
-*唯一标识：渲染行与文本片段模型
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：Block 自绘输出的行级模型——一行由一个或多个带色文本片段组成
 *
 *****************************************************************************/
-using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除），此处显式指向 Terminal.Gui 类型
 using Color = Terminal.Gui.Drawing.Color;

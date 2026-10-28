@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App
 *文件名： TerminalGuiApp
 *版本号： V1.0.0.0
-*唯一标识：TUI 应用启动引导
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswen@outlook.com
@@ -14,11 +14,6 @@
 *描述：Terminal.Gui 应用启动引导，负责初始化驱动、运行顶层视图与优雅关闭
 *
 *****************************************************************************/
-using System.Runtime.InteropServices;
-using LubanAgentCli.App.Services;
-using LubanAgentCli.Infrastructure;
-using LubanAgentCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCli.App;
 
@@ -254,6 +249,10 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
     {
         private const uint TIMERR_NOERROR = 0;
 
+        /// <summary>
+        /// 把当前进程的系统计时器精度提升到 1ms，用于降低 TUI 轮询与动画的时间抖动。
+        /// </summary>
+        /// <returns>提升成功返回 true；非 Windows 平台或调用 winmm 失败返回 false。</returns>
         public static bool TryRaiseTimerResolution()
         {
             if (!OperatingSystem.IsWindows())
@@ -271,6 +270,9 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
             }
         }
 
+        /// <summary>
+        /// 恢复系统默认计时器精度，须与 <c>TryRaiseTimerResolution</c> 配对调用；仅 Windows 生效且异常被吞掉。
+        /// </summary>
         public static void RestoreTimerResolution()
         {
             if (OperatingSystem.IsWindows())

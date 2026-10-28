@@ -14,9 +14,6 @@
 *描述：框架 A2A 原生 DTO 与官方 A2A SDK 类型双向映射
 *
 *****************************************************************************/
-using System.Text.Json;
-
-using LuBan.AIAgent.A2A.Models;
 
 using Sdk = A2A;
 

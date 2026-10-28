@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models
+*命名空间：LubanAgentCli.App.Models
 *文件名： AgentTask
 *版本号： V1.0.0.0
-*唯一标识：Agent 任务模型
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -59,6 +59,9 @@ public sealed class AgentTask : IDisposable
         WorkspaceName = workspaceName;
     }
 
+    /// <summary>
+    /// 释放任务持有的取消令牌源，重复调用无副作用。
+    /// </summary>
     public void Dispose()
     {
         if (!_disposed)

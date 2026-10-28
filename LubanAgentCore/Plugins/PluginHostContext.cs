@@ -11,13 +11,6 @@
 *描述：插件宿主的作用域访问桥：从单例宿主安全触达按用户/会话隔离的 scoped 服务
 *
 *****************************************************************************/
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Context;
-using LubanAgentCore.Hosting;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Defaults;
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Skills;
 
 namespace LubanAgentCore.Plugins;
 

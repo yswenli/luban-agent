@@ -1,14 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： AssistantToolPolicy
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/21
 *描述：助手的工具审批策略（白名单过滤，不用 BypassPermissions）
+*
 *****************************************************************************/
-
-using System.Text;
-using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgent.Plugin.NewProject.Services;
 

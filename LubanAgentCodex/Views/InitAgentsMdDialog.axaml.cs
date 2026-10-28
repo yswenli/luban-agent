@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： InitAgentsMdDialog
 *版本号： V1.0.0.0
-*唯一标识：初始化 AGENTS.md 对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：初始化 AGENTS.md 结构化表单，收集 Agent 名称/业务场景/能力清单/工具清单/输出模式
 *
 *****************************************************************************/
-using Avalonia.Interactivity;
 
 namespace LubanAgentCodex.Views;
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： PluginManageWindow
 *版本号： V1.0.0.0
-*唯一标识：插件管理窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,15 +14,6 @@
 *描述：插件管理窗口：安装 / 启用 / 停用 / 升级 / 卸载
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using Avalonia.Platform.Storage;
-using Avalonia.Threading;
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Plugins.Lifecycle;
-using LuBan.AIAgent.Plugins.Loading;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Views;
 

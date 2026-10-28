@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow.Editors.Global
 *版本号： V1.0.0.0
-*唯一标识：统一设置中心（供应商 / 模型 / A2A / 云效 编辑器）
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,10 +15,12 @@
 *      控件构建顺序、标签文案、默认值与改动前逐字一致。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Configuration.Providers;
 
 namespace LubanAgentCodex.Views;
 
+/// <summary>
+/// 设置窗口（编辑器-全局部分）：构建供应商与模型、A2A 等全局配置的右栏编辑表单。
+/// </summary>
 public partial class SettingsWindow
 {
     private void BuildProviderEditor(StackPanel host, string key)

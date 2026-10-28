@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： InputBox
 *版本号： V1.0.0.0
-*唯一标识：输入框控件
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,17 +15,6 @@
 *       输入 / 时弹出命令补全菜单：Up/Down 选择、Tab/Enter 确认、Esc 关闭。
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Input;
-using Avalonia.Input.Platform;
-using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
-using Avalonia.Platform.Storage;
-using LuBan.AIAgent.Hosting.Commands;
-using LubanAgentCore.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using System.Threading.Tasks;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -54,6 +43,9 @@ public partial class InputBox : UserControl
     /// <summary>程序化设置 ListBox 选中项时屏蔽 OnCompletionSelectionChanged 的应用逻辑。</summary>
     private bool _syncingSelection;
 
+    /// <summary>
+    /// 初始化消息输入框控件并加载 XAML 定义，挂接按键发送、附件、模型选择与斜杠命令补全交互。
+    /// </summary>
     public InputBox()
     {
         InitializeComponent();

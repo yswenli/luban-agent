@@ -14,14 +14,6 @@
 *描述：子代理规格与 A2A 消息/事件之间的桥接工具，供进程内与远程执行器复用
 *
 *****************************************************************************/
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
-
-using LuBan.AIAgent.A2A.Models;
-using LuBan.AIAgent.Orchestration.Models;
-
-using LubanAgentA2A.InProcess;
 
 namespace LubanAgentA2A.Executor;
 

@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： ChoiceBlocks
 *版本号： V1.0.0.0
-*唯一标识：内联选择块工厂
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：预设场景的内联选择块工厂方法（确认/二次确认/Plan退出）
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models;
 
 namespace LubanAgentCli.App.Models.Blocks;
 

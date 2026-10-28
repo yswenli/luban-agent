@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Services
 *文件名： FooterDataProvider
 *版本号： V1.0.0.0
-*唯一标识：页脚数据提供者
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：页脚数据提供者，获取git分支、token用量、工作目录等信息
 *
 *****************************************************************************/
-using LubanAgentCore.Services;
-using LuBan.AIAgent.Sessions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Services;
 
@@ -27,6 +24,10 @@ public class FooterDataProvider
 {
     private readonly IServiceProvider _services;
     
+    /// <summary>
+    /// 初始化页脚数据提供者，后续按需从服务容器解析会话管理器等依赖。
+    /// </summary>
+    /// <param name="services">应用服务容器。</param>
     public FooterDataProvider(IServiceProvider services)
     {
         _services = services;

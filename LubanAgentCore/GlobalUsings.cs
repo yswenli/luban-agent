@@ -1,3 +1,26 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore
+*文件名： GlobalUsings
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/20
+*描述：项目级全局 using 声明，集中上移各代码文件的公共命名空间引用
+*
+*=================================================
+*修改标记
+*修改时间：2026/8/20
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：项目级全局 using 声明，集中上移各代码文件的公共命名空间引用
+*
+*****************************************************************************/
+
 // Global using 引用 - 外部依赖
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Abstractions;
@@ -50,3 +73,35 @@ global using System.Runtime.CompilerServices;
 global using System.Security.Cryptography;
 global using System.Text;
 global using System.Text.Json;
+
+// 由代码文件上移的命名空间（2026-10-28 规范化）
+global using LuBan.AIAgent.Abstractions.Models;
+global using LuBan.AIAgent.Configuration.Providers;
+global using LuBan.AIAgent.Connectors;
+global using LuBan.AIAgent.Defaults;
+global using LuBan.AIAgent.Errors;
+global using LuBan.AIAgent.Hosting;
+global using LuBan.AIAgent.Infrastructure;
+global using LuBan.AIAgent.Orchestration;
+global using LuBan.AIAgent.Plugins;
+global using LuBan.AIAgent.Plugins.Lifecycle;
+global using LuBan.AIAgent.Plugins.Loading;
+global using LuBan.AIAgent.Plugins.Security;
+global using LuBan.AIAgent.Retrieval.Chunkers;
+global using LuBan.AIAgent.Tools.McpManage;
+global using LuBan.AIAgent.Utils.Text;
+global using LuBan.AIAgent.Wiki;
+global using LuBan.AIAgent.Wiki.Extractors;
+global using LuBan.Logging;
+global using LubanAgentCore.Hosting;
+global using LubanAgentCore.Plugins;
+global using Microsoft.Extensions.DependencyInjection.Extensions;
+global using Microsoft.Extensions.Logging;
+global using System.Collections.Concurrent;
+global using System.Diagnostics;
+global using System.Globalization;
+global using System.Net.Http;
+global using System.Net.Http.Headers;
+global using System.Text.Encodings.Web;
+global using System.Text.Json.Serialization;
+global using System.Text.RegularExpressions;

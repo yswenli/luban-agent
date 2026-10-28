@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： TuiOutputWriter
 *版本号： V1.0.0.0
-*唯一标识：TUI 输出写入器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,10 +15,6 @@
 *统一 /help /clear /mode 等已迁移命令与后续命令的输出格式
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models;
-using LubanAgentCli.App.Models.Blocks;
-
-using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;

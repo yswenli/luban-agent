@@ -1,10 +1,17 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： KnowledgeDocs
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/23
 *描述：插件包 docs/ 知识正文 → 项目工作区的同步器（方案 A：每步下发前自愈）
+*
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Services;

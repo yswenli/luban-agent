@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Models
 *文件名： WorkspaceTypes
 *版本号： V1.0.0.0
-*唯一标识：工作区类型常量
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

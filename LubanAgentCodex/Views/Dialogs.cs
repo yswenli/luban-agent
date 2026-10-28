@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： Dialogs
 *版本号： V1.0.0.0
-*唯一标识：统一美观对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,14 +14,6 @@
 *描述：统一的确认 / 错误弹出层，复用 Dialogs.axaml 中的按钮与卡片样式
 *
 *****************************************************************************/
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Threading;
-using LuBan.AIAgent.Abstractions;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 
 namespace LubanAgentCodex.Views;
 

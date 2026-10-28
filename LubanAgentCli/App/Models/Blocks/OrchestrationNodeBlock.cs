@@ -2,22 +2,21 @@
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
 *机器名称：WALLE
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： OrchestrationNodeBlock
 *版本号： V1.0.0.0
-*唯一标识：编排子 Agent 节点状态块
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/16
 *描述：编排子 Agent 节点的单行实时状态块（参考 opencode 的 subagent 展示）。
- *运行中显示动画 spinner + ▶ + 节点描述 + 实时耗时；完成后变为
- *✓ 描述 · 耗时（绿色）或 ✗ 描述 · 失败原因（红色）。同层并行节点各占一行，
- *各自独立动画，避免节点执行期（最长可达节点超时阈值）界面无任何反馈。
- *同时缓存该节点内部活动（思考/正文/工具调用/结果），供点击进入整屏详情查看。
- *
+*运行中显示动画 spinner + ▶ + 节点描述 + 实时耗时；完成后变为
+*✓ 描述 · 耗时（绿色）或 ✗ 描述 · 失败原因（红色）。同层并行节点各占一行，
+*各自独立动画，避免节点执行期（最长可达节点超时阈值）界面无任何反馈。
+*同时缓存该节点内部活动（思考/正文/工具调用/结果），供点击进入整屏详情查看。
+*
 *****************************************************************************/
-using LubanAgentCli.App.ViewModels;
 
 // 消歧：全局 using 引入了 Spectre.Console.Color
 using Color = Terminal.Gui.Drawing.Color;

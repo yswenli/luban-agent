@@ -3,6 +3,7 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： YunxiaoOrganizationId
+*版本号： V1.0.0.0
 *唯一标识：新建
 *当前的用户域：WALLE
 *创建人： yswenli

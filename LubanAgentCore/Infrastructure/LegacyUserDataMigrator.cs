@@ -1,14 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgentCore.Infrastructure
 *文件名： LegacyUserDataMigrator
 *版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/13
 *描述：历史单用户数据归属迁移（会话/工作区 UserId 归一化到默认用户）
 *
 *****************************************************************************/
-using LubanAgentCore.Hosting;
 
 namespace LubanAgentCore.Infrastructure;
 

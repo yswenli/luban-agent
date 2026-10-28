@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.Commands
 *文件名： LlmWikiCommand
 *版本号： V1.0.0.0
-*唯一标识：LLM Wiki 知识库管理命令
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -21,9 +21,6 @@
 *描述：由 RagCommand 与 WikiCommand 合并为 LlmWikiCommand，统一 /llmwiki，保留 /rag、/wiki 等别名
 *
 *****************************************************************************/
-using LuBan.AIAgent.Wiki;
-using LuBan.AIAgent.Wiki.Extractors;
-using LubanAgentCli.App.ViewModels;
 
 namespace LubanAgentCli.Commands;
 
@@ -591,6 +588,10 @@ internal sealed class LlmWikiCommand : CommandBase
     /// </remarks>
     private sealed class SynchronousProgress<T>(Action<T> report) : IProgress<T>
     {
+        /// <summary>
+        /// 把进度值同步转发给构造时传入的回调，不做线程切换或缓冲。
+        /// </summary>
+        /// <param name="value">最新进度值。</param>
         public void Report(T value) => report(value);
     }
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Converters
 *文件名： FileSizeConverter
 *版本号： V1.0.0.0
-*唯一标识：附件文件大小格式化转换器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：把字节数格式化为 B / KB / MB 文本，供附件预览条显示。
 *
 *****************************************************************************/
-using LuBan.Common.IO;
-using Avalonia.Data.Converters;
-using System.Globalization;
 
 namespace LubanAgentCodex.Converters;
 

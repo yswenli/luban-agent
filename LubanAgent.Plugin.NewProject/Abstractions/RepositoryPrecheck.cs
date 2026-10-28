@@ -1,10 +1,17 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： RepositoryPrecheck
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/19
 *描述：Step 3 预检读数：执行前把「将要发生什么」摆到确认界面上让用户核对
+*
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;

@@ -13,7 +13,6 @@
 *描述：应用配置文件模型
 *
 *****************************************************************************/
-using LuBan.AIAgent.Configuration;
 
 namespace LubanAgentCore.Configuration;
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App.Dialogs
 *文件名： FormDialog
 *版本号： V1.0.0.0
-*唯一标识：表单对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -17,10 +17,6 @@
 *      Enter 触发校验并提交，Esc 取消。
 *
 *****************************************************************************/
-using Terminal.Gui.App;
-using Terminal.Gui.Input;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 #pragma warning disable CS0618
 

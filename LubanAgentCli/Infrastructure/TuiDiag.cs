@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.Infrastructure
 *文件名： TuiDiag
 *版本号： V1.0.0.0
-*唯一标识：TUI 性能诊断埋点
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：主循环迭代与各渲染环节的耗时诊断，LuBanAgent:DebugMode=true 时生效
 *
 *****************************************************************************/
-using System.Collections.Concurrent;
-using System.Diagnostics;
 
 namespace LubanAgentCli.Infrastructure;
 
@@ -59,9 +57,21 @@ internal static class TuiDiag
 
     private sealed class Stat
     {
+        /// <summary>
+        /// 该埋点在当前统计窗口内被计入的次数。
+        /// </summary>
         public long Count;
+        /// <summary>
+        /// 该埋点在当前统计窗口内的累计耗时（毫秒）。
+        /// </summary>
         public long TotalMs;
+        /// <summary>
+        /// 该埋点在当前统计窗口内的单次最大耗时（毫秒）。
+        /// </summary>
         public long MaxMs;
+        /// <summary>
+        /// 该埋点最近一次记录附带的备注内容，无备注时为 null。
+        /// </summary>
         public string? LastNote;
     }
 
@@ -127,6 +137,12 @@ internal static class TuiDiag
         private readonly long _threshold;
         private readonly long _start;
 
+        /// <summary>
+        /// 开启一个耗时测量作用域：仅在诊断启用时记录起始时间戳。
+        /// </summary>
+        /// <param name="name">埋点名称，作为统计聚合键。</param>
+        /// <param name="note">附加备注，可为 null。</param>
+        /// <param name="thresholdMs">计入统计的耗时阈值（毫秒）。</param>
         public Scope(string name, string? note, long thresholdMs)
         {
             _name = name;
@@ -135,6 +151,9 @@ internal static class TuiDiag
             _start = Enabled ? Stopwatch.GetTimestamp() : 0;
         }
 
+        /// <summary>
+        /// 结束测量：耗时达到阈值时累加到该埋点的当前窗口统计中。
+        /// </summary>
         public void Dispose()
         {
             if (_start == 0) return;

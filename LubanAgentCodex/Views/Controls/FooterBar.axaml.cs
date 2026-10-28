@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： FooterBar
 *版本号： V1.0.0.0
-*唯一标识：页脚状态栏控件
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,10 +14,6 @@
 *描述：页脚状态栏控件，显示权限模式、工作目录、Git分支、Token用量
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -32,6 +28,9 @@ public partial class FooterBar : UserControl
     private TextBlock? _tokenUsageText;
     private TextBlock? _runStateText;
     
+    /// <summary>
+    /// 初始化页脚状态栏控件并加载 XAML 定义，缓存权限模式、工作目录、Git 分支、Token 用量与运行态文本控件。
+    /// </summary>
     public FooterBar()
     {
         InitializeComponent();

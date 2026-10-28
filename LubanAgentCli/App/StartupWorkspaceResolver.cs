@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App
 *文件名： StartupWorkspaceResolver
 *版本号： V1.0.0.0
-*唯一标识：启动阶段工作区解析器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -16,11 +16,6 @@
 *调用位置：StartupDialog 关闭之后、RootView 创建之前（CLI 侧主导，向导不再处理工作区）
 *
 *****************************************************************************/
-using LubanAgentA2A.Runtime;
-using LuBan.AIAgent.Defaults;
-
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Context;
 
 namespace LubanAgentCli.App;
 

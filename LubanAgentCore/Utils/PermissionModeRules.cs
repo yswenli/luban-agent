@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Utils
 *文件名： PermissionModeRules
 *版本号： V1.0.0.0
-*唯一标识：权限模式规则
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：权限模式的解析、循环、展示规则，CLI / GUI 共用，避免两端语义分叉
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCore.Utils;
 

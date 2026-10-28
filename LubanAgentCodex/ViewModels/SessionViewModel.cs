@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.ViewModels
 *文件名： SessionViewModel
 *版本号： V1.0.0.0
-*唯一标识：会话 ViewModel
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,16 +14,6 @@
 *描述：单个会话的运行态与消息流：每会话一份，支撑后台并行与会话间切换
 *
 *****************************************************************************/
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
-using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCodex.Views;
-using LubanAgentCore.Services;
-using LubanAgentCore.Utils;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Errors;
-using LuBan.AIAgent.Orchestration;
 
 namespace LubanAgentCodex.ViewModels;
 

@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： BlockColors
 *版本号： V1.0.0.0
-*唯一标识：Block 配色常量
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：Block 子类共享的 24-bit TrueColor 配色常量，与 App/TuiTheme.cs 中的值一致
 *
 *****************************************************************************/
-using Terminal.Gui.Drawing;
 
 // 消歧：全局 using 引入了 Spectre.Console（迁移步骤 6 移除）
 using Color = Terminal.Gui.Drawing.Color;

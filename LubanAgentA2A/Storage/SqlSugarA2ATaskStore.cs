@@ -14,10 +14,6 @@
 *描述：基于 SqlSugar/SQLite 的 A2A 任务存储实现
 *
 *****************************************************************************/
-using System.Text.Json;
-
-using LubanAgentCore.Entities;
-using LubanAgentCore.Repositories;
 
 using Sdk = A2A;
 

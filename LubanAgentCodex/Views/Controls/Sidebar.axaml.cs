@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： Sidebar
 *版本号： V1.0.0.0
-*唯一标识：左侧边栏控件
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,21 +14,6 @@
 *描述：左侧边栏，包含工作区列表、会话树、LLM Wiki 知识库和项目信息
 *
 *****************************************************************************/
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Interactivity;
-using Avalonia.Input;
-using Avalonia.Layout;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using Avalonia.Threading;
-using LubanAgentCore.Plugins;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Entities;
-using LubanAgentCore.Repositories;
-using LubanAgentCore.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -96,6 +81,9 @@ public partial class Sidebar : UserControl
     /// </summary>
     public event EventHandler<PluginSidebarRowModel>? PluginEntrySelected;
 
+    /// <summary>
+    /// 初始化左侧边栏控件并加载 XAML 定义，挂接知识库列表、插件入口与底部设置/插件/GitHub 按钮事件。
+    /// </summary>
     public Sidebar()
     {
         InitializeComponent();
@@ -919,9 +907,21 @@ public partial class Sidebar : UserControl
 /// </summary>
 public class SessionItem
 {
+    /// <summary>
+    /// 会话标识。
+    /// </summary>
     public string SessionId { get; set; } = "";
+    /// <summary>
+    /// 会话标题（取会话的展示名）。
+    /// </summary>
     public string Title { get; set; } = "";
+    /// <summary>
+    /// 该会话是否正在执行 Agent 回合，用于显示运行中圆点。
+    /// </summary>
     public bool IsRunning { get; set; }
+    /// <summary>
+    /// 是否存在待确认的工具调用，用于显示待确认提醒圆点。
+    /// </summary>
     public bool HasPendingConfirm { get; set; }
 }
 
@@ -930,8 +930,17 @@ public class SessionItem
     /// </summary>
     public class LlmWikiRowModel
     {
+        /// <summary>
+        /// 该知识库对应的工作区标识。
+        /// </summary>
         public string WorkspaceId { get; set; } = "";
+        /// <summary>
+        /// 侧边栏显示名称，固定为「知识库」而不暴露真实工作区名。
+        /// </summary>
         public string DisplayName { get; set; } = "知识库";
+        /// <summary>
+        /// 完整工作区信息，点击条目切换工作区时直接复用。
+        /// </summary>
         public WorkspaceInfo? Workspace { get; set; }
     }
 

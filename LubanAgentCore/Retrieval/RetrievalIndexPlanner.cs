@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Retrieval
 *文件名： RetrievalIndexPlanner
 *版本号： V1.0.0.0
-*唯一标识：索引任务预扫规划器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：长耗时知识库任务（索引/重建/lint）的预扫计数与阶段提示文案，供 CLI 与桌面端（Codex）复用
 *
 *****************************************************************************/
-using LuBan.AIAgent.Retrieval.Chunkers;
-
-using System.Diagnostics;
 
 namespace LubanAgentCore.Retrieval;
 

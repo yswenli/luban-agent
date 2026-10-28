@@ -14,8 +14,6 @@
 *描述：工作区 A2A 配置文件（server.json + client.<name>.json）的读写助手，供 CLI/Codex 设置页使用
 *
 *****************************************************************************/
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace LubanAgentA2A.Configuration;
 

@@ -11,8 +11,6 @@
 *描述：插件启动引导：扫描插件根目录并恢复上次的启用状态
 *
 *****************************************************************************/
-using LuBan.AIAgent.Plugins.Loading;
-using LuBan.AIAgent.Plugins.Lifecycle;
 
 namespace LubanAgentCore.Plugins;
 

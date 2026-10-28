@@ -14,7 +14,6 @@
 *描述：worktree 会话数据库实体
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions.Models;
 
 namespace LubanAgentCore.Entities;
 

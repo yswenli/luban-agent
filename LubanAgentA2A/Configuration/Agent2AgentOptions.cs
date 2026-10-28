@@ -14,9 +14,6 @@
 *描述：A2A agent 侧有效配置（工作区并集解析结果）与工作区文件模型/解析器
 *
 *****************************************************************************/
-using System.Text.Json;
-
-using LuBan.AIAgent.A2A;
 
 namespace LubanAgentA2A.Configuration;
 

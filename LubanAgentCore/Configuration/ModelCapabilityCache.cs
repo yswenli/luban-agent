@@ -1,4 +1,25 @@
-using System.Collections.Concurrent;
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore.Configuration
+*文件名： ModelCapabilityCache
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/9/18
+*描述：模型多模态能力登记表（实例级，按用户隔离）。
+*
+*=================================================
+*修改标记
+*修改时间：2026/9/18
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：模型多模态能力登记表（实例级，按用户隔离）。
+*
+*****************************************************************************/
 
 namespace LubanAgentCore.Configuration;
 

@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： ActionSpinnerBlock
 *版本号： V1.0.0.0
-*唯一标识：对话流中的动态 spinner 块
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：每次 AI 动作时插入对话流，显示动画 + 阶段 + 耗时，完成后变为最终状态
 *
 *****************************************************************************/
-using LubanAgentCli.App.ViewModels;
 
 namespace LubanAgentCli.App.Models.Blocks;
 
@@ -33,8 +32,17 @@ public sealed class ActionSpinnerBlock : Block
     private Timer? _animationTimer;
     private volatile bool _stopped;
 
+    /// <summary>
+    /// 该块不可折叠：始终以单行动画形式出现在对话流中。
+    /// </summary>
     public override bool IsFoldable => false;
 
+    /// <summary>
+    /// 初始化 spinner 块并立即启动 100ms 帧动画，用于表示一次进行中的 AI 动作。
+    /// </summary>
+    /// <param name="description">初始阶段描述文案（如「AI 正在思考…」）。</param>
+    /// <param name="doc">所属对话文档，用于触发块重绘。</param>
+    /// <param name="dispatcher">把动画帧推进切回 UI 线程的调度器。</param>
     public ActionSpinnerBlock(string description, ConversationDocument doc, IUiDispatcher dispatcher)
     {
         _description = description;
@@ -55,12 +63,21 @@ public sealed class ActionSpinnerBlock : Block
         NotifyChanged();
     }
 
+    /// <summary>
+    /// 按可用宽度重排该块，spinner 恒占一行高度。
+    /// </summary>
+    /// <param name="width">可用列宽。</param>
     public override void Layout(int width)
     {
         base.Layout(width);
         LineCount = 1;
     }
 
+    /// <summary>
+    /// 输出一行文本：帧动画符（完成后为「✓」）+ 阶段描述 + 已耗时秒数，超宽时按列截断。
+    /// </summary>
+    /// <param name="lines">收集渲染行的输出列表。</param>
+    /// <param name="width">可用列宽。</param>
     public override void Render(List<RenderLine> lines, int width)
     {
         var elapsed = Duration ?? (DateTime.UtcNow - StartedAtUtc);
@@ -71,6 +88,9 @@ public sealed class ActionSpinnerBlock : Block
         lines.Add(RenderLine.Single(truncated, BlockColors.Spinner));
     }
 
+    /// <summary>
+    /// 标记动作完成：停掉帧动画并把显示符号固定为完成态，随后通知重绘。
+    /// </summary>
     public override void MarkComplete()
     {
         base.MarkComplete();
@@ -78,6 +98,9 @@ public sealed class ActionSpinnerBlock : Block
         NotifyChanged();
     }
 
+    /// <summary>
+    /// 块从对话文档移除时停止动画计时器，避免后台线程继续触发重绘。
+    /// </summary>
     public override void OnRemoved()
     {
         base.OnRemoved();

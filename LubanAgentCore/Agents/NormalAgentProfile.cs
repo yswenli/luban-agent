@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *公司名称：Walle
-*命名空间：LubanAgent.Profiles
+*命名空间：LubanAgentCore.Agents
 *文件名： NormalAgentProfile
 *版本号： V1.0.0.0
-*唯一标识：普通 Agent 配置
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：普通工作区的 Agent 配置，启用全部工具，不使用检索模式
 *
 *****************************************************************************/
-
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCore.Agents;
 

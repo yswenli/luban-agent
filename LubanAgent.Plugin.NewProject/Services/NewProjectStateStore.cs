@@ -1,15 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： NewProjectStateStore
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：项目档案持久化——残留检测与孤儿清单展示的依据
+*
 *****************************************************************************/
-
-using System.Text.Json;
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Serialization;
 
 namespace LubanAgent.Plugin.NewProject.Services;
 

@@ -15,23 +15,6 @@
 *      将一条 A2A 消息落到本地 LuBanAgent 执行并回填事件
 *
 *****************************************************************************/
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
-
-using LuBan.AIAgent;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.A2A.Models;
-using LuBan.AIAgent.Orchestration;
-using LuBan.AIAgent.Orchestration.Models;
-
-using LubanAgentA2A.Mapping;
-
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 using Sdk = A2A;
 

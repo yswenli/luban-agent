@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： OrchestrationNodeCard
 *版本号： V1.0.0.0
-*唯一标识：编排节点卡片
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,12 +14,6 @@
 *描述：编排子代理节点卡片：左侧色条 + 宽度限制 + 点击打开节点详情窗口。
 
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using LubanAgentCodex.ViewModels.Messages;
-using System.ComponentModel;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -33,6 +27,9 @@ public partial class OrchestrationNodeCard : UserControl
     private OrchestrationNodeItem? _boundItem;
     private PropertyChangedEventHandler? _itemHandler;
 
+    /// <summary>
+    /// 初始化编排子代理节点卡片并加载 XAML 定义，绑定点击打开节点详情窗口的交互。
+    /// </summary>
     public OrchestrationNodeCard()
     {
         InitializeComponent();

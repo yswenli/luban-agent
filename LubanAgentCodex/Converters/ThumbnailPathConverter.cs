@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Converters
 *文件名： ThumbnailPathConverter
 *版本号： V1.0.0.0
-*唯一标识：附件缩略图路径转换器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,10 +15,6 @@
 *      按路径缓存，避免列表刷新时重复解码同一文件。
 *
 *****************************************************************************/
-using Avalonia.Data.Converters;
-using Avalonia.Media.Imaging;
-using System.Collections.Concurrent;
-using System.Globalization;
 
 namespace LubanAgentCodex.Converters;
 

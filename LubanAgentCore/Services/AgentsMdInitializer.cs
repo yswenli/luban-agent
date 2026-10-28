@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： AgentsMdInitializer
 *版本号： V1.0.0.0
-*唯一标识：AgentsMd 初始化服务
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -95,7 +95,7 @@ public interface IAgentsMdInitializer
     string BuildPrompt(AgentsMdOptions options);
 
     /// <summary>
-    /// 规范化模型输出：剥离外层代码围栏、统一换行、补尾部换行，得到可落盘的 Markdown
+    /// 规范化模型输出：剥离外层代码围栏、统一换行、补「Skill 流程遵守」固定章节、补尾部换行，得到可落盘的 Markdown
     /// </summary>
     /// <param name="llmOutput">模型原始输出</param>
     /// <returns>规范化后的 Markdown；无有效内容时返回空字符串</returns>
@@ -201,7 +201,39 @@ public class AgentsMdInitializer : IAgentsMdInitializer
             }
         }
 
-        return text.Length == 0 ? string.Empty : text + "\n";
+        if (text.Length == 0) return string.Empty;
+
+        text = EnsureSkillDirective(text);
+        return text + "\n";
+    }
+
+    /// <summary>
+    /// 固定章节标题：流程型 Skill 的遵守约定。模型输出缺失时由本服务确定性补齐。
+    /// </summary>
+    public const string SkillDirectiveHeading = "## Skill 流程遵守";
+
+    /// <summary>
+    /// 固定章节正文：用户调用流程型 Skill 时必须严格按其步骤执行。
+    /// </summary>
+    public const string SkillDirectiveContent =
+        "当用户调用 `brainstorming`、`grilling`（grill-me）等流程型 skill 时，必须严格按 skill 指示的步骤与顺序执行，" +
+        "不得擅自增删步骤、跳过环节或改写流程；与「方案确认」等通用协作规则冲突时，以 skill 的流程为准。";
+
+    /// <summary>
+    /// 确保正文包含「Skill 流程遵守」固定章节；已存在时原样返回，避免重复初始化造成重复追加。
+    /// </summary>
+    /// <param name="markdown">已剥离围栏、统一换行的 Markdown 正文</param>
+    /// <returns>补章后的 Markdown 正文</returns>
+    private static string EnsureSkillDirective(string markdown)
+    {
+        // 模型可能已按提示词生成该章节，标题或关键措辞任一命中即视为已存在，保持幂等
+        if (markdown.Contains(SkillDirectiveHeading, StringComparison.Ordinal)
+            || markdown.Contains("流程型 skill", StringComparison.OrdinalIgnoreCase))
+        {
+            return markdown;
+        }
+
+        return $"{markdown}\n\n{SkillDirectiveHeading}\n\n{SkillDirectiveContent}";
     }
 
     /// <inheritdoc/>
@@ -224,12 +256,13 @@ public class AgentsMdInitializer : IAgentsMdInitializer
     {
         return $@"请校验 {targetPath} 的完整性：
 
-1. 逐章核对是否包含 full 模式 10 个章节：Metadata、角色定位、业务场景、能力清单、工具与API、权限与授权、禁止行为、异常处理、输入输出规约、协作与调度接口。
+1. 逐章核对是否包含 full 模式 10 个章节：Metadata、角色定位、业务场景、能力清单、工具与API、权限与授权、禁止行为、异常处理、输入输出规约、协作与调度接口（末尾另须有固定章节，见第 6 条）。
 2. 若为 lite 模式，核对 4 个章节：Metadata、能力清单、工具与API、边界（含禁止行为与异常处理）。
 3. 检查「能力清单」「工具与API」是否为 Markdown 表格。
 4. 检查「禁止行为」「异常处理」在 full 模式下是否独立成章。
 5. 检查所有命令、路径、工具名是否与工作区实际内容一致，是否存在编造。
-6. 列出缺失或空泛的章节，并给出补齐后的内容。";
+6. 检查是否包含「Skill 流程遵守」章节：须写明调用 brainstorming、grilling（grill-me）等流程型 skill 时严格按其步骤与顺序执行，不得擅自增删步骤、跳过环节或改写流程。
+7. 列出缺失或空泛的章节，并给出补齐后的内容。";
     }
 
     /// <summary>

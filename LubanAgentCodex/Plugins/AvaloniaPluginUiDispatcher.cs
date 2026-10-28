@@ -11,9 +11,6 @@
 *描述：插件宿主的 Avalonia 线程封送实现（Dispatcher.UIThread）
 *
 *****************************************************************************/
-using Avalonia.Threading;
-
-using LubanAgentCore.Plugins;
 
 namespace LubanAgentCodex.Plugins;
 

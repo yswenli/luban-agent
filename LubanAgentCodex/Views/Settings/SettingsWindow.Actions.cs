@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow.Actions
 *版本号： V1.0.0.0
-*唯一标识：统一设置中心（新建 / 保存 / 删除 / 应用配置 / 动作栏）
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,12 +15,13 @@
 *      表单由窗口采集为 record，业务与全部提示文案由 ViewModels.Settings 产出。
 *
 *****************************************************************************/
-using Avalonia.Interactivity;
-using LuBan.AIAgent.Hosting;
-using LubanAgentCodex.ViewModels.Settings;
 
 namespace LubanAgentCodex.Views;
 
+/// <summary>
+/// 设置窗口（操作命令部分）：承担新建、保存、删除、导入导出等动作，
+/// 表单值由窗口采集后交给 ViewModels.Settings 执行，提示文案也由该层产出。
+/// </summary>
 public partial class SettingsWindow
 {
     // ---------------- 新建 ----------------

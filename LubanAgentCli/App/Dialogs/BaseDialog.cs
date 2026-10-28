@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App.Dialogs
 *文件名： BaseDialog
 *版本号： V1.0.0.0
-*唯一标识：弹出层基类
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -16,10 +16,6 @@
 *      均继承此基类，确保视觉风格一致。
 *
 *****************************************************************************/
-using Terminal.Gui.App;
-using Terminal.Gui.Drawing;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Color = Terminal.Gui.Drawing.Color;

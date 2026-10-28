@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex
 *文件名： App
 *版本号： V1.0.0.0
-*唯一标识：应用程序入口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,31 +14,6 @@
 *描述：Avalonia 应用程序，负责初始化 DI、自动恢复工作区、显示启动闪屏与主窗口
 *
 *****************************************************************************/
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml;
-using Avalonia.Threading;
-using LubanAgentA2A;
-using LubanAgentA2A.Runtime;
-using LubanAgentCore.Connectors.AliyunDevOps;
-using LubanAgentCodex.Views;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Hosting;
-using LubanAgentCore.Retrieval;
-using LubanAgentCore.Services;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Orchestration;
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Plugins.Security;
-using LuBan.Logging;
-using LubanAgentCore.Plugins;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace LubanAgentCodex;
 

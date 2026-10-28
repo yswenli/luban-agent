@@ -5,7 +5,7 @@
 *命名空间：LubanAgentCli.App.Services
 *文件名： TuiOrchestrationProgressSink
 *版本号： V1.0.0.0
-*唯一标识：TUI 编排进度出口
+*唯一标识：新建
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/23
@@ -15,8 +15,6 @@
 *      把进度事件转成文档追加，保证规划/节点执行有实时反馈。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Orchestration;
-using LuBan.AIAgent.Orchestration.Models;
 
 namespace LubanAgentCli.App.Services;
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Infrastructure
 *文件名： WorkspaceIdGenerator
 *版本号： V1.0.0.0
-*唯一标识：工作区ID派生器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：由工作区根目录派生稳定工作区ID（同一物理目录在任意宿主/数据库中恒得同一 ID）
 *
 *****************************************************************************/
-using System.Security.Cryptography;
-using System.Text;
 
 namespace LubanAgentCore.Infrastructure;
 

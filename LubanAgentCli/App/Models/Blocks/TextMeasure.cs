@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： TextMeasure
 *版本号： V1.0.0.0
-*唯一标识：按显示列宽度量/切分工具
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：按终端显示列宽处理文本（CJK 字符占 2 列），供 Block 布局使用
 *
 *****************************************************************************/
-using System.Text;
-using Terminal.Gui.Drawing;
-using Terminal.Gui.Text;
 
 namespace LubanAgentCli.App.Models.Blocks;
 

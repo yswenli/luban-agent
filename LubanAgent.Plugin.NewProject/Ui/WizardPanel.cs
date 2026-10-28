@@ -1,24 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Ui
 *文件名： WizardPanel
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：新建项目向导面板：左侧步骤条 + 表单区，右侧 Agent 操作记录区
+*
 *****************************************************************************/
-
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
-using Avalonia.Platform.Storage;
-using System.Globalization;
-using LubanAgentCore.Infrastructure;
-using LuBan.AIAgent.Plugins;
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Services;
 
 namespace LubanAgent.Plugin.NewProject.Ui;
 

@@ -1,16 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject
 *文件名： NewProjectPlugin
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：「新建项目」插件入口
+*
 *****************************************************************************/
-
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Plugins.Base;
-using LubanAgent.Plugin.NewProject.Services;
-using LubanAgent.Plugin.NewProject.Ui;
 
 namespace LubanAgent.Plugin.NewProject;
 

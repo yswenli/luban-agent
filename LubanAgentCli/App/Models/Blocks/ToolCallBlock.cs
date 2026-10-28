@@ -3,23 +3,21 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： ToolCallBlock
 *版本号： V1.0.0.0
-*唯一标识：工具执行中状态块
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/8/11
 *描述：Agent 工具调用，单行“工具执行中”可见状态块（参考 Claude Code）。
- *运行中显示动画 spinner + ⏳ + 友好中文动作名 + 实时耗时；完成后变为
- *✓ 动作完成（成功）或 ✗ 动作失败（失败）。工具方法名经 ToolDisplayNames
- *映射为友好中文动作名（如 GrepAsync → 全仓搜索）。替代原先“正在调用工具”
- *spinner 与静态“正在使用工具”两行冗余显示，单一状态块清晰表达执行状态。
- *
- *****************************************************************************/
-using LubanAgentCli.App.ViewModels;
-using LubanAgentCore.Utils;
+*运行中显示动画 spinner + ⏳ + 友好中文动作名 + 实时耗时；完成后变为
+*✓ 动作完成（成功）或 ✗ 动作失败（失败）。工具方法名经 ToolDisplayNames
+*映射为友好中文动作名（如 GrepAsync → 全仓搜索）。替代原先“正在调用工具”
+*spinner 与静态“正在使用工具”两行冗余显示，单一状态块清晰表达执行状态。
+*
+*****************************************************************************/
 
 // 消歧：全局 using 引入了 Spectre.Console.Color
 using Color = Terminal.Gui.Drawing.Color;

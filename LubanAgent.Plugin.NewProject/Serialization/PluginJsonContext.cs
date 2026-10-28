@@ -1,16 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Serialization
 *文件名： PluginJsonContext
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：插件侧 JSON 序列化上下文（源生成）。插件持久化的所有类型必须登记在此。
+*
 *****************************************************************************/
-
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Configuration;
 
 namespace LubanAgent.Plugin.NewProject.Serialization;
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： WorkspaceManager
 *版本号： V1.0.0.0
-*唯一标识：工作区管理服务
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,12 +14,6 @@
 *描述：工作区管理服务，管理工作区生命周期、授权、配置加载
 *
 *****************************************************************************/
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Rules;
-using LuBan.AIAgent.Skills;
-using LuBan.Common.IO;
-using LubanAgentCore.Infrastructure;
-using LubanAgentCore.Repositories;
 
 namespace LubanAgentCore.Services;
 

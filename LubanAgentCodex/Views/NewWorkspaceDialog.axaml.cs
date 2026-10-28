@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： NewWorkspaceDialog
 *版本号： V1.0.0.0
-*唯一标识：新建工作区对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,10 +14,6 @@
 *描述：新建工作区对话框，输入名称并选择目录
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Markup.Xaml;
-using Avalonia.Platform.Storage;
 
 namespace LubanAgentCodex.Views;
 

@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： MainWindow
 *版本号： V1.0.0.0
-*唯一标识：主窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,27 +14,6 @@
 *描述：主窗口，包含侧边栏、消息流、输入框和页脚状态栏
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Markup.Xaml;
-using Avalonia.Platform.Storage;
-using LubanAgentCore.Plugins;
-using LubanAgentCodex.Services;
-using LubanAgentCodex.ViewModels;
-using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCodex.Views.Controls;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Plugins;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Entities;
-using LubanAgentCore.Retrieval;
-using LubanAgentCore.Services;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Retrieval;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using System.Collections.Specialized;
-using System.Linq;
 
 namespace LubanAgentCodex.Views;
 
@@ -63,6 +42,10 @@ public partial class MainWindow : Window
     private bool _closing;
     private KnowledgeTaskService? _knowledgeTasks;
 
+    /// <summary>
+    /// 初始化主窗口并加载 XAML 定义：绑定侧边栏、消息流、输入框、页脚与插件面板宿主控件，
+    /// 并挂接关闭确认处理。
+    /// </summary>
     public MainWindow()
     {
         InitializeComponent();

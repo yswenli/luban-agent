@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models
+*命名空间：LubanAgentCli.App.Models
 *文件名： TaskRegistry
 *版本号： V1.0.0.0
-*唯一标识：Agent 任务注册表
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -118,6 +118,10 @@ public sealed class TaskRegistry
         handler2?.Invoke();
     }
 
+    /// <summary>
+    /// 取消指定任务：触发取消令牌，把运行中或等待中的任务标记为已取消并释放其资源，随后通知任务列表变更。
+    /// </summary>
+    /// <param name="task">待取消的任务。</param>
     public void Cancel(AgentTask task)
     {
         ArgumentNullException.ThrowIfNull(task);

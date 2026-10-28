@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： ToolConfirmationContextExtensions
 *版本号： V1.0.0.0
-*唯一标识：工具确认上下文装配扩展
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -16,7 +16,6 @@
 *消除两端各自装配导致的行为分歧。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCore.Services;
 

@@ -4,7 +4,7 @@
 *命名空间：LubanAgentCore.Repositories
 *文件名： ManagementStores
 *版本号： V1.0.0.0
-*唯一标识：管理服务用的最小仓储缝
+*唯一标识：新建
 *创建人：yswenli
 *创建时间：2026/10/27
 *描述：管理服务（工作区/会话/LLM Wiki）所需的仓储能力最小抽象。

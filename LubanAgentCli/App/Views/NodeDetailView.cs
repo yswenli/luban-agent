@@ -5,19 +5,17 @@
 *命名空间：LubanAgentCli.App.Views
 *文件名： NodeDetailView
 *版本号： V1.0.0.0
-*唯一标识：子代理节点详情视图
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/16
 *描述：子代理节点详情视图（整屏模态）。展示某个编排节点内部的思考、正文、
- *工具调用与工具结果时间轴，让子代理执行过程像主对话一样可读（参考 opencode 的
- *subagent 详情）。支持 ←/→ 切换同批节点、↑/↓/PgUp/PgDn/Home/End 滚动、Esc 返回。
- *节点仍在运行时按 250ms 轮询活动快照增量刷新（不依赖 Block 的变更通知）。
- *
+*工具调用与工具结果时间轴，让子代理执行过程像主对话一样可读（参考 opencode 的
+*subagent 详情）。支持 ←/→ 切换同批节点、↑/↓/PgUp/PgDn/Home/End 滚动、Esc 返回。
+*节点仍在运行时按 250ms 轮询活动快照增量刷新（不依赖 Block 的变更通知）。
+*
 *****************************************************************************/
-using LubanAgentCli.App.Dialogs;
-using Terminal.Gui.Text;
 
 // 消歧：全局 using 引入了 Spectre.Console.Color 与 System.Attribute
 using Attribute = Terminal.Gui.Drawing.Attribute;

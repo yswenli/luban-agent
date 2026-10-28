@@ -1,9 +1,17 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： DeployTargets
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/10/23
 *描述：Step 7「部署目标」（云效主机组）选项：创建流水线**之前**先把目标机器摊给用户选
+*
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;

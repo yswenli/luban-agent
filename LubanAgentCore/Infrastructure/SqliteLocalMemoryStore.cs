@@ -1,6 +1,25 @@
-using LuBan.AIAgent.LocalMemory;
-using LuBan.AIAgent.Utils.Text;
-using Microsoft.Data.Sqlite;
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore.Infrastructure
+*文件名： SqliteLocalMemoryStore
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/8/6
+*描述：基于 SQLite 的本地记忆存储实现，支持记忆条目的增删改查、过期清理及向量存储
+*
+*=================================================
+*修改标记
+*修改时间：2026/8/6
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：基于 SQLite 的本地记忆存储实现，支持记忆条目的增删改查、过期清理及向量存储
+*
+*****************************************************************************/
 
 namespace LubanAgentCore.Infrastructure;
 

@@ -1,10 +1,17 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Abstractions
 *文件名： INewProjectService
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：共享能力层契约：向导面板与聊天入口共用同一实例，零逻辑分叉
+*
 *****************************************************************************/
 
 namespace LubanAgent.Plugin.NewProject.Abstractions;

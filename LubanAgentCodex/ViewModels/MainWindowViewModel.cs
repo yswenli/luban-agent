@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.ViewModels
 *文件名： MainWindowViewModel
 *版本号： V1.0.0.0
-*唯一标识：主窗口 ViewModel
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：主窗口 ViewModel，管理消息流、会话和 Agent 交互
 *
 *****************************************************************************/
-
-using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCodex.ViewModels;
 

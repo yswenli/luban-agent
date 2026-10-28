@@ -4,9 +4,9 @@
 *机器名称：WALLE
 *Author：yswenli
 *命名空间：LubanAgentCore.Entities
-*文件名： DbLlmWikiFile
+*文件名： DbLlmWiki
 *版本号： V1.0.0.0
-*唯一标识：LLM Wiki 索引文件
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

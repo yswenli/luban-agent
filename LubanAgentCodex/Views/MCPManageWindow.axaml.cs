@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： MCPManageWindow
 *版本号： V1.0.0.0
-*唯一标识：MCP 服务管理窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,11 +14,6 @@
 *描述：工作区 MCP 服务管理窗口，显示和管理工作区的 MCP 配置
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using LuBan.AIAgent.MCP;
-using LubanAgentCore.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Views;
 
@@ -89,7 +84,16 @@ public partial class MCPManageWindow : Window
 /// </summary>
 public class MCPItem
 {
+    /// <summary>
+    /// MCP 服务器名称。
+    /// </summary>
     public string Name { get; set; } = "";
+    /// <summary>
+    /// MCP 服务器描述；加载失败时承载错误信息。
+    /// </summary>
     public string Description { get; set; } = "";
+    /// <summary>
+    /// 该 MCP 服务器当前是否连接成功。
+    /// </summary>
     public bool IsConnected { get; set; }
 }

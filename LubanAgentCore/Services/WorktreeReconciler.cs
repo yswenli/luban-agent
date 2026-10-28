@@ -14,7 +14,6 @@
 *描述：启动时对账 worktree 登记（DB）与磁盘 worktree 的一致性
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions.Models;
 
 namespace LubanAgentCore.Services;
 

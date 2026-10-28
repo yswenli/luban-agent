@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： WorkManageWindow
 *版本号： V1.0.0.0
-*唯一标识：工作区管理窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,10 +14,6 @@
 *描述：工作区管理窗口，用于管理工作区
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using LubanAgentCore.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Views;
 
@@ -33,6 +29,10 @@ public partial class WorkManageWindow : Window
     private Button? _deleteButton;
     private Button? _authorizeButton;
 
+    /// <summary>
+    /// 初始化工作区管理窗口并加载 XAML 定义，随后异步加载当前用户的全部工作区列表。
+    /// </summary>
+    /// <param name="services">应用服务容器，用于解析工作区管理器。</param>
     public WorkManageWindow(IServiceProvider services)
     {
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
@@ -188,10 +188,28 @@ public partial class WorkManageWindow : Window
 /// </summary>
 public class WorkspaceItem
 {
+    /// <summary>
+    /// 工作区标识。
+    /// </summary>
     public string WorkspaceId { get; set; } = "";
+    /// <summary>
+    /// 工作区类型图标（📚 表示 LLM Wiki 知识库，📁 表示普通目录）。
+    /// </summary>
     public string TypeIcon { get; set; } = "";
+    /// <summary>
+    /// 工作区名称。
+    /// </summary>
     public string Name { get; set; } = "";
+    /// <summary>
+    /// 工作区根目录的绝对路径。
+    /// </summary>
     public string RootPath { get; set; } = "";
+    /// <summary>
+    /// 状态文案：当前工作区显示「✓ 当前」，其余为空串。
+    /// </summary>
     public string Status { get; set; } = "";
+    /// <summary>
+    /// 授权状态文案（「已授权」或「未授权」）。
+    /// </summary>
     public string AuthorizedText { get; set; } = "";
 }

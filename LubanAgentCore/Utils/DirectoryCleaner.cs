@@ -1,8 +1,14 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgentCore.Utils
 *文件名： DirectoryCleaner
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/20
 *描述：目录强制删除——先递归清除只读属性再删，规避 Windows 上 git pack 只读属性挡删除的坑
 *

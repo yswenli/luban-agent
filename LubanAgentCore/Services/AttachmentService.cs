@@ -1,11 +1,25 @@
-using LuBan.AIAgent.Attachments;
-using LuBan.AIAgent.Sessions;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Models;
-using Microsoft.Extensions.AI;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore.Services
+*文件名： AttachmentService
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/9/18
+*描述：附件编排服务：路径解析、处理、模型能力判定、ChatMessage 构建、元数据序列化。
+*
+*=================================================
+*修改标记
+*修改时间：2026/9/18
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：附件编排服务：路径解析、处理、模型能力判定、ChatMessage 构建、元数据序列化。
+*
+*****************************************************************************/
 
 namespace LubanAgentCore.Services;
 

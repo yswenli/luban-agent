@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Retrieval
+*命名空间：LubanAgentCore.Retrieval
 *文件名： OnnxEmbeddingGenerator
 *版本号： V1.0.0.0
-*唯一标识：ONNX 嵌入生成器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

@@ -14,7 +14,6 @@
 *描述：云效连接器与进程内 MCP 客户端的 DI 注册扩展
 *
 *****************************************************************************/
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LubanAgentCore.Connectors.AliyunDevOps;
 

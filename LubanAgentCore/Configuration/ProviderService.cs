@@ -1,3 +1,26 @@
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore.Configuration
+*文件名： ProviderService
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/10/12
+*描述：按当前用户隔离的 Provider 门面：包装 <see cref="ProviderCache"/>， 使调用点无需直接操作缓存即可读写刷新得到的模型列表。 由 DI 按 <c>userId</c> keyed 注册。
+*
+*=================================================
+*修改标记
+*修改时间：2026/10/12
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：按当前用户隔离的 Provider 门面：包装 <see cref="ProviderCache"/>， 使调用点无需直接操作缓存即可读写刷新得到的模型列表。 由 DI 按 <c>userId</c> keyed 注册。
+*
+*****************************************************************************/
+
 namespace LubanAgentCore.Configuration;
 
 /// <summary>

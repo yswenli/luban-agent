@@ -1,14 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgentCore.Hosting
 *文件名： AgentHostServices
 *版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/13
 *描述：应用级服务提供者，持有根容器与进程常驻用户作用域
 *
 *****************************************************************************/
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCore.Hosting;
 

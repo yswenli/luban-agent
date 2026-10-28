@@ -14,7 +14,6 @@
 *描述：A2A 入站 API Key 鉴权中间件，校验 X-Api-Key 请求头
 *
 *****************************************************************************/
-using Microsoft.AspNetCore.Http;
 
 namespace LubanAgentA2A.Security;
 

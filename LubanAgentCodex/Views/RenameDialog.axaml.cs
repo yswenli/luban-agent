@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： RenameDialog
 *版本号： V1.0.0.0
-*唯一标识：重命名对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：通用重命名对话框，用于重命名工作区等
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 
 namespace LubanAgentCodex.Views;
 

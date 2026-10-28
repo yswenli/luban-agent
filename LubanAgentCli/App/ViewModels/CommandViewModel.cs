@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.ViewModels
+*命名空间：LubanAgentCli.App.ViewModels
 *文件名： CommandViewModel
 *版本号： V1.0.0.0
-*唯一标识：命令 ViewModel
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,12 +15,6 @@
 *统一 /help /clear /mode 和 /provider /model /session 等所有命令。
 *
 *****************************************************************************/
-using LuBan.AIAgent.A2A;
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.Wiki;
-using LubanAgentA2A.Runtime;
-using LubanAgentCli.App.Models;
-using LuBan.AIAgent.Hosting.Commands;
 
 namespace LubanAgentCli.App.ViewModels;
 

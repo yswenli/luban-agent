@@ -14,12 +14,6 @@
 *描述：进程内 A2A 传输，按 Agent 名路由到注册表句柄，直连不经过 HTTP
 *
 *****************************************************************************/
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
-
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.A2A.Models;
 
 namespace LubanAgentA2A.InProcess;
 

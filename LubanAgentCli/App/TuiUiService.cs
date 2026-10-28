@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App
 *文件名： TuiUiService
 *版本号： V1.0.0.0
-*唯一标识：TuiUiService 实现
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -16,7 +16,6 @@
 *作为外观层，内部使用 BaseDialog 子类的各个对话框组件。
 *
 *****************************************************************************/
-using LubanAgentCli.App.Dialogs;
 
 namespace LubanAgentCli.App;
 
@@ -113,6 +112,12 @@ internal sealed class TuiUiService : ITuiUiService
 
     /// <inheritdoc/>
 #pragma warning disable CS0618
+    /// <summary>
+    /// 以模态对话框展示动态表单，并按字段顺序回传用户输入，空表单直接返回空集合。
+    /// </summary>
+    /// <param name="title">表单对话框标题。</param>
+    /// <param name="fields">按顺序排列的字段定义，必填项为空时会拦截提交。</param>
+    /// <returns>按字段顺序排列的输入值；用户取消时返回 null。</returns>
     public IReadOnlyList<string>? ShowForm(string title, IReadOnlyList<FormField> fields)
     {
         ArgumentNullException.ThrowIfNull(fields);

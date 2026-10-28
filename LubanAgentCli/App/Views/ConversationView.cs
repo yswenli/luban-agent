@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Views
+*命名空间：LubanAgentCli.App.Views
 *文件名： ConversationView
 *版本号： V1.0.0.0
-*唯一标识：会话区自绘视图
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,13 +14,6 @@
 *描述：会话区自绘视图，消费 Block 文档模型，支持流式刷新节流、自动滚动跟随与鼠标交互
 *
 *****************************************************************************/
-
-
-using LubanAgentCli.App.Models;
-using LubanAgentCli.App.Models.Blocks;
-using LubanAgentCli.App.ViewModels;
-
-using Terminal.Gui.Text;
 
 namespace LubanAgentCli.App.Views;
 

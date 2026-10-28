@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： StartupDialog
 *版本号： V1.0.0.0
-*唯一标识：启动向导对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,12 +14,6 @@
 *描述：启动向导对话框，显示初始化进度，支持取消和错误处理
 *
 *****************************************************************************/
-using LubanAgentCli.App.Dialogs;
-using LubanAgentCore.Hosting;
-using Terminal.Gui.App;
-using Terminal.Gui.Drawing;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 using Attribute = Terminal.Gui.Drawing.Attribute;
 

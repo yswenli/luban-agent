@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SplashWindow
 *版本号： V1.0.0.0
-*唯一标识：启动闪屏
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,9 +15,6 @@
 *      由 App.OnFrameworkInitializationCompleted 驱动状态更新，初始化完成且主窗体就绪后延迟 1s 关闭。
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using Avalonia.Threading;
 
 namespace LubanAgentCodex.Views;
 
@@ -29,6 +26,10 @@ public partial class SplashWindow : Window
     private TextBlock? _statusText;
     private ProgressBar? _progress;
 
+    /// <summary>
+    /// 初始化启动闪屏窗口并加载 XAML 定义，缓存初始化状态文本与进度条控件。
+    /// 闪屏居中展示启动图与初始化进度，主窗体就绪后延迟关闭。
+    /// </summary>
     public SplashWindow()
     {
         AvaloniaXamlLoader.Load(this);

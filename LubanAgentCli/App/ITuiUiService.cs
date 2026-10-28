@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.App
+*命名空间：LubanAgentCli.App
 *文件名： ITuiUiService
 *版本号： V1.0.0.0
-*唯一标识：TUI UI 服务抽象
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： InlineChoiceBlock
 *版本号： V1.0.0.0
-*唯一标识：内联选择 Block
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：内联确认/选择公共组件。珊瑚红标题 + 选项行，双通道（键盘+鼠标）焦点同步
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models;
 
 namespace LubanAgentCli.App.Models.Blocks;
 

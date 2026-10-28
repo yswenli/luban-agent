@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow.Navigation
 *版本号： V1.0.0.0
-*唯一标识：统一设置中心（左栏导航 / 顶栏作用域 / 中栏列表）
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,11 +15,12 @@
 *      条目枚举 / 供应商 / 模型 / A2A 列表均经 ViewModels.Settings 取数。
 *
 *****************************************************************************/
-using LuBan.AIAgent;
-using LubanAgentCodex.ViewModels.Settings;
 
 namespace LubanAgentCodex.Views;
 
+/// <summary>
+/// 设置窗口（导航部分）：解析配置目录，加载页签下的条目列表并处理选中联动。
+/// </summary>
 public partial class SettingsWindow
 {
     // ---------------- 路径解析 ----------------

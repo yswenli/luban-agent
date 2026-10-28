@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： SessionRuntimeReloadTrigger
 *版本号： V1.0.0.0
-*唯一标识：会话级 Agent 重载触发器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：实现 IAgentReloadTrigger，在工具修改工作区级配置（Skill/MCP）后触发延迟重载。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Hosting;
 
 namespace LubanAgentCore.Services;
 

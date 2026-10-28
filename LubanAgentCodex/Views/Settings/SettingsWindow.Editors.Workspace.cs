@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow.Editors.Workspace
 *版本号： V1.0.0.0
-*唯一标识：统一设置中心（编辑器分发 + 技能 / 规则 / MCP 编辑器 + 字段工厂）
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,10 +15,13 @@
 *      控件构建顺序、标签文案、默认值与改动前逐字一致。
 *
 *****************************************************************************/
-using LubanAgentCodex.ViewModels.Settings;
 
 namespace LubanAgentCodex.Views;
 
+/// <summary>
+/// 设置窗口（编辑器-工作区部分）：按当前页签把技能、规则、MCP、连接器等
+/// 工作区级配置分发到对应的右栏编辑表单。
+/// </summary>
 public partial class SettingsWindow
 {
     /// <summary>

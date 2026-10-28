@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Utils
 *文件名： McpArgsParser
 *版本号： V1.0.0.0
-*唯一标识：MCP 参数解析
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

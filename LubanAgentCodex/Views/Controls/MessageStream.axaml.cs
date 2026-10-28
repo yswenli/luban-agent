@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： MessageStream
 *版本号： V1.0.0.0
-*唯一标识：消息流控件
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,12 +14,6 @@
 *描述：消息流显示控件，支持自动滚动和多种消息类型
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Markup.Xaml;
-using LubanAgentCodex.ViewModels.Messages;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -35,6 +29,9 @@ public partial class MessageStream : UserControl
     private bool _scrollScheduled;
     private ObservableCollection<MessageItemBase>? _messages;
 
+    /// <summary>
+    /// 初始化消息流控件并加载 XAML 定义，挂接滚动事件以维持贴底自动滚动。
+    /// </summary>
     public MessageStream()
     {
         InitializeComponent();

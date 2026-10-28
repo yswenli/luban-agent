@@ -11,17 +11,6 @@
 *描述：产品插件宿主实现（单例）：承接插件贡献并落到宿主界面 / 工作区 / 会话注册表
 *
 *****************************************************************************/
-using System.Text;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Connectors;
-using LuBan.AIAgent.Defaults;
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Plugins.Lifecycle;
-using LuBan.AIAgent.Plugins.Security;
-using LuBan.AIAgent.Skills;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace LubanAgentCore.Plugins;
 

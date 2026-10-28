@@ -14,13 +14,6 @@
 *描述：知识库后台任务服务（索引/wiki ingest 提取/wiki 重建），串行执行 + 节流进度 + 显式工作区
 *
 *****************************************************************************/
-using LuBan.AIAgent.Wiki;
-using LuBan.AIAgent.Wiki.Extractors;
-
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Retrieval;
-
-using System.Collections.Concurrent;
 
 namespace LubanAgentCore.Services;
 
@@ -388,12 +381,21 @@ public sealed class KnowledgeTaskService
         private DateTime _last = DateTime.MinValue;
         private IndexProgress? _lastReported;
 
+        /// <summary>
+        /// 初始化索引进度节流器。
+        /// </summary>
+        /// <param name="onReport">节流后实际调用的进度回调。</param>
+        /// <param name="interval">两次通知之间的最小间隔，终态阶段不受该限制。</param>
         public ThrottledProgress(Action<IndexProgress> onReport, TimeSpan interval)
         {
             _onReport = onReport;
             _interval = interval;
         }
 
+        /// <summary>
+        /// 上报索引进度：阶段、完成状态与当前文件均未变化时丢弃；非终态阶段还受最小间隔限制。
+        /// </summary>
+        /// <param name="value">最新索引进度。</param>
         public void Report(IndexProgress value)
         {
             lock (_lock)

@@ -15,11 +15,6 @@
 *管理当前工作区 .luban-agent/a2a/*.json 配置文件与运行时启停。
 *
 *****************************************************************************/
-using LuBan.AIAgent.A2A;
-using LuBan.AIAgent.A2A.Abstractions;
-
-using LubanAgentA2A.Configuration;
-using LubanAgentA2A.Runtime;
 
 namespace LubanAgentCli.Commands;
 

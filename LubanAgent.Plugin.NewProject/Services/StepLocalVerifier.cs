@@ -1,15 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： StepLocalVerifier
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/22
 *描述：Step 3/6/7 的插件侧本地复核器——用文件系统证据补上「助手自报」之外的独立判据
+*
 *****************************************************************************/
-
-using System.Text;
-
-using LubanAgent.Plugin.NewProject.Abstractions;
 
 namespace LubanAgent.Plugin.NewProject.Services;
 

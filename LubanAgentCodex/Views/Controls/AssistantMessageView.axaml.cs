@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： AssistantMessageView
 *版本号： V1.0.0.0
-*唯一标识：AI 助手消息视图
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,8 +14,6 @@
 *描述：AI 助手消息显示控件
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -24,6 +22,9 @@ namespace LubanAgentCodex.Views.Controls;
 /// </summary>
 public partial class AssistantMessageView : UserControl
 {
+    /// <summary>
+    /// 初始化 AI 助手消息视图并加载 XAML 定义，用于渲染助手回复正文（Markdown 与代码块）。
+    /// </summary>
     public AssistantMessageView()
     {
         InitializeComponent();

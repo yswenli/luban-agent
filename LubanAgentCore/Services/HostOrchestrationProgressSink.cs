@@ -5,7 +5,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： HostOrchestrationProgressSink
 *版本号： V1.0.0.0
-*唯一标识：HostOrchestrationProgressSink
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -13,8 +13,6 @@
 *描述：宿主编排进度出口：把框架编排进度转成 UI 无关的 OrchestrationProgressEvent 供宿主订阅。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Orchestration;
 
 namespace LubanAgentCore.Services;
 

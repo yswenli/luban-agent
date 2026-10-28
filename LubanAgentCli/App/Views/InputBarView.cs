@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Views
+*命名空间：LubanAgentCli.App.Views
 *文件名： InputBarView
 *版本号： V1.0.0.0
-*唯一标识：输入区视图
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,7 +15,6 @@
 *Enter 提交，Shift+Enter 换行。输入 / 时弹出命令补全菜单。
 *
 *****************************************************************************/
-using LuBan.AIAgent.Hosting.Commands;
 using Attribute = Terminal.Gui.Drawing.Attribute;
 using Clipboard = Terminal.Gui.App.Clipboard;
 using Color = Terminal.Gui.Drawing.Color;

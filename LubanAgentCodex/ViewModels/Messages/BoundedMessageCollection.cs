@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.ViewModels.Messages
 *文件名： BoundedMessageCollection
 *版本号： V1.0.0.0
-*唯一标识：有界消息集合
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：有界消息集合：插入后若超过上限，从最旧端裁剪，避免会话消息流无界增长。
 *
 *****************************************************************************/
-using System.Collections.ObjectModel;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 

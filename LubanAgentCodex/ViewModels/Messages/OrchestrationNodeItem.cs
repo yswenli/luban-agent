@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.ViewModels.Messages
 *文件名： OrchestrationNodeItem
 *版本号： V1.0.0.0
-*唯一标识：编排节点消息项
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：自动编排子代理节点消息项，承载节点状态与其内部活动时间线
 *
 *****************************************************************************/
-using LuBan.AIAgent.Orchestration.Models;
 
 namespace LubanAgentCodex.ViewModels.Messages;
 

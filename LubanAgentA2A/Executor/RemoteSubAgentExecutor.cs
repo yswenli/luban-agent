@@ -14,11 +14,6 @@
 *描述：远程编排子代理执行器，经 IA2AClient 调用远端 Agent 并映射事件
 *
 *****************************************************************************/
-using System.Runtime.CompilerServices;
-
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.Orchestration;
-using LuBan.AIAgent.Orchestration.Models;
 
 namespace LubanAgentA2A.Executor;
 

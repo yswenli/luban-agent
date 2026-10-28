@@ -1,34 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Services
 *文件名： NewProjectService
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：共享能力层实现。向导面板与聊天入口共用同一实例。
+*
 *****************************************************************************/
-
-using System.Diagnostics;
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using LubanAgentCore.Connectors.AliyunDevOps;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Infrastructure;
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Plugins.Lifecycle;
-using LuBan.AIAgent.Plugins.Security;
-using LuBan.AIAgent.Sessions;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Hosting;
-using LubanAgentCore.Infrastructure;
-using LubanAgentCore.Models;
-using LubanAgentCore.Services;
-using LubanAgentCore.Utils;
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Configuration;
-using LubanAgent.Plugin.NewProject.Serialization;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgent.Plugin.NewProject.Services;
 

@@ -14,10 +14,6 @@
 *描述：内存 A2A Agent 注册表实现，进程内传输按名称路由的默认来源
 *
 *****************************************************************************/
-using System.Collections.Concurrent;
-
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.A2A.Models;
 
 namespace LubanAgentA2A.InProcess;
 

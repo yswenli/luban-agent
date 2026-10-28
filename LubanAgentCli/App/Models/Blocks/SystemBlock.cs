@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Models.Blocks
+*命名空间：LubanAgentCli.App.Models.Blocks
 *文件名： SystemBlock
 *版本号： V1.0.0.0
-*唯一标识：系统消息 Block
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：系统消息与 `/` 命令输出，灰色，不可折叠；支持自定义前景色
 *
 *****************************************************************************/
-using Terminal.Gui.Drawing;
-
-using LubanAgentCli.App.Models.Blocks;
 
 // 消歧：全局 using 引入了 Spectre.Console
 using Color = Terminal.Gui.Drawing.Color;

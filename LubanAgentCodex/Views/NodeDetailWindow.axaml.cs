@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： NodeDetailWindow
 *版本号： V1.0.0.0
-*唯一标识：子代理节点详情窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,9 +14,6 @@
 *描述：展示单个编排子代理节点的思考/工具调用/结果完整时间线
 *
 *****************************************************************************/
-using Avalonia.Markup.Xaml;
-using LubanAgentCodex.ViewModels.Messages;
-using System.Collections.Specialized;
 
 namespace LubanAgentCodex.Views;
 

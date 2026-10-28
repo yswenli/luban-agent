@@ -14,7 +14,6 @@
 *描述：git 命令薄封装，统一参数拼接、编码与错误处理
 *
 *****************************************************************************/
-using LuBan.AIAgent.Infrastructure;
 
 namespace LubanAgentCore.Services;
 

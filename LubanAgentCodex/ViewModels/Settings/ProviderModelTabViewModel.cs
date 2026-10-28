@@ -14,8 +14,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Configuration.Providers;
-
 namespace LubanAgentCodex.ViewModels.Settings;
 
 /// <summary>

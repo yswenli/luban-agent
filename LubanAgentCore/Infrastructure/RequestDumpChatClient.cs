@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Infrastructure
 *文件名： RequestDumpChatClient
 *版本号： V1.0.0.0
-*唯一标识：LLM 请求失败转储装饰器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -16,7 +16,6 @@
 *       保证每次重试的原始异常都能被记录，且不改变上层容错包装的幂等判断。
 *
 *****************************************************************************/
-using LuBan.Logging;
 
 namespace LubanAgentCore.Infrastructure;
 

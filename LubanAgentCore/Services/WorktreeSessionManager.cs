@@ -14,8 +14,6 @@
 *描述：worktree 会话生命周期协调器（IWorktreeCoordinator 的宿主实现）
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions.Models;
-using LuBan.AIAgent.Defaults;
 
 namespace LubanAgentCore.Services;
 

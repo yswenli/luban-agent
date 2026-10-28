@@ -12,8 +12,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Services.Management.Models;
-
 namespace LubanAgentCodex.ViewModels.Settings;
 
 /// <summary>

@@ -3,10 +3,10 @@
 *CLR版本： .net10.0
 *机器名称：WALLE
 *Author：yswenli
-*命名空间：LubanAgent.Views
+*命名空间：LubanAgentCli.App.Views
 *文件名： RootView
 *版本号： V1.0.0.0
-*唯一标识：顶层容器视图
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -15,13 +15,6 @@
 *划分三区域布局并承载全局快捷键、会话切换与输入提交；会话切换仅重绑视图，不打断后台运行
 *
 *****************************************************************************/
-using LubanAgentCli.App.Models;
-using LubanAgentCli.App.Models.Blocks;
-using LubanAgentCli.App.ViewModels;
-
-using Terminal.Gui.Input;
-using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 namespace LubanAgentCli.App.Views;
 
@@ -37,14 +30,35 @@ internal sealed class RootView : Runnable
     /// </summary>
     private sealed class SessionUi
     {
+        /// <summary>
+        /// 该槽位所属的会话标识。
+        /// </summary>
         public required string SessionId { get; init; }
+        /// <summary>
+        /// 该会话独占的对话文档（渲染行与块的容器）。
+        /// </summary>
         public required ConversationDocument Doc { get; init; }
+        /// <summary>
+        /// 该会话的对话 ViewModel，维护消息集合与流式运行态。
+        /// </summary>
         public required ConversationViewModel Vm { get; init; }
+        /// <summary>
+        /// 该会话的斜杠命令 ViewModel，承载命令解析与执行状态。
+        /// </summary>
         public required CommandViewModel CommandVm { get; init; }
+        /// <summary>
+        /// 该会话的加载指示器服务，驱动「正在处理」等临时提示。
+        /// </summary>
         public required SpinnerService Spinner { get; init; }
+        /// <summary>
+        /// 该会话的页脚数据提供者（工作区、分支、Token 用量等）。
+        /// </summary>
         public required FooterDataProvider FooterProvider { get; init; }
 
         // 待执行队列：该会话运行期间提交的输入在此排队（含附件），本轮结束后顺序执行
+        /// <summary>
+        /// 待执行输入队列：该会话运行期间提交的输入（含附件）在此排队，本轮结束后按序执行。
+        /// </summary>
         public readonly Queue<(string Text, IReadOnlyList<AttachmentDraft> Attachments)> InputQueue = new();
 
         // 是否处于运行/派发中（含初始化空档），用于决定新输入立即执行还是入队
@@ -54,10 +68,19 @@ internal sealed class RootView : Runnable
         public volatile bool Initialized;
 
         // 初始化去重：同一会话的启动预热与首次输入共用同一任务
+        /// <summary>
+        /// 初始化互斥锁，保证同一会话的启动预热与首次输入只触发一次初始化。
+        /// </summary>
         public readonly object InitLock = new();
+        /// <summary>
+        /// 正在进行的初始化任务（解析工作区、预热 Agent、回放历史），供并发调用方共享等待。
+        /// </summary>
         public Task? InitTask;
 
         // 后台会话等待确认时，是否已向活动会话提示过一次
+        /// <summary>
+        /// 是否已就后台会话的待确认工具调用向活动会话提示过一次，用于避免重复打扰。
+        /// </summary>
         public bool HintShown;
     }
 

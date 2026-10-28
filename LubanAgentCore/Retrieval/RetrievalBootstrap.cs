@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Retrieval
 *文件名： RetrievalBootstrap
 *版本号： V1.0.0.0
-*唯一标识：检索能力引导器
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com

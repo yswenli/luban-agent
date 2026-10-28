@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： LlmWikiManageWindow
 *版本号： V1.0.0.0
-*唯一标识：LLM Wiki 知识库管理窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,20 +14,6 @@
 *描述：LLM Wiki 知识库管理窗口，用于管理 LLM Wiki 知识库
 *
 *****************************************************************************/
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using LubanAgentCodex.Views.Controls;
-using LuBan.AIAgent.Configuration;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Retrieval;
-using LuBan.AIAgent.Retrieval;
-using LuBan.AIAgent.Wiki;
-using LubanAgentCore.Services;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace LubanAgentCodex.Views;
 
@@ -56,6 +42,11 @@ public partial class LlmWikiManageWindow : Window
     private TextBlock? _viewTitleText;
     private TextBlock? _emptyHint;
 
+    /// <summary>
+    /// 初始化 LLM Wiki 知识库管理窗口并加载 XAML 定义：创建窗口级用户作用域，
+    /// 随后列出可管理（索引、检索、重建、lint）的知识库工作区。
+    /// </summary>
+    /// <param name="services">应用服务容器，用于创建工作区隔离的作用域并关闭窗口时释放。</param>
     public LlmWikiManageWindow(IServiceProvider services)
     {
         _services = services;
@@ -508,11 +499,29 @@ public class LlmWikiItem : INotifyPropertyChanged
 {
     private string _countText = "…";
 
+    /// <summary>
+    /// 该知识库对应的工作区标识。
+    /// </summary>
     public string WorkspaceId { get; set; } = "";
+    /// <summary>
+    /// 知识库显示名称。
+    /// </summary>
     public string Name { get; set; } = "";
+    /// <summary>
+    /// 知识库根目录的绝对路径。
+    /// </summary>
     public string RootPath { get; set; } = "";
+    /// <summary>
+    /// 知识库状态文案（索引就绪度等），空串表示无附加状态。
+    /// </summary>
     public string Status { get; set; } = "";
+    /// <summary>
+    /// 该知识库是否属于当前活动工作区。
+    /// </summary>
     public bool IsCurrent { get; set; }
+    /// <summary>
+    /// 控制列表项「当前」标记的可见性，直接暴露 <c>IsCurrent</c> 供绑定使用。
+    /// </summary>
     public bool IsCurrentVisible => IsCurrent;
 
     /// <summary>文件/切块统计文案，异步加载后回填。</summary>
@@ -538,9 +547,24 @@ public class LlmWikiItem : INotifyPropertyChanged
 /// </summary>
 public class SearchResultItem
 {
+    /// <summary>
+    /// 命中切块所在文件的路径。
+    /// </summary>
     public string FilePath { get; set; } = "";
+    /// <summary>
+    /// 命中切块所属的符号名（类、方法或页面标题）。
+    /// </summary>
     public string SymbolName { get; set; } = "";
+    /// <summary>
+    /// 命中内容所在的行范围文案。
+    /// </summary>
     public string LineRange { get; set; } = "";
+    /// <summary>
+    /// 相关性得分的显示文案。
+    /// </summary>
     public string ScoreText { get; set; } = "";
+    /// <summary>
+    /// 命中切块的正文内容（用于结果列表预览）。
+    /// </summary>
     public string Content { get; set; } = "";
 }

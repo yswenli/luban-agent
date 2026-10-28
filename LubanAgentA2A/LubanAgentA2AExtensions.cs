@@ -14,19 +14,6 @@
 *描述：A2A agent 侧 DI 注册入口，绑定配置并注册 SDK 实现，替换框架默认抽象
 *
 *****************************************************************************/
-using LuBan.AIAgent.A2A;
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.Orchestration;
-
-using LubanAgentA2A.Executor;
-using LubanAgentA2A.InProcess;
-using LubanAgentA2A.Runtime;
-using LubanAgentA2A.Server;
-
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 
 namespace LubanAgentA2A;
 

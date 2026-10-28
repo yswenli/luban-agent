@@ -1,19 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Ui
 *文件名： PipelineYamlEditorWindow
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/22
 *描述：Step 7 流水线 YAML 手工微调弹窗：把只读预览升级为可编辑，保存后由创建/补齐直接提交
+*
 *****************************************************************************/
-
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
 
 namespace LubanAgent.Plugin.NewProject.Ui;
 

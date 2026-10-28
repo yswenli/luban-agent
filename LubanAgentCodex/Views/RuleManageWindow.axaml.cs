@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： RuleManageWindow
 *版本号： V1.0.0.0
-*唯一标识：规则管理窗口
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,11 +14,6 @@
 *描述：工作区规则管理窗口，显示和管理工作区的 Rule 配置
 *
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Markup.Xaml;
-using LuBan.AIAgent.Rules;
-using LubanAgentCore.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LubanAgentCodex.Views;
 
@@ -90,8 +85,20 @@ public partial class RuleManageWindow : Window
 /// </summary>
 public class RuleItem
 {
+    /// <summary>
+    /// 规则唯一标识，同时用作规则文件名。
+    /// </summary>
     public string Id { get; set; } = "";
+    /// <summary>
+    /// 规则显示名称。
+    /// </summary>
     public string Name { get; set; } = "";
+    /// <summary>
+    /// 规则用途说明（取自规则元数据描述）。
+    /// </summary>
     public string Description { get; set; } = "";
+    /// <summary>
+    /// 规则当前是否启用。
+    /// </summary>
     public bool IsEnabled { get; set; }
 }

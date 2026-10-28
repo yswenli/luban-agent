@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCli.App.Dialogs
 *文件名： TableDialog
 *版本号： V1.0.0.0
-*唯一标识：表格对话框
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -17,10 +17,6 @@
 *      Enter 确认当前选中行，Esc 关闭。
 *
 *****************************************************************************/
-using System.Data;
-using Terminal.Gui.App;
-using Terminal.Gui.Input;
-using Terminal.Gui.Views;
 
 namespace LubanAgentCli.App.Dialogs;
 

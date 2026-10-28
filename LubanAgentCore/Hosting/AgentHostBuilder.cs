@@ -1,24 +1,25 @@
-using LuBan.AIAgent;
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Connectors;
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.LocalMemory;
-using LuBan.AIAgent.Plugins;
-using LuBan.AIAgent.Retrieval;
-using LuBan.AIAgent.Wiki;
-using LuBan.Logging;
-using LuBan.Orm;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using LubanAgentCore.Agents;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Plugins;
-using LubanAgentCore.Repositories;
-using LubanAgentCore.Services;
+/****************************************************************************
+*Copyright @ yswenli All Rights Reserved.
+*CLR版本： .net10.0
+*机器名称：WALLE
+*命名空间：LubanAgentCore.Hosting
+*文件名： AgentHostBuilder
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
+*创建时间：2026/7/29
+*描述：Agent 宿主构建器：提供 DI 容器构建与工作区初始化，供 TUI/GUI 共用。
+*
+*=================================================
+*修改标记
+*修改时间：2026/7/29
+*修改人： yswenli
+*版本号： V1.0.0.0
+*描述：Agent 宿主构建器：提供 DI 容器构建与工作区初始化，供 TUI/GUI 共用。
+*
+*****************************************************************************/
 
 namespace LubanAgentCore.Hosting;
 
@@ -274,6 +275,9 @@ public static class AgentHostBuilder
     private sealed class DelegateWorkspaceContextProvider(Func<string?> getWorkspaceId)
         : IWorkspaceContextProvider
     {
+        /// <summary>
+        /// 当前工作区标识，每次读取都委托给构造时传入的取值函数（可为空）。
+        /// </summary>
         public string? CurrentWorkspaceId => getWorkspaceId();
     }
 }

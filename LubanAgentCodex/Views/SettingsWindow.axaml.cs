@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views
 *文件名： SettingsWindow
 *版本号： V1.1.0.0
-*唯一标识：统一设置中心（工作区配置 + 供应商与模型）
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -24,8 +24,6 @@
 *      UI 构建拆分到 Views/Settings/SettingsWindow.{Navigation,Actions,Editors.*}.cs。
 *
 *****************************************************************************/
-using Avalonia.Interactivity;
-using LubanAgentCodex.ViewModels.Settings;
 
 namespace LubanAgentCodex.Views;
 

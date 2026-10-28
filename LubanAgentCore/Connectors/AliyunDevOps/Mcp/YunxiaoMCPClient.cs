@@ -15,8 +15,6 @@
 *
 *****************************************************************************/
 
-using System.Globalization;
-
 namespace LubanAgentCore.Connectors.AliyunDevOps.Mcp;
 
 /// <summary>

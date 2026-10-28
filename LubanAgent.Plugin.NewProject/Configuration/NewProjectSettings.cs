@@ -1,16 +1,18 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
+*机器名称：WALLE
 *命名空间：LubanAgent.Plugin.NewProject.Configuration
 *文件名： NewProjectSettings
+*版本号： V1.0.0.0
+*唯一标识：新建
+*当前的用户域：WALLE
+*创建人：yswenli
+*电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/16
 *描述：插件配置（命名与分支约定），包内默认值 + 宿主可覆盖
+*
 *****************************************************************************/
-
-using System.Reflection;
-using System.Text.Json;
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Serialization;
 
 namespace LubanAgent.Plugin.NewProject.Configuration;
 

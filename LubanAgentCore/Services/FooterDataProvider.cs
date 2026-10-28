@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCore.Services
 *文件名： FooterDataProvider
 *版本号： V1.0.0.0
-*唯一标识：页脚数据提供者
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,7 +14,6 @@
 *描述：聚合 git 分支、token 用量、模式名称等页脚元数据
 *
 *****************************************************************************/
-using LuBan.AIAgent.Abstractions;
 
 namespace LubanAgentCore.Services;
 

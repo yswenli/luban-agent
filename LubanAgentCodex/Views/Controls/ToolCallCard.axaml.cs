@@ -6,7 +6,7 @@
 *命名空间：LubanAgentCodex.Views.Controls
 *文件名： ToolCallCard
 *版本号： V1.0.0.0
-*唯一标识：工具调用卡片
+*唯一标识：新建
 *当前的用户域：WALLE
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
@@ -14,19 +14,6 @@
 *描述：工具调用显示卡片：左侧色条 + 工具图标 + 复制参数 + 结果摘要 + 紧凑参数区。
 
 *****************************************************************************/
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Input.Platform;
-using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
-using Avalonia.Media;
-using Avalonia.Threading;
-using LubanAgentCodex.ViewModels.Messages;
-using LubanAgentCore.Utils;
-using System.ComponentModel;
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace LubanAgentCodex.Views.Controls;
 
@@ -60,6 +47,9 @@ public partial class ToolCallCard : UserControl
     private DispatcherTimer? _timer;
     private int _frameIndex;
 
+    /// <summary>
+    /// 初始化工具调用卡片并加载 XAML 定义，缓存状态图标、参数区与结果摘要控件。
+    /// </summary>
     public ToolCallCard()
     {
         InitializeComponent();
