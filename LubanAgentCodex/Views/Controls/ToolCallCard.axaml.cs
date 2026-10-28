@@ -173,7 +173,24 @@ public partial class ToolCallCard : UserControl
                 RenderFailed();
                 SetAccent((IBrush?)Application.Current?.FindResource("ErrorBrush"));
                 break;
+            case ToolCallState.Cancelled:
+                // 取消/异常中断：工具不会再回传结果，必须停表，否则动画与读秒永不停
+                StopTimer();
+                RenderCancelled();
+                SetAccent((IBrush?)Application.Current?.FindResource("DividerBrush"));
+                break;
         }
+    }
+
+    private void RenderCancelled()
+    {
+        if (_boundItem == null || _statusIcon == null || _stateText == null) return;
+
+        var elapsed = DateTime.Now - _boundItem.Timestamp;
+        _statusIcon.Text = "⊘";
+        _stateText.Text = $"{_boundItem.ErrorMessage ?? "已取消"} · {elapsed.TotalSeconds:F1}s";
+        _stateText.Foreground = (IBrush?)Application.Current?.FindResource("TextTertiaryBrush")
+            ?? Brushes.Gray;
     }
 
     private void SetAccent(IBrush? brush)

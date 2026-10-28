@@ -16,7 +16,6 @@
 *****************************************************************************/
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
-using LubanAgentCodex.Diagnostics;
 using LubanAgentCodex.ViewModels.Messages;
 using LubanAgentCodex.Views;
 using LubanAgentCore.Services;
@@ -141,23 +140,11 @@ public partial class SessionViewModel : ObservableObject
         IsStopping = false;
         _cts = new CancellationTokenSource();
         var runSeq = Interlocked.Increment(ref _activeRunSeq); // 本次对话运行序号；取消/新对话将使其失效
-        UiFlowProbe.Always("SEND", $"开始回合 session={SessionId} runSeq={runSeq} 线程={Environment.CurrentManagedThreadId} 消息数={Messages.Count}");
 
         // 新回合开始：清空上一回合遗留的运行中节点（节点卡片保留在消息流中作为历史）
         _runningNodes.Clear();
         _throttle ??= new FlushThrottle(
-            () =>
-            {
-                // 诊断：节流回调投递到 UI 线程后排了多久（UI 线程被占住的强信号）
-                var postedAt = Environment.TickCount64;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var lag = Environment.TickCount64 - postedAt;
-                    if (lag > 300)
-                        UiFlowProbe.Always("UILAG", $"FlushPending 排队={lag}ms pendingText={_pendingText.Length}");
-                    FlushPending();
-                });
-            },
+            () => Dispatcher.UIThread.Post(FlushPending),
             FlushInterval);
 
         IsRunning = true;
@@ -191,7 +178,6 @@ public partial class SessionViewModel : ObservableObject
         }
         finally
         {
-            UiFlowProbe.Always("SEND-END", $"回合结束 session={SessionId} 线程={Environment.CurrentManagedThreadId} pendingText={_pendingText.Length} 正文长度={_currentAssistant?.Content.Length ?? 0} running={IsRunning}");
             FinalizeRun();
         }
     }
@@ -209,18 +195,7 @@ public partial class SessionViewModel : ObservableObject
         var runSeq = Interlocked.Increment(ref _activeRunSeq);
         _runningNodes.Clear();
         _throttle ??= new FlushThrottle(
-            () =>
-            {
-                // 诊断：节流回调投递到 UI 线程后排了多久（UI 线程被占住的强信号）
-                var postedAt = Environment.TickCount64;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var lag = Environment.TickCount64 - postedAt;
-                    if (lag > 300)
-                        UiFlowProbe.Always("UILAG", $"FlushPending 排队={lag}ms pendingText={_pendingText.Length}");
-                    FlushPending();
-                });
-            },
+            () => Dispatcher.UIThread.Post(FlushPending),
             FlushInterval);
 
         IsRunning = true;
@@ -239,12 +214,10 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     public void Cancel()
     {
-        UiFlowProbe.Always("CANCEL", $"收到取消 session={SessionId} 线程={Environment.CurrentManagedThreadId} cts空={_cts is null} running={IsRunning} 正文长度={_currentAssistant?.Content.Length ?? 0}");
         if (_cts == null)
             return;
         // 失效当前运行序号：丢弃取消后迟到的旧事件（避免下次输入仍执行上次对话）
         Interlocked.Increment(ref _activeRunSeq);
-        UiFlowProbe.Always("CANCEL", $"取消已下发 active={_activeRunSeq} 在途待刷新={_pendingText.Length}");
         _cts.Cancel();
 
         // 取消只是"请求中断"：回合可能仍在收尾（如不可中断的外部命令）。
@@ -294,13 +267,11 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     private void FinalizeRun()
     {
-        var postedAt = Environment.TickCount64;
-        UiFlowProbe.Always("FINALIZE", $"投递收尾 session={SessionId} pendingText={_pendingText.Length} pendingThink={_pendingThinking.Length} 正文长度={_currentAssistant?.Content.Length ?? 0} running={IsRunning}");
+        // 取消标志须在投递前取：投递到 UI 线程执行时 _cts 已被置空
+        var cancelled = _cts?.IsCancellationRequested == true;
         // 收尾同样投递到 UI 线程，排在所有已投递事件之后执行
         Dispatcher.UIThread.Post(() =>
         {
-            var lag = Environment.TickCount64 - postedAt;
-            UiFlowProbe.Always("FINALIZE-UI", $"收尾开始 队列耗时={lag}ms pendingText={_pendingText.Length} pendingThink={_pendingThinking.Length} 正文长度={_currentAssistant?.Content.Length ?? 0}");
             FlushPending();
             CompleteCurrentItems();
             // 回合收尾：把仍标记为运行中的节点落定为结束态，避免卡片一直显示"运行中"
@@ -309,13 +280,33 @@ public partial class SessionViewModel : ObservableObject
                 node.IsComplete = true;
             }
             _runningNodes.Clear();
+            SettleRunningToolCalls(cancelled);
             IsStopping = false;
             IsRunning = false;
-            UiFlowProbe.Always("FINALIZE-UI", $"收尾完成 正文长度={_currentAssistant?.Content.Length ?? 0} 消息数={Messages.Count} running={IsRunning}");
         });
         var cts = _cts;
         _cts = null;
         cts?.Dispose();
+    }
+
+    /// <summary>
+    /// 回合收尾：把仍未收到完成事件的工具调用落定为中断态。
+    /// </summary>
+    /// <remarks>
+    /// 取消或回合异常结束时，正在执行的工具不会回传 <c>ToolCallCompletedEvent</c>，
+    /// 若不在此落定，卡片会永远停在「运行中」——转圈动画与读秒定时器都不会停。
+    /// </remarks>
+    /// <param name="cancelled">本回合是否因取消而中断。</param>
+    private void SettleRunningToolCalls(bool cancelled)
+    {
+        for (var i = 0; i < Messages.Count; i++)
+        {
+            if (Messages[i] is not ToolCallItem tool || tool.State != ToolCallState.Running)
+                continue;
+
+            tool.ErrorMessage = cancelled ? "已取消" : "未返回结果";
+            tool.State = ToolCallState.Cancelled;
+        }
     }
 
     /// <summary>
@@ -326,7 +317,6 @@ public partial class SessionViewModel : ObservableObject
         string input, IReadOnlyList<string> attachmentPaths, CancellationToken ct, int runSeq)
     {
         var plannedCount = 0;
-        var evtCount = 0;
         var sb = new StringBuilder();
 
         // 编排进度出口：执行在工具内部、不经对话流，故本轮订阅、结束退订；
@@ -340,18 +330,6 @@ public partial class SessionViewModel : ObservableObject
             });
         if (_orchestrationSink is not null && onProgress is not null)
             _orchestrationSink.Progress += onProgress;
-
-        // ---- 临时诊断：流式空闲看门狗。消费线程 5s 收不到事件就报一次，
-        // 用于区分「上游静默（工具/LLM 无输出）」与「UI 卡住」。----
-        var streamStartTick = Environment.TickCount64;
-        var lastEventTick = streamStartTick;
-        UiFlowProbe.Always("CONSUME-START", $"开始等待流 runSeq={runSeq} 线程={Environment.CurrentManagedThreadId}");
-        using var idleWatchdog = new System.Threading.Timer(_ =>
-        {
-            var idle = Environment.TickCount64 - lastEventTick;
-            if (idle >= 5000)
-                UiFlowProbe.Always("IDLE", $"runSeq={runSeq} 已 {idle / 1000}s 收不到任何事件 累计事件={evtCount}");
-        }, null, 5000, 5000);
 
         try
         {
@@ -379,22 +357,9 @@ public partial class SessionViewModel : ObservableObject
             }, ct))
             {
                 var e = evt;
-                lastEventTick = Environment.TickCount64;
-                if (evtCount == 0)
-                    UiFlowProbe.Always("FIRST-EVENT", $"首个事件到达 等待={lastEventTick - streamStartTick}ms evt={e.GetType().Name} runSeq={runSeq}");
                 if (e is TextDeltaEvent delta)
                     sb.Append(delta.Delta);
-                var postedAt = Environment.TickCount64;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    // 诊断：事件在 UI 队列里排了多久（UI 线程被占住/队列积压的强信号）
-                    var lag = Environment.TickCount64 - postedAt;
-                    if (lag > 300)
-                        UiFlowProbe.Always("UILAG", $"事件排队={lag}ms evt={e.GetType().Name} runSeq={runSeq} active={_activeRunSeq}");
-                    HandleStreamEvent(e, runSeq);
-                });
-                evtCount++;
-                UiFlowProbe.Sample("CONSUME", $"runSeq={runSeq} 累计事件={evtCount} 正文长度={sb.Length} 线程={Environment.CurrentManagedThreadId}", 1000);
+                Dispatcher.UIThread.Post(() => HandleStreamEvent(e, runSeq));
             }
 
             if (runSeq == _activeRunSeq)
@@ -404,7 +369,6 @@ public partial class SessionViewModel : ObservableObject
         }
         finally
         {
-            UiFlowProbe.Always("CONSUME-END", $"流结束 runSeq={runSeq} 累计事件={evtCount} 正文长度={sb.Length} active={_activeRunSeq}");
             if (_orchestrationSink is not null && onProgress is not null)
                 _orchestrationSink.Progress -= onProgress;
         }
@@ -437,27 +401,7 @@ public partial class SessionViewModel : ObservableObject
         // 运行序号防护：取消或新对话发起后，迟到的旧事件一律丢弃，
         // 避免"按 Esc 取消后，下次输入仍继续执行上次对话"。
         if (runSeq != _activeRunSeq)
-        {
-            UiFlowProbe.Always("DROP", $"丢弃迟到事件 evt={evt.GetType().Name} runSeq={runSeq} active={_activeRunSeq}");
             return;
-        }
-
-        if (evt is TextDeltaEvent or ThinkingDeltaEvent)
-        {
-            UiFlowProbe.Sample("DELTA", $"evt={evt.GetType().Name} runSeq={runSeq} 正文项空={_currentAssistant is null} 正文项完成={_currentAssistant?.IsComplete} 正文长度={_currentAssistant?.Content.Length ?? 0} pendingText={_pendingText.Length} pendingThink={_pendingThinking.Length} running={IsRunning}");
-        }
-        else
-        {
-            var detail = evt switch
-            {
-                ToolCallStartedEvent tcs => $" 工具={tcs.Name} callId={tcs.CallId} 参数={UiFlowProbe.Clip(ToolArgsFormatter.Summarize(tcs.Arguments), 160)}",
-                ToolCallCompletedEvent tcc => $" callId={tcc.CallId} 结果={UiFlowProbe.Clip(tcc.ResultSummary)}",
-                ToolCallFailedEvent tcf => $" callId={tcf.CallId} 失败={UiFlowProbe.Clip(tcf.Error)}",
-                ErrorEvent err => $" 错误={UiFlowProbe.Clip(err.Message)}",
-                _ => ""
-            };
-            UiFlowProbe.Always("EVT", $"evt={evt.GetType().Name}{detail} runSeq={runSeq} 正文项空={_currentAssistant is null} 正文长度={_currentAssistant?.Content.Length ?? 0} 消息数={Messages.Count}");
-        }
 
         switch (evt)
         {
@@ -617,7 +561,6 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     private void CompleteCurrentItems()
     {
-        UiFlowProbe.Always("COMPLETE-ITEMS", $"收尾当前项 session={SessionId} pendingText={_pendingText.Length} 正文长度={_currentAssistant?.Content.Length ?? 0}");
         if (_currentThinking != null)
         {
             _currentThinking.IsComplete = true;
@@ -655,17 +598,6 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     private void FlushPending()
     {
-        var pendingText = _pendingText.Length;
-        var pendingThink = _pendingThinking.Length;
-        if (pendingText > 0 || pendingThink > 0)
-        {
-            UiFlowProbe.Sample("FLUSH", $"正文项空={_currentAssistant is null} 思考项空={_currentThinking is null} pendingText={pendingText} pendingThink={pendingThink} 正文长度={_currentAssistant?.Content.Length ?? 0} 线程={Environment.CurrentManagedThreadId}");
-            if (pendingText > 0 && _currentAssistant is null)
-                UiFlowProbe.Always("FLUSH-DROP", $"pendingText={pendingText} 但无正文项，文本被丢弃");
-            if (pendingThink > 0 && _currentThinking is null)
-                UiFlowProbe.Always("FLUSH-DROP", $"pendingThink={pendingThink} 但无思考项，文本被丢弃");
-        }
-
         if (_pendingText.Length > 0)
         {
             var text = _pendingText.ToString();
@@ -684,7 +616,6 @@ public partial class SessionViewModel : ObservableObject
     private ConfirmResult ConfirmCallback(string toolName, IReadOnlyDictionary<string, object?> args)
     {
         var ct = _cts?.Token ?? CancellationToken.None;
-        UiFlowProbe.Always("CONFIRM", $"请求工具确认 tool={toolName} 本会话是否当前={_isCurrentProvider(SessionId)} running={IsRunning} 线程={Environment.CurrentManagedThreadId}");
 
         // 非当前选中会话：先在侧栏挂待确认徽标，并阻塞等待用户切到本会话再弹窗，
         // 避免后台会话的确认模态打断当前会话，或两个会话的确认模态互相堆叠。
@@ -701,7 +632,6 @@ public partial class SessionViewModel : ObservableObject
             }
 
             var confirmResult = ShowConfirmDialog(toolName, args, ct);
-            UiFlowProbe.Always("CONFIRM", $"确认返回 tool={toolName} 结果={confirmResult}");
             return confirmResult;
         }
         finally
@@ -775,7 +705,6 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     public void Dispose()
     {
-        UiFlowProbe.Always("SESSION-DISPOSE", $"销毁会话 session={SessionId} running={IsRunning} pendingText={_pendingText.Length} 正文长度={_currentAssistant?.Content.Length ?? 0}");
         _throttle?.Dispose();
         _throttle = null;
 

@@ -16,7 +16,6 @@
 *****************************************************************************/
 
 using LuBan.AIAgent.Hosting;
-using LubanAgentCodex.Diagnostics;
 
 namespace LubanAgentCodex.ViewModels;
 
@@ -603,13 +602,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 重置 Agent，下次发送消息时按最新配置（如切换后的模型）重建
     /// </summary>
-    public void ResetAgent()
-    {
-        var started = Environment.TickCount64;
-        UiFlowProbe.Always("RESET", $"重置 Agent 开始 线程={Environment.CurrentManagedThreadId} 当前会话={_currentSession?.SessionId} 该会话running={_currentSession?.IsRunning}");
-        _agentHost.Reset();
-        UiFlowProbe.Always("RESET", $"重置 Agent 完成 耗时={Environment.TickCount64 - started}ms 该会话running={_currentSession?.IsRunning} initialized={_agentHost.IsInitialized}");
-    }
+    public void ResetAgent() => _agentHost.Reset();
 
     /// <summary>
     /// 执行 / 命令

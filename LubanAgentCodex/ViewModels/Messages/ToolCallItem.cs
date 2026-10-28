@@ -65,5 +65,7 @@ public enum ToolCallState
     /// <summary>已完成</summary>
     Done,
     /// <summary>失败</summary>
-    Failed
+    Failed,
+    /// <summary>已中断（取消/回合异常结束时仍未返回结果，不会有后续完成事件）</summary>
+    Cancelled
 }
