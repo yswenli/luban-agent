@@ -19,6 +19,11 @@
 *版本号： V1.0.0.0
 *描述：附件编排服务：路径解析、处理、模型能力判定、ChatMessage 构建、元数据序列化。
 *
+*修改时间：2026/10/29
+*修改人： yswenli
+*版本号： V1.0.0.1
+*描述：ProcessAsync 超上限改为截断（原为抛异常，会让整轮对话直接失败）
+*
 *****************************************************************************/
 
 namespace LubanAgentCore.Services;
@@ -28,7 +33,7 @@ namespace LubanAgentCore.Services;
 /// </summary>
 public sealed class AttachmentService
 {
-    /// <summary>每消息最大附件数。</summary>
+    /// <summary>每消息最大附件数（产品侧兜底上限；框架层另有 <c>LuBanAgent:Attachments:MaxCount</c> 并先行截断）。</summary>
     public const int MaxAttachmentsPerMessage = 5;
 
     private static readonly Regex FileRefPattern =
@@ -393,14 +398,20 @@ public sealed class AttachmentService
     public IReadOnlyList<string> SupportedExtensions => _processor.SupportedExtensions;
 
     /// <summary>处理附件路径集合。</summary>
+    /// <remarks>
+    /// 超出上限时<b>截断</b>而不是抛异常：框架层 <c>AgentHost.PrepareAttachmentsAsync</c> 已在解析前按
+    /// <c>LuBanAgent:Attachments:MaxCount</c> 截断并下发 <c>attachment.skipped</c>，此处再抛异常只会让整轮
+    /// 对话直接失败（用户输入已清空、无从补救）。本常量是产品侧兜底上限。
+    /// </remarks>
     public async Task<IReadOnlyList<ProcessedAttachment>> ProcessAsync(
         IReadOnlyList<string> filePaths, bool generateThumbnails = false, CancellationToken ct = default)
     {
+        var effective = filePaths;
         if (filePaths.Count > MaxAttachmentsPerMessage)
-            throw new InvalidOperationException($"最多附加 {MaxAttachmentsPerMessage} 个文件");
+            effective = filePaths.Take(MaxAttachmentsPerMessage).ToList();
 
-        var result = new List<ProcessedAttachment>(filePaths.Count);
-        foreach (var path in filePaths)
+        var result = new List<ProcessedAttachment>(effective.Count);
+        foreach (var path in effective)
         {
             ct.ThrowIfCancellationRequested();
             result.Add(await _processor.ProcessAsync(path, generateThumbnails, ct).ConfigureAwait(false));
