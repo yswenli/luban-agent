@@ -29,7 +29,7 @@ namespace LubanAgentCore.Hosting;
 /// </summary>
 public sealed class CoreSessionRuntimeInitializer(
     DefaultContextState state,
-    IServiceProvider services) : ISessionRuntimeInitializer
+    DiContainer services) : ISessionRuntimeInitializer
 {
     /// <inheritdoc />
     public Task InitializeAsync(SessionRuntimeSeed seed, CancellationToken ct = default)

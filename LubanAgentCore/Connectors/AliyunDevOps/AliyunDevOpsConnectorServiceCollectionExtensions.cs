@@ -47,8 +47,8 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置。</param>
     /// <returns>服务集合（链式）。</returns>
-    public static IServiceCollection AddAliyunDevOpsConnector(
-        this IServiceCollection services,
+    public static DiContainer AddAliyunDevOpsConnector(
+        this DiContainer services,
         IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -107,7 +107,7 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">根容器。</param>
     /// <returns>新的连接器实例。</returns>
-    internal static YunxiaoConnector CreateConnector(IServiceProvider services)
+    internal static YunxiaoConnector CreateConnector(DiContainer services)
     {
         ArgumentNullException.ThrowIfNull(services);
 

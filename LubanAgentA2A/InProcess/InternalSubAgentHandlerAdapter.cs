@@ -29,7 +29,7 @@ namespace LubanAgentA2A.InProcess;
 /// </summary>
 public sealed class InternalSubAgentHandlerAdapter : IA2AHandler, Sdk.IAgentHandler
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly DiContainer _scopeFactory;
     private readonly ILogger<InternalSubAgentHandlerAdapter>? _logger;
 
     /// <summary>
@@ -38,7 +38,7 @@ public sealed class InternalSubAgentHandlerAdapter : IA2AHandler, Sdk.IAgentHand
     /// <param name="scopeFactory">服务作用域工厂（每次执行创建独立作用域以解析 Scoped 的代理工厂）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     public InternalSubAgentHandlerAdapter(
-        IServiceScopeFactory scopeFactory,
+        DiContainer scopeFactory,
         ILogger<InternalSubAgentHandlerAdapter>? logger = null)
     {
         _scopeFactory = scopeFactory;
@@ -115,7 +115,7 @@ public sealed class InternalSubAgentHandlerAdapter : IA2AHandler, Sdk.IAgentHand
         var spec = TryBuildSpec(message);
 
         using var scope = _scopeFactory.CreateScope();
-        var services = scope.ServiceProvider;
+        var services = scope;
 
         // 严格身份回填：root 派生 scope 不带身份，从 A2A 消息元数据取用户并写入；
         // 缺失时回退本机默认用户（本地单用户）。

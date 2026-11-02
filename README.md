@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | 中文
@@ -24,13 +24,16 @@
 
 这不是科幻，这就是 **LuBan Agent**。
 
-本仓库是 LuBan Agent 的完整解决方案，包含共享核心库与两种客户端形态：
+本仓库是 LuBan Agent 的完整解决方案，包含共享核心库、两种客户端形态，以及 A2A 协作库、新建项目插件与自动化测试工程：
 
 | 项目 | 形态 | 说明 |
 |------|------|------|
-| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理 |
+| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理、连接器（含云效）与插件宿主 |
 | **[LubanAgentCli](LubanAgentCli/)** | 命令行 TUI | 基于 Terminal.Gui v2 的全屏终端界面（Claude Code 风格），可安装为 dotnet tool |
-| **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，三栏式布局 + 暗色主题 |
+| **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，双栏布局（侧边栏 + 对话区）+ 暗色主题 |
+| **[LubanAgentA2A](LubanAgentA2A/)** | A2A 协作库 | 基于 A2A SDK 的 Agent 间协作：服务端宿主、客户端注册、子代理进程内/远端分发 |
+| **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex 插件 | 「新建项目」插件，纯代码 UI，构建后自动铺装到 Codex 运行目录 `plugins/` |
+| **[LubanAgent.Tests](LubanAgent.Tests/)** | 测试工程 | MSTest 自动化测试（连接器、NewProject 插件、Skill/Rule 后端等） |
 
 > 📖 各项目的详细使用说明请查看：[LubanAgentCli README](LubanAgentCli/README.md) | [LubanAgentCodex README](LubanAgentCodex/README.md)
 
@@ -85,8 +88,8 @@
 
 **特性**：
 - ✅ 内置 Skill/MCP 不可覆盖删除，保证系统稳定
-- ✅ 写入/删除操作需用户确认，防止误操作
-- ✅ 修改后下一轮对话自动生效，无需重启
+- ✅ 写入/删除操作需用户确认（Default / AcceptEdits 必弹；Plan 模式仅记计划不落盘；Bypass 放行），防止误操作
+- ✅ Skill 写入当轮即可用；MCP 配置下一轮对话生效（新客户端需重建 Agent 才连接），无需重启
 - ✅ Skill ID 合法性校验，防止注入攻击
 
 **存储位置**：
@@ -146,19 +149,14 @@ git clone https://github.com/yswenli/luban-agent.git
 cd luban-agent
 ```
 
-### 2. 安装 Playwright 浏览器（使用浏览器工具前必须安装）
+### 2. 准备 Playwright 浏览器（首次使用时自动安装）
 
-```powershell
-# 安装与 Microsoft.Playwright 1.61.0 匹配的浏览器版本
-npx playwright@1.61.0 install chromium
-```
-
-> **注意**：浏览器版本必须与 Microsoft.Playwright 包版本匹配，当前项目使用的是 1.61.0。
+浏览器驱动按需自动安装到 `~/.luban-agent/playwright-driver/{version}`，版本取自 `Microsoft.Playwright` 包声明，无需手工指定版本。若自动安装失败，按提示执行 `PlaywrightDriverResolver.GetInstallBrowsersHint()` 给出的命令兜底。
 
 ### 3. 构建解决方案
 
 ```bash
-dotnet build luban-agent.slnx
+dotnet build LubanAgent.slnx
 ```
 
 ### 4. 选择你的客户端运行
@@ -207,8 +205,8 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 然后选择模型，开始你的第一次 Agent 对话：
 
 ```
-> /model -switch
-✓ 已选择模型: kimi:k3
+> /model -switch kimi:k3
+✓ 已切换模型: kimi:k3
 
 你: 帮我查一下D盘下面有哪些目录
 
@@ -223,7 +221,7 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 ...
 ```
 
-> **安全提示**：API Key 输入时会隐藏显示（密码输入模式）；用户配置自动保存在 `%LocalAppData%\LuBan\AIAgent\config.json`
+> **安全提示**：API Key 输入时会隐藏显示（密码输入模式）；用户配置自动保存在 `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json`（`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`）
 
 ---
 
@@ -295,8 +293,8 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 - **NativeAOT 暂不支持**：项目依赖 Terminal.Gui / Avalonia 的大量反射机制，`PublishAot=true` 会导致运行时异常
 - **跨平台编译限制**：macOS 和 Linux 的 native 依赖（如 `libSkiaSharp`）需在对应平台上编译，建议在目标平台上直接执行 `dotnet publish`
-- **Playwright 浏览器**：使用浏览器工具前，需在目标机器执行 `npx playwright@1.61.0 install chromium`
-- **配置文件**：发布后 `appsettings.json` 会随产物一起输出，可在运行前修改；用户配置保存在 `%LocalAppData%\LuBan\AIAgent\`（Windows）或 `~/.config/LuBan/AIAgent/`（macOS/Linux）
+- **Playwright 浏览器**：首次使用浏览器工具时自动安装驱动到 `~/.luban-agent/playwright-driver/{version}`，无需手工指定版本；自动安装失败时按提示执行 `PlaywrightDriverResolver.GetInstallBrowsersHint()` 给出的命令
+- **配置文件**：发布后 `appsettings.json` 会随产物一起输出，可在运行前修改；用户配置保存在系统 LocalApplicationData 下的 `LuBan/AIAgent/`（Windows 即 `%LocalAppData%\LuBan\AIAgent\`）
 
 ---
 
@@ -304,38 +302,50 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── luban-agent.slnx          # 解决方案文件（XML 格式）
-├── Directory.Build.props     # 全局构建属性
+├── LubanAgent.slnx           # 解决方案文件（XML 格式，6 个项目）
 │
 ├── LubanAgentCore/           # 核心类库（net10.0）
 │   ├── Agents/               # Agent 配置（Normal / LLM Wiki Profile）
 │   ├── Configuration/        # 配置管理
+│   ├── Connectors/           # 连接器（含云效 AliyunDevOps 实现）
+│   ├── Context/              # 用户上下文
 │   ├── EmbeddingModels/      # AI 嵌入模型文件（bge-small-zh-v1.5）
 │   ├── Entities/             # 数据实体
 │   ├── Hosting/              # 宿主集成
 │   ├── Infrastructure/       # 基础设施
 │   ├── Models/               # 数据模型
+│   ├── Plugins/              # 插件宿主
 │   ├── Repositories/         # 数据访问层
 │   ├── Retrieval/            # 语义检索
+│   ├── Security/             # 凭据存储与保护
 │   ├── Services/             # 核心服务（Agent 宿主 / 会话 / 工作区）
 │   └── Utils/                # 工具类
 │
 ├── LubanAgentCli/            # 命令行 TUI（Terminal.Gui v2 · net10.0）
 │   ├── App/                  # TUI 应用层（启动引导 + DI + 主题）
-│   │   └── Dialogs/          # 弹出层组件（BaseDialog 基类 + 5 个子类）
-│   ├── Views/                # 视图层（纯渲染）
-│   ├── ViewModels/           # MVVM ViewModel 层
-│   ├── Models/               # Block 文档模型
+│   │   ├── Dialogs/          # 弹出层组件（BaseDialog 基类 + 5 个子类）
+│   │   ├── Models/           # Block 文档模型
+│   │   ├── Services/         # TUI 服务（标题 / 编排进度）
+│   │   ├── ViewModels/       # MVVM ViewModel 层
+│   │   └── Views/            # 视图层（纯渲染）
 │   ├── Commands/             # 命令实现
+│   ├── Infrastructure/       # 输入引导与诊断
+│   ├── Services/             # 转圈提示服务
 │   └── Program.cs            # 程序入口
 │
 ├── LubanAgentCodex/          # 桌面客户端（Avalonia UI · net10.0）
 │   ├── Views/                # Avalonia 视图
 │   ├── ViewModels/           # MVVM ViewModel 层
 │   ├── Services/             # UI 服务
+│   ├── Converters/           # 值转换器
+│   ├── Plugins/              # 插件 UI 调度
 │   ├── Styles/               # 样式主题
 │   └── Program.cs            # 程序入口
 │
+├── LubanAgentA2A/            # A2A 协作库（A2A SDK · net10.0）
+├── LubanAgent.Plugin.NewProject/  # 「新建项目」插件
+├── LubanAgent.Tests/         # MSTest 自动化测试
+├── smoke/                    # 插件系统冒烟验证工程（有意不在 slnx 内）
 └── docs/                     # 设计与规划文档
 ```
 
@@ -362,7 +372,7 @@ luban-agent/
 
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
 - **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
-- **统一配置**：两个客户端共享 `%LocalAppData%\LuBan\AIAgent\` 下的用户配置与会话数据库
+- **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库为程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db`）
 
 ---
 
@@ -385,7 +395,6 @@ luban-agent/
     },
     "Orchestration": {
       "Enabled": true,
-      "AutoDetect": true,
       "MaxParallelism": 3,
       "MaxNodes": 20
     }
@@ -393,9 +402,9 @@ luban-agent/
 }
 ```
 
-### 用户配置 (%LocalAppData%\LuBan\AIAgent\config.json)
+### 用户配置 (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
 
-用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，两个客户端共享，重启后自动加载。
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，两个客户端共享，重启后自动加载。`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`；旧安装的单用户 `config.json` 在首次访问时复制为初始用户配置。
 
 > 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明**可用性**（未声明者视为未安装）；是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定。旧安装无 `connectors` 节时首次加载自动补种默认声明。
 
@@ -410,8 +419,8 @@ luban-agent/
 | **.NET 10.0** | 目标框架 |
 | **LuBan.AIAgent** | Agent 运行时框架（多模型路由 / MCP / 编排） |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
-| **Terminal.Gui 2.4.17** | CLI 全屏 TUI 框架（24-bit TrueColor，alt-screen） |
-| **Avalonia 12.1.1** | Codex 跨平台桌面 UI 框架 |
+| **Terminal.Gui 2.6.0-develop.61** | CLI 全屏 TUI 框架（24-bit TrueColor，alt-screen） |
+| **Avalonia 12.1.2** | Codex 跨平台桌面 UI 框架 |
 | **CommunityToolkit.Mvvm** | MVVM 框架 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |
 | **Microsoft.ML.OnnxRuntime** | ONNX 模型推理（语义检索） |

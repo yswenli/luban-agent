@@ -19,7 +19,8 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-		<!-- framework：经 NuGet 私有源引用（版本与 LubanAgentCore 保持一致） -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.10.28.2" />
+		<!-- 框架包走 nexus3 私有源，版本人工控制；2026-10-29 曾临时直连 framework 源码，
+		     2026.11.2.1 发包后已还原为 PackageReference。 -->
+		<PackageReference Include="LuBan.AIAgent" Version="2026.11.2.1" />
 	</ItemGroup>
 </Project>

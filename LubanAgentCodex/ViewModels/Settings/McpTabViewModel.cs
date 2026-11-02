@@ -18,7 +18,7 @@ namespace LubanAgentCodex.ViewModels.Settings;
 /// MCP 服务页 ViewModel：只做校验与转发，所有提示文案与原设置窗保持一致。
 /// </summary>
 /// <param name="services">宿主服务提供者（为 null 时视为容器不可用，操作返回失败文案）。</param>
-public sealed class McpTabViewModel(IServiceProvider? services)
+public sealed class McpTabViewModel(DiContainer? services)
 {
     private IMcpManagementService? Mcps => services?.GetService<IMcpManagementService>();
 

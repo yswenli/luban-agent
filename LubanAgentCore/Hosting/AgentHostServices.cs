@@ -17,44 +17,41 @@
 namespace LubanAgentCore.Hosting;
 
 /// <summary>
-/// 应用级服务提供者：持有根容器与**进程常驻用户作用域**，对外解析委托到用户作用域。
-/// CLI/Codex 把它当作原来的 <c>IServiceProvider Services</c> 使用。
+/// 应用级服务提供者：持有根容器与进程常驻用户作用域，对外解析委托到用户作用域。
 /// </summary>
-public sealed class AgentHostServices : IServiceProvider, IDisposable, IAsyncDisposable
+public sealed class AgentHostServices : DiContainer
 {
-    private readonly IServiceProvider _root;
-    private readonly IServiceScope _userScope;
+    private readonly DiContainer _root;
+    private readonly DiContainer _userScope;
     private int _disposed;
 
     /// <summary>创建应用级服务提供者。</summary>
     /// <param name="root">根容器。</param>
     /// <param name="userScope">进程常驻用户作用域。</param>
-    public AgentHostServices(IServiceProvider root, IServiceScope userScope)
+    public AgentHostServices(DiContainer root, DiContainer userScope)
+        : base((IServiceProvider)userScope)   // 解析全部转发到用户作用域（必须显式转接口，否则与集合重载二义）
     {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(userScope);
         _root = root;
         _userScope = userScope;
     }
 
     /// <summary>根容器（身份无关单例所在）。</summary>
-    public IServiceProvider Root => _root;
+    public DiContainer Root => _root;
 
-    /// <summary>用户作用域服务提供者。</summary>
-    public IServiceProvider UserServices => _userScope.ServiceProvider;
-
-    /// <inheritdoc />
-    public object? GetService(Type serviceType) => _userScope.ServiceProvider.GetService(serviceType);
+    /// <summary>用户作用域容器。</summary>
+    public DiContainer UserServices => _userScope;
 
     /// <inheritdoc />
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public override void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <inheritdoc />
-    public async ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
-        _userScope.Dispose();
-        if (_root is IAsyncDisposable ad)
-            await ad.DisposeAsync();
-        else
-            (_root as IDisposable)?.Dispose();
+        // 先释放用户作用域，再释放根（与原实现顺序一致；重复释放由各自幂等保证）
+        await _userScope.DisposeAsync().ConfigureAwait(false);
+        await _root.DisposeAsync().ConfigureAwait(false);
     }
 }

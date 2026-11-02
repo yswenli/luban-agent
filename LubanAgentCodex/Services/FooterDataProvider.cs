@@ -22,13 +22,13 @@ namespace LubanAgentCodex.Services;
 /// </summary>
 public class FooterDataProvider
 {
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     
     /// <summary>
     /// 初始化页脚数据提供者，后续按需从服务容器解析会话管理器等依赖。
     /// </summary>
     /// <param name="services">应用服务容器。</param>
-    public FooterDataProvider(IServiceProvider services)
+    public FooterDataProvider(DiContainer services)
     {
         _services = services;
     }

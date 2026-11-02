@@ -25,6 +25,7 @@ global using LuBan.AIAgent.Rules;
 global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Common;
+global using LuBan.DI;
 
 global using LubanAgentCli.App;
 global using LubanAgentCli.App.Models;

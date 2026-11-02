@@ -41,7 +41,7 @@ public class ModelCommand : CommandBase
     /// <param name="ui">TUI 模态交互服务</param>
     /// <param name="services">服务提供者（用于解析按用户隔离的 Provider 缓存）</param>
     public ModelCommand(ConfigManager configManager, IConfiguration configuration,
-        ITuiOutputWriter writer, ITuiUiService ui, IServiceProvider services)
+        ITuiOutputWriter writer, ITuiUiService ui, DiContainer services)
         : base(configManager, configuration, writer, ui)
     {
         _providers = services.GetRequiredService<IProviderModelManagementService>();

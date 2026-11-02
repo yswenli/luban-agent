@@ -29,7 +29,7 @@ public static class PluginBootstrap
     /// </summary>
     /// <param name="services">宿主服务提供者。</param>
     /// <param name="status">状态回调（用于闪屏/日志展示）。</param>
-    public static async Task InitializeAsync(IServiceProvider services, Action<string>? status = null)
+    public static async Task InitializeAsync(DiContainer services, Action<string>? status = null)
     {
         var manager = services.GetService<PluginManager>();
         if (manager is null)

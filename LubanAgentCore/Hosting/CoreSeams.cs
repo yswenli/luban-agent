@@ -54,7 +54,7 @@ public sealed class CoreWorkspaceResolver(
 }
 
 /// <summary>按工作区类型选 Profile。</summary>
-public sealed class CoreAgentProfileResolver(IServiceProvider services) : IAgentProfileResolver
+public sealed class CoreAgentProfileResolver(DiContainer services) : IAgentProfileResolver
 {
     /// <inheritdoc />
     public IAgentProfile Resolve(WorkspaceDescriptor workspace)
@@ -67,7 +67,7 @@ public sealed class CoreAgentProfileResolver(IServiceProvider services) : IAgent
 public sealed class PluginSessionExtension : IAgentSessionExtension
 {
     /// <inheritdoc />
-    public Task ApplyAsync(IServiceProvider sessionServices, WorkspaceDescriptor workspace, CancellationToken ct = default)
+    public Task ApplyAsync(DiContainer sessionServices, WorkspaceDescriptor workspace, CancellationToken ct = default)
     {
         foreach (var contributor in sessionServices.GetServices<IPluginSessionContributor>())
         {
@@ -82,7 +82,7 @@ public sealed class PluginSessionExtension : IAgentSessionExtension
 public sealed class ConnectorSessionExtension : IAgentSessionExtension
 {
     /// <inheritdoc />
-    public async Task ApplyAsync(IServiceProvider sessionServices, WorkspaceDescriptor workspace, CancellationToken ct = default)
+    public async Task ApplyAsync(DiContainer sessionServices, WorkspaceDescriptor workspace, CancellationToken ct = default)
     {
         var connectors = sessionServices.GetService<ConnectorRegistry>();
         if (connectors is null) return;
@@ -100,7 +100,7 @@ public sealed class ConnectorSessionExtension : IAgentSessionExtension
 public sealed class CoreAgentUserResolver : IAgentUserResolver
 {
     /// <inheritdoc />
-    public string ResolveUserId(IServiceProvider services)
+    public string ResolveUserId(DiContainer services)
         => services.GetService<IUserContext>()?.UserId is { Length: > 0 } id
             ? id
             : LocalUserDefaults.DefaultUserId;
@@ -110,12 +110,12 @@ public sealed class CoreAgentUserResolver : IAgentUserResolver
 public sealed class VisionModelCapabilityGate : IModelCapabilityGate
 {
     private readonly AttachmentService _attachments;
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
 
     /// <summary>创建门禁。</summary>
     /// <param name="attachments">产品附件服务（持有视觉判定逻辑）。</param>
     /// <param name="services">当前会话作用域，用于取用户能力缓存。</param>
-    public VisionModelCapabilityGate(AttachmentService attachments, IServiceProvider services)
+    public VisionModelCapabilityGate(AttachmentService attachments, DiContainer services)
     {
         _attachments = attachments;
         _services = services;
@@ -161,9 +161,9 @@ public sealed class CoreAttachmentOrchestrator(
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<ProcessedAttachment>> ProcessAsync(
+    public Task<AttachmentProcessingResult> ProcessAsync(
         IReadOnlyList<string> paths, CancellationToken ct = default)
-        => attachments.ProcessAsync(paths, generateThumbnails: false, ct);
+        => attachments.ProcessWithDiagnosticsAsync(paths, generateThumbnails: false, ct);
 
     /// <inheritdoc />
     public string? Validate(string modelId, IReadOnlyList<ProcessedAttachment> attachments)

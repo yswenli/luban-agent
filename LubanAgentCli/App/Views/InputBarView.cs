@@ -236,7 +236,7 @@ internal sealed class InputBarView : View
     private const int HistoryMaxSize = 50;
     private string _lastTextForCompletion = string.Empty;
     private Label? _attachmentHint;
-    private IServiceProvider? _services;
+    private DiContainer? _services;
     private ITuiUiService? _ui;
     private ICommandCatalog? _catalog;
 
@@ -252,7 +252,7 @@ internal sealed class InputBarView : View
 
     /// <summary>注入服务提供者（由 RootView 在构造后调用）。</summary>
     /// <param name="services">服务提供者。</param>
-    public void SetServiceProvider(IServiceProvider services)
+    public void SetServiceProvider(DiContainer services)
     {
         _services = services;
         try

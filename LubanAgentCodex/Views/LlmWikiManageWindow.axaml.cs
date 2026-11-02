@@ -22,10 +22,10 @@ namespace LubanAgentCodex.Views;
 /// </summary>
 public partial class LlmWikiManageWindow : Window
 {
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     private readonly IWorkspaceManager _workspaceManager;
     // 窗口级作用域：wiki/检索为 scoped（工作区/会话隔离），窗口生命周期内复用一份，关闭时释放
-    private readonly IServiceScope _scope;
+    private readonly DiContainer _scope;
     private readonly IRetrievalService? _retrieval;
     private readonly IWikiService? _wiki;
     private ListBox? _llmWikiListBox;
@@ -47,13 +47,13 @@ public partial class LlmWikiManageWindow : Window
     /// 随后列出可管理（索引、检索、重建、lint）的知识库工作区。
     /// </summary>
     /// <param name="services">应用服务容器，用于创建工作区隔离的作用域并关闭窗口时释放。</param>
-    public LlmWikiManageWindow(IServiceProvider services)
+    public LlmWikiManageWindow(DiContainer services)
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _scope = services.CreateUserScope(services.ResolveUserKey());
-        _retrieval = _scope.ServiceProvider.GetService<IRetrievalService>();
-        _wiki = _scope.ServiceProvider.GetService<IWikiService>();
+        _retrieval = _scope.GetService<IRetrievalService>();
+        _wiki = _scope.GetService<IWikiService>();
         Closed += (_, _) => _scope.Dispose();
         InitializeComponent();
         LoadLlmWikiWorkspaces();

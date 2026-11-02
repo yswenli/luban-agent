@@ -50,13 +50,13 @@ public static class AgentHostBuilder
     /// <param name="embedder">嵌入生成器（可选）</param>
     /// <param name="modelManager">模型管理器（可选）</param>
     /// <param name="configureServices">额外的服务配置委托（可选）</param>
-    public static AgentHostServices BuildServiceProvider(
+    public static AgentHostServices Build(
         IConfiguration configuration,
         OnnxEmbeddingGenerator? embedder = null,
         ModelManager? modelManager = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<DiContainer>? configureServices = null)
     {
-        var services = new ServiceCollection();
+        var services = new DiContainer();
         services.AddSingleton<IConfiguration>(configuration);
 
         services.AddLogging(builder => builder.AddLuBanFileLogger());
@@ -187,11 +187,7 @@ public static class AgentHostBuilder
 
         configureServices?.Invoke(services);
 
-        var root = services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateScopes = true,
-            ValidateOnBuild = true
-        });
+        var root = services.Build();
 
         Logger.SetLogger(root.GetRequiredService<ILoggerFactory>());
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
@@ -208,7 +204,7 @@ public static class AgentHostBuilder
     /// <summary>
     /// 初始化工作区。
     /// </summary>
-    public static async Task InitializeWorkspaceAsync(IServiceProvider sp, List<string> notices)
+    public static async Task InitializeWorkspaceAsync(DiContainer sp, List<string> notices)
     {
         try
         {

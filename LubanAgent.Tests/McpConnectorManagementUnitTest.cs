@@ -12,6 +12,7 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Connectors;
 using LubanAgentCore.Services;
@@ -202,7 +203,7 @@ public class McpConnectorManagementUnitTest
 
     private ConnectorManagementService NewConnectorService(IAppConfigReader reader, ConnectorFactoryRegistry factories)
     {
-        var host = new ConnectorInstanceHost(new EmptyServiceProvider(), factories);
+        var host = new ConnectorInstanceHost(new DiContainer(new EmptyServiceProvider()), factories);
         var registry = new ConnectorRegistry(host, factories, mcpRegistry: null, configReader: reader, configuration: null);
 
         return new ConnectorManagementService(

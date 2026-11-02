@@ -9,7 +9,7 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.4.17-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
+[![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
 English | [中文](README.md)
@@ -24,13 +24,16 @@ Imagine this: you simply say "Show me what directories are on drive D", and the 
 
 This isn't science fiction—this is **LuBan Agent**.
 
-This repository is the complete LuBan Agent solution, containing a shared core library and two client forms:
+This repository is the complete LuBan Agent solution, containing a shared core library, two client forms, plus an A2A collaboration library, the new-project plugin, and an automated test project:
 
 | Project | Form | Description |
 |---------|------|-------------|
-| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management |
+| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management, connectors (including Aliyun DevOps) and plugin hosting |
 | **[LubanAgentCli](LubanAgentCli/)** | Command-line TUI | Full-screen terminal UI based on Terminal.Gui v2 (Claude Code style), installable as a dotnet tool |
-| **[LubanAgentCodex](LubanAgentCodex/)** | Desktop Client | Cross-platform GUI based on Avalonia UI, three-pane layout + dark theme |
+| **[LubanAgentCodex](LubanAgentCodex/)** | Desktop Client | Cross-platform GUI based on Avalonia UI, two-pane layout (sidebar + conversation) + dark theme |
+| **[LubanAgentA2A](LubanAgentA2A/)** | A2A Library | Agent-to-agent collaboration on the A2A SDK: server host, client registry, in-process/remote SubAgent dispatch |
+| **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex Plugin | The "new project" plugin with a pure-code UI, staged into the Codex `plugins/` directory on build |
+| **[LubanAgent.Tests](LubanAgent.Tests/)** | Test Project | MSTest automated tests (connectors, NewProject plugin, Skill/Rule backends, etc.) |
 
 > 📖 For detailed usage of each project, see: [LubanAgentCli README](LubanAgentCli/README.en.md) | [LubanAgentCodex README](LubanAgentCodex/README.en.md)
 
@@ -146,19 +149,14 @@ git clone https://github.com/yswenli/luban-agent.git
 cd luban-agent
 ```
 
-### 2. Install Playwright Browser (Required Before Using Browser Tools)
+### 2. Prepare the Playwright Browser (Installed Automatically on First Use)
 
-```powershell
-# Install browser version matching Microsoft.Playwright 1.61.0
-npx playwright@1.61.0 install chromium
-```
-
-> **Note**: Browser version must match the Microsoft.Playwright package version. This project currently uses 1.61.0.
+Browser drivers are installed on demand into `~/.luban-agent/playwright-driver/{version}`; the version is taken from the `Microsoft.Playwright` package declaration, so no manual version pinning is needed. If automatic installation fails, run the command returned by `PlaywrightDriverResolver.GetInstallBrowsersHint()`.
 
 ### 3. Build the Solution
 
 ```bash
-dotnet build luban-agent.slnx
+dotnet build LubanAgent.slnx
 ```
 
 ### 4. Choose Your Client
@@ -207,8 +205,8 @@ Enter Kimi API Key: ********
 Then select a model and start your first Agent conversation:
 
 ```
-> /model -switch
-✓ Selected model: kimi:k3
+> /model -switch kimi:k3
+✓ Switched model: kimi:k3
 
 You: Show me what directories are on drive D
 
@@ -223,7 +221,7 @@ You: Show me what directories are on drive D
 ...
 ```
 
-> **Security Note**: API Key input is hidden (password input mode); user configuration is automatically saved to `%LocalAppData%\LuBan\AIAgent\config.json`
+> **Security Note**: API Key input is hidden (password input mode); user configuration is automatically saved to `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json` (`userId` comes from the `LUBAN_USER_ID` environment variable, defaulting to `yswenli`)
 
 ---
 
@@ -295,8 +293,8 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 - **NativeAOT not supported**: The project relies heavily on reflection from Terminal.Gui / Avalonia; `PublishAot=true` will cause runtime exceptions
 - **Cross-compilation limitations**: Native dependencies for macOS and Linux (e.g., `libSkiaSharp`) must be compiled on the target platform; it is recommended to run `dotnet publish` directly on the target platform
-- **Playwright browser**: Before using browser tools, run `npx playwright@1.61.0 install chromium` on the target machine
-- **Configuration files**: After publishing, `appsettings.json` is output with the artifacts and can be modified before running; user configuration is saved to `%LocalAppData%\LuBan\AIAgent\` (Windows) or `~/.config/LuBan/AIAgent/` (macOS/Linux)
+- **Playwright browser**: Drivers are installed automatically into `~/.luban-agent/playwright-driver/{version}` on first use of the browser tools; no manual version pinning is required. If automatic installation fails, run the command returned by `PlaywrightDriverResolver.GetInstallBrowsersHint()`
+- **Configuration files**: After publishing, `appsettings.json` is output with the artifacts and can be modified before running; user configuration is saved under `LuBan/AIAgent/` in the system LocalApplicationData directory (on Windows: `%LocalAppData%\LuBan\AIAgent\`)
 
 ---
 
@@ -304,38 +302,50 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── luban-agent.slnx          # Solution file (XML format)
-├── Directory.Build.props     # Global build properties
+├── LubanAgent.slnx           # Solution file (XML format, 6 projects)
 │
 ├── LubanAgentCore/           # Core library (net10.0)
 │   ├── Agents/               # Agent profiles (Normal / LLM Wiki)
 │   ├── Configuration/        # Configuration management
+│   ├── Connectors/           # Connectors (including the Aliyun DevOps implementation)
+│   ├── Context/              # User context
 │   ├── EmbeddingModels/      # AI embedding model files (bge-small-zh-v1.5)
 │   ├── Entities/             # Data entities
 │   ├── Hosting/              # Hosting integration
 │   ├── Infrastructure/       # Infrastructure
 │   ├── Models/               # Data models
+│   ├── Plugins/              # Plugin host
 │   ├── Repositories/         # Data access layer
 │   ├── Retrieval/            # Semantic retrieval
+│   ├── Security/             # Credential storage and protection
 │   ├── Services/             # Core services (Agent host / session / workspace)
 │   └── Utils/                # Utilities
 │
 ├── LubanAgentCli/            # Command-line TUI (Terminal.Gui v2 · net10.0)
 │   ├── App/                  # TUI application layer (bootstrap + DI + theming)
-│   │   └── Dialogs/          # Popup components (BaseDialog base + 5 subclasses)
-│   ├── Views/                # View layer (pure rendering)
-│   ├── ViewModels/           # MVVM ViewModel layer
-│   ├── Models/               # Block document model
+│   │   ├── Dialogs/          # Popup components (BaseDialog base + 5 subclasses)
+│   │   ├── Models/           # Block document model
+│   │   ├── Services/         # TUI services (title / orchestration progress)
+│   │   ├── ViewModels/       # MVVM ViewModel layer
+│   │   └── Views/            # View layer (pure rendering)
 │   ├── Commands/             # Command implementations
+│   ├── Infrastructure/       # Input bootstrap and diagnostics
+│   ├── Services/             # Spinner service
 │   └── Program.cs            # Entry point
 │
 ├── LubanAgentCodex/          # Desktop client (Avalonia UI · net10.0)
 │   ├── Views/                # Avalonia views
 │   ├── ViewModels/           # MVVM ViewModel layer
 │   ├── Services/             # UI services
+│   ├── Converters/           # Value converters
+│   ├── Plugins/              # Plugin UI dispatching
 │   ├── Styles/               # Style themes
 │   └── Program.cs            # Entry point
 │
+├── LubanAgentA2A/            # A2A collaboration library (A2A SDK · net10.0)
+├── LubanAgent.Plugin.NewProject/  # "New project" plugin
+├── LubanAgent.Tests/         # MSTest automated tests
+├── smoke/                    # Plugin system smoke projects (intentionally outside the slnx)
 └── docs/                     # Design & planning documents
 ```
 
@@ -362,7 +372,7 @@ luban-agent/
 
 - **UI/Business Separation**: CLI and Codex handle only interaction and rendering; all Agent capabilities come from Core
 - **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow
-- **Unified Configuration**: Both clients share user configuration and session database under `%LocalAppData%\LuBan\AIAgent\`
+- **Unified Configuration**: Both clients share the user configuration in `LuBan\AIAgent\` under the system LocalApplicationData directory (Windows: `%LocalAppData%\LuBan\AIAgent\`); the session database is `luban-ai-agent.db` in the application base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`)
 
 ---
 
@@ -385,7 +395,6 @@ luban-agent/
     },
     "Orchestration": {
       "Enabled": true,
-      "AutoDetect": true,
       "MaxParallelism": 3,
       "MaxNodes": 20
     }
@@ -393,9 +402,9 @@ luban-agent/
 }
 ```
 
-### User Configuration (%LocalAppData%\LuBan\AIAgent\config.json)
+### User Configuration (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
 
-User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally, shared by both clients, and loaded on restart.
+User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally, shared by both clients, and loaded on restart. `userId` comes from the `LUBAN_USER_ID` environment variable and defaults to `yswenli`; a legacy single-user `config.json` is copied to seed the first per-user configuration.
 
 > Connectors (e.g. the Aliyun DevOps `yunxiao` connector) declare their **availability** in the `connectors` section of `config.json` (an undeclared connector counts as not installed); whether one is enabled in a given workspace is decided by `.luban-agent/connectors/<name>.json`. When an older install has no `connectors` section, a default declaration is seeded on first load.
 
@@ -410,8 +419,8 @@ User configurations (Providers, custom Skills, rules, connector declarations, et
 | **.NET 10.0** | Target framework |
 | **LuBan.AIAgent** | Agent runtime framework (multi-model routing / MCP / orchestration) |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
-| **Terminal.Gui 2.4.17** | CLI full-screen TUI framework (24-bit TrueColor, alt-screen) |
-| **Avalonia 12.1.1** | Codex cross-platform desktop UI framework |
+| **Terminal.Gui 2.6.0-develop.61** | CLI full-screen TUI framework (24-bit TrueColor, alt-screen) |
+| **Avalonia 12.1.2** | Codex cross-platform desktop UI framework |
 | **CommunityToolkit.Mvvm** | MVVM framework |
 | **Microsoft.Playwright** | Browser automation engine |
 | **Microsoft.ML.OnnxRuntime** | ONNX model inference (semantic retrieval) |

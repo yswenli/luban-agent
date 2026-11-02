@@ -12,6 +12,7 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
 using LuBan.AIAgent.Attachments;
 using LuBan.AIAgent.Hosting;
 using LubanAgentCore.Hosting;
@@ -38,7 +39,7 @@ public class AttachmentBareImageMentionUnitTest
         _spacedPng = Touch("有 空格.png");
         _note = Touch("note.txt");
 
-        _service = new AttachmentService(new FakeProcessor(), new ThrowingServiceProvider());
+        _service = new AttachmentService(new FakeProcessor(), new DiContainer(new ThrowingServiceProvider()));
     }
 
     [TestCleanup]

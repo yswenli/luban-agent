@@ -81,7 +81,7 @@ public sealed record KnowledgeTaskInfo(
 public sealed class KnowledgeTaskService
 {
     private const string TempConfigDir = ".luban-agent";
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly DiContainer _scopeFactory;
 
     private readonly ConcurrentDictionary<string, KnowledgeTaskInfo> _tasks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancelSources = new(StringComparer.Ordinal);
@@ -96,7 +96,7 @@ public sealed class KnowledgeTaskService
     /// 根级作用域工厂。本服务为应用级单例（全局任务表 + 跨任务串行写库门），
     /// 任务体内部自建 scope 解析 scoped 的检索/wiki 服务，避免 captive dependency。
     /// </param>
-    public KnowledgeTaskService(IServiceScopeFactory scopeFactory)
+    public KnowledgeTaskService(DiContainer scopeFactory)
     {
         _scopeFactory = scopeFactory;
     }
@@ -120,7 +120,7 @@ public sealed class KnowledgeTaskService
         return Start(KnowledgeTaskKind.Index, workspaceId, root, label, async (id, ct) =>
         {
             using var scope = _scopeFactory.CreateUserScope(userId);
-            var retrieval = scope.ServiceProvider.GetRequiredService<IRetrievalService>();
+            var retrieval = scope.GetRequiredService<IRetrievalService>();
 
             var progress = new ThrottledProgress(p => Mutate(id, t => t with
             {
@@ -151,7 +151,7 @@ public sealed class KnowledgeTaskService
         => Start(KnowledgeTaskKind.WikiRebuild, workspaceId, root, "重建 wiki 索引", async (id, ct) =>
         {
             using var scope = _scopeFactory.CreateUserScope(userId);
-            var wiki = scope.ServiceProvider.GetRequiredService<IWikiService>();
+            var wiki = scope.GetRequiredService<IWikiService>();
 
             Mutate(id, t => t with { Detail = "正在逐页重建 wiki 向量索引…" });
             var report = await wiki.RebuildIndexAsync(ct, workspaceId);

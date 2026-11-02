@@ -35,7 +35,7 @@ public partial class MainWindow : Window
     private ContentControl? _pluginPanelContent;
     private TextBlock? _pluginPanelTitle;
     private string? _mountedPluginEntryId;
-    private IServiceProvider? _services;
+    private DiContainer? _services;
     private AgentPluginHost? _pluginHost;
     private LubanAgentCodex.Services.FooterDataProvider? _footerDataProvider;
     private bool _confirmedClose;
@@ -77,7 +77,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 设置服务提供者并初始化各组件
     /// </summary>
-    public void SetServiceProvider(IServiceProvider services)
+    public void SetServiceProvider(DiContainer services)
     {
         _services = services;
 
@@ -833,7 +833,7 @@ public partial class MainWindow : Window
 
                         // 检索 scope 为 root 派生，需回填当前用户身份
                         using var retrievalScope = vm.Services.CreateUserScope(vm.Services.ResolveUserKey());
-                        var retrieval = retrievalScope.ServiceProvider.GetService<IRetrievalService>();
+                        var retrieval = retrievalScope.GetService<IRetrievalService>();
                         if (retrieval == null)
                         {
                             await Dialogs.ShowInfoAsync(this,

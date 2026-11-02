@@ -37,8 +37,8 @@ public static class LubanAgentA2AExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置源。</param>
     /// <returns>服务集合，便于链式调用。</returns>
-    public static IServiceCollection AddLubanAgentA2A(
-        this IServiceCollection services, IConfiguration configuration)
+    public static DiContainer AddLubanAgentA2A(
+        this DiContainer services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -50,36 +50,36 @@ public static class LubanAgentA2AExtensions
         services.TryAddSingleton<A2ARuntimeState>();
 
         // SDK 实现替换框架默认抽象。
-        services.Replace(ServiceDescriptor.Singleton<IA2AAgentRegistry, InMemoryA2AAgentRegistry>());
-        services.Replace(ServiceDescriptor.Singleton<IA2ATransport>(sp =>
-            new InProcessA2ATransport(sp.GetRequiredService<IA2AAgentRegistry>())));
-        services.Replace(ServiceDescriptor.Singleton<IA2AServerHost>(sp =>
+        services.ReplaceSingleton<IA2AAgentRegistry, InMemoryA2AAgentRegistry>();
+        services.ReplaceSingleton<IA2ATransport>(d =>
+            new InProcessA2ATransport(d.GetRequiredService<IA2AAgentRegistry>()));
+        services.ReplaceSingleton<IA2AServerHost>(d =>
             new A2AServerHost(
-                sp.GetRequiredService<A2ARuntimeState>(),
-                sp.GetRequiredService<IA2AAgentRegistry>(),
-                sp.GetRequiredService<IServiceScopeFactory>(),
-                sp.GetService<ILoggerFactory>(),
-                sp.GetService<ILogger<A2AServerHost>>())));
+                d.GetRequiredService<A2ARuntimeState>(),
+                d.GetRequiredService<IA2AAgentRegistry>(),
+                d,
+                d.GetService<ILoggerFactory>(),
+                d.GetService<ILogger<A2AServerHost>>()));
 
         // 运行时生命周期（由宿主在工作区确定后显式驱动）。
         services.TryAddSingleton<A2ARuntimeLifecycle>();
-        services.TryAddSingleton<IA2ALifecycle>(sp => sp.GetRequiredService<A2ARuntimeLifecycle>());
+        services.TryAddSingleton<IA2ALifecycle>(d => d.GetRequiredService<A2ARuntimeLifecycle>());
 
         // 子代理执行接缝：未启动 A2A 时严格回退默认实现（行为不变）；
         // 启动后经组合执行器按角色分发（进程内 / 远端）。
-        services.Replace(ServiceDescriptor.Scoped<ISubAgentExecutor>(sp =>
+        services.ReplaceScoped<ISubAgentExecutor>(d =>
         {
-            var state = sp.GetRequiredService<A2ARuntimeState>();
+            var state = d.GetRequiredService<A2ARuntimeState>();
             if (!state.IsStarted)
             {
-                return sp.GetRequiredService<SubAgentFactory>();
+                return d.GetRequiredService<SubAgentFactory>();
             }
 
             var inProcess = new InProcessSubAgentExecutor(
-                sp.GetRequiredService<IA2ATransport>(),
+                d.GetRequiredService<IA2ATransport>(),
                 () => state.LocalAgentName);
             return new CompositeSubAgentExecutor(inProcess, state.RemoteExecutors);
-        }));
+        });
 
         return services;
     }

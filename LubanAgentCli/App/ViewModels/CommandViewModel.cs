@@ -27,7 +27,7 @@ internal sealed class CommandViewModel
 {
     private readonly ConversationDocument _doc;
     private readonly ConversationViewModel? _conversationVm;
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     private readonly ITuiUiService _ui;
     private readonly TuiOutputWriter _writer;
     private readonly ICommandCatalog _catalog;
@@ -50,7 +50,7 @@ internal sealed class CommandViewModel
     public CommandViewModel(
         ConversationDocument doc,
         ConversationViewModel? conversationVm,
-        IServiceProvider services,
+        DiContainer services,
         IUiDispatcher dispatcher,
         ITuiUiService ui,
         SpinnerService spinner)

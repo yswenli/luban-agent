@@ -31,7 +31,7 @@ internal static class StartupWorkspaceResolver
     /// <param name="ui">TUI 模态交互服务。</param>
     /// <param name="notices">启动提示集合（追加，供主界面横幅展示）。</param>
     /// <returns>是否已成功进入某个工作区。</returns>
-    public static async Task<bool> ResolveAsync(IServiceProvider services, ITuiUiService ui, List<string> notices)
+    public static async Task<bool> ResolveAsync(DiContainer services, ITuiUiService ui, List<string> notices)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(ui);
@@ -90,7 +90,7 @@ internal static class StartupWorkspaceResolver
     /// <summary>
     /// 启动 A2A 运行时。未启用 A2A 时为 no-op；失败仅提示，不阻断进入工作区。
     /// </summary>
-    private static async Task TryStartA2AAsync(IServiceProvider services, string workspaceRoot, List<string> notices)
+    private static async Task TryStartA2AAsync(DiContainer services, string workspaceRoot, List<string> notices)
     {
         var lifecycle = services.GetService<IA2ALifecycle>();
         if (lifecycle is null)
@@ -131,7 +131,7 @@ internal static class StartupWorkspaceResolver
     /// <summary>
     /// 循环弹出创建表单，直到成功创建或用户取消。
     /// </summary>
-    private static async Task<WorkspaceInfo?> PromptCreateAsync(IServiceProvider services, ITuiUiService ui)
+    private static async Task<WorkspaceInfo?> PromptCreateAsync(DiContainer services, ITuiUiService ui)
     {
         var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         var cwd = Directory.GetCurrentDirectory();
@@ -182,7 +182,7 @@ internal static class StartupWorkspaceResolver
     /// 尝试生成 AGENTS.md：未选模型或已存在则跳过，失败不阻断（仅提示）。
     /// </summary>
     private static async Task TryGenerateAgentsMdAsync(
-        IServiceProvider services, ITuiUiService ui, WorkspaceInfo workspace, string description)
+        DiContainer services, ITuiUiService ui, WorkspaceInfo workspace, string description)
     {
         var initializer = services.GetRequiredService<IAgentsMdInitializer>();
         var configManager = services.GetRequiredService<ConfigManager>();
@@ -203,9 +203,9 @@ internal static class StartupWorkspaceResolver
         // 否则框架插件解析 EffectiveRoot 时会抛「会话未设置工作区根或 worktree」；
         // 同时回填用户身份（root 派生 scope 不继承调用方身份）。
         using var scope = services.CreateUserScope(services.ResolveUserKey());
-        var agentFactory = scope.ServiceProvider.GetRequiredService<ILuBanAgentFactory>();
+        var agentFactory = scope.GetRequiredService<ILuBanAgentFactory>();
 
-        if (scope.ServiceProvider.GetService<DefaultContextState>() is { } state)
+        if (scope.GetService<DefaultContextState>() is { } state)
         {
             state.WorkspaceId = workspace.WorkspaceId;
             state.WorkspaceRoot = workspace.RootPath;

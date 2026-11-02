@@ -33,6 +33,11 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// 因此本策略是「补漏」而非「全量把关」。
 /// </para>
 /// <para>
+/// <b>前提（LuBan.AIAgent ≥ 2026.10.29.1）</b>：①中的「技能写删 / MCP 写删」自该版本起才<b>真的</b>会回调——
+/// 此前 <c>SkillManageToolGroup</c> / <c>McpManageToolGroup</c> 从不调用 <c>IToolConfirmationService</c>，
+/// 本策略表里的 <c>WriteSkillAsync</c> 等条目永不命中（Plan 模式也照常落盘）。升级框架包前不要假设这层把关存在。
+/// </para>
+/// <para>
 /// <b>云效 MCP 子策略</b>：Step 3 / 6 / 7 的云效动作全走 <c>mcp_yunxiao_*</c>，若不加子策略会被末尾
 /// <c>Deny</c> 全拒、链路一步走不动。故按<b>工具名段</b>表驱动放行本项目所需的 12 个云效工具
 /// （8 只读 + 4 写入），并拒绝 <c>flow_run_pipeline</c>（<c>codeup_clone</c> / <c>codeup_push</c> 已从工具面删除，保留 <c>Deny</c> 双保险）。

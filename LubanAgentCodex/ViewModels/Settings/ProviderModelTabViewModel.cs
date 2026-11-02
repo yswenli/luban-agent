@@ -20,7 +20,7 @@ namespace LubanAgentCodex.ViewModels.Settings;
 /// 供应商 / 模型页 ViewModel：直连 <see cref="ConfigManager"/>，不引入任何 UI 类型。
 /// </summary>
 /// <param name="services">宿主服务提供者（为 null 时视为容器不可用，操作返回失败文案）。</param>
-public sealed class ProviderModelTabViewModel(IServiceProvider? services)
+public sealed class ProviderModelTabViewModel(DiContainer? services)
 {
     private ConfigManager? Config => services?.GetService<ConfigManager>();
 

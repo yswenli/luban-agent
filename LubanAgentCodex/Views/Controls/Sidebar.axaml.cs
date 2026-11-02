@@ -28,7 +28,7 @@ public partial class Sidebar : UserControl
     private ListBox? _pluginEntryListBox;
     private IWorkspaceManager? _workspaceManager;
     private IChatSessionService? _sessionService;
-    private IServiceProvider? _services;
+    private DiContainer? _services;
     private AgentPluginHost? _pluginHost;
 
     // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
@@ -151,7 +151,7 @@ public partial class Sidebar : UserControl
     /// <summary>
     /// 解析插件宿主单例并订阅其侧栏贡献变化（仅订阅一次）。
     /// </summary>
-    private void EnsurePluginHost(IServiceProvider services)
+    private void EnsurePluginHost(DiContainer services)
     {
         if (_pluginHost is null)
         {
@@ -251,7 +251,7 @@ public partial class Sidebar : UserControl
     /// <summary>
     /// 设置服务提供者并加载数据
     /// </summary>
-    public void SetServiceProvider(IServiceProvider services)
+    public void SetServiceProvider(DiContainer services)
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();

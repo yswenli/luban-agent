@@ -19,7 +19,7 @@ namespace LubanAgentCodex.ViewModels.Settings;
 /// 具体读写全部委派给分页 ViewModel，不含任何 Avalonia 类型。
 /// </summary>
 /// <param name="services">宿主服务提供者（为 null 时各分页按「容器不可用」降级）。</param>
-public sealed class SettingsWindowViewModel(IServiceProvider? services)
+public sealed class SettingsWindowViewModel(DiContainer? services)
 {
     private readonly List<WorkspaceInfo> _workspaces = new();
 

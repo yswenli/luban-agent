@@ -12,6 +12,7 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
 using LuBan.AIAgent.Attachments;
 using LubanAgentCore.Services;
 
@@ -59,7 +60,7 @@ public class AttachmentServiceLimitUnitTest
     public async Task ProcessAsync_超上限时截断且不抛异常()
     {
         var processor = new CountingProcessor();
-        var service = new AttachmentService(processor, new ThrowingServiceProvider());
+        var service = new AttachmentService(processor, new DiContainer(new ThrowingServiceProvider()));
 
         var result = await service.ProcessAsync(Paths(7));
 
@@ -72,7 +73,7 @@ public class AttachmentServiceLimitUnitTest
     public async Task ProcessAsync_恰好等于上限时全部处理()
     {
         var processor = new CountingProcessor();
-        var service = new AttachmentService(processor, new ThrowingServiceProvider());
+        var service = new AttachmentService(processor, new DiContainer(new ThrowingServiceProvider()));
 
         var result = await service.ProcessAsync(Paths(AttachmentService.MaxAttachmentsPerMessage));
 
@@ -84,7 +85,7 @@ public class AttachmentServiceLimitUnitTest
     public async Task ProcessAsync_未超上限时原样处理()
     {
         var processor = new CountingProcessor();
-        var service = new AttachmentService(processor, new ThrowingServiceProvider());
+        var service = new AttachmentService(processor, new DiContainer(new ThrowingServiceProvider()));
 
         var result = await service.ProcessAsync(Paths(3));
 

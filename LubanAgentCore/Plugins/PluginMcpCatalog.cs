@@ -45,7 +45,7 @@ internal static class PluginMcpCatalog
     /// <returns>客户端实例；名称未由任何已声明连接器暴露时返回 <c>null</c>。</returns>
     public static IMCPClient? Create(
         string name,
-        IServiceProvider sessionServices,
+        DiContainer sessionServices,
         string pluginId,
         PluginPermissions? permissions = null)
     {

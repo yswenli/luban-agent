@@ -7,7 +7,7 @@
 *Empower LLMs with thinking, planning, tool calling, and autonomous execution capabilities*
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
@@ -37,7 +37,7 @@ This is not science fiction, this is **LuBan Agent Codex**.
 ## ✨ Core Features
 
 ### 🎨 Modern Graphical Interface
-- **Classic three-column layout**: Left sidebar + Main content area + Bottom input area
+- **Two-column work layout**: left sidebar (workspaces / sessions / knowledge bases / plugin entries) + right chat area (message stream + input box); the bottom status bar shows permission mode, working directory, Git branch, run state, and token usage
 - **Dark theme**: Professional dark color scheme, no fatigue during long coding sessions
 - **Streaming output**: Real-time display of AI thinking process and tool call status
 - **Smart scrolling**: Auto-follow output, support manual scrolling to view history
@@ -123,14 +123,17 @@ Built-in nine core skills, plug and play:
 
 ## 🚀 Quick Start
 
-### 1. Install Playwright Browser (Required before using browser tools)
+### 1. Prepare the Playwright Browser (Required before using browser tools)
+
+On first use of the browser tools, the app auto-installs the Chromium driver matching the version declared by the `Microsoft.Playwright` package into `~/.luban-agent/playwright-driver/{version}`; no manual step is needed on success.
 
 ```powershell
-# Install browser version matching Microsoft.Playwright 1.61.0
-npx playwright@1.61.0 install chromium
+# Manual fallback only when auto-install is blocked by the network:
+# use the version printed by the app (PlaywrightDriverResolver.GetInstallBrowsersHint)
+npx playwright@<version> install chromium
 ```
 
-> **Note**: Browser version must match Microsoft.Playwright package version, current project uses 1.61.0.
+> **Note**: The browser version must match the `Microsoft.Playwright` package version; do not pin a fixed version by hand — the version declared in the csproj is authoritative.
 
 ### 2. Clone Source and Run
 
@@ -143,66 +146,42 @@ cd luban-agent
 dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 ```
 
-### 3. Select Workspace
+### 3. Enter a Workspace
 
-After startup, workspace picker will pop up:
+Startup shows a splash screen, then automatically restores the **most recently active normal workspace** (LLM Wiki knowledge bases are excluded from restore). If no workspace has ever been created, it creates a normal workspace from the current process working directory, authorizes it, and makes it current.
 
 ```
-┌─────────────────────────────────────────┐
-│  Select Workspace                        │
-├─────────────────────────────────────────┤
-│  📁 MyProject                           │
-│     D:\Projects\MyProject               │
-│     Last active: 2026-08-20 10:30       │
-│                                         │
-│  📁 Docs                                │
-│     D:\Documents\Docs                   │
-│     Last active: 2026-08-19 15:20       │
-│                                         │
-│  [📂 Open Folder...]                    │
-└─────────────────────────────────────────┘
+Splash: Loading app configuration... → Initializing core services... → Preparing knowledge base and workspace...
+→ Building main UI... → Main window
 ```
 
-Select existing workspace or click "Open Folder" to create new workspace.
+After entering, switch workspaces and sessions from the sidebar; use `/work` when you need to create, switch, delete, or authorize workspaces.
 
 ### 4. Configure Your First AI Provider
 
-Enter `/provider -add` in input box, follow prompts:
+Enter `/provider` to open the "Providers" tab of the settings center (written to the global `config.json`, not per workspace):
+
+1. Click "＋ New" at the bottom left to create a provider draft;
+2. Pick a preset in "Type (built-in preset, optional)" (15 built-in vendors + Custom, 16 entries); selecting one auto-fills `Name` and `BaseUrl`;
+3. Fill in `ApiKey` (required), optionally adjust `BaseUrl` and add or remove custom models;
+4. Click "Save"; click "Apply Configuration" to take effect immediately, otherwise it applies on the next workspace switch or restart.
+
+The sidebar "⚙ Settings" button and `/provider` open the same settings center.
+
+### 5. Select a Model and Start the Conversation
 
 ```
-> /provider -add
-
-Select Provider type:
-  1. OpenAI
-  2. Azure OpenAI
-  3. DeepSeek
-  4. Kimi (Moonshot)
+> /model -list
+Available models:
+  kimi:k3 (current)
+  kimi:k3-256k
   ...
 
-Please select (1-23): 4
-Please enter Kimi API Key: ********
-
-✓ Provider 'Kimi' added and saved
+> /model -switch kimi:k3
+Model switched: kimi:k3
 ```
 
-### 5. Select Model and Start Conversation
-
-```
-> /model -switch
-
-Configured Providers:
-  1. Kimi
-
-Please select Provider number: 1
-Kimi supported models:
-  1. k3
-  2. k3-256k
-  3. kimi-for-coding
-  ...
-
-Please select model number: 1
-✓ Model selected: kimi:k3
-```
+`/model` only supports `-list` (default) and `-switch <provider:model>`; add, edit, and delete providers/models on the "Models" tab of the settings center. The model drop-down on the right of the input toolbar also switches the current model directly.
 
 ### 6. Start Your First Agent Conversation
 
@@ -231,35 +210,44 @@ LuBan Agent Codex provides a concise and powerful command system, all commands s
 
 | Command | Shortcut | Description |
 |---------|----------|-------------|
-| `/help` | — | Display help information |
-| `/clear` | — | Clear session history |
+| `/help` | — | Show commands and shortcuts (content comes from the command catalog) |
+| `/clear` | — | Clear the current message stream |
 | `/mode [name]` | — | View or switch permission mode (default/plan/accept-edits/bypass) |
-| `/provider` | `/p` | Manage AI Provider |
-| `/model` | `/m` | Manage models |
-| `/skill` | `/sk` | View and execute Skills |
-| `/rule` | `/r` | View and manage rules |
-| `/mcp` | `/mp` | View MCP clients |
-| `/session` | `/se` | Manage conversation sessions |
-| `/stats` | `/st` | Session and Token statistics |
-| `/work` | `/w` | Workspace management |
-| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki knowledge base management |
+| `/exit` | `/quit` | Exit the application |
+| `/provider` | `/p` | Open the "Providers" tab of the settings center |
+| `/model` | `/m` | List models, or switch with `-switch <provider:model>` |
+| `/skill` | `/sk` | Open the "Skills" tab (view / create / edit / delete skills) |
+| `/rule` | `/r` | Open the "Rules" tab of the settings center |
+| `/mcp` | `/mp` | Open the "MCP Services" tab of the settings center |
+| `/session` | `/se` | List / create / clear sessions |
+| `/stats` | `/st` | Show statistics (message count, permission mode, current session) |
+| `/work` | `/w` | Open the "Workspace Management" window |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | Open the "LLM Wiki Knowledge Base Management" window |
+| `/a2a` | — | A2A collaboration management (`-list` / `-server` / `-client` / `-start` / `-stop`) |
+
+> `/agi` and `/init` are CLI-only and unavailable in Codex.
 
 ### Sub-command Shortcuts
 
-| Shortcut | Full Command | Applicable Scenarios |
-|----------|--------------|---------------------|
-| `-l` | `-list` | All management commands |
-| `-a` | `-add` | All management commands |
-| `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
-| `-s` | `-switch` | All management commands (`-search` in `/llmwiki`) |
-| `-n` | `-new` | Session/Work/LLM Wiki |
-| `-c` | `-clear` | Session |
+GUI and CLI share the same alias expansion (`SlashCommandAliases.Expand`), but in Codex only `/model`, `/session`, and `/a2a` actually parse sub-commands; the other management commands ignore arguments and open their UI directly.
+
+| Shortcut | Expands to | Notes |
+|----------|------------|-------|
+| `-l` | `-list` | List |
+| `-a` | `-add` | Add |
+| `-u` | `-update` | Update |
+| `-d` | `-delete` | Delete |
+| `-s` | `-switch` | Switch; expands to `-server` for `/a2a` and `-search` for `/llmwiki` |
+| `-n` | `-new` | New |
+| `-c` | `-clear` | Clear; expands to `-client` for `/a2a` |
+| `-i` | `-index` | Expands only for `/llmwiki` |
+| `-t` | `-tools` | Tool list (no Codex command parses this sub-command) |
 
 **Examples**:
-- `/p -l` = `/provider -list`
-- `/st -d 7` = `/stats -days 7`
-- `/work -n D:\MyProject` = Create workspace
+- `/m -l` = `/model -list`
+- `/m -s kimi:k3` = `/model -switch kimi:k3`
+- `/se -n Project Discussion` = `/session -new Project Discussion`
+- `/a2a -s` = `/a2a -server` (not `-switch`)
 
 ---
 
@@ -297,19 +285,22 @@ You: Help me open Baidu and search for "LuBan Framework"
 🤖 Search completed, current page title: LuBan Framework_Baidu Search
 ```
 
-### Scenario 3: Code Review
+### Scenario 3: Skill-driven Code Review
+
+`/skill` only opens the "Skills" tab of the settings center (view / create / edit / delete `SKILL.md` files); it does not accept code to review. The review is done by the Agent: the model first calls `ListSkillsAsync` to find a skill, then `UseSkillAsync` to load its instruction template.
 
 ```
-> /skill code-review
+You: Use the code review skill on this code: public void Test() { var x = 1/0; }
 
-Please enter content: public void Test() { var x = 1/0; }
+⚙️ Calling tool: ListSkillsAsync
+   Parameters: keyword = code
+⚙️ Calling tool: UseSkillAsync
+   Parameters: id = code-review
+✓ Tool execution complete
 
-📋 Code Analysis:
-Found potential issues:
-1. ⚠️ Line 1 has division by zero error
-2. 💡 Recommend adding exception handling mechanism
-
-Improvement suggestions:
+🤖 📋 Code analysis:
+1. ⚠️ Line 1 risks division by zero
+2. 💡 Recommend adding exception handling
 ...
 ```
 
@@ -369,55 +360,45 @@ This is a complex task, needs to be decomposed into multiple subtasks for parall
 
 ### Scenario 6: Workspace Management
 
-```
-# Create workspace
-> /work -new D:\MyProject
-✓ Workspace created: MyProject - D:\MyProject
+Enter `/work` to open the "Workspace Management" window. Each row shows the type icon (📁 Normal / 📚 LLM Wiki), name, root directory, `✓ current` marker, and authorization state; the toolbar provides:
 
-# List all workspaces
-> /work -list
-┌──────────┬──────┬──────────────┬──────┬────────────┬──────┐
-│ Name     │ Type │ Root Dir     │ Sess │ Last Active│ Auth │
-├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
-│ * MyProject │ Normal │ D:\MyProject │ 3    │ 2026-08-20 │ ✓    │
-│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
-└──────────┴──────┴──────────────┴──────┴────────────┴──────┘
+| Button | Action |
+|--------|--------|
+| `+ New Workspace` | Pick a directory and create a normal workspace |
+| `Switch` | Make the selected workspace current |
+| `Delete` | Delete the selected workspace (cascades to its sessions and indexes, with confirmation) |
+| `Authorize` | Grant path authorization for the selected workspace (switches to it first when unauthorized) |
 
-# Switch workspace
-> /work -switch MyProject
-✓ Switched to workspace: MyProject
-  Root directory: D:\MyProject
 ```
+> /work
+(opens the "Workspace Management" window)
+```
+
+After switching, the sidebar session list and the footer working directory refresh together.
 
 ### Scenario 7: LLM Wiki Knowledge Base Q&A
 
+Enter `/llmwiki` to open the "LLM Wiki Knowledge Base Management" window. Each row shows 📚 name, path, index status (e.g. "Indexed 25 files · 142 chunks"), and the `✓ current` marker; the toolbar provides:
+
+| Button | Action |
+|--------|--------|
+| `+ Create Knowledge Base` | Create an LLM Wiki workspace with a name and directory |
+| `Index` | Build the index for the selected knowledge base; first asks for an "index file pattern" (leave empty to index everything) |
+| `Search` | Asks for a "search query", then replaces the view with "Search results · N" and a `← Back to list` button |
+| `Delete` | Delete the selected knowledge base (cascades to sessions and indexes, with confirmation) |
+| `Rebuild Wiki Index` | Rebuild the Wiki page vector index for the selected knowledge base |
+| `Wiki Lint` | Check Wiki page health and report findings |
+
 ```
-# 1. Create LLM Wiki knowledge base
-> /llmwiki -new D:\KnowledgeBase My Knowledge Base
-✓ LLM Wiki knowledge base created: My Knowledge Base - D:\KnowledgeBase
-# The name can be omitted: /llmwiki -new D:\KnowledgeBase → defaults to llmwiki
+> /llmwiki
+(opens the "LLM Wiki Knowledge Base Management" window)
+```
 
-# 2. Switch to LLM Wiki workspace
-> /work -switch My Knowledge Base
-✓ Switched to workspace: My Knowledge Base
+Switch to that knowledge base workspace (via the workspace window or the sidebar), then ask in the input box (retrieval-augmented automatically):
 
-# 3. Authorize and index files
-> /llmwiki -index *.md
-Starting to index workspace: My Knowledge Base
-✓ Indexing complete
-  Scanned files: 25
-  New files: 25
-  Total chunks: 142
-
-# 4. Retrieval test
-> /llmwiki -search how to configure workspace
-Found 3 related results:
-File: D:\KnowledgeBase\setup.md
-Content: Workspace configuration requires...
-
-# 5. Direct Q&A (automatic retrieval augmentation)
-You: How to create a workspace?
-🤖 According to knowledge base documents, creating workspace uses /work -new command...
+```
+You: How do I create a workspace?
+🤖 According to the knowledge base docs, use /work to open Workspace Management and click "+ New Workspace"...
 ```
 
 ### Scenario 8: Safely Reading Files Outside the Workspace (Three-tier Authorization)
@@ -456,7 +437,7 @@ In Plan mode the Agent only **reads** context to produce a plan; every write is 
 
 ```
 > /mode plan
-✓ Permission mode switched: plan
+✓ Permission mode switched: Plan
 
 You: Refactor the src/Logging module
 
@@ -494,16 +475,18 @@ You: Clean up the temp directory
 
 ### Scenario 11: Four Permission Modes, One-key Cycling
 
-Switch among the four modes with `/mode` or `Shift+Tab`:
+Switch among the four modes with `/mode` or `Shift+Tab` (while the Agent is running, `Shift+Tab` is refused with a notice, because the tool-confirmation semantics of the in-flight turn are already fixed):
 
 ```
 > /mode
-Current permission mode: default
-Available modes: default / plan / accept-edits / bypass (use Shift+Tab to cycle)
+Current permission mode: Default
+Available modes: default / plan / accept-edits / bypass
 
 > /mode accept-edits
-✓ Permission mode switched: accept-edits
+✓ Permission mode switched: AcceptEdits
 ```
+
+> Command feedback is localized in the app UI; the mode values you type remain `default` / `plan` / `accept-edits` / `bypass`.
 
 | Mode | Behavior |
 |------|----------|
@@ -514,29 +497,25 @@ Available modes: default / plan / accept-edits / bypass (use Shift+Tab to cycle)
 
 ### Scenario 12: Plug in External MCP Tools to Extend Capabilities On Demand
 
-Beyond built-in tools, you can bring external MCP server tools into the Agent toolset via the **MCP management window** or the `/mcp` command:
+Beyond built-in tools, you can bring external MCP server tools into the Agent toolset via the "MCP Services" tab of the settings center (jump straight there with `/mcp`):
 
 ```
-> /mcp -list
-Status     Type   Name         Description
-[connected] builtin filesystem  Built-in filesystem MCP client
+> /mcp
+(opens Settings → Workspace Configuration → MCP Services)
+```
 
-> /mcp -add                       # interactive form for name / command / args
-✓ External MCP server 'github' added
-  Use /mcp connect github to connect
+1. Click "＋ New" and fill the form: `Name` (required, used as the file name), `Description`, `Transport` (stdio / http / sse), `Command` (for http/sse you can put the URL here), `Args` (one per line), `Enabled`;
+2. Click "Save", then "Apply Configuration"; saving triggers `Reload()` on the management service, so no restart is needed;
+3. Ask in the chat and the Agent merges that server's tools (named `mcp_{client}_{tool}`) into its toolset:
 
-> /mcp -connect github
-Connecting github...
-✓ Connected
-
-> /mcp -tools github
-  - list_repos: list repositories
-  - create_issue: create an issue
-  ...
-
+```
 You: Create a bug issue in the luban-agent repo
-🤖 [MCP tool call] github.create_issue ...
+⚙️ Calling tool: mcp_github_create_issue
+   Parameters: repo = luban-agent, title = ...
+✓ Tool execution complete
 ```
+
+> The "Scope" selector at the top switches between `★ Global` and a specific workspace, deciding whether the config lands in user-level or workspace-level `.luban-agent/mcps/`.
 
 ---
 
@@ -617,16 +596,16 @@ LubanAgentCodex/
 {
   "LuBanAgent": {
     "DefaultModel": "openai:gpt-4o",
-    "SystemPrompt": "You are an intelligent assistant.",
-    "MaxToolLoopIterations": 10,
+    "SystemPrompt": "You are an intelligent assistant that helps users complete various tasks.",
+    "MaxToolLoopIterations": 30,
     "Session": {
       "CompactTargetMessages": 50,
-      "CompactThreshold": 10
+      "CompactThreshold": 10,
+      "IdleUnloadMinutes": 30
     },
     "Orchestration": {
       "Enabled": true,
       "PlannerReasoningEffort": "None",
-      "MaxParallelism": 5,
       "MaxNodes": 20,
       "DefaultNodeTimeoutSeconds": 300
     }
@@ -661,7 +640,7 @@ You: Help me write a file to C:\temp\test.txt
 │   [✗ Deny] [Allow All This Turn] [Allow All This Session] [✓ Allow] │
 └───────────────────────────────────────────────────────┘
 
-Message stream record: Allowed 写入文件
+Message stream record: Allowed Write File
 ```
 
 The dialog is an application-modal window: the main window is not interactive until you choose; Esc or aborting the session is treated as "Deny".
@@ -677,25 +656,25 @@ Read-only and normal edit operations inside the workspace need no confirmation; 
 ### Session Management
 
 ```
-# Create new session
+# Create and switch to a new session (title optional, defaults to "New Session")
 > /session -new Project Discussion
 
-# List all sessions
+# List all sessions (the current one carries a "(current)" marker)
 > /session -list
 
-# Switch session
-> /session -switch Project Discussion
-
-# Clear all sessions (requires confirmation)
+# Clear the current session (also clears the message stream)
 > /session -clear
 
 # View statistics
-> /stats -days 7
+> /stats
 ```
+
+`/session` only supports `-list`, `-new <title>`, and `-clear`; switch sessions by clicking one in the sidebar.
+`/stats` takes no arguments and prints the message count, permission mode, and current session; token usage is shown in the footer status bar.
 
 **Automatic session saving**:
 - Conversation history automatically saved to SQLite database
-- Database location: `%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+- Database location: `luban-ai-agent.db` under the program base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`; the legacy `ai_sessions.db` is renamed automatically on first start)
 - User messages and AI replies automatically saved
 - Token count automatically tracked
 
@@ -730,43 +709,32 @@ Please translate user-provided content to English.
 
 ### Custom Rules
 
-```
-# Add path protection rule
-> /rule -add
+Enter `/rule` to open the "Rules" tab of the settings center, click "＋ New", then fill the form: `Id` (required, used as the file name), `Name`, `Description`, `ActionTypePattern`, `TargetPattern` (both support wildcards), `Action` (allow / deny), `Priority` (higher number wins), `Enabled`, and `Content` (optional guidance text read by `IContentRule`). Click "Save" to apply.
 
-Please enter rule ID: protect-system
-Please enter rule name: Protect system directory
-Please enter ActionTypePattern (default *): file-write
-Please enter TargetPattern (default *): C:\Windows\*
-Please enter Action (allow/deny): deny
-Please enter priority (default 100): 100
-✓ Custom rule 'Protect system directory' (protect-system) added
+```
+> /rule
+(opens Settings → Workspace Configuration → Rules)
+
+Example: Id=protect-system, Name=Protect system directories,
+         ActionTypePattern=file-write, TargetPattern=C:\Windows\*, Action=deny, Priority=100
 ```
 
 ### MCP External Servers
 
 ```
-# Add external MCP server
-> /mcp -add
+# Open the MCP services settings tab
+> /mcp
 
-Please enter server name: github
-Please enter description: GitHub integration
-Please enter startup command (e.g., npx): npx
-Please enter command arguments (space-separated, optional): -y @modelcontextprotocol/server-github
-✓ External MCP server 'github' added
-
-# Connect to MCP server
-> /mcp -connect github
-Connecting to github...
-✓ Connection successful
-
-# View available tools
-> /mcp -tools github
-github available tools:
-  - create_issue: Create GitHub Issue
-  - search_repositories: Search repositories
-  ...
+# Form fields
+Name        required, used as the file name (e.g. github)
+Description optional
+Transport   stdio / http / sse
+Command     startup command for stdio (e.g. npx); for http/sse you can put the URL here
+Args        one argument per line, e.g. -y, @modelcontextprotocol/server-github
+Enabled     whether the server participates in loading
 ```
+
+After "Save", click "Apply Configuration" to hot-reload (`McpManagementService` calls `Reload()`); exposed tools are named `mcp_{client}_{tool}`, e.g. `mcp_github_create_issue`.
 
 ---
 
@@ -774,7 +742,7 @@ github available tools:
 
 | Component | Description |
 |-----------|-------------|
-| **Avalonia 12.1.1** | Cross-platform UI framework (.NET 10.0, dark theme) |
+| **Avalonia 12.1.2** | Cross-platform UI framework (.NET 10.0, dark theme) |
 | **Microsoft.Agents.AI.Foundry** | Agent runtime framework |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
 | **Microsoft.Playwright** | Browser automation engine |
@@ -789,7 +757,7 @@ github available tools:
 ## 💡 Tips
 
 - 🖥️ **Graphical Interface**: Launch enters Avalonia desktop application, enter plain text to directly converse with Agent
-- ⌨️ **Shortcuts**: `Enter` send message, `Ctrl+Enter` newline, `Ctrl+V` paste attachments (files/screenshots), `Shift+Tab` switch permission mode
+- ⌨️ **Shortcuts**: `Enter` send message, `Ctrl+Enter` / `Shift+Enter` newline, `Ctrl+V` paste attachments (files/screenshots), `Shift+Tab` switch permission mode, `Esc` cancel the current task
 - 🛡️ **Four Permission Modes**: `Shift+Tab` cycle through Default / Plan / AcceptEdits / BypassPermissions, footer displays in real-time
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow

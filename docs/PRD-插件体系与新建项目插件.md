@@ -158,7 +158,7 @@
 | **宿主 / 操作层** | `luban-agent/LubanAgentCodex`（Avalonia 桌面端） | **操作插件**：加载（ALC）、管理（安装 / 启用 / 停用 / 卸载）、渲染 UI 贡献（侧栏条目 + 面板）、提供 `PluginManageWindow` | 运行时宿主，消费框架 `PluginManager` |
 
 - 框架 `LuBan.AIAgent` 已有同构模块（`Skills/`、`Rules/`、`MCP/`），插件模块 `Plugins/` 沿用同一模式：`IPlugin` / `PluginBase` 类比 `ISkill` / `SkillBase`；`PluginManager`（含插件注册表）类比 `SkillRegistry`（`LuBan.AIAgent/Skills/SkillRegistry.cs`）。
-- **依赖方式（v0.21 定案）**：产品工程通过 **`PackageReference`** 引用 `LuBan.*` 框架包，版本统一 **`2026.10.20.1`**，来自私有源 `nexus3`（凭据在用户级 NuGet.Config）。`LubanAgentCore` 声明 `LuBan.AIAgent` / `LuBan.Common` / `LuBan.Logging` / `LuBan.Orm`，其余闭包包（`DI` / `Threading` / `Linq`）经传递引用进入；`LubanAgentA2A`、`LubanAgent.Plugin.NewProject` 各声明 `LuBan.AIAgent`（云效连接器 v0.24 起并入 `LubanAgentCore`，不再单独声明）。**历史**：P0/P1/P2 开发期曾用 `TEMP-LOCAL-VERIFY` 项目引用以便框架改动即时生效，三阶段验收后（v0.21）还原为包引用；**smoke 4 个开发验证台工程有意保留项目引用**。**代价**：改 framework 源码不再即时生效，需重新发包并提升版本号。具体插件项目同样以 `PackageReference` 引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`（且插件包 `lib/` 不得含框架程序集）。
+- **依赖方式（v0.21 定案）**：产品工程通过 **`PackageReference`** 引用 `LuBan.*` 框架包，版本统一 **`2026.11.2.1`**，来自私有源 `nexus3`（凭据在用户级 NuGet.Config）。`LubanAgentCore` 声明 `LuBan.AIAgent` / `LuBan.Common` / `LuBan.Logging` / `LuBan.Orm`，其余闭包包（`DI` / `Threading` / `Linq`）经传递引用进入；`LubanAgentA2A`、`LubanAgent.Plugin.NewProject` 各声明 `LuBan.AIAgent`（云效连接器 v0.24 起并入 `LubanAgentCore`，不再单独声明）。**历史**：P0/P1/P2 开发期曾用 `TEMP-LOCAL-VERIFY` 项目引用以便框架改动即时生效，三阶段验收后（v0.21）还原为包引用；2026-10-29 曾再度临时改回项目引用以验证框架修复，`2026.11.2.1` 发包后已还原；**smoke 4 个开发验证台工程有意保留项目引用**。**代价**：改 framework 源码不再即时生效，需重新发包并提升版本号。具体插件项目同样以 `PackageReference` 引用 `LuBan.AIAgent` 以获得契约与 `PluginBase`（且插件包 `lib/` 不得含框架程序集）。
 - （v0.15 时）框架**尚无** `Plugins/` 目录，本次为新增模块；该模块现已落地（`LuBan.AIAgent/Plugins/*`，含契约、生命周期、`PluginManager`/`PluginLoader`/`ManifestValidator`、`PluginBase`/`BuiltinPluginCatalog` 与安全子系统）。
 
 ### 3.1 宿主定位
@@ -206,7 +206,7 @@
 > **（v0.16 定案）插件目录固定为宿主目录下的 `plugins/<插件标识>/`（首版即 `luban-agent-codex/plugins/`）。用户级（`~/.luban-agent/plugins/`）覆盖机制**本期不实现**，不在设计范围内（见 §6 #9）。
 - **应用内置目录**：`<AppContext.BaseDirectory>/plugins/<plugin-id>/`，结构：`plugin.json` + `lib/`（程序集，含 `entryAssembly` 及其依赖）+ `assets/`（图标/模板）。
 - **用户级覆盖（开发/调试优先）**：对齐现有记忆库约定 `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)/LuBan/AIAgent/plugins/<plugin-id>/`；原 `~/.luban-agent/plugins/` 可并存作为备选。解析顺序：用户级优先，未命中回退应用内置。建议新增 `PluginLocation.ResolveDirectories()` 统一返回有序目录列表。
-- **契约与插件核心（来自框架）**：`IPlugin` / `PluginBase` / `PluginManager` / `BuiltinPluginCatalog` 定义于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 NuGet 包 `LuBan.AIAgent` 发布；宿主与具体插件项目均以 `PackageReference` 引用该包（v0.21 起已统一为包引用 `2026.10.20.1`），**不单独新建 agent 侧契约工程**。插件工程引用时契约程序集置于默认 ALC，不随插件包分发。
+- **契约与插件核心（来自框架）**：`IPlugin` / `PluginBase` / `PluginManager` / `BuiltinPluginCatalog` 定义于框架 `luban-framework/LuBan.AIAgent/Plugins/`，随 NuGet 包 `LuBan.AIAgent` 发布；宿主与具体插件项目均以 `PackageReference` 引用该包（v0.21 起已统一为包引用，当前版本 `2026.11.2.1`），**不单独新建 agent 侧契约工程**。插件工程引用时契约程序集置于默认 ALC，不随插件包分发。
 
 ### 3.4 加载与隔离（方案 B：ALC + `IPlugin`）—— 已确认落地
 

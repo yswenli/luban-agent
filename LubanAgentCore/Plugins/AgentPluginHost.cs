@@ -86,7 +86,7 @@ public sealed class AgentPluginHost : IPluginHost, IPluginSessionContributor
     /// 插件应改为经 <c>SessionRuntime.Services</c> 获取——这是 DI 硬约束：单例宿主的构造链与解析链里
     /// 不得出现 scoped 服务，否则容器会在 <c>ValidateScopes=true</c> 下直接抛错。
     /// </remarks>
-    public IServiceProvider Services => _context.Root;
+    public DiContainer Services => _context.Root;
 
     /// <inheritdoc />
     /// <remarks>框架经 <c>PluginHostScope</c> 按插件包装后回填真实标识，共享实现自身不持有插件身份。</remarks>
@@ -383,7 +383,7 @@ public sealed class AgentPluginHost : IPluginHost, IPluginSessionContributor
     /// 以及运行期贡献（<c>RegisterSkill</c> / <c>ContributeSkills</c>，由宿主记账），两者都只补缺失、
     /// 不覆盖已存在文件。全过程幂等，失败不影响会话构建。
     /// </remarks>
-    public void Contribute(IServiceProvider sessionServices)
+    public void Contribute(DiContainer sessionServices)
     {
         if (sessionServices is null) return;
 
@@ -466,7 +466,7 @@ public sealed class AgentPluginHost : IPluginHost, IPluginSessionContributor
     /// 插件身份取自当前权限环境（<see cref="PluginHostScope.RegisterMcpServer"/> 在委派前已进入），
     /// 使 MCP 客户端出口调用按插件声明判定越界；无环境时按「未声明权限」处理（默认拒绝）。
     /// </remarks>
-    private void TryRegisterMcpInSession(IServiceProvider sessionServices, string name)
+    private void TryRegisterMcpInSession(DiContainer sessionServices, string name)
     {
         try
         {

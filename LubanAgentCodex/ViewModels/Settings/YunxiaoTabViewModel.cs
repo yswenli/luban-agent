@@ -18,7 +18,7 @@ namespace LubanAgentCodex.ViewModels.Settings;
 /// 云效连接页 ViewModel：读写经 <see cref="YunxiaoSettingsService"/>（组织 ID 落 config.json，PAT 落凭据存储）。
 /// </summary>
 /// <param name="services">宿主服务提供者（为 null 时视为容器不可用，操作返回失败文案）。</param>
-public sealed class YunxiaoTabViewModel(IServiceProvider? services)
+public sealed class YunxiaoTabViewModel(DiContainer? services)
 {
     private YunxiaoSettingsService? Settings => services?.GetService<YunxiaoSettingsService>();
 

@@ -29,7 +29,7 @@ pwsh -File luban-agent\smoke\plugin-system\build.ps1 -SkipCodex
 ```
 
 `build.ps1` 退出码 0 = framework 三场景全绿；非 0 会打印失败场景。
-脚本用 `ProjectReference` 直接引 `luban-framework/LuBan.AIAgent`（**有意例外**：本目录是开发验证台，不在 `LubanAgent.slnx` 内，保留项目引用以便改框架源码即时生效；产品工程已于 2026-10-20 还原为 NuGet 包引用 `2026.10.20.1`）。
+脚本用 `ProjectReference` 直接引 `luban-framework/LuBan.AIAgent`（**有意例外**：本目录是开发验证台，不在 `LubanAgent.slnx` 内，保留项目引用以便改框架源码即时生效；产品工程走 NuGet 包引用，当前 `2026.11.2.1`，2026-10-29 曾临时改回项目引用，该版本发包后已还原）。
 
 ## 2. framework-harness 三场景（自动断言）
 

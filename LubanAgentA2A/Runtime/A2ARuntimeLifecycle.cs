@@ -32,7 +32,7 @@ public sealed class A2ARuntimeLifecycle : IA2ALifecycle
     private readonly A2ARuntimeState _state;
     private readonly IA2AAgentRegistry _registry;
     private readonly IA2AServerHost _serverHost;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly DiContainer _scopeFactory;
     private readonly SubAgentRoleRegistry _roleRegistry;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<A2ARuntimeLifecycle>? _logger;
@@ -56,7 +56,7 @@ public sealed class A2ARuntimeLifecycle : IA2ALifecycle
         A2ARuntimeState state,
         IA2AAgentRegistry registry,
         IA2AServerHost serverHost,
-        IServiceScopeFactory scopeFactory,
+        DiContainer scopeFactory,
         SubAgentRoleRegistry roleRegistry,
         ILoggerFactory? loggerFactory = null,
         ILogger<A2ARuntimeLifecycle>? logger = null)

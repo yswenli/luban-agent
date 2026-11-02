@@ -33,7 +33,7 @@ public partial class WorkManageWindow : Window
     /// 初始化工作区管理窗口并加载 XAML 定义，随后异步加载当前用户的全部工作区列表。
     /// </summary>
     /// <param name="services">应用服务容器，用于解析工作区管理器。</param>
-    public WorkManageWindow(IServiceProvider services)
+    public WorkManageWindow(DiContainer services)
     {
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         InitializeComponent();

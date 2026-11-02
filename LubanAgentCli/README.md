@@ -7,7 +7,7 @@
 *让大模型具备思考、规划、调用工具和自主执行的能力*
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
@@ -47,7 +47,7 @@
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
 | 📁 **文件系统工具** | 读取、写入、编辑（单处/多处/全部替换）、列出目录、搜索、复制、移动、删除；工作区内直接放行，工作区外经确认 |
-| 🌿 **Git 工具** | 状态、差异、日志、分支、暂存、提交、合并、变基、推送等 26 个细粒度工具 |
+| 🌿 **Git 工具** | 状态、差异、日志、分支、暂存、提交、合并、变基、推送、worktree 隔离等 30 个细粒度工具 |
 | 🔧 **脚本执行工具** | 执行 Shell、Lua、Python 脚本 |
 | 🌍 **Web 工具** | 发送 HTTP 请求获取网页内容 |
 | 🔍 **语义检索工具** | 索引本地代码/文档，按语义搜索相关片段 |
@@ -61,7 +61,7 @@
 > **编排说明**：Git 工具默认不进入编排子代理的工具组（`Orchestration.DefaultToolGroups=["filesystem", "log"]`），如需让子代理执行 Git 操作，请在 DAG 节点中显式指定 `toolGroups`。
 
 ### 🎯 Skill 系统
-内置九大核心技能，即插即用：
+内置十大核心技能，即插即用：
 - **头脑风暴**：实现功能前探索需求和设计
 - **代码审查**：审查代码、发现问题、提供改进建议
 - **文档生成**：生成代码注释、README、API 文档
@@ -71,8 +71,9 @@
 - **调试助手**：辅助调试问题
 - **Git 提交**：生成规范的 Git 提交信息
 - **技能发现**：自动发现和推荐合适的技能
+- **AGENTS.md 生成**：为工作区生成 AGENTS.md 规约文档（对应 `/init` 命令）
 
-**对话内激活 Skill**：在 `/agi` 或 `/browse` 对话中输入 `/skill -switch`，选择 Skill 后仅对下一条输入生效，执行后自动取消。
+**Skill 开关**：用 `/skill -switch` 启用或禁用内置/自定义 Skill，状态持久化保存；被禁用的 Skill 不再参与对话。文件型 Skill 不支持该开关，直接编辑 `.luban-agent/skills` 目录即可。用 `/skill <id>` 可直接执行某个 Skill。
 
 **文件化 Skill**：支持通过 SKILL.md 文件定义自定义 Skill，兼容 OpenCode 格式，放置于项目级或用户级目录即可自动加载。
 
@@ -89,7 +90,7 @@
 
 ### 💾 会话持久化
 - 对话历史自动保存到 SQLite 数据库
-- 支持长对话压缩（SummarizingChatReducer），上下文永不丢失
+- 支持长对话压缩（`compact_context` 工具：先摘要再归档较旧消息，可指定保留条数）
 - 会话统计、Token 计数一目了然
 
 ### 🔌 MCP 协议支持
@@ -122,14 +123,11 @@
 
 ## 🚀 快速开始
 
-### 1. 安装 Playwright 浏览器（使用浏览器工具前必须安装）
+### 1. 浏览器驱动（首次使用浏览器工具时自动准备）
 
-```powershell
-# 安装与 Microsoft.Playwright 1.61.0 匹配的浏览器版本
-npx playwright@1.61.0 install chromium
-```
+浏览器驱动（约 100MB）不随安装包分发，首次调用浏览器工具时自动安装到 `~/.luban-agent/playwright-driver/{version}`，版本取自 `Microsoft.Playwright` 包声明，无需手动干预。
 
-> **注意**：浏览器版本必须与 Microsoft.Playwright 包版本匹配，当前项目使用的是 1.61.0。
+> **注意**：通常不需要手动安装。若自动安装失败（如网络受限），程序会给出与当前运行时版本匹配的兜底命令（形如 `npx playwright@<version> install chromium`），按提示执行即可；不要自行指定其他版本，否则与包内驱动版本不匹配。
 
 ### 方式一：克隆源码运行
 
@@ -138,8 +136,8 @@ npx playwright@1.61.0 install chromium
 git clone https://github.com/yswenli/luban-agent.git
 cd luban-agent
 
-# 运行程序
-dotnet run
+# 运行程序（仓库根目录没有 csproj，需指定 CLI 工程）
+dotnet run --project LubanAgentCli/LubanAgentCli.csproj
 ```
 
 ### 方式二：作为 dotnet tool 安装（推荐）
@@ -160,7 +158,7 @@ git clone https://github.com/yswenli/luban-agent.git
 cd luban-agent
 
 # 2. 打包
-dotnet pack -c Release -o ./artifacts
+dotnet pack LubanAgentCli/LubanAgentCli.csproj -c Release -o ./artifacts
 
 # 3. 全局安装
 dotnet tool install -g LuBan.Agent.CLI --add-source ./artifacts
@@ -180,8 +178,8 @@ luban-agent-cli
 #### 配置文件说明
 
 - **应用配置**（`appsettings.json`）：始终优先从工具安装目录加载；当前工作目录下的 `appsettings.json` 可作为覆盖项
-- **用户配置**（Provider、Skill、规则等）：自动保存在 `%LocalAppData%\LuBan\AIAgent\config.json`
-- **会话数据**：保存在 `%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+- **用户配置**（Provider、Skill、规则等）：自动保存在 `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json`，`userId` 取环境变量 `LUBAN_USER_ID`（缺省 `yswenli`）；旧版单用户配置 `%LocalAppData%\LuBan\AIAgent\config.json` 会在首次访问时自动迁移
+- **会话数据**：保存在程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db` 的相对路径按程序基目录解析）；旧版 `ai_sessions.db` 在首次启动时自动更名为该文件
 
 #### 更新与卸载
 
@@ -190,7 +188,7 @@ luban-agent-cli
 dotnet tool update -g LuBan.Agent.CLI
 
 # 更新（从本地源码）
-dotnet pack -c Release -o ./artifacts
+dotnet pack LubanAgentCli/LubanAgentCli.csproj -c Release -o ./artifacts
 dotnet tool update -g LuBan.Agent.CLI --add-source ./artifacts
 
 # 卸载
@@ -214,37 +212,29 @@ dotnet tool list -g
 ```
 > /provider -add
 选择 Provider 类型:
-  1. OpenAI
-  2. Azure OpenAI
-  3. DeepSeek
-  4. Kimi (Moonshot)
-  5. 智谱 GLM
-  6. 通义千问
-  7. 豆包
-  8. Claude
-  9. Google Gemini
-  10. Ollama (本地)
-  11. MiniMax
-  12. 字节方舟 (火山引擎)
-  13. 阿里百炼
-  14. 腾讯混元
-  15. 小米 MiMo
-  16. 百度文心一言 (ERNIE)
-  17. xAI Grok
-  18. 百度智能云千帆
-  19. 腾讯云 TI 平台
-  20. 华为云盘古
-  21. AWS Bedrock
-  22. OpenRouter
-  23. 自定义 OpenAI 兼容 API
-请选择 (1-23): 4
-请输入 Kimi API Key: ********
+  OpenAI
+  Azure OpenAI
+  DeepSeek
+  Kimi (Moonshot)
+  智谱 GLM
+  通义千问
+  豆包
+  Claude
+  Google Gemini
+  Ollama (本地)
+  MiniMax
+  字节方舟 (火山引擎)
+  阿里百炼
+  腾讯混元
+  小米 MiMo
+  自定义 OpenAI 兼容 API
+
+（选择 Kimi 后在表单中填写 API Key）
 
 Kimi API 地址选择:
-  1. 国内通用 (https://api.moonshot.cn/v1) - 推荐
-  2. 海外直连 (https://api.moonshot.ai/v1)
-  3. 编程专属 (https://api.kimi.com/coding/v1)
-请选择 (1-3): 1
+  国内通用 (https://api.moonshot.cn/v1)
+  海外直连 (https://api.moonshot.ai/v1)
+  编程专属 (https://api.kimi.com/coding/v1)
 ✓ Provider 'Kimi' 已添加并保存
   支持的模型: k3, k3-256k, kimi-for-coding, kimi-for-coding-highspeed
 ```
@@ -255,19 +245,17 @@ Kimi API 地址选择:
 
 ```
 > /model -switch
-已配置的 Provider:
-  1. OpenAI
+选择 Provider:
+  OpenAI
 
-请选择 Provider 编号: 1
-OpenAI 支持的模型:
-  1. gpt-4.1
-  2. gpt-4.1-mini
-  3. gpt-4.1-nano
-  4. gpt-4o
+OpenAI 可用模型（回车确认，未选则默认第一个）:
+  gpt-4.1
+  gpt-4.1-mini
+  gpt-4.1-nano
+  gpt-4o
   ...
 
-请选择模型编号: 4
-✓ 已选择模型: openai:gpt-4o
+✓ 已确认 LLM: OpenAI - gpt-4o
 ```
 
 ### 5. 开始你的第一次 Agent 对话
@@ -313,10 +301,10 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 启动后进入 Terminal.Gui 全屏 alt-screen 界面，布局自上而下为会话区（可滚动）、页脚（模式/目录/git/token）、输入区（贴底）：
 
 - **Enter** — 提交当前输入（普通文本发送给 Agent，`/` 开头路由到命令面板）
-- **Ctrl+Q** — 强制退出 TUI
+- **Ctrl+Q** — 退出 TUI（弹出确认对话框；Agent 运行中会提示将中断当前任务）
 - **Ctrl+L** — 重绘屏幕
 - **Ctrl+O** — 打开文件选择器添加附件（可多选）
-- **Esc** — 取消当前运行的 Agent 任务
+- **Esc** — 取消当前运行的 Agent 任务；空闲时与 Ctrl+Q 一样弹出退出确认
 - **Shift+Tab** — 循环切换权限模式（Default → Plan → AcceptEdits → BypassPermissions）
 - **Tab** — 切换对话视图 / Agent 任务视图
 - **鼠标** — 点击 Block 折叠/展开；滚轮滚动；Shift 拖选终端原生复制
@@ -360,11 +348,9 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 | `-a` | `-add` | 所有管理命令（注：`/work` 中 `-add` 为 `-authorize` 别名） |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
 | `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
-| `-d` | `-days` | Stats（统计天数） |
 | `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`，`/a2a` 中 `-s` 为 `-server`） |
 | `-n` | `-new` | Session/Work/LLM Wiki |
 | `-c` | `-clear` | Session（注：`/a2a` 中 `-c` 为 `-client`） |
-| `-c` | `-connect` | MCP |
 | `-t` | `-tools` | MCP |
 | `-i` | `-index` | LLM Wiki（索引文件） |
 | `-info` | `-info` | Work（工作区信息） |
@@ -372,9 +358,9 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 **示例**：
 - `/p -l` = `/provider -list`
-- `/st -d 7` = `/stats -days 7`
+- `/st -days 7` = `/stats -days 7`（统计天数只认 `-days`/`days`；`-d` 会被统一展开为 `-delete`）
 - `/st --all` = 跨所有工作区统计
-- `/mp -c filesystem` = `/mcp -connect filesystem`
+- `/mp -connect filesystem` = `/mcp -connect filesystem`（`-c` 会被统一展开为 `-clear`，不能当 `-connect` 用）
 - `/work -n D:\MyProject` = 创建工作区
 - `/llmwiki -i *.md` = 索引当前 LLM Wiki 工作区的 Markdown 文件
 
@@ -419,9 +405,10 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 ```
 > /skill code-review
 
-请输入内容: public void Test() { var x = 1/0; }
-
 执行 Skill: 代码审查
+审查代码、发现问题、提供改进建议
+
+请输入内容: public void Test() { var x = 1/0; }
 
 📋 代码分析：
 发现潜在问题：
@@ -512,12 +499,12 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 # 列出所有工作区
 > /work -list
-┌──────────┬──────┬──────────────┬──────┬────────────┬──────┐
-│ 名称     │ 类型 │ 根目录       │ 会话 │ 最后活跃   │ 授权 │
-├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
-│ * MyProject │ 普通 │ D:\MyProject │ 3    │ 2026-07-31 │ ✓    │
-│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
-└──────────┴──────┴──────────────┴──────┴────────────┴──────┘
+┌────────────┬──────────┬──────────────┬──────┬────────┬────────────┐
+│ 名称       │ 类型     │ 根目录       │ 授权 │ 会话数 │ 最后活跃   │
+├────────────┼──────────┼──────────────┼──────┼────────┼────────────┤
+│ * MyProject│ 普通     │ D:\MyProject │ ✓    │ 3      │ 2026-07-31 │
+│   Docs     │ LLM Wiki │ D:\Docs      │ ✗    │ 0      │ -          │
+└────────────┴──────────┴──────────────┴──────┴────────┴────────────┘
 
 # 切换工作区
 > /work -switch MyProject
@@ -537,7 +524,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 **工作区说明**：
 
-- 启动时默认进入最近活跃的工作区（`LastActiveAt DESC`），仅当从未创建过工作区时才以当前目录隐式创建
+- 启动时自动进入最近活跃的工作区（按 `LastActiveAt` 倒序，跳过根目录已不存在或 LLM Wiki 类型的工作区）；没有可用工作区时弹出创建表单（路径/名称/AGENTS.md 描述），取消则进入无工作区主界面
 - 进入主界面即自动进入该工作区最近活跃的会话（`UpdateTime DESC`，无会话则创建默认会话）并回放历史
 - 每个工作区拥有独立的会话历史与配置目录（`.luban-agent/`）
 - 切换工作区时自动恢复该工作区的最近会话
@@ -554,12 +541,15 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 > /work -switch 我的知识库
 ✓ 已切换到工作区: 我的知识库
 
-# 3. 授权并索引文件
-> /llmwiki -index *.md
+# 3. 索引文件（默认转后台任务，加 --wait 同步等待）
+> /llmwiki -index *.md --wait
 开始索引工作区: 我的知识库
+文件匹配模式: *.md
 ✓ 索引完成
   扫描文件: 25
   新增文件: 25
+  更新文件: 0
+  跳过文件: 0
   总切块数: 142
 
 # 4. 检索测试
@@ -580,7 +570,7 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 
 - LLM Wiki 工作区是特殊工作区，专注于文件管理与知识问答
 - 创建时名称可省略，默认 `llmwiki`（多个知识库同名时以路径区分）
-- 默认支持 `.txt` 和 `.md` 文件索引
+- 默认可索引 Markdown、纯文本（`.md`/`.txt`/`.csv`/`.log` 等）与常见源码文件（`.cs`/`.ts`/`.py`/`.go`/`.java`/`.yaml`/`.json`/`.html` 等），`.docx`/`.pdf` 等白名单外扩展名直接跳过；`.git`/`bin`/`obj`/`node_modules` 等目录自动排除
 - 索引后通过 `/agi` 对话时自动检索相关文档并注入上下文
 - 不同 LLM Wiki 工作区的向量数据完全隔离
 - 工作区根目录下自动生成 `.luban-agent/llmwiki-config.json` 配置文件
@@ -703,60 +693,64 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 ## 🏗️ 项目结构
 
 ```
-LubanAgent/
-├── App/                    # TUI 应用层（Terminal.Gui 启动 + DI + 主题）
-│   ├── TerminalGuiApp.cs       # Application.Create().Init() + Run 启动引导
+LubanAgentCli/
+├── App/                    # TUI 应用层（Terminal.Gui 启动 + 主题 + 弹层）
+│   ├── TerminalGuiApp.cs       # Application 创建/初始化与运行引导
+│   ├── StartupRunner.cs        # 启动流程编排（启动向导 → 工作区解析 → 主界面）
+│   ├── StartupDialog.cs        # 启动向导对话框
+│   ├── StartupWorkspaceResolver.cs # 解析并进入最近活跃工作区（无则弹创建表单）
 │   ├── TuiTheme.cs             # 24-bit TrueColor 配色方案
-│   ├── TuiUiService.cs         # ITuiUiService 外观层（模态对话框入口）
-│   ├── IUiDispatcher.cs        # UI 线程调度抽象
-│   ├── TerminalGuiDispatcher.cs
-│   └── Dialogs/                # 弹出层组件（统一样式）
-│       ├── BaseDialog.cs           # 弹出层基类（无边框 + 灰色背景 + 白色文字 + 标题）
-│       ├── ConfirmDialog.cs        # 确认对话框（是/否）
-│       ├── ChooseDialog.cs         # 选择列表对话框（ListView + 确定/取消）
-│       ├── FormDialog.cs           # 表单对话框（动态字段 + 校验）
-│       ├── TableDialog.cs          # 表格对话框（TableView + 选择/关闭）
-│       └── ProgressDialog.cs       # 进度对话框（无按钮 + 状态更新）
-├── Views/                  # TUI 视图层（纯渲染 · 无业务逻辑）
-│   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键 + 视图协调
-│   ├── ConversationView.cs     # 会话区自绘（Block 文档模型驱动）
-│   ├── InputBarView.cs         # 输入区（原生 TextView 封装）
-│   └── FooterView.cs           # 页脚自绘（模式/目录/git/token/tasks）
-├── ViewModels/             # MVVM ViewModel 层
-│   ├── ConversationViewModel.cs  # Agent 生命周期 + 流式对话循环 + 权限确认
-│   ├── CommandViewModel.cs       # / 命令路由与执行
-│   └── AgentViewViewModel.cs     # 多会话任务视图
-├── Models/                 # 纯数据模型（无 UI 依赖 · 可单测）
-│   ├── ConversationDocument.cs   # 会话文档模型
-│   ├── AgentTask.cs / TaskRegistry.cs  # 任务模型与注册表
-│   ├── ChoiceOption.cs / ConfirmResult.cs / PlannedAction.cs  # 选择组件类型
-│   └── Blocks/                  # Block 类层级
-│       ├── Block.cs             # 抽象基类（Layout/Render/HitTest）
-│       ├── RenderLine.cs        # RenderLine + TextSegment
-│       ├── BlockColors.cs       # 24-bit TrueColor 配色常量
-│       ├── UserMessageBlock / AssistantMessageBlock
-│       ├── ThinkingBlock / ToolCallBlock / ToolResultBlock
-│       ├── InlineChoiceBlock / SystemBlock
-│       └── ChoiceBlocks.cs      # 工厂方法
-├── Infrastructure/        # 基础设施
-│   ├── FlushThrottle.cs         # 流式刷新节流器（16ms 窗口）
-│   ├── DatabaseInitializer.cs
-│   ├── WorkspaceIdGenerator.cs  # 路径派生工作区 ID（归一化 + SHA256）
-│   └── SqliteLocalMemoryStore.cs
-├── Services/              # 核心服务
-│   ├── FooterDataProvider.cs    # 页脚元数据（git 分支/token 用量）
-│   ├── ConsoleAppService.cs     # 命令分发
-│   ├── SessionManager.cs        # 会话持久化
-│   └── WorkspaceManager.cs      # 工作区管理与授权
-├── Commands/              # 命令实现
-├── Configuration/         # 配置管理
-├── Profiles/              # Agent 配置
-├── Repositories/          # 数据访问层
-├── Retrieval/             # 语义检索
-├── Entities/              # 数据实体
-├── EmbeddingModels/       # AI 嵌入模型文件
-└── Program.cs             # 程序入口（TUI bootstrap）
+│   ├── ITuiUiService.cs / TuiUiService.cs  # 模态交互抽象与实现（对话框入口）
+│   ├── TuiOutputWriter.cs      # 命令输出写入会话文档
+│   ├── IUiDispatcher.cs / TerminalGuiDispatcher.cs  # UI 线程调度
+│   ├── Services/               # TUI 侧辅助服务
+│   │   ├── TitleService.cs         # 会话标题生成
+│   │   └── TuiOrchestrationProgressSink.cs  # 编排进度渲染
+│   ├── Dialogs/                # 弹出层组件（统一样式）
+│   │   ├── BaseDialog.cs           # 弹出层基类（无边框 + 灰色背景 + 白色文字 + 标题）
+│   │   ├── ConfirmDialog.cs        # 确认对话框（是/否）
+│   │   ├── ChooseDialog.cs         # 选择列表对话框（ListView + 确定/取消）
+│   │   ├── FormDialog.cs           # 表单对话框（动态字段 + 校验）
+│   │   ├── TableDialog.cs          # 表格对话框（TableView + 选择/关闭）
+│   │   └── ProgressDialog.cs       # 进度对话框（无按钮 + 状态更新）
+│   ├── Views/                  # TUI 视图层（纯渲染 · 无业务逻辑）
+│   │   ├── RootView.cs             # 顶层容器（Runnable）+ 全局快捷键 + 视图协调
+│   │   ├── ConversationView.cs     # 会话区自绘（Block 文档模型驱动）
+│   │   ├── InputBarView.cs         # 输入区（原生 TextView 封装）
+│   │   ├── FooterView.cs           # 页脚自绘（模式/目录/git/token/tasks）
+│   │   └── NodeDetailView.cs       # 编排节点详情弹层
+│   ├── ViewModels/             # MVVM ViewModel 层
+│   │   ├── ConversationViewModel.cs  # Agent 生命周期 + 流式对话循环 + 权限确认
+│   │   ├── CommandViewModel.cs       # / 命令路由与执行
+│   │   └── AgentViewViewModel.cs     # 多会话任务视图
+│   └── Models/                 # 纯数据模型（无 UI 依赖 · 可单测）
+│       ├── ConversationDocument.cs   # 会话文档模型
+│       ├── AgentTask.cs / TaskRegistry.cs  # 任务模型与注册表
+│       ├── AttachmentDraft.cs / ChoiceOption.cs  # 附件草稿与选择项
+│       └── Blocks/                  # Block 类层级
+│           ├── Block.cs             # 抽象基类（Layout/Render/HitTest）
+│           ├── RenderLine.cs        # RenderLine + TextSegment
+│           ├── BlockColors.cs / TextMeasure.cs
+│           ├── UserMessageBlock / AssistantMessageBlock
+│           ├── ThinkingBlock / ToolCallBlock / SystemBlock
+│           ├── InlineChoiceBlock / ActionSpinnerBlock / OrchestrationNodeBlock
+│           ├── ChoiceBlocks.cs      # 内联确认块工厂
+│           └── MarkdownLightRenderer.cs  # 轻量 Markdown 渲染
+├── Commands/               # 斜杠命令实现
+│   ├── CommandBase.cs / ICommand.cs
+│   ├── ProviderCommand.cs / ModelCommand.cs / SkillCommand.cs / RuleCommand.cs
+│   ├── MCPCommand.cs / SessionCommand.cs / StatsCommand.cs / WorkCommand.cs
+│   └── LlmWikiCommand.cs / A2ACommand.cs / InitCommand.cs
+├── Infrastructure/         # TUI 基础设施
+│   ├── FastInputBootstrapper.cs  # 快速输入引导
+│   └── TuiDiag.cs                # TUI 诊断日志开关
+├── Services/               # 会话级 UI 服务
+│   └── SpinnerService.cs       # 加载指示器
+├── GlobalUsings.cs
+└── Program.cs              # 程序入口（TUI bootstrap）
 ```
+
+> 会话持久化、工作区管理、数据库初始化、流式刷新节流等核心实现位于 `LubanAgentCore`（如 `Infrastructure/DatabaseInitializer.cs`、`Services/WorkspaceManager.cs`、`Utils/FlushThrottle.cs`），不在本工程内。
 
 ### 弹出层架构
 
@@ -781,9 +775,9 @@ LubanAgent/
 ```json
 {
   "LuBanAgent": {
-    "DefaultModel": "openai:gpt-4o",
-    "SystemPrompt": "你是一个智能助手。",
-    "MaxToolLoopIterations": 10,
+    "DefaultModel": "deepseek:v4flash",
+    "SystemPrompt": "你是一个智能助手，可以帮助用户完成各种任务。",
+    "MaxToolLoopIterations": 500,
     "Session": {
       "CompactTargetMessages": 50,
       "CompactThreshold": 10
@@ -793,15 +787,18 @@ LubanAgent/
       "PlannerReasoningEffort": "None",
       "MaxParallelism": 5,
       "MaxNodes": 20,
-      "DefaultNodeTimeoutSeconds": 300
+      "DefaultNodeTimeoutSeconds": 300,
+      "DefaultToolGroups": [ "filesystem", "log" ]
     }
   }
 }
 ```
 
-### 用户配置 (%LocalAppData%\LuBan\AIAgent\config.json)
+以上为节选，完整配置项见 `LubanAgentCli/appsettings.json`。
 
-用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，重启后自动加载。
+### 用户配置 (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
+
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，重启后自动加载。`<userId>` 取环境变量 `LUBAN_USER_ID`，缺省为 `yswenli`；旧版单用户配置 `%LocalAppData%\LuBan\AIAgent\config.json` 会在首次访问时自动迁移到用户目录。
 
 > 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明可用性，是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定；凭据键泛化为 `connector:<实例名>:token`（兼容旧键 `yunxiao_pat`）。
 
@@ -858,7 +855,7 @@ LubanAgent/
 
 **会话自动保存**：
 - 在 `/agi` 对话中，对话历史自动保存到 SQLite 数据库
-- 数据库位置：`%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+- 数据库位置：程序基目录下的 `luban-ai-agent.db`（旧版 `ai_sessions.db` 首次启动自动更名）
 - 用户消息和 AI 回复都会自动保存
 - Token 数量自动统计
 
@@ -871,9 +868,9 @@ LuBan Agent 支持两种自定义 Skill 方式：
 在项目级或用户级目录创建 `SKILL.md` 文件，兼容 OpenCode 格式：
 
 ```
-存储位置（按优先级）：
+存储位置（先加载前者、后者覆盖前者）：
+  用户级: ~/.luban-agent/skills/<skill-id>/SKILL.md   # Windows 为 %USERPROFILE%\.luban-agent\skills\...
   项目级: <workspace>/.luban-agent/skills/<skill-id>/SKILL.md
-  用户级: %LocalAppData%/LuBan/AIAgent/skills/<skill-id>/SKILL.md
 ```
 
 **SKILL.md 格式**：
@@ -898,38 +895,27 @@ category: custom
 **使用方式**：
 
 ```bash
-# 在 /agi 对话中激活 Skill
+# 启用/禁用 Skill（内置与自定义 Skill 可切换，状态持久化）
 > /skill -switch
-可用 Skills:
-#    类别         名称                 描述                                     来源
-1    custom       翻译助手             将文本翻译成英文                          文件
+选择要启用/禁用的 Skill:
+  代码审查 (code-review) [内置] [已启用]
+  翻译助手 (my-translator) [文件] [已启用]
 
-请选择编号 (1-1), 或 0 取消: 1
-✓ 已激活 Skill: 翻译助手
-💡 Skill 仅对下一条输入生效，执行后自动取消
+✓ Skill 'code-review' 已禁用
 
-# 下一条输入自动携带 Skill 指令
-👶 你好，世界
-🤖 Hello, World
+# 直接执行某个 Skill（按 Id）
+> /skill my-translator
+执行 Skill: 翻译助手
 ```
 
-**优先级**：项目级 > 用户级 > 内置 > config.json
+**优先级**：内置（硬编码）> 项目级文件 > 用户级文件 > config.json（同名 Id 取高优先级）。
 
 #### 方式二：命令行添加（兼容旧版）
 
 ```bash
 # 添加自定义 Skill
 > /skill -add
-
-请输入 Skill ID: my-translator
-请输入 Skill 名称: 翻译助手
-请输入 Skill 描述: 将文本翻译成英文
-请输入分类: custom
-请输入提示词模板（多行输入，单独一行 '.' 结束）:
-请将以下内容翻译成英文：
-{input}
-.
-请输入示例（可选，逗号分隔）: 你好,世界
+（弹出表单：Skill ID *、Skill 名称 *、Skill 描述、分类（默认 custom）、提示词模板（多行）、示例（可选，逗号分隔））
 ✓ 自定义 Skill '翻译助手' (my-translator) 已添加
 ```
 
@@ -938,13 +924,7 @@ category: custom
 ```bash
 # 添加路径保护规则
 > /rule -add
-
-请输入规则 ID: protect-system
-请输入规则名称: 保护系统目录
-请输入 ActionTypePattern (默认 *): file-write
-请输入 TargetPattern (默认 *): C:\Windows\*
-请输入 Action (allow/deny): deny
-请输入优先级 (默认 100): 100
+（弹出表单：规则 ID *、规则名称 *、ActionTypePattern（默认 *）、TargetPattern（默认 *）、Action（allow/deny，默认 deny）、优先级（默认 100））
 ✓ 自定义规则 '保护系统目录' (protect-system) 已添加
 ```
 
@@ -953,11 +933,7 @@ category: custom
 ```bash
 # 添加外部 MCP 服务器
 > /mcp -add
-
-请输入服务器名称: github
-请输入描述: GitHub 集成
-请输入启动命令 (如 npx): npx
-请输入命令参数 (空格分隔，可选): -y @modelcontextprotocol/server-github
+（弹出表单：服务器名称 *、描述、启动命令 (如 npx) *、命令参数（一行一个，可含空格））
 ✓ 外部 MCP 服务器 'github' 已添加
 使用 /mcp connect github 连接
 
@@ -995,15 +971,15 @@ github 可用的工具：
 ## 💡 小贴士
 
 - 🖥️ **全屏 TUI**：启动即进入 Terminal.Gui 全屏界面，输入普通文本直接与 Agent 对话
-- ⌨️ **快捷键**：`Esc` 取消任务、`Shift+Tab` 切换权限模式、`Tab` 切换任务视图、`Ctrl+Q` 退出、`Ctrl+L` 重绘、`Ctrl+O` 添加附件
+- ⌨️ **快捷键**：`Esc` 取消任务（空闲时弹出退出确认）、`Shift+Tab` 切换权限模式、`Tab` 切换任务视图、`Ctrl+Q` 退出确认、`Ctrl+L` 重绘、`Ctrl+O` 添加附件
 - 🛡️ **四模式权限**：`Shift+Tab` 循环切换 Default / Plan / AcceptEdits / BypassPermissions，页脚实时显示
 - 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击 `▸` 展开查看详情
-- 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ 行提示"
+- 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ N 行新内容"提示
+- 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider，可通过 `/provider -add` 新增
 - 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择
 - 🛠️ **12 大内置工具组**覆盖浏览器自动化、文件操作（含编辑）、Git 版本控制、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP 外部工具、多 Agent 编排、LLM Wiki 知识库（opt-in）与大日志分析
 - ⚠️ **ToolConfirmationService** 对工作区外路径访问及写入、删除、执行等敏感操作要求用户确认，支持本次/本轮/本会话三档授权（InlineChoiceBlock 内联确认，Y/N/A/S）
 - 🔒 **FileSystemToolOptions.AllowedRoots** 与工作区根共同构成可信范围，范围内操作免确认
-- 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider
 - 🧩 **多 Agent 编排**：`/agi` 对话中 AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行
 - 📂 **工作区隔离**：`/work` 命令管理工作区，每个工作区有独立的会话历史与配置目录
 

@@ -7,7 +7,7 @@
 *让大模型具备思考、规划、调用工具和自主执行的能力*
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
 
@@ -37,7 +37,7 @@
 ## ✨ 核心特性
 
 ### 🎨 现代化图形界面
-- **经典三栏式布局**：左侧边栏 + 主内容区 + 底部输入区
+- **双栏工作布局**：左侧边栏（工作区 / 会话 / 知识库 / 插件入口）+ 右侧对话区（消息流 + 输入框）；底部状态栏显示权限模式、工作目录、Git 分支、运行状态与 Token 用量
 - **暗色主题**：专业的暗色配色方案，长时间编码不疲劳
 - **流式输出**：实时显示 AI 思考过程和工具调用状态
 - **智能滚动**：自动跟随输出，支持手动滚动查看历史
@@ -123,14 +123,16 @@
 
 ## 🚀 快速开始
 
-### 1. 安装 Playwright 浏览器（使用浏览器工具前必须安装）
+### 1. 准备 Playwright 浏览器（使用浏览器工具前必须完成）
+
+首次调用浏览器工具时，应用按 `Microsoft.Playwright` 包声明版本自动把 Chromium 驱动安装到 `~/.luban-agent/playwright-driver/{version}`，成功时无需手工操作。
 
 ```powershell
-# 安装与 Microsoft.Playwright 1.61.0 匹配的浏览器版本
-npx playwright@1.61.0 install chromium
+# 仅在自动安装被网络阻断时手工兜底：版本号取应用提示（PlaywrightDriverResolver.GetInstallBrowsersHint）给出的值
+npx playwright@<版本> install chromium
 ```
 
-> **注意**：浏览器版本必须与 Microsoft.Playwright 包版本匹配，当前项目使用的是 1.61.0。
+> **注意**：浏览器版本必须与 `Microsoft.Playwright` 包版本一致，不要手工钉住固定版本号；具体版本以 csproj 声明为准。
 
 ### 2. 克隆源码运行
 
@@ -143,66 +145,42 @@ cd luban-agent
 dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 ```
 
-### 3. 选择工作区
+### 3. 进入工作区
 
-启动后会弹出工作区选择器：
+启动先显示闪屏，随后自动恢复**最近活跃的普通工作区**（LLM Wiki 知识库不参与自动恢复）；若从未创建过工作区，则用当前进程工作目录自动创建一个普通工作区，并授权、设为当前工作区。
 
 ```
-┌─────────────────────────────────────────┐
-│  选择工作区                              │
-├─────────────────────────────────────────┤
-│  📁 MyProject                           │
-│     D:\Projects\MyProject               │
-│     最后活跃: 2026-08-20 10:30          │
-│                                         │
-│  📁 Docs                                │
-│     D:\Documents\Docs                   │
-│     最后活跃: 2026-08-19 15:20          │
-│                                         │
-│  [📂 打开文件夹...]                      │
-└─────────────────────────────────────────┘
+闪屏：正在加载应用配置… → 正在初始化核心服务… → 正在准备知识库与工作区…
+→ 正在构建主界面… → 主窗口
 ```
 
-选择已有工作区或点击"打开文件夹"创建新工作区。
+进入后可在侧边栏切换工作区与会话；需要新建、切换、删除、授权时输入 `/work` 打开「工作区管理」窗口。
 
 ### 4. 配置你的第一个 AI Provider
 
-在输入框中输入 `/provider -add`，按提示操作：
+输入 `/provider` 打开设置中心的「供应商」页（配置写入全局 `config.json`，不分工作区）：
 
-```
-> /provider -add
+1. 点击左下「＋ 新建」生成供应商草稿；
+2. 在「类型（内置预设，可选）」中选择预设（内置 15 个厂商 + Custom，共 16 项），选中后自动预填 `Name` 与 `BaseUrl`；
+3. 填写 `ApiKey`（必填），按需修改 `BaseUrl`、增删自定义模型；
+4. 点击「保存」；如需立即生效再点「应用配置」，否则在下次切换工作区或重启后生效。
 
-选择 Provider 类型:
-  1. OpenAI
-  2. Azure OpenAI
-  3. DeepSeek
-  4. Kimi (Moonshot)
-  ...
-
-请选择 (1-23): 4
-请输入 Kimi API Key: ********
-
-✓ Provider 'Kimi' 已添加并保存
-```
+侧边栏「⚙ 设置」与 `/provider` 打开的是同一个设置中心。
 
 ### 5. 选择模型并开始对话
 
 ```
-> /model -switch
-
-已配置的 Provider:
-  1. Kimi
-
-请选择 Provider 编号: 1
-Kimi 支持的模型:
-  1. k3
-  2. k3-256k
-  3. kimi-for-coding
+> /model -list
+可用模型:
+  kimi:k3 (当前)
+  kimi:k3-256k
   ...
 
-请选择模型编号: 1
-✓ 已选择模型: kimi:k3
+> /model -switch kimi:k3
+已切换模型: kimi:k3
 ```
+
+`/model` 只支持 `-list`（缺省）与 `-switch <provider:model>`；供应商与模型的增删改在设置中心「模型」页完成。输入框工具栏右侧的模型下拉框也可直接切换当前模型。
 
 ### 6. 开始你的第一次 Agent 对话
 
@@ -231,35 +209,44 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 | 命令 | 简写 | 说明 |
 |------|------|------|
-| `/help` | — | 显示帮助信息 |
-| `/clear` | — | 清空会话历史 |
+| `/help` | — | 显示命令与快捷键（内容取自命令清单） |
+| `/clear` | — | 清空当前消息流 |
 | `/mode [name]` | — | 查看或切换权限模式（default/plan/accept-edits/bypass） |
-| `/provider` | `/p` | 管理 AI Provider |
-| `/model` | `/m` | 管理模型 |
-| `/skill` | `/sk` | 查看和执行 Skill |
-| `/rule` | `/r` | 查看和管理规则 |
-| `/mcp` | `/mp` | 查看 MCP 客户端 |
-| `/session` | `/se` | 管理对话会话 |
-| `/stats` | `/st` | 会话与 Token 统计 |
-| `/work` | `/w` | 工作区管理 |
-| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki 知识库管理 |
+| `/exit` | `/quit` | 退出程序 |
+| `/provider` | `/p` | 打开设置中心「供应商」页 |
+| `/model` | `/m` | 列出模型，或用 `-switch <provider:model>` 切换 |
+| `/skill` | `/sk` | 打开设置中心「技能」页（查看 / 新建 / 编辑 / 删除 Skill） |
+| `/rule` | `/r` | 打开设置中心「规则」页 |
+| `/mcp` | `/mp` | 打开设置中心「MCP 服务」页 |
+| `/session` | `/se` | 会话列表 / 新建 / 清空 |
+| `/stats` | `/st` | 查看统计（消息数量、权限模式、当前会话） |
+| `/work` | `/w` | 打开「工作区管理」窗口 |
+| `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | 打开「LLM Wiki 知识库管理」窗口 |
+| `/a2a` | — | A2A 协作管理（`-list` / `-server` / `-client` / `-start` / `-stop`） |
+
+> `/agi`、`/init` 仅在 CLI 端提供，Codex 不可用。
 
 ### 子命令简写
 
-| 简写 | 完整命令 | 适用场景 |
-|------|---------|---------|
-| `-l` | `-list` | 所有管理命令 |
-| `-a` | `-add` | 所有管理命令 |
-| `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
-| `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
-| `-s` | `-switch` | 所有管理命令（注：`/llmwiki` 中 `-s` 为 `-search`） |
-| `-n` | `-new` | Session/Work/LLM Wiki |
-| `-c` | `-clear` | Session |
+GUI 与 CLI 共用同一套简写展开（`SlashCommandAliases.Expand`），但 Codex 端只有 `/model`、`/session`、`/a2a` 真正解析子命令，其余管理命令忽略参数、直接打开对应界面。
+
+| 简写 | 展开 | 说明 |
+|------|------|------|
+| `-l` | `-list` | 列表 |
+| `-a` | `-add` | 新增 |
+| `-u` | `-update` | 更新 |
+| `-d` | `-delete` | 删除 |
+| `-s` | `-switch` | 切换；`/a2a` 中展开为 `-server`，`/llmwiki` 中展开为 `-search` |
+| `-n` | `-new` | 新建 |
+| `-c` | `-clear` | 清空；`/a2a` 中展开为 `-client` |
+| `-i` | `-index` | 仅 `/llmwiki` 展开 |
+| `-t` | `-tools` | 工具列表（Codex 端无命令解析该子命令） |
 
 **示例**：
-- `/p -l` = `/provider -list`
-- `/st -d 7` = `/stats -days 7`
-- `/work -n D:\MyProject` = 创建工作区
+- `/m -l` = `/model -list`
+- `/m -s kimi:k3` = `/model -switch kimi:k3`
+- `/se -n 项目讨论` = `/session -new 项目讨论`
+- `/a2a -s` = `/a2a -server`（不是 `-switch`）
 
 ---
 
@@ -297,19 +284,22 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 🤖 已完成搜索，当前页面标题: LuBan Framework_百度搜索
 ```
 
-### 场景三：代码审查
+### 场景三：技能驱动的代码审查
+
+`/skill` 只负责打开设置中心的「技能」页（查看 / 新建 / 编辑 / 删除 `SKILL.md`），不接收待审查代码。审查由 Agent 自动完成：模型先用 `ListSkillsAsync` 查找技能，再用 `UseSkillAsync` 加载技能指令模板。
 
 ```
-> /skill code-review
+你: 用代码审查技能看看这段代码：public void Test() { var x = 1/0; }
 
-请输入内容: public void Test() { var x = 1/0; }
+⚙️ 调用工具: ListSkillsAsync
+   参数: keyword = code
+⚙️ 调用工具: UseSkillAsync
+   参数: id = code-review
+✓ 工具执行完成
 
-📋 代码分析：
-发现潜在问题：
-1. ⚠️ 第 1 行存在除以零的错误
-2. 💡 建议添加异常处理机制
-
-改进建议：
+🤖 📋 代码分析：
+1. ⚠️ 第 1 行存在除以零的风险
+2. 💡 建议补充异常处理
 ...
 ```
 
@@ -369,55 +359,45 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ### 场景六：工作区管理
 
-```
-# 创建工作区
-> /work -new D:\MyProject
-✓ 已创建工作区: MyProject - D:\MyProject
+输入 `/work` 打开「工作区管理」窗口。列表每行显示类型图标（📁 普通 / 📚 LLM Wiki）、名称、根目录、`✓ 当前` 标记与授权状态，工具栏提供：
 
-# 列出所有工作区
-> /work -list
-┌──────────┬──────┬──────────────┬──────┬────────────┬──────┐
-│ 名称     │ 类型 │ 根目录       │ 会话 │ 最后活跃   │ 授权 │
-├──────────┼──────┼──────────────┼──────┼────────────┼──────┤
-│ * MyProject │ 普通 │ D:\MyProject │ 3    │ 2026-08-20 │ ✓    │
-│   Docs      │ LLM Wiki  │ D:\Docs      │ 0    │ -          │ ✗    │
-└──────────┴──────┴──────────────┴──────┴────────────┴──────┘
+| 按钮 | 作用 |
+|------|------|
+| `+ 新建工作区` | 选择目录并创建普通工作区 |
+| `切换` | 把选中工作区设为当前工作区 |
+| `删除` | 删除选中工作区（级联删除其会话与索引，需确认） |
+| `授权` | 为选中工作区补齐路径授权（未授权时自动切换过去） |
 
-# 切换工作区
-> /work -switch MyProject
-✓ 已切换到工作区: MyProject
-  根目录: D:\MyProject
 ```
+> /work
+（打开「工作区管理」窗口）
+```
+
+切换后侧边栏的会话列表与页脚的工作目录会同步刷新。
 
 ### 场景七：LLM Wiki 知识库问答
 
+输入 `/llmwiki` 打开「LLM Wiki 知识库管理」窗口。列表行显示 📚 名称、路径、索引状态（如「已索引 25 文件 · 142 切块」）与 `✓ 当前` 标记，工具栏提供：
+
+| 按钮 | 作用 |
+|------|------|
+| `+ 创建知识库` | 指定名称与目录创建 LLM Wiki 类型工作区 |
+| `索引` | 为选中知识库建立索引，先弹出「索引文件匹配模式」（留空索引全部文件） |
+| `搜索` | 弹出「搜索查询」输入框，结果替换为「搜索结果 · N 条」视图，可「← 返回列表」 |
+| `删除` | 删除选中知识库（级联删除会话与索引，需确认） |
+| `重建 Wiki 索引` | 重建选中知识库的 Wiki 页面向量索引 |
+| `Wiki Lint` | 检查 Wiki 页面健康度并给出报告 |
+
 ```
-# 1. 创建 LLM Wiki 知识库
-> /llmwiki -new D:\KnowledgeBase 我的知识库
-✓ 已创建 LLM Wiki 知识库: 我的知识库 - D:\KnowledgeBase
-# 名称可省略：/llmwiki -new D:\KnowledgeBase → 默认名 llmwiki
+> /llmwiki
+（打开「LLM Wiki 知识库管理」窗口）
+```
 
-# 2. 切换到 LLM Wiki 工作区
-> /work -switch 我的知识库
-✓ 已切换到工作区: 我的知识库
+在「工作区管理」窗口或用侧边栏切到该知识库工作区后，直接在输入框提问即可（自动检索增强）：
 
-# 3. 授权并索引文件
-> /llmwiki -index *.md
-开始索引工作区: 我的知识库
-✓ 索引完成
-  扫描文件: 25
-  新增文件: 25
-  总切块数: 142
-
-# 4. 检索测试
-> /llmwiki -search 如何配置工作区
-找到 3 条相关结果：
-文件: D:\KnowledgeBase\setup.md
-内容: 工作区配置需要...
-
-# 5. 直接问答（自动检索增强）
+```
 你: 如何创建工作区？
-🤖 根据知识库文档，创建工作区使用 /work -new 命令...
+🤖 根据知识库文档，创建工作区使用 /work 打开「工作区管理」窗口后点「+ 新建工作区」...
 ```
 
 ### 场景八：安全地读取工作区外的文件（三档授权）
@@ -456,7 +436,7 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ```
 > /mode plan
-✓ 权限模式已切换: plan
+✓ 权限模式已切换: 计划 (Plan)
 
 你: 把 src/Logging 模块重构一下
 
@@ -494,15 +474,15 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ### 场景十一：四种权限模式，一键循环
 
-用 `/mode` 或 `Shift+Tab` 在四种模式间切换：
+用 `/mode` 或 `Shift+Tab` 在四种模式间切换（Agent 运行中 `Shift+Tab` 会被拒绝并提示「Agent 运行中无法切换权限模式」，因为本轮已启动的工具确认语义不会改变）：
 
 ```
 > /mode
-当前权限模式: default
-可用模式: default / plan / accept-edits / bypass（使用 Shift+Tab 切换）
+当前权限模式: 默认 (Default)
+可用模式: default / plan / accept-edits / bypass
 
 > /mode accept-edits
-✓ 权限模式已切换: accept-edits
+✓ 权限模式已切换: 接受编辑 (AcceptEdits)
 ```
 
 | 模式 | 行为 |
@@ -514,29 +494,25 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 
 ### 场景十二：接入外部 MCP 工具，能力随插随扩
 
-除了内置工具，还可以通过 **MCP 管理窗口**或 `/mcp` 命令把外部 MCP 服务器的工具接进 Agent 工具集：
+除了内置工具，还可以通过设置中心的「MCP 服务」页（`/mcp` 直接定位）把外部 MCP 服务器的工具接进 Agent 工具集：
 
 ```
-> /mcp -list
-状态      类型   名称        描述
-[已连接]  内置   filesystem  内置文件系统 MCP 客户端
+> /mcp
+（打开设置中心 → 工作区配置 → MCP 服务）
+```
 
-> /mcp -add                       # 交互式填写名称 / 命令 / 参数
-✓ 外部 MCP 服务器 'github' 已添加
-  使用 /mcp connect github 连接
+1. 点击「＋ 新建」，填写表单：`Name`（必填，即文件名）、`Description`、`Transport`（stdio / http / sse）、`Command`（http/sse 时可将 URL 填在此处）、`Args`（一行一个）、`Enabled`；
+2. 点击「保存」，再点「应用配置」；保存时管理服务会调用 `Reload()` 热加载，无需重启；
+3. 在对话中直接提需求，Agent 会把该服务器暴露的工具（命名 `mcp_{client}_{tool}`）并入工具集：
 
-> /mcp -connect github
-正在连接 github...
-✓ 连接成功
-
-> /mcp -tools github
-  - list_repos: 列出仓库
-  - create_issue: 创建 issue
-  ...
-
+```
 你: 帮我在 luban-agent 仓库建一个 bug issue
-🤖 [调用 MCP 工具] github.create_issue ...
+⚙️ 调用工具: mcp_github_create_issue
+   参数: repo = luban-agent, title = ...
+✓ 工具执行完成
 ```
+
+> 顶栏「作用域」可切换 `★ 全局` 或具体工作区，决定配置写入用户级还是工作区级 `.luban-agent/mcps/`。
 
 ---
 
@@ -616,16 +592,16 @@ LubanAgentCodex/
 {
   "LuBanAgent": {
     "DefaultModel": "openai:gpt-4o",
-    "SystemPrompt": "你是一个智能助手。",
-    "MaxToolLoopIterations": 10,
+    "SystemPrompt": "你是一个智能助手，可以帮助用户完成各种任务。",
+    "MaxToolLoopIterations": 30,
     "Session": {
       "CompactTargetMessages": 50,
-      "CompactThreshold": 10
+      "CompactThreshold": 10,
+      "IdleUnloadMinutes": 30
     },
     "Orchestration": {
       "Enabled": true,
       "PlannerReasoningEffort": "None",
-      "MaxParallelism": 5,
       "MaxNodes": 20,
       "DefaultNodeTimeoutSeconds": 300
     }
@@ -676,25 +652,25 @@ LubanAgentCodex/
 ### 会话管理
 
 ```
-# 创建新会话
+# 创建并切换到新会话（标题可省略，默认「新会话」）
 > /session -new 项目讨论
 
-# 列出所有会话
+# 列出所有会话（当前会话带「(当前)」标记）
 > /session -list
 
-# 切换会话
-> /session -switch 项目讨论
-
-# 清除所有会话（需确认）
+# 清空当前会话（消息流一并清空）
 > /session -clear
 
 # 查看统计
-> /stats -days 7
+> /stats
 ```
+
+`/session` 只支持 `-list`、`-new <标题>`、`-clear`；切换会话请在侧边栏点击会话。
+`/stats` 不接受参数，输出消息数量、权限模式与当前会话；Token 用量显示在页脚状态栏。
 
 **会话自动保存**：
 - 对话历史自动保存到 SQLite 数据库
-- 数据库位置：`%LocalAppData%\LuBan\AIAgent\ai_sessions.db`
+- 数据库位置：程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db`；旧版 `ai_sessions.db` 首次启动自动更名）
 - 用户消息和 AI 回复都会自动保存
 - Token 数量自动统计
 
@@ -729,43 +705,32 @@ category: custom
 
 ### 自定义规则
 
-```
-# 添加路径保护规则
-> /rule -add
+输入 `/rule` 打开设置中心的「规则」页，点「＋ 新建」后填写表单：`Id`（必填，即文件名）、`Name`、`Description`、`ActionTypePattern`、`TargetPattern`（两者均支持通配符）、`Action`（allow / deny）、`Priority`（数字越大优先级越高）、`Enabled`、`Content`（可选，供 `IContentRule` 读取的引导文本），点「保存」生效。
 
-请输入规则 ID: protect-system
-请输入规则名称: 保护系统目录
-请输入 ActionTypePattern (默认 *): file-write
-请输入 TargetPattern (默认 *): C:\Windows\*
-请输入 Action (allow/deny): deny
-请输入优先级 (默认 100): 100
-✓ 自定义规则 '保护系统目录' (protect-system) 已添加
+```
+> /rule
+（打开设置中心 → 工作区配置 → 规则）
+
+示例：Id=protect-system，Name=保护系统目录，
+     ActionTypePattern=file-write，TargetPattern=C:\Windows\*，Action=deny，Priority=100
 ```
 
 ### MCP 外部服务器
 
 ```
-# 添加外部 MCP 服务器
-> /mcp -add
+# 打开 MCP 服务设置页
+> /mcp
 
-请输入服务器名称: github
-请输入描述: GitHub 集成
-请输入启动命令 (如 npx): npx
-请输入命令参数 (空格分隔，可选): -y @modelcontextprotocol/server-github
-✓ 外部 MCP 服务器 'github' 已添加
-
-# 连接 MCP 服务器
-> /mcp -connect github
-正在连接 github...
-✓ 连接成功
-
-# 查看可用工具
-> /mcp -tools github
-github 可用的工具：
-  - create_issue: 创建 GitHub Issue
-  - search_repositories: 搜索仓库
-  ...
+# 表单字段
+Name        必填，即文件名（如 github）
+Description 可选
+Transport   stdio / http / sse
+Command     stdio 填启动命令（如 npx）；http / sse 可将 URL 填在此处
+Args        一行一个参数，如 -y、@modelcontextprotocol/server-github
+Enabled     是否参与加载
 ```
+
+「保存」后点「应用配置」即时热加载（`McpManagementService` 调用 `Reload()`）；接入后的工具以 `mcp_{client}_{tool}` 命名，如 `mcp_github_create_issue`。
 
 ---
 
@@ -773,7 +738,7 @@ github 可用的工具：
 
 | 组件 | 说明 |
 |------|------|
-| **Avalonia 12.1.1** | 跨平台 UI 框架（.NET 10.0，暗色主题） |
+| **Avalonia 12.1.2** | 跨平台 UI 框架（.NET 10.0，暗色主题） |
 | **Microsoft.Agents.AI.Foundry** | Agent 运行时框架 |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |
@@ -788,7 +753,7 @@ github 可用的工具：
 ## 💡 小贴士
 
 - 🖥️ **图形界面**：启动后进入 Avalonia 桌面应用，输入普通文本直接与 Agent 对话
-- ⌨️ **快捷键**：`Enter` 发送消息、`Ctrl+Enter` 换行、`Ctrl+V` 粘贴附件（文件/截图）、`Shift+Tab` 切换权限模式
+- ⌨️ **快捷键**：`Enter` 发送消息、`Ctrl+Enter` / `Shift+Enter` 换行、`Ctrl+V` 粘贴附件（文件/截图）、`Shift+Tab` 切换权限模式、`Esc` 取消当前任务
 - 🛡️ **四模式权限**：`Shift+Tab` 循环切换 Default / Plan / AcceptEdits / BypassPermissions，页脚实时显示
 - 🎨 **折叠/展开**：思考过程和工具调用默认折叠，点击展开查看详情
 - 📜 **智能滚动**：流式输出自动贴底；手动上滚断开跟随

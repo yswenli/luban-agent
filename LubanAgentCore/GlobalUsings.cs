@@ -25,6 +25,7 @@
 global using LuBan.AIAgent;
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Attachments;
+global using LuBan.AIAgent.Attachments.Ingestion;
 global using LuBan.AIAgent.Configuration;
 global using LuBan.AIAgent.LocalMemory;
 global using LuBan.AIAgent.MCP;
@@ -35,6 +36,7 @@ global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.Common;
 global using LuBan.Common.IO;
+global using LuBan.DI;
 global using LuBan.Orm;
 global using LuBan.Orm.Models;
 

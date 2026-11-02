@@ -22,7 +22,7 @@ namespace LubanAgentCodex.Views;
 /// </summary>
 public partial class MCPManageWindow : Window
 {
-    private IServiceProvider? _services;
+    private DiContainer? _services;
     private WorkspaceInfo? _workspace;
     private ListBox? _mcpList;
 
@@ -37,7 +37,7 @@ public partial class MCPManageWindow : Window
     /// <summary>
     /// 带参构造函数
     /// </summary>
-    public MCPManageWindow(IServiceProvider services, WorkspaceInfo workspace) : this()
+    public MCPManageWindow(DiContainer services, WorkspaceInfo workspace) : this()
     {
         _services = services;
         _workspace = workspace;

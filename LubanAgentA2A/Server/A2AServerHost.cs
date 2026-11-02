@@ -22,7 +22,7 @@ namespace LubanAgentA2A.Server;
 /// <summary>
 /// A2A 服务端宿主。<see cref="StartAsync"/> 时按 <see cref="A2ARuntimeState.Options"/> 中
 /// 解析后的服务端参数自建一个轻量 <see cref="WebApplication"/>（不接管外层 Generic Host），注册
-/// <see cref="InternalSubAgentHandlerAdapter"/> 与外层容器的 <c>IServiceScopeFactory</c>，
+/// <see cref="InternalSubAgentHandlerAdapter"/> 与外层容器的 <c>DiContainer</c>，
 /// 挂载 JSON-RPC 端点（<c>MapA2A</c>）与 well-known AgentCard（<c>MapWellKnownAgentCard</c>）。
 /// <para>仅允许绑定回环地址；<see cref="A2AServerOptions.Port"/> 为 0 时预先选一个空闲回环端口，
 /// 以保证 AgentCard 内接口地址与真实绑定端口一致。</para>
@@ -31,7 +31,7 @@ public sealed class A2AServerHost : IA2AServerHost
 {
     private readonly A2ARuntimeState _state;
     private readonly IA2AAgentRegistry _registry;
-    private readonly IServiceScopeFactory _outerScopeFactory;
+    private readonly DiContainer _outerScopeFactory;
     private readonly ILoggerFactory? _outerLoggerFactory;
     private readonly ILogger<A2AServerHost>? _logger;
 
@@ -49,7 +49,7 @@ public sealed class A2AServerHost : IA2AServerHost
     public A2AServerHost(
         A2ARuntimeState state,
         IA2AAgentRegistry registry,
-        IServiceScopeFactory outerScopeFactory,
+        DiContainer outerScopeFactory,
         ILoggerFactory? outerLoggerFactory = null,
         ILogger<A2AServerHost>? logger = null)
     {

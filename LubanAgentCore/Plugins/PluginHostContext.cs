@@ -33,7 +33,7 @@ namespace LubanAgentCore.Plugins;
 /// </remarks>
 public sealed class PluginHostContext
 {
-    private readonly IServiceProvider _root;
+    private readonly DiContainer _root;
     private readonly UserContextRegistry _users;
     private readonly SessionRuntimeManager _runtimes;
 
@@ -43,7 +43,7 @@ public sealed class PluginHostContext
     /// <param name="root">根级 DI 容器。</param>
     /// <param name="users">用户状态注册表（根单例）。</param>
     /// <param name="runtimes">会话运行时管理器（根单例）。</param>
-    public PluginHostContext(IServiceProvider root, UserContextRegistry users, SessionRuntimeManager runtimes)
+    public PluginHostContext(DiContainer root, UserContextRegistry users, SessionRuntimeManager runtimes)
     {
         _root = root;
         _users = users;
@@ -51,7 +51,7 @@ public sealed class PluginHostContext
     }
 
     /// <summary>根级 DI 容器（解析身份无关的进程级单例）。</summary>
-    public IServiceProvider Root => _root;
+    public DiContainer Root => _root;
 
     /// <summary>当前用户标识（桌面端为本地默认用户）。</summary>
     public string UserId => LocalUserDefaults.DefaultUserId;

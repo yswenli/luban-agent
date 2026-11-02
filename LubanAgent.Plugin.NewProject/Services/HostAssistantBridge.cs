@@ -14,6 +14,8 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
+
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
@@ -183,9 +185,9 @@ internal sealed class HostAssistantBridge
                     sessionCreated = true;
                 }
 
-                var factory = _resolve(typeof(IServiceScopeFactory)) as IServiceScopeFactory;
+                var factory = _resolve(typeof(DiContainer)) as DiContainer;
                 using var scope = factory?.CreateUserScope(LocalUserDefaults.DefaultUserId);
-                var bootstrap = scope?.ServiceProvider.GetService(typeof(IAgentHost)) as IAgentHost;
+                var bootstrap = scope?.GetService(typeof(IAgentHost)) as IAgentHost;
                 if (bootstrap is null)
                     return Fail("无法解析 IAgentHost，项目会话运行时不可用。");
 

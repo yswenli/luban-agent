@@ -32,6 +32,7 @@ global using LuBan.AIAgent.A2A.Models;
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Orchestration;
 global using LuBan.AIAgent.Orchestration.Models;
+global using LuBan.DI;
 global using LubanAgentA2A.Client;
 global using LubanAgentA2A.Configuration;
 global using LubanAgentA2A.Executor;

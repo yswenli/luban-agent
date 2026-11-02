@@ -79,15 +79,16 @@ public abstract class CommandBase : ICommand
     /// 构建服务提供者，注册核心服务并初始化 LubanAgent
     /// </summary>
     /// <returns>配置完成的服务提供者</returns>
-    protected ServiceProvider BuildServiceProvider()
+    protected DiContainer BuildContainer()
     {
-        var services = new ServiceCollection();
+        var services = new DiContainer();
         services.AddSingleton<IConfiguration>(Configuration);
         services.AddSingleton(ConfigManager);
-        services.AddSingleton<IChatClient>(sp => ChatClientResilience.Wrap(
+        services.AddSingleton<IChatClient>(d => ChatClientResilience.Wrap(
             new RequestDumpChatClient(ConfigManager.CreateChatClient()),
-            sp.GetRequiredService<IOptions<LuBanAgentOptions>>().Value));
+            d.GetRequiredService<IOptions<LuBanAgentOptions>>().Value));
         services.AddLuBanAgent(Configuration);
-        return services.BuildServiceProvider();
+        // 原容器构建不校验，这里保持不校验
+        return services.Build(validateScopes: false, validateOnBuild: false);
     }
 }

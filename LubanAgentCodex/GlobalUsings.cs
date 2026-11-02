@@ -39,6 +39,7 @@ global using LuBan.AIAgent.Orchestration.Models;
 global using LuBan.AIAgent.Rules;
 global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
+global using LuBan.DI;
 global using LuBan.Orm;
 
 global using LubanAgentA2A.Configuration;

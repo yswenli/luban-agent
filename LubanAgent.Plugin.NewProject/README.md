@@ -1,23 +1,23 @@
 # LubanAgent.Plugin.NewProject（新建项目插件）
 
-> PRD：`docs/PRD-插件体系与新建项目插件.md`
+> PRD：`luban-agent/docs/PRD-插件体系与新建项目插件.md`（本插件目录内的 `docs/` 是随包知识正文，不含 PRD）
 > 插件标识：`com.tjces.newproject` · 显示名：新建项目
 
 以三端模板仓创建新项目：**七步向导**（左侧栏面板）+ **聊天式入口**（`newproject-*` 技能），
 两条入口共用同一个 `INewProjectService`，云效逻辑零分叉。
 Step 4 / Step 5 的动作**不由插件执行**：插件下发提示词与硬边界 → **项目会话的助手亲自探活 / 编译** → 插件回读**结论文件**判定。
 新增**步骤条回退导航**（可回到任一「已到达」步骤重看 / 重跑，只动面板视图游标、不动档案）与**推送闸门** `StepGate.CanPush`（编译未全部通过即拒推，向导 / 聊天同受保护）——修「Step 5 无入口导致越级推送」的真机缺陷，详见「回退导航与推送闸门」。审查发现 1–5 的修正：同目录重提不弹破坏性确认（改指路「重跑 Step 2」）、闸门拒绝不写 `Push` 终态且前置到档案空判之后、Step 3 重跑作废旧编译结论（`StepGate.InvalidateBuild`）、未到达步骤行显式降不透明度、重推按钮补 hover 反馈。二次逐行审查再修 5 处，其中一处是**阻断级**：**落库顺序 P0** —— Step 4 / Step 5 原先「先 `SaveSpec` 后 `EndOperation`」，而终态快照只回放**终态**记录，于是本轮记录此刻仍是 `Running` 被跳过，`StepStates` 里**根本没有 `Build` 键** → 闸门 `CanPush` 恒判否，**编译通过了也推不动**；已改为「先记终态再落库」（与 Step 6 同型）；另：同目录判据改用与服务端唯一性①同源的 `WorkspaceIdGenerator.Normalize`（解析 junction / 符号链接）、步骤行灰化只按「是否已到达」（忙碌时不再把当前步与已完成步一起变淡）、同目录黄字先清上一轮红字并补「中止并清理」出口。
-**（Step 7 真机取证改写）** 云效控制台现存 70 条流水线**全是 tb 形态**，其 `flow` 原文提交必报 `1209300 校验失败`，且 OpenAPI 无「复制流水线」接口——故 Step 7 由「**克隆参考流水线**」改为「**内嵌新版 YAML 模板 + 占位符渲染 + 创建**」：三端模板（含**变量与缓存**：`variables` 的 `DOCKER_IMAGE_NAME` / `APP_PORT` / `DOCKER_CONTAINER_NAME` / `HARBOR_*` + 顶层 `cache`）内嵌于 `PipelineTemplates.cs`（`PipelineTemplateLibrary` / `PipelineRenderer`，随包分发、可单测），MCP 侧 `flow_clone_pipeline` 由 **`flow_create_pipeline`**（`name` + `content` + `organizationId`）取代；部署阶段默认禁用（只作注释附末尾）并可「一键补齐部署阶段」（仅后端，组件 `VMDockerDeploy`）。真机校正：变量**不带 `type`**（私密值用 `secret: true`）、`NodeBuild` 用 `versionType/customNodeVersion`、`OSSUpload` 用 `sourceFilePath/targetFilePath`、`OSSDelete` 用 `prefix`、`runsOn` **默认不写**（私有集群只能人工回填）、`VMDockerDeploy.machineGroup` **必须是主机组 uuid**。详见「Step 7 实现要点」与「P4 复审增补 · v0.30」。
+**（Step 7 真机取证改写 · 历史口径，模板与部署段方案已被下两段取代）** 云效控制台现存 70 条流水线**全是 tb 形态**，其 `flow` 原文提交必报 `1209300 校验失败`，且 OpenAPI 无「复制流水线」接口——故 Step 7 由「**克隆参考流水线**」改为「**新版 YAML 模板 + 占位符渲染 + 创建**」：三端模板（含**变量与缓存**：`variables` 的 `DOCKER_IMAGE_NAME` / `APP_PORT` / `DOCKER_CONTAINER_NAME` / `HARBOR_*` + 顶层 `cache`）当时内嵌于 `PipelineTemplates.cs`（`PipelineTemplateLibrary` / `PipelineRenderer`；**该文件与两个类已删除，模板现位于 `docs/pipeline-*.yml.md`、由助手渲染**），MCP 侧 `flow_clone_pipeline` 由 **`flow_create_pipeline`**（`name` + `content` + `organizationId`）取代；部署阶段当时默认禁用（只作注释附末尾）并可「一键补齐部署阶段」（仅后端，组件 `VMDockerDeploy`）——**该口径已废弃**：现为「创建前选部署目标、创建即写部署段」，注释块与「一键补齐」全链路删除。真机校正：变量**不带 `type`**（私密值用 `secret: true`）、`NodeBuild` 用 `versionType/customNodeVersion`、`OSSUpload` 用 `sourceFilePath/targetFilePath`、`OSSDelete` 用 `prefix`、`runsOn` **默认不写**（私有集群只能人工回填）、`VMDockerDeploy.machineGroup` **必须是主机组 uuid**。详见「Step 7 实现要点」与「P4 复审增补 · v0.30」。
 
-**（Step 7 YAML 可手工微调）** 预览不再只是「列出来」：点「编辑 YAML…」在独立窗口里改选中端的提交原文（按端、**会话内**保留，「重置为模板」可回退），创建 / 一键补齐直接提交微调后的文本；提交前做最小校验（非空 / 无 Tab / 有顶层 `stages:` / `name:` 必须与模板名一致，其余语法交给云效原样报回），补齐时在微调文本末尾自动追加部署阶段（已自写 `VMDockerDeploy` 则不重复追加）。
+**（Step 7 YAML 可手工微调）** 预览不再只是「列出来」：点「编辑 YAML…」在独立窗口里改选中端的提交原文（按端、**会话内**保留，「重置为模板」可回退），创建直接提交微调后的文本。**当前面板不做任何 YAML 校验**：`PipelineYamlEditorWindow` 只是文本框，「非空 / 无 Tab / 顶层 `stages:` / `name:` 一致」都由云效报回（`1209300`）；「一键补齐 / 末尾自动追加部署阶段」已随部署段改为创建前选择而删除（见下段）。
 
-**（部署目标改为「创建前选择」）** 删掉「部署阶段默认禁用 + 注释块 + 事后一键补齐」那一套（它把「往哪台机器发布」这一件事推到了创建之后，且注释块在真机 YAML 里既不能执行、又容易被误删）：改为**创建流水线之前**给出「部署目标」——只读拉取云效主机组列表（连接器新增 `ListHostGroupsAsync` / `GetHostGroupAsync`，MCP 新增 `flow_list_host_groups` / `flow_get_host_group`）→ 面板下拉（**仅后端 Service 可选**，默认预选 `pipelineDefaults[Service].deployMachineGroup`，可展开机器明细核对落点）→ **创建即写**含 `  deploy:`（`VMDockerDeploy` + `machineGroup: '<uuid>'`）的完整 YAML，不再有注释块、不再需要补齐。**拉取失败 / 无权限一律阻断创建**（不降级成手填 uuid——uuid 填错云效只回「该机器组uuid[x]不存在」，是白跑一次且污染远端）。保留一个「**覆盖更新**」入口（原「一键补齐」位）给旧流水线补部署段 / 换目标后纠偏（`UpdatePipeline` 整体覆盖，仍走卡内勾选确认）。档案每端记「本次提交 YAML 是否含部署段」+「所选主机组 uuid / 名」。详见「Step 7 实现要点 · v0.32 部署目标」。
+**（部署目标改为「创建前选择」）** 删掉「部署阶段默认禁用 + 注释块 + 事后一键补齐」那一套（它把「往哪台机器发布」这一件事推到了创建之后，且注释块在真机 YAML 里既不能执行、又容易被误删）：改为**创建流水线之前**给出「部署目标」——只读拉取云效主机组列表（连接器新增 `ListHostGroupsAsync` / `GetHostGroupAsync`，MCP 新增 `flow_list_host_groups` / `flow_get_host_group`）→ 面板下拉（**仅后端 Service 可选**，默认预选结论文件 `artifacts[kind=pipeline].extra.recommendedDeployTargetUuid`——助手按 `docs/org-reference.md` 的登记值给出，`newproject.settings.json` 已无 `pipelineDefaults` 键，可展开机器明细核对落点）→ **创建即写**含 `  deploy:`（`VMDockerDeploy` + `machineGroup: '<uuid>'`）的完整 YAML，不再有注释块、不再需要补齐。**拉取失败 / 无权限一律阻断创建**（不降级成手填 uuid——uuid 填错云效只回「该机器组uuid[x]不存在」，是白跑一次且污染远端）。保留一个「**覆盖更新**」入口（原「一键补齐」位）给旧流水线补部署段 / 换目标后纠偏（`UpdatePipeline` 整体覆盖，仍走卡内勾选确认）。档案每端记「本次提交 YAML 是否含部署段」+「所选主机组 uuid / 名」。详见「Step 7 实现要点 · v0.32 部署目标」。
 
 **（命名与缩写校验调整）** ①**英文缩写收紧为只允许小写字母 a-z**（`^[a-z]+$`，不再允许数字；Step 1 校验文案与输入框占位提示同步）；②**代码库名默认首字母大写**——`repositoryNameFormat` 由 `{code}-{end}` 改为 `{Code}-{end}`（如 `csxmy` → `Csxmy-Service` / `Csxmy-Admin` / `Csxmy-Mobile`），与**全大写**的代码组名 `{CODE}`（如 `CSXMY`）刻意区分；`BuildRepositoryName` 由 `Replace("{code}", …, OrdinalIgnoreCase)`（会连带替换 `{Code}` / `{CODE}`）改为**区分大小写**展开 `{code}` / `{Code}` / `{CODE}` + `{end}`；**本地目录名与仓库名同源**，故本地目录亦变为 `Csxmy-Service`。
 
 **（命中同名改为「覆盖更新」）** Step 7 创建入口按名命中同名流水线时，**不再「命中即复用」**，而是对该条 `UpdatePipeline` 提交本次渲染的 YAML（**全端** Service / Admin / Mobile；`Created = false`，档案 `DeployStageIncluded` 与部署目标随本次渲染变真实；覆盖更新失败即该端失败）——旧流水线可能缺部署段或残留上一版模板 / 占位符，复用会让「预览到的 YAML」与远端实际不一致（真机曾因此让后端流水线没有 `deploy` 段）。**副作用：普通重跑也会覆盖远端**（含控制台上的人工改动），即 **v0.30「命中即复用」被本口径取代**；「覆盖更新」按钮保留（对已有流水线纠偏 / 补部署段）。
 
-**（Step 3/6/7 助手驱动重构 · 知识移出代码）** Step 3 / 6 / 7 的执行体从插件 C# 直连**下沉给项目会话的助手**：插件只负责「**下发提示词 + 固定边界 + 回读结论文件**」，云效动作走 `mcp_yunxiao_*`（`AssistantToolPolicy` 新增**云效 MCP 子策略**，按工具名段放行 12 个：8 只读 + 4 写入；`flow_run_pipeline` 拒绝，已删的 `codeup_clone` / `codeup_push` 双保险仍 Deny），git 动作走**框架 git 工具组**（工作区内**免确认、不经插件策略**）。组织专有值（模板仓名 / Harbor / 服务连接 / bucket / pipelineId / 主机组 uuid …）与三端 YAML 模板从代码迁到**随包分发的 `docs/` 知识文件**，技能正文只写「读 `docs/` 哪一节」，靠**禁用值扫描单测**把「唯一副本」变成可执行检查。Step 3 / 7 为「**一次只读准备下发 + 用户确认后同会话执行续跑**」（**不叫「两轮」**），结论文件扩展 `status`(done/needsInput/failed) / `artifacts[]`(判别属性 `kind` + 具名强类型 `extra`) / `inputs[]`（三选一 / 部署目标）；闸门 `StepGate.CanPush` / `CanCreatePipelines` 判据改读 **Step 5 / Step 6 结论文件**（`StepStates` 降级为仅界面进度）。删除 `Services/PipelineTemplates.cs`（`PipelineTemplateLibrary` / `PipelineRenderer` / `PipelineYamlOverride`）、`PlaceholderReplacer.cs`、`PushRetryPolicy.cs` 与 `CodeupClient.CloneToLocalAsync` / `PushAsync`；新增本地复核器 `StepLocalVerifier`。详见「Step 3 / Step 6 实现要点」「Step 7 实现要点」「验证」。
+**（Step 3/6/7 助手驱动重构 · 知识移出代码）** Step 3 / 6 / 7 的执行体从插件 C# 直连**下沉给项目会话的助手**：插件只负责「**下发提示词 + 固定边界 + 回读结论文件**」，云效动作走 `mcp_yunxiao_*`（`AssistantToolPolicy` 新增**云效 MCP 子策略**，按工具名段放行 12 个：8 只读 + 4 写入；`flow_run_pipeline` 拒绝，已删的 `codeup_clone` / `codeup_push` 双保险仍 Deny），git 动作走**框架 git 工具组**（工作区内**免确认、不经插件策略**）。组织专有值（模板仓名 / Harbor / 服务连接 / bucket / pipelineId / 主机组 uuid …）与三端 YAML 模板从代码迁到**随包分发的 `docs/` 知识文件**，技能正文只写「读 `docs/` 哪一节」，靠**禁用值扫描单测**把「唯一副本」变成可执行检查。Step 3 / 7 为「**一次只读准备下发 + 用户确认后同会话执行续跑**」（**不叫「两轮」**），结论文件扩展 `status`(done/needsInput/failed；Step 3 准备结论另用 `ready`/`blocked`) / `phase`(prepare/execute) / `artifacts[]`(判别属性 `kind` + 具名强类型 `extra`) / `inputs[]`（三选一 / 部署目标）；闸门 `StepGate.CanPush` / `CanCreatePipelines` 判据改读 **Step 5 / Step 6 结论文件**（`StepStates` 降级为仅界面进度）。删除 `Services/PipelineTemplates.cs`（`PipelineTemplateLibrary` / `PipelineRenderer` / `PipelineYamlOverride`）、`PlaceholderReplacer.cs`、`PushRetryPolicy.cs` 与 `CodeupClient.CloneToLocalAsync` / `PushAsync`；新增本地复核器 `StepLocalVerifier`。详见「Step 3 / Step 6 实现要点」「Step 7 实现要点」「验证」。
 
 ## 目录结构
 
@@ -28,13 +28,16 @@ LubanAgent.Plugin.NewProject/
 ├─ newproject.settings.json              # 瘦身后仅留 6 项格式值（组织专有值已迁 docs/）
 ├─ docs/                                 # 随包分发的知识文件（组织专有值 + 三端 YAML 模板 + 编排约定）
 ├─ NewProjectPlugin.cs                   # 插件入口（PluginBase）
+├─ GlobalUsings.cs                       # 项目级全局 using（集中公共命名空间）
 ├─ Abstractions/
 │  ├─ ProjectSpec.cs                     # 项目档案与相关模型
 │  ├─ BasicInfoValidation.cs             # Step 1 校验结果（字段级错误 + 非阻断提示，面板与聊天入口共用）
 │  ├─ RepositoryPrecheck.cs              # Step 3 确认视图模型（数据来源＝结论文件 artifacts[]）
 │  ├─ DatabaseProbe.cs                   # Step 4 探活参数（含校验与口令脱敏的 Describe）
-│  ├─ StepReport.cs                      # 结论文件模型（step / ok / status / checks[] / inputs[] / artifacts[] / message）
+│  ├─ StepReport.cs                      # 结论文件模型（step / ok / status / phase / checks[] / inputs[] / artifacts[] / message）
+│  ├─ DeployTargets.cs                   # Step 7 部署目标（主机组候选 + 机器明细视图模型）
 │  ├─ PipelinePreview.cs                 # Step 7 复核视图模型（数据来源＝结论文件 artifacts[]）
+│  ├─ PipelinePrepareResult.cs           # Step 7 准备读数（按端预览 + inputs[] + 映射缺口）
 │  └─ INewProjectService.cs              # 共享能力层契约
 ├─ Configuration/NewProjectSettings.cs   # 包内配置读取（瘦身：仅 6 项格式值）
 ├─ Serialization/PluginJsonContext.cs    # 源生成 JSON 上下文（登记全部新 schema 类型）
@@ -42,11 +45,14 @@ LubanAgent.Plugin.NewProject/
 │  ├─ NewProjectService.cs               # 共享能力层实现（Step 3/6/7 执行体已下沉，改为「下发 + 回读」）
 │  ├─ NewProjectStateStore.cs            # 档案持久化（残留检测 / 孤儿清单）
 │  ├─ HostAssistantBridge.cs             # 桥接层：经宿主服务在项目会话上跑一轮提示词
+│  ├─ KnowledgeDocs.cs                   # 插件包 docs/ → 工作区覆盖式同步（每步下发前自愈，不删除）
 │  ├─ StepPrompts.cs                     # Step 3/4/5/6/7 提示词构造（纯函数，锁死边界与结论契约）
 │  ├─ StepReportParser.cs                # 结论文件解析（源生成上下文，不抛异常）
 │  ├─ StepReportEvaluator.cs             # 结论归并与阻断判定（新增 Step 3/6/7 三个判定入口）
+│  ├─ ArtifactViewModelMapper.cs         # 结论文件 artifacts[] → 面板视图模型的逐字段映射
 │  ├─ StepLocalVerifier.cs               # 本地复核器（目录 / .git / refs / 占位符残余，独立再核对）
 │  ├─ StepGate.cs                        # 推送 / 建流水线闸门（纯函数：判据＝读 Step 5 / Step 6 结论文件）
+│  ├─ StepStateResolver.cs               # 步骤状态归并（档案终态快照 ⊕ 本次操作记录，仅界面显示）
 │  ├─ StepResultFile.cs                  # 结论文件路径约定（工作区内，不在任何 git 仓库里）
 │  ├─ AssistantToolPolicy.cs             # 助手工具白名单（含云效 MCP 子策略 + 删除类工作区内放行）
 │  └─ DatabaseProbeDefaults.cs           # Step 4 默认值：解析 appsettings.json 连接串装配参数
@@ -59,11 +65,15 @@ LubanAgent.Plugin.NewProject/
 
 ### 知识文件布局与生效范围
 
-插件包新增 `docs/`，Step 2 随 `skills/` 一并**铺装**到项目工作区 `.luban-agent/plugin-newproject/docs/`，承载组织专有值与三端 YAML 模板：
+插件包新增 `docs/`，Step 2 铺装到项目工作区 `.luban-agent/plugin-newproject/docs/`，承载组织专有值与三端 YAML 模板：
 `org-reference.md`（值总表）/ `step3-repositories.md` / `step6-push.md` / `pipeline-*.yml.md`（三端模板）/ `pipeline-conventions.md` / `README.md`（索引）。
 
-> **生效范围**：`docs/` 与 `skills/` 都是**只补缺失**策略铺装——**知识文件的更新只对「新建项目」即时生效**；
-> 已建项目保留其工作区里的**快照**（改 `docs/` 不会回溯改写已建项目工作区）。要让已建项目吃到新知识，需**重跑 Step 2** 重新铺装。
+> **生效范围**：`docs/` 与 `skills/` 策略**不同**——
+> ①`docs/` 由 `Services/KnowledgeDocs.cs` 的 `Sync` **覆盖式同步且不删除**（同名文件以插件包为准，用户手补文件保留），
+> 并在 Step 3/4/5/6/7 **每次下发前自愈重铺**（`NewProjectService.EnsureKnowledgeDocs`）；铺装失败即判本步失败、不下发。
+> 故改 `docs/` 后，已建项目在**下一次相关步骤**即拿到新知识，无需重跑 Step 2。
+> ②`skills/` 是宿主**只补缺失**（`AgentPluginHost.EnsureManifestSkills` / `EnsureRuntimeSkills`：目标
+> `<工作区>\.luban-agent\skills\<skillId>\SKILL.md` 已存在即跳过），故改 `skills/*.md` 后须删掉工作区对应技能文件再重跑 Step 2。
 
 ## 打包硬约束（重要，改动前先读）
 
@@ -220,18 +230,26 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 
 ### 结论文件契约（Step 3 / 6 / 7）
 
-路径沿用 `{LocalPath}\.luban-agent\plugin-newproject\results\step{N}-<ts>.json`。`StepReport` 扩展 schema：
+路径沿用 `{LocalPath}\.luban-agent\plugin-newproject\results\step{N}-<ts>.json`；**Step 3 准备（只读）结论单独分名**为
+`step3-prepare-<ts>.json`（`StepResultFile.List` / `FindLatest` 只收执行结论，不把它算作本步已完成）。`StepReport` 扩展 schema：
 
 ```jsonc
 {
   "step": 3, "ok": true,
-  "status": "done",            // done | needsInput | failed（Step 3/6/7 均阻断性：必须 done ∧ ok）
+  "status": "done",            // 执行阶段：done | needsInput | failed（Step 3/6/7 均阻断性：必须 done ∧ ok）
+                               // Step 3 准备结论改用 ready | blocked
+  "phase": "execute",          // prepare | execute（可空；空按执行阶段，兼容旧结论）
   "checks":     [ { "name": "Service", "ok": true, "detail": "…", "command": null } ],
   "inputs":     [ /* 仅 needsInput 时非空：三选一 / 部署目标 */ ],
   "artifacts":  [ /* 面板视图模型 + 落账的唯一来源 */ ],
   "message":    ""
 }
 ```
+
+- **准备与执行必须分阶段**：Step 3 准备结论写 `phase="prepare"` + `status="ready"|"blocked"`，
+  执行结论写 `phase="execute"` + `status="done"`。执行判定 `EvaluateRepositorySetup(requireCloned=true)` **明确拒绝**
+  准备结论（`phase=prepare` 或 `status=ready|blocked` 一律判「未执行」并提示重写 `step3-<ts>.json`）；
+  准备判定则拒绝 `status=blocked`。Step 7 的准备与执行同名（`step7-<ts>.json`），靠「`mtime >= 本次起始时刻`」区分。
 
 - `artifacts[]` 判别属性是 `kind`（`group` / `repository` / `pipeline`），`extra` 是**具名强类型**
   （`GroupArtifactExtra` / `RepositoryArtifactExtra` / `PipelineArtifactExtra`）——**不得**用自由字典。
@@ -261,7 +279,7 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 4. `codeup_search_repos` 查目标仓库是否已存在，**已存在再 `codeup_get_repo` 取 `httpUrlToRepo`**；
 5. 检查该端**仓库目录**（`<工作区>\<仓库名>`，**已含仓库名**）是否已存在且非空。
 
-产出 `results/step3-*.json` 的 `artifacts[]`（`kind=group` 一条 + `kind=repository` **每端一条**），面板据此渲染**确认界面**
+产出准备结论 `results/step3-prepare-*.json`（`phase=prepare` / `status=ready|blocked`）的 `artifacts[]`（`kind=group` 一条 + `kind=repository` **每端一条**），面板据此渲染**确认界面**
 （视图模型 `RepositoryPrecheck` / `EndPrecheck` 由 `artifacts[]` 映射，不再是 C# 预检读数）；用户可改仓库名 / 可见性
 （走 `ValidateRepositoryPlanAsync` + `ApplyRepositoryPlan`）。**准备阶段不得出现任何「新建」类产物**。
 
@@ -399,8 +417,8 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 | 项 | 约定 |
 |----|------|
 | 路径 | `{LocalPath}\.luban-agent\plugin-newproject\results\step{4,5}-<时间戳>.json` |
-| schema | `{ "step": 4 或 5, "ok": bool, "checks": [ { "name", "ok", "detail", "command"? } ], "message" }`（Step 3/6/7 扩展为 `status` / `inputs[]` / `artifacts[]`，见「结论文件契约」） |
-| 通过判定 | **四环齐**：①文件存在 ②schema 可解析（`StepReportParser`，走源生成上下文） ③`ok` 为真 ④本轮事件流无错误事件（**守卫拒绝 / 用户取消不算错误**，见下「助手工具白名单」）；Step 3/6/7 另加第 ③′ 环 `status == "done"` 与插件侧**本地复核**（`StepLocalVerifier`） |
+| schema | `{ "step": 4 或 5, "ok": bool, "checks": [ { "name", "ok", "detail", "command"? } ], "message" }`（Step 3/6/7 扩展为 `status` / `phase` / `inputs[]` / `artifacts[]`；Step 3 准备结论另用 `step3-prepare-*.json` + `phase=prepare` + `status=ready\|blocked`，见「结论文件契约」） |
+| 通过判定 | **四环齐**：①文件存在 ②schema 可解析（`StepReportParser`，走源生成上下文） ③`ok` 为真 ④本轮事件流无错误事件（**守卫拒绝 / 用户取消不算错误**，见下「助手工具白名单」）；Step 3/6/7 **执行轮**另加第 ③′ 环 `status == "done"` 与插件侧**本地复核**（`StepLocalVerifier`） |
 | Step 3 之后注意 | 该目录与各端 git 仓库**同级、不在任何仓库内** → Step 6 推送不会把它带进业务仓库 |
 | 时效（Step 3/6/7） | 插件**每次下发前**记起始时刻，回读**只接受 `mtime >= 起始时刻`** 的结论文件；历史文件保留在 `results/` 但 UI 标注「历史轮次」、不参与判定 |
 
@@ -471,7 +489,8 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - 框架 `FileSystemToolPlugin.DeleteDirectoryAsync`（`luban-framework/LuBan.AIAgent/Tools/FileSystem/FileSystemToolPlugin.cs:807`）
   用的是裸 `Directory.Delete`，删 git 目录（含只读 pack）会失败且只报「权限不足」。Step 3「清空后重克隆」
   改由助手 `RunPythonAsync` 的 `shutil.rmtree(onerror=清只读)` 执行（策略层只把 `DeleteDirectoryAsync` 放开为「工作区内放行」作契约兜底）；
-  插件自己的中止清理仍走 `DirectoryCleaner.DeleteForce`（先清只读再删，RC5 已修）；框架那个要改需重新发包。
+  插件自己的「中止并清理」**不删本地目录**——只做 `host.UnregisterSkill` / `UnregisterMcpServer` + `DeleteWorkspaceAsync`（逻辑删），
+  故 `LubanAgentCore.Utils.DirectoryCleaner` 在本插件内已**无调用点**（只剩 `LubanAgent.Tests/DirectoryCleanerUnitTest` 引用）；框架那个要改需重新发包。
 - **（待查）** Step 4 真机实测走「连库未带口令」分支（`1045 Access denied … (using password: NO)`）。
   口令按方案 A 内联进提示词，链路需复核「界面口令是否真的传进本轮提示词」，以及 `1045` 分支的文案是否明确引导用户回填口令后重跑
   （口令会落进本地会话库这一残余风险已知并记录在案，此处是交互提示的待确认项）。
@@ -642,15 +661,15 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 3. 左侧栏出现「新建项目」入口，点击后面板挂载成功（左侧步骤条 + Step 1 表单 + 右侧操作记录区）；
 4. Step 1 填表 → 「下一步」：校验失败时字段级红字；有非阻断提示（如目标仓库目录已存在且非空）时黄字提示但不拦；
    通过后 Step 2 逐条写时间线（工作区 → 授权 → 当前工作区 → 会话 → 档案快照 → 技能 → **知识文件 `docs/`** → 云效 MCP → 项目级 Agent）；
-5. 复核落盘：`{LocalPath}/.luban-agent/skills/newproject-*.md`（6 个）、
+5. 复核落盘：`{LocalPath}/.luban-agent/skills/<skillId>/SKILL.md`（6 个技能目录，skillId 形如 `newproject-*`）、
    `{LocalPath}/.luban-agent/plugin-newproject/spec.json`、**`{LocalPath}/.luban-agent/plugin-newproject/docs/`（组织专有值 / 三端 YAML 模板 / 编排约定）**；工作区列表与会话列表出现新记录；
 6. 「重跑 Step 2」：时间线显示「复用已有工作区」并新建执行会话（不报「工作区已存在」）；
 7. **唯一性①出口**：同一目录再点「下一步」→ 红字 + 出现「复用该工作区继续」；点它 →
    复用该工作区、新建执行会话、Step 2 全绿（不会再被卡死）；
 8. 带残留档案重启面板：出现「清理后重来 / 保留并继续」横幅，未处置前「下一步」不可用；
-9. 「中止并清理」：时间线出现 1 条「中止并清理」记录；`{LocalPath}/.luban-agent/skills/newproject-*` 全部消失，
+9. 「中止并清理」：时间线出现 1 条「中止并清理」记录；`{LocalPath}/.luban-agent/skills/newproject-*` 目录全部消失（`UnregisterSkill` 删 `<skillId>/SKILL.md` 所在目录），
    工作区列表不再有该项目，**`LocalPath` 目录本身仍在**；此后同目录再「下一步」可正常走通（登记残留已清）；
-10. 停用插件 → 侧栏入口与面板消失，`.luban-agent/skills/newproject-*` 无残留。
+10. 停用插件 → 侧栏入口与面板消失，`.luban-agent/skills/newproject-*` 目录无残留。
 
 ### P3 增补（Step 3 / Step 6）
 
@@ -662,12 +681,12 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
     改动仓库名 / 可见性 → 准备读数变黄「已作废」（结论文件 `mtime` 早于本次起始时刻不参与判定），须重新准备；
 12. **准备读数（只读，不创建）**：点「准备（只读，不创建）」→ 助手在**项目会话**里调只读 `mcp_yunxiao_*`
     （`codeup_list_template_repos` 全量拉模板库 / `codeup_list_branches` 解析 pin / `codeup_list_groups` 查代码组 /
-    `codeup_search_repos` 查同名仓库〔命中再 `codeup_get_repo` 取克隆地址〕），产出 `results/step3-*.json`；读数含：
+    `codeup_search_repos` 查同名仓库〔命中再 `codeup_get_repo` 取克隆地址〕），产出准备结论 `results/step3-prepare-*.json`；读数含：
     目标代码组（不存在将新建 / 已存在将复用 · id）、逐端模板库命中（`templateProjectId` · 全路径）、
     pin 及依据（按 `docs/org-reference.md` 的 pin 择优顺序**实时解析**）、仓库名（将新建 / 已存在将复用 · 可见性）；
     此时**云效侧未新增任何代码组 / 仓库**（只读，可对照后台）；右侧操作记录呈现助手调用的 MCP 工具与返回摘要；
 13. **准备阻断**：未填「云效连接」的组织 ID / PAT，或模板库中按名约定找不到模板仓时点「准备」→
-    读数与时间线给出红字（引导去设置页 / 列出模板库现有条目）；**结论文件缺失 / 不可解析 / `status != done` 一律不发执行请求**；
+    读数与时间线给出红字（引导去设置页 / 列出模板库现有条目）；**准备结论文件缺失 / 不可解析 / `status=blocked`（`ok=false`）一律不发执行请求**；执行轮只接受新写出的 `step3-<ts>.json`（`status=done`），读到准备结论即判「未执行」；
 14. **Step 3 正常路径**：准备通过 → 勾选「我已确认」→ 「创建并克隆」→ 助手在**同一会话执行续跑**（提示词显式携带用户答复 +
     准备阶段结论文件**绝对路径**），逐条进时间线（准备项目代码组〔`codeup_create_group`，**先查后建**〕→ 创建仓库 / 同名复用
     〔`codeup_create_repo`，`templateType=1` / `syncAllBranches=true`〕→ **新建后再 `codeup_get_repo` 取 `httpUrlToRepo`** →
@@ -679,7 +698,7 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
     **插件回读后再跑本地复核器 `StepLocalVerifier`**（目录存在且非空 / `.git` 有效 / `refs/heads/<pin>` 存在 / 占位符残余 = 0），通过才判成功；
 15. **模板 pin 实时解析**：模板仓 pin 留空 → 读数为 `develop`（Service/Admin）与 `master`（Mobile，无 develop）；
     在 `docs/` 里把某端 pin 改成不存在的分支 → 准备阻断，提示现有分支清单（不静默回退）；
-    ⚠️ pin / 模板仓名约定 / 占位符规则**都读工作区 `docs/`**，改 docs **只对新建项目即时生效**（已建项目沿用工作区快照，见上文「知识文件布局与生效范围」）；
+    ⚠️ pin / 模板仓名约定 / 占位符规则**都读工作区 `docs/`**；`docs/` 在每步下发前覆盖式重铺，故改 docs **下一次相关步骤即生效**（见上文「知识文件布局与生效范围」）；
 16. **Step 3 重跑幂等**：重新准备后（此时代码组已存在）→ 页面显示「已存在，将复用」；
     执行 → 时间线出现「云效已存在同名仓库，跳过创建直接复用」，**不会**因重名建库失败；
     重跑成功后**作废 Step 5 / Step 7 结论**（删除最近一份 `step5-*.json` / `step7-*.json`、清 `BuildResults` / `PipelineResults`
@@ -707,17 +726,17 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
     目录必须被真正删空并重新克隆成功（**不得**再报 `Access to the path '…idx' is denied.`）。
     说明：git 在 Windows 上把 pack 标为只读，裸 `Directory.Delete` 必失败且会在抛错前删掉 HEAD / config / refs，
     把残骸越搞越烂——这正是 RC5 的死锁现场（真机 2026-10-20 17:27 踩到）。该删除由助手用
-    `RunPythonAsync` 的 `shutil.rmtree(onerror=清只读后重试)` 完成；插件侧 `DirectoryCleaner`（**保留**，仅供「中止并清理」用）
-    仍由 `LubanAgent.Tests/DirectoryCleanerUnitTest.cs` 锁死（裸删必抛 + `DeleteForce` 必成）。
+    `RunPythonAsync` 的 `shutil.rmtree(onerror=清只读后重试)` 完成；插件「中止并清理」**不删本地目录**，
+    故 `DirectoryCleaner` 在插件内已无调用点，只剩 `LubanAgent.Tests/DirectoryCleanerUnitTest.cs` 锁住其行为（裸删必抛 + `DeleteForce` 必成）。
 
 > **真机第一次执行建仓动作前**，先对照第 12 项读数与用户逐项核对（模板库命中 / pin / 代码组名 / 仓库名 / 落地位置）。
 
 ### P4 增补（Step 4 / Step 5）
 
 **冒烟前置（重要，否则会测到旧技能正文）**：宿主把技能写入工作区是**只补缺失**策略，已存在的
-`{LocalPath}\.luban-agent\skills\newproject-*` **不会被覆盖**（`docs/` 同样只补缺失）。改了 `skills/*.md` 或 `docs/` 后
-必须先删掉 `{LocalPath}\.luban-agent\skills\newproject-*` 与 `{LocalPath}\.luban-agent\plugin-newproject\docs\`，
-再从 Step 2 重跑，才能拿到新正文——即 **docs 知识更新只对新建项目即时生效，已建项目保留工作区快照**。
+`{LocalPath}\.luban-agent\skills\<skillId>\SKILL.md` **不会被覆盖**；`docs/` 不同——每次下发前由 `KnowledgeDocs.Sync`
+**覆盖式重铺**。故：改了 `skills/*.md` 必须先删掉 `{LocalPath}\.luban-agent\skills\newproject-*` 再从 Step 2 重跑；
+只改 `docs/` 则**无需手工清理**，下一次 Step 3/4/5/6/7 下发即生效（Step 2 也会铺一次）。
 另：P4 改动需先重新构建 `LubanAgent.slnx`（把新包铺到 codex 运行目录）。
 
 22. **Step 4 界面**：进入 Step 4 → 服务器 / 端口 / 库名 / 账号已从克隆下来的 `WebHost/appsettings.json` **预填**，
@@ -897,7 +916,7 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 |------|------|------|
 | **P1** | 工程骨架、清单、档案模型、共享能力层契约与桩、向导面板骨架、铺包通路、源生成 JSON 通路 | **已完成**（构建 0 错误；框架侧生命周期探针全绿，含「停用后 ALC 真回收」；用户人工冒烟通过） |
 | **P2** | Step 1 表单 + Step 2 初始化项目环境（工作区 / 会话 / 技能 / 云效 / 项目助手） | **已完成**（构建 0 错误；含唯一性①死路修复与「中止并清理」补齐，详见上文「Step 1 / Step 2 实现要点」） |
-| P3 | Step 3 准备（只读）+ 执行续跑（建组 / 建库 / 克隆 / 占位符）+ Step 6 助手推送 | **已完成 + 助手驱动重构**（历史：修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner`（保留给「中止并清理」）。Step 3/6 的云效与 git 动作**全部下沉给助手**——云效走 `mcp_yunxiao_*`（新增 `codeup_list_template_repos` / `codeup_get_repo` / `codeup_list_groups`，删 `codeup_clone` / `codeup_push`），git 走**框架 git 工具组**（`GitCloneAsync` / `GitPushAsync` …）；插件只做「提示词下发 + 结论文件回读（`artifacts[]`）+ 闸门判定（读结论文件）+ 落账 + 本地复核 `StepLocalVerifier`」；`CodeupClient.CloneToLocalAsync` / `PushAsync`、`GitCommandResult.cs`、`Services/PlaceholderReplacer.cs`、`Services/PushRetryPolicy.cs` **删除**；组织专有值 / pin 择优 / 占位符规则 / 提交信息格式 / 退避口径迁入工作区 `docs/`（唯一副本原则）；Step 3 重跑作废 Step 5 / 7 结论（只清结论、不删远端本体）；**待真机冒烟**——见「P3 增补」11–21） |
+| P3 | Step 3 准备（只读）+ 执行续跑（建组 / 建库 / 克隆 / 占位符）+ Step 6 助手推送 | **已完成 + 助手驱动重构**（历史：修复 RC1 建库/克隆竞态、RC2 git 报错被吞、RC3 失败残留、RC4「复用已克隆」假成功、RC5 只读 pack 挡住「清空后重克隆」导致三选一死锁；新增 `LubanAgentCore.Utils.DirectoryCleaner`（**当前产品路径已无调用方**，仅单测引用）。Step 3/6 的云效与 git 动作**全部下沉给助手**——云效走 `mcp_yunxiao_*`（新增 `codeup_list_template_repos` / `codeup_get_repo` / `codeup_list_groups`，删 `codeup_clone` / `codeup_push`），git 走**框架 git 工具组**（`GitCloneAsync` / `GitPushAsync` …）；插件只做「提示词下发 + 结论文件回读（`artifacts[]`）+ 闸门判定（读结论文件）+ 落账 + 本地复核 `StepLocalVerifier`」；`CodeupClient.CloneToLocalAsync` / `PushAsync`、`GitCommandResult.cs`、`Services/PlaceholderReplacer.cs`、`Services/PushRetryPolicy.cs` **删除**；组织专有值 / pin 择优 / 占位符规则 / 提交信息格式 / 退避口径迁入工作区 `docs/`（唯一副本原则）；Step 3 重跑作废 Step 5 / 7 结论（只清结论、不删远端本体）；**待真机冒烟**——见「P3 增补」11–21） |
 | P4 | Step 4 数据库探活（只读）+ Step 5 逐端编译（助手亲自执行 + 结论文件回读判定） | **代码完成 + 冒烟缺陷已修**（构建 0 错误；`LubanAgent.Tests` **135/135** 通过；新增提示词 / 结论解析与归并 / 探活参数与默认值 / 工具白名单 / **推进指针与推送闸门** 5 组单测；修复「Step 5 无入口 → 越级推送」根因——步骤条回退导航 + `StepGate.CanPush` 能力层闸门 + 重推入口可见性收紧；并完成审查收口：同目录重提不给破坏性确认、闸门拒绝不写 Push 终态、闸门前置、Step 3 重跑作废旧编译结论、未到达行显式灰化与重推 hover 反馈；复审再收口：**落库顺序 P0**（Step 4/5 改为「先记终态再落库」，否则闸门读不到 `StepStates["Build"]` 恒判否；**闸门改读结论文件，该脆弱性消除**）、同目录判据补齐 junction 别名、灰化只绑已到达、黄字清残留红字并补「中止并清理」出口；真机 Step 5 冒烟暴露的**助手守卫两处真缺陷**随修——①Shell 逐段判定改为识别成对引号（引号内的 `;` / `|` / `&&` / 换行不再被误切成命令段，`node -e "…;…"` 不再被误拒）；②守卫拒绝不再计入「本轮错误事件」（只留「被拒明细」），不再把助手的一次试错判成整步失败；`LubanAgent.Tests` **137/137**；真机管理端编译失败的根因是**仓库基线**（pnpm 跳过 `@vue-office/docx` 的构建脚本 → 包入口缺失）；该根因闭环——Step 5 提示词新增【本组织已知构建姿势】（管理端：`develop` 分支；`fnm exec --using=16 -- npm.cmd …`；`npm install --registry=https://registry.npmmirror.com`；**`npm run build:dev`** 而非 `npm run build`；报 `Failed to resolve entry for package "X"` 时 `npm.cmd rebuild X` 补跑），白名单补 `fnm` / `cnpm`，边界由「只编译、不修复」放宽为「**只编译、不改业务**」（允许修依赖树与环境，禁改业务源码与工程配置）；本机实测管理端 `npm install` 81s → `build:dev` exit 0 / 89s，`dist` 正常产出；另按组织口径把包内 `pushBranch` 默认由 `main` 改为 **`develop`**（对齐 Step 3 克隆 pin，配置改值、无代码改动）；Step 6 真机推送缺陷闭环——①云效**服务端限流**（`remote: 请求过于频繁，请稍后重试!`）原先被当成「PAT 权限 / 分支保护」误归因、且一次失败即整步失败（真机后端隔 11s 重推成功、管理端 3s 后又被限流即挂），现按限流识别分流并经退避策略 **线性 10s → 20s → 30s、最多 3 次**（只重试限流，非快进 / 鉴权 / 权限不重试；**该口径迁入 `docs/step6-push.md`、由助手执行，原 `PushRetryPolicy` 已删除**），等待期间原地改写同一条记录，文案不再提 PAT（聊天出口同步；**推送一律走框架 git 工具组，`codeup_push` 已删除**）；②顺带修正 `$"{EndLabel(end)}端"` 造成的「管理端端 / 后端端」重字（含 Step 6 提交信息）；`LubanAgent.Tests` **148/148**；**待真机冒烟**——见「P4 增补」22–29、「P4 增补 · 冒烟缺陷修复项」30–46 与「P4 复审增补」47–50、「P4 复审增补」51–54） |
 | P5 | Step 7 准备（主机组 + 渲染 YAML）+ 执行续跑（创建 / 覆盖更新）+ 远端产物孤儿清单化展示（本地回收已在 P2 完成） | **已完成 + 助手驱动重构**（历史：口径由「克隆参考流水线」改为「内嵌新版 YAML 模板 + 渲染 + 创建」（真机：tb 形态 `flow` 原文不可提交、OpenAPI 无复制接口、全组织 70 条全是 tb）；MCP `flow_clone_pipeline` → `flow_create_pipeline`；部署阶段改为「**创建前选目标 + 创建即写**」，注释块与「一键补齐」全链路删除，`AppendDeployStagesAsync` → `UpdatePipelinesAsync`，档案记 `DeployMachineGroupUuid` / `DeployMachineGroupName`；连接器新增只读主机组能力（`FlowClient.ListHostGroupsAsync` / `GetHostGroupAsync` + MCP `flow_list_host_groups` / `flow_get_host_group`，工具 10 → 12）；`PipelineYamlEditorWindow` 微调按端会话内保留。三端 YAML 模板与编排约定**迁入 `docs/pipeline-*.yml.md` / `docs/pipeline-conventions.md`**（`Services/PipelineTemplates.cs` 整个文件删除——`PipelineTemplateLibrary` / `PipelineRenderer` / `PipelineYamlOverride` 全部移除），渲染与「哪些端有独立部署阶段 / 待绑定清单」**改由助手在结论文件 `artifacts[kind=pipeline]` 里给出**；Step 7 同样「一次只读准备下发 + 用户确认后同会话执行续跑」，`flow_create_pipeline` / `flow_update_pipeline` 由助手执行；面板**不再做 YAML 即时校验**；`CanCreatePipelines` 判据改读 Step 6 结论文件；**待真机验收**——按 4B 裁决排在 Step 6 复跑通过之后，见「P4 复审增补」55–61、「P5 增补」62–66 与「**P5 增补**」67–71） |
 | P6 | 6 个技能正文「助手驱动」重写 + `docs/` 知识文件 + 聊天入口与向导联调 | 进行中（6 个技能正文已改写为「助手执行」口径——Step 3/6/7 一律「助手调 `mcp_yunxiao_*`（云效侧）+ 框架 git 工具组」，组织专有值只写「读工作区 `docs/` 对应节」，不再出现 `codeup_clone` / `codeup_push` 与「两轮」措辞；`plugin.json` 6 个技能 description 同步改写；README 冒烟清单 1–71 条重写为「助手执行」版；聊天入口与向导联调待办） |

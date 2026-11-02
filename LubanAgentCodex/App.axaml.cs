@@ -81,30 +81,30 @@ public class App : Application
                 }
 
                 splash.SetStatus("正在初始化核心服务…");
-                _services = AgentHostBuilder.BuildServiceProvider(configuration, embedder, modelManager, services =>
+                _services = AgentHostBuilder.Build(configuration, embedder, modelManager, services =>
                 {
                     // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后触发）
                     services.AddLubanAgentA2A(configuration);
 
                     // 编排进度出口：框架默认注册 no-op，此处替换为可订阅的宿主实现（供主窗口实时渲染）
                     services.AddSingleton<HostOrchestrationProgressSink>();
-                    services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
-                        sp => sp.GetRequiredService<HostOrchestrationProgressSink>()));
+                    services.ReplaceSingleton<IOrchestrationProgressSink>(
+                        d => d.GetRequiredService<HostOrchestrationProgressSink>());
 
                     // 插件宿主三件套（PluginHostRegistry / PluginHostContext / AgentPluginHost）
                     // 与 IPluginHost / IPluginSessionContributor 映射已由 AgentHostBuilder 统一注册；
                     // 桌面端只需覆盖 UI 线程封送（默认 ImmediatePluginUiDispatcher 就地执行，不具备 UI 线程语义）。
-                    services.Replace(ServiceDescriptor.Singleton<IPluginUiDispatcher, Plugins.AvaloniaPluginUiDispatcher>());
+                    services.ReplaceSingleton<IPluginUiDispatcher, Plugins.AvaloniaPluginUiDispatcher>();
 
                     // 云效集成凭据与设置：
                     // 宿主凭据存储沿用全局 config.json（与 Provider.ApiKey 同基线），覆盖框架默认只读实现；
                     // PAT 提供者改为读凭据存储，使设置页录入后即时生效。三者皆为单例，
                     // 供单例的云效连接器消费（CredentialStore 经 UserContextRegistry 取配置，不跨 scope）。
                     services.AddSingleton<CredentialStore>();
-                    services.Replace(ServiceDescriptor.Singleton<ICredentialStore>(
-                        sp => sp.GetRequiredService<CredentialStore>()));
-                    services.Replace(ServiceDescriptor.Singleton<IYunxiaoCredentialProvider>(
-                        sp => new Security.CodexYunxiaoCredentialProvider(sp.GetRequiredService<ICredentialStore>())));
+                    services.ReplaceSingleton<ICredentialStore>(
+                        d => d.GetRequiredService<CredentialStore>());
+                    services.ReplaceSingleton<IYunxiaoCredentialProvider>(
+                        d => new Security.CodexYunxiaoCredentialProvider(d.GetRequiredService<ICredentialStore>()));
                     services.AddSingleton<Security.YunxiaoSettingsService>();
                 });
 
@@ -144,7 +144,7 @@ public class App : Application
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);
 
-                // 插件宿主与状态登记必须在「根容器」首次创建：这些单例在构造期注入的 IServiceProvider
+                // 插件宿主与状态登记必须在「根容器」首次创建：这些单例在构造期注入的 DiContainer
                 // 会被长期持有（PluginManager 延迟解析 IPluginHost、PluginHostContext 借此定位会话 scope），
                 // 若首次创建发生在用户/会话 scope，会形成 captive dependency（该 scope 释放后即不可用）。
                 _ = _services.Root.GetRequiredService<IPluginHost>();

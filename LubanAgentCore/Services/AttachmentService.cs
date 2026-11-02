@@ -24,6 +24,11 @@
 *版本号： V1.0.0.1
 *描述：ProcessAsync 超上限改为截断（原为抛异常，会让整轮对话直接失败）
 *
+*修改时间：2026/10/29
+*修改人： yswenli
+*版本号： V1.0.0.2
+*描述：新增 ProcessWithDiagnosticsAsync（逐项 fail-soft + 超限原因），对齐框架 IAgentAttachmentOrchestrator
+*
 *****************************************************************************/
 
 namespace LubanAgentCore.Services;
@@ -67,14 +72,14 @@ public sealed class AttachmentService
     }
 
     private readonly IAttachmentProcessor _processor;
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     private readonly IWorkspaceManager? _workspace;
 
     /// <summary>构造。</summary>
     /// <param name="processor">单文件处理器。</param>
     /// <param name="services">服务提供者，用于按用户解析模型能力（keyed）。</param>
     /// <param name="workspace">工作区管理器，用于相对路径解析（可为 null）。</param>
-    public AttachmentService(IAttachmentProcessor processor, IServiceProvider services, IWorkspaceManager? workspace = null)
+    public AttachmentService(IAttachmentProcessor processor, DiContainer services, IWorkspaceManager? workspace = null)
     {
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _services = services ?? throw new ArgumentNullException(nameof(services));
@@ -417,6 +422,49 @@ public sealed class AttachmentService
             result.Add(await _processor.ProcessAsync(path, generateThumbnails, ct).ConfigureAwait(false));
         }
         return result;
+    }
+
+    /// <summary>
+    /// 处理附件路径集合，并带回被跳过项的原因（框架 <c>IAgentAttachmentOrchestrator</c> 契约）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="ProcessAsync"/> 的差别：单个文件处理失败不再抛出，而是进 <c>Failed</c>，
+    /// 由宿主折成 <c>attachment.skipped</c> 事件——一个坏文件不该让整轮对话失败。
+    /// </remarks>
+    public async Task<AttachmentProcessingResult> ProcessWithDiagnosticsAsync(
+        IReadOnlyList<string> filePaths, bool generateThumbnails = false, CancellationToken ct = default)
+    {
+        var processed = new List<ProcessedAttachment>(filePaths.Count);
+        var failed = new List<AttachmentSourceFailure>();
+
+        var effective = filePaths;
+        if (filePaths.Count > MaxAttachmentsPerMessage)
+        {
+            effective = filePaths.Take(MaxAttachmentsPerMessage).ToList();
+            failed.AddRange(filePaths
+                .Skip(MaxAttachmentsPerMessage)
+                .Select(path => new AttachmentSourceFailure(
+                    path, $"超出附件上限（本产品最多 {MaxAttachmentsPerMessage} 个），已跳过")));
+        }
+
+        foreach (var path in effective)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                processed.Add(await _processor.ProcessAsync(path, generateThumbnails, ct).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failed.Add(new AttachmentSourceFailure(path, $"处理失败: {ex.Message}"));
+            }
+        }
+
+        return new AttachmentProcessingResult(processed, failed);
     }
 
     /// <summary>模型是否可接受这些附件（仅有图片时校验 vision）。</summary>

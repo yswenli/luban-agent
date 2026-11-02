@@ -53,12 +53,12 @@ public sealed class UserBucket
 /// </summary>
 public sealed class UserContextRegistry
 {
-    private readonly IServiceProvider _root;
+    private readonly DiContainer _root;
     private readonly ConcurrentDictionary<string, Lazy<UserBucket>> _buckets = new(StringComparer.Ordinal);
 
     /// <summary>创建用户状态注册表。</summary>
     /// <param name="root">根级容器（用于解析身份无关的仓储/内置目录等单例）。</param>
-    public UserContextRegistry(IServiceProvider root) => _root = root;
+    public UserContextRegistry(DiContainer root) => _root = root;
 
     /// <summary>取（或创建）指定用户的状态桶；用户为空时使用本地默认用户。</summary>
     public UserBucket GetOrCreate(string? userId)

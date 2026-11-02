@@ -208,7 +208,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// 服务提供者
     /// </summary>
-    public IServiceProvider Services => _agentHost.Services;
+    public DiContainer Services => _agentHost.Services;
 
     /// <summary>
     /// 命令清单（用于 InputBox 补全菜单过滤）
@@ -274,7 +274,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// 构造函数
     /// </summary>
     /// <param name="services">服务提供者</param>
-    public MainWindowViewModel(IServiceProvider services)
+    public MainWindowViewModel(DiContainer services)
     {
         _agentHost = services.GetRequiredService<IAgentHost>();
         _orchestrationSink = services.GetService<IOrchestrationProgressSink>() as HostOrchestrationProgressSink;

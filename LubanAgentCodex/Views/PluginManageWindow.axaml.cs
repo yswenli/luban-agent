@@ -39,7 +39,7 @@ public partial class PluginManageWindow : Window
     /// 带参构造函数。
     /// </summary>
     /// <param name="services">宿主服务提供者（插件管理服务为 scoped，随用户作用域解析）。</param>
-    public PluginManageWindow(IServiceProvider services) : this()
+    public PluginManageWindow(DiContainer services) : this()
     {
         _service = services.GetService<IPluginManagementService>();
         if (_service is null)

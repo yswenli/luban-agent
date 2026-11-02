@@ -393,7 +393,7 @@ public class SkillCommand : CommandBase
             }
         }
 
-        using var serviceProvider = BuildServiceProvider();
+        using var serviceProvider = BuildContainer();
 
         try
         {

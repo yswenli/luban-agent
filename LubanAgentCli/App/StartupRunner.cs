@@ -31,19 +31,15 @@ internal static class StartupRunner
     /// <summary>
     /// 构建服务容器。
     /// </summary>
-    public static AgentHostServices BuildServiceProvider(
-        IConfiguration configuration,
-        OnnxEmbeddingGenerator? embedder,
-        ModelManager? modelManager)
+    public static AgentHostServices BuildHost(
+        IConfiguration configuration, OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)
     {
         // TUI 特定：启用诊断埋点
         TuiDiag.Enabled = configuration.GetValue<bool>("LuBanAgent:DebugMode");
 
         // 调用 Core 的构建方法，注册 TUI 特定服务
-        return AgentHostBuilder.BuildServiceProvider(
-            configuration,
-            embedder,
-            modelManager,
+        return AgentHostBuilder.Build(
+            configuration, embedder, modelManager,
             services =>
             {
                 // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后由 StartupDialog 触发）
@@ -55,14 +51,14 @@ internal static class StartupRunner
                 // TUI 特定：编排进度出口。AddLuBanAgent 已注册 no-op 默认实现，
                 // 这里替换为 TUI 实现（ConversationViewModel 订阅其事件）。
                 services.AddSingleton<TuiOrchestrationProgressSink>();
-                services.Replace(ServiceDescriptor.Singleton<IOrchestrationProgressSink>(
-                    sp => sp.GetRequiredService<TuiOrchestrationProgressSink>()));
+                services.ReplaceSingleton<IOrchestrationProgressSink>(
+                    d => d.GetRequiredService<TuiOrchestrationProgressSink>());
             });
     }
 
     /// <summary>
     /// 初始化工作区。
     /// </summary>
-    public static Task InitializeWorkspaceAsync(IServiceProvider sp, List<string> notices)
+    public static Task InitializeWorkspaceAsync(DiContainer sp, List<string> notices)
         => AgentHostBuilder.InitializeWorkspaceAsync(sp, notices);
 }

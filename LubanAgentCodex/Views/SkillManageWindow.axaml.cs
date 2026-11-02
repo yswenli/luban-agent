@@ -22,7 +22,7 @@ namespace LubanAgentCodex.Views;
 /// </summary>
 public partial class SkillManageWindow : Window
 {
-    private IServiceProvider? _services;
+    private DiContainer? _services;
     private WorkspaceInfo? _workspace;
     private ListBox? _skillList;
 
@@ -37,7 +37,7 @@ public partial class SkillManageWindow : Window
     /// <summary>
     /// 带参构造函数
     /// </summary>
-    public SkillManageWindow(IServiceProvider services, WorkspaceInfo workspace) : this()
+    public SkillManageWindow(DiContainer services, WorkspaceInfo workspace) : this()
     {
         _services = services;
         _workspace = workspace;

@@ -14,6 +14,7 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.MCP;
 using LuBan.AIAgent.Tools.McpManage;
@@ -321,22 +322,22 @@ public class SettingsViewModelUnitTest
 
     private ProviderModelTabViewModel NewProviderViewModel(ConfigManager config)
     {
-        var services = new ServiceCollection()
+        var services = new DiContainer()
             .AddSingleton(config)
-            .BuildServiceProvider();
+            .Build(validateScopes: false, validateOnBuild: false);
         return new ProviderModelTabViewModel(services);
     }
 
-    private static IServiceProvider Provider(
+    private static DiContainer Provider(
         ISkillManagementService? skills,
         IRuleManagementService? rules,
         IMcpManagementService? mcps)
     {
-        var services = new ServiceCollection();
+        var services = new DiContainer();
         if (skills != null) services.AddSingleton<ISkillManagementService>(skills);
         if (rules != null) services.AddSingleton<IRuleManagementService>(rules);
         if (mcps != null) services.AddSingleton<IMcpManagementService>(mcps);
-        return services.BuildServiceProvider();
+        return services.Build(validateScopes: false, validateOnBuild: false);
     }
 
     private sealed class FakeSkillManagementService : ISkillManagementService

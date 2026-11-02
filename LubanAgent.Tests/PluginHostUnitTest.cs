@@ -13,6 +13,7 @@
 *
 *****************************************************************************/
 
+using LuBan.DI;
 using LuBan.AIAgent.Configuration;
 using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Plugins;
@@ -27,7 +28,7 @@ namespace LubanAgent.Tests;
 [TestClass]
 public class PluginHostUnitTest
 {
-    private ServiceProvider _root = null!;
+    private DiContainer _root = null!;
     private SessionRuntimeManager _runtimes = null!;
     private RecordingDispatcher _ui = null!;
     private AgentPluginHost _host = null!;
@@ -35,7 +36,7 @@ public class PluginHostUnitTest
     [TestInitialize]
     public void Setup()
     {
-        _root = new ServiceCollection().BuildServiceProvider();
+        _root = new DiContainer().Build(validateScopes: false, validateOnBuild: false);
         var configuration = new ConfigurationBuilder().Build();
         _runtimes = new SessionRuntimeManager(_root, configuration);
         _ui = new RecordingDispatcher();

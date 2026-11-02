@@ -37,5 +37,5 @@ public interface IPluginSessionContributor
     /// 回放插件贡献到指定会话的注册表（在 Agent 构建前调用，可重复调用）。
     /// </summary>
     /// <param name="sessionServices">会话 scope 的服务提供者（含该会话的 <c>MCPRegistry</c> / <c>SkillRegistry</c>）。</param>
-    void Contribute(IServiceProvider sessionServices);
+    void Contribute(DiContainer sessionServices);
 }

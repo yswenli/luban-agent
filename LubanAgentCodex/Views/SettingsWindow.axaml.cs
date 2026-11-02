@@ -37,7 +37,7 @@ public partial class SettingsWindow : Window
     private SettingsWindowViewModel _vm = new(null);
 
     /// <summary>应用服务提供者（「应用配置」与工作区比对用；容器不可用时为 null）。</summary>
-    private readonly IServiceProvider? _services;
+    private readonly DiContainer? _services;
 
     /// <summary>当前编辑器已注册的字段控件（键与 <c>SetField</c> 一致）。</summary>
     private readonly Dictionary<string, Control> _editorFields = new(StringComparer.Ordinal);
@@ -78,7 +78,7 @@ public partial class SettingsWindow : Window
     /// </summary>
     /// <param name="services">应用服务提供者</param>
     /// <param name="currentWorkspace">预选工作区；为 null 时选中全局作用域</param>
-    public SettingsWindow(IServiceProvider services, WorkspaceInfo? currentWorkspace) : this()
+    public SettingsWindow(DiContainer services, WorkspaceInfo? currentWorkspace) : this()
     {
         _vm = new SettingsWindowViewModel(services);
         _vm.SelectedWorkspace = currentWorkspace;

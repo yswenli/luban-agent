@@ -1,3 +1,4 @@
+using LuBan.DI;
 using LuBan.AIAgent.Plugins;
 using LuBan.AIAgent.Plugins.Base;
 using LuBan.AIAgent.Plugins.Lifecycle;
@@ -38,9 +39,9 @@ internal static class Program
         var testHost = new TestPluginHost { RetainUiCallbacks = mode == "token" };
         var stateFile = Path.Combine(Path.GetTempPath(), $"luban-plugin-state-{Guid.NewGuid():N}.json");
 
-        using var provider = new ServiceCollection()
+        using var provider = new DiContainer()
             .AddSingleton<IPluginHost>(testHost)
-            .BuildServiceProvider();
+            .Build(validateScopes: false, validateOnBuild: false);
 
         var validator = new ManifestValidator(new ManifestValidationOptions
         {

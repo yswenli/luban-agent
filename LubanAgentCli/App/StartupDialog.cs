@@ -116,7 +116,7 @@ internal class StartupDialog : Dialogs.BaseDialog
             _dispatcher.Invoke(() => _cancelButton.Visible = false);
 
             Report("④ 构建服务容器...");
-            Services = StartupRunner.BuildServiceProvider(config, embedder, modelManager);
+            Services = StartupRunner.BuildHost(config, embedder, modelManager);
 
             var workspaceManager = Services.GetRequiredService<IWorkspaceManager>() as WorkspaceManager;
             if (workspaceManager != null)

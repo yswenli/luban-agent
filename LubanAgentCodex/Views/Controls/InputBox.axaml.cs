@@ -88,7 +88,7 @@ public partial class InputBox : UserControl
     /// <summary>
     /// 设置服务提供者，加载模型列表
     /// </summary>
-    public void SetServiceProvider(IServiceProvider services)
+    public void SetServiceProvider(DiContainer services)
     {
         _configManager = services.GetRequiredService<ConfigManager>();
         _providers = services.GetRequiredService<IProviderModelManagementService>();

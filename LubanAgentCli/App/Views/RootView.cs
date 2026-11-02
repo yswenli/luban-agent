@@ -84,7 +84,7 @@ internal sealed class RootView : Runnable
         public bool HintShown;
     }
 
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly ITuiUiService _ui;
     private readonly SessionManager _sessionManager;
@@ -121,7 +121,7 @@ internal sealed class RootView : Runnable
     /// <param name="ui">TUI 模态交互服务。</param>
     /// <param name="startupNotices">启动提示。</param>
     public RootView(
-        IServiceProvider services,
+        DiContainer services,
         IUiDispatcher dispatcher,
         ITuiUiService ui,
         IReadOnlyList<string>? startupNotices = null)

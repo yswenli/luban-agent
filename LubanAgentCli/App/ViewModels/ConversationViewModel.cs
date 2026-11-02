@@ -28,7 +28,7 @@ namespace LubanAgentCli.App.ViewModels;
 internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
 {
     private readonly string _sessionId;
-    private readonly IServiceProvider _services;
+    private readonly DiContainer _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly ConversationDocument _doc;
     private readonly ConfigManager _configManager;
@@ -165,7 +165,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// <param name="spinner">会话级加载指示器。</param>
     public ConversationViewModel(
         string sessionId,
-        IServiceProvider services,
+        DiContainer services,
         IUiDispatcher dispatcher,
         ConversationDocument doc,
         SpinnerService spinner)

@@ -1,3 +1,4 @@
+using LuBan.DI;
 using LuBan.AIAgent.Connectors;
 using LuBan.AIAgent.Plugins;
 
@@ -21,7 +22,7 @@ internal sealed class TestPluginHost : IPluginHost
     /// <summary>是否保留 <see cref="PostToUi"/> 回调（token 模式专用）。</summary>
     public bool RetainUiCallbacks { get; init; }
 
-    public IServiceProvider Services { get; set; } = null!;
+    public DiContainer Services { get; set; } = null!;
 
     public string PluginId => "com.demo.hello";
 
