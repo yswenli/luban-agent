@@ -102,12 +102,20 @@ public static class StepLocalVerifier
 
         var issues = new List<string>();
 
-        foreach (var end in ends)
+        // 单仓：各端共用同一个仓根目录（localPath 同值），所以目录 / .git / pin / 占位符残余都按仓复核**一次**；
+        // 端之间只额外核对各自的仓内模块目录是否存在。
+        var groups = ends
+            .Select(end => (End: end, Artifact: StepReportEvaluator.RepositoryArtifact(report, end)))
+            .GroupBy(
+                pair => (pair.Artifact?.LocalPath ?? string.Empty).Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var group in groups)
         {
-            var artifact = StepReportEvaluator.RepositoryArtifact(report, end);
-            var extra = StepReportEvaluator.RepositoryExtra(report, end);
-            var label = EndName(end);
-            var localPath = artifact?.LocalPath;
+            var groupEnds = group.Select(pair => pair.End).ToList();
+            var label = EndList(groupEnds);
+            var localPath = group.Key;
 
             if (string.IsNullOrWhiteSpace(localPath))
             {
@@ -121,10 +129,10 @@ public static class StepLocalVerifier
                 continue;
             }
 
-            if (!HasAnyEntry(localPath!))
+            if (!HasAnyEntry(localPath))
                 issues.Add($"{label}：本地目录为空（{localPath}）。");
 
-            var gitDir = Path.Combine(localPath!, ".git");
+            var gitDir = Path.Combine(localPath, ".git");
             if (!System.IO.Directory.Exists(gitDir))
             {
                 issues.Add($"{label}：未发现 .git 目录（{gitDir}）。");
@@ -135,7 +143,11 @@ public static class StepLocalVerifier
             if (!System.IO.File.Exists(head) || !IsValidHead(SafeRead(head)))
                 issues.Add($"{label}：.git/HEAD 缺失或未指向有效 ref。");
 
-            var pin = FirstNonEmpty(artifact?.TemplateBranch, extra?.DefaultBranch);
+            var pin = group
+                .Select(pair => FirstNonEmpty(
+                    pair.Artifact?.TemplateBranch,
+                    StepReportEvaluator.RepositoryExtra(report, pair.End)?.DefaultBranch))
+                .FirstOrDefault(one => !string.IsNullOrWhiteSpace(one));
             if (string.IsNullOrWhiteSpace(pin))
             {
                 issues.Add($"{label}：结论未给出 pin 分支，无法核对 refs/heads/<pin>。");
@@ -145,7 +157,23 @@ public static class StepLocalVerifier
                 issues.Add($"{label}：未发现 refs/heads/{pin}（pin 分支未就位）。");
             }
 
-            var tokens = (extra?.PlaceholderSources ?? new List<string>())
+            // 各端的仓内模块目录必须真实存在（单仓下「端」就是模块子目录）。
+            foreach (var (end, artifact) in group)
+            {
+                var module = artifact?.ModulePath?.Trim();
+                if (string.IsNullOrWhiteSpace(module))
+                {
+                    issues.Add($"{EndName(end)}：结论未给出 modulePath，无法核对仓内模块目录。");
+                    continue;
+                }
+
+                if (!System.IO.Directory.Exists(Path.Combine(localPath, module)))
+                    issues.Add($"{EndName(end)}：仓内模块目录不存在（{Path.Combine(localPath, module)}）。");
+            }
+
+            var tokens = group
+                .SelectMany(pair => (StepReportEvaluator.RepositoryExtra(report, pair.End)?.PlaceholderSources
+                                     ?? new List<string>()))
                 .Where(one => !string.IsNullOrWhiteSpace(one))
                 .Select(one => one.Trim())
                 .Distinct(StringComparer.Ordinal)
@@ -153,15 +181,15 @@ public static class StepLocalVerifier
 
             if (tokens.Count == 0)
             {
-                // 方案 C：占位符来源令牌为空＝该端**没做**占位符替换，不是「无法复核」。
+                // 方案 C：占位符来源令牌为空＝该仓**没做**占位符替换，不是「无法复核」。
                 // 事实依据（2026-10-23 真机）：助手克隆完一端就把结论文件写成 failed，两端 placeholderSources 都是空，
                 // 旧文案只说「无法独立复核残余」，容易被当成复核器能力不足，半成品仍带着 cloned=true 落进结论。
-                issues.Add($"{label}：占位符替换未完成（placeholderSources 为空）——该端仍属未完成，"
+                issues.Add($"{label}：占位符替换未完成（placeholderSources 为空）——该仓仍属未完成，"
                            + "`cloned=true` 不成立；请按 docs 的规则表替换后把实际命中的来源令牌逐字写回。");
             }
             else
             {
-                var (scanned, hits) = ScanResidual(localPath!, tokens);
+                var (scanned, hits) = ScanResidual(localPath, tokens);
                 if (hits > 0)
                     issues.Add($"{label}：占位符残余未清零（扫过 {scanned} 个文件，命中 {hits} 处）。");
             }
@@ -183,12 +211,20 @@ public static class StepLocalVerifier
 
         var issues = new List<string>();
 
-        foreach (var end in ends)
+        // 单仓：各端共用同一个仓根目录与推送分支，远端跟踪分支只核对一次；
+        // 各端只核对自己自报的提交 id 是否与远端一致。
+        var groups = ends
+            .Select(end => (End: end, Artifact: StepReportEvaluator.RepositoryArtifact(report, end)))
+            .GroupBy(
+                pair => (pair.Artifact?.LocalPath ?? string.Empty).Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var group in groups)
         {
-            var artifact = StepReportEvaluator.RepositoryArtifact(report, end);
-            var extra = StepReportEvaluator.RepositoryExtra(report, end);
-            var label = EndName(end);
-            var localPath = artifact?.LocalPath;
+            var groupEnds = group.Select(pair => pair.End).ToList();
+            var label = EndList(groupEnds);
+            var localPath = group.Key;
 
             if (string.IsNullOrWhiteSpace(localPath) || !System.IO.Directory.Exists(localPath))
             {
@@ -196,14 +232,16 @@ public static class StepLocalVerifier
                 continue;
             }
 
-            var gitDir = Path.Combine(localPath!, ".git");
+            var gitDir = Path.Combine(localPath, ".git");
             if (!System.IO.Directory.Exists(gitDir))
             {
                 issues.Add($"{label}：未发现 .git 目录，无法核对推送结果。");
                 continue;
             }
 
-            var branch = artifact?.TemplateBranch;
+            var branch = group
+                .Select(pair => pair.Artifact?.TemplateBranch)
+                .FirstOrDefault(one => !string.IsNullOrWhiteSpace(one));
             if (string.IsNullOrWhiteSpace(branch))
             {
                 issues.Add($"{label}：结论未给出推送分支，无法核对 refs/remotes/origin/<branch>。");
@@ -218,14 +256,17 @@ public static class StepLocalVerifier
                 continue;
             }
 
-            var reported = extra?.CommitId?.Trim();
-            if (string.IsNullOrWhiteSpace(reported))
+            foreach (var (end, _) in group)
             {
-                issues.Add($"{label}：结论未给出提交 id，无法核对推送提交。");
-            }
-            else if (NormalizeSha(sha) != NormalizeSha(reported))
-            {
-                issues.Add($"{label}：{refName} 的提交（{Shorten(sha)}）与结论自报（{Shorten(reported!)}）不一致。");
+                var reported = StepReportEvaluator.RepositoryExtra(report, end)?.CommitId?.Trim();
+                if (string.IsNullOrWhiteSpace(reported))
+                {
+                    issues.Add($"{EndName(end)}：结论未给出提交 id，无法核对推送提交。");
+                }
+                else if (NormalizeSha(sha) != NormalizeSha(reported))
+                {
+                    issues.Add($"{EndName(end)}：{refName} 的提交（{Shorten(sha)}）与结论自报（{Shorten(reported!)}）不一致。");
+                }
             }
         }
 
@@ -480,4 +521,12 @@ public static class StepLocalVerifier
         ProjectEnd.Mobile => "移动端",
         _ => end.ToString()
     };
+
+    /// <summary>同仓端集合的标签（多个端共用一个仓库时标明「同仓」）。</summary>
+    /// <param name="ends">端集合。</param>
+    /// <returns>标签。</returns>
+    private static string EndList(IReadOnlyList<ProjectEnd> ends)
+        => ends.Count == 1
+            ? EndName(ends[0])
+            : string.Join("、", ends.Select(EndName)) + "（同仓）";
 }

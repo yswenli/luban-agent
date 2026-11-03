@@ -189,8 +189,11 @@ public sealed class StepReportArtifact
     /// <summary>HTTPS 克隆地址（<c>repository</c> 专用，取自 <c>httpUrlToRepo</c>，<b>不含</b>凭据）。</summary>
     public string? CloneUrl { get; set; }
 
-    /// <summary>本地目录（<c>repository</c> 专用）。</summary>
+    /// <summary>本地仓库根目录（<c>repository</c> 专用；单仓下各端同值）。</summary>
     public string? LocalPath { get; set; }
+
+    /// <summary>仓内模块目录名（<c>repository</c> 专用；相对仓库根，如 <c>Csxmy-Service</c>）。</summary>
+    public string? ModulePath { get; set; }
 
     /// <summary>模板 pin 分支（<c>repository</c> 专用；Step 6 时为推送分支）。</summary>
     public string? TemplateBranch { get; set; }

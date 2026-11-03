@@ -36,16 +36,16 @@ public class NewProjectStepReportDecisionUnitTest
       "artifacts": [
         { "kind": "group", "name": "jnms", "externalId": "100", "webUrl": "https://codeup.aliyun.com/g/100",
           "extra": { "kind": "group", "exists": true, "parentId": 7, "organizationId": "org-1" } },
-        { "kind": "repository", "end": "Service", "name": "jnms-Service", "externalId": "201",
-          "cloneUrl": "https://codeup.aliyun.com/x/jnms-Service.git", "localPath": "D:\\ws\\jnms\\jnms-Service",
-          "templateBranch": "develop",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Service", "templateProjectId": 11,
+        { "kind": "repository", "end": "Service", "name": "jnms-Mixed", "externalId": "201",
+          "cloneUrl": "https://codeup.aliyun.com/x/jnms-Mixed.git", "localPath": "D:\\ws\\jnms\\jnms-Mixed",
+          "modulePath": "jnms-Service", "templateBranch": "develop",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11,
                      "resolvedBranchSource": "配置登记", "placeholderSources": ["TJCES", "Tjces"],
                      "cloned": true, "defaultBranch": "develop" } },
-        { "kind": "repository", "end": "Admin", "name": "jnms-Admin", "externalId": "202",
-          "cloneUrl": "https://codeup.aliyun.com/x/jnms-Admin.git", "localPath": "D:\\ws\\jnms\\jnms-Admin",
-          "templateBranch": "develop",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Admin",
+        { "kind": "repository", "end": "Admin", "name": "jnms-Mixed", "externalId": "201",
+          "cloneUrl": "https://codeup.aliyun.com/x/jnms-Mixed.git", "localPath": "D:\\ws\\jnms\\jnms-Mixed",
+          "modulePath": "jnms-Admin", "templateBranch": "develop",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11,
                      "placeholderSources": ["TJCES"], "cloned": true, "defaultBranch": "develop" } }
       ]
     }
@@ -70,11 +70,19 @@ public class NewProjectStepReportDecisionUnitTest
 
         var extra = StepReportEvaluator.RepositoryExtra(report, ProjectEnd.Service);
         Assert.IsNotNull(extra);
-        Assert.AreEqual("TJCES-Service", extra!.TemplateRepository);
+        Assert.AreEqual("TJCES-Mixed", extra!.TemplateRepository);
         Assert.IsTrue(extra.Cloned);
         CollectionAssert.AreEqual(new[] { "TJCES", "Tjces" }, extra.PlaceholderSources.ToArray());
-        Assert.AreEqual("https://codeup.aliyun.com/x/jnms-Service.git",
+        Assert.AreEqual("https://codeup.aliyun.com/x/jnms-Mixed.git",
             StepReportEvaluator.RepositoryArtifact(report, ProjectEnd.Service)!.CloneUrl);
+
+        // 单仓：两端共用同一仓库名 / 同一个本地仓根，只有模块目录不同
+        var serviceRepo = StepReportEvaluator.RepositoryArtifact(report, ProjectEnd.Service)!;
+        var adminRepo = StepReportEvaluator.RepositoryArtifact(report, ProjectEnd.Admin)!;
+        Assert.AreEqual(serviceRepo.Name, adminRepo.Name);
+        Assert.AreEqual(serviceRepo.LocalPath, adminRepo.LocalPath);
+        Assert.AreEqual("jnms-Service", serviceRepo.ModulePath);
+        Assert.AreEqual("jnms-Admin", adminRepo.ModulePath);
     }
 
     [TestMethod]
@@ -90,7 +98,7 @@ public class NewProjectStepReportDecisionUnitTest
                 { "value": "reuse", "label": "复用现有目录" },
                 { "value": "reclone", "label": "清空后重新克隆" },
                 { "value": "abort", "label": "中止本次执行" } ],
-              "details": { "path": "D:\\ws\\jnms\\jnms-Service", "entryCount": 42 } }
+              "details": { "path": "D:\\ws\\jnms\\jnms-Mixed", "entryCount": 42 } }
           ],
           "artifacts": []
         }
@@ -163,7 +171,8 @@ public class NewProjectStepReportDecisionUnitTest
         {
           "step": 3, "status": "done", "ok": true,
           "artifacts": [
-            { "kind": "repository", "end": "Service", "name": "jnms-Service",
+            { "kind": "repository", "end": "Service", "name": "jnms-Mixed",
+              "localPath": "D:\\ws\\jnms\\jnms-Mixed", "modulePath": "jnms-Service",
               "extra": { "kind": "repository", "cloned": true } } ]
         }
         """;

@@ -50,12 +50,36 @@ public class NewProjectStepLocalVerifierUnitTest
         return dir;
     }
 
-    /// <summary>造一个「像 git 仓」的目录：.git/HEAD + 一个本地分支 + 一份源码。</summary>
-    private string NewRepo(string pin = "develop", string sourceContent = "class App { }", bool withGit = true)
+    /// <summary>单仓名（各端共用同一个仓根）。</summary>
+    private const string RepoName = "jnms-Mixed";
+
+    /// <summary>后端在仓内的模块目录名。</summary>
+    private const string ServiceModule = "jnms-Service";
+
+    /// <summary>
+    /// 造一个「像 git 仓」的目录：.git/HEAD + 一个本地分支 + 一份源码。
+    /// 单仓形态：仓根下再放一个后端模块子目录（各端模块目录必须真实存在）。
+    /// </summary>
+    private string NewRepo(
+        string pin = "develop",
+        string sourceContent = "class App { }",
+        bool withGit = true,
+        bool withModule = true)
     {
-        var repo = Path.Combine(NewRoot(), "jnms-Service");
-        Directory.CreateDirectory(Path.Combine(repo, "src"));
-        File.WriteAllText(Path.Combine(repo, "src", "App.cs"), sourceContent);
+        var repo = Path.Combine(NewRoot(), RepoName);
+        Directory.CreateDirectory(repo);
+
+        if (withModule)
+        {
+            var module = Path.Combine(repo, ServiceModule);
+            Directory.CreateDirectory(Path.Combine(module, "src"));
+            File.WriteAllText(Path.Combine(module, "src", "App.cs"), sourceContent);
+        }
+        else
+        {
+            // 没模块目录时也要让仓根非空，避免把「目录空」混进要断言的问题里。
+            File.WriteAllText(Path.Combine(repo, "README.md"), "# repo");
+        }
 
         if (withGit)
         {
@@ -68,7 +92,10 @@ public class NewProjectStepLocalVerifierUnitTest
         return repo;
     }
 
-    private static StepReport RepoReport(string localPath, string pin, params string[] tokens) => new()
+    private static StepReport RepoReport(
+        string localPath,
+        string pin,
+        params string[] tokens) => new()
     {
         Step = 3,
         Ok = true,
@@ -78,8 +105,39 @@ public class NewProjectStepLocalVerifierUnitTest
             {
                 Kind = "repository",
                 End = ProjectEnd.Service,
-                Name = "jnms-Service",
+                Name = RepoName,
                 LocalPath = localPath,
+                ModulePath = ServiceModule,
+                TemplateBranch = pin,
+                Extra = new RepositoryArtifactExtra { Cloned = true, PlaceholderSources = tokens.ToList() }
+            }
+        }
+    };
+
+    /// <summary>同仓两端（后端 + 管理端）的结论：localPath 同值，模块目录不同。</summary>
+    private static StepReport TwoEndsRepoReport(string localPath, string pin, params string[] tokens) => new()
+    {
+        Step = 3,
+        Ok = true,
+        Artifacts =
+        {
+            new StepReportArtifact
+            {
+                Kind = "repository",
+                End = ProjectEnd.Service,
+                Name = RepoName,
+                LocalPath = localPath,
+                ModulePath = ServiceModule,
+                TemplateBranch = pin,
+                Extra = new RepositoryArtifactExtra { Cloned = true, PlaceholderSources = tokens.ToList() }
+            },
+            new StepReportArtifact
+            {
+                Kind = "repository",
+                End = ProjectEnd.Admin,
+                Name = RepoName,
+                LocalPath = localPath,
+                ModulePath = "jnms-Admin",
                 TemplateBranch = pin,
                 Extra = new RepositoryArtifactExtra { Cloned = true, PlaceholderSources = tokens.ToList() }
             }
@@ -279,6 +337,47 @@ public class NewProjectStepLocalVerifierUnitTest
         var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
 
         StringAssert.Contains(string.Join("；", issues), "本地目录为空");
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_模块目录缺失_报问题()
+    {
+        // 单仓下「端」就是仓内模块目录：仓根对但模块目录没了 ⇒ 该端未完成
+        var repo = NewRepo(withModule: false);
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "仓内模块目录不存在");
+        StringAssert.Contains(issues[0], ServiceModule);
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_同仓两端_仓级只复核一次且逐端核对模块目录()
+    {
+        var repo = NewRepo();
+        Directory.CreateDirectory(Path.Combine(repo, "jnms-Admin"));
+        var report = TwoEndsRepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service, ProjectEnd.Admin]);
+
+        CollectionAssert.AreEqual(Array.Empty<string>(), issues.ToArray());
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_同仓两端占位符残余_只报一条仓级问题()
+    {
+        // 仓级问题（占位符残余）不能按端重复报三遍
+        var repo = NewRepo(sourceContent: "namespace TJCES.Service; class App { }");
+        Directory.CreateDirectory(Path.Combine(repo, "jnms-Admin"));
+        var report = TwoEndsRepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(report, [ProjectEnd.Service, ProjectEnd.Admin]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "占位符残余未清零");
+        StringAssert.Contains(issues[0], "（同仓）");
     }
 
     // ── Step 6 ────────────────────────────────────────────────────────────

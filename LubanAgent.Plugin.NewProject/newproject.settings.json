@@ -10,17 +10,22 @@
   "defaultVisibility": "internal",
 
   // Step 6 推送目标分支：本组织取 develop（早期曾取 main，已定案改为 develop）。
-  // 理由：Step 3 克隆的 pin 按 develop → master → main 择优，各端仓库实际都落在 develop；
+  // 理由：Step 3 克隆的 pin 按 develop → master → main 择优，目标单仓实际落在 develop；
   //      推送分支若仍取 main 就成了「在 develop 编译、推 main」。
   // 该值同时用作云效建仓的默认分支，故 Step 3 建仓与 Step 6 推送两处口径一致。
-  // 留空则退回各端仓库的默认分支（仍为空则 main）。
+  // 留空则退回目标仓库的默认分支（仍为空则 main）。
   "pushBranch": "develop",
 
-  // 代码库名称格式（令牌 {code} 原文 / {Code} 首字母大写 / {CODE} 全大写 / {end} 端后缀）。
-  // 默认 {Code}-{end} ⇒ 首字母大写，如 csxmy → Csxmy-Service / Csxmy-Admin / Csxmy-Mobile；
-  // 本地目录名与云端仓库名同源（Step 2 目录 = {localPath}\{展开值}），故本地也是 Csxmy-Service。
-  // 与代码组名（groupNameFormat，默认全大写）刻意区分：组名 CSXMY、库名 Csxmy-Service。
-  "repositoryNameFormat": "{Code}-{end}",
+  // 代码库名称格式（单仓；令牌 {code} 原文 / {Code} 首字母大写 / {CODE} 全大写）。
+  // 默认 {Code}-Mixed ⇒ 首字母大写，如 csxmy → Csxmy-Mixed；各端共用这一个仓。
+  // 本地目录名与云端仓库名同源（Step 2 目录 = {localPath}\{展开值}），故本地仓根也是 Csxmy-Mixed。
+  // 与代码组名（groupNameFormat，默认全大写）刻意区分：组名 CSXMY、库名 Csxmy-Mixed。
+  "repositoryNameFormat": "{Code}-Mixed",
+
+  // 仓内模块目录名格式（令牌同上 + {end} 端后缀）。
+  // 默认 {Code}-{end} ⇒ csxmy → Csxmy-Service / Csxmy-Admin / Csxmy-Mobile（仓根下的子目录）。
+  // 建库 / 克隆只按仓库执行一次；模块目录用于逐端编译与流水线构建目录。
+  "modulePathFormat": "{Code}-{end}",
 
   // 项目代码组名格式（{code}/{Code}/{CODE}/{name}）；默认全大写缩写，如 csxmy → CSXMY。
   // 该名字由助手在 Step 3 于组织内先查后建（命中即复用），同时用作云效 path，勿含 "/"。

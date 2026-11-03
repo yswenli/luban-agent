@@ -7,11 +7,11 @@
 ## 何时使用
 
 - 主 skill `newproject-create` 的第 6 步；
-- 或**重新推送 / 补推某端**（例如 Mobile 上次漏推）。
+- 或**重新推送 / 补推本项目的单仓**（上次推送失败、或被限流打断）。
 
 ## 前置条件
 
-- Step 3 已完成（各端仓库已创建并克隆到本地，且档案里对应端的 `cloned = true`）。
+- Step 3 已完成（本项目**单仓**已创建并克隆到本地，且档案里 `cloned = true`；三端共享同一个仓根）。
 - Step 5 编译检查已通过。界面用 `StepGate.CanPush` 拦，**判据已改读 Step 5 结论文件**：
   取最近一份 `results/step5-*.json`（`mtime` 最新且晚于本步最近一次起始时刻），
   **逐端 `BuildResults` 全 `Ok` 且覆盖 `spec.Ends` 全集**才放行；`ProjectSpec.StepStates`
@@ -26,30 +26,30 @@
 
 - git 工具在**工作区内**由框架直接放行、不经插件策略（不需要动白名单）；
 - 云效侧本次**没有**推送类工具，推送一律经 git 工具组；
-- **每个调用都要带 `workingDirectory=<该端仓库目录>`**——不传时框架在项目工作区根执行，会报「不是 git 仓库」。
+- **每个调用都要带 `workingDirectory=<仓库根>`**（不是模块目录）——不传时框架在项目工作区根执行，会报「不是 git 仓库」。
 
 > **纪律（机制拦不住，只能靠约定）**：不得使用 `--force`、`reset --hard`、`clean -fd`。
 > 工作区内的破坏性 git 动作同样免确认、免回调（框架 `GitResetAsync` / `GitCleanAsync` 与 shell 里的
 > `git` 都拦不住），故只能用约定约束；操作记录把工具调用**原样**呈现给用户复核。
 
-对所选**每个端**依次执行：
+在**仓根**执行（**只跑一遍**，三端同仓同分支，不按端重复推送）：
 
-1. **看工作树**：`GitStatusAsync(workingDirectory=<仓库目录>)`。**无改动就跳过提交**（如实报告，不产生空提交），仍继续推送。
+1. **看工作树**：`GitStatusAsync(workingDirectory=<仓库根>)`。**无改动就跳过提交**（如实报告，不产生空提交），仍继续推送。
 2. **建 / 切目标分支**：目标分支名按 `docs/step6-push.md` 解析（配置 `pushBranch` 有值用配置值，
-   留空退回该端仓库的**默认分支**，仓库为空则以 `docs/org-reference.md` 登记的默认分支创建并推送）；
-   分支已存在用 `GitCheckoutAsync(target=<branch>, workingDirectory=<仓库目录>)` 切过去，
-   否则 `GitCheckoutAsync(target=<branch>, createBranch=true, workingDirectory=<仓库目录>)` 新建。
+   留空退回仓库的**默认分支**，仓库为空则以 `docs/org-reference.md` 登记的默认分支创建并推送）；
+   分支已存在用 `GitCheckoutAsync(target=<branch>, workingDirectory=<仓库根>)` 切过去，
+   否则 `GitCheckoutAsync(target=<branch>, createBranch=true, workingDirectory=<仓库根>)` 新建。
 3. **提交身份兜底**：先读本机 `git config user.name` / `user.email`；缺失时按 `docs/org-reference.md`
    的兜底值在**本仓库级**设置（不改全局配置）。
-4. **提交**：`GitAddAsync(paths=["."], workingDirectory=<仓库目录>)`（**不能传 `-A`**：工具会拼成
-   `git add -- -A` 当 pathspec 而失败）→ `GitCommitAsync(message=<消息>, workingDirectory=<仓库目录>)`；
-   提交信息格式按 `docs/step6-push.md`（中文，风格与 luban-agent 既有约定一致）。
-5. **推送**：`GitPushAsync(remote="origin", branch=<branch>, setUpstream=true, workingDirectory=<仓库目录>)`；
+4. **提交**：`GitAddAsync(paths=["."], workingDirectory=<仓库根>)`（**不能传 `-A`**：工具会拼成
+   `git add -- -A` 当 pathspec 而失败）→ `GitCommitAsync(message=<消息>, workingDirectory=<仓库根>)`；
+   提交信息格式按 `docs/step6-push.md`（中文，**单仓一次提交**，端标签用 `、` 连接）。
+5. **推送**：`GitPushAsync(remote="origin", branch=<branch>, setUpstream=true, workingDirectory=<仓库根>)`；
    **凭据由用户外部配置**，URL 里不带凭据；**不强制推送**。
 6. **回写结论文件**：`results/step6-*.json`，`status = "done"`；`artifacts[]` 里 `kind=repository`
-   **每端一条**，`extra` 记该端推送目标分支与提交 id（`defaultBranch` / `commitId`）；
+   **每端一条**（三端 `commitId` / 分支名同值），`extra` 记推送目标分支与提交 id（`defaultBranch` / `commitId`）；
    `checks[]` **逐端一条**（`name` 取端标识 `Service` / `Admin` / `Mobile`，失败时 `detail` 给原文摘要）。
-   **任一端失败 → 整步 `failed`**，但已成功落账的条目**照常写进档案**，便于重跑只补缺失。
+   **失败 → 整步 `failed`**，但已落账的档案与产物**照常保留**，便于重跑只补缺失。
 
 ## 结论文件契约
 
@@ -61,8 +61,8 @@
 
 ## 结果
 
-- 各端专属仓库的目标分支上出现本项目初始提交，本地分支与 `origin/<branch>` 一致。
-- 操作记录区可看到每端的「看工作树 → 建 / 切分支 → 提交改动 → 推送到自有仓库」动作与 commit 摘要。
+- 本项目单仓的目标分支上出现初始提交（三端改动在同一个提交里），本地分支与 `origin/<branch>` 一致。
+- 操作记录区可看到「看工作树 → 建 / 切分支 → 提交改动 → 推送到自有仓库」的动作与 commit 摘要。
 - 插件回读 `artifacts[]` 后做**本地复核**：`<localPath>/.git/refs/remotes/origin/<pushBranch>` 存在，
   且 commit id 与自报一致（远端不可独立核对的部分如实记为残余风险）。
 

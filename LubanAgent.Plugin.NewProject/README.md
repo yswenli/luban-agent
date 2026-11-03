@@ -3,7 +3,7 @@
 > PRD：`luban-agent/docs/PRD-插件体系与新建项目插件.md`（本插件目录内的 `docs/` 是随包知识正文，不含 PRD）
 > 插件标识：`com.tjces.newproject` · 显示名：新建项目
 
-以三端模板仓创建新项目：**七步向导**（左侧栏面板）+ **聊天式入口**（`newproject-*` 技能），
+以单仓模板仓创建新项目（**一个仓库 + 三端模块子目录**）：**七步向导**（左侧栏面板）+ **聊天式入口**（`newproject-*` 技能），
 两条入口共用同一个 `INewProjectService`，云效逻辑零分叉。
 Step 4 / Step 5 的动作**不由插件执行**：插件下发提示词与硬边界 → **项目会话的助手亲自探活 / 编译** → 插件回读**结论文件**判定。
 新增**步骤条回退导航**（可回到任一「已到达」步骤重看 / 重跑，只动面板视图游标、不动档案）与**推送闸门** `StepGate.CanPush`（编译未全部通过即拒推，向导 / 聊天同受保护）——修「Step 5 无入口导致越级推送」的真机缺陷，详见「回退导航与推送闸门」。审查发现 1–5 的修正：同目录重提不弹破坏性确认（改指路「重跑 Step 2」）、闸门拒绝不写 `Push` 终态且前置到档案空判之后、Step 3 重跑作废旧编译结论（`StepGate.InvalidateBuild`）、未到达步骤行显式降不透明度、重推按钮补 hover 反馈。二次逐行审查再修 5 处，其中一处是**阻断级**：**落库顺序 P0** —— Step 4 / Step 5 原先「先 `SaveSpec` 后 `EndOperation`」，而终态快照只回放**终态**记录，于是本轮记录此刻仍是 `Running` 被跳过，`StepStates` 里**根本没有 `Build` 键** → 闸门 `CanPush` 恒判否，**编译通过了也推不动**；已改为「先记终态再落库」（与 Step 6 同型）；另：同目录判据改用与服务端唯一性①同源的 `WorkspaceIdGenerator.Normalize`（解析 junction / 符号链接）、步骤行灰化只按「是否已到达」（忙碌时不再把当前步与已完成步一起变淡）、同目录黄字先清上一轮红字并补「中止并清理」出口。
@@ -19,13 +19,15 @@ Step 4 / Step 5 的动作**不由插件执行**：插件下发提示词与硬边
 
 **（Step 3/6/7 助手驱动重构 · 知识移出代码）** Step 3 / 6 / 7 的执行体从插件 C# 直连**下沉给项目会话的助手**：插件只负责「**下发提示词 + 固定边界 + 回读结论文件**」，云效动作走 `mcp_yunxiao_*`（`AssistantToolPolicy` 新增**云效 MCP 子策略**，按工具名段放行 12 个：8 只读 + 4 写入；`flow_run_pipeline` 拒绝，已删的 `codeup_clone` / `codeup_push` 双保险仍 Deny），git 动作走**框架 git 工具组**（工作区内**免确认、不经插件策略**）。组织专有值（模板仓名 / Harbor / 服务连接 / bucket / pipelineId / 主机组 uuid …）与三端 YAML 模板从代码迁到**随包分发的 `docs/` 知识文件**，技能正文只写「读 `docs/` 哪一节」，靠**禁用值扫描单测**把「唯一副本」变成可执行检查。Step 3 / 7 为「**一次只读准备下发 + 用户确认后同会话执行续跑**」（**不叫「两轮」**），结论文件扩展 `status`(done/needsInput/failed；Step 3 准备结论另用 `ready`/`blocked`) / `phase`(prepare/execute) / `artifacts[]`(判别属性 `kind` + 具名强类型 `extra`) / `inputs[]`（三选一 / 部署目标）；闸门 `StepGate.CanPush` / `CanCreatePipelines` 判据改读 **Step 5 / Step 6 结论文件**（`StepStates` 降级为仅界面进度）。删除 `Services/PipelineTemplates.cs`（`PipelineTemplateLibrary` / `PipelineRenderer` / `PipelineYamlOverride`）、`PlaceholderReplacer.cs`、`PushRetryPolicy.cs` 与 `CodeupClient.CloneToLocalAsync` / `PushAsync`；新增本地复核器 `StepLocalVerifier`。详见「Step 3 / Step 6 实现要点」「Step 7 实现要点」「验证」。
 
+**（单仓形态改造：一个仓库 + 三端模块子目录）** 远端模板由「三仓」改为**单仓** `TJCES-Mixed`（根下一个 `.git`，`TJCES-Service/` / `TJCES-Admin/` / `TJCES-Mobile/` 是普通子目录，**不是 submodule**）：`newproject.settings.json` 的 `repositoryNameFormat` 默认改为 `{Code}-Mixed`，新增 `modulePathFormat`（默认 `{Code}-{end}`）；`EndRepository` 增加 `ModulePath`（仓内模块目录名）与只读派生 `ModuleLocalPath`，`RepositoryName` / `LocalPath` 在各端之间**同值**。**建库 / 克隆 / 推送 / 占位符替换改为仓库级动作，整步各做一次**（`NewProjectService` 的目录冲突警告、克隆冲突三选一、`ValidateRepositoryPlanAsync` 的仓库名校验都只做一次，端之间只校验 `modulePath` 唯一）；端级只保留「核对仓内模块目录 + 逐端结论」（`StepLocalVerifier` 按 `localPath` 分组复核仓库级四项、再逐端核对模块目录，多端同仓的提示标「（同仓）」）。未勾选的端在克隆与该目录删除之间处理：**先做整仓占位符替换，再删其模块目录**。仓库类远端产物改为**项目级账目**（`End = null`，按名称去重）。Step 5 改为进**各端模块目录**执行，管理端对齐仓库实际（`pnpm-lock.yaml` → **Node 18/20 LTS + pnpm**：`pnpm run build:dev`，不再用 npm / cnpm），移动端仍 Node 16 + npm；Step 7 的流水线名改用**模块目录名** `{CODE}_DEV_Deploy_{module}`（三端同仓，用仓库名会撞名），`sources.repo.name` / `endpoint` / `branch` 三端同值，构建步骤先 `cd "$PROJECT_DIR/{module}"`。组织专有值仍只在 `docs/org-reference.md`（「模板仓与仓内模块」表）。
+
 ## 目录结构
 
 ```
 LubanAgent.Plugin.NewProject/
 ├─ LubanAgent.Plugin.NewProject.csproj   # 含「铺包」目标（见下；新增 docs/ 铺装）
 ├─ plugin.json                           # 插件清单：侧栏条目 / 6 个技能 / yunxiao MCP / 权限
-├─ newproject.settings.json              # 瘦身后仅留 6 项格式值（组织专有值已迁 docs/）
+├─ newproject.settings.json              # 瘦身后仅留 7 项格式值（组织专有值已迁 docs/）
 ├─ docs/                                 # 随包分发的知识文件（组织专有值 + 三端 YAML 模板 + 编排约定）
 ├─ NewProjectPlugin.cs                   # 插件入口（PluginBase）
 ├─ GlobalUsings.cs                       # 项目级全局 using（集中公共命名空间）
@@ -128,7 +130,7 @@ LubanAgent.Plugin.NewProject/
    用户点它即以 `allowExistingWorkspace: true` 重跑校验 → 建档案 → 复用该工作区执行 Step 2
    （复用分支本身幂等，见下）。没有这个出口就会形成死角：错误文案让用户去点一个只在另一种状态下存在的按钮
    （P2 冒烟缺陷）；
-2. `{localPath}\{Code}-Service|Admin|Mobile`（如 `D:\ws\csxmy\Csxmy-Service`，**与云端仓库名同源**）目录已存在且非空 → **只提示不拦截**（`Warnings`，警示色展示）：
+2. `{localPath}\{Code}-Mixed`（如 `D:\ws\csxmy\Csxmy-Mixed`，**与云端仓库名同源**，各端共用）目录已存在且非空 → **只提示不拦截**（`Warnings`，警示色展示）：
    克隆前必须判断目标目录：非空时给用户「复用已克隆 / 清空后重克隆 / 中止」三选一，
    该决策属 Step 3；在 Step 1 硬拦截会把用户挡在本步并不负责的判断上。
 
@@ -277,11 +279,11 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 2. `codeup_list_branches` 取模板分支，按 `docs/org-reference.md` 的 pin 择优顺序解析 pin；
 3. `codeup_list_groups` 查目标代码组是否已存在（决定新建 / 复用）；
 4. `codeup_search_repos` 查目标仓库是否已存在，**已存在再 `codeup_get_repo` 取 `httpUrlToRepo`**；
-5. 检查该端**仓库目录**（`<工作区>\<仓库名>`，**已含仓库名**）是否已存在且非空。
+5. 检查**仓库根目录**（`<工作区>\<仓库名>`，**已含仓库名**，单仓各端同值）是否已存在且非空；端只核对仓内模块目录名（克隆后才存在）。
 
 产出准备结论 `results/step3-prepare-*.json`（`phase=prepare` / `status=ready|blocked`）的 `artifacts[]`（`kind=group` 一条 + `kind=repository` **每端一条**），面板据此渲染**确认界面**
-（视图模型 `RepositoryPrecheck` / `EndPrecheck` 由 `artifacts[]` 映射，不再是 C# 预检读数）；用户可改仓库名 / 可见性
-（走 `ValidateRepositoryPlanAsync` + `ApplyRepositoryPlan`）。**准备阶段不得出现任何「新建」类产物**。
+（视图模型 `RepositoryPrecheck` / `EndPrecheck` 由 `artifacts[]` 映射，不再是 C# 预检读数）；用户可改**共用的仓库名** / 可见性
+（走 `ValidateRepositoryPlanAsync` + `ApplyRepositoryPlan`；仓库名只校验一次，端之间只校验 `modulePath` 唯一）。**准备阶段不得出现任何「新建」类产物**。
 
 > 面板侧：**「创建并克隆」在准备结论就绪前保持禁用**；任何输入变更（仓库名 / 可见性）立即**作废**该结论
 > （比对「输入签名」），需重新准备；`mtime` 早于本次起始时刻的结论文件不参与判定。
@@ -294,37 +296,38 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 2. 仓库不存在 → `codeup_create_repo`（`templateProjectId` / `templateType=1` / `syncAllBranches=true` / `namespaceId` / `path`）；
 3. **新建仓库后必须再调一次 `codeup_get_repo`（`repositoryId` = 建库响应里的 id）取 `httpUrlToRepo`**——建库响应不保证带该字段；
 4. 轮询 `codeup_list_branches` 等 pin 分支就绪（上限 120s / 间隔 3s，**超时即失败**）；
-5. `GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)`（框架 git 工具组；**仓库目录已含仓库名，勿再拼**；地址**不带凭据**）；
+5. `GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库根目录>)`（框架 git 工具组；**仓库根目录已含仓库名，勿再拼**；单仓只克隆一次；地址**不带凭据**）；
 6. 克隆失败 → 记 git 原文摘要（**不内嵌凭据**）、**不自行删目录**、写 `status="failed"`；
-7. 目标目录非空 → 写 `status="needsInput"`，`inputs[]` 带**克隆冲突三选一**；
+7. 目标目录非空 → 写 `status="needsInput"`，`inputs[]` 带**克隆冲突三选一**（单仓整步只问一次）；
 8. **占位符替换**：助手用 `RunPythonAsync` 现场脚本完成（内容 + 文件 / 目录名，跳过 `.git` / `bin` / `obj` / `node_modules`，
-   按 `From` 长度降序、区分大小写、**幂等**）；规则读 `docs/org-reference.md` 与 `docs/step3-repositories.md`；
+   按 `From` 长度降序、区分大小写、**幂等**），**整仓一次**；未勾选的端模块目录在替换后按新名字删除；
+   规则读 `docs/org-reference.md` 与 `docs/step3-repositories.md`；
    `checks[]` 必须含 `placeholder-residual` 且 `ok=true`；实际命中的令牌逐字写进 `extra.placeholderSources`（**至少一项**）；
-9. `GitStatusAsync` / `GitBranchListAsync`（**都要带 `workingDirectory=<仓库目录>`**）复核工作树与 `refs/heads/<pin>` 后，把 `cloned` / `defaultBranch` / `commitId` 写进
+9. `GitStatusAsync` / `GitBranchListAsync`（**都要带 `workingDirectory=<仓库根目录>`**）复核工作树与 `refs/heads/<pin>`，再逐端确认仓内模块目录存在，把 `cloned` / `defaultBranch` / `commitId` / `modulePath` 写进
    `artifacts[kind=repository].extra`。
 
 - **克隆冲突三选一**：`reuse`（**先做健康校验**：工作树 + `refs/heads/<pin>`，不通过拒绝复用）/ `reclone`
   （**由助手删除目录**：`RunPythonAsync` 现场脚本 `shutil.rmtree(path, onerror=清只读后重试)`——克隆出的仓库 pack 文件是**只读**的，
   框架 `DeleteDirectoryAsync` 是裸 `Directory.Delete`、**不处理 Windows 只读位**，直接删大概率失败）/ `abort`（远端仓库保留，登记孤儿产物）。
-- **逐端完备性与混合结果**：`checks[]` 逐端一条（`name` 取端标识）；任一端失败 → 整步 `failed`，但已成功项**照常落账**，重跑只补缺失。
-- **插件回读**：`artifacts[]` → 档案 `Repositories[]` / `RemoteArtifacts[]`；再执行**本地复核** `StepLocalVerifier`
-  （目录存在且非空 / `.git` 有效 / `refs/heads/<pin>` 存在 / 占位符残余 = 0，逐项独立再扫）；通过后触发**重跑联动失效**。
+- **逐端完备性与混合结果**：`checks[]` 逐端一条（`name` 取端标识）；任一端失败 → 整步 `failed`，但已成功项**照常落账**，重跑只补缺失；**建库 / 克隆 / 占位符替换是仓库级动作，整步各做一次**（同仓多端不重复执行）。
+- **插件回读**：`artifacts[]` → 档案 `Repositories[]` / `RemoteArtifacts[]`（仓库产物按名称去重、`End = null`）；再执行**本地复核** `StepLocalVerifier`
+  （按 `localPath` 分组只复核一次目录存在且非空 / `.git` 有效 / `refs/heads/<pin>` 存在 / 占位符残余 = 0，再逐端核对仓内模块目录），通过后触发**重跑联动失效**。
 - **Step 3 重跑联动失效（保留）**：执行续跑成功后作废**最近一份 Step 5 结论文件 + 清 `BuildResults`**、
   **最近一份 Step 7 结论文件 + 清 `PipelineResults` 与流水线类远端产物记录**，并清 Step 3/5/6/7 的操作记录条目；
   **只清结论，不删云效上的仓库 / 流水线本体**（远端产物一律不自动删除）。
 
 ### Step 6（一次下发即可完成）
 
-提示词＝`skills/newproject-push-repo.md` + `docs/step6-push.md`。逐端：
+提示词＝`skills/newproject-push-repo.md` + `docs/step6-push.md`。**单仓：整步只推送一次**（各端共用同一个仓库根），端只体现为 `checks[]` / `artifacts[]` 的 `modulePath`：
 
-1. `GitStatusAsync(workingDirectory=<仓库目录>)` 看工作树；**无改动跳过提交**（如实报告，不产生空提交），仍继续推送；
+1. `GitStatusAsync(workingDirectory=<仓库根目录>)` 看工作树；**无改动跳过提交**（如实报告，不产生空提交），仍继续推送；
 2. 建 / 切目标分支：分支名按 `docs/step6-push.md` 解析（配置 `pushBranch` 有值用配置值，留空退回仓库默认分支，
-   仓库为空以 docs 登记的默认分支创建）→ 已存在 `GitCheckoutAsync(target=<branch>, workingDirectory=<仓库目录>)`、
-   否则 `GitCheckoutAsync(target=<branch>, createBranch=true, workingDirectory=<仓库目录>)`；
+   仓库为空以 docs 登记的默认分支创建）→ 已存在 `GitCheckoutAsync(target=<branch>, workingDirectory=<仓库根目录>)`、
+   否则 `GitCheckoutAsync(target=<branch>, createBranch=true, workingDirectory=<仓库根目录>)`；
 3. 提交身份：读本机 `git config user.name` / `user.email`，缺失按 `docs/org-reference.md` 兜底值在**本仓库级**设置；
-4. `GitAddAsync(paths=["."], workingDirectory=<仓库目录>)`（**不能传 `-A`**）→ `GitCommitAsync(message=<消息>, workingDirectory=<仓库目录>)`（提交信息格式按 `docs/step6-push.md`）；
-5. `GitPushAsync(remote="origin", branch=<branch>, setUpstream=true, workingDirectory=<仓库目录>)`；**凭据由用户外部配置**，URL 不带凭据；**不强制推送**；
-6. 回写 `results/step6-*.json`：`artifacts[kind=repository]` 每端一条（`extra` 记推送目标分支与提交 id），`checks[]` 逐端一条。
+4. `GitAddAsync(paths=["."], workingDirectory=<仓库根目录>)`（**不能传 `-A`**）→ `GitCommitAsync(message=<消息>, workingDirectory=<仓库根目录>)`（提交信息按 `docs/step6-push.md`：单仓只提交一次，多端用 `、` 连接）；
+5. `GitPushAsync(remote="origin", branch=<branch>, setUpstream=true, workingDirectory=<仓库根目录>)`；**凭据由用户外部配置**，URL 不带凭据；**不强制推送**；
+6. 回写 `results/step6-*.json`：`artifacts[kind=repository]` 每端一条（同值 `name` / `localPath`，`extra` 记推送目标分支与**同一个**提交 id），`checks[]` 逐端一条。
 
 - **限流退避（约定，读 `docs/step6-push.md`）**：429 / `请求过于频繁，请稍后重试!` 才退避 **线性 10s / 20s / 30s、
   最多 3 次**（原 `PushRetryPolicy` 的口径已迁 docs，代码删除；**不是指数间隔**）；非快进 / 鉴权 / 权限**一律不重试**。
@@ -342,7 +345,7 @@ Step 3 / 6 / 7 的云效与 git 动作**全部下沉给项目会话的助手**�
 - 常驻：校验错误 / 非阻断提示 / 忙碌文案 / 残留横幅 + 「档案与维护」（重跑 Step 2 / 重新推送（重跑 Step 6）/ 中止并清理）；
 - **导航行**：步骤条下方一行 = 「← 上一步」按钮 + 提示文字（回看时显示「（回看；档案已到达 N …）」）；
 - Step 1 表单（`BasicInfo` / `Scaffold`）；
-- Step 3 确认区（`Repositories`）：逐端仓库名 / 可见性单选 / 归属组织只读 / 落地位置 / **准备卡片（「准备（只读，不创建）」按钮 + 结论读数，数据来源＝结论文件 `artifacts[]`）** / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
+- Step 3 确认区（`Repositories`）：**共用的目标仓库名**（单仓，一个输入框）/ 可见性单选 / 归属组织只读 / 逐端只读的仓内模块目录 / **准备卡片（「准备（只读，不创建）」按钮 + 结论读数，数据来源＝结论文件 `artifacts[]`）** / 「我已确认」勾选 + 建库按钮 + 内联冲突三选一；
 - Step 4 探活表单（`Database`）：服务器 / 端口 / 库名 / 账号 / 口令（默认值取自克隆下来的 `WebHost/appsettings.json`，口令用 `PasswordChar` 遮蔽且不回填）+ 「开始探活（只读，不建库）」+ 结论区（读档案，跨重启可见）；
 - Step 5 逐端卡（`Build`）：所选端逐条显示「通过 / 失败 / 未勾选」，附**实际执行的命令**与失败摘要 + 「开始编译（逐端）」；
 - Step 6 推送区（`Push`）；Step 7 复核区（`Pipeline`：部署目标下拉 + YAML 预览 / 微调 + 覆盖更新 + 创建）。
@@ -437,25 +440,24 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 
 ### Step 5：逐端编译（编译方式交助手判断 + 按端已知构建姿势）
 
-- **插件不预设命令**：助手先看仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml`）再自行决定；
-  提示词里另给一段【本组织已知构建姿势】，**与本组织仓库既有做法冲突时以提示词为准**。
-- **管理端（Admin，Vite + Vue）已知姿势（本机实测通过）**：分支 `develop`；Node 16 —— 所有命令用
-  `fnm exec --using=16 -- npm.cmd <子命令>` 包一层（**Windows 下必须写 `npm.cmd`**，`fnm` 直接 spawn `npm` 报 `program not found`；
-  管道 + `Invoke-Expression` 那类写法仍被守卫拒绝）；装依赖 `npm install --registry=https://registry.npmmirror.com`（或 `cnpm`）；
-  构建 **`npm run build:dev`（不是 `npm run build`：该仓库的构建脚本叫 `build:dev`）**。
+- **插件不预设命令**：助手先看**该端模块目录**里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml`）再自行决定；
+  提示词里另给一段【本组织已知构建姿势】，**与本组织仓库既有做法冲突时以提示词为准**。单仓：各端共用仓库根，
+  **命令必须进各自模块目录执行**（`LocalPath` + `modulePath`，提示词里以「实际执行目录」给出），不在仓根执行。
+- **管理端（Admin，Vite + Vue）已知姿势（对齐仓库实际）**：分支 `develop`；**Node 18/20 LTS + pnpm**（仓库以 `pnpm-lock.yaml` 为准，
+  残留的 `package-lock.json` 是历史遗留，**不要**混用 npm / cnpm）：`pnpm install` → **`pnpm run build:dev`**（不是 `pnpm build`：
+  该仓库的构建脚本叫 `build:dev`）；pnpm 提示锁文件过期时按 `package.json` 与 `pnpm-lock.yaml` 的差异审查，不手工编辑锁文件。
+- **移动端（Mobile，uni-app 2.x / Vue2）已知姿势**：Node 16 + npm（`npm install` → `npm run build:dev`），产物在 `dist/dev/h5`；该端不改成 pnpm。
+- **后端（Service，.NET）已知姿势**：在模块目录 `dotnet build <解决方案>.sln`。
 - `checks[].name` **必须用端标识**（`Service` / `Admin` / `Mobile`），**逐端齐全**——漏端即判「该端未给结论」＝**本步失败**（不用「其余端通过」兜底，否则漏跑一端会被静默放过）。
-- **失败阻断 Step 6**；**只编译、不改业务**：**允许修依赖树与环境**——装依赖、`fnm` 切 Node、
-  重跑依赖自身的构建脚本（`npm rebuild X`）、必要时重建 `node_modules`；**禁止改业务源码与工程配置**
+- **失败阻断 Step 6**；**只编译、不改业务**：**允许修依赖树与环境**——装依赖、切 Node 版本、
+  重跑依赖自身的构建脚本、必要时重建 `node_modules`；**禁止改业务源码与工程配置**
   （业务代码、`package.json`、`vite.config`、`.csproj` / `.sln` 等一律不改；锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。不清理编译产物。
-- **真机根因**：管理端 `@vue-office/{docx,excel,pdf}` 的 `package.json` 里 `main = lib/index.js`，
+- **入口缺失的两条根因（真机取证）**：管理端 `@vue-office/{docx,excel,pdf}` 的 `package.json` 里 `main = lib/index.js`，
   而 `lib/index.js` **不随包发布**——由包自身 `postinstall`（`lib/script/postinstall.js` → `utils.js` 的 `switchVersion(3)`，
-  即把 `lib/v3/index.js` 复制成 `lib/index.js`，`index.css` 同理）生成。pnpm v10 默认跳过依赖的构建脚本 → 入口缺失 →
-  `vite build` 报 `Failed to resolve entry for package "X"`。曾判定「正解是在仓库侧执行 `pnpm approve-builds`，
-  属仓库配置变更、不该让助手动」；复核后改为：**这条路根本不需要 pnpm** —— 该仓库用 **npm 系**
-  （`npm install` 默认跑依赖构建脚本）× **Node 16** 就是本组织既有姿势，助手在白名单内即可把依赖树修好
-  （本机实测：`npm install` 81s → `npm run build:dev` exit 0 / 89s，`dist` 正常产出）。
-  若装完仍报入口缺失，用 `fnm exec --using=16 -- npm.cmd rebuild X` 补跑后重试一次（实测可重新生成入口）。
-  （附带结论：不带参数的 `pnpm approve-builds` 是**交互式**命令，助手在无 TTY 的 Shell 里本就跑不动。）
+  即把 `lib/v3/index.js` 复制成 `lib/index.js`，`index.css` 同理）生成；**postinstall 未跑**时删包重装多少遍结果都一样，
+  正解是跑包内自带脚本（`node node_modules/@vue-office/docx/lib/script/switch-cli.js 3`，Vue2 仓库用参数 `2`）补入口，
+  同族包（docx / excel / pdf）要一次查全。真正的半装包（目录在、入口文件与包内产物都不存在，如 `element-plus/es/index.mjs`）
+  才删单个包目录后 `pnpm install` 重装；**`pnpm rebuild X` 对预构建包无效**，不是修法。
 
 ### 助手工具白名单（替代 `BypassPermissions`）
 
@@ -473,8 +475,9 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - **Shell 逐段判定**：按 **未加引号** 的 `&&` / `||` / `;` / `|` / 换行切段（引号内的分隔符属参数文本、不切段——`node -e "…;…"` / `git commit -m "a;b"` 必须放行；单引号内除 `''` 外不转义、双引号内反引号转义、未闭合引号按「到末尾都在引号内」处理；单个 `&` 不切段，只有 `&&` 切），每段取首词（支持 `& "prog"` 与 `"C:\Program Files\...\dotnet.exe"` 引号路径，去目录、去 `.exe/.cmd/.bat/.ps1` 后缀），
   首词不在 `AllowedExecutables`（`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `fnm` / `cnpm` / `python` / `py` / `python3` / `pip` / `pip3`）与 pwsh 无副作用内置（`cd` / `Set-Location` 等）内即**整条拒绝**；
   `$env:X = "..."` 赋值段视为无副作用放行。
-- **`fnm` / `cnpm`**：本组织管理端要求 Node 16 + npm 系客户端，助手需用 `fnm exec --using=16 -- npm.cmd …`
-  与 `cnpm`（内网镜像客户端）。二者都只是「版本管理器 / 包管理器」，不引入新的越界面；
+- **`fnm` / `cnpm` / `pnpm`**：管理端用 pnpm（Node 18/20），移动端仍是 **Node 16 + npm**——切版本要 `fnm exec --using=16 -- npm.cmd …`
+  （**Windows 下必须写 `npm.cmd`**，`fnm` 直接 spawn `npm` 报 `program not found`），`cnpm` 作为内网镜像客户端保留。
+  它们都只是「版本管理器 / 包管理器」，不引入新的越界面；
   `fnm env --use-on-cd | Out-String | Invoke-Expression` 那类写法**仍被拒**（管道分段后 `Out-String` / `Invoke-Expression`
   不是白名单首词，且 `Invoke-Expression` 等同任意求值——提示词里改为 `fnm exec --using=16 -- …` 的免管道形态）。
 - **拒绝 ≠ 本轮失败**：被拒的调用**不计进事件流错误**（`AssistantToolPolicy.IsGuardDenial` 认宿主文案「工具调用被拒绝或已取消」），只留在操作记录「被拒明细」里——否则助手**试错一次就被自己的守卫判成整步失败**（四环第④环会中招）。早先的实现正是把守卫拒绝塞进 `errors`，真机两次都因此判失败。
@@ -682,22 +685,22 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 12. **准备读数（只读，不创建）**：点「准备（只读，不创建）」→ 助手在**项目会话**里调只读 `mcp_yunxiao_*`
     （`codeup_list_template_repos` 全量拉模板库 / `codeup_list_branches` 解析 pin / `codeup_list_groups` 查代码组 /
     `codeup_search_repos` 查同名仓库〔命中再 `codeup_get_repo` 取克隆地址〕），产出准备结论 `results/step3-prepare-*.json`；读数含：
-    目标代码组（不存在将新建 / 已存在将复用 · id）、逐端模板库命中（`templateProjectId` · 全路径）、
-    pin 及依据（按 `docs/org-reference.md` 的 pin 择优顺序**实时解析**）、仓库名（将新建 / 已存在将复用 · 可见性）；
+    目标代码组（不存在将新建 / 已存在将复用 · id）、模板库命中（**单仓一条** `templateProjectId` · 全路径）、
+    pin 及依据（按 `docs/org-reference.md` 的 pin 择优顺序**实时解析**，单仓只解析一次）、仓库名（将新建 / 已存在将复用 · 可见性）与逐端仓内模块目录；
     此时**云效侧未新增任何代码组 / 仓库**（只读，可对照后台）；右侧操作记录呈现助手调用的 MCP 工具与返回摘要；
 13. **准备阻断**：未填「云效连接」的组织 ID / PAT，或模板库中按名约定找不到模板仓时点「准备」→
     读数与时间线给出红字（引导去设置页 / 列出模板库现有条目）；**准备结论文件缺失 / 不可解析 / `status=blocked`（`ok=false`）一律不发执行请求**；执行轮只接受新写出的 `step3-<ts>.json`（`status=done`），读到准备结论即判「未执行」；
 14. **Step 3 正常路径**：准备通过 → 勾选「我已确认」→ 「创建并克隆」→ 助手在**同一会话执行续跑**（提示词显式携带用户答复 +
     准备阶段结论文件**绝对路径**），逐条进时间线（准备项目代码组〔`codeup_create_group`，**先查后建**〕→ 创建仓库 / 同名复用
     〔`codeup_create_repo`，`templateType=1` / `syncAllBranches=true`〕→ **新建后再 `codeup_get_repo` 取 `httpUrlToRepo`** →
-    等待模板分支就绪〔`codeup_list_branches` 轮询〕→ `GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)` → 占位符替换〔`RunPythonAsync` 现场脚本〕）；
+    等待模板分支就绪〔`codeup_list_branches` 轮询〕→ `GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库根目录>)` → 占位符替换〔`RunPythonAsync` 现场脚本，整仓一次〕）；
     「等待模板分支就绪」在 pin 分支尚未同步到新仓时轮询等待（上限 120s / 间隔 3s），就绪后立刻写「pin develop 已就绪」；
-    复核本地目录里有仓库内容、`spec.json` 里 `repositories[].cloneUrl/webUrl/externalId/templateBranch` 已落、
-    `remoteArtifacts` 出现 `Group`（项目级，`end` 为 null）与各端 `Repository` 条目；远端仓库由模板同步了分支；
-    代码组 / 仓库名落在 `docs/step3-repositories.md` 的命名约定下（各端仓库名**首字母大写**＋端后缀），本地目录名与之同源；
-    **插件回读后再跑本地复核器 `StepLocalVerifier`**（目录存在且非空 / `.git` 有效 / `refs/heads/<pin>` 存在 / 占位符残余 = 0），通过才判成功；
-15. **模板 pin 实时解析**：模板仓 pin 留空 → 读数为 `develop`（Service/Admin）与 `master`（Mobile，无 develop）；
-    在 `docs/` 里把某端 pin 改成不存在的分支 → 准备阻断，提示现有分支清单（不静默回退）；
+    复核本地目录里有仓库内容、`spec.json` 里 `repositories[].cloneUrl/webUrl/externalId/templateBranch/modulePath` 已落、
+    `remoteArtifacts` 出现 `Group`（项目级，`end` 为 null）与 `Repository`（**项目级一条**，单仓按名去重、`end` 为 null）条目；远端仓库由模板同步了分支；
+    代码组 / 仓库名落在 `docs/step3-repositories.md` 的命名约定下（仓库名 `{Code}-Mixed` **首字母大写**，端后缀只用于仓内模块目录），本地目录名与仓库名同源；
+    **插件回读后再跑本地复核器 `StepLocalVerifier`**（按 `localPath` 分组只复核一次：目录存在且非空 / `.git` 有效 / `refs/heads/<pin>` 存在 / 占位符残余 = 0，再逐端核对仓内模块目录），通过才判成功；
+15. **模板 pin 实时解析（单仓只解析一次）**：模板仓 pin 留空 → 单仓读数为 `develop`（`TJCES-Mixed` 有 develop，按 `develop → master → main → 模板默认分支` 择优）；
+    在 `docs/` 里把 pin 改成不存在的分支 → 准备阻断，提示现有分支清单（不静默回退）；
     ⚠️ pin / 模板仓名约定 / 占位符规则**都读工作区 `docs/`**；`docs/` 在每步下发前覆盖式重铺，故改 docs **下一次相关步骤即生效**（见上文「知识文件布局与生效范围」）；
 16. **Step 3 重跑幂等**：重新准备后（此时代码组已存在）→ 页面显示「已存在，将复用」；
     执行 → 时间线出现「云效已存在同名仓库，跳过创建直接复用」，**不会**因重名建库失败；
@@ -709,10 +712,10 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
     （`RunPythonAsync` 的 `shutil.rmtree(path, onerror=清只读后重试)`；框架 `DeleteDirectoryAsync` 不处理 Windows 只读位）后重克隆；
     选「中止本步」→ 本步 `failed`（文案取用户选择），不推进，远端仓库保留（孤儿），本地目录未被改动；
 18. **Step 6（助手调 git 工具组，一次下发完成）**：点常驻「档案与维护」卡里的「重新推送（重跑 Step 6）」
-    （**推进指针 ≥ Step 6 后可见**，Step 6 页自身的按钮等价）→ 助手在项目会话里逐端走 git 工具组
+    （**推进指针 ≥ Step 6 后可见**，Step 6 页自身的按钮等价）→ 助手在项目会话里按**单仓**走 git 工具组
     （`GitStatusAsync` → `GitCheckoutAsync`〔建 / 切分支，`createBranch=true`〕→ `GitAddAsync(paths=["."])` → `GitCommitAsync` → `GitPushAsync`，
-    每个调用都带 `workingDirectory=<仓库目录>`），
-    时间线逐端「整理分支 → 提交改动 → 推送到自有仓库」；云效仓库出现目标分支（`pushBranch`，默认 `develop`）与首次提交；
+    每个调用都带 `workingDirectory=<仓库根目录>`，整步只做一次），
+    时间线「整理分支 → 提交改动 → 推送到自有仓库」（单次推送，各端同值）；云效仓库出现目标分支（`pushBranch`，默认 `develop`）与首次提交；
     再点一次 → 无改动时显示「工作区无改动，跳过提交」，推送仍成功（幂等）；凭据由用户**外部配置**，URL 不带凭据；
     插件回读 `results/step6-*.json` 的 `artifacts[kind=repository]` 落账，并由 `StepLocalVerifier` 核对
     `<localPath>/.git/refs/remotes/origin/<pushBranch>` 与 commit id；
@@ -813,17 +816,18 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 
 #### P4 复审增补（管理端构建姿势 + 边界放宽）
 
-47. **管理端用本组织姿势能编过（核心回归，必测）**：重启 codex 后跑 Step 5，管理端应走
-    `fnm exec --using=16 -- npm.cmd install --registry=https://registry.npmmirror.com` → `fnm exec --using=16 -- npm.cmd run build:dev`，
-    结论 `ok: true`；运行记录里能看到这两条命令**被放行**（`fnm` / `cnpm` 在白名单内）。修复前助手只会 `pnpm run build` → 报入口缺失。
-48. **`fnm` / `cnpm` 放行、管道形态仍拒（回归）**：`fnm exec --using=16 -- npm.cmd run build:dev` 与 `cnpm install`
+47. **管理端按单仓姿势能编过（核心回归，必测）**：重启 codex 后跑 Step 5，管理端应走
+    `pnpm install` → `pnpm run build:dev`（Node 18/20 LTS；仓库以 `pnpm-lock.yaml` 为准，不混用 npm / cnpm），
+    结论 `ok: true`；运行记录里能看到这两条命令**被放行**（`pnpm` / `node` 在白名单内）。修复前助手只会 `pnpm run build` → 报入口缺失。
+48. **白名单放行、管道形态仍拒（回归）**：`pnpm install` / `pnpm run build:dev` 与 `fnm exec --using=16 -- npm.cmd run build:dev`（移动端）
     应放行；`fnm env --use-on-cd | Out-String | Invoke-Expression` 应**被拒**（管道分段后首词不是白名单可执行文件），
     且该拒绝**不判本步失败**（守卫拒绝白名单外的命令或工具时，不算本步失败）。
 49. **依赖入口缺失可自修（回归）**：人为删掉 `node_modules\@vue-office\pdf\lib\index.js` 后跑 Step 5，
-    助手应改用 `fnm exec --using=16 -- npm.cmd rebuild @vue-office/pdf` 补跑并最终编过（本轮边界放宽后允许）；
+    助手应先按 `docs` 的「postinstall 未跑」分支跑包内自带脚本补入口（`node node_modules/@vue-office/pdf/lib/script/switch-cli.js 3`，Vue2 仓库用 `2`），
+    再重跑 `pnpm run build:dev` 并最终编过；半装包（入口文件与包内产物都不存在）才删单包目录后 `pnpm install` 重装；
     **边界仍守住**：业务源码与工程配置（`package.json` / `vite.config` / `.csproj` / `.sln`）不得被改写。
 50. **Step 6 推的是 develop 不是 main**：Step 5 通过后点「重新推送（重跑 Step 6）」→
-    云效各端仓库的 **`develop`** 分支上出现本次提交（`main` 分支不应被新建/更新）；若仓库里 `develop` 尚不存在，
+    云效目标仓库（单仓，各端同值）的 **`develop`** 分支上出现本次提交（`main` 分支不应被新建/更新）；若仓库里 `develop` 尚不存在，
     时间线应显示从模板 pin 分支创建 `develop` 后再推送。目标分支名按 `docs/step6-push.md` 解析
     （配置 `pushBranch` 有值用配置值、留空退回仓库默认分支），助手据 `GitCheckoutAsync` 建 / 切分支。
 
@@ -841,11 +845,10 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 53. **非限流失败不进退避等待**：制造一条非快进失败（远端 `develop` 已有本地没有的提交）→ 推送应**立即失败**、
     不出现「Ns 后重试」，且文案仍给出排查方向（「若持续失败，请检查 PAT 是否具备该仓库写权限、目标分支是否被保护」）。
 54. **提交信息不再重字（回归）**：Step 6 提交成功后的记录与仓库 `git log` 应为
-    `chore: 初始化 <项目名>（管理端）——由「新建项目」向导按模板 <模板仓名> 生成`（**提交信息格式读 `docs/step6-push.md`**），
-    时间线上也应是「整理分支（管理端）」「提交改动（管理端）」——**不得出现「管理端端」「后端端」「移动端端」**
-    （修复前真机提交即 `chore: 初始化 测试项目一（管理端端）——…`）；同一批修正也覆盖界面文案：Step 3 表单字段为
-    「管理端目标仓库名」、端分组标题为「管理端」、目录冲突横幅为「管理端目标目录已存在且非空…」
-    （服务层 5 处 + UI 4 处，共 9 处）。
+    `chore: 初始化 <项目名>（管理端）——由「新建项目」向导按模板 <模板仓名> 生成`（**提交信息格式读 `docs/step6-push.md`**；
+    单仓只提交一次，多端用 `、` 连接），时间线上也应是「整理分支」「提交改动」——**不得出现「管理端端」「后端端」「移动端端」**
+    （修复前真机提交即 `chore: 初始化 测试项目一（管理端端）——…`）；同一批修正也覆盖界面文案：Step 3 表单为
+    「目标仓库名（各端共用）」+ 逐端只读的「仓内模块目录」行、端分组标题为「管理端」、目录冲突横幅为「目标仓库目录已存在且非空…」。
 
 #### P4 复审增补（Step 7 流水线：模板渲染 + 变量与缓存 + 部署补齐）
 
@@ -909,6 +912,27 @@ Shell 逐段判定 + 越界拒绝 + **引号内分隔符不切段** + **守卫�
 71. **覆盖更新补旧流水线（必测）**：对 live 后端流水线（早期版本建的、只含构建段 + 末尾注释块）→ 勾选「覆盖更新」确认 → 执行 →
     助手 `flow_update_pipeline`（**回传现有名称**）→ 云效控制台该流水线变为「构建段 + 活动部署段」（注释块消失），**名称未被改掉**；
     **未勾选确认**时点该按钮 → 黄字提示、不发请求。
+
+#### P6 增补（单仓形态：一个仓库 + 三端模块子目录）
+
+> 前置：`luban-agent/docs/CONNECTOR-SMOKE-TEST.md` 之外的操作都按单仓口径；改插件后需**重建铺包 + 重启 codex**。
+> 模板仓（`TJCES-Mixed`）必须先登记为模板库条目（`templateType=1`），否则 Step 3 准备按「模板未登记」阻断——这是组织侧配置，不是插件缺陷。
+
+72. **Step 3 只建一个仓（必测）**：三端全勾 → 准备读数为**一条**仓库名（`{Code}-Mixed`）+ 逐端模块目录；执行后云效只多出**一个**仓库，
+    `spec.json` 的 `repositories[]` 各端 `name` / `localPath` 同值、`modulePath` 各不相同；`remoteArtifacts` 里 `Repository` 只有**一条**（`end` 为 null）。
+73. **建库 / 克隆只执行一次**：执行时间线里 `codeup_create_repo` / `GitCloneAsync` 各出现**一次**（不是每端一次）；重跑时命中同名仓库直接复用，
+    不因「三端同名」被判重复建库。
+74. **未勾选端目录被删（必测）**：只勾后端 + 管理端、不勾移动端 → 克隆后整仓占位符替换完成，`{Code}-Mobile` 目录被删除，
+    仓库根与另两个模块目录保留；`git status` 无残留占位符文件。
+75. **本地复核按仓分组**：三端全勾且目录正常 → 复核只查一次仓库级四项（目录 / `.git` / pin / 占位符残余）再逐端核对模块目录；
+    手工删掉某个模块目录后重跑 → 该端报「仓内模块目录不存在」，其余端仍各自给出结论；多端同仓的占位符残余提示带「（同仓）」。
+76. **Step 5 进模块目录**：管理端结论里的实际执行命令发生在 `{Code}-Admin` 内（`pnpm run build:dev`），移动端在 `{Code}-Mobile` 内（Node 16 + npm），
+    后端在 `{Code}-Service` 内（`dotnet build`）；仓根下**不**直接跑构建。
+77. **Step 6 只推一次**：推送后时间线只有一组「整理分支 / 提交改动 / 推送到自有仓库」，提交信息里多端用 `、` 连接；
+    各端 `extra.commitId` 同值；分支产物按 `localPath` 去重（同名分支不重复登记）。
+78. **Step 7 流水线名用模块目录**：三端流水线名为 `{CODE}_DEV_Deploy_{module}`（如 `CSXMY_DEV_Deploy_Csxmy-Admin`，**不撞名**）；
+    `sources.repo.name` / `endpoint` / `branch` 三端同值；YAML 构建步骤先 `cd "$PROJECT_DIR/{module}"`，`OSSUpload.sourceFilePath`
+    分别指向 `Csxmy-Service/dist` / `Csxmy-Admin/dist` / `Csxmy-Mobile/dist/dev/h5`。
 
 ## 阶段进度
 

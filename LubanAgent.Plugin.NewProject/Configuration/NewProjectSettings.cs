@@ -53,8 +53,17 @@ public sealed class NewProjectSettings
     /// </remarks>
     public string PushBranch { get; set; } = "develop";
 
-    /// <summary>目标仓库名格式，占位符 <c>{code}</c> / <c>{end}</c>。</summary>
-    public string RepositoryNameFormat { get; set; } = "{Code}-{end}";
+    /// <summary>
+    /// 目标仓库名格式（单仓）：占位符 <c>{code}</c> / <c>{Code}</c> / <c>{CODE}</c>，
+    /// 默认 <c>{Code}-Mixed</c>（如 <c>csxmy</c> → <c>Csxmy-Mixed</c>）。
+    /// </summary>
+    public string RepositoryNameFormat { get; set; } = "{Code}-Mixed";
+
+    /// <summary>
+    /// 仓内模块目录名格式：占位符同上 + <c>{end}</c>，
+    /// 默认 <c>{Code}-{end}</c>（如 <c>csxmy</c> → <c>Csxmy-Service</c> / <c>Csxmy-Admin</c> / <c>Csxmy-Mobile</c>）。
+    /// </summary>
+    public string ModulePathFormat { get; set; } = "{Code}-{end}";
 
     /// <summary>
     /// 项目代码组名格式（运行期由助手建组）：占位符 <c>{code}</c> / <c>{Code}</c> / <c>{CODE}</c> / <c>{name}</c>，
@@ -113,20 +122,32 @@ public sealed class NewProjectSettings
     }
 
     /// <summary>
-    /// 目标仓库名：<c>{Code}-{end}</c>（如 <c>Csxmy-Service</c>——<b>首字母大写</b>，与代码组名的全大写区分）。
+    /// 目标仓库名（单仓）：默认 <c>{Code}-Mixed</c>（如 <c>Csxmy-Mixed</c>——<b>首字母大写</b>，
+    /// 与代码组名的全大写区分）。各端同值。
+    /// </summary>
+    /// <param name="code">项目英文缩写（小写字母）。</param>
+    /// <returns>仓库名（格式留空时退回 <c>{Code}-Mixed</c>）。</returns>
+    /// <remarks>
+    /// 令牌<b>区分大小写</b>：<c>{code}</c>＝缩写原文 / <c>{Code}</c>＝首字母大写（默认）/ <c>{CODE}</c>＝全大写。
+    /// </remarks>
+    public string BuildRepositoryName(string code)
+    {
+        var format = string.IsNullOrWhiteSpace(RepositoryNameFormat) ? "{Code}-Mixed" : RepositoryNameFormat;
+        return ExpandTokens(format, code, string.Empty).Trim();
+    }
+
+    /// <summary>
+    /// 仓内模块目录名：默认 <c>{Code}-{end}</c>（如 <c>Csxmy-Service</c>）。
     /// </summary>
     /// <param name="code">项目英文缩写（小写字母）。</param>
     /// <param name="end">端。</param>
-    /// <returns>仓库名（格式留空时退回 <c>{Code}-{end}</c>）。</returns>
-    /// <remarks>
-    /// 令牌<b>区分大小写</b>：<c>{code}</c>＝缩写原文 / <c>{Code}</c>＝首字母大写（默认）/ <c>{CODE}</c>＝全大写；
-    /// 另支持 <c>{end}</c>＝Service / Admin / Mobile。
-    /// </remarks>
-    public string BuildRepositoryName(string code, ProjectEnd end)
+    /// <returns>模块目录名（格式留空时退回 <c>{Code}-{end}</c>）。</returns>
+    public string BuildModulePath(string code, ProjectEnd end)
     {
-        var format = string.IsNullOrWhiteSpace(RepositoryNameFormat) ? "{Code}-{end}" : RepositoryNameFormat;
+        var format = string.IsNullOrWhiteSpace(ModulePathFormat) ? "{Code}-{end}" : ModulePathFormat;
         return ExpandTokens(format, code, string.Empty)
-            .Replace("{end}", EndSuffix(end), StringComparison.Ordinal);
+            .Replace("{end}", EndSuffix(end), StringComparison.Ordinal)
+            .Trim();
     }
 
     /// <summary>

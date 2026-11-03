@@ -21,13 +21,13 @@ namespace LubanAgent.Plugin.NewProject.Abstractions;
 /// </summary>
 public enum ProjectEnd
 {
-    /// <summary>后端（模板仓 <c>TJCES-Service</c>）。</summary>
+    /// <summary>后端（单仓模板 <c>TJCES-Mixed</c> 的 <c>TJCES-Service/</c> 模块）。</summary>
     Service = 1,
 
-    /// <summary>管理端（模板仓 <c>TJCES-Admin</c>）。</summary>
+    /// <summary>管理端（单仓模板 <c>TJCES-Mixed</c> 的 <c>TJCES-Admin/</c> 模块）。</summary>
     Admin = 2,
 
-    /// <summary>移动端（模板仓 <c>TJCES-Mobile</c>）。</summary>
+    /// <summary>移动端（单仓模板 <c>TJCES-Mixed</c> 的 <c>TJCES-Mobile/</c> 模块；未勾选时克隆后删除该目录）。</summary>
     Mobile = 3
 }
 
@@ -122,14 +122,20 @@ public sealed class RemoteArtifact
 }
 
 /// <summary>
-/// 按端的目标代码仓库信息。
+/// 单端在目标仓库里的落点：一个项目只有<b>一个</b>目标仓库（单仓），各端是仓内模块子目录。
 /// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="RepositoryName"/> / <see cref="LocalPath"/> 在各端之间<b>同值</b>（同一个仓、同一次克隆）；
+/// 端之间只有 <see cref="ModulePath"/> 不同。建库 / 克隆 / 推送都按仓库去重执行一次，编译与流水线仍逐端（模块）判定。
+/// </para>
+/// </remarks>
 public sealed class EndRepository
 {
     /// <summary>所属端。</summary>
     public ProjectEnd End { get; set; }
 
-    /// <summary>模板仓名（由助手按 <c>docs/org-reference.md</c> 的按端名称约定在模板库匹配后回填，插件不再硬编码）。</summary>
+    /// <summary>模板仓名（由助手按 <c>docs/org-reference.md</c> 的模板仓约定在模板库匹配后回填，插件不再硬编码）。</summary>
     public string TemplateRepository { get; set; } = string.Empty;
 
     /// <summary>
@@ -138,8 +144,23 @@ public sealed class EndRepository
     /// </summary>
     public string TemplateBranch { get; set; } = string.Empty;
 
-    /// <summary>目标仓库名，默认 <c>{Code}-Service</c> / <c>-Admin</c> / <c>-Mobile</c>（如 <c>Csxmy-Service</c>），可在 Step 3 改。</summary>
+    /// <summary>
+    /// 目标仓库名，默认 <c>{Code}-Mixed</c>（如 <c>Csxmy-Mixed</c>），可在 Step 3 改；
+    /// <b>各端同值</b>（单仓）。
+    /// </summary>
     public string RepositoryName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 仓内模块目录名（相对仓根），默认 <c>{Code}-Service</c> / <c>{Code}-Admin</c> / <c>{Code}-Mobile</c>
+    /// （如 <c>Csxmy-Service</c>）；移动端未勾选时该目录在克隆后被删除。
+    /// </summary>
+    public string ModulePath { get; set; } = string.Empty;
+
+    /// <summary>模块目录绝对路径（仓根 + <see cref="ModulePath"/>；任一项为空时为空串）。</summary>
+    [JsonIgnore]
+    public string ModuleLocalPath => string.IsNullOrWhiteSpace(LocalPath) || string.IsNullOrWhiteSpace(ModulePath)
+        ? string.Empty
+        : Path.Combine(LocalPath, ModulePath);
 
     /// <summary>可见性：<c>internal</c>＝组织内公开（默认），<c>private</c>＝私有。</summary>
     public string Visibility { get; set; } = "internal";
@@ -153,7 +174,7 @@ public sealed class EndRepository
     /// <summary>HTTPS 克隆地址（取自「查询单个仓库」的 <c>httpUrlToRepo</c>）。</summary>
     public string CloneUrl { get; set; } = string.Empty;
 
-    /// <summary>本地代码目录。</summary>
+    /// <summary>本地仓库根目录（单仓一次克隆；各端同值，模块目录见 <see cref="ModulePath"/>）。</summary>
     public string LocalPath { get; set; } = string.Empty;
 
     /// <summary>默认/推送分支（建库时的默认分支，Step 6 与流水线 <c>{branch}</c> 都用它；配置留空时按 docs 退回仓库默认分支）。</summary>

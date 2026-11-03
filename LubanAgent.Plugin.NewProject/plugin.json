@@ -3,7 +3,7 @@
   "name": "新建项目插件",
   "version": "1.0.0",
   "author": "Walle",
-  "description": "以三端模板仓新建项目：七步向导 + 聊天式入口；Step 3/6/7 由助手按技能驱动执行并回读结论文件",
+  "description": "以单仓模板仓新建项目：七步向导 + 聊天式入口；Step 3/6/7 由助手按技能驱动执行并回读结论文件",
   "entryAssembly": "LubanAgent.Plugin.NewProject.dll",
   "targetApp": "LubanAgentCodex",
   "minHostVersion": "2026.10.0",
@@ -26,7 +26,7 @@
     {
       "id": "newproject-clone-template",
       "name": "按模板建库并克隆",
-      "description": "Step 3：助手一次只读准备 + 用户确认后同会话执行续跑——以模板仓创建各端专属仓库、克隆到本地、占位符替换，产出结论文件",
+      "description": "Step 3：助手一次只读准备 + 用户确认后同会话执行续跑——以模板仓创建目标单仓（三端为仓内模块子目录）、克隆到本地、占位符替换，产出结论文件",
       "entry": "skills/newproject-clone-template.md",
       "category": "newproject"
     },
@@ -47,7 +47,7 @@
     {
       "id": "newproject-push-repo",
       "name": "推送改动到自有仓库",
-      "description": "Step 6：助手调框架 git 工具组看工作树、建/切分支、提交并推送各端改动到专属仓库，产出结论文件",
+      "description": "Step 6：助手调框架 git 工具组看工作树、建/切分支、提交并推送改动到同一个目标仓库，产出结论文件",
       "entry": "skills/newproject-push-repo.md",
       "category": "newproject"
     },

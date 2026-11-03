@@ -1,23 +1,23 @@
 # Step 6 知识正文：推送改动到自有仓库（step6-push）
 
 > 配套技能：`skills/newproject-push-repo.md`。组织专有值以 [`org-reference.md`](./org-reference.md) 为准。
-> Step 6 是**一次下发**（无往返），逐端串行执行。**闸门**：Step 5 编译未过不能推送（判定源是最近一份 Step 5 结论文件，逐端全 `Ok` 且覆盖全部端才放行）。
+> Step 6 是**一次下发**（无往返），**单仓只推一次**（三端同仓同分支）。**闸门**：Step 5 编译未过不能推送（判定源是最近一份 Step 5 结论文件，逐端全 `Ok` 且覆盖全部端才放行）。
 
 ## 0. 前置
 
-- Step 3 已完成：各端仓库已创建并克隆到本地，档案 `cloned = true`。
+- Step 3 已完成：本项目**单仓**已创建并克隆到本地，档案 `cloned = true`（各端共享同一个仓根）。
 - Step 5 编译检查已通过（结论文件逐端 `Ok`）。
 - **git 凭据由用户在外部环境配置**：git credential helper / 系统凭据管理器 / 已配置的 remote。插件与技能**不提供凭据通路**，助手**不得**在 URL 里拼 `oauth2:<PAT>@` 之类的凭据。
 
 ---
 
-## 1. 逐端执行顺序
+## 1. 执行顺序（单仓一次）
 
-对每个端**依次**执行 1.1 → 1.5（不要并行推送，避免触发云效限流）。
+在**仓根**依次执行 1.1 → 1.5，**只跑一遍**（不是按端跑三遍：三端同仓同分支，重复推送只会撞限流）。
 
 > **助手侧口径（框架 git 工具组）**：本节命令是"口径"，助手实际调
 > `GitStatusAsync` / `GitCheckoutAsync` / `GitAddAsync` / `GitCommitAsync` / `GitPushAsync` / `GitLogAsync`，
-> 且**每个调用都要带 `workingDirectory=<该端仓库目录>`**（不传时框架在项目工作区根执行，会报「不是 git 仓库」）。
+> 且**每个调用都要带 `workingDirectory=<仓库根>`**（不传时框架在项目工作区根执行，会报「不是 git 仓库」）。
 > 映射：`git add -A` ⇒ `GitAddAsync(paths=["."])`（**不能传 `-A`**，工具会拼成 `git add -- -A` 当 pathspec 而失败）；
 > `git checkout -b <branch>` ⇒ `GitCheckoutAsync(target=<branch>, createBranch=true)`；`git push -u origin <branch>` ⇒
 > `GitPushAsync(remote="origin", branch=<branch>, setUpstream=true)`。
@@ -38,7 +38,7 @@ git status --porcelain
 | 情形 | 目标分支 |
 |------|----------|
 | 插件配置 `pushBranch` 有值（**本组织为 `develop`**） | 用它 |
-| `pushBranch` 留空 | 退回该端仓库的**默认分支** |
+| `pushBranch` 留空 | 退回仓库的**默认分支** |
 | 仓库仍为空（无任何分支） | 以 `main` 为默认分支创建并推送 |
 
 操作：
@@ -49,7 +49,7 @@ git checkout <branch>                                # 命中则直接切过去
 git checkout -b <branch>                             # 未命中则自当前 pin（= 档案 templateBranch）新建
 ```
 
-> 分支口径与 Step 3 的 pin 择优一致（各端仓库实际都落在 `develop`）⇒ 不会出现「在 develop 编译、推 main」。
+> 分支口径与 Step 3 的 pin 择优一致（仓库实际落在 `develop`）⇒ 不会出现「在 develop 编译、推 main」。
 
 ### 1.3 提交身份（兜底口径）
 
@@ -82,7 +82,8 @@ chore: 初始化 {项目名}（{端标签}）——由「新建项目」向导�
 ```
 
 - `{端标签}` 取中文：`后端` / `管理端` / `移动端`（**已自带"端"字，不要再拼一个"端"**）。
-- 示例：`chore: 初始化 测试项目一（管理端）——由「新建项目」向导按模板 TJCES-Admin 生成`
+- **单仓只提交一次**：本次项目包含的端**全列**，用 `、` 连接，如 `后端、管理端`（不要为每端各提交一次）。
+- 示例：`chore: 初始化 测试项目一（后端、管理端）——由「新建项目」向导按模板 TJCES-Mixed 生成`
 
 ### 1.5 推送
 
@@ -91,7 +92,7 @@ git push -u origin <branch>      # 不强制推送
 ```
 
 - **不 force、不 `--force-with-lease`**；非快进（远端已有提交）⇒ 停下让用户确认，**不自动重试**。
-- 成功后记 `artifacts[]`：各端分支名 + 提交 id（`commitId`）。
+- 成功后记 `artifacts[]`：**每端一条**（`end` + 分支名 + 提交 id `commitId`），三端的 `commitId` 与分支名**同值**（同仓同一次提交）。
 
 ---
 
@@ -139,7 +140,7 @@ remote: Invalid username or password.
 ## 4. 限流退避口径（严格照做）
 
 - **退避序列（线性）**：第 1 次重试前等 **10s**，第 2 次 **20s**，第 3 次 **30s**。
-- **最多 3 次重试**（不含首次尝试），单端最坏多等 60s。
+- **最多 3 次重试**（不含首次尝试），单次推送最坏多等 60s。
 - ⚠️ **是线性间隔，不是指数间隔**。
 - 每次等待期间，在操作记录 / `checks[].detail` 里写明：`<仓库名> · <分支> —— 云效服务端限流（<原文摘要>）：Ns 后重试（第 k/3 次）`。
 - 3 次用尽仍失败 ⇒ `failed`，文案：
@@ -155,9 +156,9 @@ remote: Invalid username or password.
 
 ## 5. 完成判定（逐端完备性）
 
-- `artifacts[]` 里 **每端一条** 记录（分支名 + 提交 id）；
-- `checks[]` **每端一条**，`name` 取端名；
-- **任一端失败 ⇒ 整步 `failed`**，但已成功端的账目**照常写进档案**（重跑只补缺失）；
+- `artifacts[]` 里 **每端一条** 记录（分支名 + 提交 id；三端同值），**推送动作只发生一次**；
+- `checks[]` **每端一条**，`name` 取端名（内容同值）；
+- **失败 ⇒ 整步 `failed`**，但已落账的档案与产物**照常保留**（重跑只补缺失）；
 - `status="done"` 才允许推进 Step 7（`CanCreatePipelines` 读 Step 6 结论文件的逐端推送结果）。
 
-> 只推一次不动就重推：重跑本步即可（先查后建 > 幂等），已推送的端不会重复提交（`git diff --cached --quiet` 为空则跳过）。
+> 只推一次不动就重推：重跑本步即可（先查后建 > 幂等），已推送的内容不会重复提交（`git diff --cached --quiet` 为空则跳过）。

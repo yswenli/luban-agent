@@ -40,9 +40,10 @@ public class NewProjectArtifactMappingUnitTest
             {
                 Kind = "repository",
                 End = ProjectEnd.Service,
-                Name = "jnms-Service",
-                WebUrl = "https://codeup.aliyun.com/x/jnms-Service",
-                LocalPath = "D:\\ws\\jnms\\jnms-Service",
+                Name = "jnms-Mixed",
+                WebUrl = "https://codeup.aliyun.com/x/jnms-Mixed",
+                LocalPath = "D:\\ws\\jnms\\jnms-Mixed",
+                ModulePath = "jnms-Service",
                 TemplateBranch = "develop",
                 Extra = new RepositoryArtifactExtra
                 {
@@ -61,8 +62,9 @@ public class NewProjectArtifactMappingUnitTest
             {
                 Kind = "repository",
                 End = ProjectEnd.Admin,
-                Name = "jnms-Admin",
-                LocalPath = "D:\\ws\\jnms\\jnms-Admin",
+                Name = "jnms-Mixed",
+                LocalPath = "D:\\ws\\jnms\\jnms-Mixed",
+                ModulePath = "jnms-Admin",
                 TemplateBranch = "develop",
                 Extra = new RepositoryArtifactExtra { TemplateRepository = "TJCES-Admin" }
             }
@@ -91,8 +93,9 @@ public class NewProjectArtifactMappingUnitTest
         Assert.AreEqual(2, precheck.Ends.Count);
 
         var service = precheck.Ends.Single(one => one.End == ProjectEnd.Service);
-        Assert.AreEqual("jnms-Service", service.RepositoryName);
-        Assert.AreEqual("D:\\ws\\jnms\\jnms-Service", service.LocalPath);
+        Assert.AreEqual("jnms-Mixed", service.RepositoryName);
+        Assert.AreEqual("jnms-Service", service.ModulePath);
+        Assert.AreEqual("D:\\ws\\jnms\\jnms-Mixed", service.LocalPath);
         Assert.AreEqual("develop", service.ResolvedBranch);
         Assert.AreEqual("TJCES-Service", service.TemplateRepository);
         Assert.AreEqual(11, service.TemplateProjectId);
@@ -155,6 +158,17 @@ public class NewProjectArtifactMappingUnitTest
         var precheck = ArtifactViewModelMapper.ToRepositoryPrecheck(report, TakenAt, BothEnds);
 
         StringAssert.Contains(string.Join("；", precheck.Errors), "缺少 localPath");
+    }
+
+    [TestMethod]
+    public void ToRepositoryPrecheck_缺modulePath_报错误()
+    {
+        var report = PrecheckReport();
+        report.Artifacts.Single(one => one.Kind == "repository" && one.End == ProjectEnd.Admin).ModulePath = string.Empty;
+
+        var precheck = ArtifactViewModelMapper.ToRepositoryPrecheck(report, TakenAt, BothEnds);
+
+        StringAssert.Contains(string.Join("；", precheck.Errors), "缺少 modulePath");
     }
 
     // ── Step 7 准备结论 → 流水线预览 ───────────────────────────────────────

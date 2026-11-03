@@ -11,11 +11,15 @@
 
 ## 执行（由你**亲自执行**，编译方式按工程类型判断）
 
-**本技能要求项目助手在本会话内自己动手**，逐端编译并汇总：
+**本技能要求项目助手在本会话内自己动手**，逐端编译并汇总。
 
-1. 先看清每端仓库里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml` / `pom.xml` …），
+> **单仓口径**：本项目只有一个仓库，三端是**仓内模块目录**。编译 / 装依赖都必须进
+> `<仓库根>\<模块目录>`（如 `Csxmy-Service` / `Csxmy-Admin`）执行，**不要在仓库根执行**；
+> `git` 类命令仍在仓库根。
+
+1. 先看清每个模块目录里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml` / `pom.xml` …），
    再自行决定编译命令——**编译方式由你按工程类型判断**，插件不预设命令。
-2. 依赖未装就先装（`dotnet restore` / `npm install` / `cnpm install` / `pnpm install`），再编译；
+2. 依赖未装就先装（`dotnet restore` / `pnpm install` / `npm install`），再编译；
    **每个端最多重试 2 次**。装依赖必须**独占一条命令并等它正常退出**：不要接管道截断输出、
    不要与其它命令并行——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑。
 3. 逐端得出「通过 / 失败」与一句话结论，写进**结论文件**；回复正文只回一行
@@ -23,11 +27,11 @@
 
 常见形态（供参考，非硬性规定）：
 
-| 端 | 典型命令 |
-|----|----------|
+| 端 | 典型命令（在对应模块目录内执行） |
+|----|----------------------------------|
 | 后端（.NET） | `dotnet build <解决方案>.sln` |
-| 管理端（Vite / Vue） | 按 `docs/org-reference.md` 的「构建姿势」节 |
-| 移动端 | 按工程类型（如 Flutter 的 `flutter build`） |
+| 管理端（Vite / Vue） | 按 `docs/org-reference.md` 的「构建姿势」节（Node 18/20 + pnpm） |
+| 移动端 | Node 16 + npm，`npm install` → `npm run build:dev` |
 
 ### 本组织已知构建姿势
 
@@ -36,10 +40,14 @@
 
 管理端固定 4 步（简版，详见文档）：
 
-1. `fnm exec --using=16 -- npm.cmd run build:dev` —— 成功即通过；
-2. 失败才查环境：`fnm exec --using=16 -- node -v` 必须是 v16.x，不是就用 `fnm exec --using=16 --` 包一层；
-3. `fnm exec --using=16 -- cnpm.cmd install -g vite` → `fnm exec --using=16 -- cnpm.cmd i`；
-4. 再 `fnm exec --using=16 -- npm.cmd run build:dev`，以这一次输出定结论。
+1. `pnpm run build:dev` —— 成功即通过；
+2. 失败才查环境：`node -v` 必须是 `v18.x` / `v20.x`；`pnpm -v` 应可用（缺 pnpm 才 `npm install -g pnpm`）；
+   **不要**改用 npm / cnpm（仓里残留的 `package-lock.json` 是历史遗留，混用会装出不一致的依赖树）；
+3. `pnpm install`（锁文件过期时先核对 `package.json` 与 `pnpm-lock.yaml` 的差异，不要手工改锁文件）；
+4. 再 `pnpm run build:dev`，以这一次输出定结论。
+
+> 移动端与之相反：仍是 **Node 16 + npm**（`.node-version` = `lts-gallium`，配 `package-lock.json`），
+> 不要对它改用 pnpm。
 
 > 本仓库 `build:dev` 实测要 **2~4 分钟**。若看到 `esbuild service stopped: write EPIPE` + `exitCode=-1`
 > 而 `dist/` 已写全，那是**进程被超时杀掉**的收尾残响，不是 monaco 插件不兼容。

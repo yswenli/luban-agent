@@ -9,9 +9,10 @@
 
 | 占位符 | 取值 | 说明 |
 |--------|------|------|
-| `{pipelineName}` | `{CODE}_DEV_Deploy_{repository}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Admin` | 顶层 `name:`，**提交后不允许改** |
-| `{repository}` | 该端仓库名，例 `Csxmy-Admin` | `sources.repo.name` |
-| `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
+| `{pipelineName}` | `{CODE}_DEV_Deploy_{module}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Admin` | 顶层 `name:`，**提交后不允许改** |
+| `{repository}` | **本项目单仓仓库名**，例 `Csxmy-Mixed`（三端同值） | `sources.repo.name` |
+| `{module}` | 该端仓内模块目录，例 `Csxmy-Admin` | 构建步骤的工作目录；同时是**流水线名后缀** |
+| `{endpoint}` | 单仓 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`；三端同值） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
 | `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md)「后端流水线（Service）」表里的 codeup 服务连接 | codeup 服务连接 id |
 | `{cacheMode}` | 构建集群留空 ⇒ `remote`；`private/*` ⇒ `local` | `cache.cacheMode` |
@@ -19,7 +20,7 @@
 | `{ossRegion}` | `cn-shanghai` | OSS 区域（**必填**） |
 | `{ossBucket}` | 见 [`org-reference.md`](./org-reference.md)「前端流水线（Admin / Mobile）」表里的 OSS bucket | OSS 桶 |
 | `{ossPrefix}` | `DEV/{CODE}-Admin/` 展开值，例 `DEV/CSXMY-Admin/` | `OSSDelete.prefix` / `OSSUpload.targetFilePath` |
-| `{uploadPath}` | `dist` | `OSSUpload.sourceFilePath` |
+| `{uploadPath}` | `{module}/dist`（相对**仓根**），例 `Csxmy-Admin/dist` | `OSSUpload.sourceFilePath` |
 
 > 管理端**无**变量段（模板不写顶层 `variables:`）；**无** `runsOn`（构建集群留空 ⇒ 云效默认北京公共集群）。
 > 需要私有构建集群时在控制台确认形态后回填（形如 `private/<集群ID>`，回填后 `cacheMode` 取 `local`）。
@@ -43,7 +44,7 @@ sources:
 
 cache:
   cacheDirs:
-    - /root/.npm
+    - /root/.local/share/pnpm
     - /root/.cache
   cacheMode: {cacheMode}
 
@@ -60,12 +61,13 @@ stages:
             name: Node.js 构建
             with:
               versionType: custom
-              customNodeVersion: lts/gallium   # = Node 16，对齐企服版 CI_RUNTIME_VERSION
+              customNodeVersion: lts/iron      # = Node 20 LTS，对齐管理端 README「Node 18/20 LTS」
               run: |
                 set -e
-                npm config set registry https://registry.npmmirror.com
-                npm install
-                npm run build:dev
+                cd "$PROJECT_DIR/{module}"
+                command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+                pnpm install --frozen-lockfile || pnpm install
+                pnpm run build:dev
           oss_delete:
             step: OSSDelete
             name: 清理 OSS 远端目录
@@ -88,6 +90,11 @@ stages:
 > ⚠️ 键名别写错：`OSSUpload` 用 `sourceFilePath` / `targetFilePath`（**不是** `localPath` / `prefix`）；`OSSDelete` 用 `prefix`；两者都必填 `region`。
 > ⚠️ `NodeBuild` 必填 `with.run`；Node 运行时用 `versionType` + `customNodeVersion`（**不要**写 `nodeVersion` 之类的旧键）。
 
+> **单仓 + pnpm**：`sources.repo` 指向单仓，管理端代码在仓内模块目录 `{module}` 下，构建先 `cd "$PROJECT_DIR/{module}"`。
+> 管理端以 `pnpm-lock.yaml` 为准（**不要**改用 npm：仓里残留的 `package-lock.json` 是历史遗留，混用会装出不一致的依赖树）；
+> `pnpm-lock.yaml` 与 `package.json` 可能不完全同步，锁文件过期时退回普通 `pnpm install`，不要手工改锁文件。
+> 上传源 `{module}/dist` **相对仓根**（`OSSUpload` 的工作目录是仓根，不是模块目录）。
+
 ## 渲染后示例（项目缩写 `csxmy`）
 
 ```yaml
@@ -96,8 +103,8 @@ name: CSXMY_DEV_Deploy_Csxmy-Admin
 sources:
   repo:
     type: codeup
-    name: Csxmy-Admin
-    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Admin.git
+    name: Csxmy-Mixed
+    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Mixed.git
     branch: develop
     triggerEvents: []
     certificate:
@@ -106,7 +113,7 @@ sources:
 
 cache:
   cacheDirs:
-    - /root/.npm
+    - /root/.local/share/pnpm
     - /root/.cache
   cacheMode: remote
 
@@ -122,12 +129,13 @@ stages:
             name: Node.js 构建
             with:
               versionType: custom
-              customNodeVersion: lts/gallium
+              customNodeVersion: lts/iron
               run: |
                 set -e
-                npm config set registry https://registry.npmmirror.com
-                npm install
-                npm run build:dev
+                cd "$PROJECT_DIR/Csxmy-Admin"
+                command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+                pnpm install --frozen-lockfile || pnpm install
+                pnpm run build:dev
           oss_delete:
             step: OSSDelete
             name: 清理 OSS 远端目录
@@ -143,7 +151,7 @@ stages:
               serviceConnection: {ossSc}
               region: cn-shanghai
               bucket: '{ossBucket}'
-              sourceFilePath: 'dist'
+              sourceFilePath: 'Csxmy-Admin/dist'
               targetFilePath: 'DEV/CSXMY-Admin/'
 ```
 

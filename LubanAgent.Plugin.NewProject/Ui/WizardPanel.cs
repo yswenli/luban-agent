@@ -27,7 +27,7 @@ namespace LubanAgent.Plugin.NewProject.Ui;
 /// </para>
 /// <para>
 /// <b>本阶段范围</b>：Step 1 真表单（名称 / 缩写 / 介绍 / 端选择 / 本地目录 + 浏览）、
-/// Step 2 初始化触发、Step 3 建库确认区（逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 克隆冲突三选一）、
+/// Step 2 初始化触发、Step 3 建库确认区（单仓仓库名 + 逐端模块目录 / 可见性 / 归属组织 / 「我已确认」+ 克隆冲突三选一）、
 /// Step 4 数据库探活表单（服务器 / 端口 / 库名 / 账号 / 口令 + 「开始探活」）、Step 5 逐端编译区与
 /// Step 6 推送区已接入，校验与执行全部委托共享能力层（面板只做展示与投递，零业务规则）；
 /// Step 4 / 5 的实际动作由项目助手执行，面板只负责采集参数与呈现结论。Step 7 的操作区在 P5 接入。
@@ -56,10 +56,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     {
         (WizardStep.BasicInfo, "基本信息", "名称 / 缩写 / 介绍 / 端 / 本地目录"),
         (WizardStep.Scaffold, "初始化", "工作区 · 会话 · 技能 · 云效 · 项目助手"),
-        (WizardStep.Repositories, "建库", "以模板建各端仓库并克隆到本地"),
+        (WizardStep.Repositories, "建库", "按模板建单仓并克隆到本地（各端为仓内模块）"),
         (WizardStep.Database, "数据库", "只读探活：能连上且库存在"),
         (WizardStep.Build, "编译", "逐端编译并汇总结果"),
-        (WizardStep.Push, "推送", "提交并推送到各端专属仓库"),
+        (WizardStep.Push, "推送", "提交并推送到本项目单仓"),
         (WizardStep.Pipeline, "流水线", "逐端按模板渲染并创建（含变量与缓存）")
     };
 
@@ -180,7 +180,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     private Border _conflictPanel = null!;
     private StackPanel _repoRowsPanel = null!;
 
-    /// <summary>各端仓库名输入行（Step 3 确认区）。</summary>
+    /// <summary>单仓模式下的目标仓库名输入（Step 3 确认区，各端共用）。</summary>
+    private readonly TextBox _repoNameBox = new() { PlaceholderText = "目标仓库名（可改，各端共用）" };
+
+    /// <summary>各端模块目录行（Step 3 确认区，只读展示仓内子目录）。</summary>
     private readonly List<RepoRowView> _repoRows = new();
 
     private readonly RadioButton _visibilityInternal = new()
@@ -793,7 +796,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     new TextBlock { Text = "新建项目", FontSize = 20, FontWeight = FontWeight.SemiBold, Foreground = PrimaryText },
                     new TextBlock
                     {
-                        Text = "以 TJCES 三端模板仓创建新项目：后端与管理端必选，移动端可选。",
+                        Text = "以单仓模板仓（一个仓库 + 三端模块子目录）创建新项目：后端与管理端必选，移动端可选。",
                         FontSize = 12,
                         Foreground = MutedText,
                         TextWrapping = TextWrapping.Wrap
@@ -899,26 +902,26 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     });
 
     /// <summary>
-    /// Step 3「用户确认界面」操作区：逐端仓库名 / 可见性 / 归属组织 / 「我已确认」+ 建库按钮，
+    /// Step 3「用户确认界面」操作区：单仓目标仓库名 / 逐端模块目录 / 可见性 / 归属组织 / 「我已确认」+ 建库按钮，
     /// 以及运行期出现的克隆冲突三选一。
     /// </summary>
     /// <returns>操作区。</returns>
     private Border BuildStep3Area()
     {
+        _repoNameBox.TextChanged += OnPlanTextChanged;
+
         _repoRowsPanel = new StackPanel { Spacing = 10 };
         foreach (var end in new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile })
         {
-            var nameBox = new TextBox { PlaceholderText = "仓库名（可改）" };
-            nameBox.TextChanged += OnPlanTextChanged;
-            var templateText = new TextBlock { FontSize = 11, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
+            var moduleText = new TextBlock { FontSize = 11, Foreground = MutedText, TextWrapping = TextWrapping.Wrap };
             var panel = new StackPanel
             {
                 Spacing = 4,
-                Children = { LabeledField($"{EndLabel(end)}目标仓库名", nameBox), templateText }
+                Children = { LabeledField($"{EndLabel(end)}仓内模块目录", moduleText) }
             };
 
             _repoRowsPanel.Children.Add(panel);
-            _repoRows.Add(new RepoRowView(end, panel, nameBox, templateText));
+            _repoRows.Add(new RepoRowView(end, panel, moduleText));
         }
 
         _conflictPanel = new Border
@@ -950,17 +953,18 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             Spacing = 10,
             Children =
             {
-                new TextBlock { Text = "Step 3 · 按模板建库并克隆", FontSize = 14, Foreground = PrimaryText },
+                new TextBlock { Text = "Step 3 · 按模板建库并克隆（单仓）", FontSize = 14, Foreground = PrimaryText },
                 new TextBlock
                 {
-                    Text = "以各端模板仓为模板，在云效组织内创建本项目专属仓库，再按 HTTPS 地址克隆到本地并替换占位符。"
-                         + "仓库名可在此修改（改名会重新克隆到新目录）；模板在云效模板库中定位，pin 分支留空时按 "
-                         + "develop → master → main → 模板默认分支 实时解析。",
+                    Text = "以模板仓为模板，在云效组织内创建本项目专属的单仓（各端只是仓内模块目录），再按 HTTPS 地址克隆到本地"
+                         + "并替换占位符。仓库名可在此修改（改名会重新克隆到新目录）；模板在云效模板库中定位，"
+                         + "pin 分支留空时按 develop → master → main → 模板默认分支 实时解析。",
                     FontSize = 12,
                     Foreground = MutedText,
                     TextWrapping = TextWrapping.Wrap
                 },
                 new Border { Height = 1, Background = DividerBrush },
+                LabeledField("目标仓库名（各端共用）", _repoNameBox),
                 _repoRowsPanel,
                 LabeledField("可见性", new StackPanel
                 {
@@ -985,8 +989,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                             new TextBlock { Text = "Step 3 预检（只读，不创建）", FontSize = 12, Foreground = PrimaryText },
                             new TextBlock
                             {
-                                Text = "预检只查不建：把「将要使用什么参数」提前摊开——目标代码组（新建还是复用）、逐端模板库命中项、"
-                                     + "解析出的 pin 分支与依据、目标仓库名（新建还是复用）、可见性与落地位置。"
+                                Text = "预检只查不建：把「将要使用什么参数」提前摊开——目标代码组（新建还是复用）、目标仓库名（新建还是复用）、"
+                                     + "可见性与落地位置、模板库命中项、解析出的 pin 分支与依据、各端模块目录。"
                                      + "任何输入变更都会让预检作废，需重新预检后才能执行。",
                                 FontSize = 11,
                                 Foreground = MutedText,
@@ -1142,7 +1146,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             new TextBlock { Text = "Step 6 · 推送改动到自有仓库", FontSize = 14, Foreground = PrimaryText },
             new TextBlock
             {
-                Text = "逐端执行：切到目标分支（配置 pushBranch，默认 develop；不存在则从模板 pin 分支创建）"
+                Text = "单仓执行（各端同仓，只推一次）：切到目标分支（配置 pushBranch，默认 develop；不存在则从模板 pin 分支创建）"
                      + "→ 暂存全部改动（git add .）→ 有改动则提交 → 推送。"
                      + "不强制推送；提交身份优先取本机 git 配置，缺失时用插件配置兜底。",
                 FontSize = 12,
@@ -1311,8 +1315,8 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         });
     }
 
-    /// <summary>Step 3 各端仓库名行的视觉载体。</summary>
-    private sealed record RepoRowView(ProjectEnd End, Control Root, TextBox NameBox, TextBlock TemplateText);
+    /// <summary>Step 3 各端模块目录行的视觉载体（单仓模式下仓库名只有一份，行内只展示模块目录）。</summary>
+    private sealed record RepoRowView(ProjectEnd End, Control Root, TextBlock ModuleText);
 
     /// <summary>Step 5 逐端编译状态行的视觉载体。</summary>
     private sealed record EndBuildRowView(ProjectEnd End, Control Root, TextBlock Status);
@@ -2346,7 +2350,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 把档案里的建库计划回填到 Step 3 确认区（逐端：仓库名输入 + 模板仓 / pin 信息）。
+    /// 把档案里的建库计划回填到 Step 3 确认区（单仓：仓库名一份 + 逐端模块目录 / 模板仓与 pin 信息）。
     /// </summary>
     /// <param name="spec">项目档案。</param>
     private void PopulateStep3Area(ProjectSpec spec)
@@ -2354,51 +2358,63 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _populating = true;
         try
         {
+            var selected = spec.Repositories
+                .Where(item => spec.Ends.Count == 0 || spec.Ends.Contains(item.End))
+                .ToList();
+
+            // 单仓：仓库名各端同值，只回填一次（优先取本次预检读数，其次档案）。
+            var precheckedName = _precheck?.Ends.FirstOrDefault()?.RepositoryName;
+            var name = !string.IsNullOrWhiteSpace(precheckedName)
+                ? precheckedName!
+                : selected.FirstOrDefault()?.RepositoryName ?? string.Empty;
+            if (!_repoNameBox.IsFocused && !string.Equals(_repoNameBox.Text, name, StringComparison.Ordinal))
+                _repoNameBox.Text = name;
+
             foreach (var row in _repoRows)
             {
-                var selected = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
-                row.Root.IsVisible = selected;
-                if (!selected)
+                var visible = spec.Ends.Count == 0 || spec.Ends.Contains(row.End);
+                row.Root.IsVisible = visible;
+                if (!visible)
                     continue;
 
                 var repository = spec.Repositories.FirstOrDefault(item => item.End == row.End);
-                var name = repository?.RepositoryName ?? string.Empty;
-                if (!row.NameBox.IsFocused && !string.Equals(row.NameBox.Text, name, StringComparison.Ordinal))
-                    row.NameBox.Text = name;
-
-                // 模板仓：优先显示「本次准备（只读）」的解析结果（_precheck 才是当次事实）；
-                // 档案里的 TemplateRepository 只有执行成功后才回填，拿它判「未配置」会把刚预检通过的端误报成阻断。
                 var prechecked = _precheck?.Ends.FirstOrDefault(item => item.End == row.End);
-                if (prechecked is not null && !string.IsNullOrWhiteSpace(prechecked.TemplateRepository))
+                var module = !string.IsNullOrWhiteSpace(prechecked?.ModulePath)
+                    ? prechecked!.ModulePath
+                    : repository?.ModulePath ?? string.Empty;
+                var localPath = !string.IsNullOrWhiteSpace(prechecked?.LocalPath)
+                    ? prechecked!.LocalPath
+                    : repository?.LocalPath ?? string.Empty;
+
+                var clonedNow = repository?.Cloned == true ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
+                var templateRepository = prechecked?.TemplateRepository;
+                row.ModuleText.Foreground = MutedText;
+
+                if (!string.IsNullOrWhiteSpace(templateRepository))
                 {
-                    var pin = string.IsNullOrWhiteSpace(prechecked.ResolvedBranch)
+                    var pin = string.IsNullOrWhiteSpace(prechecked!.ResolvedBranch)
                         ? "pin 待运行期解析"
                         : $"pin {prechecked.ResolvedBranch}";
-                    var clonedNow = repository?.Cloned == true ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
-                    row.TemplateText.Foreground = MutedText;
-                    row.TemplateText.Text = $"模板仓：{prechecked.TemplateRepository} · {pin}（本次预检读数）{clonedNow}";
+                    row.ModuleText.Text = $"{module}（同仓；模块绝对路径 = {Path.Combine(localPath, module)}）"
+                                          + $" · 模板仓：{templateRepository} · {pin}{clonedNow}";
                     continue;
                 }
 
                 if (repository is not null && !string.IsNullOrWhiteSpace(repository.TemplateRepository))
                 {
-                    row.TemplateText.Foreground = MutedText;
                     var pin = string.IsNullOrWhiteSpace(repository.TemplateBranch)
                         ? "pin 待准备阶段解析（develop → master → main → 模板默认分支）"
                         : $"pin {repository.TemplateBranch}（上次执行落账；本次按 docs 重新解析）";
-                    var cloned = repository.Cloned ? " · 已克隆（重跑本步将跳过克隆）" : string.Empty;
-                    row.TemplateText.Text = $"模板仓：{repository.TemplateRepository} · {pin}{cloned}";
+                    row.ModuleText.Text = $"{module}（同仓）"
+                                          + $" · 模板仓：{repository.TemplateRepository} · {pin}{clonedNow}";
                     continue;
                 }
 
-                row.TemplateText.Foreground = MutedText;
-                row.TemplateText.Text = "模板仓：由准备阶段按 docs 的按端名称约定解析（执行成功后回填档案）。";
+                row.ModuleText.Text = $"{module}（同仓） · 模板仓：由准备阶段按 docs 的模板仓约定解析（执行成功后回填档案）。";
             }
 
             // 可见性：档案里已有取值则回填，否则保持「组织内公开」默认
-            var visibility = spec.Repositories
-                .FirstOrDefault(item => spec.Ends.Count == 0 || spec.Ends.Contains(item.End))
-                ?.Visibility;
+            var visibility = selected.FirstOrDefault()?.Visibility;
             var isPrivate = string.Equals(visibility, "private", StringComparison.OrdinalIgnoreCase);
             _visibilityInternal.IsChecked = !isPrivate;
             _visibilityPrivate.IsChecked = isPrivate;
@@ -2409,15 +2425,11 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 : organization!;
             _orgText.Foreground = string.IsNullOrWhiteSpace(organization) ? DangerBrush : PrimaryText;
 
-            _landingText.Text = string.IsNullOrWhiteSpace(spec.LocalPath)
-                ? "未设置（Step 1 的本地目录为空）"
-                : string.Join("；", _repoRows.Where(view => view.Root.IsVisible).Select(view =>
-                {
-                    var repository = spec.Repositories.FirstOrDefault(item => item.End == view.End);
-                    return string.IsNullOrWhiteSpace(repository?.LocalPath)
-                        ? $"{EndLabel(view.End)}：—"
-                        : $"{EndLabel(view.End)}：{repository!.LocalPath}";
-                }));
+            // 单仓：落地位置只有一处（仓库根），模块目录已在上面逐行给出。
+            var repositoryRoot = selected.FirstOrDefault()?.LocalPath;
+            _landingText.Text = !string.IsNullOrWhiteSpace(spec.LocalPath) && !string.IsNullOrWhiteSpace(repositoryRoot)
+                ? $"{repositoryRoot}（单仓；各端为其下模块目录）"
+                : "未设置（Step 1 的本地目录为空）";
         }
         finally
         {
@@ -2485,8 +2497,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 预检输入签名：把「当前确认区实际会提交的参数」压成可比对字符串（端 + 仓库名 + 可见性）。
+    /// 预检输入签名：把「当前确认区实际会提交的参数」压成可比对字符串（项目 + 单仓仓库名 + 可见性）。
     /// </summary>
+    /// <remarks>单仓模式下仓库名各端同值，模块目录由插件按默认规则派生且不可编辑，故无需进签名。</remarks>
     /// <returns>签名；无档案时为空串。</returns>
     private string CurrentPlanSignature()
     {
@@ -2495,12 +2508,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             return string.Empty;
 
         var visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal";
-        var entries = _repoRows
-            .Where(row => row.Root.IsVisible)
-            .OrderBy(row => row.End)
-            .Select(row => $"{row.End}:{(row.NameBox.Text ?? string.Empty).Trim()}:{visibility}");
+        var name = (_repoNameBox.Text ?? string.Empty).Trim();
 
-        return $"{spec.Code}|{spec.Name}|{string.Join("|", entries)}";
+        return $"{spec.Code}|{spec.Name}|{name}|{visibility}";
     }
 
     /// <summary>预检读数的多行展示文案。</summary>
@@ -2516,14 +2526,26 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                     : $"（不存在，将新建 · 父级 {(precheck.GroupParentId.HasValue ? precheck.GroupParentId.Value.ToString() : "组织根")}）")
         };
 
+        // 单仓：仓库名 / 可见性 / 是否已存在在各端之间同值，只报一次，避免同一读数重复三遍。
+        var first = precheck.Ends.FirstOrDefault();
+        if (first is not null)
+        {
+            lines.Add($"目标仓库：{first.RepositoryName}"
+                      + $"（{(first.RepositoryExists ? "已存在，将复用" : "将新建")} · {VisibilityText(first.Visibility)}）"
+                      + $" → 仓库根 {first.LocalPath}");
+        }
+
         foreach (var end in precheck.Ends)
         {
             var label = EndLabel(end.End);
             lines.Add(end.IsReady
-                ? $"· {label}：模板 {end.TemplateRepository}（id {end.TemplateProjectId} · {end.TemplatePath}）"
-                  + $" · pin {end.ResolvedBranch}（{end.ResolvedBranchSource}）"
-                  + $" → 仓库 {end.RepositoryName}"
-                  + $"（{(end.RepositoryExists ? "已存在，将复用" : "将新建")} · {VisibilityText(end.Visibility)}）"
+                ? $"· {label}：模块 {end.ModulePath}"
+                  + (string.IsNullOrWhiteSpace(end.TemplateRepository)
+                      ? string.Empty
+                      : $" · 模板 {end.TemplateRepository}（id {end.TemplateProjectId} · {end.TemplatePath}）")
+                  + (string.IsNullOrWhiteSpace(end.ResolvedBranch)
+                      ? " · pin 待运行期解析"
+                      : $" · pin {end.ResolvedBranch}（{end.ResolvedBranchSource}）")
                 : $"· {label}：✕ {end.Error}");
         }
 
@@ -2550,6 +2572,10 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     /// <returns>按端建库计划。</returns>
     private List<EndRepository> CollectPlan(ProjectSpec spec)
     {
+        // 单仓：仓库名各端同值（界面只有一份输入），模块目录沿用档案里的取值（Step 2 已按默认规则生成，界面不提供编辑）。
+        var name = (_repoNameBox.Text ?? string.Empty).Trim();
+        var visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal";
+
         var plan = new List<EndRepository>();
         foreach (var row in _repoRows.Where(view => view.Root.IsVisible))
         {
@@ -2559,8 +2585,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
                 End = row.End,
                 TemplateRepository = current?.TemplateRepository ?? string.Empty,
                 TemplateBranch = current?.TemplateBranch ?? string.Empty,
-                RepositoryName = row.NameBox.Text ?? string.Empty,
-                Visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal",
+                RepositoryName = name,
+                ModulePath = current?.ModulePath ?? string.Empty,
+                Visibility = visibility,
                 DefaultBranch = string.IsNullOrWhiteSpace(current?.DefaultBranch) ? "main" : current!.DefaultBranch,
                 LocalPath = current?.LocalPath ?? string.Empty
             });
@@ -2616,8 +2643,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
         _confirmedCheck.IsEnabled = !_busy;
         _visibilityInternal.IsEnabled = !_busy;
         _visibilityPrivate.IsEnabled = !_busy;
-        foreach (var row in _repoRows)
-            row.NameBox.IsEnabled = !_busy;
+        _repoNameBox.IsEnabled = !_busy;
 
         // 回退导航（P4 收尾）：只放开「已到达」的步骤（回看 / 重跑）；超过推进指针的必须按顺序执行。
         // 步骤条行与「上一步」同受此约束；残留档案未处置时一并锁住。
@@ -3166,7 +3192,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
             _service.ApplyRepositoryPlan(plan);
 
-            SetBusy(true, "正在按模板建库并克隆（逐端：建组 → 模板库定位 / 解析 pin → 建库 / 复用 → 克隆 → 替换占位符）…");
+            SetBusy(true, "正在按模板建库并克隆（单仓：建组 → 模板库定位 / 解析 pin → 建库 / 复用 → 克隆 → 替换占位符 → 按端核对模块目录）…");
             var result = await _service.CreateRepositoriesAsync().ConfigureAwait(true);
             if (_unloaded)
                 return;
@@ -3575,7 +3601,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             return;
 
         ShowErrors(Array.Empty<string>());
-        SetBusy(true, "正在推送改动（逐端：整理分支 → 暂存 → 提交 → 推送）…");
+        SetBusy(true, "正在推送改动（单仓：整理分支 → 暂存 → 提交 → 推送）…");
         try
         {
             var result = await _service.PushAsync().ConfigureAwait(true);
@@ -3615,7 +3641,7 @@ public sealed class WizardPanel : UserControl, IPluginPanel
             }
 
             _conflictChoice = completion;
-            _conflictText.Text = $"{EndLabel(conflict.End)}目标目录已存在且非空：{conflict.LocalPath}（{conflict.EntryCount} 项）。"
+            _conflictText.Text = $"目标仓库目录已存在且非空：{conflict.LocalPath}（{conflict.EntryCount} 项）。"
                                  + $"远端仓库 {conflict.RepositoryName} 已就绪，请选择本地目录的处置方式：";
             _conflictPanel.IsVisible = true;
         });

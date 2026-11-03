@@ -47,8 +47,11 @@ public sealed class EndPrecheck
     /// <summary>pin 来源说明（配置登记 / 模板 develop / 模板默认分支 …）。</summary>
     public string ResolvedBranchSource { get; set; } = string.Empty;
 
-    /// <summary>目标仓库名（可在 Step 3 改）。</summary>
+    /// <summary>目标仓库名（单仓下各端同值，可在 Step 3 改）。</summary>
     public string RepositoryName { get; set; } = string.Empty;
+
+    /// <summary>仓内模块目录名（相对仓库根，如 <c>Csxmy-Service</c>）。</summary>
+    public string ModulePath { get; set; } = string.Empty;
 
     /// <summary>云效组织内已存在同名仓库（执行时复用，不再创建）。</summary>
     public bool RepositoryExists { get; set; }
@@ -59,7 +62,7 @@ public sealed class EndPrecheck
     /// <summary>可见性：<c>internal</c> / <c>private</c>。</summary>
     public string Visibility { get; set; } = "internal";
 
-    /// <summary>本地落地目录（执行时若已存在且非空，需三选一）。</summary>
+    /// <summary>本地仓根目录（单仓下各端同值；执行时若已存在且非空，需三选一）。</summary>
     public string LocalPath { get; set; } = string.Empty;
 
     /// <summary>本地目录已存在且非空（执行时会出现「复用 / 清空重克隆 / 中止」三选一）。</summary>

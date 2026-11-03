@@ -263,20 +263,18 @@ public sealed class NewProjectService : INewProjectService
             // 该判断属于 Step 3；在 Step 1 硬拦截会把用户挡在本步并不负责的决策上（P2 冒烟缺陷）。
             if (CodePattern.IsMatch(trimmedCode))
             {
-                foreach (var end in selected)
+                // 单仓：目标仓库只有一个，目录检查也只做一次。
+                var repoName = _settings.BuildRepositoryName(trimmedCode);
+                var repoDir = Path.Combine(trimmedPath, repoName);
+                try
                 {
-                    var repoName = _settings.BuildRepositoryName(trimmedCode, end);
-                    var repoDir = Path.Combine(trimmedPath, repoName);
-                    try
-                    {
-                        if (Directory.Exists(repoDir) && Directory.EnumerateFileSystemEntries(repoDir).Any())
-                            warnings.Add($"本地目录：{repoName} 已存在且非空；Step 3 克隆前会让你选择"
-                                         + "「复用已克隆 / 清空后重克隆 / 中止」。");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn($"[newproject] 检查目标目录失败：{repoDir}", ex);
-                    }
+                    if (Directory.Exists(repoDir) && Directory.EnumerateFileSystemEntries(repoDir).Any())
+                        warnings.Add($"本地目录：{repoName} 已存在且非空；Step 3 克隆前会让你选择"
+                                     + "「复用已克隆 / 清空后重克隆 / 中止」。");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"[newproject] 检查目标目录失败：{repoDir}", ex);
                 }
             }
         }
@@ -307,9 +305,15 @@ public sealed class NewProjectService : INewProjectService
             CurrentStep = WizardStep.BasicInfo
         };
 
-        // 各端目标仓库（仓库名默认 {Code}-Service/-Admin/-Mobile，如 Csxmy-Service；本地目录同源，Step 3 可改）。
+        // 单仓形态：一个项目只建一个目标仓库（默认 {Code}-Mixed，如 Csxmy-Mixed），各端是其仓内模块子目录
+        // （默认 {Code}-Service/-Admin/-Mobile，如 Csxmy-Service）；本地仓根同源，Step 3 可改仓库名。
         // 模板仓对照不再由插件配置提供：迁到 docs/org-reference.md，由助手在 Step 3 只读准备阶段按那里的
-        // 按端名称约定定位模板仓，回填进 Step 3 预检产物（见 RepositoryPrecheck.TemplateRepository）。
+        // 模板仓约定定位模板仓，回填进 Step 3 预检产物（见 RepositoryPrecheck.TemplateRepository）。
+        var repositoryName = _settings.BuildRepositoryName(spec.Code);
+        var repositoryRoot = string.IsNullOrWhiteSpace(spec.LocalPath)
+            ? string.Empty
+            : Path.Combine(spec.LocalPath, repositoryName);
+
         foreach (var end in selected)
         {
             spec.Repositories.Add(new EndRepository
@@ -317,12 +321,11 @@ public sealed class NewProjectService : INewProjectService
                 End = end,
                 TemplateRepository = string.Empty,
                 TemplateBranch = string.Empty,
-                RepositoryName = _settings.BuildRepositoryName(spec.Code, end),
+                RepositoryName = repositoryName,
+                ModulePath = _settings.BuildModulePath(spec.Code, end),
                 Visibility = _settings.DefaultVisibility,
                 DefaultBranch = _settings.PushBranch,
-                LocalPath = string.IsNullOrWhiteSpace(spec.LocalPath)
-                    ? string.Empty
-                    : Path.Combine(spec.LocalPath, _settings.BuildRepositoryName(spec.Code, end))
+                LocalPath = repositoryRoot
             });
         }
 
@@ -566,21 +569,39 @@ public sealed class NewProjectService : INewProjectService
         if (entries.Count == 0)
             errors.Add("建库计划：为空（Step 1 至少要选择后端与管理端）。");
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 单仓口径：各端共用同一仓库名，故仓库名只校验一次；端之间只校验模块目录名唯一、不重复。
+        var defaultName = _settings.BuildRepositoryName(Current?.Code ?? string.Empty);
+        var repoName = entries.Select(entry => entry.RepositoryName?.Trim() ?? string.Empty)
+            .FirstOrDefault(name => name.Length > 0) ?? string.Empty;
+
+        if (repoName.Length == 0)
+            errors.Add("目标仓库名：必填。");
+        else if (!RepositoryNamePattern.IsMatch(repoName))
+            errors.Add("目标仓库名：只能包含字母、数字、下划线、中划线与点，且需以字母或数字开头"
+                       + $"（建议沿用默认 {defaultName}）。");
+        else if (repoName.Length > 100)
+            errors.Add("目标仓库名：请控制在 100 个字符以内。");
+
+        var distinctNames = entries
+            .Select(entry => entry.RepositoryName?.Trim() ?? string.Empty)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (distinctNames.Count > 1)
+            errors.Add($"目标仓库名：单仓模式下各端必须共用同一仓库名（当前出现 {string.Join("、", distinctNames)}）。");
+
+        var seenModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in entries)
         {
             var label = EndLabel(entry.End);
-            var name = entry.RepositoryName?.Trim() ?? string.Empty;
+            var module = entry.ModulePath?.Trim() ?? string.Empty;
 
-            if (name.Length == 0)
-                errors.Add($"{label}仓库名：必填。");
-            else if (!RepositoryNamePattern.IsMatch(name))
-                errors.Add($"{label}仓库名：只能包含字母、数字、下划线、中划线与点，且需以字母或数字开头"
-                           + $"（建议沿用默认 {_settings.BuildRepositoryName(Current?.Code ?? string.Empty, entry.End)}）。");
-            else if (name.Length > 100)
-                errors.Add($"{label}仓库名：请控制在 100 个字符以内。");
-            else if (!seen.Add(name))
-                errors.Add($"仓库名：{name} 在各端重复（同批建库的仓库名必须互不相同）。");
+            if (module.Length == 0)
+                errors.Add($"{label}模块目录：必填（仓内子目录名，建议沿用默认 {_settings.BuildModulePath(Current?.Code ?? string.Empty, entry.End)}）。");
+            else if (module.Contains('/') || module.Contains('\\') || module.Contains("..", StringComparison.Ordinal))
+                errors.Add($"{label}模块目录：只能是仓根下的一级目录名（不得含路径分隔符或 ..）。");
+            else if (!seenModules.Add(module))
+                errors.Add($"模块目录：{module} 在各端重复（各端必须是不同的仓内子目录）。");
 
             if (!IsSupportedVisibility(entry.Visibility))
                 errors.Add($"{label}可见性：取值非法（只能是「组织内公开」或「私有」）。");
@@ -612,6 +633,9 @@ public sealed class NewProjectService : INewProjectService
         foreach (var incoming in plan)
         {
             var name = incoming.RepositoryName?.Trim() ?? string.Empty;
+            var module = string.IsNullOrWhiteSpace(incoming.ModulePath)
+                ? _settings.BuildModulePath(spec.Code, incoming.End)
+                : incoming.ModulePath.Trim();
             var visibility = NormalizeVisibility(incoming.Visibility);
 
             var target = spec.Repositories.FirstOrDefault(repository => repository.End == incoming.End);
@@ -623,21 +647,30 @@ public sealed class NewProjectService : INewProjectService
                     TemplateRepository = incoming.TemplateRepository,
                     TemplateBranch = incoming.TemplateBranch,
                     RepositoryName = name,
+                    ModulePath = module,
                     Visibility = visibility,
                     DefaultBranch = _settings.PushBranch,
-                    LocalPath = ResolveRepositoryLocalPath(spec, incoming.End, name)
+                    LocalPath = ResolveRepositoryLocalPath(spec, name)
                 });
 
                 continue;
             }
 
-            // 改名后本地目录随之改变：已克隆的端视为需要重新克隆（旧目录留在磁盘，由 Step 3 的三选一处置）
+            // 改名后本地目录随之改变：已克隆的端视为需要重新克隆（旧目录留在磁盘，由 Step 3 的三选一处置）。
+            // 单仓下仓库名各端共享，改名时同一批里的所有端一起作废，避免出现「一部分端仍标已克隆」的半旧状态。
             if (!string.Equals(target.RepositoryName, name, StringComparison.Ordinal))
-                target.Cloned = false;
+            {
+                foreach (var sibling in spec.Repositories.Where(repository =>
+                             string.Equals(repository.RepositoryName, target.RepositoryName, StringComparison.Ordinal)))
+                {
+                    sibling.Cloned = false;
+                }
+            }
 
             target.RepositoryName = name;
+            target.ModulePath = module;
             target.Visibility = visibility;
-            target.LocalPath = ResolveRepositoryLocalPath(spec, target.End, name);
+            target.LocalPath = ResolveRepositoryLocalPath(spec, name);
         }
 
         SaveSpec(spec);
@@ -1076,19 +1109,32 @@ public sealed class NewProjectService : INewProjectService
         if (input.Ends.Count == 0)
             return "助手请求处置目录冲突，但未指明是哪一端（inputs[].ends 为空）：请在面板重跑本步。";
 
+        // 单仓：各端共用同一个仓根目录，冲突只问一次（否则同一目录会被问三遍）。
+        var targets = new List<(string Path, EndRepository Repository, List<ProjectEnd> Ends)>();
         foreach (var end in input.Ends)
         {
             var repository = plan.FirstOrDefault(one => one.End == end);
             if (repository is null)
                 return $"助手要求处置 {EndLabel(end)} 的目录冲突，但该项目不在建库计划中。";
 
-            var choice = await AskCloneConflictAsync(repository, cancellationToken);
+            var path = repository.LocalPath ?? string.Empty;
+            var existing = targets.FirstOrDefault(one => string.Equals(one.Path, path, StringComparison.OrdinalIgnoreCase));
+            if (existing.Repository is null)
+                targets.Add((path, repository, new List<ProjectEnd> { end }));
+            else
+                existing.Ends.Add(end);
+        }
+
+        foreach (var target in targets)
+        {
+            var label = string.Join("、", target.Ends.Select(EndLabel));
+            var choice = await AskCloneConflictAsync(target.Repository, cancellationToken);
             if (choice is null)
-                return $"目标目录已存在且非空（{EndLabel(end)}：{repository.LocalPath}），但没有可用的交互通道："
+                return $"目标目录已存在且非空（{label}：{target.Path}），但没有可用的交互通道："
                      + "请从向导面板重跑本步并选择「复用已克隆 / 清空后重克隆 / 中止」。";
 
             if (choice == CloneConflictChoice.Abort)
-                return $"用户选择「中止」：{EndLabel(end)} 保持原样（远端产物保留，本地目录未改动）。";
+                return $"用户选择「中止」：{label} 保持原样（远端产物保留，本地目录未改动）。";
 
             var answer = choice switch
             {
@@ -1099,7 +1145,7 @@ public sealed class NewProjectService : INewProjectService
                 _ => choice.ToString()
             };
 
-            resolvedInputs.Add($"clone-conflict · {EndLabel(end)}（目录 {repository.LocalPath}）：{answer}");
+            resolvedInputs.Add($"clone-conflict · {label}（同一仓库目录 {target.Path}）：{answer}");
         }
 
         return null;
@@ -1147,6 +1193,8 @@ public sealed class NewProjectService : INewProjectService
                 repository.CloneUrl = fact.CloneUrl!.Trim();
             if (!string.IsNullOrWhiteSpace(fact.LocalPath))
                 repository.LocalPath = fact.LocalPath!.Trim();
+            if (!string.IsNullOrWhiteSpace(fact.ModulePath))
+                repository.ModulePath = fact.ModulePath!.Trim();
             if (!string.IsNullOrWhiteSpace(fact.TemplateBranch))
                 repository.TemplateBranch = fact.TemplateBranch!.Trim();
 
@@ -1620,10 +1668,17 @@ public sealed class NewProjectService : INewProjectService
             if (ok)
             {
                 var registered = new List<RemoteArtifact>();
+                var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var repository in targets)
                 {
+                    // 单仓：同一次推送只登记一条分支产物（各端共用同一个仓与分支）。
+                    if (!registeredPaths.Add(repository.LocalPath ?? string.Empty))
+                        continue;
+
                     // 产物名取「实际推送的分支」（结论里的 templateBranch），缺失时由 AddArtifact 退回仓库默认分支
-                    var pushedBranch = StepReportEvaluator.RepositoryArtifact(report!, repository.End)?.TemplateBranch;
+                    var pushedBranch = targets
+                        .Select(one => StepReportEvaluator.RepositoryArtifact(report!, one.End)?.TemplateBranch)
+                        .FirstOrDefault(one => !string.IsNullOrWhiteSpace(one));
                     var artifact = AddArtifact(spec, repository, RemoteArtifactKind.Branch, pushedBranch);
                     if (artifact is not null)
                         registered.Add(artifact);
@@ -2885,8 +2940,11 @@ public sealed class NewProjectService : INewProjectService
 
         var existing = spec.RemoteArtifacts.FirstOrDefault(artifact =>
             artifact.Kind == kind
-            && artifact.End == repository.End
-            && string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase));
+            && (kind == RemoteArtifactKind.Repository
+                // 单仓：仓库产物是项目级账目，按名称去重（各端共用同一个仓，不重复登记）。
+                ? string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase)
+                : artifact.End == repository.End
+                  && string.Equals(artifact.Name, name, StringComparison.OrdinalIgnoreCase)));
 
         if (existing is not null)
         {
@@ -2898,7 +2956,7 @@ public sealed class NewProjectService : INewProjectService
         var created = new RemoteArtifact
         {
             Kind = kind,
-            End = repository.End,
+            End = kind == RemoteArtifactKind.Repository ? null : repository.End,
             Name = name,
             WebUrl = webUrl,
             ExternalId = externalId
@@ -2908,18 +2966,17 @@ public sealed class NewProjectService : INewProjectService
         return created;
     }
 
-    /// <summary>由工作区根路径 + 仓库名推导本地目录（档案路径为空时返回空串）。</summary>
+    /// <summary>由工作区根路径 + 仓库名推导本地仓根目录（档案路径为空时返回空串）。</summary>
     /// <param name="spec">项目档案。</param>
-    /// <param name="end">所属端。</param>
-    /// <param name="repositoryName">仓库名。</param>
-    /// <returns>本地目录绝对路径。</returns>
-    private string ResolveRepositoryLocalPath(ProjectSpec spec, ProjectEnd end, string repositoryName)
+    /// <param name="repositoryName">仓库名（各端同值）。</param>
+    /// <returns>本地仓根绝对路径。</returns>
+    private string ResolveRepositoryLocalPath(ProjectSpec spec, string repositoryName)
     {
         if (string.IsNullOrWhiteSpace(spec.LocalPath))
             return string.Empty;
 
         var name = string.IsNullOrWhiteSpace(repositoryName)
-            ? _settings.BuildRepositoryName(spec.Code, end)
+            ? _settings.BuildRepositoryName(spec.Code)
             : repositoryName.Trim();
 
         return Path.Combine(spec.LocalPath, name);

@@ -8,9 +8,10 @@
 
 | 占位符 | 取值 | 说明 |
 |--------|------|------|
-| `{pipelineName}` | `{CODE}_DEV_Deploy_{repository}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Service` | 顶层 `name:`，**提交后不允许改**（同名幂等检索与档案名称都依赖它） |
-| `{repository}` | 该端仓库名，例 `Csxmy-Service` | `sources.repo.name` |
-| `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
+| `{pipelineName}` | `{CODE}_DEV_Deploy_{module}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Service` | 顶层 `name:`，**提交后不允许改**（同名幂等检索与档案名称都依赖它） |
+| `{repository}` | **本项目单仓仓库名**，例 `Csxmy-Mixed`（三端流水线同值） | `sources.repo.name` |
+| `{module}` | 该端仓内模块目录，例 `Csxmy-Service` | 构建步骤的工作目录；同时是**流水线名后缀**（三端同仓，用仓库名会撞名） |
+| `{endpoint}` | 单仓 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`；三端同值） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
 | `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md)「后端流水线（Service）」表里的 codeup 服务连接 | codeup 服务连接 id |
 | `{image}` | `{code}-service`，例 `csxmy-service` | 变量 `DOCKER_IMAGE_NAME` |
@@ -27,6 +28,10 @@
 > 并写进结论 `extra.recommendedDeployTargetUuid`——YAML 必须是**可直接提交**的正文，插件侧已无渲染器与守卫。
 > 执行阶段用户改选了目标就按新 uuid 覆盖改写；**仍没有可用 uuid 时不许提交**（不得写 `'<未选择：主机组 uuid>'` 之类占位）：
 > 写 `status="failed"` 并说明缺部署目标（提示词硬边界；部署目标取值见 pipeline-conventions.md）。
+
+> **单仓构建上下文**：`sources.repo` 指向的是**单仓**（`{Code}-Mixed`），后端的 `Dockerfile` 与解决方案都在
+> 仓内模块目录 `{module}` 下；构建步骤必须先 `cd "$PROJECT_DIR/{module}"`，再用 `-f Dockerfile .` 作上下文。
+> `SOLUTION_PATH`（`./WebHost/WebHost.csproj`）等 Dockerfile 内的相对路径**均相对该模块目录**，不要改成相对仓根。
 
 ## 模板正文
 
@@ -107,8 +112,8 @@ stages:
             with:
               run: |
                 set -e
-                cd "$PROJECT_DIR"
-                docker build -f WebHost/Dockerfile \
+                cd "$PROJECT_DIR/{module}"
+                docker build -f Dockerfile \
                   -t "$HARBOR_HOST/$DOCKER_REPO_NAME/$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" .
                 docker push "$HARBOR_HOST/$DOCKER_REPO_NAME/$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG"
 
@@ -142,8 +147,8 @@ name: CSXMY_DEV_Deploy_Csxmy-Service
 sources:
   repo:
     type: codeup
-    name: Csxmy-Service
-    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Service.git
+    name: Csxmy-Mixed
+    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Mixed.git
     branch: develop
     triggerEvents: []
     certificate:

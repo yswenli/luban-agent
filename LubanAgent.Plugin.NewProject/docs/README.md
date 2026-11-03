@@ -23,12 +23,12 @@
 
 | 文件 | 讲什么 | 何时读 |
 |------|--------|--------|
-| [`org-reference.md`](./org-reference.md) | 组织专有值总表：模板仓名、命名格式、pin 择优、占位符规则、三端流水线默认值、构建姿势、提交身份；每条注明**取值来源 + 生效位置** | **任何步骤开跑前**先读一遍；需要确认真实值（端口 / Harbor / 服务连接 / bucket / 主机组 uuid / 模板仓名）时必读。**这是唯一改值入口** |
-| [`step3-repositories.md`](./step3-repositories.md) | Step 3：模板库定位、pin 择优、建代码组 / 建库、建库后补查 `httpUrlToRepo`、轮询等 pin 分支、克隆（框架 git 工具组 + `workingDirectory` 口径）、占位符替换语义、本地复核项 | 执行 **Step 3**（准备与执行续跑）时读；补建 / 补克隆单端时也读 |
-| [`step6-push.md`](./step6-push.md) | Step 6：推送分支口径（`pushBranch`，本组织 `develop`）、提交身份兜底、git 工具组调用姿势（`GitAddAsync(paths=["."])` / commit / push）、**报错→处置对照表**、凭据失败固定提示、限流退避（10/20/30s，最多 3 次） | 执行 **Step 6**（推送改动到自有仓库）时读；排查推送失败时必读 |
-| [`pipeline-service.yml.md`](./pipeline-service.yml.md) | 后端（Service）新版流水线 YAML 模板：`Command` 登录 Harbor + `docker build/push`，**含独立 `deploy` 段**（`VMDockerDeploy`） | 执行 **Step 7** 准备阶段、渲染后端 YAML 时读 |
-| [`pipeline-admin.yml.md`](./pipeline-admin.yml.md) | 管理端（Admin）新版流水线 YAML 模板：`NodeBuild` + `OSSDelete`/`OSSUpload`（**无**独立部署阶段） | 执行 **Step 7** 准备阶段、渲染管理端 YAML 时读 |
-| [`pipeline-mobile.yml.md`](./pipeline-mobile.yml.md) | 移动端（Mobile）新版流水线 YAML 模板：`NodeBuild` + `OSSDelete`/`OSSUpload`（**无**独立部署阶段） | 执行 **Step 7** 准备阶段、渲染移动端 YAML 时读 |
+| [`org-reference.md`](./org-reference.md) | 组织专有值总表：模板仓名与仓内模块、命名格式、pin 择优、占位符规则、三端流水线默认值、构建姿势、提交身份；每条注明**取值来源 + 生效位置** | **任何步骤开跑前**先读一遍；需要确认真实值（端口 / Harbor / 服务连接 / bucket / 主机组 uuid / 模板仓名）时必读。**这是唯一改值入口** |
+| [`step3-repositories.md`](./step3-repositories.md) | Step 3：**单仓形态**（建库 / 克隆各一次，端=仓内模块目录）、模板库定位、pin 择优、建代码组 / 建库、建库后补查 `httpUrlToRepo`、轮询等 pin 分支、克隆（框架 git 工具组 + `workingDirectory` 口径）、占位符替换与模块目录归位、本地复核项 | 执行 **Step 3**（准备与执行续跑）时读；补克隆 / 补模块目录核对时也读 |
+| [`step6-push.md`](./step6-push.md) | Step 6：**单仓单次推送**（三端同仓同分支）、推送分支口径（`pushBranch`，本组织 `develop`）、提交身份兜底、git 工具组调用姿势（`GitAddAsync(paths=["."])` / commit / push）、**报错→处置对照表**、凭据失败固定提示、限流退避（10/20/30s，最多 3 次） | 执行 **Step 6**（推送改动到自有仓库）时读；排查推送失败时必读 |
+| [`pipeline-service.yml.md`](./pipeline-service.yml.md) | 后端（Service）新版流水线 YAML 模板：`Command` 登录 Harbor + `docker build/push`（构建目录 = 模块目录），**含独立 `deploy` 段**（`VMDockerDeploy`） | 执行 **Step 7** 准备阶段、渲染后端 YAML 时读 |
+| [`pipeline-admin.yml.md`](./pipeline-admin.yml.md) | 管理端（Admin）新版流水线 YAML 模板：`NodeBuild`（Node 18/20 + pnpm）+ `OSSDelete`/`OSSUpload`（**无**独立部署阶段） | 执行 **Step 7** 准备阶段、渲染管理端 YAML 时读 |
+| [`pipeline-mobile.yml.md`](./pipeline-mobile.yml.md) | 移动端（Mobile）新版流水线 YAML 模板：`NodeBuild`（Node 16 + npm）+ `OSSDelete`/`OSSUpload`（**无**独立部署阶段） | 执行 **Step 7** 准备阶段、渲染移动端 YAML 时读 |
 | [`pipeline-conventions.md`](./pipeline-conventions.md) | 流水线名称格式、变量与缓存口径、**待人工绑定清单**、覆盖更新口径、`pipelineId` 溯源标注、**哪端有独立部署阶段** | 执行 **Step 7**（准备与执行续跑）时**必读**：`yamlIncludesDeployStage` 与 `pendingBindings` 的判定依据都在这里 |
 
 ## 与「技能」的区别（别搞混）

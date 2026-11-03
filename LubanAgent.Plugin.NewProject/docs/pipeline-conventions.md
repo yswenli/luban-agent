@@ -5,11 +5,15 @@
 
 ## 1. 名称格式
 
-| 项 | 格式 | 展开示例（`CODE=CSXMY`，`repository=Csxmy-Service`） |
-|----|------|------------------------------------------------------|
-| 流水线名 | `{CODE}_DEV_Deploy_{repository}` | `CSXMY_DEV_Deploy_Csxmy-Service` |
-| 兜底（格式为空时） | `{CODE}_DEV_Deploy_{repository}` | 同上 |
+> **单仓口径**：三端共用**同一个仓库**（`sources.repo.name` / `endpoint` / `branch` 同值），
+> 但**流水线仍是三条**（每端一条），构建目录是各端的**仓内模块目录**。
 
+| 项 | 格式 | 展开示例（`CODE=CSXMY`，`module=Csxmy-Service`） |
+|----|------|--------------------------------------------------|
+| 流水线名 | `{CODE}_DEV_Deploy_{module}` | `CSXMY_DEV_Deploy_Csxmy-Service` |
+| 兜底（格式为空时） | `{CODE}_DEV_Deploy_{module}` | 同上 |
+
+- `{module}` = 该端的**仓内模块目录名**（`{Code}-{end}` 展开值），不是仓库名——三端同仓，用仓库名会让三条流水线撞名。
 - 顶层 `name:` 就是流水线名，**创建后不允许改**：同名幂等检索与档案里记录的名称都依赖它。
 - 确需改名 ⇒ 改本文件的格式串后**重跑 Step 7**（不要只改某一条 YAML 的 `name:`）。
 - 对齐组织既有命名习惯（如企服版 `{CODE}_DEV_Deploy_{repository}` 形态；具体参考流水线见 [`org-reference.md`](./org-reference.md) 的「流水线溯源标注（Step 7）」表）。
@@ -24,7 +28,7 @@
 | 管理端 / 移动端 | **不写**顶层 `variables:`（模板里没有） |
 | 缓存写法 | 顶层 `cache:` = `cacheDirs`（列表）+ `cacheMode` |
 | `cacheMode` 取值 | 构建集群留空（公共集群）⇒ `remote`；`buildCluster` 以 `private` 开头 ⇒ `local` |
-| 缓存目录 | 后端：`/root/.m2`、`/root/.gradle/caches`、`/root/.npm`、`/root/.yarn`、`/go/pkg/mod`、`/root/.cache`；前端：`/root/.npm`、`/root/.cache` |
+| 缓存目录 | 后端：`/root/.m2`、`/root/.gradle/caches`、`/root/.npm`、`/root/.yarn`、`/go/pkg/mod`、`/root/.cache`；前端管理端：`/root/.local/share/pnpm`、`/root/.cache`；前端移动端：`/root/.npm`、`/root/.cache` |
 
 ## 3. 哪端有独立部署阶段（`yamlIncludesDeployStage` 的判定依据）
 
@@ -62,20 +66,22 @@
 | # | 待绑定项 | 当前值 / 状态 | 要做的事 |
 |---|----------|---------------|----------|
 | 1 | 服务连接（OSS） | 见 [`org-reference.md`](./org-reference.md)「前端流水线（Admin / Mobile）」表里的 OSS 服务连接 | 确认授权范围含 region `cn-shanghai` / 对应 bucket |
-| 2 | OSS 目录 | 上传源 `sourceFilePath='dist'` → 远端 `targetFilePath='DEV/{CODE}-Admin/'`（`OSSDelete` 以同一前缀做目录清理） | 确认前缀符合预期 |
+| 2 | OSS 目录 | 上传源 `sourceFilePath='{module}/dist'`（如 `Csxmy-Admin/dist`，相对仓库根）→ 远端 `targetFilePath='DEV/{CODE}-Admin/'`（`OSSDelete` 以同一前缀做目录清理） | 确认前缀符合预期 |
 | 3 | 构建集群 | 模板**不写** `runsOn` ⇒ 云效默认公共北京集群 | 如需私有集群：确认形态后回填（形如 `private/<集群ID>`） |
-| 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/gallium`（= Node 16，对齐企服版 `CI_RUNTIME_VERSION`） | 确认模板仓在 Node 16 下可构建 |
-| 5 | 代码源事件触发 | `triggerEvents: []` | 需要 push 自动构建时在控制台开启 |
+| 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/iron`（= Node 20 LTS）+ pnpm（管理端仓库以 `pnpm-lock.yaml` 为准，残留 `package-lock.json` 勿用） | 确认模板仓该模块在 Node 20 + pnpm 下可构建 |
+| 5 | 构建目录（单仓） | 构建命令先 `cd "$PROJECT_DIR/{module}"`（如 `Csxmy-Admin`）再 `pnpm install` / `pnpm run build:dev` | 单仓各端同仓，只有模块目录不同 |
+| 6 | 代码源事件触发 | `triggerEvents: []` | 需要 push 自动构建时在控制台开启 |
 
 ### 4.3 移动端（Mobile）
 
 | # | 待绑定项 | 当前值 / 状态 | 要做的事 |
 |---|----------|---------------|----------|
 | 1 | 服务连接（OSS） | 见 [`org-reference.md`](./org-reference.md)「前端流水线（Admin / Mobile）」表里的 OSS 服务连接 | 确认授权范围含 region `cn-shanghai` / 对应 bucket |
-| 2 | OSS 目录 | 上传源 `sourceFilePath='dist/dev/h5'` → 远端 `targetFilePath='DEV/{CODE}-Mobile/'` | 确认前缀符合预期 |
+| 2 | OSS 目录 | 上传源 `sourceFilePath='{module}/dist/dev/h5'`（如 `Csxmy-Mobile/dist/dev/h5`，相对仓库根）→ 远端 `targetFilePath='DEV/{CODE}-Mobile/'` | 确认前缀符合预期 |
 | 3 | 构建集群 | 模板**不写** `runsOn` ⇒ 云效默认公共北京集群 | 如需私有集群：确认形态后回填 |
-| 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/gallium`（= Node 16） | 确认模板仓在 Node 16 下可构建 |
-| 5 | 代码源事件触发 | `triggerEvents: []` | 需要 push 自动构建时在控制台开启 |
+| 4 | Node 运行时 | `versionType=custom` + `customNodeVersion=lts/gallium`（= Node 16）+ npm | 确认模板仓该模块在 Node 16 下可构建 |
+| 5 | 构建目录（单仓） | 构建命令先 `cd "$PROJECT_DIR/{module}"`（如 `Csxmy-Mobile`）再 `npm install` / `npm run build:dev` | 单仓各端同仓，只有模块目录不同 |
+| 6 | 代码源事件触发 | `triggerEvents: []` | 需要 push 自动构建时在控制台开启 |
 
 ## 5. 覆盖更新口径
 

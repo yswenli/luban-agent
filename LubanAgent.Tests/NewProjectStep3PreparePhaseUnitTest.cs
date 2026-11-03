@@ -39,10 +39,12 @@ public class NewProjectStep3PreparePhaseUnitTest
       "artifacts": [
         { "kind": "group", "name": "csxmy", "externalId": null,
           "extra": { "kind": "group", "exists": false, "parentId": null, "organizationId": "org-1" } },
-        { "kind": "repository", "end": "Service", "name": "csxmy-Service", "localPath": "D:\\ws\\csxmy\\csxmy-Service",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Service", "templateProjectId": 11 } },
-        { "kind": "repository", "end": "Admin", "name": "csxmy-Admin", "localPath": "D:\\ws\\csxmy\\csxmy-Admin",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Admin", "templateProjectId": 12 } }
+        { "kind": "repository", "end": "Service", "name": "csxmy-Mixed", "localPath": "D:\\ws\\csxmy\\csxmy-Mixed",
+          "modulePath": "csxmy-Service",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11 } },
+        { "kind": "repository", "end": "Admin", "name": "csxmy-Mixed", "localPath": "D:\\ws\\csxmy\\csxmy-Mixed",
+          "modulePath": "csxmy-Admin",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11 } }
       ]
     }
     """;
@@ -57,13 +59,15 @@ public class NewProjectStep3PreparePhaseUnitTest
       "artifacts": [
         { "kind": "group", "name": "csxmy", "externalId": "100",
           "extra": { "kind": "group", "exists": true, "parentId": 7, "organizationId": "org-1" } },
-        { "kind": "repository", "end": "Service", "name": "csxmy-Service", "externalId": "201",
-          "cloneUrl": "https://codeup.aliyun.com/x/csxmy-Service.git", "localPath": "D:\\ws\\csxmy\\csxmy-Service",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Service", "templateProjectId": 11,
+        { "kind": "repository", "end": "Service", "name": "csxmy-Mixed", "externalId": "201",
+          "cloneUrl": "https://codeup.aliyun.com/x/csxmy-Mixed.git", "localPath": "D:\\ws\\csxmy\\csxmy-Mixed",
+          "modulePath": "csxmy-Service",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11,
                      "placeholderSources": ["TJCES"], "cloned": true, "defaultBranch": "develop" } },
-        { "kind": "repository", "end": "Admin", "name": "csxmy-Admin", "externalId": "202",
-          "cloneUrl": "https://codeup.aliyun.com/x/csxmy-Admin.git", "localPath": "D:\\ws\\csxmy\\csxmy-Admin",
-          "extra": { "kind": "repository", "templateRepository": "TJCES-Admin", "templateProjectId": 12,
+        { "kind": "repository", "end": "Admin", "name": "csxmy-Mixed", "externalId": "201",
+          "cloneUrl": "https://codeup.aliyun.com/x/csxmy-Mixed.git", "localPath": "D:\\ws\\csxmy\\csxmy-Mixed",
+          "modulePath": "csxmy-Admin",
+          "extra": { "kind": "repository", "templateRepository": "TJCES-Mixed", "templateProjectId": 11,
                      "placeholderSources": ["TJCES"], "cloned": true, "defaultBranch": "develop" } }
       ]
     }

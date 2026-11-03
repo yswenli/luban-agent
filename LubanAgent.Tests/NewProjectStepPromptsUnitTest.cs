@@ -94,20 +94,31 @@ public class NewProjectStepPromptsUnitTest
     }
 
     [TestMethod]
-    public void BuildCompilePrompt_逐端清单带本地目录与端标识()
+    public void BuildCompilePrompt_逐端清单带仓库根与模块目录()
     {
         var targets = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "jnms-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" },
-            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+            new()
+            {
+                End = ProjectEnd.Service, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed",
+                ModulePath = "jnms-Service"
+            },
+            new()
+            {
+                End = ProjectEnd.Admin, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed",
+                ModulePath = "jnms-Admin"
+            }
         };
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
 
         StringAssert.Contains(prompt, "name = Service（后端）");
-        StringAssert.Contains(prompt, "本地目录 = D:\\ws\\jnms\\Csxmy-Service");
+        StringAssert.Contains(prompt, "仓库根 = D:\\ws\\jnms\\jnms-Mixed（单仓，各端同值）");
+        StringAssert.Contains(prompt, "模块目录 = jnms-Service");
+        StringAssert.Contains(prompt, "实际执行目录 = D:\\ws\\jnms\\jnms-Mixed\\jnms-Service");
         StringAssert.Contains(prompt, "name = Admin（管理端）");
-        StringAssert.Contains(prompt, "本地目录 = D:\\ws\\jnms\\csxmy-Admin");
+        StringAssert.Contains(prompt, "模块目录 = jnms-Admin");
+        StringAssert.Contains(prompt, "实际执行目录 = D:\\ws\\jnms\\jnms-Mixed\\jnms-Admin");
         StringAssert.Contains(prompt, ResultFile);
     }
 
@@ -116,7 +127,11 @@ public class NewProjectStepPromptsUnitTest
     {
         var targets = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+            new()
+            {
+                End = ProjectEnd.Admin, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed",
+                ModulePath = "jnms-Admin"
+            }
         };
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
@@ -125,23 +140,23 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "编译方式由你按工程类型决定");
         StringAssert.Contains(prompt, "dotnet build");
 
-        // 管理端固定 4 步（先构建 → 失败再核 Node16 → cnpm 修依赖 → 再构建）
+        // 管理端固定 4 步（先构建 → 失败再核 Node 18/20 与 pnpm → pnpm 装依赖 → 再构建）
         StringAssert.Contains(prompt, "本组织已知构建姿势");
-        StringAssert.Contains(prompt, "不要用 pnpm");
+        StringAssert.Contains(prompt, "Node 18/20 LTS");
+        StringAssert.Contains(prompt, "pnpm");
         StringAssert.Contains(prompt, "develop");
-        StringAssert.Contains(prompt, "fnm exec --using=16 -- cnpm.cmd install -g vite");
-        StringAssert.Contains(prompt, "fnm exec --using=16 -- cnpm.cmd i");
-        StringAssert.Contains(prompt, "fnm exec --using=16 -- npm.cmd run build:dev");
-        StringAssert.Contains(prompt, "不是 npm run build");
+        StringAssert.Contains(prompt, "pnpm run build:dev");
+        StringAssert.Contains(prompt, "不是 pnpm build");
+        StringAssert.Contains(prompt, "不要**改用 npm / cnpm");
         StringAssert.Contains(prompt, "Failed to resolve entry for package");
 
         // 半装包只能删目录重装，rebuild 无效（上一轮真机失败的对策纠正）
         StringAssert.Contains(prompt, "删掉该包目录再装回来");
         StringAssert.Contains(prompt, "rmSync('node_modules/X'");
-        StringAssert.Contains(prompt, "不要用 npm rebuild X");
+        StringAssert.Contains(prompt, "不要用 pnpm rebuild X");
 
-        // 环境缺件时如实上报；全局只授权装 vite，其余不自行安装、不改仓库配置
-        StringAssert.Contains(prompt, "自行安装除 vite 之外的全局工具链");
+        // 环境缺件时如实上报；不自行装全局工具链、不改仓库配置
+        StringAssert.Contains(prompt, "自行安装全局工具链");
         StringAssert.Contains(prompt, "由用户补好环境后重跑");
 
         // 边界由「只编译、不修复」放宽为「只编译、不改业务」——可修依赖树与环境，禁改业务源码与工程配置
@@ -152,8 +167,8 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "白名单");
         StringAssert.Contains(prompt, "dotnet");
         StringAssert.Contains(prompt, "pip");
-        StringAssert.Contains(prompt, "fnm");
-        StringAssert.Contains(prompt, "cnpm");
+        StringAssert.Contains(prompt, "pnpm");
+        StringAssert.Contains(prompt, "npm");
     }
 
     [TestMethod]
@@ -161,7 +176,11 @@ public class NewProjectStepPromptsUnitTest
     {
         var targets = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+            new()
+            {
+                End = ProjectEnd.Admin, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed",
+                ModulePath = "jnms-Admin"
+            }
         };
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
@@ -170,9 +189,9 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "es/index.mjs");
         StringAssert.Contains(prompt, "包管理器只核对目录，不校验文件完整性");
 
-        // 修法：删单包目录后用 cnpm i 补回
+        // 修法：删单包目录后用 pnpm install 补回
         StringAssert.Contains(prompt, "rmSync('node_modules/X'");
-        StringAssert.Contains(prompt, "cnpm.cmd i");
+        StringAssert.Contains(prompt, "pnpm install");
 
         // 装依赖不能再被管道截断（上一轮 npm install 就是中途被杀，留下半装包）
         StringAssert.Contains(prompt, "装依赖必须独占一条命令");
@@ -190,7 +209,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var targets = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Admin", LocalPath = @"D:\ws\jnms\csxmy-Admin" }
+            new() { End = ProjectEnd.Admin, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed", ModulePath = "jnms-Admin" }
         };
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
@@ -220,7 +239,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var targets = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "jnms-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new() { End = ProjectEnd.Service, RepositoryName = "jnms-Mixed", LocalPath = @"D:\ws\jnms\jnms-Mixed", ModulePath = "jnms-Service" }
         };
 
         var prompt = StepPrompts.BuildCompilePrompt(Spec(), targets, ResultFile);
@@ -247,7 +266,7 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "pymysql");
     }
 
-    /// <summary>Step 3 准备：仓库目录术语必须明确「已含仓库名」，避免助手再拼一次仓库名。</summary>
+    /// <summary>Step 3 准备：仓库根目录术语必须明确「已含仓库名」，避免助手再拼一次仓库名；端只对模块目录负责。</summary>
     [TestMethod]
     public void BuildRepositoryPreparePrompt_仓库目录术语与只读边界()
     {
@@ -256,59 +275,76 @@ public class NewProjectStepPromptsUnitTest
             new()
             {
                 End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                TemplateRepository = "TJCES-Service"
+                RepositoryName = "Csxmy-Mixed",
+                LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service",
+                TemplateRepository = "TJCES-Mixed"
             }
         };
 
         var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
 
-        StringAssert.Contains(prompt, "仓库目录 = D:\\ws\\jnms\\Csxmy-Service（已含仓库名，勿再拼一次）");
+        StringAssert.Contains(prompt, "仓库根目录 = D:\\ws\\jnms\\Csxmy-Mixed");
+        StringAssert.Contains(prompt, "已含仓库名");
+        StringAssert.Contains(prompt, "不要再拼一次");
+        StringAssert.Contains(prompt, "仓内模块目录 = Csxmy-Service");
         StringAssert.Contains(prompt, "mcp_yunxiao_codeup_list_template_repos");
         StringAssert.Contains(prompt, "mcp_yunxiao_codeup_get_repo");
         StringAssert.Contains(prompt, "本阶段只读");
+        StringAssert.Contains(prompt, "整步只建这一个仓、只克隆这一次");
     }
 
-    /// <summary>Step 3 执行：git 调用必须带 workingDirectory，且暂存全部不能传 -A。</summary>
+    /// <summary>Step 3 执行：git 调用必须带 workingDirectory，且暂存全部不能传 -A；单仓只克隆一次。</summary>
     [TestMethod]
     public void BuildRepositoryExecutePrompt_git调用带工作目录且禁用A()
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new()
+            {
+                End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service"
+            }
         };
 
         var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
 
-        StringAssert.Contains(prompt, "GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)");
-        StringAssert.Contains(prompt, "workingDirectory=<仓库目录>");
+        StringAssert.Contains(prompt, "GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库根目录>)");
+        StringAssert.Contains(prompt, "workingDirectory=<仓库根目录>");
         StringAssert.Contains(prompt, "GitAddAsync(paths=[\".\"], …)");
         StringAssert.Contains(prompt, "-A");
         StringAssert.Contains(prompt, "syncAllBranches=true");
         StringAssert.Contains(prompt, "至少写一项");
+        StringAssert.Contains(prompt, "不要再拼仓库名");
     }
 
     /// <summary>
-    /// 方案 D（2026-10-23 真机：助手克隆完 Service 就写 failed 结论，Admin 未克隆、两端未替换占位符）：
-    /// 提示词必须锁死「逐端闭环 + 收尾自检 + 禁止用结论文件代替执行」。
+    /// 单仓改造（原「逐端闭环」）：仓库级动作整步只做一次，端级只核对模块目录；
+    /// 仍须锁死「未闭环不许写结论收尾」「禁止用结论文件代替执行」。
     /// </summary>
     [TestMethod]
-    public void BuildRepositoryExecutePrompt_逐端闭环且禁止用结论文件代替执行()
+    public void BuildRepositoryExecutePrompt_仓库级只做一次且禁止用结论文件代替执行()
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" },
-            new() { End = ProjectEnd.Admin, RepositoryName = "Csxmy-Admin", LocalPath = @"D:\ws\jnms\Csxmy-Admin" }
+            new()
+            {
+                End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service"
+            },
+            new()
+            {
+                End = ProjectEnd.Admin, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Admin"
+            }
         };
 
         var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
 
-        // 逐端闭环：拒绝「先把所有端建库、再统一克隆」
-        StringAssert.Contains(prompt, "逐端闭环");
-        StringAssert.Contains(prompt, "一端没走完不许收尾");
-        StringAssert.Contains(prompt, "禁止");
-        StringAssert.Contains(prompt, "统一克隆");
+        // 单仓：建库 / 克隆 / 占位符替换整步各一次，禁止按端重复
+        StringAssert.Contains(prompt, "仓库级动作只做一次");
+        StringAssert.Contains(prompt, "禁止**按端重复建库或重复克隆");
+        StringAssert.Contains(prompt, "本次只建这一个仓");
 
         // 禁止写半成品结论收尾
         StringAssert.Contains(prompt, "任一端未闭环时禁止写结论文件收尾");
@@ -316,9 +352,9 @@ public class NewProjectStepPromptsUnitTest
         StringAssert.Contains(prompt, "代替执行");
         StringAssert.Contains(prompt, "单端失败不豁免其它端");
 
-        // 每端六项收尾自检
+        // 收尾自检：仓库级三项 + 每端三项
         StringAssert.Contains(prompt, "收尾自检");
-        StringAssert.Contains(prompt, "六项全绿");
+        StringAssert.Contains(prompt, "全绿");
         StringAssert.Contains(prompt, "placeholderSources` **非空**");
 
         // 逐端 checks 完备性 + message 不得写待办
@@ -327,7 +363,7 @@ public class NewProjectStepPromptsUnitTest
     }
 
     /// <summary>
-    /// 方案 D：插件只落账整体通过的轮次，所以计划里的 Cloned=true 必须作为「已完成端」下发，
+    /// 插件只落账整体通过的轮次，所以计划里的 Cloned=true 必须作为「已完成仓」下发，
     /// 助手跳过建库/克隆只补占位符与复核（否则每次重跑都从第 1 步重来，长链路易再次半途收尾）。
     /// </summary>
     [TestMethod]
@@ -337,27 +373,48 @@ public class NewProjectStepPromptsUnitTest
         {
             new()
             {
-                End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                Cloned = true
+                End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service", Cloned = true
             },
             new()
             {
-                End = ProjectEnd.Admin,
-                RepositoryName = "Csxmy-Admin",
-                LocalPath = @"D:\ws\jnms\Csxmy-Admin",
-                Cloned = false
+                End = ProjectEnd.Admin, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Admin", Cloned = true
             }
         };
 
         var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
 
-        StringAssert.Contains(prompt, "【已落账的端（上一次已建库并克隆，本轮只补缺失）】");
+        StringAssert.Contains(prompt, "【已落账（上一次已建库并克隆，本轮只补缺失）】");
         StringAssert.Contains(prompt, "跳过 1)~5)");
         StringAssert.Contains(prompt, "只做 6) 占位符替换 + 7) 复核");
-        StringAssert.Contains(prompt, "状态 = 已克隆（跳过建库与克隆，只补占位符替换与复核）");
-        StringAssert.Contains(prompt, "状态 = 未克隆（1)~5) 全做）");
+        StringAssert.Contains(prompt, "状态 = 已克隆");
+    }
+
+    /// <summary>同仓部分端已落账：只提示补齐，不再建库 / 克隆。</summary>
+    [TestMethod]
+    public void BuildRepositoryExecutePrompt_部分端已落账时不再建库克隆()
+    {
+        var plan = new List<EndRepository>
+        {
+            new()
+            {
+                End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service", Cloned = true
+            },
+            new()
+            {
+                End = ProjectEnd.Admin, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Admin", Cloned = false
+            }
+        };
+
+        var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
+
+        StringAssert.Contains(prompt, "已有端落账 ⇒ **不要再建库 / 不要再克隆**");
+        StringAssert.Contains(prompt, "状态 = 已克隆");
+        StringAssert.Contains(prompt, "状态 = 未克隆");
+        Assert.IsFalse(prompt.Contains("跳过 1)~5)", StringComparison.Ordinal));
     }
 
     /// <summary>Step 6：分支不写死 develop、git 调用带 workingDirectory、暂存用 paths=["."]。</summary>
@@ -369,9 +426,10 @@ public class NewProjectStepPromptsUnitTest
             new()
             {
                 End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                CloneUrl = "https://codeup.example/Csxmy-Service.git",
+                RepositoryName = "Csxmy-Mixed",
+                LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Mixed.git",
                 DefaultBranch = "develop"
             }
         };
@@ -379,9 +437,10 @@ public class NewProjectStepPromptsUnitTest
         var prompt = StepPrompts.BuildPushPrompt(Spec(), targets, ResultFile);
 
         StringAssert.Contains(prompt, "本次目标分支 = develop");
-        StringAssert.Contains(prompt, "GitStatusAsync(workingDirectory=<仓库目录>)");
-        StringAssert.Contains(prompt, "GitAddAsync(paths=[\".\"], workingDirectory=<仓库目录>)");
-        StringAssert.Contains(prompt, "GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库目录>)");
+        StringAssert.Contains(prompt, "整步只推送一次");
+        StringAssert.Contains(prompt, "GitStatusAsync(workingDirectory=<仓库根目录>)");
+        StringAssert.Contains(prompt, "GitAddAsync(paths=[\".\"], workingDirectory=<仓库根目录>)");
+        StringAssert.Contains(prompt, "GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库根目录>)");
         Assert.IsFalse(prompt.Contains("GitAddAsync(paths=[\"-A\"])", StringComparison.Ordinal));
     }
 
@@ -394,9 +453,10 @@ public class NewProjectStepPromptsUnitTest
             new()
             {
                 End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                CloneUrl = "https://codeup.example/Csxmy-Service.git",
+                RepositoryName = "Csxmy-Mixed",
+                LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Mixed.git",
                 DefaultBranch = "develop"
             }
         };
@@ -425,9 +485,10 @@ public class NewProjectStepPromptsUnitTest
             new()
             {
                 End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                CloneUrl = "https://codeup.example/Csxmy-Service.git"
+                RepositoryName = "Csxmy-Mixed",
+                LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Mixed.git"
             }
         };
 
@@ -454,7 +515,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed", ModulePath = "Csxmy-Service" }
         };
 
         var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
@@ -470,7 +531,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed", ModulePath = "Csxmy-Service" }
         };
 
         var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
@@ -488,7 +549,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed", ModulePath = "Csxmy-Service" }
         };
 
         var prompt = StepPrompts.BuildRepositoryPreparePrompt(Spec(), plan, ResultFile);
@@ -508,7 +569,7 @@ public class NewProjectStepPromptsUnitTest
     {
         var plan = new List<EndRepository>
         {
-            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Service", LocalPath = @"D:\ws\jnms\Csxmy-Service" }
+            new() { End = ProjectEnd.Service, RepositoryName = "Csxmy-Mixed", LocalPath = @"D:\ws\jnms\Csxmy-Mixed", ModulePath = "Csxmy-Service" }
         };
 
         var prompt = StepPrompts.BuildRepositoryExecutePrompt(Spec(), plan, ResultFile, ResultFile);
@@ -529,9 +590,10 @@ public class NewProjectStepPromptsUnitTest
             new()
             {
                 End = ProjectEnd.Service,
-                RepositoryName = "Csxmy-Service",
-                LocalPath = @"D:\ws\jnms\Csxmy-Service",
-                CloneUrl = "https://codeup.example/Csxmy-Service.git"
+                RepositoryName = "Csxmy-Mixed",
+                LocalPath = @"D:\ws\jnms\Csxmy-Mixed",
+                ModulePath = "Csxmy-Service",
+                CloneUrl = "https://codeup.example/Csxmy-Mixed.git"
             }
         };
         var execute = new[]

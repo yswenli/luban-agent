@@ -88,6 +88,7 @@ public static class ArtifactViewModelMapper
             row.RepositoryName = artifact.Name ?? string.Empty;
             row.RepositoryWebUrl = Nullable(artifact.WebUrl);
             row.LocalPath = artifact.LocalPath ?? string.Empty;
+            row.ModulePath = artifact.ModulePath ?? string.Empty;
             row.ResolvedBranch = Nullable(artifact.TemplateBranch);
 
             if (string.IsNullOrWhiteSpace(row.RepositoryName))
@@ -113,6 +114,9 @@ public static class ArtifactViewModelMapper
 
             if (string.IsNullOrWhiteSpace(row.LocalPath) && string.IsNullOrEmpty(row.Error))
                 result.Errors.Add($"{EndName(end)}：仓库产物缺少 localPath（无法确定落地目录）。");
+
+            if (string.IsNullOrWhiteSpace(row.ModulePath) && string.IsNullOrEmpty(row.Error))
+                result.Errors.Add($"{EndName(end)}：仓库产物缺少 modulePath（无法确定仓内模块目录）。");
         }
 
         // checks[] → Errors / Warnings（ok=false → 阻断；ok=true 且 detail 以「提示」开头 → 非阻断）

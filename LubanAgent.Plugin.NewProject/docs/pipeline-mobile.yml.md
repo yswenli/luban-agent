@@ -9,9 +9,10 @@
 
 | 占位符 | 取值 | 说明 |
 |--------|------|------|
-| `{pipelineName}` | `{CODE}_DEV_Deploy_{repository}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Mobile` | 顶层 `name:`，**提交后不允许改** |
-| `{repository}` | 该端仓库名，例 `Csxmy-Mobile` | `sources.repo.name` |
-| `{endpoint}` | 该端仓库 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`） | `sources.repo.endpoint`；**不带凭据** |
+| `{pipelineName}` | `{CODE}_DEV_Deploy_{module}` 展开值，例 `CSXMY_DEV_Deploy_Csxmy-Mobile` | 顶层 `name:`，**提交后不允许改** |
+| `{repository}` | **本项目单仓仓库名**，例 `Csxmy-Mixed`（三端同值） | `sources.repo.name` |
+| `{module}` | 该端仓内模块目录，例 `Csxmy-Mobile` | 构建步骤的工作目录；同时是**流水线名后缀** |
+| `{endpoint}` | 单仓 HTTPS 克隆地址（Step 3 补查得到的 `httpUrlToRepo`；三端同值） | `sources.repo.endpoint`；**不带凭据** |
 | `{branch}` | 推送分支 `develop`（= `pushBranch`） | `sources.repo.branch` |
 | `{codeupSc}` | 见 [`org-reference.md`](./org-reference.md)「后端流水线（Service）」表里的 codeup 服务连接 | codeup 服务连接 id |
 | `{cacheMode}` | 构建集群留空 ⇒ `remote`；`private/*` ⇒ `local` | `cache.cacheMode` |
@@ -19,7 +20,7 @@
 | `{ossRegion}` | `cn-shanghai` | OSS 区域（**必填**） |
 | `{ossBucket}` | 见 [`org-reference.md`](./org-reference.md)「前端流水线（Admin / Mobile）」表里的 OSS bucket | OSS 桶 |
 | `{ossPrefix}` | `DEV/{CODE}-Mobile/` 展开值，例 `DEV/CSXMY-Mobile/` | `OSSDelete.prefix` / `OSSUpload.targetFilePath` |
-| `{uploadPath}` | `dist/dev/h5` | `OSSUpload.sourceFilePath`（**与管理端不同**） |
+| `{uploadPath}` | `{module}/dist/dev/h5`（相对**仓根**），例 `Csxmy-Mobile/dist/dev/h5` | `OSSUpload.sourceFilePath`（**与管理端不同**） |
 
 ## 模板正文
 
@@ -60,6 +61,7 @@ stages:
               customNodeVersion: lts/gallium   # = Node 16，对齐企服版 CI_RUNTIME_VERSION
               run: |
                 set -e
+                cd "$PROJECT_DIR/{module}"
                 npm config set registry https://registry.npmmirror.com
                 npm install
                 npm run build:dev
@@ -82,6 +84,10 @@ stages:
               targetFilePath: '{ossPrefix}'
 ```
 
+> **单仓**：`sources.repo` 指向单仓，移动端代码在仓内模块目录 `{module}` 下，构建先 `cd "$PROJECT_DIR/{module}"`；
+> 上传源 `{module}/dist/dev/h5` **相对仓根**（`OSSUpload` 的工作目录是仓根）。
+> 移动端沿用 **Node 16 + npm**（模板仓 `.node-version` = `lts-gallium`，与仓内 `package-lock.json` 配套），**不要**改成 pnpm。
+
 ## 渲染后示例（项目缩写 `csxmy`）
 
 ```yaml
@@ -90,8 +96,8 @@ name: CSXMY_DEV_Deploy_Csxmy-Mobile
 sources:
   repo:
     type: codeup
-    name: Csxmy-Mobile
-    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Mobile.git
+    name: Csxmy-Mixed
+    endpoint: https://codeup.aliyun.com/<组织路径>/CSXMY/Csxmy-Mixed.git
     branch: develop
     triggerEvents: []
     certificate:
@@ -119,6 +125,7 @@ stages:
               customNodeVersion: lts/gallium
               run: |
                 set -e
+                cd "$PROJECT_DIR/Csxmy-Mobile"
                 npm config set registry https://registry.npmmirror.com
                 npm install
                 npm run build:dev
@@ -137,7 +144,7 @@ stages:
               serviceConnection: {ossSc}
               region: cn-shanghai
               bucket: '{ossBucket}'
-              sourceFilePath: 'dist/dev/h5'
+              sourceFilePath: 'Csxmy-Mobile/dist/dev/h5'
               targetFilePath: 'DEV/CSXMY-Mobile/'
 ```
 

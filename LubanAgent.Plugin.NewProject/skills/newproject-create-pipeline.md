@@ -46,6 +46,9 @@
 2. **逐端渲染新版 YAML**：按端取 `docs/pipeline-*.yml.md` 的模板，用项目档案 + `docs/org-reference.md`
    的值展开（名称 / 仓库地址 / 分支（取 `pushBranch`）/ 服务连接 / 变量 / 缓存 / OSS 目录 / 部署段 …）；
    占位符替换语义见 `docs/pipeline-conventions.md`。
+   **单仓口径**：`sources.repo.name` / `endpoint` / `branch` 三端**同值**（本项目单仓），差异只有
+   `{module}`（仓内模块目录）——它同时决定**构建工作目录**与**流水线名后缀**
+   （`{CODE}_DEV_Deploy_{module}`；三端同仓，用仓库名会撞名）。
 3. **产出结论文件**：`results/step7-*.json`，`status = "done"`；`artifacts[]` 的 `kind=pipeline`
    **每端一条**，`extra` 为 `PipelineArtifactExtra`
    （`yamlIncludesDeployStage` / `pendingBindings` / `recommendedDeployTargetHostGroupId`（数字 id）/
@@ -110,8 +113,9 @@
 
 ## 结果
 
-- 所选端**各 1 条、最多 3 条**流水线；名称含项目缩写，便于识别。
+- 所选端**各 1 条、最多 3 条**流水线，名称为 `{CODE}_DEV_Deploy_{module}`，便于识别（三端同仓不撞名）。
 - 后端流水线**含活动部署段**，前端两端不含（上传 OSS 即发布）。
+- 构建 / 上传路径都相对**仓根 + 模块目录**（`{module}/dist`、`{module}/dist/dev/h5`）。
 
 ## 重要约束（真机口径）
 

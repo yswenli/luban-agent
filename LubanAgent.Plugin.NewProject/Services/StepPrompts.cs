@@ -148,52 +148,53 @@ public static class StepPrompts
         builder.AppendLine("【待编译的端】（每个端的 name 标识必须原样使用，插件按它把结论对回具体的端）");
         foreach (var repository in targets)
         {
-            builder.AppendLine($"- name = {repository.End}（{EndName(repository.End)}）；本地目录 = {repository.LocalPath}；"
-                               + $"仓库 = {repository.RepositoryName}");
+            builder.AppendLine($"- name = {repository.End}（{EndName(repository.End)}）；仓库根 = {repository.LocalPath}"
+                               + $"（单仓，各端同值）；模块目录 = {repository.ModulePath}；"
+                               + $"**实际执行目录 = {repository.ModuleLocalPath}**；仓库 = {repository.RepositoryName}");
         }
         builder.AppendLine();
 
-        builder.AppendLine("【本组织已知构建姿势】（本组织各端仓库的既有做法；与你按工程类型的默认判断冲突时，以这里为准）");
-        builder.AppendLine("- 管理端（Admin，Vite + Vue）：Node 必须是 16，用 npm 系客户端（**不要用 pnpm**）。"
+        builder.AppendLine("【本组织已知构建姿势】（模板仓三端模块的既有做法；与你按工程类型的默认判断冲突时，以这里为准）");
+        builder.AppendLine("- 管理端（Admin，Vite + Vue）：Node 18/20 LTS + **pnpm**（仓库以 pnpm-lock.yaml 为准）。"
                            + "固定按下面 4 步走，不要自创流程：");
-        builder.AppendLine("  1) 先直接跑构建：fnm exec --using=16 -- npm.cmd run build:dev"
-                           + "（本仓库的构建脚本叫 build:dev，**不是 npm run build**）。exitCode=0 即该端通过，收工。");
-        builder.AppendLine("  2) 构建失败时先核对 Node 版本：fnm exec --using=16 -- node -v 应为 v16.x；"
-                           + "不是 16 就一律用 fnm exec --using=16 -- 把命令包一层（Windows 下 fnm 直接 spawn npm 会报 program not found，"
-                           + "必须写成 npm.cmd / cnpm.cmd；不要用 fnm env | Invoke-Expression 这类管道 / 求值写法）。"
+        builder.AppendLine("  1) 先直接跑构建：pnpm run build:dev"
+                           + "（本仓库的构建脚本叫 build:dev，**不是 pnpm build**）。exitCode=0 即该端通过，收工。");
+        builder.AppendLine("  2) 构建失败时先核对环境：node -v 应为 v18.x / v20.x；pnpm -v 应可用（缺 pnpm 才 npm install -g pnpm）。"
+                           + "**不要**改用 npm / cnpm 安装：仓库残留的 package-lock.json 是历史遗留，混用会装出不一致的依赖树。"
                            + "同时确认当前在 develop 分支（工作树干净时才 git checkout develop）。");
-        builder.AppendLine("  3) 装依赖：先 fnm exec --using=16 -- cnpm.cmd install -g vite（全局 vite 兜底），"
-                           + "再在仓库目录 fnm exec --using=16 -- cnpm.cmd i（补全/修复项目依赖）。"
+        builder.AppendLine("  3) 装依赖：在模块目录 pnpm install。"
                            + "**装依赖必须独占一条命令并等它正常退出**：不要接管道截断输出（| Select-Object / | Select-String / | head），"
                            + "也不要并行做别的——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑；"
-                           + "若被中断，重跑同一命令直到正常退出。");
-        builder.AppendLine("  4) 再跑一次构建：fnm exec --using=16 -- npm.cmd run build:dev，**以这一次的输出定结论**。");
-        builder.AppendLine("  补充：若第 4 步仍报 Failed to resolve entry for package \"X\"，先分下面两种，**别急着重装**：");
+                           + "若被中断，重跑同一命令直到正常退出。pnpm 提示锁文件过期时，先核对 package.json 与 pnpm-lock.yaml 的差异，"
+                           + "审查安装产生的锁文件更新是否合理，不要手工编辑锁文件。");
+        builder.AppendLine("  4) 再跑一次构建：pnpm run build:dev，**以这一次的输出定结论**。");
+        builder.AppendLine("  补充：若仍报 Failed to resolve entry for package \"X\"，先分下面两种，**别急着重装**：");
         builder.AppendLine("  a) 包内自带版本目录、入口文件只是没拷出来（**postinstall 未跑**）：package.json 的 main 是 lib/index.js，"
                            + "而 lib/index.js 不存在，但 lib/v3/index.js（或 lib/v2/index.js）在。典型：**@vue-office/docx、excel、pdf**。"
-                           + "这类包靠 postinstall 按 Vue 大版本把 v3 产物拷成入口，cnpm 装完不补跑，**删包重装多少遍结果都一样**。"
-                           + "修法是跑包内自带脚本把入口补出来：在仓库目录执行 "
+                           + "这类包靠 postinstall 按 Vue 大版本把 v3 产物拷成入口，装完不补跑时**删包重装多少遍结果都一样**。"
+                           + "修法是跑包内自带脚本把入口补出来：在模块目录执行 "
                            + "node node_modules/@vue-office/docx/lib/script/switch-cli.js 3"
                            + "（Vue 2 仓库用参数 2）。**同族包要一次查全**：docx / excel / pdf 三个常同时缺，"
                            + "只补一个会立刻被下一个同类报错卡住，逐个确认 lib/index.js 都在了再构建。");
         builder.AppendLine("  b) 否则才是真「半装」——包目录在，但 module / main / exports 指向的入口文件不存在且包内也没有可拷的产物"
                            + "（例：element-plus 缺 node_modules/element-plus/es/index.mjs）：删掉该包目录再装回来，"
-                           + "node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\" 后重跑 cnpm.cmd i。");
-        builder.AppendLine("  **不要用 npm rebuild X**（对预构建包无效），也**不要**因安装几秒 exit 0 就认为修好——"
+                           + "node -e \"require('fs').rmSync('node_modules/X',{recursive:true,force:true})\" 后重跑 pnpm install。");
+        builder.AppendLine("  **不要用 pnpm rebuild X / npm rebuild X**（对预构建包无效），也**不要**因安装几秒 exit 0 就认为修好——"
                            + "包管理器只核对目录，不校验文件完整性。**改结论前必须再跑一次构建**。");
-        builder.AppendLine("- 后端（Service，.NET）：dotnet build <解决方案>.sln。");
-        builder.AppendLine("- 其它端（移动端等）：按工程类型自行判断。");
-        builder.AppendLine("（兜底：若机器上确实没有 fnm / Node 16 / cnpm，**不要**自行安装除 vite 之外的全局工具链、也不要改仓库配置——"
+        builder.AppendLine("- 移动端（Mobile，uni-app 2.x / Vue2）：Node 16 + npm（`npm install` → `npm run build:dev`），"
+                           + "构建产物在 `dist/dev/h5`；该端不改成 pnpm。");
+        builder.AppendLine("- 后端（Service，.NET）：在模块目录 dotnet build <解决方案>.sln。");
+        builder.AppendLine("（兜底：若机器上确实没有对应 Node / pnpm，**不要**自行安装全局工具链、也不要改仓库配置——"
                            + "把缺失项如实写进该端结论的 detail，本步按失败上报，由用户补好环境后重跑。）");
         builder.AppendLine();
 
         builder.AppendLine("【执行要求】");
-        builder.AppendLine("1) 每个端先看清目录里有什么（.sln / .csproj / package.json / pubspec.yaml 等）——"
-                           + "**命令一律在该端的「本地目录」（＝该端仓库目录）执行**（先 cd 或用工具的工作目录参数，"
-                           + "不要在项目工作区根执行）；编译方式由你按工程类型决定。");
-        builder.AppendLine("2) 后端一般是 .NET 解决方案：在仓库目录里 dotnet build 对应的 .sln（或 .csproj）。");
-        builder.AppendLine("3) 前端（Vite/Vue 等）先读仓库 package.json 的 scripts 再选命令：本组织管理端先直接跑 npm run build:dev，"
-                           + "失败再按【本组织已知构建姿势】的 4 步流程修环境；不要凭默认猜 npm run build，也不要用 pnpm。");
+        builder.AppendLine("1) **单仓**：各端共用同一个仓库根（上面「仓库根」同值），但命令必须进各自的**模块目录**执行"
+                           + "（＝上面给的「实际执行目录」，先 cd 或用工具的工作目录参数），不要在仓库根执行；"
+                           + "先看清模块目录里有什么（.sln / .csproj / package.json / pubspec.yaml 等），编译方式由你按工程类型决定。");
+        builder.AppendLine("2) 后端一般是 .NET 解决方案：在模块目录里 dotnet build 对应的 .sln（或 .csproj）。");
+        builder.AppendLine("3) 前端（Vite/Vue 等）先读模块目录 package.json 的 scripts 再选命令：本组织管理端用 pnpm run build:dev，"
+                           + "移动端用 npm run build:dev；不要凭默认猜 pnpm build / npm run build。");
         builder.AppendLine("4) **修了依赖就必须重跑构建验证**：本轮里凡动过 node_modules（装 / 重装 / 删包重装），"
                            + "都要在修复后**再跑一次该端的构建命令**，以最后一次构建的真实输出定结论；不许拿修复前的报错收尾，"
                            + "也不许只跑 npm install 就宣布修好（install 的 exit 0 不代表包完整）。");
@@ -208,7 +209,7 @@ public static class StepPrompts
         builder.AppendLine("  \"ok\": false,   // 仅当所有端都通过时才写 true");
         builder.AppendLine("  \"checks\": [");
         builder.AppendLine("    { \"name\": \"Service\", \"ok\": true,  \"detail\": \"编译通过\", \"command\": \"dotnet build xxx.sln\" },");
-        builder.AppendLine("    { \"name\": \"Admin\",   \"ok\": false, \"detail\": \"2 个错误：…\", \"command\": \"fnm exec --using=16 -- npm.cmd run build:dev\" }");
+        builder.AppendLine("    { \"name\": \"Admin\",   \"ok\": false, \"detail\": \"2 个错误：…\", \"command\": \"pnpm run build:dev\" }");
         builder.AppendLine("  ],");
         builder.AppendLine("  \"message\": \"<一句话总结>\"");
         builder.AppendLine("}");
@@ -266,28 +267,31 @@ public static class StepPrompts
         AppendOrganization(builder, spec);
 
         builder.AppendLine("【建库计划】（用户已在面板确认；仓库名与可见性以这里为准）");
+        builder.AppendLine($"- **单仓**：目标仓库 = {plan.FirstOrDefault()?.RepositoryName} · 可见性 = {plan.FirstOrDefault()?.Visibility}"
+                           + $" · 仓库根目录 = {plan.FirstOrDefault()?.LocalPath}"
+                           + "（**整步只建这一个仓、只克隆这一次**；下面各端只是仓内模块目录）");
         foreach (var repository in plan)
         {
-            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库名 = {repository.RepositoryName}"
-                               + $" · 可见性 = {repository.Visibility} · 仓库目录 = {repository.LocalPath}"
-                               + "（已含仓库名，勿再拼一次）"
-                               + $" · 模板仓 = {(string.IsNullOrWhiteSpace(repository.TemplateRepository) ? "（未登记，按 docs 按端名称约定匹配）" : repository.TemplateRepository)}");
+            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {repository.ModulePath}"
+                               + $"（模块绝对路径 = {repository.ModuleLocalPath}）"
+                               + $" · 模板仓 = {(string.IsNullOrWhiteSpace(repository.TemplateRepository) ? "（未登记，按 docs 的模板仓约定匹配）" : repository.TemplateRepository)}");
         }
         builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
         builder.AppendLine();
 
-        builder.AppendLine("【要查清的事实】（逐端）");
+        builder.AppendLine("【要查清的事实】（仓库级查一次，端只对模块目录负责）");
         builder.AppendLine("1) 模板库：`mcp_yunxiao_codeup_list_template_repos`（templateType=1、perPage=100）**全量拉取**后"
-                           + "在本地按各端名称约定匹配（该接口**没有 search 入参**，别指望服务端按名过滤）；取 templateProjectId；");
+                           + "在本地按 docs 的**模板仓名**匹配（该接口**没有 search 入参**，别指望服务端按名过滤）；取 templateProjectId；");
         builder.AppendLine("2) 模板仓分支：`mcp_yunxiao_codeup_list_branches`（repositoryId=templateProjectId），"
                            + "按 docs 的 pin 择优顺序（develop → master → main → 模板默认分支）解析 pin；");
         builder.AppendLine("3) 代码组：`mcp_yunxiao_codeup_list_groups`（search=组名）查目标代码组是否已存在（决定「新建 / 复用」）；");
         builder.AppendLine("4) 同名仓库：`mcp_yunxiao_codeup_search_repos`（search=仓库名）；**若命中，再调 "
                            + "`mcp_yunxiao_codeup_get_repo`（repositoryId=命中项 id）取 httpUrlToRepo 与 defaultBranch**"
                            + "（列表接口不含克隆地址；仓库页面地址由克隆地址去掉尾部 .git 推导）；");
-        builder.AppendLine("5) 仓库目录：检查 `<仓库目录>`（上面各端的完整目录，**已含仓库名**，不要再拼一次）是否已存在且非空"
+        builder.AppendLine("5) 仓库目录：检查 `<仓库根目录>`（上面给的完整目录，**已含仓库名**，不要再拼一次）是否已存在且非空"
                            + "（只读判断，不要删）。**目录判定一律用 `ListDirectoryAsync`**（或用 `RunPythonAsync` 读文件系统），"
                            + "不要用 `RunShellAsync` 写 PowerShell `if` / `foreach`（按段首词白名单会拒「名单外的可执行文件」）。");
+        builder.AppendLine("6) 仓内模块：按 docs 的模板目录约定核对各端模块目录名（克隆后才存在；准备阶段只据模板仓判断名对不对，不要建目录）。");
         builder.AppendLine();
 
         AppendArtifactSchema(builder, 3, @"{
@@ -298,9 +302,9 @@ public static class StepPrompts
   ""artifacts"": [
     { ""kind"": ""group"", ""name"": ""<代码组名>"", ""externalId"": ""<组 id 或 null>"", ""webUrl"": ""<链接或 null>"",
       ""extra"": { ""kind"": ""group"", ""exists"": false, ""parentId"": null, ""organizationId"": ""<组织 ID>"" } },
-    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": null,
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名（各端同值）>"", ""externalId"": null,
       ""webUrl"": ""<仓库页面链接或 null>"", ""cloneUrl"": ""<已存在时的 httpUrlToRepo 或 null>"",
-      ""localPath"": ""<仓库目录>"", ""templateBranch"": ""<pin 分支>"",
+      ""localPath"": ""<仓库根目录>"", ""modulePath"": ""<仓内模块目录>"", ""templateBranch"": ""<pin 分支>"",
       ""extra"": { ""kind"": ""repository"", ""templateRepository"": ""<模板仓名>"", ""templateProjectId"": 123,
         ""templatePath"": ""<模板库全路径>"", ""templateBranches"": [""develop"", ""master""],
         ""resolvedBranchSource"": ""<pin 来源说明>"", ""repositoryExists"": false, ""localPathOccupied"": false,
@@ -316,7 +320,8 @@ public static class StepPrompts
         builder.AppendLine();
 
         builder.AppendLine("要点：`end` 必须用端标识字符串（Service / Admin / Mobile，**不是**数字）；"
-                           + "每端一条 `kind=repository` 产物；`extra.kind` 必须与 `kind` 一致（多态判别属性）；"
+                           + "每端一条 `kind=repository` 产物，但 `name` / `localPath` 各端**同值**（同一个仓），"
+                           + "`modulePath` 各端不同（仓内模块目录）；`extra.kind` 必须与 `kind` 一致（多态判别属性）；"
                            + "某端查不通时把原因写进该端 `extra.error` 并把 `checks` 里该项记为 ok=false，**不要**编造事实。");
         builder.AppendLine();
 
@@ -357,7 +362,7 @@ public static class StepPrompts
                 + "（同名仓库已存在则**跳过创建直接复用**，重跑幂等）；只读事实仍用 codeup_list_* / codeup_get_repo。",
             "git 侧一律用**框架 git 工具组**（云效 MCP **已不再提供** git 类工具）：克隆用 GitCloneAsync(url, branch, directory)，"
                 + "变换分支用 GitCheckoutAsync，复核用 GitStatusAsync / GitBranchListAsync。**不要**用 codeup_clone / codeup_push（已删除）。"
-                + "**每个 git 调用都必须显式带 `workingDirectory=<该端仓库目录>`**（不传时框架在项目工作区根执行，会操作到别的目录 / 报「不是 git 仓库」）；"
+                + "**每个 git 调用都必须显式带 `workingDirectory=<仓库根目录>`**（单仓只有这一个目录，不传时框架在项目工作区根执行，会操作到别的目录 / 报「不是 git 仓库」）；"
                 + "需要暂存全部时传 `GitAddAsync(paths=[\".\"], …)`，**不要**传 `-A`（工具会拼成 `git add -- -A` 当 pathspec，必然失败）。",
             $"先读知识正文：`{docs}\\step3-repositories.md`（建库 / 克隆 / 占位符 / 三选一 / 失败处置）与 "
                 + $"`{docs}\\org-reference.md`（组织专有值）。",
@@ -381,31 +386,45 @@ public static class StepPrompts
         builder.AppendLine();
 
         builder.AppendLine("【本次建库计划（用户已确认）】");
+        builder.AppendLine($"- **单仓**：目标仓库 = {plan.FirstOrDefault()?.RepositoryName} · 可见性 = {plan.FirstOrDefault()?.Visibility}"
+                           + $" · 仓库根目录 = {plan.FirstOrDefault()?.LocalPath}"
+                           + "（**建库 / 等 pin / 冲突处置 / 克隆 / 占位符替换整步只做一次**；各端只是仓内模块目录）");
         foreach (var repository in plan)
         {
-            builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库名 = {repository.RepositoryName}"
-                               + $" · 可见性 = {repository.Visibility} · 仓库目录 = {repository.LocalPath}"
-                               + "（已含仓库名，勿再拼一次）"
-                               + $" · 模板仓 = {repository.TemplateRepository}"
+            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {repository.ModulePath}"
+                               + $"（模块绝对路径 = {repository.ModuleLocalPath}）"
                                + $" · pin = {(string.IsNullOrWhiteSpace(repository.TemplateBranch) ? "（按 docs 现场解析）" : repository.TemplateBranch)}"
-                               + (repository.Cloned ? " · 状态 = 已克隆（跳过建库与克隆，只补占位符替换与复核）" : " · 状态 = 未克隆（1)~5) 全做）"));
+                               + (repository.Cloned ? " · 状态 = 已克隆" : " · 状态 = 未克隆"));
         }
+
+        var missingEnds = new[] { ProjectEnd.Service, ProjectEnd.Admin, ProjectEnd.Mobile }
+            .Where(end => plan.All(repository => repository.End != end))
+            .ToList();
+        if (missingEnds.Count > 0)
+        {
+            builder.AppendLine("  · **本步未勾选的端模块**：" + string.Join("、", missingEnds.Select(EndName))
+                               + " —— 模板仓里仍有这些子目录，克隆并完成占位符替换后**删除这些模块目录**"
+                               + "（删除发生在占位符替换之后，按替换后的目录名删；只删模块目录，不要删仓库根）。");
+        }
+
         builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
         builder.AppendLine();
 
         // 断点续跑：插件只把「整体通过」的轮次落账，所以 Cloned=true 的端一定已过本地复核——
         // 直接告诉助手别重复建库/克隆，否则它每次重跑都从第 1 步重来，长链路易再次半途收尾。
         var clonedEnds = plan.Where(repository => repository.Cloned).ToList();
-        if (clonedEnds.Count > 0)
+        if (clonedEnds.Count > 0 && clonedEnds.Count == plan.Count)
         {
-            builder.AppendLine("【已落账的端（上一次已建库并克隆，本轮只补缺失）】");
-            foreach (var repository in clonedEnds)
-            {
-                builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库目录 = {repository.LocalPath}："
-                                   + "**跳过 1)~5)**（不要重复建库、不要重新克隆，目录非空即复用），只做 6) 占位符替换 + 7) 复核，"
-                                   + "并把该端照常写进本次结论的 `artifacts[]` / `checks[]`。");
-            }
-            builder.AppendLine("其余端（状态 = 未克隆）照常走完整 1)→7)。");
+            builder.AppendLine("【已落账（上一次已建库并克隆，本轮只补缺失）】");
+            builder.AppendLine($"- 仓库根 = {plan[0].LocalPath}：**跳过 1)~5)**（不要重复建库、不要重新克隆，目录非空即复用），"
+                               + "只做 6) 占位符替换 + 7) 复核，并把各端照常写进本次结论的 `artifacts[]` / `checks[]`。");
+            builder.AppendLine();
+        }
+        else if (clonedEnds.Count > 0)
+        {
+            builder.AppendLine("【已落账（上一次已建库并克隆，本轮只补缺失）】");
+            builder.AppendLine($"- 仓库根 = {plan[0].LocalPath}：已有端落账 ⇒ **不要再建库 / 不要再克隆**，按 6) 补齐占位符替换与模块目录后复核；"
+                               + "把各端照常写进本次结论的 `artifacts[]` / `checks[]`。");
             builder.AppendLine();
         }
 
@@ -417,43 +436,47 @@ public static class StepPrompts
             builder.AppendLine();
         }
 
-        builder.AppendLine("【执行口径：逐端闭环，一端没走完不许收尾】");
-        builder.AppendLine("本步是多端批次，但**必须一端一端闭环**：对清单里的每一端，独立完整地走完 1)→7)，"
-                           + "把该端写进 `artifacts[]` / `checks[]` 之后再进入下一端。"
-                           + "**禁止**把多端拆成「先把所有端建库、再统一克隆 / 统一替换」的批处理顺序。");
-        builder.AppendLine("**任一端未闭环时禁止写结论文件收尾**：1)~7) 只要有一条没做（或占位符残余 ≠ 0），"
+        builder.AppendLine("【执行口径：仓库级动作只做一次，端级复核逐端做完】");
+        builder.AppendLine("本步是**单仓**：建组 / 建库 / 等 pin / 目录冲突处置 / 克隆 / 占位符替换都是**仓库级动作，整步各做一次**；"
+                           + "**禁止**按端重复建库或重复克隆（各端的仓库根目录是同一个）。"
+                           + "端级只做两件事：①确认该端的仓内模块目录存在（未勾选的端则删除其模块目录）②逐端把结果写进 `artifacts[]` / `checks[]`。");
+        builder.AppendLine("**任一端未闭环时禁止写结论文件收尾**：5)~7) 只要有一条没做（或占位符残余 ≠ 0），"
                            + "就必须继续调用工具做完，**不得**用 `status=failed` 的结论文件代替执行、"
                            + "也不得写「执行中断 / 需要继续执行」这类收尾语。"
                            + "确实遇到 docs 失败对照表里不可恢复的失败（401/403/pin 120s 未就绪/凭据缺失）时，"
                            + "才能在该端 `checks[]` 写明**失败环节 + 原始报错**并把整步写 `failed`；"
                            + "此时仍要把**尚未尝试的端照常做完**（单端失败不豁免其它端）。");
-        builder.AppendLine("**收尾自检（每端六项全绿才算闭环，任一不绿就继续做）**："
-                           + "①仓库 id 已取到 ②`httpUrlToRepo` 已取到 ③pin 分支已在远端就位 ④本地目录已克隆且 `.git`/`refs/heads/<pin>` 有效 "
-                           + "⑤占位符残余 = 0 且 `extra.placeholderSources` **非空** ⑥`extra.cloned=true` 且 `extra.error` 为空。");
+        builder.AppendLine("**收尾自检（仓库级三项 + 每端三项全绿才算闭环，任一不绿就继续做）**："
+                           + "仓库级 ①仓库 id 已取到 ②`httpUrlToRepo` 已取到 ③pin 分支已在远端就位；"
+                           + "每端 ④仓内模块目录存在（未勾选的端已删除）⑤占位符残余 = 0 且 `extra.placeholderSources` **非空** "
+                           + "⑥该端 `extra.cloned=true` 且 `extra.error` 为空。");
         builder.AppendLine();
 
-        builder.AppendLine("【执行步骤】（对**每一端**依次执行；不要跨端交错）");
+        builder.AppendLine("【执行步骤】（1)~6) 仓库级各做一次；7) 逐端复核）");
         builder.AppendLine("1) 代码组：查不到就 `mcp_yunxiao_codeup_create_group` 建（父级按 docs），查到就复用；");
         builder.AppendLine("2) 仓库：同名已存在则复用其 id；否则 `mcp_yunxiao_codeup_create_repo`（以模板创建、落在项目代码组下、"
                            + "`syncAllBranches=true`；参数名按工具 schema 原样小驼峰，写错即静默走默认值）；"
-                           + "建完**必须**再 `mcp_yunxiao_codeup_get_repo` 取 `httpUrlToRepo` 与 `defaultBranch`；");
-        builder.AppendLine("3) 等 pin 分支就绪（轮询 list_branches，上限 120s / 间隔 3s，超时即该端失败）；");
-        builder.AppendLine("4) 目标目录已存在且非空：按 docs 的三选一处置——能自行判定就用脚本工具清理"
+                           + "建完**必须**再 `mcp_yunxiao_codeup_get_repo` 取 `httpUrlToRepo` 与 `defaultBranch`；"
+                           + "**本次只建这一个仓**（各端共用）；");
+        builder.AppendLine("3) 等 pin 分支就绪（轮询 list_branches，上限 120s / 间隔 3s，超时即整步失败）；");
+        builder.AppendLine("4) 仓库根目录已存在且非空：按 docs 的三选一处置——能自行判定就用脚本工具清理"
                            + "（**清理只读 pack 文件**：用 `RunPythonAsync` 的 `shutil.rmtree(..., onerror=清只读后重试)`，"
                            + "不要用裸删）；**无法自行判定时**写 `status=\"needsInput\"` 并在 `inputs[]` 里给出 "
                            + "`id=\"clone-conflict\"`（`kind=\"choice\"`、`options[].value` 取 reuse / reclone / abort）后**停止**；");
-        builder.AppendLine("5) 克隆：`GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库目录>)`"
-                           + "（`<仓库目录>` 就是上面给的完整目录，**不要再拼仓库名**）；"
+        builder.AppendLine("5) 克隆：`GitCloneAsync(url=<httpUrlToRepo>, branch=<pin>, directory=<仓库根目录>)`"
+                           + "（`<仓库根目录>` 就是上面给的完整目录，**不要再拼仓库名**，**也不要按端克隆多次**）；"
                            + "失败时若目录是本次新建的可清理残骸（用同一 Python 删法）；");
-        builder.AppendLine("6) 占位符替换：按 docs 的规则表把模板占位符替换成项目命名空间 / 项目名 / 缩写（区分大小写、幂等），"
-                           + "替换后残余必须为 0；把**实际替换的来源令牌**写进该端 `extra.placeholderSources`"
+        builder.AppendLine("6) 占位符替换：**整仓一次**，按 docs 的规则表把模板占位符替换成项目命名空间 / 项目名 / 缩写"
+                           + "（区分大小写、幂等；内容替换 → 文件改名 → 目录改名），替换后残余必须为 0；"
+                           + "把**实际替换的来源令牌**写进各端 `extra.placeholderSources`"
                            + "（令牌取值见 docs，逐字写实际命中的那几个，例如 `[\"<令牌原文>\", …]`；"
-                           + "**至少写一项**——插件要按它独立扫描残余，空列表会被判为「占位符替换未完成＝该端未完成」）；");
-        builder.AppendLine("7) 复核（**全部带 `workingDirectory=<仓库目录>`**）："
-                           + "`GitStatusAsync(workingDirectory=<仓库目录>)` / "
-                           + "`GitBranchListAsync(workingDirectory=<仓库目录>)` 确认工作树可用且 `refs/heads/<pin>` 存在，"
-                           + "再写 `extra.cloned=true`、`extra.defaultBranch`；");
-        builder.AppendLine("8) 该端闭环后，才进入下一端（回到 1)）。全部端闭环后才写结论文件。");
+                           + "**至少写一项**——插件要按它独立扫描残余，空列表会被判为「占位符替换未完成＝该端未完成」）；"
+                           + "替换完成后，**计划里未勾选的端模块目录按替换后的名字删除**（只删该模块目录）；");
+        builder.AppendLine("7) 逐端复核（**全部带 `workingDirectory=<仓库根目录>`**）："
+                           + "`GitStatusAsync(workingDirectory=<仓库根目录>)` / "
+                           + "`GitBranchListAsync(workingDirectory=<仓库根目录>)` 确认工作树可用且 `refs/heads/<pin>` 存在；"
+                           + "再逐端确认仓内模块目录存在，并写 `modulePath`、`extra.cloned=true`、`extra.defaultBranch`；");
+        builder.AppendLine("8) 全部端复核完后才写结论文件。");
         builder.AppendLine();
 
         AppendArtifactSchema(builder, 3, @"{
@@ -464,9 +487,9 @@ public static class StepPrompts
   ""artifacts"": [
     { ""kind"": ""group"", ""name"": ""<代码组名>"", ""externalId"": ""<组 id>"", ""webUrl"": ""<链接>"",
       ""extra"": { ""kind"": ""group"", ""exists"": true, ""parentId"": null, ""organizationId"": ""<组织 ID>"" } },
-    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": ""<仓库 id>"",
-      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库目录>"",
-      ""templateBranch"": ""<pin 分支>"",
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名（各端同值）>"", ""externalId"": ""<仓库 id>"",
+      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库根目录>"",
+      ""modulePath"": ""<仓内模块目录>"", ""templateBranch"": ""<pin 分支>"",
       ""extra"": { ""kind"": ""repository"", ""templateRepository"": ""<模板仓名>"", ""templateProjectId"": 123,
         ""templatePath"": ""<模板库全路径>"", ""templateBranches"": [""develop""], ""resolvedBranchSource"": ""<pin 来源>"",
         ""repositoryExists"": false, ""localPathOccupied"": false, ""visibility"": ""internal"", ""error"": null,
@@ -524,7 +547,7 @@ public static class StepPrompts
             "只做推送相关动作：分支整理 / 暂存 / 提交 / 推送；**不要**改业务源码、不要建库、不要动云效流水线。",
             "git 动作一律用**框架 git 工具组**：GitStatusAsync / GitCheckoutAsync / GitAddAsync / GitCommitAsync / "
                 + "GitPushAsync / GitLogAsync（云效 MCP 已无 git 类工具；**不要**用 codeup_push）。"
-                + "**每个 git 调用都必须显式带 `workingDirectory=<该端仓库目录>`**（不传时框架在项目工作区根执行，会报「不是 git 仓库」或操作到别的目录）。",
+                + "**每个 git 调用都必须显式带 `workingDirectory=<仓库根目录>`**（单仓只有这一个目录，不传时框架在项目工作区根执行，会报「不是 git 仓库」或操作到别的目录）。",
             $"先读 `{docs}\\step6-push.md`（分支口径、提交身份、提交信息格式、**报错→处置对照表**、"
                 + "限流退避：线性 10/20/30s 最多 3 次）。",
             "**git 凭据由用户在外部环境配置**（插件与技能都不提供凭据通路）：推送失败是凭据问题时，"
@@ -533,31 +556,32 @@ public static class StepPrompts
             "禁止 `--force` / `git reset --hard` / `git clean -fd`；不要动其它分支、不要建标签。"
         });
 
-        builder.AppendLine("【待推送的端】（目标分支按 docs 第 2 节解析：配置 `pushBranch` 有值用它，留空退回该端仓库默认分支）");
+        builder.AppendLine("【待推送的仓库】（**单仓：各端共用同一个仓库根，整步只推送一次**；目标分支按 docs 第 2 节解析：配置 `pushBranch` 有值用它，留空退回仓库默认分支）");
         foreach (var repository in targets)
         {
             var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch)
-                ? "（未配置，按 docs 解析该端仓库默认分支）"
+                ? "（未配置，按 docs 解析仓库默认分支）"
                 : repository.DefaultBranch;
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
-                               + $" · 仓库目录 = {repository.LocalPath} · 克隆地址 = {repository.CloneUrl}"
-                               + $" · 本次目标分支 = {branch}");
+                               + $" · 仓库根目录 = {repository.LocalPath} · 仓内模块目录 = {repository.ModulePath}"
+                               + $" · 克隆地址 = {repository.CloneUrl} · 本次目标分支 = {branch}");
         }
         builder.AppendLine();
 
-        builder.AppendLine("【执行步骤】（逐端；下面所有 git 调用都要带 `workingDirectory=<该端仓库目录>`）");
-        builder.AppendLine("1) `GitStatusAsync(workingDirectory=<仓库目录>)` 看工作树；无改动就跳过提交"
+        builder.AppendLine("【执行步骤】（仓库级各做一次；下面所有 git 调用都要带 `workingDirectory=<仓库根目录>`）");
+        builder.AppendLine("1) `GitStatusAsync(workingDirectory=<仓库根目录>)` 看工作树；无改动就跳过提交"
                            + "（如实报告，不产生空提交），仍继续推送；");
-        builder.AppendLine("2) 切分支：已存在则 `GitCheckoutAsync(target=<目标分支>, workingDirectory=<仓库目录>)`；"
-                           + "否则 `GitCheckoutAsync(target=<目标分支>, createBranch=true, workingDirectory=<仓库目录>)`"
+        builder.AppendLine("2) 切分支：已存在则 `GitCheckoutAsync(target=<目标分支>, workingDirectory=<仓库根目录>)`；"
+                           + "否则 `GitCheckoutAsync(target=<目标分支>, createBranch=true, workingDirectory=<仓库根目录>)`"
                            + "（对应 `git checkout -b`）；");
-        builder.AppendLine("3) `GitAddAsync(paths=[\".\"], workingDirectory=<仓库目录>)` 暂存全部改动"
+        builder.AppendLine("3) `GitAddAsync(paths=[\".\"], workingDirectory=<仓库根目录>)` 暂存全部改动"
                            + "（**不要**传 `-A`：工具会拼成 `git add -- -A` 当 pathspec，必然失败）；");
-        builder.AppendLine("4) `GitCommitAsync(message=<消息>, workingDirectory=<仓库目录>)`（提交信息格式与提交身份按 docs："
-                           + "优先本机 git config，缺失用 docs 的兜底身份）；");
-        builder.AppendLine("5) `GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库目录>)`；"
+        builder.AppendLine("4) `GitCommitAsync(message=<消息>, workingDirectory=<仓库根目录>)`（提交信息格式与提交身份按 docs："
+                           + "优先本机 git config，缺失用 docs 的兜底身份；提交信息里的端标签按本次实际涉及的端写）；");
+        builder.AppendLine("5) `GitPushAsync(remote=\"origin\", branch=<目标分支>, setUpstream=true, workingDirectory=<仓库根目录>)`；"
                            + "限流类失败按 docs 线性退避重试（10/20/30s，最多 3 次），其余失败不重试；");
-        builder.AppendLine("6) 推送后取本次提交 id（`GitLogAsync(maxCount=1, workingDirectory=<仓库目录>)`），写进 `extra.commitId`。");
+        builder.AppendLine("6) 推送后取本次提交 id（`GitLogAsync(maxCount=1, workingDirectory=<仓库根目录>)`），写进**各端** `extra.commitId`"
+                           + "（同一个提交，各端同值）。");
         builder.AppendLine();
 
         AppendArtifactSchema(builder, 6, @"{
@@ -565,16 +589,16 @@ public static class StepPrompts
   ""status"": ""done"",
   ""ok"": true,
   ""artifacts"": [
-    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名>"", ""externalId"": ""<仓库 id>"",
-      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库目录>"",
-      ""templateBranch"": ""<实际推送的分支>"",
+    { ""kind"": ""repository"", ""end"": ""Service"", ""name"": ""<仓库名（各端同值）>"", ""externalId"": ""<仓库 id>"",
+      ""webUrl"": ""<仓库页面链接>"", ""cloneUrl"": ""<httpUrlToRepo>"", ""localPath"": ""<仓库根目录>"",
+      ""modulePath"": ""<仓内模块目录>"", ""templateBranch"": ""<实际推送的分支>"",
       ""extra"": { ""kind"": ""repository"", ""cloned"": true, ""commitId"": ""<本次提交 id>"", ""error"": null } }
   ],
   ""checks"": [ { ""name"": ""Service"", ""ok"": true, ""detail"": ""已推送 <分支>（提交 <短 id>）"" } ],
   ""message"": ""<一句话总结>""
 }");
 
-        builder.AppendLine("注意：本步每端都要有 `kind=repository` 产物与同名 `checks` 项；"
+        builder.AppendLine("注意：本步每端都要有 `kind=repository` 产物与同名 `checks` 项（`name` / `localPath` 各端同值，`modulePath` 各端不同）；"
                            + "`templateBranch` 填**实际推送的分支**；漏端会被判为「该端未给结论」＝本步失败。");
         builder.AppendLine();
 
@@ -619,21 +643,25 @@ public static class StepPrompts
 
         AppendOrganization(builder, spec);
 
-        builder.AppendLine("【待建流水线的端】（`{branch}` 按 docs 解析：配置 `pushBranch` 有值用它，留空退回该端仓库默认分支）");
+        builder.AppendLine("【待建流水线的端】（单仓：各端代码源是同一个仓库，构建目录是各自模块目录；`{branch}` 按 docs 解析）");
         foreach (var repository in targets)
         {
             var branch = string.IsNullOrWhiteSpace(repository.DefaultBranch)
-                ? "（未配置，按 docs 解析该端仓库默认分支）"
+                ? "（未配置，按 docs 解析仓库默认分支）"
                 : repository.DefaultBranch;
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
+                               + $" · 仓内模块目录 = {repository.ModulePath}"
                                + $" · 克隆地址 = {repository.CloneUrl} · 本项目推送分支 = {branch}");
         }
         builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
         builder.AppendLine();
 
         builder.AppendLine("【要做的事】");
-        builder.AppendLine("1) 按 docs 的三端模板，为每端生成将要提交的完整新版 YAML（顶层 `stages:` 形态），"
-                           + "把项目值（代码源地址 = 克隆地址、分支 = 上面的推送分支、镜像 / 桶 / 目录前缀等）按 docs 占位符表替换；");
+        builder.AppendLine("1) 按 docs 的三端模板，为每端生成将要提交的完整新版 YAML（顶层 `stages:` 形态）："
+                           + "流水线名用该端的**模块目录名**（如 `{CODE}_DEV_Deploy_<模块目录名>`）；"
+                           + "`sources.repo.name` / `endpoint` 用同一个仓库（上面的仓库名与克隆地址）；"
+                           + "构建步骤必须**先进入该端的仓内模块目录再执行**（如 `cd \"$PROJECT_DIR/<模块目录>\"`）；"
+                           + "其余镜像 / 桶 / 目录前缀等按 docs 占位符表替换；");
         builder.AppendLine("2) 列出该端的**待人工绑定清单**（已展开占位符，逐条写清「在哪绑、绑什么」）；");
         builder.AppendLine("3) 后端：列出部署主机组候选（flow_list_host_groups），写进 `inputs[]` 的 `deploy-target` 项；"
                            + "按 docs 的默认口径（或唯一合理候选）选一个作为推荐值，在 `details.defaultValue` 给数字 id，"
@@ -720,15 +748,16 @@ public static class StepPrompts
         builder.AppendLine("（YAML 正文 / 待绑定清单 / 推荐部署目标以它为准；用户手工微调的端以本轮内联的微调正文优先。）");
         builder.AppendLine();
 
-        builder.AppendLine("【本次要处理的端】");
+        builder.AppendLine("【本次要处理的端】（单仓：各端代码源同一个仓库，构建目录各自模块目录）");
         foreach (var repository in targets)
         {
             var overrideYaml = TryGetOverride(yamlOverrides, repository.End);
             var target = TryGetTarget(deployTargets, repository.End);
 
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
+                               + $" · 仓内模块目录 = {repository.ModulePath}"
                                + $" · 克隆地址 = {repository.CloneUrl}"
-                               + $" · 推送分支 = {(string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "（按 docs 解析该端默认分支）" : repository.DefaultBranch)}");
+                               + $" · 推送分支 = {(string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "（按 docs 解析默认分支）" : repository.DefaultBranch)}");
             if (target is not null)
                 builder.AppendLine($"　部署目标（用户已选）：名称 = {target.Name} · uuid = {target.Uuid} · 数字 id = {target.HostGroupId}"
                                    + $"（写进 YAML machineGroup 的是 **uuid**）");
