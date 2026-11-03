@@ -149,7 +149,7 @@ public static class StepPrompts
         foreach (var repository in targets)
         {
             builder.AppendLine($"- name = {repository.End}（{EndName(repository.End)}）；仓库根 = {repository.LocalPath}"
-                               + $"（单仓，各端同值）；模块目录 = {repository.ModulePath}；"
+                               + $"（单仓，各端同值）；模块目录 = {ModuleText(repository)}；"
                                + $"**实际执行目录 = {repository.ModuleLocalPath}**；仓库 = {repository.RepositoryName}");
         }
         builder.AppendLine();
@@ -272,7 +272,7 @@ public static class StepPrompts
                            + "（**整步只建这一个仓、只克隆这一次**；下面各端只是仓内模块目录）");
         foreach (var repository in plan)
         {
-            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {repository.ModulePath}"
+            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {ModuleText(repository)}"
                                + $"（模块绝对路径 = {repository.ModuleLocalPath}）"
                                + $" · 模板仓 = {(string.IsNullOrWhiteSpace(repository.TemplateRepository) ? "（未登记，按 docs 的模板仓约定匹配）" : repository.TemplateRepository)}");
         }
@@ -391,7 +391,7 @@ public static class StepPrompts
                            + "（**建库 / 等 pin / 冲突处置 / 克隆 / 占位符替换整步只做一次**；各端只是仓内模块目录）");
         foreach (var repository in plan)
         {
-            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {repository.ModulePath}"
+            builder.AppendLine($"  · end = {repository.End}（{EndName(repository.End)}）· 仓内模块目录 = {ModuleText(repository)}"
                                + $"（模块绝对路径 = {repository.ModuleLocalPath}）"
                                + $" · pin = {(string.IsNullOrWhiteSpace(repository.TemplateBranch) ? "（按 docs 现场解析）" : repository.TemplateBranch)}"
                                + (repository.Cloned ? " · 状态 = 已克隆" : " · 状态 = 未克隆"));
@@ -563,7 +563,7 @@ public static class StepPrompts
                 ? "（未配置，按 docs 解析仓库默认分支）"
                 : repository.DefaultBranch;
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
-                               + $" · 仓库根目录 = {repository.LocalPath} · 仓内模块目录 = {repository.ModulePath}"
+                               + $" · 仓库根目录 = {repository.LocalPath} · 仓内模块目录 = {ModuleText(repository)}"
                                + $" · 克隆地址 = {repository.CloneUrl} · 本次目标分支 = {branch}");
         }
         builder.AppendLine();
@@ -650,7 +650,7 @@ public static class StepPrompts
                 ? "（未配置，按 docs 解析仓库默认分支）"
                 : repository.DefaultBranch;
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
-                               + $" · 仓内模块目录 = {repository.ModulePath}"
+                               + $" · 仓内模块目录 = {ModuleText(repository)}"
                                + $" · 克隆地址 = {repository.CloneUrl} · 本项目推送分支 = {branch}");
         }
         builder.AppendLine($"项目缩写（code）= {spec.Code}；项目名 = {spec.Name}。");
@@ -755,7 +755,7 @@ public static class StepPrompts
             var target = TryGetTarget(deployTargets, repository.End);
 
             builder.AppendLine($"- end = {repository.End}（{EndName(repository.End)}）· 仓库 = {repository.RepositoryName}"
-                               + $" · 仓内模块目录 = {repository.ModulePath}"
+                               + $" · 仓内模块目录 = {ModuleText(repository)}"
                                + $" · 克隆地址 = {repository.CloneUrl}"
                                + $" · 推送分支 = {(string.IsNullOrWhiteSpace(repository.DefaultBranch) ? "（按 docs 解析默认分支）" : repository.DefaultBranch)}");
             if (target is not null)
@@ -933,6 +933,15 @@ public static class StepPrompts
     /// <returns>展示名。</returns>
     private static string Display(ProjectSpec spec)
         => string.IsNullOrWhiteSpace(spec.Name) ? spec.Code : $"{spec.Name}，缩写 {spec.Code}";
+
+    /// <summary>提示词里的「仓内模块目录」。</summary>
+    /// <remarks>旧档案（单仓改造前）没有该字段：此时该端工程根就是仓根，明确写出来，避免助手把它当成空目录名。</remarks>
+    /// <param name="repository">端仓库记录。</param>
+    /// <returns>模块目录名；旧档案无该字段时给出口径说明。</returns>
+    private static string ModuleText(EndRepository repository)
+        => string.IsNullOrWhiteSpace(repository.ModulePath)
+            ? "（无：旧档案，该端工程根即仓库根）"
+            : repository.ModulePath;
 
     /// <summary>端的中文名。</summary>
     /// <param name="end">端。</param>

@@ -380,7 +380,61 @@ public class NewProjectStepLocalVerifierUnitTest
         StringAssert.Contains(issues[0], "（同仓）");
     }
 
+    [TestMethod]
+    public void VerifyRepositories_未勾选端模块目录仍存在_报问题()
+    {
+        // 移动端未勾选：克隆后应删掉 jnms-Mobile，留着就是没删
+        var repo = NewRepo();
+        Directory.CreateDirectory(Path.Combine(repo, "jnms-Mobile"));
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(
+            report,
+            [ProjectEnd.Service],
+            [(ProjectEnd.Mobile, "jnms-Mobile")]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "未勾选该端");
+        StringAssert.Contains(issues[0], "jnms-Mobile");
+    }
+
+    [TestMethod]
+    public void VerifyRepositories_未勾选端模块目录已删除_通过()
+    {
+        var repo = NewRepo();
+        var report = RepoReport(repo, "develop", "TJCES");
+
+        var issues = StepLocalVerifier.VerifyRepositories(
+            report,
+            [ProjectEnd.Service],
+            [(ProjectEnd.Mobile, "jnms-Mobile")]);
+
+        CollectionAssert.AreEqual(Array.Empty<string>(), issues.ToArray());
+    }
+
     // ── Step 6 ────────────────────────────────────────────────────────────
+
+    /// <summary>同仓两端（后端 + 管理端）的推送结论：可分别给分支，用于核对分支一致性。</summary>
+    private static StepReport PushTwoEndsReport(
+        string localPath, string serviceBranch, string adminBranch, string? commitId)
+    {
+        static StepReportArtifact Repository(ProjectEnd end, string branch, string? commit) => new()
+        {
+            Kind = "repository",
+            End = end,
+            Name = RepoName,
+            LocalPath = string.Empty,
+            TemplateBranch = branch,
+            Extra = new RepositoryArtifactExtra { Cloned = true, CommitId = commit, PlaceholderSources = ["TJCES"] }
+        };
+
+        var service = Repository(ProjectEnd.Service, serviceBranch, commitId);
+        service.LocalPath = localPath;
+        var admin = Repository(ProjectEnd.Admin, adminBranch, commitId);
+        admin.LocalPath = localPath;
+
+        return new StepReport { Step = 6, Ok = true, Artifacts = { service, admin } };
+    }
 
     private static void WriteRemoteTrackingRef(string repo, string branch, string sha)
     {
@@ -437,6 +491,20 @@ public class NewProjectStepLocalVerifierUnitTest
 
         Assert.AreEqual(1, issues.Count);
         StringAssert.Contains(issues[0], "未给出提交 id");
+    }
+
+    [TestMethod]
+    public void VerifyPush_同仓两端分支不一致_报问题()
+    {
+        // 单仓必须推同一分支；两端自报不同分支说明结论本身有问题，不能只核首个
+        var repo = NewRepo();
+        WriteRemoteTrackingRef(repo, "develop", Sha40);
+        var report = PushTwoEndsReport(repo, "develop", "main", Sha40);
+
+        var issues = StepLocalVerifier.VerifyPush(report, [ProjectEnd.Service, ProjectEnd.Admin]);
+
+        Assert.AreEqual(1, issues.Count);
+        StringAssert.Contains(issues[0], "推送分支不一致");
     }
 
     // ── Step 7 ────────────────────────────────────────────────────────────

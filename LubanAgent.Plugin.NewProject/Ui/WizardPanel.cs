@@ -2497,9 +2497,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
     }
 
     /// <summary>
-    /// 预检输入签名：把「当前确认区实际会提交的参数」压成可比对字符串（项目 + 单仓仓库名 + 可见性）。
+    /// 预检输入签名：把「当前确认区实际会提交的参数」压成可比对字符串（项目 + 单仓仓库名 + 可见性 + 所选端）。
     /// </summary>
-    /// <remarks>单仓模式下仓库名各端同值，模块目录由插件按默认规则派生且不可编辑，故无需进签名。</remarks>
+    /// <remarks>端集合变化会改变要核对的模块目录与复核范围，故一并进签名；模块目录名由插件按默认规则派生且不可编辑。</remarks>
     /// <returns>签名；无档案时为空串。</returns>
     private string CurrentPlanSignature()
     {
@@ -2509,8 +2509,9 @@ public sealed class WizardPanel : UserControl, IPluginPanel
 
         var visibility = _visibilityPrivate.IsChecked == true ? "private" : "internal";
         var name = (_repoNameBox.Text ?? string.Empty).Trim();
+        var ends = string.Join(",", spec.Ends.Select(end => end.ToString()));
 
-        return $"{spec.Code}|{spec.Name}|{name}|{visibility}";
+        return $"{spec.Code}|{spec.Name}|{name}|{visibility}|{ends}";
     }
 
     /// <summary>预检读数的多行展示文案。</summary>

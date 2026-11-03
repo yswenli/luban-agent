@@ -4,10 +4,11 @@
 *命名空间：LubanAgent.Tests
 *文件名： NewProjectRepositoryPlanUnitTest
 *创建时间：2026/11/03
-*描述：单仓建库计划的薄校验单测——锁死三条口径：
+*描述：单仓建库计划的薄校验单测——锁死四条口径：
 *      ① 三端共用同一仓库名**不算重复**（单仓形态，旧「仓库名必须不同」已废弃）；
 *      ② 各端模块目录必须互不相同（同仓下的落点不能撞）；
-*      ③ 各端仓库名不一致时报「单仓必须共用同一仓库名」。
+*      ③ 各端仓库名不一致时报「单仓必须共用同一仓库名」；
+ *      ④ 模块目录名与仓库名同一规则（不得含路径分隔符等非法字符）。
 *
 *****************************************************************************/
 
@@ -122,6 +123,23 @@ public class NewProjectRepositoryPlanUnitTest
         var text = string.Join("；", result.Errors);
         StringAssert.Contains(text, "模块目录：必填");
         StringAssert.Contains(text, "Jnms-Service");
+    }
+
+    /// <summary>模块目录名复用仓库名规则：含路径分隔符等非法字符时报错。</summary>
+    [TestMethod]
+    public async Task ValidateRepositoryPlanAsync_模块目录名非法报错()
+    {
+        var service = NewService(ProjectEnd.Service);
+
+        var result = await service.ValidateRepositoryPlanAsync(new[]
+        {
+            Plan(ProjectEnd.Service, "jnms-Mixed", "jnms/Service")
+        });
+
+        Assert.IsFalse(result.IsValid);
+        var text = string.Join("；", result.Errors);
+        StringAssert.Contains(text, "模块目录");
+        StringAssert.Contains(text, "不得含路径分隔符");
     }
 
     private static EndRepository Plan(ProjectEnd end, string repositoryName, string modulePath) => new()

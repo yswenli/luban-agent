@@ -598,8 +598,8 @@ public sealed class NewProjectService : INewProjectService
 
             if (module.Length == 0)
                 errors.Add($"{label}模块目录：必填（仓内子目录名，建议沿用默认 {_settings.BuildModulePath(Current?.Code ?? string.Empty, entry.End)}）。");
-            else if (module.Contains('/') || module.Contains('\\') || module.Contains("..", StringComparison.Ordinal))
-                errors.Add($"{label}模块目录：只能是仓根下的一级目录名（不得含路径分隔符或 ..）。");
+            else if (!RepositoryNamePattern.IsMatch(module))
+                errors.Add($"{label}模块目录：只能包含字母、数字、下划线、中划线与点，且需以字母或数字开头（不得含路径分隔符）。");
             else if (!seenModules.Add(module))
                 errors.Add($"模块目录：{module} 在各端重复（各端必须是不同的仓内子目录）。");
 
@@ -1036,7 +1036,14 @@ public sealed class NewProjectService : INewProjectService
             if (failReason is null)
             {
                 // 对结论自报的产物做插件侧可独立核对项（目录 / .git / refs / 占位符残余）
-                localIssues = StepLocalVerifier.VerifyRepositories(report!, spec.Ends);
+                // 未勾选端的模块目录应在克隆后删除：按默认命名规则反推目录名，核对它确实不在仓里。
+                var absentModules = string.IsNullOrWhiteSpace(spec.Code)
+                    ? new List<(ProjectEnd End, string ModulePath)>()
+                    : Enum.GetValues<ProjectEnd>()
+                        .Where(end => !spec.Ends.Contains(end))
+                        .Select(end => (End: end, ModulePath: _settings.BuildModulePath(spec.Code, end)))
+                        .ToList();
+                localIssues = StepLocalVerifier.VerifyRepositories(report!, spec.Ends, absentModules);
                 (ok, _, message) = StepReportEvaluator.EvaluateRepositorySetup(
                     report, spec.Ends, lastOutcome!.Errors, localIssues, requireCloned: true);
             }

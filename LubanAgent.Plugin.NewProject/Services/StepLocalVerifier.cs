@@ -90,12 +90,34 @@ public static class StepLocalVerifier
     private const int MaxScanFiles = 20000;
 
     /// <summary>
+    /// 按 <c>localPath</c> 把「端 + 该端仓库产物」分组：单仓各端同值 ⇒ 归入同一组，仓级核对只做一次。
+    /// </summary>
+    /// <param name="report">结论。</param>
+    /// <param name="ends">本次要求的端。</param>
+    /// <returns>按仓根目录分组的端与产物。</returns>
+    private static List<IGrouping<string, (ProjectEnd End, StepReportArtifact? Artifact)>> GroupByRepository(
+        StepReport report,
+        IReadOnlyList<ProjectEnd> ends)
+        => ends
+            .Select(end => (End: end, Artifact: StepReportEvaluator.RepositoryArtifact(report, end)))
+            .GroupBy(
+                pair => (pair.Artifact?.LocalPath ?? string.Empty).Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>
     /// Step 3 执行续跑后的本地复核（准备阶段不要调用：那时目录尚未克隆）。
     /// </summary>
     /// <param name="report">已解析的执行续跑结论。</param>
     /// <param name="ends">本次要求的端。</param>
+    /// <param name="absentModules">
+    /// 未勾选端「克隆后应已删除」的模块目录（端 + 目录名）；传 <c>null</c> 表示不核对。
+    /// </param>
     /// <returns>问题清单（空 = 通过）。</returns>
-    public static IReadOnlyList<string> VerifyRepositories(StepReport report, IReadOnlyList<ProjectEnd> ends)
+    public static IReadOnlyList<string> VerifyRepositories(
+        StepReport report,
+        IReadOnlyList<ProjectEnd> ends,
+        IReadOnlyList<(ProjectEnd End, string ModulePath)>? absentModules = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(ends);
@@ -104,12 +126,7 @@ public static class StepLocalVerifier
 
         // 单仓：各端共用同一个仓根目录（localPath 同值），所以目录 / .git / pin / 占位符残余都按仓复核**一次**；
         // 端之间只额外核对各自的仓内模块目录是否存在。
-        var groups = ends
-            .Select(end => (End: end, Artifact: StepReportEvaluator.RepositoryArtifact(report, end)))
-            .GroupBy(
-                pair => (pair.Artifact?.LocalPath ?? string.Empty).Trim(),
-                StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var groups = GroupByRepository(report, ends);
 
         foreach (var group in groups)
         {
@@ -195,6 +212,28 @@ public static class StepLocalVerifier
             }
         }
 
+        // 未勾选的端：模板仓里那份模块目录应在占位符改名后被删掉；没删就说明用户会在仓里见到不该存在的端。
+        if (absentModules is { Count: > 0 })
+        {
+            var root = ends
+                .Select(end => (StepReportEvaluator.RepositoryArtifact(report, end)?.LocalPath ?? string.Empty).Trim())
+                .FirstOrDefault(path => path.Length > 0);
+
+            if (!string.IsNullOrWhiteSpace(root))
+            {
+                foreach (var (end, modulePath) in absentModules)
+                {
+                    var module = modulePath?.Trim() ?? string.Empty;
+                    if (module.Length == 0)
+                        continue;
+
+                    var full = Path.Combine(root, module);
+                    if (System.IO.Directory.Exists(full))
+                        issues.Add($"{EndName(end)}：未勾选该端，但仓内模块目录仍存在（{full}）——克隆后应删除该目录。");
+                }
+            }
+        }
+
         return issues;
     }
 
@@ -213,12 +252,7 @@ public static class StepLocalVerifier
 
         // 单仓：各端共用同一个仓根目录与推送分支，远端跟踪分支只核对一次；
         // 各端只核对自己自报的提交 id 是否与远端一致。
-        var groups = ends
-            .Select(end => (End: end, Artifact: StepReportEvaluator.RepositoryArtifact(report, end)))
-            .GroupBy(
-                pair => (pair.Artifact?.LocalPath ?? string.Empty).Trim(),
-                StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var groups = GroupByRepository(report, ends);
 
         foreach (var group in groups)
         {
@@ -239,14 +273,25 @@ public static class StepLocalVerifier
                 continue;
             }
 
-            var branch = group
-                .Select(pair => pair.Artifact?.TemplateBranch)
-                .FirstOrDefault(one => !string.IsNullOrWhiteSpace(one));
-            if (string.IsNullOrWhiteSpace(branch))
+            var branches = group
+                .Select(pair => pair.Artifact?.TemplateBranch?.Trim() ?? string.Empty)
+                .Where(one => one.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (branches.Count == 0)
             {
                 issues.Add($"{label}：结论未给出推送分支，无法核对 refs/remotes/origin/<branch>。");
                 continue;
             }
+
+            // 单仓：各端必须推同一分支；自报不一致说明结论本身有问题，不能只取首个了事。
+            if (branches.Count > 1)
+            {
+                issues.Add($"{label}：结论给出的推送分支不一致（{string.Join("、", branches)}）——单仓模式下各端必须推同一分支。");
+                continue;
+            }
+
+            var branch = branches[0];
 
             var refName = $"refs/remotes/origin/{branch}";
             var sha = ReadRef(gitDir, refName);

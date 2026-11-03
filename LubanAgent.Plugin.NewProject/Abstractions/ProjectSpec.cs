@@ -156,11 +156,15 @@ public sealed class EndRepository
     /// </summary>
     public string ModulePath { get; set; } = string.Empty;
 
-    /// <summary>模块目录绝对路径（仓根 + <see cref="ModulePath"/>；任一项为空时为空串）。</summary>
+    /// <summary>模块目录绝对路径（仓根 + <see cref="ModulePath"/>）。</summary>
+    /// <remarks>
+    /// <see cref="ModulePath"/> 为空时退回仓根本身：单仓形态之前的档案没有模块目录概念，
+    /// 那时的仓根就是该端的工程根，退回仓根才能让旧档案继续按同一套提示词执行。
+    /// </remarks>
     [JsonIgnore]
-    public string ModuleLocalPath => string.IsNullOrWhiteSpace(LocalPath) || string.IsNullOrWhiteSpace(ModulePath)
+    public string ModuleLocalPath => string.IsNullOrWhiteSpace(LocalPath)
         ? string.Empty
-        : Path.Combine(LocalPath, ModulePath);
+        : string.IsNullOrWhiteSpace(ModulePath) ? LocalPath : Path.Combine(LocalPath, ModulePath);
 
     /// <summary>可见性：<c>internal</c>＝组织内公开（默认），<c>private</c>＝私有。</summary>
     public string Visibility { get; set; } = "internal";

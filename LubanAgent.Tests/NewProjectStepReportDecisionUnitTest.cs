@@ -185,6 +185,35 @@ public class NewProjectStepReportDecisionUnitTest
         StringAssert.Contains(message, "管理端");
     }
 
+    /// <summary>
+    /// 单仓不变量：各端 localPath 不一致（助手按「每端一个仓」执行）时整步失败——
+    /// 仅靠界面侧的计划校验不够，结论回读侧也必须守。
+    /// </summary>
+    [TestMethod]
+    public void EvaluateRepositorySetup_各端localPath不一致_整步失败()
+    {
+        const string Json = """
+        {
+          "step": 3, "status": "done", "ok": true,
+          "artifacts": [
+            { "kind": "repository", "end": "Service", "name": "jnms-Service",
+              "localPath": "D:\\ws\\jnms\\jnms-Service", "modulePath": "jnms-Service",
+              "extra": { "kind": "repository", "cloned": true } },
+            { "kind": "repository", "end": "Admin", "name": "jnms-Admin",
+              "localPath": "D:\\ws\\jnms\\jnms-Admin", "modulePath": "jnms-Admin",
+              "extra": { "kind": "repository", "cloned": true } } ]
+        }
+        """;
+        var report = Parse(Json);
+
+        var (ok, status, message) = StepReportEvaluator.EvaluateRepositorySetup(
+            report, BothEnds, null, null, requireCloned: true);
+
+        Assert.IsFalse(ok);
+        Assert.AreEqual(StepReportStatus.Failed, status);
+        StringAssert.Contains(message, "单仓模式下各端必须共用同一个仓");
+    }
+
     [TestMethod]
     public void EvaluateRepositorySetup_needsInput_不通过且状态为needsInput()
     {

@@ -180,6 +180,10 @@ public static class StepReportEvaluator
         if (missing.Count > 0)
             return Failed($"结论缺少端产物：{EndList(missing)}（逐端完备性要求每端一条 kind=repository）。");
 
+        var repoMismatch = ValidateSingleRepository(report, ends);
+        if (repoMismatch is not null)
+            return Failed(repoMismatch);
+
         if (requireCloned)
         {
             var notCloned = ends.Where(end => !IsRepositoryCloned(report, end)).ToList();
@@ -317,6 +321,41 @@ public static class StepReportEvaluator
         // 旧结论（Step 4/5）没有 status：按 ok 兜底。
         return report.Ok ? StepReportStatus.Done : StepReportStatus.Failed;
     }
+
+    /// <summary>
+    /// 单仓不变量：同一步结论里各端 <c>kind=repository</c> 产物必须指向同一个仓
+    /// （<c>name</c> 与 <c>localPath</c> 各端同值）。空值不参与比较——准备阶段尚未落账时允许留空。
+    /// </summary>
+    /// <param name="report">结论。</param>
+    /// <param name="ends">本次要求的端。</param>
+    /// <returns>不一致时的说明；一致或无法比较时为 <c>null</c>。</returns>
+    private static string? ValidateSingleRepository(StepReport report, IReadOnlyList<ProjectEnd> ends)
+    {
+        var artifacts = ends
+            .Select(end => RepositoryArtifact(report, end))
+            .Where(artifact => artifact is not null)
+            .ToList();
+
+        var names = DistinctValues(artifacts.Select(artifact => artifact!.Name));
+        if (names.Count > 1)
+            return $"各端仓库名不一致（{string.Join("、", names)}）：单仓模式下各端必须共用同一个仓。";
+
+        var paths = DistinctValues(artifacts.Select(artifact => artifact!.LocalPath));
+        if (paths.Count > 1)
+            return $"各端本地仓库目录不一致（{string.Join("、", paths)}）：单仓模式下各端必须共用同一个仓。";
+
+        return null;
+    }
+
+    /// <summary>去空白、忽略大小写、剔除空值后的取值集合（顺序按首次出现）。</summary>
+    /// <param name="values">原始取值。</param>
+    /// <returns>不同的非空取值。</returns>
+    private static List<string> DistinctValues(IEnumerable<string?> values)
+        => values
+            .Select(value => value?.Trim() ?? string.Empty)
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>是否为该端给出一条 <c>kind=repository</c> 产物。</summary>
     /// <param name="report">结论。</param>

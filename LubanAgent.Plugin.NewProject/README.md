@@ -41,7 +41,7 @@ LubanAgent.Plugin.NewProject/
 │  ├─ PipelinePreview.cs                 # Step 7 复核视图模型（数据来源＝结论文件 artifacts[]）
 │  ├─ PipelinePrepareResult.cs           # Step 7 准备读数（按端预览 + inputs[] + 映射缺口）
 │  └─ INewProjectService.cs              # 共享能力层契约
-├─ Configuration/NewProjectSettings.cs   # 包内配置读取（瘦身：仅 6 项格式值）
+├─ Configuration/NewProjectSettings.cs   # 包内配置读取（瘦身：仅 7 项格式值）
 ├─ Serialization/PluginJsonContext.cs    # 源生成 JSON 上下文（登记全部新 schema 类型）
 ├─ Services/
 │  ├─ NewProjectService.cs               # 共享能力层实现（Step 3/6/7 执行体已下沉，改为「下发 + 回读」）
