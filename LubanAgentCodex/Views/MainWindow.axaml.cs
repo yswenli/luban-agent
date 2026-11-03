@@ -135,6 +135,10 @@ public partial class MainWindow : Window
                 _inputBox.ImagePasted += (s, path) => _viewModel?.AddAttachments(new[] { path });
                 _inputBox.AttachmentRemoveRequested += (s, fileName) => _viewModel?.RemoveAttachment(fileName);
 
+                // 工具栏按钮：权限模式循环同 Shift+Tab；统计输出同 /stats
+                _inputBox.PermissionModeToggleRequested += (s, e) => CyclePermissionMode();
+                _inputBox.StatsRequested += (s, e) => _viewModel?.ShowStats();
+
                 // 拖拽落点：窗口级接管，提取本地文件路径
                 AddHandler(DragDrop.DragOverEvent, OnDragOver);
                 AddHandler(DragDrop.DropEvent, OnDrop);

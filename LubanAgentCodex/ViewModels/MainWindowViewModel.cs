@@ -1297,7 +1297,10 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void ShowStats()
+    /// <summary>
+    /// 输出统计信息到消息流（/stats 与输入框「统计」按钮共用）。
+    /// </summary>
+    public void ShowStats()
     {
         var sessionManager = Services.GetService<ISessionManager>();
         var sb = new StringBuilder();

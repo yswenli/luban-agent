@@ -26,6 +26,8 @@ public partial class InputBox : UserControl
     private TextBox? _inputTextBox;
     private Button? _sendButton;
     private Button? _attachButton;
+    private Button? _permissionButton;
+    private Button? _statsButton;
     private TextBlock? _processingHint;
     private ComboBox? _modelCombo;
     private ItemsControl? _attachmentBar;
@@ -57,6 +59,8 @@ public partial class InputBox : UserControl
         _inputTextBox = this.FindControl<TextBox>("InputTextBox");
         _sendButton = this.FindControl<Button>("SendButton");
         _attachButton = this.FindControl<Button>("AttachButton");
+        _permissionButton = this.FindControl<Button>("PermissionButton");
+        _statsButton = this.FindControl<Button>("StatsButton");
         _processingHint = this.FindControl<TextBlock>("ProcessingHint");
         _modelCombo = this.FindControl<ComboBox>("ModelCombo");
         _attachmentBar = this.FindControl<ItemsControl>("AttachmentBar");
@@ -74,6 +78,12 @@ public partial class InputBox : UserControl
 
         if (_attachButton != null)
             _attachButton.Click += OnAttachButtonClick;
+
+        if (_permissionButton != null)
+            _permissionButton.Click += OnPermissionButtonClick;
+
+        if (_statsButton != null)
+            _statsButton.Click += OnStatsButtonClick;
 
         if (_modelCombo != null)
             _modelCombo.SelectionChanged += OnModelSelectionChanged;
@@ -406,6 +416,12 @@ public partial class InputBox : UserControl
     /// <summary>请求选择附件（由 MainWindow 接管 StorageProvider）。</summary>
     public event EventHandler? AttachRequested;
 
+    /// <summary>请求切换权限模式（由 MainWindow 接管，行为同 Shift+Tab）。</summary>
+    public event EventHandler? PermissionModeToggleRequested;
+
+    /// <summary>请求显示统计信息（由 MainWindow 接管，行为同 /stats）。</summary>
+    public event EventHandler? StatsRequested;
+
     /// <summary>粘贴到附件（剪贴板中的文件路径）。</summary>
     public event EventHandler<string>? ImagePasted;
 
@@ -433,6 +449,12 @@ public partial class InputBox : UserControl
 
     private void OnAttachButtonClick(object? sender, RoutedEventArgs e)
         => AttachRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnPermissionButtonClick(object? sender, RoutedEventArgs e)
+        => PermissionModeToggleRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnStatsButtonClick(object? sender, RoutedEventArgs e)
+        => StatsRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnRemoveAttachmentClick(object? sender, RoutedEventArgs e)
     {
