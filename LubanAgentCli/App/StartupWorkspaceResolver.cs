@@ -30,8 +30,10 @@ internal static class StartupWorkspaceResolver
     /// <param name="services">根级 DI 容器。</param>
     /// <param name="ui">TUI 模态交互服务。</param>
     /// <param name="notices">启动提示集合（追加，供主界面横幅展示）。</param>
+    /// <param name="remoteMode">是否连统一 Agent 服务（远程模式下本地库不可信，跳过在本进程读写库的步骤）。</param>
     /// <returns>是否已成功进入某个工作区。</returns>
-    public static async Task<bool> ResolveAsync(DiContainer services, ITuiUiService ui, List<string> notices)
+    public static async Task<bool> ResolveAsync(
+        DiContainer services, ITuiUiService ui, List<string> notices, bool remoteMode = false)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(ui);
@@ -70,46 +72,54 @@ internal static class StartupWorkspaceResolver
         await workspaceManager.SetCurrentAsync(target.WorkspaceId);
 
         // worktree 启动对账：登记与磁盘不一致时以启动提示呈现（不阻塞进入工作区）
-        try
+        // 远程模式下登记表归服务端，本进程读不到真实数据，跳过以免误报孤儿 worktree。
+        if (!remoteMode)
         {
-            var reconcileMessages = await services.GetRequiredService<WorktreeReconciler>().RunAsync();
-            foreach (var message in reconcileMessages)
-                notices.Add("worktree 对账: " + message);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("worktree 启动对账失败", ex);
+            try
+            {
+                var reconcileMessages = await services.GetRequiredService<WorktreeReconciler>().RunAsync();
+                foreach (var message in reconcileMessages)
+                    notices.Add("worktree 对账: " + message);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("worktree 启动对账失败", ex);
+            }
         }
 
-        // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
-        await TryStartA2AAsync(services, target.RootPath, notices);
+        // A2A：运行时随宿主进程启停，本进程只读状态（远程模式下本进程没有 A2A 运行时）
+        await AddA2AStatusNoticeAsync(services, notices);
 
         return true;
     }
 
     /// <summary>
-    /// 启动 A2A 运行时。未启用 A2A 时为 no-op；失败仅提示，不阻断进入工作区。
+    /// 读取 A2A 状态并作为启动提示。运行时由宿主进程启停，本进程不提供启停；失败仅提示。
     /// </summary>
-    private static async Task TryStartA2AAsync(DiContainer services, string workspaceRoot, List<string> notices)
+    private static async Task AddA2AStatusNoticeAsync(DiContainer services, List<string> notices)
     {
-        var lifecycle = services.GetService<IA2ALifecycle>();
-        if (lifecycle is null)
+        var statusProvider = services.GetService<IA2AStatusProvider>();
+        if (statusProvider is null)
         {
             return;
         }
 
         try
         {
-            await lifecycle.StartAsync(workspaceRoot);
-            if (lifecycle.IsRunning)
+            var status = await statusProvider.GetStatusAsync();
+            if (status.IsRunning)
             {
-                notices.Add("A2A 已启动");
+                notices.Add($"A2A 运行中（{status.LocalAgentName}）");
+            }
+            else if (status.Enabled)
+            {
+                notices.Add("A2A 已启用但未运行");
             }
         }
         catch (Exception ex)
         {
-            Logger.Error("启动 A2A 失败", ex);
-            notices.Add($"A2A 启动失败: {ex.Message}");
+            Logger.Error("读取 A2A 状态失败", ex);
+            notices.Add($"读取 A2A 状态失败: {ex.Message}");
         }
     }
 

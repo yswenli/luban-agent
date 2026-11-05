@@ -255,7 +255,7 @@ internal sealed class LlmWikiCommand : CommandBase
         var wait = args.Any(a => string.Equals(a, "--wait", StringComparison.OrdinalIgnoreCase));
         var glob = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
 
-        // 后台模式：必需部分（校验/授权）同步完成即返回，索引进后台并由 Updated 事件反馈
+        // 远程模式下后台任务通道不可用：StartIndexAsync 返回 null，直接走同步索引（--wait 只是强制同步）
         if (!wait)
         {
             var task = await _wiki.StartIndexAsync(workspace.WorkspaceId, glob);

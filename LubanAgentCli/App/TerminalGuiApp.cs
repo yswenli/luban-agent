@@ -50,6 +50,11 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
     public AgentHostServices? Services { get; private set; }
 
     /// <summary>
+    /// 到统一 Agent 服务的连接。随应用退出释放；自动拉起模式下会一并结束服务子进程。
+    /// </summary>
+    public AgentClientConnection? Connection { get; private set; }
+
+    /// <summary>
     /// 释放资源。
     /// </summary>
     /// <remarks>
@@ -73,6 +78,14 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
         {
             await Services.DisposeAsync();
             Services = null;
+        }
+
+        // 连接晚于容器释放：容器内还有经 HTTP 端口工作的服务（Agent/会话/工作区），
+        // 连接一旦断开这些调用的目标就没了；自动拉起模式下这里同时结束服务子进程。
+        if (Connection is not null)
+        {
+            await Connection.DisposeAsync();
+            Connection = null;
         }
 
         if (_timerPeriodRaised && OperatingSystem.IsWindows())
@@ -153,6 +166,7 @@ internal sealed class TerminalGuiApp : IAsyncDisposable
             }
 
             Services = startup.Services;
+            Connection = startup.Connection;
 
             _titleService = Services.GetRequiredService<TitleService>();
             _titleChangedHandler = title =>

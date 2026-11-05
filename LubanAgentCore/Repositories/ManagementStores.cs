@@ -25,6 +25,28 @@ public interface ISessionWorkspaceQuery
     /// <param name="workspaceId">工作区标识；为空时返回空列表。</param>
     /// <param name="userId">归属用户。</param>
     Task<List<DbSession>> GetByWorkspaceAsync(string workspaceId, string userId);
+
+    /// <summary>
+    /// 取会话绑定的工作区标识。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户。</param>
+    /// <returns>工作区标识；会话不存在、不属于该用户或未绑定工作区时为 null。</returns>
+    Task<string?> GetSessionWorkspaceIdAsync(string sessionId, string userId);
+}
+
+/// <summary>
+/// 会话消息的预览查询（<c>/session -list</c> 的列表预览）。
+/// </summary>
+public interface ISessionMessageQuery
+{
+    /// <summary>
+    /// 批量取各会话首条用户消息的截断预览。
+    /// </summary>
+    /// <param name="sessionIds">会话标识集合。</param>
+    /// <param name="maxLength">单条预览最大长度。</param>
+    /// <returns>会话标识到预览文本的映射；无用户消息的会话不出现。</returns>
+    Task<Dictionary<string, string>> GetFirstUserMessagePreviewAsync(IEnumerable<string> sessionIds, int maxLength = 60);
 }
 
 /// <summary>

@@ -87,7 +87,8 @@ internal sealed class RootView : Runnable
     private readonly DiContainer _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly ITuiUiService _ui;
-    private readonly SessionManager _sessionManager;
+    /// <summary>会话管理（本地为 SessionManager，远程模式为 HTTP 实现）</summary>
+    private readonly ISessionManager _sessionManager;
     private readonly IWorkspaceManager _workspaceManager;
     private readonly AgentViewViewModel _agentVm;
     private readonly ConversationView _conversation;
@@ -136,8 +137,9 @@ internal sealed class RootView : Runnable
         _services = services;
         _dispatcher = dispatcher;
         _ui = ui;
-        // 单例；ISessionManager 由 SessionManager 实现（同一实例），转为具体类型以订阅 CurrentSessionChanged
-        _sessionManager = (SessionManager)services.GetRequiredService<ISessionManager>();
+        // 单例；本地模式为 SessionManager、远程模式为 HttpSessionManager，
+        // 统一按接口使用，变更事件经 ICurrentSessionNotifier 订阅
+        _sessionManager = services.GetRequiredService<ISessionManager>();
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _onExitRequested = ConfirmExit;
 
@@ -224,7 +226,11 @@ internal sealed class RootView : Runnable
         }
 
         _onCurrentSessionChanged = OnCurrentSessionChanged;
-        _sessionManager.CurrentSessionChanged += _onCurrentSessionChanged;
+        // 本地与远程实现都实现 ICurrentSessionNotifier；不变更接口契约，仅按能力订阅
+        if (_sessionManager is ICurrentSessionNotifier notifier)
+        {
+            notifier.CurrentSessionChanged += _onCurrentSessionChanged;
+        }
 
         var completionPopup = _inputBar.CompletionPopup;
         completionPopup.Width = 55;
@@ -523,7 +529,10 @@ internal sealed class RootView : Runnable
                 _keyboard = null;
                 _onGlobalKeyDown = null;
             }
-            _sessionManager.CurrentSessionChanged -= _onCurrentSessionChanged;
+            if (_sessionManager is ICurrentSessionNotifier notifier)
+            {
+                notifier.CurrentSessionChanged -= _onCurrentSessionChanged;
+            }
             if (_services.GetService<KnowledgeTaskService>() is { } knowledgeTasks)
             {
                 knowledgeTasks.Updated -= OnKnowledgeTaskUpdated;

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>LubanAgent.Protocol</RootNamespace>
+		<AssemblyName>LubanAgentProtocol</AssemblyName>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 复用框架的宿主契约（IAgentHost / AgentStreamEvent / 会话与消息模型）与事件映射；
+		     版本跟随 LubanAgentCore，避免两处口径分叉 -->
+		<PackageReference Include="LuBan.AIAgent" Version="2026.11.2.1" />
+	</ItemGroup>
+
+</Project>

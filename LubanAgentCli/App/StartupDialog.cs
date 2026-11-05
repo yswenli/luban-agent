@@ -35,6 +35,11 @@ internal class StartupDialog : Dialogs.BaseDialog
     public AgentHostServices? Services { get; private set; }
 
     /// <summary>
+    /// 到统一 Agent 服务的连接（随应用退出释放；自动拉起模式下会一并结束服务子进程）。
+    /// </summary>
+    public AgentClientConnection? Connection { get; private set; }
+
+    /// <summary>
     /// 启动提示集合。
     /// </summary>
     public List<string> Notices { get; } = new();
@@ -104,9 +109,12 @@ internal class StartupDialog : Dialogs.BaseDialog
             config.InitConfigUtil();
             ProviderHelper.Initialize(config);
 
-            Report("② 初始化数据库...");
-            var messages = DatabaseInitializer.Initialize();
-            foreach (var msg in messages) Report(msg);
+            Report("② 连接统一 Agent 服务...");
+            Connection = await AgentClientHostBuilder.ConnectAsync(new AgentClientOptions
+            {
+                // 服务子进程与客户端同工作目录，保持相对路径与工作区语义一致
+                WorkingDirectory = Directory.GetCurrentDirectory()
+            });
 
             Report("③ 准备嵌入模型...");
             _retrievalCts = new CancellationTokenSource();
@@ -116,35 +124,43 @@ internal class StartupDialog : Dialogs.BaseDialog
             _dispatcher.Invoke(() => _cancelButton.Visible = false);
 
             Report("④ 构建服务容器...");
-            Services = StartupRunner.BuildHost(config, embedder, modelManager);
+            Services = StartupRunner.BuildHost(config, embedder, modelManager, Connection);
 
-            var workspaceManager = Services.GetRequiredService<IWorkspaceManager>() as WorkspaceManager;
-            if (workspaceManager != null)
+            var promptAuthorization = new Func<WorkspaceInfo, Task<bool>>(async ws =>
             {
-                workspaceManager.AuthorizationPrompt = async ws =>
+                var tcs = new TaskCompletionSource<bool>();
+                _dispatcher.Invoke(() =>
                 {
-                    var tcs = new TaskCompletionSource<bool>();
-                    _dispatcher.Invoke(() =>
+                    try
                     {
-                        try
-                        {
-                            tcs.TrySetResult(_ui.Confirm("工作区授权",
-                                $"工作区 '{ws.Name}' 需要授权才能访问...\n是否授权？",
-                                defaultValue: false));
-                        }
-                        catch (Exception ex)
-                        {
-                            tcs.TrySetException(ex);
-                        }
-                    });
-                    return await tcs.Task;
-                };
+                        tcs.TrySetResult(_ui.Confirm("工作区授权",
+                            $"工作区 '{ws.Name}' 需要授权才能访问...\n是否授权？",
+                            defaultValue: false));
+                    }
+                    catch (Exception ex)
+                    {
+                        tcs.TrySetException(ex);
+                    }
+                });
+                return await tcs.Task;
+            });
+
+            // 授权弹窗必须挂到实际生效的实现上：远程模式下工作区管理器是 HTTP 实现，
+            // 它自己不会弹窗，未挂回调时一律按拒绝处理。
+            switch (Services.GetRequiredService<IWorkspaceManager>())
+            {
+                case WorkspaceManager local:
+                    local.AuthorizationPrompt = promptAuthorization;
+                    break;
+                case HttpWorkspaceManager remote:
+                    remote.AuthorizationPrompt = promptAuthorization;
+                    break;
             }
 
             // ⑤ 准备工作区：选最近活跃非 LLM Wiki 工作区（无则弹创建表单）、授权、设为当前并可生成 AGENTS.md。
             // 必须在向导的运行中主循环内调用——解析器会弹出嵌套模态表单。
             Report("⑤ 准备工作区...");
-            await StartupWorkspaceResolver.ResolveAsync(Services, _ui, Notices);
+            await StartupWorkspaceResolver.ResolveAsync(Services, _ui, Notices, remoteMode: Connection is not null);
 
             Success = true;
             _dispatcher.Invoke(RequestStop);
@@ -153,6 +169,7 @@ internal class StartupDialog : Dialogs.BaseDialog
         {
             Report("已取消");
             Success = false;
+            await CloseConnectionAsync();
             _dispatcher.Invoke(RequestStop);
         }
         catch (Exception ex)
@@ -160,7 +177,20 @@ internal class StartupDialog : Dialogs.BaseDialog
             Logger.Error("Startup initialization failed", ex);
             Report($"错误: {ex.Message}");
             Success = false;
+            await CloseConnectionAsync();
             _dispatcher.Invoke(RequestStop);
+        }
+    }
+
+    /// <summary>
+    /// 初始化失败时释放已建立的连接（自动拉起模式下同时结束服务子进程）。
+    /// </summary>
+    private async Task CloseConnectionAsync()
+    {
+        if (Connection is not null)
+        {
+            await Connection.DisposeAsync();
+            Connection = null;
         }
     }
 

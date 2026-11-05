@@ -36,6 +36,10 @@
     <!-- 被测产品程序集（含其传递的框架引用）：云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/） -->
     <!-- 产品侧连接器配置写入器（ConfigManager : IConnectorConfigWriter） -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
+    <!-- WebHost 与客户端共用的传输协议（SSE 帧编解码、事件还原、请求体包装、路由常量） -->
+    <ProjectReference Include="..\LubanAgentProtocol\LubanAgentProtocol.csproj" />
+    <!-- 客户端 SDK（HTTP/SSE 实现与子进程启动器） -->
+    <ProjectReference Include="..\LubanAgentClient\LubanAgentClient.csproj" />
     <!-- 「新建项目」插件的共享能力层（步骤状态归并等纯逻辑，供单测覆盖；UI 部分不参与测试） -->
     <ProjectReference Include="..\LubanAgent.Plugin.NewProject\LubanAgent.Plugin.NewProject.csproj" />
     <!-- Codex 设置窗的分页 ViewModel（Task 19：业务已从窗口下沉到 ViewModels/Settings，纯逻辑无 Avalonia 依赖） -->

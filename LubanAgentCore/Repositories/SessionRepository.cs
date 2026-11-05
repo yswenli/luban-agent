@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// Session 仓储
 /// </summary>
-public class SessionRepository : BaseRepository<DbSession>, ISessionWorkspaceQuery
+public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQuery
 {
     /// <summary>
     /// 创建 Session 仓储实例。
@@ -39,6 +39,18 @@ public class SessionRepository : BaseRepository<DbSession>, ISessionWorkspaceQue
     }
 
     /// <summary>
+    /// 取会话绑定的工作区标识（跨用户不可见）。
+    /// </summary>
+    public async Task<string?> GetSessionWorkspaceIdAsync(string sessionId, string userId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return null;
+
+        var session = await GetFirstAsync(
+            s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+        return string.IsNullOrWhiteSpace(session?.WorkspaceId) ? null : session!.WorkspaceId;
+    }
+
+    /// <summary>
     /// 判断指定用户是否拥有该会话（含软删除；用于消息读写的越权防护）。
     /// </summary>
     /// <remarks>
@@ -49,6 +61,18 @@ public class SessionRepository : BaseRepository<DbSession>, ISessionWorkspaceQue
     {
         if (string.IsNullOrEmpty(sessionId)) return false;
         return await AnyAsync(s => s.SessionId == sessionId && s.UserId == userId);
+    }
+
+    /// <summary>
+    /// 取会话的归属用户（不受调用身份限制，用于区分「不存在」与「无权访问」）。
+    /// </summary>
+    /// <param name="sessionId">会话ID。</param>
+    /// <returns>归属用户ID；会话不存在或已软删除时返回 null。</returns>
+    public async Task<string?> GetOwnerUserIdAsync(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return null;
+        var session = await GetFirstAsync(s => s.SessionId == sessionId && !s.IsDelete);
+        return session?.UserId;
     }
 
     /// <summary>
@@ -189,7 +213,7 @@ public class SessionRepository : BaseRepository<DbSession>, ISessionWorkspaceQue
 /// <summary>
 /// Session 消息仓储
 /// </summary>
-public class SessionMessageRepository : BaseRepository<DbSessionMessage>
+public class SessionMessageRepository : AgentRepository<DbSessionMessage>, ISessionMessageQuery
 {
     /// <summary>
     /// 创建 Session 消息仓储实例。

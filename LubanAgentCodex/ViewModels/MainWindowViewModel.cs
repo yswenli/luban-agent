@@ -787,7 +787,7 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 执行 /a2a 命令（A2A 协作管理：状态/服务端/客户端/启停）。
+    /// 执行 /a2a 命令（A2A 协作管理：状态/服务端/客户端；运行时由宿主进程启停）。
     /// </summary>
     private async Task ExecuteA2ACommandAsync(string[] args)
     {
@@ -797,7 +797,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             case "-list":
             case "-l":
-                ShowA2AStatus();
+                await ShowA2AStatusAsync();
                 break;
 
             case "-server":
@@ -811,17 +811,14 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case "-start":
-                await StartA2AAsync();
-                break;
-
             case "-stop":
-                await StopA2AAsync();
+                WriteA2AManagedByHost();
                 break;
 
             default:
                 Messages.Add(new SystemMessageItem
                 {
-                    Content = $"未知子命令: {sub}\n用法: /a2a [-list | -server | -client | -start | -stop]",
+                    Content = $"未知子命令: {sub}\n用法: /a2a [-list | -server | -client]",
                     IsError = true
                 });
                 break;
@@ -836,22 +833,39 @@ public partial class MainWindowViewModel : ObservableObject
     private void AddA2AMessage(string content, bool isError = false)
         => Messages.Add(new SystemMessageItem { Content = content, IsError = isError });
 
-    /// <summary>显示 A2A 状态与服务端/客户端概览。</summary>
-    private void ShowA2AStatus()
+    /// <summary>显示 A2A 状态与服务端/客户端概览（状态经宿主读取，只读）。</summary>
+    private async Task ShowA2AStatusAsync()
     {
-        var enabled = Services.GetService<IOptions<A2AOptions>>()?.Value.Enabled ?? false;
-        var lifecycle = Services.GetService<IA2ALifecycle>();
-        var state = Services.GetService<A2ARuntimeState>();
-        var serverHost = Services.GetService<IA2AServerHost>();
         var root = A2AWorkspaceRoot;
+
+        A2AStatusDto? status = null;
+        var provider = Services.GetService<IA2AStatusProvider>();
+        if (provider is null)
+        {
+            AddA2AMessage("A2A 状态服务未注册", isError: true);
+            return;
+        }
+
+        try
+        {
+            status = await provider.GetStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            AddA2AMessage($"读取 A2A 状态失败: {ex.Message}", isError: true);
+            return;
+        }
+
+        var enabled = status.Enabled;
 
         var sb = new StringBuilder();
         sb.AppendLine("A2A 协作状态");
         sb.AppendLine($"  总开关(Enabled): {(enabled ? "已启用" : "已禁用")}");
-        sb.AppendLine($"  运行状态: {(lifecycle?.IsRunning == true ? "运行中" : "未启动")}");
-        sb.AppendLine($"  本地 Agent 名: {state?.LocalAgentName ?? "luban-agent"}");
-        sb.AppendLine($"  服务端端点: {(string.IsNullOrWhiteSpace(serverHost?.Endpoint) ? "-" : serverHost!.Endpoint)}");
+        sb.AppendLine($"  运行状态: {(status.IsRunning ? "运行中" : "未启动")}");
+        sb.AppendLine($"  本地 Agent 名: {(string.IsNullOrWhiteSpace(status.LocalAgentName) ? "-" : status.LocalAgentName)}");
+        sb.AppendLine($"  服务端端点: {(string.IsNullOrWhiteSpace(status.Endpoint) ? "-" : status.Endpoint)}");
         sb.AppendLine($"  工作区: {(string.IsNullOrWhiteSpace(root) ? "(未选择)" : root)}");
+        sb.AppendLine("  说明: A2A 随宿主进程启动/停止，客户端只读状态");
 
         if (string.IsNullOrWhiteSpace(root))
         {
@@ -946,7 +960,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"已创建服务端配置: {Path.Combine(A2AWorkspaceConfigStore.ResolveDir(root), A2AWorkspaceConfigStore.ServerFileName)}\n" +
             $"  API Key: {apiKey}\n" +
             "API Key 为明文，请勿提交到版本库；建议将 .luban-agent/a2a/ 加入 .gitignore\n" +
-            "执行 /a2a -stop 再 /a2a -start（或重启）后生效");
+            "重启客户端（宿主进程随之重启）后服务端角色生效");
     }
 
     /// <summary>处理客户端子命令。</summary>
@@ -1043,7 +1057,7 @@ public partial class MainWindowViewModel : ObservableObject
             ApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
             RegisterAsSubAgent = false,
         });
-        AddA2AMessage($"已保存客户端配置: {fileName}\n执行 /a2a -stop 再 /a2a -start（或重启）后生效");
+        AddA2AMessage($"已保存客户端配置: {fileName}\n重启客户端（宿主进程随之重启）后生效");
     }
 
     /// <summary>删除客户端配置；缺参时打开 A2A 设置页。</summary>
@@ -1071,56 +1085,11 @@ public partial class MainWindowViewModel : ObservableObject
         AddA2AMessage($"已删除客户端配置: {match.FileName}");
     }
 
-    /// <summary>启动 A2A 运行时。</summary>
-    private async Task StartA2AAsync()
-    {
-        var root = A2AWorkspaceRoot;
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            AddA2AMessage("当前未选择工作区", isError: true);
-            return;
-        }
-
-        var lifecycle = Services.GetService<IA2ALifecycle>();
-        if (lifecycle is null)
-        {
-            AddA2AMessage("A2A 未注册", isError: true);
-            return;
-        }
-
-        try
-        {
-            await lifecycle.StartAsync(root);
-            AddA2AMessage(lifecycle.IsRunning
-                ? "A2A 已启动"
-                : "A2A 启动完成（未启用或未配置角色，当前未运行）");
-        }
-        catch (Exception ex)
-        {
-            AddA2AMessage($"启动 A2A 失败: {ex.Message}", isError: true);
-        }
-    }
-
-    /// <summary>停止 A2A 运行时。</summary>
-    private async Task StopA2AAsync()
-    {
-        var lifecycle = Services.GetService<IA2ALifecycle>();
-        if (lifecycle is null)
-        {
-            AddA2AMessage("A2A 未注册", isError: true);
-            return;
-        }
-
-        try
-        {
-            await lifecycle.StopAsync();
-            AddA2AMessage("A2A 已停止");
-        }
-        catch (Exception ex)
-        {
-            AddA2AMessage($"停止 A2A 失败: {ex.Message}", isError: true);
-        }
-    }
+    /// <summary>启动/停止已降级：A2A 运行时随宿主进程启停，命令层只读状态。</summary>
+    private void WriteA2AManagedByHost()
+        => AddA2AMessage(
+            "A2A 运行时由宿主进程（LubanAgentWebHost）管理：进入工作区时自动启动，进程退出时停止。\n"
+            + "客户端不再提供启停；如需强制重启，请退出并重新打开客户端。");
 
     private void ShowHelp()
     {

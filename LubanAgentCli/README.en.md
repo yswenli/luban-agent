@@ -541,8 +541,8 @@ Authorize? (y/N): y
 > /work -switch "My Knowledge Base"
 ✓ Switched to workspace: My Knowledge Base
 
-# 3. Index files (background task by default; add --wait to wait synchronously)
-> /llmwiki -index *.md --wait
+# 3. Index files (indexing runs synchronously inside the host process with a progress window; --wait behaves the same)
+> /llmwiki -index *.md
 Indexing workspace: My Knowledge Base
 File pattern: *.md
 ✓ Indexing complete
@@ -704,8 +704,7 @@ LubanAgentCli/
 │   ├── TuiOutputWriter.cs      # Writes command output into the conversation document
 │   ├── IUiDispatcher.cs / TerminalGuiDispatcher.cs  # UI thread dispatch
 │   ├── Services/               # TUI-side helper services
-│   │   ├── TitleService.cs         # Session title generation
-│   │   └── TuiOrchestrationProgressSink.cs  # Orchestration progress rendering
+│   │   └── TitleService.cs         # Session title generation
 │   ├── Dialogs/                # Popup components (unified style)
 │   │   ├── BaseDialog.cs           # Base dialog (no border + gray bg + white text + title)
 │   │   ├── ConfirmDialog.cs        # Confirm dialog (Yes/No)

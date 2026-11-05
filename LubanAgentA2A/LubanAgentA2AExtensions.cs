@@ -15,6 +15,8 @@
 *
 *****************************************************************************/
 
+using LubanAgent.Protocol;
+
 namespace LubanAgentA2A;
 
 /// <summary>
@@ -64,6 +66,9 @@ public static class LubanAgentA2AExtensions
         // 运行时生命周期（由宿主在工作区确定后显式驱动）。
         services.TryAddSingleton<A2ARuntimeLifecycle>();
         services.TryAddSingleton<IA2ALifecycle>(d => d.GetRequiredService<A2ARuntimeLifecycle>());
+
+        // 状态只读查询：本机实现直接读上面的运行时对象；远程客户端由 LubanAgentClient 覆盖为 HTTP 实现。
+        services.AddScoped<IA2AStatusProvider, A2AStatusService>();
 
         // 子代理执行接缝：未启动 A2A 时严格回退默认实现（行为不变）；
         // 启动后经组合执行器按角色分发（进程内 / 远端）。

@@ -23,7 +23,7 @@ public class SessionCommand : CommandBase
 {
     private readonly ISessionManager _sessionManager;
     private readonly IChatSessionService _sessions;
-    private readonly SessionMessageRepository _messageRepo;
+    private readonly ISessionMessageQuery _messageQuery;
     private readonly IWorkspaceManagementService _workspaces;
 
     /// <summary>
@@ -43,17 +43,17 @@ public class SessionCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="sessionManager">会话管理器（提供「当前会话」标记）</param>
     /// <param name="sessions">会话管理服务</param>
-    /// <param name="messageRepo">会话消息仓储（列表预览）</param>
+    /// <param name="messageQuery">会话消息查询（列表预览）</param>
     /// <param name="workspaces">工作区管理服务（提供当前工作区ID）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
-    public SessionCommand(ConfigManager configManager, IConfiguration configuration, IChatSessionService sessions, ISessionManager sessionManager, SessionMessageRepository messageRepo,
+    public SessionCommand(ConfigManager configManager, IConfiguration configuration, IChatSessionService sessions, ISessionManager sessionManager, ISessionMessageQuery messageQuery,
         IWorkspaceManagementService workspaces, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessions = sessions;
         _sessionManager = sessionManager;
-        _messageRepo = messageRepo;
+        _messageQuery = messageQuery;
         _workspaces = workspaces;
     }
 
@@ -130,7 +130,7 @@ public class SessionCommand : CommandBase
         }
 
         var sessionIds = sessions.Select(s => s.SessionId);
-        var previews = await _messageRepo.GetFirstUserMessagePreviewAsync(sessionIds);
+        var previews = await _messageQuery.GetFirstUserMessagePreviewAsync(sessionIds);
 
         var rows = new List<IReadOnlyList<string>>();
 

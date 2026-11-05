@@ -510,6 +510,15 @@ public class ManagementServiceUnitTest
         public Task<WorkspaceInfo?> GetWorkspaceAsync(string workspaceId)
             => Task.FromResult(ById.TryGetValue(workspaceId, out var ws) ? ws : null);
 
+        public Task<WorkspaceInfo?> GetByRootPathAsync(string rootPath)
+            => Task.FromResult(Workspaces.FirstOrDefault(w =>
+                string.Equals(w.RootPath, rootPath, StringComparison.OrdinalIgnoreCase)));
+
+        public Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword)
+            => Task.FromResult<IReadOnlyList<WorkspaceInfo>>(Workspaces
+                .Where(w => w.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                .ToList());
+
         public Task<bool> EnsureAuthorizedAsync(WorkspaceInfo workspace)
         {
             EnsureAuthorizedCalls++;
@@ -632,6 +641,10 @@ public class ManagementServiceUnitTest
             LastUserId = userId;
             return Task.FromResult(Sessions);
         }
+
+        public Task<string?> GetSessionWorkspaceIdAsync(string sessionId, string userId)
+            => Task.FromResult(Sessions
+                .FirstOrDefault(s => s.SessionId == sessionId)?.WorkspaceId);
     }
 
     // ---------------- Stub：LLM Wiki 仓储缝 ----------------

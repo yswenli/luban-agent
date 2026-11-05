@@ -835,15 +835,9 @@ public partial class MainWindow : Window
                         await workspaceManager.EnsureAuthorizedAsync(llmWikiWs);
                         await workspaceManager.SetCurrentAsync(llmWikiWs.WorkspaceId);
 
-                        // 检索 scope 为 root 派生，需回填当前用户身份
-                        using var retrievalScope = vm.Services.CreateUserScope(vm.Services.ResolveUserKey());
-                        var retrieval = retrievalScope.GetService<IRetrievalService>();
-                        if (retrieval == null)
-                        {
-                            await Dialogs.ShowInfoAsync(this,
-                                "知识库已创建，但嵌入模型未就绪，暂未建立索引。\n请将嵌入模型包放入 EmbeddingModels 目录后重新初始化。");
-                            return;
-                        }
+                        // 索引与检索都在宿主进程内：客户端只按工作区请求，不再解析 IRetrievalService
+                        // （远程模式下本进程没有嵌入模型，也没有初始化数据库）
+                        var wiki = vm.Services.GetRequiredService<ILlmWikiManagementService>();
 
                         var maxFileSizeBytes = vm.Services.GetRequiredService<IOptions<LuBanAgentOptions>>()
                             .Value.Tools.Retrieval.MaxFileSizeKB * 1024L;
@@ -862,18 +856,62 @@ public partial class MainWindow : Window
                             return;
                         }
 
-                        // 必需部分完成：立即关闭遮罩（finally）、恢复原工作区，然后提示并转后台索引
-                        vm.Messages.Add(new SystemMessageItem
+                        // 必需部分完成：立即关闭遮罩（finally）、恢复原工作区，然后提示并开始索引
+                        var started = await wiki.StartIndexAsync(llmWikiWs.WorkspaceId);
+                        if (started is null)
                         {
-                            Content = $"知识库「{llmWikiWs.Name}」已创建，正在后台建立索引（{fileCount} 个文件）…"
-                        });
+                            // 客户端没有后台任务通道（远程模式）：同步索引，遮罩保持显示
+                            vm.Messages.Add(new SystemMessageItem
+                            {
+                                Content = $"知识库「{llmWikiWs.Name}」已创建，正在建立索引（{fileCount} 个文件）…"
+                            });
+                            vm.BusyOverlayText = "正在建立索引…";
 
-                        var tasks = vm.Services.GetService<KnowledgeTaskService>();
-                        if (tasks != null)
-                            tasks.StartIndex(llmWikiWs.WorkspaceId, path, null, llmWikiWs.UserId);
+                            try
+                            {
+                                var report = await wiki.IndexFilesAsync(llmWikiWs.WorkspaceId);
+                                vm.Messages.Add(new SystemMessageItem
+                                {
+                                    Content = $"知识库「{llmWikiWs.Name}」索引完成：扫描 {report.ScannedFiles}、新增 {report.NewFiles}、" +
+                                        $"更新 {report.UpdatedFiles}、跳过 {report.SkippedFiles}、切块 {report.TotalChunks}。"
+                                });
+
+                                // 失败与告警不能吞掉：否则用户看到「索引完成」却查不到内容
+                                if (report.Errors.Count > 0)
+                                {
+                                    vm.Messages.Add(new SystemMessageItem
+                                    {
+                                        Content = $"索引错误 {report.Errors.Count} 条：{string.Join("；", report.Errors.Take(5))}",
+                                        IsError = true
+                                    });
+                                }
+
+                                if (report.Warnings.Count > 0)
+                                {
+                                    vm.Messages.Add(new SystemMessageItem
+                                    {
+                                        Content = $"索引告警 {report.Warnings.Count} 条：{string.Join("；", report.Warnings.Take(5))}"
+                                    });
+                                }
+                            }
+                            catch (Exception indexEx)
+                            {
+                                // 补一条终态消息，避免「正在建立索引…」永久悬挂
+                                vm.Messages.Add(new SystemMessageItem
+                                {
+                                    Content = $"知识库「{llmWikiWs.Name}」索引失败：{indexEx.Message}",
+                                    IsError = true
+                                });
+                                throw;
+                            }
+                        }
                         else
-                            await Dialogs.ShowInfoAsync(this,
-                                "知识库已创建，但后台任务服务未就绪，请使用 /llmwiki -index 手动建立索引。");
+                        {
+                            vm.Messages.Add(new SystemMessageItem
+                            {
+                                Content = $"知识库「{llmWikiWs.Name}」已创建，正在后台建立索引（{fileCount} 个文件）…"
+                            });
+                        }
                     }
                     finally
                     {

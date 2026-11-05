@@ -541,8 +541,8 @@ TUI 重构完成后，所有命令均在 TUI 全屏界面内以 `/` 前缀交互
 > /work -switch 我的知识库
 ✓ 已切换到工作区: 我的知识库
 
-# 3. 索引文件（默认转后台任务，加 --wait 同步等待）
-> /llmwiki -index *.md --wait
+# 3. 索引文件（索引在宿主进程内同步执行，期间显示进度窗；--wait 与默认行为一致）
+> /llmwiki -index *.md
 开始索引工作区: 我的知识库
 文件匹配模式: *.md
 ✓ 索引完成
@@ -704,8 +704,7 @@ LubanAgentCli/
 │   ├── TuiOutputWriter.cs      # 命令输出写入会话文档
 │   ├── IUiDispatcher.cs / TerminalGuiDispatcher.cs  # UI 线程调度
 │   ├── Services/               # TUI 侧辅助服务
-│   │   ├── TitleService.cs         # 会话标题生成
-│   │   └── TuiOrchestrationProgressSink.cs  # 编排进度渲染
+│   │   └── TitleService.cs         # 会话标题生成
 │   ├── Dialogs/                # 弹出层组件（统一样式）
 │   │   ├── BaseDialog.cs           # 弹出层基类（无边框 + 灰色背景 + 白色文字 + 标题）
 │   │   ├── ConfirmDialog.cs        # 确认对话框（是/否）

@@ -4,7 +4,7 @@
 
 **基于 Microsoft Agent Framework 的完整 AI Agent 解决方案**
 
-*一套核心运行时，两种终端体验：命令行 TUI + 跨平台桌面客户端*
+*一套核心运行时，三端统一：命令行 TUI + 跨平台桌面客户端 + 本地 Agent 服务*
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -24,16 +24,19 @@
 
 这不是科幻，这就是 **LuBan Agent**。
 
-本仓库是 LuBan Agent 的完整解决方案，包含共享核心库、两种客户端形态，以及 A2A 协作库、新建项目插件与自动化测试工程：
+本仓库是 LuBan Agent 的完整解决方案，包含共享核心库、两种客户端形态、统一的本地 Agent 服务（WebHost）及其协议 / 客户端 SDK，以及 A2A 协作库、新建项目插件与自动化测试工程：
 
 | 项目 | 形态 | 说明 |
 |------|------|------|
 | **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理、连接器（含云效）与插件宿主 |
 | **[LubanAgentCli](LubanAgentCli/)** | 命令行 TUI | 基于 Terminal.Gui v2 的全屏终端界面（Claude Code 风格），可安装为 dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，双栏布局（侧边栏 + 对话区）+ 暗色主题 |
+| **[LubanAgentWebHost](LubanAgentWebHost/)** | 本地 Agent 服务 | 基于 SAEA.MVC 的 HTTP/SSE 宿主，把对话、会话、工作区能力暴露为本地接口 |
+| **[LubanAgentProtocol](LubanAgentProtocol/)** | 传输协议 | WebHost 与客户端共用的路由常量、请求/响应 DTO、SSE 帧编解码与事件还原 |
+| **[LubanAgentClient](LubanAgentClient/)** | 客户端 SDK | `IAgentHost` / `ISessionManager` / `IWorkspaceManager` 的 HTTP 实现与子进程启动器 |
 | **[LubanAgentA2A](LubanAgentA2A/)** | A2A 协作库 | 基于 A2A SDK 的 Agent 间协作：服务端宿主、客户端注册、子代理进程内/远端分发 |
 | **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex 插件 | 「新建项目」插件，纯代码 UI，构建后自动铺装到 Codex 运行目录 `plugins/` |
-| **[LubanAgent.Tests](LubanAgent.Tests/)** | 测试工程 | MSTest 自动化测试（连接器、NewProject 插件、Skill/Rule 后端等） |
+| **[LubanAgent.Tests](LubanAgent.Tests/)** | 测试工程 | MSTest 自动化测试（连接器、NewProject 插件、Skill/Rule 后端、传输协议等） |
 
 > 📖 各项目的详细使用说明请查看：[LubanAgentCli README](LubanAgentCli/README.md) | [LubanAgentCodex README](LubanAgentCodex/README.md)
 
@@ -185,6 +188,18 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 
 启动后选择工作区，即可在图形界面中与 Agent 对话。
 
+#### 方式三：本地 Agent 服务（LubanAgentWebHost）
+
+```bash
+# 手工启动（默认 18080，可用 --port 覆盖）
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
+
+# 健康检查
+curl http://127.0.0.1:18080/system/health
+```
+
+客户端不必手工启动它：`LubanAgentClient` 在未指定服务地址时会拉起 WebHost 子进程（空闲端口 + 一次性令牌），并在客户端退出时一并结束。
+
 ### 5. 配置 AI Provider 并开始对话
 
 在任一客户端中配置你的第一个 Provider：
@@ -302,7 +317,7 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── LubanAgent.slnx           # 解决方案文件（XML 格式，6 个项目）
+├── LubanAgent.slnx           # 解决方案文件（XML 格式，9 个项目）
 │
 ├── LubanAgentCore/           # 核心类库（net10.0）
 │   ├── Agents/               # Agent 配置（Normal / LLM Wiki Profile）
@@ -325,7 +340,7 @@ luban-agent/
 │   ├── App/                  # TUI 应用层（启动引导 + DI + 主题）
 │   │   ├── Dialogs/          # 弹出层组件（BaseDialog 基类 + 5 个子类）
 │   │   ├── Models/           # Block 文档模型
-│   │   ├── Services/         # TUI 服务（标题 / 编排进度）
+│   │   ├── Services/         # TUI 服务（标题生成等）
 │   │   ├── ViewModels/       # MVVM ViewModel 层
 │   │   └── Views/            # 视图层（纯渲染）
 │   ├── Commands/             # 命令实现
@@ -342,6 +357,12 @@ luban-agent/
 │   ├── Styles/               # 样式主题
 │   └── Program.cs            # 程序入口
 │
+├── LubanAgentWebHost/        # 本地 Agent 服务（SAEA.MVC · net10.0）
+│   ├── Controllers/          # agent / session / workspace / system 四组接口
+│   └── Hosting/              # 运行时、SSE 写出、启动参数、公共守卫
+│
+├── LubanAgentProtocol/       # 传输协议（路由 / DTO / SSE 帧 / 事件还原）
+├── LubanAgentClient/         # 客户端 SDK（HTTP 实现 + 子进程启动器）
 ├── LubanAgentA2A/            # A2A 协作库（A2A SDK · net10.0）
 ├── LubanAgent.Plugin.NewProject/  # 「新建项目」插件
 ├── LubanAgent.Tests/         # MSTest 自动化测试
@@ -356,8 +377,15 @@ luban-agent/
 │ LubanAgentCli   │  │ LubanAgentCodex │
 │ (Terminal.Gui)  │  │   (Avalonia)    │
 └────────┬────────┘  └────────┬────────┘
-         │                    │
          └────────┬───────────┘
+                  ▼
+         ┌─────────────────┐
+         │ LubanAgentClient│  客户端 SDK：HTTP/SSE + 子进程拉起
+         └────────┬────────┘
+                  ▼
+         ┌─────────────────┐
+         │ LubanAgentWebHost│  SAEA.MVC（请求级回环守卫 + 可选令牌）
+         └────────┬────────┘
                   ▼
          ┌─────────────────┐
          │ LubanAgentCore  │  Agent 运行时 / 工具 / 技能 / 会话 / LLM Wiki / 工作区
@@ -371,8 +399,40 @@ luban-agent/
 ```
 
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
+- **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，协议在 `LubanAgentProtocol`、客户端实现在 `LubanAgentClient`，接入方式见上方「统一 Agent 服务」
 - **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
 - **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库为程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db`）
+
+---
+
+## 🔗 统一 Agent 服务（WebHost）
+
+`LubanAgentWebHost` 用 SAEA.MVC 把 Agent 能力暴露为本地 HTTP/SSE 接口，客户端（CLI / Codex）只需负责界面交互：
+
+| 路由 | 说明 |
+|------|------|
+| `POST /agent/chat` | 流式对话（SSE） |
+| `POST /agent/send` | 非流式对话（不装配工具） |
+| `POST /agent/confirm` | 回传工具确认结果 |
+| `POST /agent/cancel` | 取消该会话正在进行的回合 |
+| `POST /agent/reset` | 丢弃服务端缓存的会话 Agent |
+| `/session/*` | 会话增删改查、消息、统计、切换 |
+| `/workspace/*` | 工作区列表/创建/切换/删除/重命名、授权与配置目录 |
+| `/llmwiki/*` | 知识库创建/删除、列文件、索引、检索、统计、lint、重建、ingest、清空 |
+| `GET /a2a/status` | A2A 运行状态（只读） |
+| `GET /system/health` | 健康检查（免令牌，供启动器探活） |
+
+约束与已知限制：
+
+- **仅回环**：SAEA 的监听套接字绑全接口、没有绑定地址参数，因此「只允许本机」靠请求级守卫实现——校验 `REMOTE_ADDR` 是否回环地址，非本机请求返回 403。不要把它直接暴露到公网。
+- **可选共享令牌**：配置 `LubanAgentWeb:Token` 或 `--token` 后，除健康检查外的接口都要求 `Authorization: Bearer <令牌>`；自动拉起时客户端生成一次性令牌，不落盘、不写日志。
+- **断连取消需显式调用**：SAEA 侧无法探测客户端断连，SSE 流被取消或释放后服务端回合仍在跑；客户端 SDK 会在未收到 `done` 时主动 `POST /agent/cancel`。自定义客户端必须照做。
+- **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
+- **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。
+- **知识库后台任务降级为同步**：索引/重建/ingest 的 `Start*` 入口依赖宿主侧进度事件，客户端没有该通道，因此远程模式下一律回落到同步路径（`--wait` 语义），调用期间界面遮罩需自行展示。
+- **插件目录**：插件只随 Codex 分发；自动拉起时客户端通过 `--plugins-dir` 把 Codex 的插件目录交给 WebHost 扫描，避免两处各带一份插件。插件安装/启用状态仍由 Codex 侧维护。
+- **单回合同步等待上限**：`LubanAgentWeb:TimeoutSeconds`（默认 86400，即 24 小时）必须远大于最长回合，否则 SAEA 会在回合中途返回 408 并把纯文本追写在已开启的流上。
+- **工具确认**：确认等待上限取 `LuBanAgent:Confirmation:TimeoutSeconds`（默认 60），超时按拒绝处理。
 
 ---
 
@@ -430,7 +490,7 @@ luban-agent/
 
 ## 💡 小贴士
 
-- 🖥️ **两种客户端，一套核心**：CLI 适合终端党与服务器环境，Codex 适合喜欢图形界面的用户，配置与会话完全共享
+- 🖥️ **多种客户端，一套核心**：CLI 适合终端党与服务器环境，Codex 适合喜欢图形界面的用户，两者也可统一走本地 WebHost 服务；配置与会话完全共享
 - ⌨️ **CLI 快捷键**：`Esc` 取消任务、`Shift+Tab` 切换权限模式、`Tab` 切换任务视图、`Ctrl+Q` 退出、`Ctrl+O` 添加附件
 - 🛡️ **四模式权限**：Default / Plan / AcceptEdits / BypassPermissions，工作区内免确认、工作区外与敏感操作经用户确认（本次/本轮/本会话三档授权）
 - 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider

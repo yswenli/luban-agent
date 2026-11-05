@@ -45,6 +45,9 @@ global using LuBan.Orm;
 global using LubanAgentA2A.Configuration;
 global using LubanAgentA2A.Runtime;
 
+global using LubanAgent.Protocol;
+global using LubanAgent.Protocol.Dtos;
+
 global using LubanAgentCodex.ViewModels.Messages;
 global using LubanAgentCodex.Views;
 

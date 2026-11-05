@@ -110,6 +110,20 @@ public interface IWorkspaceManager
     Task<WorkspaceInfo?> GetWorkspaceAsync(string workspaceId);
 
     /// <summary>
+    /// 按根目录取当前用户的工作区（创建前判重、按路径切换工作区时使用）。
+    /// </summary>
+    /// <param name="rootPath">根目录路径；内部做与创建时一致的归一化。</param>
+    /// <returns>工作区信息；不存在或路径为空时返回 null。</returns>
+    Task<WorkspaceInfo?> GetByRootPathAsync(string rootPath);
+
+    /// <summary>
+    /// 按名称片段模糊搜索当前用户的工作区。
+    /// </summary>
+    /// <param name="keyword">名称关键字。</param>
+    /// <returns>匹配的工作区；关键字为空时返回空集合。</returns>
+    Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword);
+
+    /// <summary>
     /// 确保工作区已授权
     /// </summary>
     /// <param name="workspace">工作区信息</param>
@@ -458,6 +472,33 @@ public class WorkspaceManager : IWorkspaceManager
         if (string.IsNullOrWhiteSpace(workspaceId)) return null;
         var ws = await _repo.GetByWorkspaceIdAsync(workspaceId, _userId);
         return ws is null ? null : ToWorkspaceInfo(ws);
+    }
+
+    /// <summary>
+    /// 按根目录取当前用户的工作区（路径归一化与创建时一致）。
+    /// </summary>
+    /// <param name="rootPath">根目录路径。</param>
+    /// <returns>工作区信息；不存在或路径为空时返回 null。</returns>
+    public async Task<WorkspaceInfo?> GetByRootPathAsync(string rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath)) return null;
+
+        var fullPath = WorkspaceIdGenerator.Normalize(rootPath);
+        var ws = await _repo.GetByRootPathAsync(fullPath, _userId);
+        return ws is null ? null : ToWorkspaceInfo(ws);
+    }
+
+    /// <summary>
+    /// 按名称片段模糊搜索当前用户的工作区。
+    /// </summary>
+    /// <param name="keyword">名称关键字。</param>
+    /// <returns>匹配的工作区；关键字为空时返回空集合。</returns>
+    public async Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword)) return Array.Empty<WorkspaceInfo>();
+
+        var list = await _repo.SearchByNameAsync(keyword.Trim(), _userId);
+        return list.Select(ToWorkspaceInfo).ToList();
     }
 
     /// <summary>

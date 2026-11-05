@@ -20,7 +20,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// 工作区仓储
 /// </summary>
-public class WorkspaceRepository : BaseRepository<DbWorkspace>
+public class WorkspaceRepository : AgentRepository<DbWorkspace>
 {
     /// <summary>
     /// 创建工作区仓储实例。

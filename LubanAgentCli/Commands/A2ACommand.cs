@@ -11,8 +11,8 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/9
-*描述：A2A 协作管理命令（-list/-server/-client/-start/-stop），
-*管理当前工作区 .luban-agent/a2a/*.json 配置文件与运行时启停。
+*描述：A2A 协作管理命令（-list/-server/-client），
+*管理当前工作区 .luban-agent/a2a/*.json 配置文件；运行时状态只读（A2A 随宿主进程启停）。
 *
 *****************************************************************************/
 
@@ -24,16 +24,13 @@ namespace LubanAgentCli.Commands;
 /// <item><c>/a2a</c> 或 <c>-list</c> 显示状态、服务端与客户端概览</item>
 /// <item><c>-server</c> 查看或首次创建 <c>server.json</c></item>
 /// <item><c>-client</c> 列出/新增/删除 <c>client.&lt;name&gt;.json</c></item>
-/// <item><c>-start</c>/<c>-stop</c> 运行时启停</item>
+/// <item><c>-start</c>/<c>-stop</c> 已降级为提示：A2A 运行时由宿主进程管理</item>
 /// </list>
 /// </summary>
 public class A2ACommand : CommandBase
 {
     private readonly IWorkspaceManager _workspaceManager;
-    private readonly IA2ALifecycle _lifecycle;
-    private readonly A2ARuntimeState _state;
-    private readonly IA2AServerHost _serverHost;
-    private readonly IOptions<A2AOptions> _baseline;
+    private readonly IA2AStatusProvider _status;
 
     /// <summary>
     /// 命令名称
@@ -43,7 +40,7 @@ public class A2ACommand : CommandBase
     /// <summary>
     /// 命令描述
     /// </summary>
-    public override string Description => "A2A 协作管理（-list/-server/-client/-start/-stop）";
+    public override string Description => "A2A 协作管理（-list/-server/-client；启停随宿主进程）";
 
     /// <summary>
     /// 创建命令实例
@@ -51,39 +48,26 @@ public class A2ACommand : CommandBase
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
     /// <param name="workspaceManager">工作区管理器</param>
-    /// <param name="lifecycle">A2A 运行时生命周期</param>
-    /// <param name="state">A2A 运行时状态</param>
-    /// <param name="serverHost">A2A 服务端宿主</param>
-    /// <param name="baseline">appsettings 的 A2A 基线（只读，用于显示总开关）</param>
+    /// <param name="status">A2A 运行状态（只读）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public A2ACommand(
         ConfigManager configManager,
         IConfiguration configuration,
         IWorkspaceManager workspaceManager,
-        IA2ALifecycle lifecycle,
-        A2ARuntimeState state,
-        IA2AServerHost serverHost,
-        IOptions<A2AOptions> baseline,
+        IA2AStatusProvider status,
         ITuiOutputWriter writer,
         ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _workspaceManager = workspaceManager;
-        _lifecycle = lifecycle;
-        _state = state;
-        _serverHost = serverHost;
-        _baseline = baseline;
+        _status = status;
     }
 
     /// <summary>
     /// 执行命令（无参数时等同 -list）
     /// </summary>
-    public override Task ExecuteAsync()
-    {
-        ListStatus();
-        return Task.CompletedTask;
-    }
+    public override Task ExecuteAsync() => ListStatusAsync();
 
     /// <summary>
     /// 执行带子命令的命令
@@ -92,7 +76,7 @@ public class A2ACommand : CommandBase
     {
         if (args.Length == 0)
         {
-            ListStatus();
+            await ListStatusAsync();
             return true;
         }
 
@@ -101,7 +85,7 @@ public class A2ACommand : CommandBase
         {
             case "-list":
             case "-l":
-                ListStatus();
+                await ListStatusAsync();
                 break;
             case "-server":
             case "-s":
@@ -112,10 +96,8 @@ public class A2ACommand : CommandBase
                 HandleClient(args);
                 break;
             case "-start":
-                await StartA2AAsync();
-                break;
             case "-stop":
-                await StopA2AAsync();
+                WriteManagedByHost();
                 break;
             default:
                 Writer.WriteLine($"未知子命令: {sub}");
@@ -133,18 +115,31 @@ public class A2ACommand : CommandBase
     /// <summary>
     /// 显示 A2A 状态与服务端/客户端概览。
     /// </summary>
-    private void ListStatus()
+    private async Task ListStatusAsync()
     {
         var root = WorkspaceRoot;
-        var enabled = _baseline.Value.Enabled;
 
         Writer.WriteHeader("A2A 协作状态");
+
+        A2AStatusDto? status = null;
+        try
+        {
+            status = await _status.GetStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("读取 A2A 状态失败", ex);
+            Writer.WriteWarning($"读取 A2A 状态失败: {ex.Message}");
+        }
+
+        var enabled = status?.Enabled ?? false;
         Writer.WriteInfo($"  总开关(Enabled): {(enabled ? "已启用" : "已禁用")}");
-        Writer.WriteInfo($"  运行状态: {(_lifecycle.IsRunning ? "运行中" : "未启动")}");
-        Writer.WriteInfo($"  本地 Agent 名: {_state.LocalAgentName}");
-        var endpoint = _serverHost.Endpoint;
+        Writer.WriteInfo($"  运行状态: {(status?.IsRunning == true ? "运行中" : "未启动")}");
+        Writer.WriteInfo($"  本地 Agent 名: {status?.LocalAgentName ?? "-"}");
+        var endpoint = status?.Endpoint;
         Writer.WriteInfo($"  服务端端点: {(string.IsNullOrWhiteSpace(endpoint) ? "-" : endpoint)}");
         Writer.WriteInfo($"  工作区: {(string.IsNullOrWhiteSpace(root) ? "(未选择)" : root)}");
+        Writer.WriteInfo("  说明: A2A 随宿主进程启动/停止，客户端只读状态");
 
         if (string.IsNullOrWhiteSpace(root))
         {
@@ -210,7 +205,7 @@ public class A2ACommand : CommandBase
         Writer.WriteSuccess($"已创建服务端配置: {Path.Combine(A2AWorkspaceConfigStore.ResolveDir(root), A2AWorkspaceConfigStore.ServerFileName)}");
         Writer.WriteInfo($"  API Key: {apiKey}");
         Writer.WriteWarning("API Key 为明文，请勿提交到版本库；建议将 .luban-agent/a2a/ 加入 .gitignore");
-        Writer.WriteInfo("执行 /a2a -stop 再 /a2a -start（或重启）后服务端角色生效");
+        Writer.WriteInfo("重启客户端（宿主进程随之重启）后服务端角色生效");
     }
 
     /// <summary>
@@ -334,7 +329,7 @@ public class A2ACommand : CommandBase
         A2AWorkspaceConfigStore.SaveClient(root, fileName, file);
 
         Writer.WriteSuccess($"已保存客户端配置: {fileName}");
-        Writer.WriteInfo("执行 /a2a -stop 再 /a2a -start（或重启）后生效");
+        Writer.WriteInfo("重启客户端（宿主进程随之重启）后生效");
     }
 
     /// <summary>
@@ -382,42 +377,12 @@ public class A2ACommand : CommandBase
     }
 
     /// <summary>
-    /// 启动 A2A 运行时。
+    /// 启停已降级：A2A 运行时随宿主进程启动与退出，命令层只读状态。
     /// </summary>
-    private async Task StartA2AAsync()
+    private void WriteManagedByHost()
     {
-        var root = RequireWorkspace();
-        if (root is null) return;
-
-        try
-        {
-            await _lifecycle.StartAsync(root);
-            Writer.WriteSuccess(_lifecycle.IsRunning
-                ? "A2A 已启动"
-                : "A2A 启动完成（未启用或未配置角色，当前未运行）");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("启动 A2A 失败", ex);
-            Writer.WriteError($"启动 A2A 失败: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// 停止 A2A 运行时。
-    /// </summary>
-    private async Task StopA2AAsync()
-    {
-        try
-        {
-            await _lifecycle.StopAsync();
-            Writer.WriteSuccess("A2A 已停止");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("停止 A2A 失败", ex);
-            Writer.WriteError($"停止 A2A 失败: {ex.Message}");
-        }
+        Writer.WriteInfo("A2A 运行时由宿主进程（LubanAgentWebHost）管理：进入工作区时自动启动，进程退出时停止。");
+        Writer.WriteInfo("客户端不再提供启停；如需强制重启，请退出并重新打开客户端。");
     }
 
     /// <summary>
@@ -462,8 +427,7 @@ public class A2ACommand : CommandBase
         Writer.WriteLine("  /a2a -client                                  - 列出客户端");
         Writer.WriteLine("  /a2a -client -add <name> <endpoint> [apiKey]  - 新增客户端");
         Writer.WriteLine("  /a2a -client -delete <name>                   - 删除客户端");
-        Writer.WriteLine("  /a2a -start                                   - 启动 A2A");
-        Writer.WriteLine("  /a2a -stop                                    - 停止 A2A");
+        Writer.WriteLine("  /a2a -start / -stop                           - 已降级：A2A 随宿主进程启停");
         Writer.WriteLine("  简写: /a2a -l, /a2a -s, /a2a -c");
     }
 }

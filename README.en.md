@@ -4,7 +4,7 @@
 
 **A Complete AI Agent Solution Based on Microsoft Agent Framework**
 
-*One shared core runtime, two terminal experiences: command-line TUI + cross-platform desktop client*
+*One shared core runtime, three ways to use it: command-line TUI + cross-platform desktop client + local Agent service*
 
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -24,16 +24,19 @@ Imagine this: you simply say "Show me what directories are on drive D", and the 
 
 This isn't science fiction—this is **LuBan Agent**.
 
-This repository is the complete LuBan Agent solution, containing a shared core library, two client forms, plus an A2A collaboration library, the new-project plugin, and an automated test project:
+This repository is the complete LuBan Agent solution, containing a shared core library, two client forms, a unified local Agent service (WebHost) with its protocol / client SDK, plus an A2A collaboration library, the new-project plugin, and an automated test project:
 
 | Project | Form | Description |
 |---------|------|-------------|
 | **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management, connectors (including Aliyun DevOps) and plugin hosting |
 | **[LubanAgentCli](LubanAgentCli/)** | Command-line TUI | Full-screen terminal UI based on Terminal.Gui v2 (Claude Code style), installable as a dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | Desktop Client | Cross-platform GUI based on Avalonia UI, two-pane layout (sidebar + conversation) + dark theme |
+| **[LubanAgentWebHost](LubanAgentWebHost/)** | Local Agent Service | SAEA.MVC-based HTTP/SSE host exposing chat, session and workspace capabilities as local endpoints |
+| **[LubanAgentProtocol](LubanAgentProtocol/)** | Transport Protocol | Route constants, request/response DTOs, SSE frame codec and event translation shared by WebHost and clients |
+| **[LubanAgentClient](LubanAgentClient/)** | Client SDK | HTTP implementations of `IAgentHost` / `ISessionManager` / `IWorkspaceManager`, plus the child-process launcher |
 | **[LubanAgentA2A](LubanAgentA2A/)** | A2A Library | Agent-to-agent collaboration on the A2A SDK: server host, client registry, in-process/remote SubAgent dispatch |
 | **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex Plugin | The "new project" plugin with a pure-code UI, staged into the Codex `plugins/` directory on build |
-| **[LubanAgent.Tests](LubanAgent.Tests/)** | Test Project | MSTest automated tests (connectors, NewProject plugin, Skill/Rule backends, etc.) |
+| **[LubanAgent.Tests](LubanAgent.Tests/)** | Test Project | MSTest automated tests (connectors, NewProject plugin, Skill/Rule backends, transport protocol, etc.) |
 
 > 📖 For detailed usage of each project, see: [LubanAgentCli README](LubanAgentCli/README.en.md) | [LubanAgentCodex README](LubanAgentCodex/README.en.md)
 
@@ -185,6 +188,18 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 
 Select a workspace on startup, then chat with the Agent in the graphical interface.
 
+#### Option 3: Local Agent Service (LubanAgentWebHost)
+
+```bash
+# Start manually (defaults to 18080, override with --port)
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
+
+# Health check
+curl http://127.0.0.1:18080/system/health
+```
+
+Clients don't have to start it manually: when no service address is configured, `LubanAgentClient` launches the WebHost child process (free port + one-time token) and shuts it down when the client exits.
+
 ### 5. Configure an AI Provider and Start Chatting
 
 Configure your first Provider in either client:
@@ -302,7 +317,7 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── LubanAgent.slnx           # Solution file (XML format, 6 projects)
+├── LubanAgent.slnx           # Solution file (XML format, 9 projects)
 │
 ├── LubanAgentCore/           # Core library (net10.0)
 │   ├── Agents/               # Agent profiles (Normal / LLM Wiki)
@@ -325,7 +340,7 @@ luban-agent/
 │   ├── App/                  # TUI application layer (bootstrap + DI + theming)
 │   │   ├── Dialogs/          # Popup components (BaseDialog base + 5 subclasses)
 │   │   ├── Models/           # Block document model
-│   │   ├── Services/         # TUI services (title / orchestration progress)
+│   │   ├── Services/         # TUI services (session titles, etc.)
 │   │   ├── ViewModels/       # MVVM ViewModel layer
 │   │   └── Views/            # View layer (pure rendering)
 │   ├── Commands/             # Command implementations
@@ -342,6 +357,12 @@ luban-agent/
 │   ├── Styles/               # Style themes
 │   └── Program.cs            # Entry point
 │
+├── LubanAgentWebHost/        # Local Agent service (SAEA.MVC · net10.0)
+│   ├── Controllers/          # agent / session / workspace / system endpoint groups
+│   └── Hosting/              # Runtime, SSE writer, startup settings, shared guards
+│
+├── LubanAgentProtocol/       # Transport protocol (routes / DTOs / SSE frames / event translation)
+├── LubanAgentClient/         # Client SDK (HTTP implementations + child-process launcher)
 ├── LubanAgentA2A/            # A2A collaboration library (A2A SDK · net10.0)
 ├── LubanAgent.Plugin.NewProject/  # "New project" plugin
 ├── LubanAgent.Tests/         # MSTest automated tests
@@ -356,8 +377,15 @@ luban-agent/
 │ LubanAgentCli   │  │ LubanAgentCodex │
 │ (Terminal.Gui)  │  │   (Avalonia)    │
 └────────┬────────┘  └────────┬────────┘
-         │                    │
          └────────┬───────────┘
+                  ▼
+         ┌─────────────────┐
+         │ LubanAgentClient│  Client SDK: HTTP/SSE + child-process launch
+         └────────┬────────┘
+                  ▼
+         ┌─────────────────┐
+         │ LubanAgentWebHost│  SAEA.MVC (request-level loopback guard + optional token)
+         └────────┬────────┘
                   ▼
          ┌─────────────────┐
          │ LubanAgentCore  │  Agent runtime / tools / skills / sessions / LLM Wiki / workspaces
@@ -371,8 +399,40 @@ luban-agent/
 ```
 
 - **UI/Business Separation**: CLI and Codex handle only interaction and rendering; all Agent capabilities come from Core
+- **Unified Service Entry**: chat, sessions and workspaces are exposed by `LubanAgentWebHost`; the protocol lives in `LubanAgentProtocol` and the client implementation in `LubanAgentClient` — see "Unified Agent Service" above
 - **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow
 - **Unified Configuration**: Both clients share the user configuration in `LuBan\AIAgent\` under the system LocalApplicationData directory (Windows: `%LocalAppData%\LuBan\AIAgent\`); the session database is `luban-ai-agent.db` in the application base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`)
+
+---
+
+## 🔗 Unified Agent Service (WebHost)
+
+`LubanAgentWebHost` exposes Agent capabilities as local HTTP/SSE endpoints via SAEA.MVC, so clients (CLI / Codex) only handle UI interaction:
+
+| Route | Description |
+|-------|-------------|
+| `POST /agent/chat` | Streaming chat (SSE) |
+| `POST /agent/send` | Non-streaming chat (tools disabled) |
+| `POST /agent/confirm` | Return a tool confirmation result |
+| `POST /agent/cancel` | Cancel the round currently running for that session |
+| `POST /agent/reset` | Drop the server-cached Agent for a session |
+| `/session/*` | Session CRUD, messages, statistics, switching |
+| `/workspace/*` | Workspace list/create/switch/delete/rename, authorization and config directory |
+| `/llmwiki/*` | Knowledge base create/delete, list files, index, search, stats, lint, rebuild, ingest, clear |
+| `GET /a2a/status` | A2A runtime status (read-only) |
+| `GET /system/health` | Health check (token-free, used by the launcher) |
+
+Constraints and known limitations:
+
+- **Loopback only**: SAEA's listening socket binds all interfaces and offers no bind-address option, so "local only" is enforced by a request-level guard — the server checks whether `REMOTE_ADDR` is a loopback address and returns 403 otherwise. Do not expose it to the internet.
+- **Optional shared token**: setting `LubanAgentWeb:Token` or `--token` requires `Authorization: Bearer <token>` on every endpoint except the health check. When launched automatically, the client generates a one-time token that is never written to disk or logs.
+- **Disconnect cancellation must be explicit**: SAEA cannot detect a client disconnect, so the server-side round keeps running after an SSE stream is cancelled or disposed. The client SDK therefore calls `POST /agent/cancel` whenever it ends without receiving `done`. Custom clients must do the same.
+- **Database owned by the WebHost**: session data is `luban-ai-agent.db` in the WebHost program directory (relative connection strings are rebased onto the host program directory). Clients no longer open the database; the working directory only affects relative-path inputs. A same-named database left in a client output directory by an older build is not read — copy it into the WebHost program directory if you want to keep it.
+- **A2A and orchestration progress live on the host side**: A2A server/client roles and the startup worktree reconciliation run inside the WebHost per user workspace; sub-agent orchestration progress is streamed as `orchestration.progress` frames and replayed by the client into its local progress outlet, so UI subscriptions behave the same as when running locally. The A2A runtime starts and stops with the host process; clients only read `/a2a/status`, and `/a2a -start|-stop` degrades to a notice.
+- **Knowledge-base background tasks degrade to synchronous calls**: the `Start*` entry points rely on host-side progress events, which the client has no channel for, so remote mode always falls back to the synchronous path (the `--wait` semantics); callers must show their own busy overlay while it runs.
+- **Plugin directory**: plugins ship only with Codex; when auto-launching, the client passes the Codex plugin directory to the WebHost via `--plugins-dir` so the host scans that single copy. Plugin installation and enabled state remain maintained on the Codex side.
+- **Single-round sync wait limit**: `LubanAgentWeb:TimeoutSeconds` (default 86400, i.e. 24 hours) must be far larger than the longest round; otherwise SAEA returns 408 mid-round and appends plain text onto the already-open stream.
+- **Tool confirmation**: the wait limit comes from `LuBanAgent:Confirmation:TimeoutSeconds` (default 60); a timeout is treated as a denial.
 
 ---
 
@@ -430,7 +490,7 @@ User configurations (Providers, custom Skills, rules, connector declarations, et
 
 ## 💡 Tips
 
-- 🖥️ **Two Clients, One Core**: CLI suits terminal lovers and server environments; Codex suits GUI users—configuration and sessions are fully shared
+- 🖥️ **Multiple Clients, One Core**: CLI suits terminal lovers and server environments; Codex suits GUI users—both can also go through the local WebHost service; configuration and sessions are fully shared
 - ⌨️ **CLI Shortcuts**: `Esc` cancel task, `Shift+Tab` cycle permission modes, `Tab` toggle task view, `Ctrl+Q` quit, `Ctrl+O` add attachments
 - 🛡️ **Four Permission Modes**: Default / Plan / AcceptEdits / BypassPermissions — in-workspace operations need no confirmation, while out-of-workspace and sensitive operations require user confirmation (this-time/turn/session grant tiers)
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers

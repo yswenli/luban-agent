@@ -20,7 +20,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// worktree 会话仓储
 /// </summary>
-public class WorktreeSessionRepository : BaseRepository<DbWorktreeSession>
+public class WorktreeSessionRepository : AgentRepository<DbWorktreeSession>
 {
     /// <summary>
     /// 创建 worktree 会话仓储实例。

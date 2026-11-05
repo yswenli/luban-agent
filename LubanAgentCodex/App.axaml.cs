@@ -17,12 +17,15 @@
 
 namespace LubanAgentCodex;
 
+using LubanAgent.Client;
+
 /// <summary>
 /// Avalonia 应用程序
 /// </summary>
 public class App : Application
 {
     private AgentHostServices? _services;
+    private AgentClientConnection? _connection;
 
     /// <summary>
     /// 初始化应用程序
@@ -67,6 +70,16 @@ public class App : Application
                 splash.SetStatus("正在加载应用配置…");
                 var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
 
+                // 2.1) 连接统一 Agent 服务：数据库、会话、工作区、A2A 都在 WebHost 进程内；
+                //      未探测到服务时按本机空闲端口拉起子进程，退出时由本对象一并结束
+                splash.SetStatus("正在连接 Agent 服务…");
+                var connection = await AgentClientHostBuilder.ConnectAsync(new AgentClientOptions
+                {
+                    // 子进程与界面同工作目录：宿主按相对路径解析工作区，两边同目录才一致
+                    WorkingDirectory = Directory.GetCurrentDirectory()
+                });
+                _connection = connection;
+
                 // 3) 准备检索嵌入模型（LLM Wiki 知识库依赖），并初始化核心服务（DI 容器）
                 splash.SetStatus("正在准备检索嵌入模型…");
                 OnnxEmbeddingGenerator? embedder = null;
@@ -83,10 +96,15 @@ public class App : Application
                 splash.SetStatus("正在初始化核心服务…");
                 _services = AgentHostBuilder.Build(configuration, embedder, modelManager, services =>
                 {
-                    // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后触发）
-                    services.AddLubanAgentA2A(configuration);
+                    // A2A：注册 SDK 实现与运行时生命周期。
+                    // 远程模式下 A2A 服务端/客户端都在 WebHost 进程内启停，客户端再注册会重复起一套生命周期。
+                    if (connection is null)
+                    {
+                        services.AddLubanAgentA2A(configuration);
+                    }
 
-                    // 编排进度出口：框架默认注册 no-op，此处替换为可订阅的宿主实现（供主窗口实时渲染）
+                    // 编排进度出口：本机编排由框架直接 Publish；远程模式下 HttpAgentHost 收到
+                    // orchestration.progress 帧后经 Raise 投递到同一出口，界面订阅方无需区分。
                     services.AddSingleton<HostOrchestrationProgressSink>();
                     services.ReplaceSingleton<IOrchestrationProgressSink>(
                         d => d.GetRequiredService<HostOrchestrationProgressSink>());
@@ -106,7 +124,12 @@ public class App : Application
                     services.ReplaceSingleton<IYunxiaoCredentialProvider>(
                         d => new Security.CodexYunxiaoCredentialProvider(d.GetRequiredService<ICredentialStore>()));
                     services.AddSingleton<Security.YunxiaoSettingsService>();
-                });
+
+                    // 会话 / 工作区 / 对话改走统一 Agent 服务；必须在容器构建前覆盖
+                    connection?.RegisterInto(services);
+                },
+                // 远程模式下本地不再读写 SQLite，跳过历史数据归一化，避免凭空建库
+                migrateLegacyUserData: connection is null);
 
                 // 初始化 ProviderHelper（使 GetEndpoints 可用，SettingsWindow 新建供应商时预填 BaseUrl 依赖）
                 ProviderHelper.Initialize(configuration);
@@ -121,11 +144,17 @@ public class App : Application
                     Logger.Warn("回填云效组织 ID 失败", ex);
                 }
 
-                // 4) 设置工作区授权回调（GUI 自动授权）
-                var workspaceManager = _services.GetRequiredService<IWorkspaceManager>();
-                if (workspaceManager is LubanAgentCore.Services.WorkspaceManager wm)
+                // 4) 设置工作区授权回调（GUI 自动授权）。
+                // 必须覆盖实际生效的实现：远程模式解析出的是 HttpWorkspaceManager，
+                // 它自己不会弹窗，未挂回调时一律按拒绝处理（授权动作会静默失败）。
+                switch (_services.GetRequiredService<IWorkspaceManager>())
                 {
-                    wm.AuthorizationPrompt = _ => Task.FromResult(true);
+                    case LubanAgentCore.Services.WorkspaceManager local:
+                        local.AuthorizationPrompt = _ => Task.FromResult(true);
+                        break;
+                    case LubanAgent.Client.HttpWorkspaceManager remote:
+                        remote.AuthorizationPrompt = _ => Task.FromResult(true);
+                        break;
                 }
 
                 // 5) 自动恢复/初始化当前工作区
@@ -153,27 +182,31 @@ public class App : Application
                 // （放在工作区就绪之后，插件贡献的工作区级 Skill 可直接落到当前工作区）
                 await PluginBootstrap.InitializeAsync(_services.Root, msg => splash.SetStatus(msg));
 
-                // worktree 启动对账：登记与磁盘不一致时记录提示（不阻塞启动）
-                try
+                // worktree 启动对账：登记与磁盘不一致时记录提示（不阻塞启动）。
+                // 远程模式下登记表在宿主进程，客户端不读本地库，故只在本地模式执行。
+                if (connection is null)
                 {
-                    var reconcileMessages = await _services.GetRequiredService<WorktreeReconciler>().RunAsync();
-                    foreach (var message in reconcileMessages)
-                        Logger.Warn("worktree 对账: " + message);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("worktree 启动对账失败", ex);
-                }
+                    try
+                    {
+                        var reconcileMessages = await _services.GetRequiredService<WorktreeReconciler>().RunAsync();
+                        foreach (var message in reconcileMessages)
+                            Logger.Warn("worktree 对账: " + message);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("worktree 启动对账失败", ex);
+                    }
 
-                // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
-                splash.SetStatus("正在启动 A2A…");
-                try
-                {
-                    await _services.GetRequiredService<IA2ALifecycle>().StartAsync(target.RootPath);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("启动 A2A 失败", ex);
+                    // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
+                    splash.SetStatus("正在启动 A2A…");
+                    try
+                    {
+                        await _services.GetRequiredService<IA2ALifecycle>().StartAsync(target.RootPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("启动 A2A 失败", ex);
+                    }
                 }
 
                 // 6) 构建并显示主窗口
@@ -187,17 +220,61 @@ public class App : Application
                 splash.MarkReady();
                 await Task.Delay(1000);
                 splash.Close();
+
+                // 8) 退出时释放连接（自动拉起的子进程随之结束）
+                desktop.Exit += OnDesktopExit;
             }
             catch (System.Exception ex)
             {
                 // 初始化失败：记录日志，关闭闪屏，避免应用卡在启动画面
                 Logger.Error("Startup", ex);
                 splash.SetStatus("初始化失败：" + ex.Message);
+                await DisconnectAsync();
                 await Task.Delay(2000);
                 splash.Close();
             }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// 退出钩子：释放到 Agent 服务的连接。
+    /// </summary>
+    private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+    {
+        try
+        {
+            _connection?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"释放 Agent 服务连接失败：{ex.Message}");
+        }
+        finally
+        {
+            _connection = null;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _connection.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"释放 Agent 服务连接失败：{ex.Message}");
+        }
+        finally
+        {
+            _connection = null;
+        }
     }
 }

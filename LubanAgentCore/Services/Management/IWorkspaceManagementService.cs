@@ -48,6 +48,16 @@ public interface IWorkspaceManagementService
     /// <summary>切换当前工作区。</summary>
     Task SwitchAsync(string workspaceId, CancellationToken ct = default);
 
+    /// <summary>按根目录查找工作区（用于创建前判重、按路径切换）。</summary>
+    /// <param name="rootPath">根目录路径。</param>
+    /// <param name="ct">取消令牌。</param>
+    Task<WorkspaceInfo?> FindByRootPathAsync(string rootPath, CancellationToken ct = default);
+
+    /// <summary>按名称片段模糊搜索工作区。</summary>
+    /// <param name="keyword">名称关键字。</param>
+    /// <param name="ct">取消令牌。</param>
+    Task<IReadOnlyList<WorkspaceInfo>> SearchAsync(string keyword, CancellationToken ct = default);
+
     /// <summary>确保工作区已授权（首次使用时写授权标记）。</summary>
     Task GrantAccessAsync(string workspaceId, CancellationToken ct = default);
 }

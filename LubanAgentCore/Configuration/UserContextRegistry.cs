@@ -60,6 +60,21 @@ public sealed class UserContextRegistry
     /// <param name="root">根级容器（用于解析身份无关的仓储/内置目录等单例）。</param>
     public UserContextRegistry(DiContainer root) => _root = root;
 
+    /// <summary>
+    /// 会话管理器工厂；为 null 时按本进程数据库构造。
+    /// </summary>
+    /// <remarks>
+    /// 远程客户端不持有数据库，会话数据在宿主侧；由客户端把自己的实现从这里注入，
+    /// 避免构造 <c>SessionManager</c> 时触碰未初始化的 ORM。
+    /// </remarks>
+    public Func<string, ISessionManager>? SessionManagerFactory { get; init; }
+
+    /// <summary>
+    /// 工作区管理器工厂；为 null 时按本进程数据库构造。
+    /// </summary>
+    /// <remarks>参数依次为用户标识与已创建的会话管理器，远程客户端同样在此注入 HTTP 实现。</remarks>
+    public Func<string, ISessionManager, IWorkspaceManager>? WorkspaceManagerFactory { get; init; }
+
     /// <summary>取（或创建）指定用户的状态桶；用户为空时使用本地默认用户。</summary>
     public UserBucket GetOrCreate(string? userId)
     {
@@ -84,14 +99,20 @@ public sealed class UserContextRegistry
 
         var providerRouter = BuildProviderRouter(config);
 
-        var sessionManager = new SessionManager(userId);
-        var workspaceManager = new WorkspaceManager(
-            userId,
-            _root.GetRequiredService<WorkspaceRepository>(),
-            _root.GetRequiredService<SessionRepository>(),
-            sessionManager,
-            _root.GetRequiredService<BuiltinSkillCatalog>(),
-            _root.GetRequiredService<BuiltinRuleCatalog>());
+        // 会话/工作区管理器：远程客户端用注入的工厂（数据在宿主侧，本进程没有数据库），
+        // 本地宿主按本进程数据库构造
+        var sessionManager = SessionManagerFactory is { } sessionFactory
+            ? sessionFactory(userId)
+            : new SessionManager(userId);
+        var workspaceManager = WorkspaceManagerFactory is { } workspaceFactory
+            ? workspaceFactory(userId, sessionManager)
+            : new WorkspaceManager(
+                userId,
+                _root.GetRequiredService<WorkspaceRepository>(),
+                _root.GetRequiredService<SessionRepository>(),
+                sessionManager,
+                _root.GetRequiredService<BuiltinSkillCatalog>(),
+                _root.GetRequiredService<BuiltinRuleCatalog>());
 
         return new UserBucket
         {

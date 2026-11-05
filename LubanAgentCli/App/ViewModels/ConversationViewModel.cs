@@ -38,6 +38,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     private readonly IAgentHost _agentHost;
     private readonly SpinnerService _spinner;
 
+    /// <summary>编排进度出口；本机由框架 Publish，远程由 HttpAgentHost 收到帧后 Raise。</summary>
+    private readonly HostOrchestrationProgressSink? _orchestrationSink;
+
     // 由 DI 解析并缓存的页脚引用（会话切换/初始化时刷新状态栏）
     private FooterView? _footerView;
     private FooterDataProvider? _footerProvider;
@@ -180,6 +183,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         _iSessionManager = services.GetRequiredService<ISessionManager>();
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _agentHost = services.GetRequiredService<IAgentHost>();
+        // 编排进度出口：本机由框架直接 Publish，远程由 HttpAgentHost 收到 SSE 帧后 Raise；
+        // 两种模式下都从这里订阅，界面无需区分（未注册时为 null，仅无进度反馈）
+        _orchestrationSink = services.GetService<HostOrchestrationProgressSink>();
 
         _configManager.SelectedModelChanged += OnSelectedModelChanged;
     }
@@ -268,25 +274,28 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     }
 
     /// <summary>
-    /// 取会话实体（用于标题/工作区解析）。
+    /// 取会话信息（用于标题展示）。
     /// </summary>
-    private async Task<DbSession?> GetSessionAsync(string sessionId)
-    {
-        if (string.IsNullOrEmpty(sessionId)) return null;
-        var repo = _services.GetRequiredService<SessionRepository>();
-        return await repo.GetBySessionIdAsync(sessionId, _services.ResolveUserKey());
-    }
+    private Task<SessionInfo?> GetSessionAsync(string sessionId)
+        => string.IsNullOrEmpty(sessionId)
+            ? Task.FromResult<SessionInfo?>(null)
+            : _iSessionManager.GetSessionAsync(sessionId);
 
     /// <summary>
     /// 解析会话自身绑定的工作区；未绑定或已删除时回退到当前工作区。
     /// </summary>
-    private async Task<WorkspaceInfo?> ResolveWorkspaceAsync(DbSession? session)
+    private async Task<WorkspaceInfo?> ResolveWorkspaceAsync(SessionInfo? session)
     {
-        var workspaceId = session?.WorkspaceId;
-        if (!string.IsNullOrWhiteSpace(workspaceId))
+        if (session is not null)
         {
-            var ws = await _workspaceManager.GetWorkspaceAsync(workspaceId!);
-            if (ws is not null) return ws;
+            // 会话与工作区的绑定关系由会话存储持有，客户端一律经查询口读取。
+            var workspaceId = await _services.GetRequiredService<ISessionWorkspaceQuery>()
+                .GetSessionWorkspaceIdAsync(session.SessionId, _services.ResolveUserKey());
+            if (!string.IsNullOrWhiteSpace(workspaceId))
+            {
+                var ws = await _workspaceManager.GetWorkspaceAsync(workspaceId!);
+                if (ws is not null) return ws;
+            }
         }
         return _workspaceManager.CurrentWorkspace;
     }
@@ -644,6 +653,19 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
             });
         }
 
+        // 编排进度：规划与节点执行在工具内部、不经对话流，需要另走出口；
+        // 本轮订阅、结束退订，迟到事件按运行序号丢弃（进度可能来自并行节点线程，
+        // 方法内部已编组到 UI 线程，这里不再二次 Invoke）
+        Action<OrchestrationProgressEvent>? onProgress = _orchestrationSink is null
+            ? null
+            : p =>
+            {
+                if (runSeq != Volatile.Read(ref _activeRunSeq)) return;
+                HandleOrchestrationProgress(p);
+            };
+        if (_orchestrationSink is not null && onProgress is not null)
+            _orchestrationSink.Progress += onProgress;
+
         try
         {
             await foreach (var evt in _agentHost.RunStreamingAsync(new AgentRunRequest
@@ -681,6 +703,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         }
         finally
         {
+            if (_orchestrationSink is not null && onProgress is not null)
+                _orchestrationSink.Progress -= onProgress;
+
             // 仅当仍是当前活动运行才操作文档；否则（已被取消/覆盖）跳过，避免污染新运行
             var stale = _currentRunSeq != Volatile.Read(ref _activeRunSeq);
             if (!stale)

@@ -20,7 +20,7 @@ namespace LubanAgentCore.Services;
 /// <summary>
 /// Session 管理服务实现 - 使用 SQLite 数据库
 /// </summary>
-public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager
+public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSessionNotifier
 {
     private readonly SessionRepository _sessionRepo;
     private readonly SessionMessageRepository _messageRepo;

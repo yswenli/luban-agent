@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// A2A 任务仓储
 /// </summary>
-public class A2ATaskRepository : BaseRepository<DbA2ATask>
+public class A2ATaskRepository : AgentRepository<DbA2ATask>
 {
     /// <summary>
     /// 创建 A2A 任务仓储实例。

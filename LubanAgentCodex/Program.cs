@@ -33,9 +33,7 @@ class Program
 
         try
         {
-            // 初始化数据库（LuBanOrm.Init、表结构迁移等）
-            DatabaseInitializer.Initialize();
-
+            // 数据库与表结构由 WebHost 独占初始化（客户端不再直连 SQLite），此处只启动界面
             BuildAvaloniaApp()
                 .StartWithClassicDesktopLifetime(args);
         }

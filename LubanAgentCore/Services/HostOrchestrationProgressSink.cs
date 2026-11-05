@@ -27,13 +27,26 @@ public sealed class HostOrchestrationProgressSink : IOrchestrationProgressSink
 
     /// <inheritdoc/>
     public void Publish(OrchestrationProgress progress)
+        => Dispatch(OrchestrationProgressEvent.From(progress));
+
+    /// <summary>
+    /// 由传输层补投一次进度事件。
+    /// </summary>
+    /// <remarks>
+    /// 远程模式下编排在服务端执行，客户端本进程没有 <see cref="IOrchestrationProgressSink"/> 的生产者，
+    /// 由 HTTP/SSE 客户端收到进度帧后经本方法转成本地 <see cref="Progress"/> 事件。
+    /// </remarks>
+    /// <param name="progress">已还原的进度事件。</param>
+    public void Raise(OrchestrationProgressEvent progress) => Dispatch(progress);
+
+    private void Dispatch(OrchestrationProgressEvent progress)
     {
         var handler = Progress;
         if (handler is null) return;
 
         try
         {
-            handler(OrchestrationProgressEvent.From(progress));
+            handler(progress);
         }
         catch (Exception ex)
         {

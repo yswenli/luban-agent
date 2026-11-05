@@ -54,7 +54,8 @@ public static class AgentHostBuilder
         IConfiguration configuration,
         OnnxEmbeddingGenerator? embedder = null,
         ModelManager? modelManager = null,
-        Action<DiContainer>? configureServices = null)
+        Action<DiContainer>? configureServices = null,
+        bool migrateLegacyUserData = true)
     {
         var services = new DiContainer();
         services.AddSingleton<IConfiguration>(configuration);
@@ -70,6 +71,7 @@ public static class AgentHostBuilder
 
         // 管理服务只依赖最小仓储缝（便于脱离数据库做单测），由具体仓储解析
         services.AddSingleton<ISessionWorkspaceQuery>(sp => sp.GetRequiredService<SessionRepository>());
+        services.AddSingleton<ISessionMessageQuery>(sp => sp.GetRequiredService<SessionMessageRepository>());
         services.AddSingleton<ILlmWikiFileStore>(sp => sp.GetRequiredService<LlmWikiFileRepository>());
         services.AddSingleton<ILlmWikiChunkStore>(sp => sp.GetRequiredService<LlmWikiChunkRepository>());
         services.AddSingleton<WorktreeSessionRepository>();
@@ -193,7 +195,8 @@ public static class AgentHostBuilder
         Logger.SetSerializer(LuBanLoggingServiceExtensions.CreateLuBanSerializer());
 
         // 历史单用户数据归属归一化（会话/工作区 UserId: null/''/'default' → 默认用户）
-        LegacyUserDataMigrator.Migrate();
+        // 远程客户端不持有本地库，跳过以免创建只写不读的 SQLite 文件。
+        if (migrateLegacyUserData) LegacyUserDataMigrator.Migrate();
 
         // 进程常驻用户作用域：CLI/Codex 单用户身份在此绑定；session scope 由 SessionRuntimeManager 从 root 派生并回填身份
         var userScope = root.CreateUserScope(LocalUserDefaults.DefaultUserId);

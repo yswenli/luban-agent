@@ -84,6 +84,10 @@ global using LubanAgentCli.App.Services;
 global using LubanAgentCli.App.ViewModels;
 global using LubanAgentCore.Context;
 global using LubanAgentCore.Hosting;
+
+global using LubanAgent.Client;
+global using LubanAgent.Protocol;
+global using LubanAgent.Protocol.Dtos;
 global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using System.Collections.Concurrent;
 global using System.Collections.ObjectModel;

@@ -24,10 +24,9 @@ public partial class LlmWikiManageWindow : Window
 {
     private readonly DiContainer _services;
     private readonly IWorkspaceManager _workspaceManager;
-    // 窗口级作用域：wiki/检索为 scoped（工作区/会话隔离），窗口生命周期内复用一份，关闭时释放
+    // 窗口级作用域：管理服务为 scoped，窗口生命周期内复用一份，关闭时释放
     private readonly DiContainer _scope;
-    private readonly IRetrievalService? _retrieval;
-    private readonly IWikiService? _wiki;
+    private readonly ILlmWikiManagementService _wiki;
     private ListBox? _llmWikiListBox;
     private ListBox? _resultListBox;
     private Button? _createButton;
@@ -52,8 +51,7 @@ public partial class LlmWikiManageWindow : Window
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _scope = services.CreateUserScope(services.ResolveUserKey());
-        _retrieval = _scope.GetService<IRetrievalService>();
-        _wiki = _scope.GetService<IWikiService>();
+        _wiki = _scope.GetRequiredService<ILlmWikiManagementService>();
         Closed += (_, _) => _scope.Dispose();
         InitializeComponent();
         LoadLlmWikiWorkspaces();
@@ -151,12 +149,6 @@ public partial class LlmWikiManageWindow : Window
     private async void OnIndex(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var retrieval = _retrieval;
-        if (retrieval == null)
-        {
-            await Dialogs.ShowInfoAsync(this, "嵌入模型未就绪，无法索引");
-            return;
-        }
 
         try
         {
@@ -187,7 +179,7 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.IndexEmbedStatus(fileCount));
-            var report = await Task.Run(() => retrieval.IndexDirectoryAsync(ws.RootPath, globPattern, force: false, workspaceId: item.WorkspaceId));
+            var report = await _wiki.IndexFilesAsync(item.WorkspaceId, globPattern);
             HideBusy();
             var summary = $"索引完成：扫描 {report.ScannedFiles}，新增 {report.NewFiles}，更新 {report.UpdatedFiles}，跳过 {report.SkippedFiles}，切块 {report.TotalChunks}";
             if (report.Errors.Count > 0) summary += $"；{report.Errors.Count} 个文件失败（{string.Join("；", report.Errors.Take(3))}）";
@@ -210,12 +202,6 @@ public partial class LlmWikiManageWindow : Window
     private async void OnSearch(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _wiki;
-        if (wiki == null)
-        {
-            await Dialogs.ShowInfoAsync(this, "嵌入模型未就绪，无法搜索");
-            return;
-        }
 
         try
         {
@@ -228,7 +214,7 @@ public partial class LlmWikiManageWindow : Window
             if (string.IsNullOrWhiteSpace(query)) return;
 
             // 与 /llmwiki -search 一致：wiki 优先，无相关内容时回落原始资料
-            var results = await wiki.SearchAsync(query!, includeRaw: true, workspaceId: item.WorkspaceId);
+            var results = await _wiki.SearchAsync(item.WorkspaceId, query!, WikiSearchScope.WikiThenRaw);
             ShowSearchResults(item, results);
             if (results.Count == 0)
                 await Dialogs.ShowInfoAsync(this, "未找到相关文档");
@@ -243,12 +229,6 @@ public partial class LlmWikiManageWindow : Window
     private async void OnWikiRebuildClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _wiki;
-        if (wiki == null)
-        {
-            await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法重建索引");
-            return;
-        }
 
         try
         {
@@ -270,7 +250,7 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在重建向量索引"));
-            var report = await Task.Run(() => wiki.RebuildIndexAsync(workspaceId: item.WorkspaceId));
+            var report = await _wiki.RebuildAsync(item.WorkspaceId);
             HideBusy();
             await Dialogs.ShowInfoAsync(this,
                 $"重建完成（{item.Name}）：扫描 {report.ScannedFiles}，删除 {report.DeletedFiles}，切块 {report.TotalChunks}");
@@ -291,12 +271,6 @@ public partial class LlmWikiManageWindow : Window
     private async void OnWikiLintClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
-        var wiki = _wiki;
-        if (wiki == null)
-        {
-            await Dialogs.ShowInfoAsync(this, "Wiki 服务未就绪，无法执行 lint");
-            return;
-        }
 
         try
         {
@@ -318,7 +292,7 @@ public partial class LlmWikiManageWindow : Window
             }
 
             UpdateBusy(RetrievalIndexPlanner.WikiPagesStatus(pageCount, "正在执行 lint（孤儿页/死链/未收录）"));
-            var report = await Task.Run(() => wiki.LintAsync(workspaceId: item.WorkspaceId));
+            var report = await _wiki.LintAsync(item.WorkspaceId);
             HideBusy();
             var text = report.Findings.Count == 0
                 ? $"（{item.Name}）共 {report.PageCount} 页，未发现问题。"
@@ -425,21 +399,14 @@ public partial class LlmWikiManageWindow : Window
         var list = items.ToList();
         if (list.Count == 0) return;
 
-        var retrieval = _retrieval;
-        if (retrieval == null)
-        {
-            foreach (var it in list) it.CountText = "未索引";
-            return;
-        }
-
         foreach (var it in list)
         {
             try
             {
-                var stats = await Task.Run(() => retrieval.GetStatsAsync(it.WorkspaceId));
-                it.CountText = stats.TotalFiles == 0
+                var status = await _wiki.GetStatusAsync(it.WorkspaceId);
+                it.CountText = status.IndexedFiles == 0
                     ? "未索引"
-                    : $"已索引 {stats.TotalFiles} 文件 · {stats.TotalChunks} 切块";
+                    : $"已索引 {status.IndexedFiles} 文件 · {status.IndexedChunks} 切块";
             }
             catch (Exception ex)
             {

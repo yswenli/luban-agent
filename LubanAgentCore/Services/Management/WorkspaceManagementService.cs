@@ -67,6 +67,14 @@ public sealed class WorkspaceManagementService : IWorkspaceManagementService
         => _workspaces.SwitchWorkspaceAsync(workspaceId);
 
     /// <inheritdoc />
+    public Task<WorkspaceInfo?> FindByRootPathAsync(string rootPath, CancellationToken ct = default)
+        => _workspaces.GetByRootPathAsync(rootPath);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<WorkspaceInfo>> SearchAsync(string keyword, CancellationToken ct = default)
+        => _workspaces.SearchByNameAsync(keyword);
+
+    /// <inheritdoc />
     public async Task GrantAccessAsync(string workspaceId, CancellationToken ct = default)
     {
         var workspace = await _workspaces.GetWorkspaceAsync(workspaceId);
