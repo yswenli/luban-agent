@@ -7,7 +7,7 @@
 *
 *****************************************************************************/
 
-using LubanAgent.Protocol.Dtos;
+using LubanAgentCore.Protocol.Dtos;
 
 using LubanAgentCore.Services.Management;
 using LubanAgentCore.Services.Management.Models;

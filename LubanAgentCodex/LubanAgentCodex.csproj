@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -38,8 +38,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-    <ProjectReference Include="..\LubanAgentClient\LubanAgentClient.csproj" />
-    <ProjectReference Include="..\LubanAgentA2A\LubanAgentA2A.csproj" />
     <!-- 云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），不再单独引用 -->
+    <!-- A2A 协作、传输协议（DTO/路由/SSE 帧）、客户端 SDK 均已并入 LubanAgentCore，不再单独引用 -->
   </ItemGroup>
 </Project>

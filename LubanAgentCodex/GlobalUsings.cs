@@ -42,11 +42,11 @@ global using LuBan.AIAgent.Skills;
 global using LuBan.DI;
 global using LuBan.Orm;
 
-global using LubanAgentA2A.Configuration;
-global using LubanAgentA2A.Runtime;
+global using LubanAgentCore.A2A.Configuration;
+global using LubanAgentCore.A2A.Runtime;
 
-global using LubanAgent.Protocol;
-global using LubanAgent.Protocol.Dtos;
+global using LubanAgentCore.Protocol;
+global using LubanAgentCore.Protocol.Dtos;
 
 global using LubanAgentCodex.ViewModels.Messages;
 global using LubanAgentCodex.Views;
@@ -98,7 +98,7 @@ global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Wiki;
 global using LuBan.Common.IO;
 global using LuBan.Logging;
-global using LubanAgentA2A;
+global using LubanAgentCore.A2A;
 global using LubanAgentCodex.Security;
 global using LubanAgentCodex.Services;
 global using LubanAgentCodex.ViewModels;

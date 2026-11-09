@@ -9,7 +9,7 @@
 
 using System.Reflection;
 
-using LubanAgent.Protocol.Dtos;
+using LubanAgentCore.Protocol.Dtos;
 
 using LubanAgentWebHost.Hosting;
 

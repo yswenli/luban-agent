@@ -32,8 +32,8 @@
 
   <ItemGroup>
     <!-- 框架包走 nexus3 私有源；仅编译期需要，运行期宿主程序集由默认 ALC 提供，插件包 lib/ 不得包含（见文件头打包约束）。
-         2026-10-29 曾临时直连 framework 源码，2026.11.2.1 发包后已还原为 PackageReference。 -->
-    <PackageReference Include="LuBan.AIAgent" Version="2026.11.2.1" />
+         版本与宿主 LubanAgentCore 保持一致（2026.11.9.1），避免插件与宿主编译出两套工具定义。 -->
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.9.1" />
     <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束）。
          云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），随宿主程序集一并由默认 ALC 提供。 -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />

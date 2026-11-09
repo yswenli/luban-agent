@@ -11,10 +11,10 @@ using System.Reflection;
 
 using LuBan.AIAgent.Hosting;
 
-using LubanAgent.Client;
-using LubanAgent.Protocol;
-using LubanAgent.Protocol.Dtos;
-using LubanAgent.Protocol.Events;
+using LubanAgentCore.Client;
+using LubanAgentCore.Protocol;
+using LubanAgentCore.Protocol.Dtos;
+using LubanAgentCore.Protocol.Events;
 
 namespace LubanAgent.Tests;
 

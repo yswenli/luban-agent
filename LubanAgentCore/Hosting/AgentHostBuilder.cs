@@ -211,16 +211,19 @@ public static class AgentHostBuilder
     {
         try
         {
-            var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
 
             // 启动默认进入当前用户最近活跃的工作区（GetUserWorkspacesAsync 已按 LastActiveAt DESC 排序）。
-            // 仅在当前用户没有任何工作区时，才以当前目录隐式创建工作区，保证首次启动可用。
-            var existing = (await workspaceManager.GetUserWorkspacesAsync()).FirstOrDefault();
+            // 仅在当前用户没有任何工作区时，才按「首次启动默认根目录」隐式创建一个，保证首次启动可用。
+            // 不能直接用进程当前目录：通过快捷方式/双击启动时它就是宿主输出目录（bin\Debug\net10.0），
+            // 会把工作区锚定到构建产物上，后续「分析工作区」必然读错目录。
+            var existing = (await workspaceManager.GetUserWorkspacesAsync())
+                .FirstOrDefault(w => WorkspaceStartupDefaults.IsUserFacingDirectory(w.RootPath));
             string workspaceId;
             if (existing == null)
             {
-                var ws = await workspaceManager.CreateWorkspaceAsync(cwd, type: WorkspaceTypes.Normal);
+                var rootPath = WorkspaceStartupDefaults.SuggestRootPath();
+                var ws = await workspaceManager.CreateWorkspaceAsync(rootPath, type: WorkspaceTypes.Normal);
                 workspaceId = ws.WorkspaceId;
                 notices.Add($"已创建工作区: {ws.Name} ({ws.RootPath})");
             }

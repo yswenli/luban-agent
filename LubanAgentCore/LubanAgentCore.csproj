@@ -7,12 +7,11 @@
 
 	<ItemGroup>
 		<!-- 框架包走 nexus3 私有源，版本人工控制。
-		     2026-10-29 曾临时直连 framework 源码，用于验证附件上限与 Skill/MCP 管理工具修复；
-		     2026.11.2.1 发包后已还原为 PackageReference。 -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.11.2.1" />
-		<PackageReference Include="LuBan.Common" Version="2026.11.2.1" />
-		<PackageReference Include="LuBan.Logging" Version="2026.11.2.1" />
-		<PackageReference Include="LuBan.Orm" Version="2026.11.2.1" />
+		     2026.11.9.1 起含文件工具读取修复（分页 / 编码回写 / 表格读取 / 二进制守卫）。 -->
+		<PackageReference Include="LuBan.AIAgent" Version="2026.11.9.1" />
+		<PackageReference Include="LuBan.Common" Version="2026.11.9.1" />
+		<PackageReference Include="LuBan.Logging" Version="2026.11.9.1" />
+		<PackageReference Include="LuBan.Orm" Version="2026.11.9.1" />
 		<!-- 产品侧厂商连接器（云效）已并入本程序集（Connectors/AliyunDevOps/），不再独立成程序集；
 		     宿主仍显式注册（AgentHostBuilder → AddAliyunDevOpsConnector），ALC 回落语义不变。 -->
 		<!-- Microsoft.Extensions.DependencyInjection / Options / Configuration / AI
@@ -24,6 +23,21 @@
 		     ProtectedData 不在共享框架内，必须显式引用；非 Windows 平台运行时 IsAvailable=false。 -->
 		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.5" />
 		<PackageReference Include="SqlSugarCore" Version="5.1.4.221" />
+		<!-- A2A 协议 SDK（A2A/ 目录）：core 包 + ASP.NET Core 宿主扩展 -->
+		<PackageReference Include="A2A" Version="1.0.0-preview2" />
+		<PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
+	</ItemGroup>
+
+	<!-- A2A Server 宿主（A2A/Server/A2AServerHost）：基于 ASP.NET Core，仅库引用，不启用 Generic Host -->
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 测试工程需要验证子进程参数装配（ServerProcessLauncher.BuildArguments），不对外暴露 -->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>LubanAgent.Tests</_Parameter1>
+		</AssemblyAttribute>
 	</ItemGroup>
 
 	<!-- 嵌入模型包：单一来源，经 ProjectReference 内容传播带入每个引用方（Cli/Codex）的输出目录。

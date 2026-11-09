@@ -26,7 +26,7 @@ namespace LubanAgentCore.Services;
 /// 界面层需要「会话被创建 / 切换 / 由服务端回填」后重绑视图，故单列本接口。
 /// </para>
 /// <para>
-/// 本地实现 <see cref="SessionManager"/> 与远程实现 <c>LubanAgent.Client.HttpSessionManager</c>
+/// 本地实现 <see cref="SessionManager"/> 与远程实现 <c>LubanAgentCore.Client.HttpSessionManager</c>
 /// 都实现本接口，调用方按接口订阅即可，不必写死具体类型（远程模式下容器里注入的是 HTTP 实现）。
 /// </para>
 /// </remarks>

@@ -7,7 +7,7 @@
 *
 *****************************************************************************/
 
-using LubanAgent.Protocol;
+using LubanAgentCore.Protocol;
 
 using LubanAgentWebHost.Hosting;
 

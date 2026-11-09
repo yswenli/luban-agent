@@ -18,9 +18,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-		<ProjectReference Include="..\LubanAgentProtocol\LubanAgentProtocol.csproj" />
-		<!-- A2A 运行时随宿主下沉：服务端/客户端角色都在 WebHost 进程内启停 -->
-		<ProjectReference Include="..\LubanAgentA2A\LubanAgentA2A.csproj" />
+		<!-- A2A 运行时随宿主下沉：服务端/客户端角色都在 WebHost 进程内启停（实现已并入 LubanAgentCore） -->
 	</ItemGroup>
 
 	<ItemGroup>

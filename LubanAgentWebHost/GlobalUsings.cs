@@ -12,8 +12,8 @@ global using LuBan.DI;
 global using LuBan.AIAgent.Hosting;
 global using LuBan.AIAgent.Orchestration;
 
-global using LubanAgentA2A;
-global using LubanAgentA2A.Runtime;
+global using LubanAgentCore.A2A;
+global using LubanAgentCore.A2A.Runtime;
 
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Entities;

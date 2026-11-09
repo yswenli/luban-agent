@@ -133,6 +133,9 @@ internal static class StartupWorkspaceResolver
         {
             if (string.Equals(ws.Type, WorkspaceTypes.LlmWiki, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Directory.Exists(ws.RootPath)) continue;
+            // 跳过锚定在宿主程序目录（bin\Debug\net10.0 之类）的工作区，
+            // 这类记录来自早期「用进程当前目录建工作区」的启动逻辑
+            if (!WorkspaceStartupDefaults.IsUserFacingDirectory(ws.RootPath)) continue;
             return ws;
         }
         return null;
@@ -144,13 +147,14 @@ internal static class StartupWorkspaceResolver
     private static async Task<WorkspaceInfo?> PromptCreateAsync(DiContainer services, ITuiUiService ui)
     {
         var workspaceManager = services.GetRequiredService<IWorkspaceManager>();
-        var cwd = Directory.GetCurrentDirectory();
+        // 表单预填「用户目录」而非进程当前目录：宿主从快捷方式启动时当前目录是程序输出目录
+        var suggestedPath = WorkspaceStartupDefaults.SuggestExistingDirectory();
 
         while (true)
         {
             var values = ui.ShowForm("创建工作区", new[]
             {
-                new FormField("路径", InitialValue: cwd),
+                new FormField("路径", InitialValue: suggestedPath),
                 new FormField("名称（可空，默认取目录名）", Required: false),
                 new FormField("AGENTS.md 创建描述（可空）", Required: false, Multiline: true)
             });

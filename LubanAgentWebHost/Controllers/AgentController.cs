@@ -15,8 +15,8 @@ using LuBan.AIAgent.Abstractions;
 using LuBan.AIAgent.Hosting;
 using LuBan.AIAgent.Protocol;
 
-using LubanAgent.Protocol.Dtos;
-using LubanAgent.Protocol.Events;
+using LubanAgentCore.Protocol.Dtos;
+using LubanAgentCore.Protocol.Events;
 
 using LubanAgentWebHost.Hosting;
 

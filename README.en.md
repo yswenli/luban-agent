@@ -24,17 +24,14 @@ Imagine this: you simply say "Show me what directories are on drive D", and the 
 
 This isn't science fiction—this is **LuBan Agent**.
 
-This repository is the complete LuBan Agent solution, containing a shared core library, two client forms, a unified local Agent service (WebHost) with its protocol / client SDK, plus an A2A collaboration library, the new-project plugin, and an automated test project:
+This repository is the complete LuBan Agent solution, containing a shared core library (with its transport protocol, client SDK and A2A collaboration), two client forms, a unified local Agent service (WebHost), the new-project plugin, and an automated test project:
 
 | Project | Form | Description |
 |---------|------|-------------|
-| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management, connectors (including Aliyun DevOps) and plugin hosting |
+| **[LubanAgentCore](LubanAgentCore/)** | Core Library | Agent runtime, tool system, skill system, session storage, LLM Wiki retrieval, workspace management, connectors (including Aliyun DevOps), plugin hosting, transport protocol (DTOs/routes/SSE frames), client SDK (HTTP implementations + child-process launcher) and A2A collaboration |
 | **[LubanAgentCli](LubanAgentCli/)** | Command-line TUI | Full-screen terminal UI based on Terminal.Gui v2 (Claude Code style), installable as a dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | Desktop Client | Cross-platform GUI based on Avalonia UI, two-pane layout (sidebar + conversation) + dark theme |
 | **[LubanAgentWebHost](LubanAgentWebHost/)** | Local Agent Service | SAEA.MVC-based HTTP/SSE host exposing chat, session and workspace capabilities as local endpoints |
-| **[LubanAgentProtocol](LubanAgentProtocol/)** | Transport Protocol | Route constants, request/response DTOs, SSE frame codec and event translation shared by WebHost and clients |
-| **[LubanAgentClient](LubanAgentClient/)** | Client SDK | HTTP implementations of `IAgentHost` / `ISessionManager` / `IWorkspaceManager`, plus the child-process launcher |
-| **[LubanAgentA2A](LubanAgentA2A/)** | A2A Library | Agent-to-agent collaboration on the A2A SDK: server host, client registry, in-process/remote SubAgent dispatch |
 | **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex Plugin | The "new project" plugin with a pure-code UI, staged into the Codex `plugins/` directory on build |
 | **[LubanAgent.Tests](LubanAgent.Tests/)** | Test Project | MSTest automated tests (connectors, NewProject plugin, Skill/Rule backends, transport protocol, etc.) |
 
@@ -198,7 +195,7 @@ dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
 curl http://127.0.0.1:18080/system/health
 ```
 
-Clients don't have to start it manually: when no service address is configured, `LubanAgentClient` launches the WebHost child process (free port + one-time token) and shuts it down when the client exits.
+Clients don't have to start it manually: when no service address is configured, the client SDK inside `LubanAgentCore` (`Client/`) launches the WebHost child process (free port + one-time token) and shuts it down when the client exits.
 
 ### 5. Configure an AI Provider and Start Chatting
 
@@ -317,10 +314,12 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── LubanAgent.slnx           # Solution file (XML format, 9 projects)
+├── LubanAgent.slnx           # Solution file (XML format, 6 projects)
 │
 ├── LubanAgentCore/           # Core library (net10.0)
+│   ├── A2A/                  # A2A collaboration (server host / client registry / in-process & remote SubAgent dispatch)
 │   ├── Agents/               # Agent profiles (Normal / LLM Wiki)
+│   ├── Client/               # Client SDK (HTTP/SSE implementations + child-process launcher)
 │   ├── Configuration/        # Configuration management
 │   ├── Connectors/           # Connectors (including the Aliyun DevOps implementation)
 │   ├── Context/              # User context
@@ -330,6 +329,7 @@ luban-agent/
 │   ├── Infrastructure/       # Infrastructure
 │   ├── Models/               # Data models
 │   ├── Plugins/              # Plugin host
+│   ├── Protocol/             # Transport protocol (routes / DTOs / SSE frames / event translation)
 │   ├── Repositories/         # Data access layer
 │   ├── Retrieval/            # Semantic retrieval
 │   ├── Security/             # Credential storage and protection
@@ -361,9 +361,6 @@ luban-agent/
 │   ├── Controllers/          # agent / session / workspace / system endpoint groups
 │   └── Hosting/              # Runtime, SSE writer, startup settings, shared guards
 │
-├── LubanAgentProtocol/       # Transport protocol (routes / DTOs / SSE frames / event translation)
-├── LubanAgentClient/         # Client SDK (HTTP implementations + child-process launcher)
-├── LubanAgentA2A/            # A2A collaboration library (A2A SDK · net10.0)
 ├── LubanAgent.Plugin.NewProject/  # "New project" plugin
 ├── LubanAgent.Tests/         # MSTest automated tests
 ├── smoke/                    # Plugin system smoke projects (intentionally outside the slnx)
@@ -373,33 +370,31 @@ luban-agent/
 **Architecture Overview**:
 
 ```
-┌─────────────────┐  ┌─────────────────┐
-│ LubanAgentCli   │  │ LubanAgentCodex │
-│ (Terminal.Gui)  │  │   (Avalonia)    │
-└────────┬────────┘  └────────┬────────┘
-         └────────┬───────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentClient│  Client SDK: HTTP/SSE + child-process launch
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentWebHost│  SAEA.MVC (request-level loopback guard + optional token)
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentCore  │  Agent runtime / tools / skills / sessions / LLM Wiki / workspaces
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │  LuBan.AIAgent  │  Multi-model routing / MCP / orchestration engine
-         └────────┬────────┘
-                  ▼
-     OpenAI / Kimi / DeepSeek / Claude / ... (20+ Providers)
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│   LubanAgentCli     │  │   LubanAgentCodex   │  │  LubanAgentWebHost  │
+│   (Terminal.Gui)    │  │     (Avalonia)      │  │     (SAEA.MVC)      │
+└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
+           │                        │                        │
+           └────────────────────────┼────────────────────────┘
+                                    ▼
+       ┌────────────────────────────────────────────────────────┐
+       │ LubanAgentCore                                         │
+       │  runtime / tools / skills / sessions / LLM Wiki / ws   │
+       │  Client/    client SDK (HTTP/SSE + child-process)      │
+       │  Protocol/  transport protocol (routes / DTOs / SSE)   │
+       │  A2A/       A2A collaboration (server host / dispatch) │
+       └────────────────────────────┬───────────────────────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │    LuBan.AIAgent    │
+                         │  multi-model / MCP  │
+                         └─────────────────────┘
+                                    ▼
+         OpenAI / Kimi / DeepSeek / Claude / ... (20+ Providers)
 ```
 
 - **UI/Business Separation**: CLI and Codex handle only interaction and rendering; all Agent capabilities come from Core
-- **Unified Service Entry**: chat, sessions and workspaces are exposed by `LubanAgentWebHost`; the protocol lives in `LubanAgentProtocol` and the client implementation in `LubanAgentClient` — see "Unified Agent Service" above
+- **Unified Service Entry**: chat, sessions and workspaces are exposed by `LubanAgentWebHost`; the transport protocol (`Core/Protocol/`) and the client implementation (`Core/Client/`) both live in `LubanAgentCore` — see "Unified Agent Service" above
 - **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow
 - **Unified Configuration**: Both clients share the user configuration in `LuBan\AIAgent\` under the system LocalApplicationData directory (Windows: `%LocalAppData%\LuBan\AIAgent\`); the session database is `luban-ai-agent.db` in the application base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`)
 

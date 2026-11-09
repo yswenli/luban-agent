@@ -11,7 +11,7 @@ using LuBan.AIAgent.A2A;
 using LuBan.AIAgent.A2A.Abstractions;
 using LuBan.AIAgent.A2A.Models;
 
-using LubanAgentA2A.Runtime;
+using LubanAgentCore.A2A.Runtime;
 
 using Microsoft.Extensions.Options;
 
@@ -63,11 +63,11 @@ public class A2AStatusServiceUnitTest
     [TestMethod]
     public void 状态模型可JSON往返()
     {
-        var original = new LubanAgent.Protocol.Dtos.A2AStatusDto(
+        var original = new LubanAgentCore.Protocol.Dtos.A2AStatusDto(
             true, true, "agent-x", "http://127.0.0.1:9000", @"C:\ws");
 
-        var json = LubanAgent.Protocol.AgentApiJson.Serialize(original);
-        var restored = LubanAgent.Protocol.AgentApiJson.Deserialize<LubanAgent.Protocol.Dtos.A2AStatusDto>(json);
+        var json = LubanAgentCore.Protocol.AgentApiJson.Serialize(original);
+        var restored = LubanAgentCore.Protocol.AgentApiJson.Deserialize<LubanAgentCore.Protocol.Dtos.A2AStatusDto>(json);
 
         Assert.AreEqual(original, restored);
     }

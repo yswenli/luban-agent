@@ -17,7 +17,7 @@
 
 namespace LubanAgentCodex;
 
-using LubanAgent.Client;
+using LubanAgentCore.Client;
 
 /// <summary>
 /// Avalonia 应用程序
@@ -152,7 +152,7 @@ public class App : Application
                     case LubanAgentCore.Services.WorkspaceManager local:
                         local.AuthorizationPrompt = _ => Task.FromResult(true);
                         break;
-                    case LubanAgent.Client.HttpWorkspaceManager remote:
+                    case LubanAgentCore.Client.HttpWorkspaceManager remote:
                         remote.AuthorizationPrompt = _ => Task.FromResult(true);
                         break;
                 }
@@ -163,12 +163,16 @@ public class App : Application
                 var workspaces = await wsManager.GetUserWorkspacesAsync();
                 var target = workspaces
                     .Where(w => w.Type != WorkspaceTypes.LlmWiki)
+                    // 排除锚定在宿主程序目录（bin\Debug\net10.0 之类）的旧工作区：
+                    // 这类工作区是早期「用进程当前目录建工作区」留下的，继续默认进入会一直读构建产物
+                    .Where(w => WorkspaceStartupDefaults.IsUserFacingDirectory(w.RootPath))
                     .OrderByDescending(w => w.LastActiveAt)
                     .FirstOrDefault();
                 if (target == null)
                 {
+                    // 首次启动：使用用户目录下的默认工作区根，而不是进程当前目录
                     target = await wsManager.CreateWorkspaceAsync(
-                        Path.GetFullPath(Directory.GetCurrentDirectory()), type: WorkspaceTypes.Normal);
+                        WorkspaceStartupDefaults.SuggestRootPath(), type: WorkspaceTypes.Normal);
                 }
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);

@@ -11,8 +11,6 @@
 /LubanAgentCodex/obj/
 /LubanAgentCli/bin/
 /LubanAgentCli/obj/
-/LubanAgentA2A/bin/
-/LubanAgentA2A/obj/
 /LubanAgentCore/bin/
 /LubanAgentCore/obj/
 /LubanAgent.Plugin.NewProject/bin/
@@ -21,10 +19,6 @@
 /LubanAgent.Tests/obj/
 /LubanAgentWebHost/bin/
 /LubanAgentWebHost/obj/
-/LubanAgentClient/bin/
-/LubanAgentClient/obj/
-/LubanAgentProtocol/bin/
-/LubanAgentProtocol/obj/
 
 # 冒烟资产（smoke/plugin-system）：工程构建产物与生成的插件包
 /smoke/plugin-system/**/bin/

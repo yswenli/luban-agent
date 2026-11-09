@@ -9,7 +9,7 @@
 
 using System.Text;
 
-using LubanAgent.Protocol.Events;
+using LubanAgentCore.Protocol.Events;
 
 using SAEA.Http;
 using SAEA.Http.Model;

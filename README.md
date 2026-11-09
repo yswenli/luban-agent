@@ -24,17 +24,14 @@
 
 这不是科幻，这就是 **LuBan Agent**。
 
-本仓库是 LuBan Agent 的完整解决方案，包含共享核心库、两种客户端形态、统一的本地 Agent 服务（WebHost）及其协议 / 客户端 SDK，以及 A2A 协作库、新建项目插件与自动化测试工程：
+本仓库是 LuBan Agent 的完整解决方案，包含共享核心库（内含传输协议、客户端 SDK 与 A2A 协作）、两种客户端形态、统一的本地 Agent 服务（WebHost）、新建项目插件与自动化测试工程：
 
 | 项目 | 形态 | 说明 |
 |------|------|------|
-| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理、连接器（含云效）与插件宿主 |
+| **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理、连接器（含云效）、插件宿主、传输协议（DTO/路由/SSE 帧）、客户端 SDK（HTTP 实现与子进程启动器）与 A2A 协作 |
 | **[LubanAgentCli](LubanAgentCli/)** | 命令行 TUI | 基于 Terminal.Gui v2 的全屏终端界面（Claude Code 风格），可安装为 dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，双栏布局（侧边栏 + 对话区）+ 暗色主题 |
 | **[LubanAgentWebHost](LubanAgentWebHost/)** | 本地 Agent 服务 | 基于 SAEA.MVC 的 HTTP/SSE 宿主，把对话、会话、工作区能力暴露为本地接口 |
-| **[LubanAgentProtocol](LubanAgentProtocol/)** | 传输协议 | WebHost 与客户端共用的路由常量、请求/响应 DTO、SSE 帧编解码与事件还原 |
-| **[LubanAgentClient](LubanAgentClient/)** | 客户端 SDK | `IAgentHost` / `ISessionManager` / `IWorkspaceManager` 的 HTTP 实现与子进程启动器 |
-| **[LubanAgentA2A](LubanAgentA2A/)** | A2A 协作库 | 基于 A2A SDK 的 Agent 间协作：服务端宿主、客户端注册、子代理进程内/远端分发 |
 | **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex 插件 | 「新建项目」插件，纯代码 UI，构建后自动铺装到 Codex 运行目录 `plugins/` |
 | **[LubanAgent.Tests](LubanAgent.Tests/)** | 测试工程 | MSTest 自动化测试（连接器、NewProject 插件、Skill/Rule 后端、传输协议等） |
 
@@ -198,7 +195,7 @@ dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
 curl http://127.0.0.1:18080/system/health
 ```
 
-客户端不必手工启动它：`LubanAgentClient` 在未指定服务地址时会拉起 WebHost 子进程（空闲端口 + 一次性令牌），并在客户端退出时一并结束。
+客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时会拉起 WebHost 子进程（空闲端口 + 一次性令牌），并在客户端退出时一并结束。
 
 ### 5. 配置 AI Provider 并开始对话
 
@@ -317,10 +314,12 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 
 ```
 luban-agent/
-├── LubanAgent.slnx           # 解决方案文件（XML 格式，9 个项目）
+├── LubanAgent.slnx           # 解决方案文件（XML 格式，6 个项目）
 │
 ├── LubanAgentCore/           # 核心类库（net10.0）
+│   ├── A2A/                  # A2A 协作（服务端宿主 / 客户端注册 / 子代理进程内与远端分发）
 │   ├── Agents/               # Agent 配置（Normal / LLM Wiki Profile）
+│   ├── Client/               # 客户端 SDK（HTTP/SSE 实现 + 子进程启动器）
 │   ├── Configuration/        # 配置管理
 │   ├── Connectors/           # 连接器（含云效 AliyunDevOps 实现）
 │   ├── Context/              # 用户上下文
@@ -330,6 +329,7 @@ luban-agent/
 │   ├── Infrastructure/       # 基础设施
 │   ├── Models/               # 数据模型
 │   ├── Plugins/              # 插件宿主
+│   ├── Protocol/             # 传输协议（路由 / DTO / SSE 帧 / 事件还原）
 │   ├── Repositories/         # 数据访问层
 │   ├── Retrieval/            # 语义检索
 │   ├── Security/             # 凭据存储与保护
@@ -361,9 +361,6 @@ luban-agent/
 │   ├── Controllers/          # agent / session / workspace / system 四组接口
 │   └── Hosting/              # 运行时、SSE 写出、启动参数、公共守卫
 │
-├── LubanAgentProtocol/       # 传输协议（路由 / DTO / SSE 帧 / 事件还原）
-├── LubanAgentClient/         # 客户端 SDK（HTTP 实现 + 子进程启动器）
-├── LubanAgentA2A/            # A2A 协作库（A2A SDK · net10.0）
 ├── LubanAgent.Plugin.NewProject/  # 「新建项目」插件
 ├── LubanAgent.Tests/         # MSTest 自动化测试
 ├── smoke/                    # 插件系统冒烟验证工程（有意不在 slnx 内）
@@ -373,33 +370,31 @@ luban-agent/
 **架构说明**：
 
 ```
-┌─────────────────┐  ┌─────────────────┐
-│ LubanAgentCli   │  │ LubanAgentCodex │
-│ (Terminal.Gui)  │  │   (Avalonia)    │
-└────────┬────────┘  └────────┬────────┘
-         └────────┬───────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentClient│  客户端 SDK：HTTP/SSE + 子进程拉起
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentWebHost│  SAEA.MVC（请求级回环守卫 + 可选令牌）
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │ LubanAgentCore  │  Agent 运行时 / 工具 / 技能 / 会话 / LLM Wiki / 工作区
-         └────────┬────────┘
-                  ▼
-         ┌─────────────────┐
-         │  LuBan.AIAgent  │  多模型路由 / MCP / 编排引擎
-         └────────┬────────┘
-                  ▼
-     OpenAI / Kimi / DeepSeek / Claude / ... (20+ Providers)
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│   LubanAgentCli     │  │   LubanAgentCodex   │  │  LubanAgentWebHost  │
+│   (Terminal.Gui)    │  │     (Avalonia)      │  │     (SAEA.MVC)      │
+└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
+           │                        │                        │
+           └────────────────────────┼────────────────────────┘
+                                    ▼
+       ┌────────────────────────────────────────────────────────┐
+       │ LubanAgentCore                                         │
+       │  运行时 / 工具 / 技能 / 会话 / LLM Wiki / 工作区       │
+       │  Client/    客户端 SDK（HTTP/SSE + 子进程拉起）        │
+       │  Protocol/  传输协议（路由 / DTO / SSE 帧）            │
+       │  A2A/       A2A 协作（服务端宿主 / 子代理分发）        │
+       └────────────────────────────┬───────────────────────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │    LuBan.AIAgent    │
+                         │ 多模型 / MCP / 编排 │
+                         └─────────────────────┘
+                                    ▼
+         OpenAI / Kimi / DeepSeek / Claude / ... (20+ Providers)
 ```
 
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
-- **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，协议在 `LubanAgentProtocol`、客户端实现在 `LubanAgentClient`，接入方式见上方「统一 Agent 服务」
+- **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，传输协议（`Core/Protocol/`）与客户端实现（`Core/Client/`）同属 `LubanAgentCore`，接入方式见上方「统一 Agent 服务」
 - **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
 - **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库为程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db`）
 

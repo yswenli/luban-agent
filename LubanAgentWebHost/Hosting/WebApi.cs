@@ -9,7 +9,7 @@
 
 using System.Net;
 
-using LubanAgent.Protocol;
+using LubanAgentCore.Protocol;
 
 using SAEA.Http;
 using SAEA.Http.Base;
