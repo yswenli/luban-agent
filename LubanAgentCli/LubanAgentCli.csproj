@@ -54,20 +54,20 @@
 
 	<ItemGroup>
 		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-		<PackageReference Include="System.Management" Version="10.0.12" />
+		<PackageReference Include="System.Management" Version="10.0.14" />
 		<PackageReference Include="Terminal.Gui" Version="2.6.0-develop.61" />
 		<PackageReference Include="Terminal.Gui.Editor" Version="2.5.8-develop.5" />
 		<!-- Microsoft.Extensions.Configuration.Json / EnvironmentVariables / DependencyInjection / AI.OpenAI
 		     不再显式声明：由 LuBan.Common / LuBan.AIAgent 传递提供（10.0.13 / 10.11.0）。
 		     显式钉低版本会触发 NU1605 包降级（NuGet 直接引用最近者优先）。 -->
-		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
-		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
 		<!-- M.E.AI.OpenAI 依赖的 OpenAI 2.13.0 流式工具调用表示有破坏性变更，
 		     会导致工具调用 chunk 解析为空 update、轮次静默结束，故显式钉住下限 -->
-		<PackageReference Include="OpenAI" Version="2.14.0" />
+		<PackageReference Include="OpenAI" Version="2.15.0" />
 
 		<!-- SQLite 持久化仅需 SqlSugarCore，裁剪其余数据库驱动约 7MB -->
-		<PackageReference Include="Oscar.Data.SqlClient" Version="4.2.36" ExcludeAssets="all" PrivateAssets="all">
+		<PackageReference Include="Oscar.Data.SqlClient" Version="4.2.40" ExcludeAssets="all" PrivateAssets="all">
 		  <IncludeAssets>none</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="SqlSugarCore.Dm" Version="8.8.2" ExcludeAssets="all" PrivateAssets="all">
