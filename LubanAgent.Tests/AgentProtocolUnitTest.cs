@@ -161,16 +161,23 @@ public class AgentProtocolUnitTest
     }
 
     [TestMethod]
-    public void A2A接口只暴露只读状态路由()
+    public void A2A路由包含只读状态与工作区配置读写()
     {
         var constants = typeof(AgentApiRoutes.A2A)
             .GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
             .ToList();
 
-        Assert.AreEqual(1, constants.Count, "A2A 只应有状态路由，启停已下沉到宿主进程");
-        Assert.AreEqual("/a2a/status", (string)constants[0].GetRawConstantValue()!);
-        Assert.AreEqual(nameof(AgentApiRoutes.A2A.Status), constants[0].Name);
+        Assert.AreEqual(7, constants.Count, "A2A 路由应为 1 条状态 + 6 条工作区配置读写（启停仍下沉到宿主进程）");
+        foreach (var constant in constants)
+        {
+            Assert.IsTrue(
+                ((string)constant.GetRawConstantValue()!).StartsWith("/a2a/", StringComparison.Ordinal),
+                constant.Name);
+        }
+
+        Assert.AreEqual("/a2a/status", (string)typeof(AgentApiRoutes.A2A)
+            .GetField(nameof(AgentApiRoutes.A2A.Status))!.GetRawConstantValue()!);
     }
 
     [TestMethod]

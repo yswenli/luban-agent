@@ -43,6 +43,36 @@ public sealed class SessionController : Controller
         return WebApi.OkJson(sessions.ToList());
     });
 
+    /// <summary>当前用户的会话摘要列表（含工作区与模型，浏览器端会话列表用）。</summary>
+    /// <returns>按更新时间倒序的会话摘要。</returns>
+    [HttpGet]
+    public Task<ActionResult> ListDetailed() => WebApi.RunAsync(async () =>
+    {
+        if (await WebApi.GuardAsync() is { } denied)
+        {
+            return denied;
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var sessions = await scope.GetRequiredService<SessionRepository>()
+            .GetUserSessionsAsync(WebApi.Runtime.UserId)
+            .ConfigureAwait(false);
+
+        return WebApi.OkJson(sessions
+            .OrderByDescending(s => s.UpdateTime ?? s.CreateTime)
+            .Select(s => new SessionSummaryDto(
+                s.SessionId,
+                s.Title,
+                s.CreateTime,
+                s.UpdateTime,
+                s.MessageCount,
+                s.TotalTokens,
+                s.WorkspaceId,
+                s.Provider,
+                s.ModelName))
+            .ToList());
+    });
+
     /// <summary>指定工作区下的会话列表（更新时间倒序）。</summary>
     /// <param name="workspaceId">工作区标识。</param>
     /// <returns>会话列表。</returns>

@@ -416,6 +416,13 @@ luban-agent/
 | `/llmwiki/*` | 知识库创建/删除、列文件、索引、检索、统计、lint、重建、ingest、清空 |
 | `GET /a2a/status` | A2A 运行状态（只读） |
 | `GET /system/health` | 健康检查（免令牌，供启动器探活） |
+| `GET /system/bootstrap` | 浏览器端首屏数据（工作区、供应商与模型、权限模式、附件策略、版本） |
+| `GET /system/commands` | 浏览器端斜杠命令清单 |
+| `POST /attachment/upload` | 浏览器端附件上传（JSON + Base64，落盘到工作区暂存目录） |
+| `GET` / `POST` `/provider/*` | 读取/切换全局模型选择、按供应商拉取模型列表、供应商读写（密钥只回传掩码） |
+| `GET` / `POST` `/skill/*`、`/rule/*`、`/mcp/*` | 文件型技能/规则/MCP 的列表、读取、保存、删除（按 `global` 或工作区作用域） |
+| `GET` / `POST` `/model/*` | 按供应商列出模型、增删改自定义模型 |
+| `GET` / `POST` `/a2a/*` | A2A 运行状态，以及工作区 A2A 服务端/客户端配置的读写 |
 
 约束与已知限制：
 
@@ -428,6 +435,23 @@ luban-agent/
 - **插件目录**：插件只随 Codex 分发；自动拉起时客户端通过 `--plugins-dir` 把 Codex 的插件目录交给 WebHost 扫描，避免两处各带一份插件。插件安装/启用状态仍由 Codex 侧维护。
 - **单回合同步等待上限**：`LubanAgentWeb:TimeoutSeconds`（默认 86400，即 24 小时）必须远大于最长回合，否则 SAEA 会在回合中途返回 408 并把纯文本追写在已开启的流上。
 - **工具确认**：确认等待上限取 `LuBanAgent:Confirmation:TimeoutSeconds`（默认 60），超时按拒绝处理。
+
+### 🌐 浏览器端（`LubanAgentWebHost/wwwroot`）
+
+WebHost 同时托管一套网页界面（SolidJS + TypeScript + Vite），源码在 `web/`，构建产物提交在 `LubanAgentWebHost/wwwroot/`，由 csproj 随 `dotnet build` 拷到输出目录的 `wwwroot`。
+
+```bash
+cd web
+npm install
+npm run build          # 产物落 LubanAgentWebHost/wwwroot
+```
+
+- **`dotnet build` 不依赖 Node**：产物随代码提交；只有改了 `web/` 下的源码才需要重新构建。
+- **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
+- **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）。SAEA 没有 SPA 回退，所以不能用 history 路由。
+- **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，写入令牌、用户与端口；该文件不提交（见 `.gitignore`），`vite dev` 下缺失时前端按无令牌运行。
+- **开发生**：先启动 WebHost（`--port` 指定端口），再在 `web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 8080），同一个 `server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去，静态资源仍由 Vite 提供。
+- **范围**：网页版覆盖会话列表、对话（含附件、斜杠命令、工具确认框）与设置页；插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
 
 ---
 

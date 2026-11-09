@@ -24,3 +24,10 @@
 /smoke/plugin-system/**/bin/
 /smoke/plugin-system/**/obj/
 /smoke/plugin-system/artifacts/
+
+# 浏览器端前端（web/）：依赖与本地构建中间产物
+/web/node_modules/
+/web/dist/
+
+# 运行时生成的静态配置（含令牌），不进仓库
+/LubanAgentWebHost/wwwroot/runtime-config.js

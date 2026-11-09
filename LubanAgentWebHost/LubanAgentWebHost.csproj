@@ -27,4 +27,9 @@
 		</None>
 	</ItemGroup>
 
+	<ItemGroup>
+		<!-- 浏览器端静态站点：源码在 ../web，产物由 `npm run build` 落在此目录；构建时整体拷到输出目录的 wwwroot -->
+		<Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
 </Project>

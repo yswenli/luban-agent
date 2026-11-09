@@ -93,6 +93,9 @@ public static class AgentApiRoutes
 
         /// <summary>会话绑定工作区标识。</summary>
         public const string WorkspaceId = "/session/workspaceId";
+
+        /// <summary>会话摘要列表（含工作区与模型，浏览器端首屏用）。</summary>
+        public const string ListDetailed = "/session/listDetailed";
     }
 
     /// <summary>工作区相关接口。</summary>
@@ -134,6 +137,106 @@ public static class AgentApiRoutes
     {
         /// <summary>健康检查（客户端启动探测用）。</summary>
         public const string Health = "/system/health";
+
+        /// <summary>首屏引导数据（浏览器端一次性取全）。</summary>
+        public const string Bootstrap = "/system/bootstrap";
+
+        /// <summary>斜杠命令清单（浏览器端）。</summary>
+        public const string Commands = "/system/commands";
+    }
+
+    /// <summary>附件接口（浏览器端上传，源码见宿主）。</summary>
+    public static class Attachment
+    {
+        /// <summary>上传附件（JSON + Base64）。</summary>
+        public const string Upload = "/attachment/upload";
+    }
+
+    /// <summary>供应商与模型接口（浏览器端对话页的模型下拉用它读写全局选择）。</summary>
+    public static class Provider
+    {
+        /// <summary>读取全局模型选择。</summary>
+        public const string Selection = "/provider/selection";
+
+        /// <summary>切换全局模型选择。</summary>
+        public const string Select = "/provider/select";
+
+        /// <summary>按供应商拉取可用模型（有 API Key 时向远端刷新，失败回落到本地列表）。</summary>
+        public const string Models = "/provider/models";
+
+        /// <summary>供应商列表（API Key 掩码）。</summary>
+        public const string List = "/provider/list";
+
+        /// <summary>新建或更新供应商（API Key 留空表示不修改）。</summary>
+        public const string Save = "/provider/save";
+
+        /// <summary>删除供应商。</summary>
+        public const string Delete = "/provider/delete";
+    }
+
+    /// <summary>技能设置接口（浏览器端，文件型条目）。</summary>
+    public static class Skill
+    {
+        /// <summary>列出文件型技能。</summary>
+        public const string List = "/skill/list";
+
+        /// <summary>读取技能内容。</summary>
+        public const string Read = "/skill/read";
+
+        /// <summary>保存技能。</summary>
+        public const string Save = "/skill/save";
+
+        /// <summary>删除技能。</summary>
+        public const string Delete = "/skill/delete";
+    }
+
+    /// <summary>规则设置接口（浏览器端，文件型条目）。</summary>
+    public static class Rule
+    {
+        /// <summary>列出文件型规则。</summary>
+        public const string List = "/rule/list";
+
+        /// <summary>读取规则内容。</summary>
+        public const string Read = "/rule/read";
+
+        /// <summary>保存规则。</summary>
+        public const string Save = "/rule/save";
+
+        /// <summary>删除规则。</summary>
+        public const string Delete = "/rule/delete";
+    }
+
+    /// <summary>MCP 设置接口（浏览器端，文件型条目）。</summary>
+    public static class Mcp
+    {
+        /// <summary>列出文件型 MCP 配置。</summary>
+        public const string List = "/mcp/list";
+
+        /// <summary>读取 MCP 配置。</summary>
+        public const string Read = "/mcp/read";
+
+        /// <summary>保存 MCP 配置。</summary>
+        public const string Save = "/mcp/save";
+
+        /// <summary>删除 MCP 配置。</summary>
+        public const string Delete = "/mcp/delete";
+    }
+
+    /// <summary>模型设置接口（浏览器端，按供应商维护模型清单）。</summary>
+    /// <remarks>全局模型选择走 <see cref="Provider.Select"/>，向远端刷新走 <see cref="Provider.Models"/>，此处不重复。</remarks>
+    public static class Model
+    {
+        /// <summary>列出供应商下的全部模型。</summary>
+        public const string List = "/model/list";
+
+        /// <summary>新增自定义模型。</summary>
+        public const string Add = "/model/add";
+
+        /// <summary>重命名自定义模型。</summary>
+        public const string Rename = "/model/rename";
+
+        /// <summary>删除自定义模型。</summary>
+        public const string Delete = "/model/delete";
     }
 
     /// <summary>LLM Wiki 知识库接口（对应 <c>/llmwiki</c> 命令与 Codex 知识库窗口）。</summary>
@@ -185,5 +288,23 @@ public static class AgentApiRoutes
     {
         /// <summary>读取 A2A 运行状态。</summary>
         public const string Status = "/a2a/status";
+
+        /// <summary>读取工作区服务端配置。</summary>
+        public const string GetServer = "/a2a/getServer";
+
+        /// <summary>保存工作区服务端配置。</summary>
+        public const string SaveServer = "/a2a/saveServer";
+
+        /// <summary>列出工作区客户端配置。</summary>
+        public const string ListClients = "/a2a/listClients";
+
+        /// <summary>读取单个客户端配置。</summary>
+        public const string GetClient = "/a2a/getClient";
+
+        /// <summary>保存客户端配置。</summary>
+        public const string SaveClient = "/a2a/saveClient";
+
+        /// <summary>删除 A2A 配置（<c>server</c> 或客户端文件名）。</summary>
+        public const string DeleteClient = "/a2a/deleteClient";
     }
 }

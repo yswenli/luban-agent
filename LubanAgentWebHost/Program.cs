@@ -9,6 +9,8 @@
 
 using LuBan.Common;
 
+using LubanAgentCore.Protocol;
+
 using LubanAgentWebHost.Hosting;
 
 using SAEA.MVC;
@@ -78,11 +80,14 @@ public static class Program
             Report("⑤ 启动 HTTP 服务...");
             var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
             Directory.CreateDirectory(root);
+            WriteRuntimeConfig(root, runtime);
 
             var mvcConfig = new SAEAMvcApplicationConfig
             {
                 Port = settings.Port,
-                Root = root,
+                // SAEA 会把 Root 里的路径分隔符全部去掉再拼到 exe 目录的父级下，
+                // 所以这里只能给相对单段目录名，绝对路径必然 404
+                Root = "wwwroot",
                 // 长回合 SSE 由动作内部流式写出，动作本身要阻塞到流结束，必须远大于默认 180s
                 Timeout = settings.TimeoutSeconds,
                 IsDebug = settings.Debug
@@ -127,4 +132,26 @@ public static class Program
     }
 
     private static void Report(string message) => AgentWebRuntime.Log(message);
+
+    /// <summary>
+    /// 在静态根下生成 <c>runtime-config.js</c>（页面启动时读取令牌与身份）。
+    /// </summary>
+    /// <remarks>
+    /// 每次启动重写；该文件不进仓库（见 .gitignore）。必须在创建 <c>SAEAMvcApplication</c> 之前写盘，
+    /// 避免首个请求落在文件索引建立之前。
+    /// </remarks>
+    /// <param name="root">静态根目录绝对路径。</param>
+    /// <param name="runtime">运行时（取用户标识）。</param>
+    private static void WriteRuntimeConfig(string root, AgentWebRuntime runtime)
+    {
+        var config = new Dictionary<string, object?>
+        {
+            ["token"] = runtime.Settings.Token ?? string.Empty,
+            ["userId"] = runtime.UserId,
+            ["port"] = runtime.Settings.Port
+        };
+
+        var content = $"window.__LUBAN__ = {AgentApiJson.Serialize(config)};\n";
+        File.WriteAllText(Path.Combine(root, "runtime-config.js"), content, new UTF8Encoding(false));
+    }
 }

@@ -416,6 +416,13 @@ luban-agent/
 | `/llmwiki/*` | Knowledge base create/delete, list files, index, search, stats, lint, rebuild, ingest, clear |
 | `GET /a2a/status` | A2A runtime status (read-only) |
 | `GET /system/health` | Health check (token-free, used by the launcher) |
+| `GET /system/bootstrap` | Browser first-screen data (workspaces, providers and models, permission modes, attachment policy, version) |
+| `GET /system/commands` | Slash-command catalogue for the browser client |
+| `POST /attachment/upload` | Browser attachment upload (JSON + Base64, written to the workspace staging directory) |
+| `GET` / `POST` `/provider/*` | Read/switch the global model selection, pull a provider's models, read/write providers (keys are returned masked only) |
+| `GET` / `POST` `/skill/*`, `/rule/*`, `/mcp/*` | List/read/save/delete file-based skills, rules and MCP servers (scoped to `global` or a workspace) |
+| `GET` / `POST` `/model/*` | List a provider's models and add/rename/delete custom models |
+| `GET` / `POST` `/a2a/*` | A2A runtime status plus read/write of workspace A2A server/client configuration |
 
 Constraints and known limitations:
 
@@ -428,6 +435,23 @@ Constraints and known limitations:
 - **Plugin directory**: plugins ship only with Codex; when auto-launching, the client passes the Codex plugin directory to the WebHost via `--plugins-dir` so the host scans that single copy. Plugin installation and enabled state remain maintained on the Codex side.
 - **Single-round sync wait limit**: `LubanAgentWeb:TimeoutSeconds` (default 86400, i.e. 24 hours) must be far larger than the longest round; otherwise SAEA returns 408 mid-round and appends plain text onto the already-open stream.
 - **Tool confirmation**: the wait limit comes from `LuBanAgent:Confirmation:TimeoutSeconds` (default 60); a timeout is treated as a denial.
+
+### 🌐 Browser client (`LubanAgentWebHost/wwwroot`)
+
+The WebHost also serves a web UI (SolidJS + TypeScript + Vite). The source lives in `web/`, the build output is committed under `LubanAgentWebHost/wwwroot/`, and the project file copies it to the `wwwroot` folder of the build output on `dotnet build`.
+
+```bash
+cd web
+npm install
+npm run build          # output goes to LubanAgentWebHost/wwwroot
+```
+
+- **`dotnet build` does not need Node**: the output is committed; rebuild only after changing sources under `web/`.
+- **Restart the process to pick up a new build**: `IsStaticsCached=True` keeps static file contents in memory after the first request, so a same-named file on disk is not reloaded.
+- **Hash routing**: `#/` (sessions), `#/s/<sessionId>` (chat), `#/settings/<tab>` (settings). SAEA has no SPA fallback, so history routing is not an option.
+- **Runtime config**: the process writes `wwwroot/runtime-config.js` (token, user, port) at startup. The file is not committed (see `.gitignore`); when missing under `vite dev`, the frontend runs without a token.
+- **Development loop**: start the WebHost first (`--port` to choose the port), then run `npm run dev` in `web/`; `VITE_HOST_PORT` sets the upstream port (default 8080) and the single `server.proxy` entry forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a` and `/llmwiki`, while Vite keeps serving the static assets.
+- **Scope**: the web UI covers the session list, chat (attachments, slash commands, tool confirmation dialog) and the settings page; plugins, connectors, `@` context and the Shell command entry point are out of scope for the web UI.
 
 ---
 
