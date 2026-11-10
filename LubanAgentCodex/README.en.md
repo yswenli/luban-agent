@@ -1,7 +1,5 @@
 ﻿# LuBan Agent Codex
 
-<div align="center">
-
 **Cross-platform AI Coding Agent Desktop Client based on Avalonia UI**
 
 *Empower LLMs with thinking, planning, tool calling, and autonomous execution capabilities*
@@ -9,11 +7,9 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.6-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | [中文](README.md)
-
-</div>
 
 ---
 
@@ -742,7 +738,7 @@ After "Save", click "Apply Configuration" to hot-reload (`McpManagementService` 
 
 | Component | Description |
 |-----------|-------------|
-| **Avalonia 12.1.2** | Cross-platform UI framework (.NET 10.0, dark theme) |
+| **Avalonia 12.1.6** | Cross-platform UI framework (.NET 10.0, dark theme) |
 | **Microsoft.Agents.AI.Foundry** | Agent runtime framework |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
 | **Microsoft.Playwright** | Browser automation engine |
@@ -794,10 +790,6 @@ MIT License
 
 ---
 
-<div align="center">
-
 **⭐ If this project is helpful to you, please give it a Star! ⭐**
 
 Made with ❤️ by yswenli
-
-</div>

@@ -1,7 +1,5 @@
 ﻿# LuBan Agent
 
-<div align="center">
-
 **A Complete AI Agent Solution Based on Microsoft Agent Framework**
 
 *One shared core runtime, three ways to use it: command-line TUI + cross-platform desktop client + local Agent service*
@@ -10,11 +8,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.6-blue.svg)](https://avaloniaui.net/)
 
 English | [中文](README.md)
-
-</div>
 
 ---
 
@@ -48,6 +44,19 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 
 ---
 
+## 📸 UI Preview
+
+![LuBan Agent web UI overview: project-grouped sessions on the left, multi-tab chat on the right](lubanagent.png)
+
+*Web UI overview: sessions grouped by project on the left, parallel tabbed chats on the right*
+
+| Chat & Tool Calls | Skills & Settings |
+|:---:|:---:|
+| ![Chat page: Markdown content, collapsible reasoning and tool call records](lubanagent-chat.png) | ![Settings page: skill list and skill body editor](lubanagent-settings.png) |
+| Chat page: Markdown content, collapsible reasoning and tool call records | Settings page: unified management of Skills, Rules, MCP servers, Providers and Models, with Global/Current Workspace scope switch |
+
+---
+
 ## ✨ Core Features
 
 ### 🤖 Multi-Model Routing
@@ -70,6 +79,8 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 | 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents in parallel/serial |
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 | 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
+
+> Counting note: the 12 rows above list user-facing capabilities; "MCP External Tools" means merging the tools of external MCP servers into the tool set rather than a standalone tool group. The framework actually registers 15 tool groups — 4 management-only groups are not listed separately: `SkillToolGroup` (list/load skills), `SkillManageToolGroup` (write/delete skills), `McpManageToolGroup` (write/delete MCP configs) and `ConnectorManageToolGroup` (connector management); see "Conversational Skill/MCP Management" and "Configuration" below.
 
 ### 🎯 Skill System
 - Nine core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery), plug and play
@@ -409,7 +420,7 @@ luban-agent/
 - **UI/Business Separation**: CLI and Codex handle only interaction and rendering; all Agent capabilities come from Core
 - **Unified Service Entry**: chat, sessions and workspaces are exposed by `LubanAgentWebHost`; the transport protocol (`Core/Protocol/`) and the client implementation (`Core/Client/`) both live in `LubanAgentCore` — see "Unified Agent Service" above
 - **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow
-- **Unified Configuration**: Both clients share the user configuration in `LuBan\AIAgent\` under the system LocalApplicationData directory (Windows: `%LocalAppData%\LuBan\AIAgent\`); the session database is `luban-ai-agent.db` in the application base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`)
+- **Unified Configuration**: Both clients share the user configuration in `LuBan\AIAgent\` under the system LocalApplicationData directory (Windows: `%LocalAppData%\LuBan\AIAgent\`); the session database `luban-ai-agent.db` is owned exclusively by the WebHost and lives in its program directory (`Data Source=./luban-ai-agent.db` in `appsettings.json` is a relative path that the host resolves against its own directory), and clients never open it
 
 ---
 
@@ -475,6 +486,8 @@ npm run build          # output goes to LubanAgentWebHost/wwwroot
 
 ### Application Configuration (appsettings.json)
 
+> The snippet below is a structural example, not the repository defaults; actual values live in `LubanAgentWebHost/appsettings.json` (for example `MaxToolLoopIterations` is 500, `Orchestration.MaxParallelism` falls back to the framework default 5 when unset, and `Tools` also contains `Git` and `Log` groups).
+
 ```json
 {
   "LuBanAgent": {
@@ -515,7 +528,7 @@ User configurations (Providers, custom Skills, rules, connector declarations, et
 | **LuBan.AIAgent** | Agent runtime framework (multi-model routing / MCP / orchestration) |
 | **Microsoft.Extensions.AI** | Unified chat client abstraction |
 | **Terminal.Gui 2.6.0-develop.61** | CLI full-screen TUI framework (24-bit TrueColor, alt-screen) |
-| **Avalonia 12.1.2** | Codex cross-platform desktop UI framework |
+| **Avalonia 12.1.6** | Codex cross-platform desktop UI framework |
 | **CommunityToolkit.Mvvm** | MVVM framework |
 | **Microsoft.Playwright** | Browser automation engine |
 | **Microsoft.ML.OnnxRuntime** | ONNX model inference (semantic retrieval) |
@@ -559,10 +572,6 @@ MIT License
 
 ---
 
-<div align="center">
-
 **⭐ If this project helps you, please give it a Star! ⭐**
 
 Made with ❤️ by yswenli
-
-</div>

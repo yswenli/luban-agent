@@ -1,7 +1,5 @@
 ﻿# LuBan Agent Codex
 
-<div align="center">
-
 **基于 Avalonia UI 的跨平台 AI 编码代理桌面客户端**
 
 *让大模型具备思考、规划、调用工具和自主执行的能力*
@@ -9,11 +7,9 @@
 [![NuGet](https://img.shields.io/nuget/v/LuBan.AIAgent.svg)](https://www.nuget.org/packages/LuBan.AIAgent/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.6-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | 中文
-
-</div>
 
 ---
 
@@ -738,7 +734,7 @@ Enabled     是否参与加载
 
 | 组件 | 说明 |
 |------|------|
-| **Avalonia 12.1.2** | 跨平台 UI 框架（.NET 10.0，暗色主题） |
+| **Avalonia 12.1.6** | 跨平台 UI 框架（.NET 10.0，暗色主题） |
 | **Microsoft.Agents.AI.Foundry** | Agent 运行时框架 |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |
@@ -790,10 +786,6 @@ MIT License
 
 ---
 
-<div align="center">
-
 **⭐ 如果这个项目对你有帮助，请给它一个 Star！⭐**
 
 Made with ❤️ by yswenli
-
-</div>

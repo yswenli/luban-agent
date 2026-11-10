@@ -1,7 +1,5 @@
 ﻿# LuBan Agent CLI
 
-<div align="center">
-
 **基于 Microsoft Agent Framework 的 AI Agent 命令行工具**
 
 *让大模型具备思考、规划、调用工具和自主执行的能力*
@@ -12,8 +10,6 @@
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
 
 [English](README.en.md) | 中文
-
-</div>
 
 ---
 
@@ -1007,10 +1003,6 @@ MIT License
 
 ---
 
-<div align="center">
-
 **⭐ 如果这个项目对你有帮助，请给它一个 Star！⭐**
 
 Made with ❤️ by yswenli
-
-</div>

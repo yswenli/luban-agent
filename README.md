@@ -1,7 +1,5 @@
 ﻿# LuBan Agent
 
-<div align="center">
-
 **基于 Microsoft Agent Framework 的完整 AI Agent 解决方案**
 
 *一套核心运行时，三端统一：命令行 TUI + 跨平台桌面客户端 + 本地 Agent 服务*
@@ -10,11 +8,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Terminal.Gui](https://img.shields.io/badge/Terminal.Gui-2.6.0--develop.61-blue.svg)](https://gui-cs.github.io/Terminal.Gui/)
-[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.2-blue.svg)](https://avaloniaui.net/)
+[![Avalonia](https://img.shields.io/badge/Avalonia-12.1.6-blue.svg)](https://avaloniaui.net/)
 
 [English](README.en.md) | 中文
-
-</div>
 
 ---
 
@@ -48,6 +44,19 @@
 
 ---
 
+## 📸 界面预览
+
+![LuBan Agent 网页界面主视图：左侧按项目分组的会话列表，右侧多标签对话区](lubanagent.png)
+
+*网页界面主视图：左侧按项目分组管理会话，右侧多标签并行对话*
+
+| 对话与工具调用 | 技能与设置 |
+|:---:|:---:|
+| ![对话页：Markdown 正文、思考过程折叠与工具调用记录](lubanagent-chat.png) | ![设置页：技能列表与技能正文编辑表单](lubanagent-settings.png) |
+| 对话页：Markdown 正文、可折叠的思考过程与工具调用记录 | 设置页：技能、规则、MCP、供应商、模型统一管理，支持全局/当前工作区切换 |
+
+---
+
 ## ✨ 核心特性
 
 ### 🤖 多模型路由
@@ -70,6 +79,8 @@
 | 🧩 **编排工具** | 复合任务拆解为 DAG，调度 SubAgent 并行/串行执行 |
 | 📚 **Wiki 知识库工具** | 读写/删除 wiki 页面、向量搜索、健康检查（opt-in，需显式启用） |
 | 📜 **大日志分析工具** | 大日志文件聚合概览、正则检索、按行切片，恒定内存（默认启用） |
+
+> 计数口径：上表 12 行是面向使用者的能力清单，其中「MCP 外部工具」指把外部 MCP 服务器的工具并入工具集，不是独立工具组。框架实际注册 15 个工具组，另有 4 个管理类未单列——`SkillToolGroup`（列出/加载 Skill）、`SkillManageToolGroup`（写入删除 Skill）、`McpManageToolGroup`（写入删除 MCP 配置）、`ConnectorManageToolGroup`（连接器管理），见下文「对话式 Skill/MCP 管理」与「配置说明」。
 
 ### 🎯 Skill 系统
 - 内置九大核心技能（头脑风暴、代码审查、文档生成、代码重构、测试生成、代码解释、调试助手、Git 提交、技能发现），即插即用
@@ -409,7 +420,7 @@ luban-agent/
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
 - **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，传输协议（`Core/Protocol/`）与客户端实现（`Core/Client/`）同属 `LubanAgentCore`，接入方式见上方「统一 Agent 服务」
 - **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
-- **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库为程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db`）
+- **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库 `luban-ai-agent.db` 由 WebHost 独占，落在 WebHost 程序目录（`appsettings.json` 中 `Data Source=./luban-ai-agent.db` 是相对路径，宿主会按自己的程序目录解析成绝对路径），客户端不打开数据库
 
 ---
 
@@ -475,6 +486,8 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 
 ### 应用配置 (appsettings.json)
 
+> 下面是结构示例，数值不是仓库默认值；实际取值以 `LubanAgentWebHost/appsettings.json` 为准（例如 `MaxToolLoopIterations` 为 500，`Orchestration.MaxParallelism` 未显式配置时取框架默认 5，`Tools` 另含 `Git`、`Log` 等组）。
+
 ```json
 {
   "LuBanAgent": {
@@ -515,7 +528,7 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 | **LuBan.AIAgent** | Agent 运行时框架（多模型路由 / MCP / 编排） |
 | **Microsoft.Extensions.AI** | 统一聊天客户端抽象 |
 | **Terminal.Gui 2.6.0-develop.61** | CLI 全屏 TUI 框架（24-bit TrueColor，alt-screen） |
-| **Avalonia 12.1.2** | Codex 跨平台桌面 UI 框架 |
+| **Avalonia 12.1.6** | Codex 跨平台桌面 UI 框架 |
 | **CommunityToolkit.Mvvm** | MVVM 框架 |
 | **Microsoft.Playwright** | 浏览器自动化引擎 |
 | **Microsoft.ML.OnnxRuntime** | ONNX 模型推理（语义检索） |
@@ -559,10 +572,6 @@ MIT License
 
 ---
 
-<div align="center">
-
 **⭐ 如果这个项目对你有帮助，请给它一个 Star！⭐**
 
 Made with ❤️ by yswenli
-
-</div>
