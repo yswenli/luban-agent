@@ -18,15 +18,15 @@ public static class WebSystemService
     /// 健康检查。
     /// </summary>
     /// <remarks>
-    /// 免令牌校验（客户端启动器在拿到令牌前就要探测端口），但仍受来源校验保护；
-    /// 不触发用户初始化，避免探测被初始化耗时拖长、也不让初始化失败拖垮端口就绪判定。
+    /// 免令牌校验（客户端启动器在拿到令牌前就要探测端口），但仍受全站门禁的路径白名单保护；
+    /// 不返回用户标识等身份信息，不触发用户初始化——避免探测被初始化耗时拖长、
+    /// 也不让初始化失败拖垮端口就绪判定。
     /// </remarks>
     /// <returns>宿主信息。</returns>
     public static Task<ActionResult> HealthAsync() => WebApi.RunGuardedAsync(
         () => Task.FromResult(WebApi.OkJson(new HealthDto(
             "ok",
             Version,
-            WebApi.Runtime.UserId,
             DateTime.Now))),
         requireToken: false,
         ensureUser: false);

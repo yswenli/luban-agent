@@ -19,8 +19,11 @@ public static class Program
     /// <summary>
     /// 启动 WebHost。
     /// </summary>
-    /// <param name="args">命令行参数（<c>--stop</c> / <c>--port</c> / <c>--token</c> / <c>--user</c> / <c>--timeout</c> / <c>--debug</c>）。</param>
-    /// <returns>退出码：0 正常，非 0 表示启动失败。</returns>
+    /// <param name="args">
+    /// 命令行参数：<c>token</c>（打印在运行实例的浏览器入口）、<c>--stop</c>（停止在运行实例）、
+    /// <c>--port</c> / <c>--token</c> / <c>--user</c> / <c>--timeout</c> / <c>--debug</c>。
+    /// </param>
+    /// <returns>退出码：0 正常，非 0 表示启动失败或命令失败。</returns>
     public static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -29,6 +32,12 @@ public static class Program
         if (args.Any(static arg => string.Equals(arg, "--stop", StringComparison.OrdinalIgnoreCase)))
         {
             return StopRunningHost();
+        }
+
+        // 入口命令：宿主已在运行，按其自述文件重新打印带令牌的地址
+        if (args.Length > 0 && string.Equals(args[0], "token", StringComparison.OrdinalIgnoreCase))
+        {
+            return PrintEntryUrls();
         }
 
         using var shutdown = new CancellationTokenSource();
@@ -47,6 +56,10 @@ public static class Program
         {
             var configuration = AgentHostBuilder.BuildConfiguration(args);
             var settings = WebHostSettings.Create(configuration, args);
+
+            // 访问令牌：未显式指定时每次启动随机生成，进程退出即失效（不做长期登录态）
+            var accessToken = settings.Token ?? WebHostAccess.CreateToken();
+            settings = settings with { Token = accessToken };
 
             Report("① 加载配置...");
             configuration.InitConfigUtil();
@@ -94,6 +107,10 @@ public static class Program
             };
 
             application = new SAEAMvcApplication(mvcConfig);
+
+            // 访问门禁：把 MVC 的请求上下文换成带令牌判定的版本（覆盖接口、SSE、附件与静态资源）
+            WebHostGate.Install(application);
+
             try
             {
                 application.Start();
@@ -116,12 +133,10 @@ public static class Program
             });
 
             Console.WriteLine($"listening on 0.0.0.0:{settings.Port} (user={runtime.UserId})");
-            Report($"⑥ 就绪（监听全部网卡，令牌{(string.IsNullOrEmpty(settings.Token) ? "未启用" : "已启用")}）");
-            Report($"   浏览器入口：http://127.0.0.1:{settings.Port}/　停止：LubanAgentWebHost --stop");
-            if (string.IsNullOrEmpty(settings.Token))
-            {
-                Report("   提示：未启用令牌，任何能访问该端口的人都可以操作本机（读写工作区文件、执行命令）；对公网暴露务必加 --token 并在反向代理层再做一次鉴权。");
-            }
+            Report("⑥ 就绪（监听全部网卡，已启用访问令牌）");
+            Report($"   浏览器入口：{WebHostAccess.BuildEntryUrl($"http://{WebHostAccess.GetPreferredLanHost()}:{settings.Port}", accessToken)}");
+            Report($"   本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", accessToken)}");
+            Report("   令牌随本次运行有效，重启后换成新地址；随时用 LubanAgentWebHost token 重新打印。");
 
             await Task.Delay(Timeout.Infinite, shutdown.Token).ConfigureAwait(false);
             return 0;
@@ -205,6 +220,38 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// 打印在运行实例的浏览器入口。
+    /// </summary>
+    /// <remarks>
+    /// 令牌随进程生成、退出即失效，故一律读自述文件里的当前值；宿主未运行时报错，不做任何猜测。
+    /// </remarks>
+    /// <returns>退出码：0 已打印；1 没有可用实例。</returns>
+    private static int PrintEntryUrls()
+    {
+        var descriptor = WebHostDiscovery.TryRead();
+        if (descriptor is null)
+        {
+            Console.Error.WriteLine("[webhost] 没有发现运行中的实例；先启动 LubanAgentWebHost 再执行本命令");
+            return 1;
+        }
+
+        var port = Uri.TryCreate(descriptor.BaseAddress, UriKind.Absolute, out var address) && address.Port > 0
+            ? address.Port
+            : 18080;
+
+        if (string.IsNullOrEmpty(descriptor.Token))
+        {
+            Console.WriteLine($"[webhost] 运行中的实例未启用访问令牌（旧版本）：{descriptor.BaseAddress.TrimEnd('/')}/");
+            return 0;
+        }
+
+        Console.WriteLine($"[webhost] 运行中：pid={descriptor.ProcessId} {descriptor.BaseAddress}");
+        Console.WriteLine($"[webhost] 浏览器入口：{WebHostAccess.BuildEntryUrl($"http://{WebHostAccess.GetPreferredLanHost()}:{port}", descriptor.Token)}");
+        Console.WriteLine($"[webhost] 本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{port}", descriptor.Token)}");
+        return 0;
+    }
+
     private static void Report(string message) => AgentWebRuntime.Log(message);
 
     /// <summary>请求关闭；令牌源已释放（Main 已返回）时忽略。</summary>
@@ -221,11 +268,12 @@ public static class Program
     }
 
     /// <summary>
-    /// 在静态根下生成 <c>runtime-config.js</c>（页面启动时读取令牌与身份）。
+    /// 在静态根下生成 <c>runtime-config.js</c>（页面启动时读取身份与端口）。
     /// </summary>
     /// <remarks>
     /// 每次启动重写；该文件不进仓库（见 .gitignore）。必须在创建 <c>SAEAMvcApplication</c> 之前写盘，
-    /// 避免首个请求落在文件索引建立之前。
+    /// 避免首个请求落在文件索引建立之前。访问令牌不写这里：它只经地址栏换成 HttpOnly Cookie，
+    /// 任何能被 JS 读到的地方都不放。
     /// </remarks>
     /// <param name="root">静态根目录绝对路径。</param>
     /// <param name="runtime">运行时（取用户标识）。</param>
@@ -233,7 +281,6 @@ public static class Program
     {
         var config = new Dictionary<string, object?>
         {
-            ["token"] = runtime.Settings.Token ?? string.Empty,
             ["userId"] = runtime.UserId,
             ["port"] = runtime.Settings.Port
         };

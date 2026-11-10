@@ -5,6 +5,12 @@ import solid from 'vite-plugin-solid';
 // 端口由 WebHost 的 --port / LubanAgentWeb:Port 决定，这里用环境变量覆盖，默认 8080。
 const hostPort = process.env.VITE_HOST_PORT ?? '8080';
 
+// 访问令牌由宿主每次启动随机生成，终端会打印 http://<ip>:<port>/?t=<token>。
+// 开发模式下浏览器直连 Vite、拿不到宿主换发的 Cookie，故把 token 填进 VITE_HOST_TOKEN，
+// 由代理在转发时补 Authorization 头；生产模式不读这个变量。
+const hostToken = process.env.VITE_HOST_TOKEN;
+const hostAuthHeaders = hostToken ? { Authorization: `Bearer ${hostToken}` } : undefined;
+
 const apiPrefixes = [
   '/agent',
   '/session',
@@ -23,7 +29,7 @@ const apiPrefixes = [
 const proxy = Object.fromEntries(
   apiPrefixes.map((prefix) => [
     prefix,
-    { target: `http://127.0.0.1:${hostPort}`, changeOrigin: true },
+    { target: `http://127.0.0.1:${hostPort}`, changeOrigin: true, headers: hostAuthHeaders },
   ]),
 );
 

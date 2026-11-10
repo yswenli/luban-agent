@@ -11,24 +11,24 @@ export class ApiError extends Error {
 }
 
 interface RuntimeConfig {
-  token?: string;
   userId?: string;
   port?: number;
 }
 
-/** 读取 WebHost 启动时写入的 `runtime-config.js`；开发模式下缺失即视为无令牌。 */
+/** 读取 WebHost 启动时写入的 `runtime-config.js`；开发模式下缺失即视为空配置。 */
 export function runtimeConfig(): RuntimeConfig {
   const value = (window as unknown as { __LUBAN__?: RuntimeConfig }).__LUBAN__;
   return value ?? {};
 }
 
+/**
+ * 请求头。
+ *
+ * 访问令牌不落前端：宿主把地址栏 `?t=` 换成 HttpOnly Cookie，浏览器之后的同源请求自动携带，
+ * JS 读不到也无需读。`Authorization` 只给 CLI / Codex / 插件用。
+ */
 function authHeaders(): Record<string, string> {
-  const token = runtimeConfig().token;
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+  return { Accept: 'application/json' };
 }
 
 function buildQuery(params?: Record<string, string | number | boolean | null | undefined>): string {
@@ -70,6 +70,8 @@ export async function get<T>(
   const response = await fetch(`${path}${buildQuery(params)}`, {
     method: 'GET',
     headers: authHeaders(),
+    // 访问令牌放在 HttpOnly Cookie 里，必须带上同源凭据
+    credentials: 'same-origin',
   });
   return parseEnvelope<T>(response);
 }
@@ -83,6 +85,7 @@ export async function post<T>(path: string, body: unknown = {}): Promise<T> {
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({ payload: JSON.stringify(body) }),
+    credentials: 'same-origin',
   });
   return parseEnvelope<T>(response);
 }
@@ -97,6 +100,7 @@ export function sseRequest(path: string, body: unknown, signal?: AbortSignal): P
     },
     body: JSON.stringify({ payload: JSON.stringify(body) }),
     signal,
+    credentials: 'same-origin',
   });
 }
 

@@ -127,11 +127,11 @@ public class AgentProtocolUnitTest
     [TestMethod]
     public void 响应壳成功与失败载荷()
     {
-        var ok = ApiEnvelope.Ok(new HealthDto("ok", "1.0", "yswenli", new DateTime(2026, 11, 4)));
+        var ok = ApiEnvelope.Ok(new HealthDto("ok", "1.0", new DateTime(2026, 11, 4)));
         Assert.IsTrue(ok.Success);
         Assert.AreEqual(200, ok.Code);
         Assert.IsNull(ok.Message);
-        Assert.AreEqual("yswenli", ok.GetData<HealthDto>()!.UserId);
+        Assert.AreEqual("1.0", ok.GetData<HealthDto>()!.Version);
 
         var fail = ApiEnvelope.Fail(404, "会话不存在");
         Assert.IsFalse(fail.Success);

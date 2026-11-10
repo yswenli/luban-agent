@@ -17,7 +17,7 @@ public sealed record WebHostDescriptor
     /// <summary>监听地址，形如 <c>http://127.0.0.1:18080</c>。</summary>
     public string BaseAddress { get; init; } = string.Empty;
 
-    /// <summary>共享令牌；宿主未启用令牌时为 null。</summary>
+    /// <summary>宿主本次运行的访问令牌；旧版本宿主未启用令牌时为 null。</summary>
     public string? Token { get; init; }
 
     /// <summary>宿主进程号，用于判断自述是否已过期。</summary>

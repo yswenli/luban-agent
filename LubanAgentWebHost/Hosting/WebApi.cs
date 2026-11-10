@@ -10,12 +10,16 @@
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
-/// 控制器公共能力：可选令牌校验、用户初始化与 JSON 响应壳。
+/// 控制器公共能力：令牌校验、用户初始化与 JSON 响应壳。
 /// </summary>
 /// <remarks>
 /// <para>
 /// SAEA 用 <c>BaseType.FullName == "SAEA.MVC.Controller"</c> 收集控制器，
 /// 控制器与 <see cref="Controller"/> 之间不能插入自定义基类，故公共逻辑只能做成静态方法。
+/// </para>
+/// <para>
+/// 令牌已在 <see cref="GatedHttpContext"/> 处全站拦截，这里是第二道：动作按需再确认一次，
+/// 避免将来某条路径绕过 MVC 的请求上下文。
 /// </para>
 /// <para>
 /// SAEA 未设置 <c>m_OnException</c>，动作抛异常会因空引用直接掐断连接，故每个动作都必须经
@@ -197,17 +201,7 @@ public static class WebApi
 
     private static bool HasValidToken(string expected)
     {
-        var header = Header("Authorization");
-        if (string.IsNullOrWhiteSpace(header))
-        {
-            return false;
-        }
-
-        const string prefix = "Bearer ";
-        var token = header.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            ? header[prefix.Length..].Trim()
-            : header.Trim();
-
-        return string.Equals(token, expected, StringComparison.Ordinal);
+        var cookie = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var value) ? value.Value : null;
+        return WebHostAccess.IsAuthorized(cookie, Header("Authorization"), expected);
     }
 }

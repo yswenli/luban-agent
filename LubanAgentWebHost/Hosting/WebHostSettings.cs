@@ -17,7 +17,7 @@ public sealed record WebHostSettings
     /// <summary>监听端口；客户端只探活/拉起，不再用随机端口覆盖（可被命令行 <c>--port</c> 覆盖）。</summary>
     public int Port { get; init; } = 18080;
 
-    /// <summary>可选的共享令牌；为空表示不校验 <c>Authorization</c> 头。</summary>
+    /// <summary>访问令牌；为空表示启动时随机生成，仅本次运行有效（重启即换）。</summary>
     public string? Token { get; init; }
 
     /// <summary>SAEA 的同步等待上限（秒）；必须远大于最长回合（SSE 与同步索引都可能跑很久）。</summary>
