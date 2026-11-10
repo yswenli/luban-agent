@@ -41,4 +41,11 @@ public sealed class SystemController : Controller
     /// <returns>命令清单。</returns>
     [HttpGet]
     public Task<ActionResult> Commands() => WebSystemService.CommandsAsync();
+
+    /// <summary>
+    /// 仓库 README 原文（浏览器端「帮助」弹窗展示）。
+    /// </summary>
+    /// <returns>Markdown 原文。</returns>
+    [HttpGet]
+    public Task<ActionResult> Readme() => WebSystemService.ReadmeAsync();
 }

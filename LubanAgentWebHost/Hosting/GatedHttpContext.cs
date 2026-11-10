@@ -25,20 +25,8 @@ namespace LubanAgentWebHost.Hosting;
 /// </remarks>
 public sealed class GatedHttpContext : SAEA.MVC.HttpContext
 {
-    private const string UnauthorizedHtml =
-        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
-        + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        + "<title>需要访问令牌</title></head>"
-        + "<body style=\"margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
-        + "background:#12141a;color:#e6e8ee;font-family:system-ui,-apple-system,'Segoe UI',sans-serif\">"
-        + "<main style=\"max-width:32rem;padding:2rem;line-height:1.7\">"
-        + "<h1 style=\"font-size:1.25rem;margin:0 0 .75rem\">需要访问令牌</h1>"
-        + "<p style=\"margin:0 0 .75rem;color:#a8aec0\">直接打开这个地址不会被放行。"
-        + "请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>"
-        + "<p style=\"margin:0;color:#a8aec0\">找不到终端？在宿主机上执行 "
-        + "<code style=\"background:#1d212b;padding:.15rem .4rem;border-radius:.25rem\">"
-        + "LubanAgentWebHost token</code> 重新打印地址。</p>"
-        + "</main></body></html>";
+    /// <summary>无令牌提示页（浏览器直接访问时返回，纯 HTML 不依赖前端脚本）。</summary>
+    private static readonly string UnauthorizedHtml = BuildUnauthorizedHtml();
 
     /// <summary>创建上下文实例（SAEA 按 <c>(IWebHost)</c> 构造）。</summary>
     /// <param name="webHost">宿主。</param>
@@ -81,6 +69,86 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
         return WantsHtml()
             ? new ContentResult(UnauthorizedHtml, HttpStatusCode.Unauthorized)
             : WebApi.FailJson(401, "未授权：缺少或错误的访问令牌");
+    }
+
+    /// <summary>
+    /// 生成无令牌提示页：正文之外附「帮助」与「关于」，让拿不到令牌的用户也能自行排查。
+    /// </summary>
+    /// <remarks>
+    /// 该页在门禁拦截时直接返回，拿不到任何接口数据，故作者、仓库与版本只能内置（版本取宿主程序集）。
+    /// </remarks>
+    /// <returns>完整 HTML。</returns>
+    private static string BuildUnauthorizedHtml()
+    {
+        var assembly = typeof(GatedHttpContext).Assembly;
+        // InformationalVersion 形如 1.0.0+<commit>，页面只显示语义版本
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var version = informational?.Split('+')[0]
+                      ?? assembly.GetName().Version?.ToString()
+                      ?? "unknown";
+
+        return $$"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需要访问令牌 · LuBan Agent</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 32px 20px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: #12141a; color: #e6e8ee;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    width: 100%; max-width: 34rem; line-height: 1.75;
+    background: #171a21; border: 1px solid #262b36; border-radius: 12px; padding: 20px 22px;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 .75rem; }
+  p { margin: 0 0 .75rem; color: #a8aec0; }
+  code { background: #1d212b; padding: .15rem .4rem; border-radius: .25rem; font-size: .92em; }
+  details { margin-top: 14px; border-top: 1px solid #262b36; padding-top: 12px; }
+  summary { cursor: pointer; color: #cdd3e1; font-weight: 600; font-size: .95rem; }
+  details p, details ul { color: #a8aec0; font-size: .92rem; }
+  details ul { margin: .5rem 0 0; padding-left: 1.2rem; }
+  details li { margin: .25rem 0; }
+  a { color: #9bb0ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  footer { color: #7b8194; font-size: .8rem; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>需要访问令牌</h1>
+  <p>直接打开这个地址不会被放行。</p>
+  <details open>
+    <summary>帮助</summary>
+    <p>请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>
+    <ul>
+      <li>找不到终端？在宿主机上执行 <code>LubanAgentWebHost token</code> 重新打印地址。</li>
+      <li>令牌随本次运行有效：宿主重启后地址会变，旧书签需要替换。</li>
+      <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>。</li>
+      <li>带令牌的地址等同于完整操作权限，不要转发给他人。</li>
+    </ul>
+  </details>
+  <details>
+    <summary>关于</summary>
+    <p>LuBan Agent——基于 Microsoft Agent Framework 的 AI Agent 解决方案：一套核心运行时，命令行 TUI、跨平台桌面客户端与本地 Agent 服务三端统一。</p>
+    <ul>
+      <li>版本：v{{version}}</li>
+      <li>仓库：<a href="https://github.com/yswenli/luban-agent" target="_blank" rel="noreferrer">github.com/yswenli/luban-agent</a></li>
+      <li>作者：yswenli · <a href="https://github.com/yswenli" target="_blank" rel="noreferrer">@yswenli</a> · <a href="mailto:yswenli@outlook.com">yswenli@outlook.com</a></li>
+      <li>许可：MIT License</li>
+    </ul>
+  </details>
+</main>
+<footer>Luban Agent @ yswenli</footer>
+</body>
+</html>
+""";
     }
 
     private bool IsReadRequest()

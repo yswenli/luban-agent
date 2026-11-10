@@ -1445,6 +1445,8 @@ a {
   inset: 0;
   z-index: 100;
   display: grid;
+  /* 单列按容器宽度算：auto 列会被弹窗内容（README 表格/代码）撑到 max-content，窄屏直接溢出 */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
   background: rgba(16, 20, 28, 0.42);
@@ -1464,6 +1466,7 @@ a {
 .dialog {
   width: 100%;
   max-width: 560px;
+  min-width: 0;
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
@@ -1482,6 +1485,10 @@ a {
     opacity: 1;
     transform: none;
   }
+}
+
+.dialog.wide {
+  max-width: 920px;
 }
 
 .dialog-head {
@@ -1522,6 +1529,87 @@ a {
   font-size: 12.5px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* 帮助弹窗：直接渲染仓库 README（含表格、代码块与预览图） */
+.md-readme {
+  padding-bottom: 8px;
+}
+
+.md-readme .md > *:first-child {
+  margin-top: 0;
+}
+
+.md-readme .md table {
+  font-size: 12.5px;
+}
+
+.md-readme .md th,
+.md-readme .md td {
+  /* 窄屏（手机）下单元格里的长标识符要能断行，否则整张表把弹窗撑出横向滚动 */
+  overflow-wrap: anywhere;
+}
+
+.md-readme .md code {
+  /* README 里有 `BrowserDriverResolver.GetInstallBrowserAsync` 这类长标识符，不折行会把整条行撑出弹窗 */
+  overflow-wrap: anywhere;
+}
+
+.md-readme .md img {
+  border: 1px solid var(--border);
+}
+
+/* 关于弹窗 */
+.about-intro {
+  margin: 0 0 16px;
+  line-height: 1.75;
+  color: var(--text-dim);
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px 14px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.about-grid dt {
+  color: var(--text-faint);
+}
+
+.about-grid dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.about-steps {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.9;
+}
+
+.about-steps code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-3);
+}
+
+/* 页脚署名：所有视图底部固定一行，不参与交互 */
+.app-footer {
+  flex: 0 0 auto;
+  padding: 10px 0 2px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+.settings-panel > .app-footer {
+  padding: 0 0 12px;
 }
 
 /* ── 设置浮层 ─────────────────────────────────────────────────────────── */
@@ -1693,10 +1781,22 @@ a {
 /* ── 启动/错误态 ──────────────────────────────────────────────────────── */
 
 .boot {
+  position: relative;
   height: 100%;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 32px;
+}
+
+/* 启动/错误页的署名贴底，避免把居中的卡片挤偏 */
+.boot > .app-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  padding: 0;
 }
 
 .boot-card {
@@ -1712,6 +1812,13 @@ a {
 .boot-card p {
   margin: 0 0 18px;
   color: var(--text-dim);
+}
+
+.boot-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .spinner {

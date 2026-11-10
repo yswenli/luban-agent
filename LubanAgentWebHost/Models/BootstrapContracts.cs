@@ -67,6 +67,10 @@ public sealed record AttachmentPolicyDto(
 /// <param name="TimeoutSeconds">等待上限（秒），超时按拒绝处理。</param>
 public sealed record ConfirmationPolicyDto(int TimeoutSeconds);
 
+/// <summary>仓库 README。</summary>
+/// <param name="Markdown">Markdown 原文。</param>
+public sealed record ReadmeDto(string Markdown);
+
 /// <summary>斜杠命令（浏览器端）。</summary>
 /// <param name="Name">命令名（含 /）。</param>
 /// <param name="Aliases">别名。</param>

@@ -37,6 +37,13 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M12 17.5h.01" />
     </>
   ),
+  info: () => (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5.5" />
+      <path d="M12 7.6h.01" />
+    </>
+  ),
   close: () => <path d="M18 6 6 18M6 6l12 12" />,
   copy: () => (
     <>

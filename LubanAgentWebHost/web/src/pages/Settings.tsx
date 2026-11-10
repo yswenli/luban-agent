@@ -172,6 +172,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
             </Show>
           </div>
         </div>
+        <footer class="app-footer">Luban Agent @ yswenli</footer>
       </div>
     </div>
   );

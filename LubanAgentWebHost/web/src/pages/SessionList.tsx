@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onMount, Show } from 'soli
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
+import { AboutDialog, HelpDialog } from '../components/InfoDialogs';
 import { PopMenu, menuAt } from '../components/PopMenu';
 import { dayBucket, formatRelative, truncate } from '../lib/format';
 import { openSession, openSettings } from '../lib/router';
@@ -22,7 +23,6 @@ import {
   sessions,
   sessionsError,
   sessionsLoading,
-  showToast,
   workspaceName,
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
@@ -48,6 +48,7 @@ export function SessionListPage() {
   const [projectDialog, setProjectDialog] = createSignal<ProjectAction | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [newProject, setNewProject] = createSignal(false);
+  const [info, setInfo] = createSignal<'help' | 'about' | null>(null);
 
   let searchEl!: HTMLInputElement;
 
@@ -190,9 +191,13 @@ export function SessionListPage() {
             <Icon name="settings" size={16} />
             设置
           </button>
-          <button class="side-link" onClick={() => showToast('输入 /help 查看可用命令', 'info')}>
+          <button class="side-link" onClick={() => setInfo('help')}>
             <Icon name="help" size={16} />
             帮助
+          </button>
+          <button class="side-link" onClick={() => setInfo('about')}>
+            <Icon name="info" size={16} />
+            关于
           </button>
         </div>
       </aside>
@@ -427,6 +432,14 @@ export function SessionListPage() {
           onClose={() => setNewProject(false)}
           onCreate={(rootPath, name) => createWorkspace(rootPath, name)}
         />
+      </Show>
+
+      <Show when={info() === 'help'}>
+        <HelpDialog onClose={() => setInfo(null)} />
+      </Show>
+
+      <Show when={info() === 'about'}>
+        <AboutDialog onClose={() => setInfo(null)} />
       </Show>
     </div>
   );

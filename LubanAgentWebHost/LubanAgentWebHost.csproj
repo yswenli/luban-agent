@@ -30,6 +30,12 @@
 	<ItemGroup>
 		<!-- 浏览器端静态站点：源码在 ../web，产物由 `npm run build` 落在此目录；构建时整体拷到输出目录的 wwwroot -->
 		<Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+		<!-- 浏览器端「帮助」弹窗展示仓库 README：拷到输出根目录，由 /system/readme 读取 -->
+		<Content Include="..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<!-- README 的预览图用根目录相对路径，随站点一起放进 wwwroot -->
+		<Content Include="..\lubanagent.png" Link="wwwroot\lubanagent.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-chat.png" Link="wwwroot\lubanagent-chat.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-settings.png" Link="wwwroot\lubanagent-settings.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

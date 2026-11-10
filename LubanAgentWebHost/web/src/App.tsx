@@ -1,6 +1,7 @@
-import { createEffect, createMemo, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, onMount, Show } from 'solid-js';
 
 import { Icon } from './components/Icons';
+import { AboutDialog, ConnectionHelpDialog } from './components/InfoDialogs';
 import { ToastStack } from './components/ToastStack';
 import { TopBar } from './components/TopBar';
 import { closeSettings, lastView, useRoute } from './lib/router';
@@ -50,6 +51,8 @@ export function App() {
               </div>
 
               <Show when={settingsTab()}>{(tab) => <SettingsOverlay tab={tab()} onClose={closeSettings} />}</Show>
+
+              <footer class="app-footer">Luban Agent @ yswenli</footer>
             </div>
           }
         >
@@ -69,22 +72,45 @@ function BootScreen() {
         <h1>正在连接 LuBan Agent</h1>
         <p>读取工作区、供应商与模型配置…</p>
       </div>
+      <footer class="app-footer">Luban Agent @ yswenli</footer>
     </div>
   );
 }
 
 function ErrorScreen(props: { message: string }) {
+  // 连不上宿主时读不到 /system/readme，帮助内容只能是本地排查步骤，不能在弹窗里渲染 README
+  const [dialog, setDialog] = createSignal<'help' | 'about' | null>(null);
+
   return (
     <div class="boot">
       <div class="boot-card">
         <Icon name="alert" size={28} />
         <h1>无法连接后端</h1>
         <p>{props.message}</p>
-        <button class="btn primary" onClick={() => void loadBootstrap()}>
-          <Icon name="refresh" size={16} />
-          重试
-        </button>
+        <div class="boot-actions">
+          <button class="btn primary" onClick={() => void loadBootstrap()}>
+            <Icon name="refresh" size={16} />
+            重试
+          </button>
+          <button class="btn ghost" onClick={() => setDialog('help')}>
+            <Icon name="help" size={16} />
+            帮助
+          </button>
+          <button class="btn ghost" onClick={() => setDialog('about')}>
+            <Icon name="info" size={16} />
+            关于
+          </button>
+        </div>
       </div>
+
+      <Show when={dialog() === 'help'}>
+        <ConnectionHelpDialog onClose={() => setDialog(null)} />
+      </Show>
+      <Show when={dialog() === 'about'}>
+        <AboutDialog onClose={() => setDialog(null)} />
+      </Show>
+
+      <footer class="app-footer">Luban Agent @ yswenli</footer>
     </div>
   );
 }

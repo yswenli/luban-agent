@@ -105,6 +105,28 @@ public static class WebSystemService
         return Task.FromResult(WebApi.OkJson(commands));
     });
 
+    /// <summary>
+    /// 仓库 README 原文（浏览器端「帮助」弹窗直接渲染）。
+    /// </summary>
+    /// <remarks>
+    /// 文件随构建拷到输出根目录，前端不再维护第二份帮助文档；读取失败只回「文件不存在」，
+    /// 不回传本机绝对路径。不触发用户初始化：帮助内容与工作区状态无关。
+    /// </remarks>
+    /// <returns>Markdown 原文。</returns>
+    public static Task<ActionResult> ReadmeAsync() => WebApi.RunGuardedAsync(
+        async () =>
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "README.md");
+            if (!File.Exists(path))
+            {
+                return WebApi.FailJson(404, "未找到 README.md：请重新构建 LubanAgentWebHost");
+            }
+
+            var markdown = await File.ReadAllTextAsync(path, Encoding.UTF8).ConfigureAwait(false);
+            return WebApi.OkJson(new ReadmeDto(markdown));
+        },
+        ensureUser: false);
+
     /// <summary>宿主程序集版本。</summary>
     private static string Version =>
         typeof(WebSystemService).Assembly

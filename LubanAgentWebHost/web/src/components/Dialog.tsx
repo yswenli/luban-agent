@@ -9,6 +9,8 @@ export function Modal(props: {
   subtitle?: string;
   children: JSX.Element;
   footer?: JSX.Element;
+  /** 宽弹窗：README 这类长文档用，单列表单不要开。 */
+  wide?: boolean;
   onClose: () => void;
 }) {
   onMount(() => {
@@ -26,7 +28,7 @@ export function Modal(props: {
         if (event.target === event.currentTarget) props.onClose();
       }}
     >
-      <div class="dialog" role="dialog" aria-modal="true">
+      <div class="dialog" classList={{ wide: props.wide }} role="dialog" aria-modal="true">
         <div class="dialog-head">
           <div>
             <div class="dialog-title">{props.title}</div>
