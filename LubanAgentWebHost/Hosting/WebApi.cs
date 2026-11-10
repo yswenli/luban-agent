@@ -88,6 +88,30 @@ public static class WebApi
     }
 
     /// <summary>
+    /// 先执行守卫，再执行动作，并兜底异常。
+    /// </summary>
+    /// <remarks>
+    /// 守卫与动作同处一个 <see cref="RunAsync"/> 兜底内：守卫阶段的初始化异常也会被转成 JSON 壳，
+    /// 不会因 SAEA 未处理异常而掐断连接。
+    /// </remarks>
+    /// <param name="action">动作体。</param>
+    /// <param name="requireToken">是否校验共享令牌（健康检查免校验）。</param>
+    /// <param name="ensureUser">是否等待用户初始化（健康检查不需要）。</param>
+    /// <returns>动作结果；守卫拒绝或异常时返回对应 JSON 壳。</returns>
+    public static Task<ActionResult> RunGuardedAsync(
+        Func<Task<ActionResult>> action,
+        bool requireToken = true,
+        bool ensureUser = true) => RunAsync(async () =>
+    {
+        if (await GuardAsync(requireToken, ensureUser).ConfigureAwait(false) is { } denied)
+        {
+            return denied;
+        }
+
+        return await action().ConfigureAwait(false);
+    });
+
+    /// <summary>
     /// 把异常转成可安全回传客户端的文案。
     /// </summary>
     /// <remarks>

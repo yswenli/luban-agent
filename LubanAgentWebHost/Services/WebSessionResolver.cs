@@ -1,13 +1,13 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentWebHost.Hosting
+*命名空间：LubanAgentWebHost.Services
 *文件名： WebSessionResolver
 *描述：解析一轮对话实际使用的会话（显式指定 / 复用最后一次 / 新建）
 *
 *****************************************************************************/
 
-namespace LubanAgentWebHost.Hosting;
+namespace LubanAgentWebHost.Services;
 
 /// <summary>会话解析结果。</summary>
 /// <param name="Ok">是否解析成功。</param>

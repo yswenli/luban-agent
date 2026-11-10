@@ -1,13 +1,13 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentWebHost.Hosting
+*命名空间：LubanAgentWebHost.Services
 *文件名： SettingsScope
 *描述：设置页作用域（全局 / 工作区）到「文件根目录」的解析
 *
 *****************************************************************************/
 
-namespace LubanAgentWebHost.Hosting;
+namespace LubanAgentWebHost.Services;
 
 /// <summary>
 /// 设置页作用域解析。

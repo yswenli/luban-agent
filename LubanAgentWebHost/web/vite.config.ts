@@ -33,7 +33,7 @@ export default defineConfig({
   plugins: [solid()],
   build: {
     // 产物直接落到宿主工程的静态根目录，dotnet build 时再由 csproj 拷到输出目录
-    outDir: '../LubanAgentWebHost/wwwroot',
+    outDir: '../wwwroot',
     emptyOutDir: true,
     target: 'es2022',
     // 不产出 .json / .webmanifest：SAEA 的静态 MIME 表没有对应映射

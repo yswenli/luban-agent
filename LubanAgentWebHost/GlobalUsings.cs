@@ -38,6 +38,8 @@ global using LubanAgentCore.Services.Management.Models;
 global using LubanAgentCore.Utils;
 
 global using LubanAgentWebHost.Hosting;
+global using LubanAgentWebHost.Models;
+global using LubanAgentWebHost.Services;
 
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;
