@@ -14,7 +14,7 @@ namespace LubanAgentWebHost.Hosting;
 /// </summary>
 public sealed record WebHostSettings
 {
-    /// <summary>监听端口；客户端启动器会传入空闲端口。</summary>
+    /// <summary>监听端口；客户端只探活/拉起，不再用随机端口覆盖（可被命令行 <c>--port</c> 覆盖）。</summary>
     public int Port { get; init; } = 18080;
 
     /// <summary>可选的共享令牌；为空表示不校验 <c>Authorization</c> 头。</summary>

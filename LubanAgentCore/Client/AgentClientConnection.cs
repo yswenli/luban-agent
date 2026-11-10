@@ -16,8 +16,9 @@ namespace LubanAgentCore.Client;
 /// 客户端到 WebHost 的连接。
 /// </summary>
 /// <remarks>
-/// 会话、工作区、知识库、对话与 A2A 状态都经本对象里的实现转发给 WebHost；
-/// 若地址是自动拉起得来的，<see cref="DisposeAsync"/> 会一并结束子进程。
+/// 会话、工作区、知识库、对话与 A2A 状态都经本对象里的实现转发给 WebHost。
+/// 宿主是独立服务：<see cref="DisposeAsync"/> 只释放连接，不结束宿主进程
+/// （自动拉起或接管的实例都会继续常驻，停止用 <c>LubanAgentWebHost --stop</c>）。
 /// </remarks>
 public sealed class AgentClientConnection : IAsyncDisposable
 {

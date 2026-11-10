@@ -188,14 +188,17 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 #### 方式三：本地 Agent 服务（LubanAgentWebHost）
 
 ```bash
-# 手工启动（默认 18080，可用 --port 覆盖）
-dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
+# 手工启动（端口取自 appsettings.json 的 LubanAgentWeb:Port，默认 18080）
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj
 
 # 健康检查
 curl http://127.0.0.1:18080/system/health
+
+# 停止常驻实例
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 ```
 
-客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时会拉起 WebHost 子进程（空闲端口 + 一次性令牌），并在客户端退出时一并结束。
+WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时先按发现文件接管已在运行的实例，确实没有才拉起子进程；端口、令牌、超时与用户身份一律以宿主的 `LubanAgentWeb` 配置为准，客户端不下发。拉起后的宿主常驻，客户端退出不结束它，停止用 `--stop`（或结束宿主进程）。
 
 ### 5. 配置 AI Provider 并开始对话
 
@@ -431,7 +434,8 @@ luban-agent/
 约束与已知限制：
 
 - **监听全部网卡，本机与外部网络都可访问**：SAEA 的监听套接字固定绑全接口（`0.0.0.0`），没有绑定地址参数，接口也不再做来源限制。未配置令牌时，任何能访问该端口的人都可以操作本机（读写工作区文件、执行命令、查看全部会话），对公网暴露务必加 `--token` 并在反向代理层再做一次鉴权。
-- **可选共享令牌**：配置 `LubanAgentWeb:Token` 或 `--token` 后，除健康检查外的接口都要求 `Authorization: Bearer <令牌>`；自动拉起时客户端生成一次性令牌，不落盘、不写日志。注意 `wwwroot/runtime-config.js` 明文含该令牌且对任何能访问端口的人可读，它约束的是直接调用 API 的脚本，不构成浏览器侧的访问控制。
+- **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080），客户端只负责探活与拉起，不再下发随机端口和一次性令牌。宿主启动成功后把实际地址与令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
+- **可选共享令牌**：配置 `LubanAgentWeb:Token` 或 `--token` 后，除健康检查外的接口都要求 `Authorization: Bearer <令牌>`。注意 `wwwroot/runtime-config.js` 明文含该令牌且对任何能访问端口的人可读，它约束的是直接调用 API 的脚本，不构成浏览器侧的访问控制。
 - **断连取消需显式调用**：SAEA 侧无法探测客户端断连，SSE 流被取消或释放后服务端回合仍在跑；客户端 SDK 会在未收到 `done` 时主动 `POST /agent/cancel`。自定义客户端必须照做。
 - **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
 - **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。

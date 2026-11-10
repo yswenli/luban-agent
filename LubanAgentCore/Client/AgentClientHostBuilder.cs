@@ -14,8 +14,9 @@ namespace LubanAgentCore.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="AgentClientOptions.BaseAddress"/> 有值时直连，否则按
-/// <see cref="AgentClientOptions.AutoLaunch"/> 拉起子进程（空闲端口 + 一次性令牌）。
+/// <see cref="AgentClientOptions.BaseAddress"/> 有值时直连该地址；否则按
+/// <see cref="AgentClientOptions.AutoLaunch"/> 先接管已运行的宿主（发现文件 + 探活），
+/// 确实没有实例时才拉起子进程。宿主的端口与令牌以宿主配置为准，客户端不下发。
 /// </para>
 /// <para>
 /// 连接成功后先用 <c>/system/health</c> 探活并刷新当前工作区镜像，

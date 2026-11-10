@@ -225,14 +225,15 @@ public class AgentProtocolUnitTest
     }
 
     [TestMethod]
-    public void 自动拉起的令牌非空且不写入选项()
+    public void 拉起参数不再下发端口令牌超时与用户()
     {
-        var launcher = new ServerProcessLauncher(new AgentClientOptions());
-        Assert.IsFalse(string.IsNullOrWhiteSpace(launcher.Token));
-        Assert.AreEqual(64, launcher.Token.Length);
+        var args = ServerProcessLauncher.BuildArguments(
+            new AgentClientOptions { Debug = true });
 
-        var fixedToken = new ServerProcessLauncher(new AgentClientOptions { Token = "  token-1  " });
-        Assert.AreEqual("token-1", fixedToken.Token);
+        foreach (var flag in new[] { "--port", "--token", "--timeout", "--user" })
+        {
+            Assert.IsFalse(args.Contains(flag), $"端口/令牌等以宿主配置为准，不应下发 {flag}");
+        }
     }
 
     [TestMethod]
@@ -243,12 +244,11 @@ public class AgentProtocolUnitTest
         try
         {
             var args = ServerProcessLauncher.BuildArguments(
-                new AgentClientOptions { PluginsDirectory = root, UserId = "user-1" }, 18080, "tok");
+                new AgentClientOptions { PluginsDirectory = root });
 
             var index = args.IndexOf("--plugins-dir");
             Assert.IsTrue(index >= 0, "插件目录存在时必须下发 --plugins-dir");
             Assert.AreEqual(Path.GetFullPath(root), args[index + 1]);
-            Assert.AreEqual("user-1", args[args.IndexOf("--user") + 1]);
         }
         finally
         {
@@ -262,23 +262,9 @@ public class AgentProtocolUnitTest
         var missing = Path.Combine(Path.GetTempPath(), $"luban-plugins-missing-{Guid.NewGuid():N}");
 
         var args = ServerProcessLauncher.BuildArguments(
-            new AgentClientOptions { PluginsDirectory = missing }, 18080, "tok");
+            new AgentClientOptions { PluginsDirectory = missing });
 
         Assert.IsFalse(args.Contains("--plugins-dir"), "目录不存在时交给宿主回落默认目录");
-    }
-
-    [TestMethod]
-    public void 启动器参数包含端口令牌与超时()
-    {
-        var args = ServerProcessLauncher.BuildArguments(
-            new AgentClientOptions { SessionTimeoutSeconds = 120 }, 18999, "tok-2");
-
-        Assert.AreEqual("--port", args[0]);
-        Assert.AreEqual("18999", args[1]);
-        Assert.AreEqual("--token", args[2]);
-        Assert.AreEqual("tok-2", args[3]);
-        Assert.AreEqual("--timeout", args[4]);
-        Assert.AreEqual("120", args[5]);
     }
 
     [TestMethod]
@@ -317,10 +303,10 @@ public class AgentProtocolUnitTest
     [TestMethod]
     public void 启动器透传调试开关()
     {
-        var debug = ServerProcessLauncher.BuildArguments(new AgentClientOptions { Debug = true }, 18080, "tok");
+        var debug = ServerProcessLauncher.BuildArguments(new AgentClientOptions { Debug = true });
         Assert.IsTrue(debug.Contains("--debug"));
 
-        var normal = ServerProcessLauncher.BuildArguments(new AgentClientOptions(), 18080, "tok");
+        var normal = ServerProcessLauncher.BuildArguments(new AgentClientOptions());
         Assert.IsFalse(normal.Contains("--debug"));
     }
 

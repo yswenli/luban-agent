@@ -188,14 +188,17 @@ Select a workspace on startup, then chat with the Agent in the graphical interfa
 #### Option 3: Local Agent Service (LubanAgentWebHost)
 
 ```bash
-# Start manually (defaults to 18080, override with --port)
-dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --port 18080
+# Start manually (port comes from LubanAgentWeb:Port in appsettings.json, default 18080)
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj
 
 # Health check
 curl http://127.0.0.1:18080/system/health
+
+# Stop the resident instance
+dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 ```
 
-Clients don't have to start it manually: when no service address is configured, the client SDK inside `LubanAgentCore` (`Client/`) launches the WebHost child process (free port + one-time token) and shuts it down when the client exits.
+The WebHost is a standalone service, so clients don't have to start it manually: when no service address is configured, the client SDK inside `LubanAgentCore` (`Client/`) first adopts an instance that is already running (via the discovery file) and only launches a child process when none exists. Port, token, timeout and user identity all come from the host's own `LubanAgentWeb` configuration — clients never pass them. A launched host stays resident after the client exits; stop it with `--stop` (or by ending the host process).
 
 ### 5. Configure an AI Provider and Start Chatting
 
@@ -431,7 +434,8 @@ luban-agent/
 Constraints and known limitations:
 
 - **All interfaces, reachable from localhost and external networks**: SAEA's listening socket always binds every interface (`0.0.0.0`) and offers no bind-address option, and the endpoints no longer restrict the request source. Without a token, anyone who can reach the port can operate this machine (read/write workspace files, run commands, read every session); if you expose it to the internet, always add `--token` and another authentication layer at the reverse proxy.
-- **Optional shared token**: setting `LubanAgentWeb:Token` or `--token` requires `Authorization: Bearer <token>` on every endpoint except the health check. When launched automatically, the client generates a one-time token that is never written to disk or logs. Note that `wwwroot/runtime-config.js` contains that token in plaintext and is readable by anyone who can reach the port; it constrains scripts calling the API directly and is not access control for browser users.
+- **Standalone service, port and token decided by the host**: the port comes from `LubanAgentWeb:Port` (default 18080); clients only probe and launch it, and never pass a random port or one-time token. After starting successfully the host writes its actual address and token to `%LOCALAPPDATA%\luban-agent\webhost.json` and deletes it on a clean exit; a client that reads it probes `/system/health` first, then adopts the running instance instead of launching a duplicate. A launched host stays resident after the client exits — stop it with `LubanAgentWebHost --stop`. Only one instance can own the port, so a second process exits immediately on the port conflict.
+- **Optional shared token**: setting `LubanAgentWeb:Token` or `--token` requires `Authorization: Bearer <token>` on every endpoint except the health check. Note that `wwwroot/runtime-config.js` contains that token in plaintext and is readable by anyone who can reach the port; it constrains scripts calling the API directly and is not access control for browser users.
 - **Disconnect cancellation must be explicit**: SAEA cannot detect a client disconnect, so the server-side round keeps running after an SSE stream is cancelled or disposed. The client SDK therefore calls `POST /agent/cancel` whenever it ends without receiving `done`. Custom clients must do the same.
 - **Database owned by the WebHost**: session data is `luban-ai-agent.db` in the WebHost program directory (relative connection strings are rebased onto the host program directory). Clients no longer open the database; the working directory only affects relative-path inputs. A same-named database left in a client output directory by an older build is not read — copy it into the WebHost program directory if you want to keep it.
 - **A2A and orchestration progress live on the host side**: A2A server/client roles and the startup worktree reconciliation run inside the WebHost per user workspace; sub-agent orchestration progress is streamed as `orchestration.progress` frames and replayed by the client into its local progress outlet, so UI subscriptions behave the same as when running locally. The A2A runtime starts and stops with the host process; clients only read `/a2a/status`, and `/a2a -start|-stop` degrades to a notice.

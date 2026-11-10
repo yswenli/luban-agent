@@ -3,28 +3,28 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgentCore.Client
 *文件名： ServerProcessLauncher
-*描述：拉起本地 WebHost 子进程并等待就绪
+*描述：接管已运行的 WebHost，未运行时按宿主自身配置拉起
 *
 *****************************************************************************/
-
-using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
-using System.Security.Cryptography;
 
 namespace LubanAgentCore.Client;
 
 /// <summary>
-/// WebHost 子进程启动器。
+/// WebHost 生命周期入口：先接管，后拉起。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 端口每次取空闲端口再以 <c>--port</c> 传给子进程，避免固定端口与既有进程冲突；
-/// 自动拉起时默认生成一次性共享令牌（仅本机通信，令牌不落盘、不写日志）。
+/// 宿主是独立服务：监听端口、共享令牌、超时与用户身份都以宿主自己的配置为准。
+/// 客户端启动时先读发现文件并对 <c>/system/health</c> 探活，通过即直接接管；
+/// 只有宿主确实不在运行时才启动子进程，且不传 <c>--port</c>/<c>--token</c> 这类连接参数。
+/// </para>
+/// <para>
+/// 拉起后宿主常驻：客户端退出不再结束它（用 <c>LubanAgentWebHost --stop</c> 显式停止），
+/// 这样浏览器、另一个客户端都能继续连同一实例。
 /// </para>
 /// <para>
 /// 子进程的工作目录默认沿用客户端当前目录：宿主按相对路径解析工作区根目录等输入，
-/// 两边同目录才能保持一致。数据库不受工作目录影响，见 <see cref="AgentClientOptions.WorkingDirectory"/>。
+/// 两边同目录才能保持一致。
 /// </para>
 /// </remarks>
 public sealed class ServerProcessLauncher : IAsyncDisposable
@@ -35,7 +35,6 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     private readonly AgentClientOptions _options;
     private readonly LinkedList<string> _output = new();
     private readonly Lock _outputGate = new();
-    private readonly string _token;
     private Process? _process;
     private int _disposed;
 
@@ -44,23 +43,20 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     public ServerProcessLauncher(AgentClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-
         _options = options;
-
-        // 未显式给令牌时生成一次性令牌：子进程与客户端同机，令牌只走命令行与 Authorization 头
-        _token = string.IsNullOrWhiteSpace(options.Token)
-            ? Convert.ToHexString(RandomNumberGenerator.GetBytes(32))
-            : options.Token.Trim();
     }
 
     /// <summary>服务地址；<see cref="StartAsync"/> 成功后可用。</summary>
     public Uri? BaseAddress { get; private set; }
 
-    /// <summary>本次启动使用的共享令牌。</summary>
-    public string Token => _token;
+    /// <summary>宿主共享令牌；宿主未启用令牌时为 null。</summary>
+    public string? Token { get; private set; }
+
+    /// <summary>本次拉起的子进程号；接管已有宿主时为 null。</summary>
+    public int? LaunchedProcessId => _process?.Id;
 
     /// <summary>
-    /// 启动子进程并等待 <c>/system/health</c> 返回就绪。
+    /// 接管已运行的宿主；没有可用实例时拉起子进程并等待其自述文件就绪。
     /// </summary>
     /// <param name="ct">取消令牌。</param>
     /// <returns>服务地址。</returns>
@@ -74,13 +70,18 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
             return BaseAddress;
         }
 
+        // 1) 已有宿主在跑：直接接管，不重复拉起
+        if (await TryAdoptAsync(ct).ConfigureAwait(false) is { } adopted)
+        {
+            return adopted;
+        }
+
         var executable = ResolveServerPath()
             ?? throw new AgentServerException(
                 503,
                 $"未找到 LubanAgentWebHost：请设置环境变量 {ServerPathVariable}，"
                 + "或把 WebHost 发布到客户端同目录，或在 AgentClientOptions 中显式指定 BaseAddress。");
 
-        var port = FindFreePort();
         var workingDirectory = string.IsNullOrWhiteSpace(_options.WorkingDirectory)
             ? Environment.CurrentDirectory
             : _options.WorkingDirectory!;
@@ -101,7 +102,7 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
             startInfo.ArgumentList.Add(executable);
         }
 
-        foreach (var argument in BuildArguments(_options, port, _token))
+        foreach (var argument in BuildArguments(_options))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -127,34 +128,22 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
         process.BeginErrorReadLine();
         _process = process;
 
-        var address = new Uri($"http://127.0.0.1:{port}");
         var deadline = DateTime.UtcNow + _options.StartupTimeout;
-
-        using var probe = new AgentServerClient(address, _token);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+
+            // 2) 等它写下自述文件；另一客户端抢先拉起时这里也会接管成功
+            if (await TryAdoptAsync(ct).ConfigureAwait(false) is { } ready)
+            {
+                return ready;
+            }
 
             if (process.HasExited)
             {
                 throw new AgentServerException(
                     process.ExitCode,
                     $"LubanAgentWebHost 启动后退出（exit={process.ExitCode}）：{TailOutput()}");
-            }
-
-            try
-            {
-                await probe.GetHealthAsync(ct).ConfigureAwait(false);
-                BaseAddress = address;
-                return address;
-            }
-            catch (AgentServerException)
-            {
-                // 尚未就绪：服务未监听或令牌未生效，继续轮询
-            }
-            catch (HttpRequestException)
-            {
-                // 尚未就绪：连接被拒绝
             }
 
             if (DateTime.UtcNow >= deadline)
@@ -169,27 +158,19 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     }
 
     /// <summary>
-    /// 构造子进程参数列表：端口、共享令牌、同步等待上限、插件根目录（存在时）、宿主身份（指定时）、调试开关。
+    /// 构造子进程参数列表：只下发插件根目录与调试开关，端口/令牌/超时由宿主配置决定。
     /// </summary>
     /// <remarks>
     /// 插件只随客户端分发：把客户端的插件根目录交给宿主进程扫描，避免两处各带一份插件。
     /// 目录不存在时不下发，让宿主回落自身默认目录。
     /// </remarks>
     /// <param name="options">客户端参数。</param>
-    /// <param name="port">监听端口。</param>
-    /// <param name="token">共享令牌。</param>
     /// <returns>参数列表（不含可执行文件名）。</returns>
-    internal static List<string> BuildArguments(AgentClientOptions options, int port, string token)
+    internal static List<string> BuildArguments(AgentClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var args = new List<string>
-        {
-            "--port", port.ToString(),
-            "--token", token,
-            "--timeout", options.SessionTimeoutSeconds.ToString()
-        };
-
+        var args = new List<string>();
         var pluginsDirectory = string.IsNullOrWhiteSpace(options.PluginsDirectory)
             ? Path.Combine(AppContext.BaseDirectory, "plugins")
             : Path.GetFullPath(options.PluginsDirectory!);
@@ -197,12 +178,6 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
         {
             args.Add("--plugins-dir");
             args.Add(pluginsDirectory);
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.UserId))
-        {
-            args.Add("--user");
-            args.Add(options.UserId);
         }
 
         if (options.Debug)
@@ -268,20 +243,48 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
         return null;
     }
 
-    /// <summary>取一个空闲的本机端口。</summary>
-    /// <returns>端口号。</returns>
-    private static int FindFreePort()
+    /// <summary>
+    /// 按发现文件接管已运行的宿主；探活失败视为不可用。
+    /// </summary>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>服务地址；不可用时为 null。</returns>
+    private async Task<Uri?> TryAdoptAsync(CancellationToken ct)
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
+        var descriptor = WebHostDiscovery.TryRead();
+        if (descriptor is null)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(descriptor.BaseAddress, UriKind.Absolute, out var address))
+        {
+            WebHostDiscovery.Delete(descriptor.ProcessId);
+            return null;
+        }
+
+        using var probe = new AgentServerClient(address, descriptor.Token);
         try
         {
-            return ((IPEndPoint)listener.LocalEndpoint).Port;
+            await probe.GetHealthAsync(ct).ConfigureAwait(false);
         }
-        finally
+        catch (AgentServerException)
         {
-            listener.Stop();
+            // 端口上另有服务或宿主尚未就绪：不接管，交给拉起分支处理
+            return null;
         }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        BaseAddress = address;
+        Token = descriptor.Token;
+        Logger.Info($"已接管运行中的 LubanAgentWebHost（{address}，pid={descriptor.ProcessId}）。");
+        return address;
     }
 
     private static string? Probe(string path) => File.Exists(path) ? Path.GetFullPath(path) : null;
@@ -326,17 +329,17 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
             return ValueTask.CompletedTask;
         }
 
+        // 宿主独立运行：只释放进程句柄，不结束进程；需要停止时用 LubanAgentWebHost --stop
         try
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(5000);
+                Logger.Info($"LubanAgentWebHost 已常驻（pid={process.Id}），可用 LubanAgentWebHost --stop 停止。");
             }
         }
         catch (Exception ex)
         {
-            Logger.Warn($"停止 LubanAgentWebHost 失败：{ex.Message}");
+            Logger.Warn($"读取 LubanAgentWebHost 进程状态失败：{ex.Message}");
         }
         finally
         {
