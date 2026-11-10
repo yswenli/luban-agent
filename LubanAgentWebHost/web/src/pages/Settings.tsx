@@ -1,7 +1,6 @@
-import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 
 import { Icon, type IconName } from '../components/Icons';
-import { openSessions } from '../lib/router';
 import { bootstrap, currentWorkspaceId, workspaceName } from '../stores/app';
 import { A2aTab } from './settings/A2aTab';
 import { McpTab } from './settings/McpTab';
@@ -29,9 +28,23 @@ const tabs: TabDef[] = [
   { id: 'model', label: '模型', icon: 'brain', scoped: false },
 ];
 
-export function SettingsPage(props: { tab: string }) {
+/**
+ * 设置浮层。
+ *
+ * 覆盖在当前视图之上、按 `#/settings/<tab>` 深链切换页签；关闭即退回打开前的视图，
+ * 因此不再有独立的设置整页与「返回应用」。
+ */
+export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
   const [search, setSearch] = createSignal('');
   const [scope, setScope] = createSignal<'global' | 'workspace'>('global');
+
+  onMount(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') props.onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => window.removeEventListener('keydown', onKey));
+  });
 
   const activeTab = createMemo(() => tabs.find((tab) => tab.id === props.tab) ?? tabs[0]);
 
@@ -53,17 +66,19 @@ export function SettingsPage(props: { tab: string }) {
 
   const scopeNotice = () =>
     activeTab().workspaceOnly
-      ? 'A2A 配置仅作用于工作区，请先在顶栏选择一个工作区。'
-      : '尚未选择工作区，请先在会话列表顶部选择一个工作区。';
+      ? 'A2A 配置仅作用于工作区，请先在首页左侧选择一个项目。'
+      : '尚未选择项目，请先在首页左侧选择一个项目。';
 
   return (
-    <div class="app">
-      <div class="shell">
-        <div class="topbar">
-          <button class="icon-btn" title="返回应用" onClick={() => openSessions()}>
-            <Icon name="arrow-left" size={18} />
-          </button>
-          <span class="topbar-title">设置</span>
+    <div
+      class="settings-overlay"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <div class="settings-panel" role="dialog" aria-modal="true">
+        <div class="settings-panel-head">
+          <span class="dialog-title">设置</span>
           <div class="spacer" />
           <Show when={showScope()}>
             <div class="scope-switch">
@@ -77,15 +92,14 @@ export function SettingsPage(props: { tab: string }) {
               </button>
             </div>
           </Show>
+          <button class="icon-btn" title="关闭设置（Esc）" onClick={() => props.onClose()}>
+            <Icon name="close" size={17} />
+          </button>
         </div>
 
         <div class="settings-layout">
           <div class="settings-nav">
-            <button class="nav-item" onClick={() => openSessions()}>
-              <Icon name="arrow-left" size={16} />
-              返回应用
-            </button>
-            <div class="searchrow" style={{ margin: '10px 0 6px' }}>
+            <div class="searchrow" style={{ margin: '4px 0 8px' }}>
               <Icon name="search" size={15} />
               <input
                 type="search"

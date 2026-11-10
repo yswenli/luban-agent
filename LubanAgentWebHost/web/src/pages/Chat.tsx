@@ -8,7 +8,9 @@ import { post } from '../lib/api';
 import { formatBytes, formatTime, isImageMediaType, truncate } from '../lib/format';
 import { openSettings, openSessions } from '../lib/router';
 import type { StoredAttachment, WebCommand } from '../lib/types';
-import { createChat, type ChatItem, type ToolCard } from '../stores/chat';
+import { workspaceColor, workspaceInitial } from '../lib/workspace';
+import type { ChatItem, ToolCard } from '../stores/chat';
+import { dropChat, getChat } from '../stores/chats';
 import {
   bootstrap,
   commands,
@@ -31,7 +33,7 @@ import {
 } from '../stores/app';
 
 export function ChatPage(props: { sessionId: string }) {
-  const chat = createChat(props.sessionId);
+  const chat = getChat(props.sessionId);
 
   const [input, setInput] = createSignal('');
   const [plusMenu, setPlusMenu] = createSignal<{ x: number; y: number } | null>(null);
@@ -72,7 +74,7 @@ export function ChatPage(props: { sessionId: string }) {
     void loadCommands();
     void chat.loadHistory();
     if (sessions().length === 0) void refreshSessions();
-    onCleanup(chat.dispose);
+    // 不在这里 abort：会话实例常驻，切换页面时流式回合继续在后台跑
   });
 
   // 流式期间每条帧都会替换 items 数组，跟随到最新
@@ -160,7 +162,7 @@ export function ChatPage(props: { sessionId: string }) {
   async function clearMessages() {
     try {
       await post('/session/clearMessages', { sessionId: props.sessionId });
-      await chat.loadHistory();
+      await chat.loadHistory(true);
       await refreshSessions();
       showToast('已清空消息', 'success');
     } catch (error) {
@@ -204,36 +206,39 @@ export function ChatPage(props: { sessionId: string }) {
   const effortOptions = ['', 'None', 'Low', 'Medium', 'High'] as const;
 
   return (
-    <div class="app">
-      <div class="shell chat">
-        <div class="topbar">
-          <button class="icon-btn" title="返回会话列表" onClick={() => openSessions()}>
-            <Icon name="arrow-left" size={18} />
-          </button>
-          <span class="topbar-title" title={`${workspaceName(session()?.workspaceId)} / ${title()}`}>
-            <Show when={workspaceName(session()?.workspaceId)}>
-              <span class="faint">{workspaceName(session()?.workspaceId)} / </span>
-            </Show>
-            {title()}
-          </span>
-          <div class="spacer" />
-          <Show when={totalTokens() > 0}>
-            <span class="faint mono" title="累计 Token">
-              {totalTokens()} tok
-            </span>
+    <>
+      <div class="chat-head">
+        <span
+          class="ws-badge sm"
+          style={{ background: workspaceColor(session()?.workspaceId) }}
+          title={workspaceName(session()?.workspaceId) || '未知项目'}
+        >
+          {workspaceInitial(workspaceName(session()?.workspaceId))}
+        </span>
+        <span class="chat-title" title={`${workspaceName(session()?.workspaceId)} / ${title()}`}>
+          <Show when={workspaceName(session()?.workspaceId)}>
+            <span class="faint">{workspaceName(session()?.workspaceId)} / </span>
           </Show>
-          <button
-            class="icon-btn"
-            title="更多"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              const position = menuAt(rect, { width: 172, height: 124, align: 'end' });
-              setMoreMenu(position);
-            }}
-          >
-            <Icon name="more" size={18} />
-          </button>
-        </div>
+          {title()}
+        </span>
+        <div class="spacer" />
+        <Show when={totalTokens() > 0}>
+          <span class="faint mono" title="累计 Token">
+            {totalTokens()} tok
+          </span>
+        </Show>
+        <button
+          class="icon-btn"
+          title="更多"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const position = menuAt(rect, { width: 172, height: 124, align: 'end' });
+            setMoreMenu(position);
+          }}
+        >
+          <Icon name="more" size={18} />
+        </button>
+      </div>
 
         <div class="chat-scroll" ref={(element) => (scrollEl = element)}>
           <div class="thread">
@@ -454,7 +459,6 @@ export function ChatPage(props: { sessionId: string }) {
             附件最多 {bootstrap()?.attachments.maxCount ?? 5} 个 · 支持拖放与粘贴 · Enter 发送 / Shift+Enter 换行
           </div>
         </div>
-      </div>
 
       <input
         ref={fileInputEl}
@@ -640,12 +644,14 @@ export function ChatPage(props: { sessionId: string }) {
           onConfirm={() => {
             setDialog(null);
             void deleteSession(props.sessionId).then((ok) => {
-              if (ok) openSessions();
+              if (!ok) return;
+              dropChat(props.sessionId);
+              openSessions();
             });
           }}
         />
       </Show>
-    </div>
+    </>
   );
 }
 

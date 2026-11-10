@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
@@ -8,19 +8,22 @@ import { openSession, openSettings } from '../lib/router';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import {
   bootstrap,
+  clearProjectFilter,
   createSession,
   createWorkspace,
-  currentWorkspaceId,
   deleteSession,
+  filterWorkspaceId,
   refreshSessions,
   renameSession,
+  searchFocusToken,
+  selectProject,
   sessions,
   sessionsError,
   sessionsLoading,
   showToast,
-  switchWorkspace,
   workspaceName,
 } from '../stores/app';
+import { dropChat } from '../stores/chats';
 
 type RowAction =
   | { kind: 'rename'; sessionId: string; title: string }
@@ -38,16 +41,28 @@ export function SessionListPage() {
   const [creating, setCreating] = createSignal(false);
   const [newProject, setNewProject] = createSignal(false);
 
+  let searchEl!: HTMLInputElement;
+
   onMount(() => {
     void refreshSessions();
+  });
+
+  // 顶栏点搜索：回到首页后把焦点交给搜索框（首次加载 token 为 0，不抢焦点）
+  createEffect(() => {
+    const token = searchFocusToken();
+    if (token === 0) return;
+    queueMicrotask(() => searchEl?.focus());
   });
 
   const workspaces = () => bootstrap()?.workspaces ?? [];
 
   const filtered = createMemo(() => {
+    const project = filterWorkspaceId();
     const keyword = search().trim().toLowerCase();
-    if (!keyword) return sessions();
+
     return sessions().filter((session) => {
+      if (project && session.workspaceId !== project) return false;
+      if (!keyword) return true;
       const title = (session.title ?? '').toLowerCase();
       const ws = workspaceName(session.workspaceId).toLowerCase();
       return title.includes(keyword) || ws.includes(keyword);
@@ -88,148 +103,143 @@ export function SessionListPage() {
   });
 
   return (
-    <div class="app">
-      <div class="shell home">
-        <div class="topbar">
-          <Icon name="grid" size={17} />
-          <span class="topbar-title">LuBan Agent</span>
-          <div class="spacer" />
-          <button class="icon-btn" title="刷新会话" onClick={() => void refreshSessions()}>
-            <Icon name="refresh" size={17} />
+    <div class="home-body">
+      <aside class="home-side">
+        <div class="side-head">
+          <span class="section-label">项目</span>
+          <div class="side-actions">
+            <Show when={filterWorkspaceId()}>
+              <button class="icon-btn" title="显示全部项目" onClick={() => clearProjectFilter()}>
+                <Icon name="close" size={15} />
+              </button>
+            </Show>
+            <button class="icon-btn" title="新建项目" onClick={() => setNewProject(true)}>
+              <Icon name="new-project" size={17} />
+            </button>
+          </div>
+        </div>
+
+        <div class="side-list">
+          <For each={workspaces()}>
+            {(workspace) => (
+              <button
+                class="side-item"
+                classList={{ selected: workspace.workspaceId === filterWorkspaceId() }}
+                title={
+                  workspace.workspaceId === filterWorkspaceId()
+                    ? `${workspace.rootPath} · 再点一次取消筛选`
+                    : workspace.rootPath
+                }
+                onClick={() => void selectProject(workspace.workspaceId)}
+              >
+                <span class="ws-badge" style={{ background: workspaceColor(workspace.workspaceId) }}>
+                  {workspaceInitial(workspace.name)}
+                </span>
+                <span class="side-name">{workspace.name || workspace.rootPath}</span>
+              </button>
+            )}
+          </For>
+          <Show when={workspaces().length === 0}>
+            <span class="side-hint faint">还没有项目，点右上角新建。</span>
+          </Show>
+        </div>
+
+        <div class="side-links">
+          <button class="side-link" onClick={() => openSettings('skill')}>
+            <Icon name="settings" size={16} />
+            设置
+          </button>
+          <button class="side-link" onClick={() => showToast('输入 /help 查看可用命令', 'info')}>
+            <Icon name="help" size={16} />
+            帮助
+          </button>
+        </div>
+      </aside>
+
+      <div class="home-main">
+        <div class="searchrow home-search">
+          <Icon name="search" size={16} />
+          <input
+            ref={searchEl}
+            type="search"
+            placeholder="搜索会话"
+            value={search()}
+            onInput={(event) => setSearch(event.currentTarget.value)}
+          />
+          <button class="icon-btn search-action" title="刷新会话" onClick={() => void refreshSessions()}>
+            <Icon name="refresh" size={16} />
           </button>
         </div>
 
-        <div class="home-body">
-          <aside class="home-side">
-            <div class="side-head">
-              <span class="section-label">项目</span>
-              <button
-                class="icon-btn"
-                title="新建项目"
-                onClick={() => setNewProject(true)}
-              >
-                <Icon name="new-project" size={17} />
-              </button>
+        <div class="home-scroll">
+          <Show when={sessionsError()}>
+            <div class="notice error" style={{ 'margin-bottom': '12px' }}>
+              <Icon name="alert" size={16} />
+              <span>{sessionsError()}</span>
             </div>
+          </Show>
 
-            <div class="side-list">
-              <For each={workspaces()}>
-                {(workspace) => (
-                  <button
-                    class="side-item"
-                    classList={{ selected: workspace.workspaceId === currentWorkspaceId() }}
-                    title={workspace.rootPath}
-                    onClick={() => {
-                      if (workspace.workspaceId === currentWorkspaceId()) return;
-                      void switchWorkspace(workspace.workspaceId);
-                    }}
-                  >
-                    <span
-                      class="ws-badge"
-                      style={{ background: workspaceColor(workspace.workspaceId) }}
-                    >
-                      {workspaceInitial(workspace.name)}
-                    </span>
-                    <span class="side-name">{workspace.name || workspace.rootPath}</span>
-                  </button>
-                )}
-              </For>
-              <Show when={workspaces().length === 0}>
-                <span class="side-hint faint">还没有项目，点右上角新建。</span>
-              </Show>
-            </div>
-
-            <div class="side-links">
-              <button class="side-link" onClick={() => openSettings('skill')}>
-                <Icon name="settings" size={16} />
-                设置
-              </button>
-              <button class="side-link" onClick={() => showToast('输入 /help 查看可用命令', 'info')}>
-                <Icon name="help" size={16} />
-                帮助
-              </button>
-              <Show when={bootstrap()?.version}>
-                <span class="side-version faint mono" title={bootstrap()!.version ?? ''}>
-                  v{bootstrap()!.version!.split('+')[0]}
-                </span>
-              </Show>
-            </div>
-          </aside>
-
-          <div class="home-main">
-            <div class="searchrow home-search">
-              <Icon name="search" size={16} />
-              <input
-                type="search"
-                placeholder="搜索会话"
-                value={search()}
-                onInput={(event) => setSearch(event.currentTarget.value)}
-              />
-            </div>
-
-            <div class="home-scroll">
-              <Show when={sessionsError()}>
-                <div class="notice error" style={{ 'margin-bottom': '12px' }}>
-                  <Icon name="alert" size={16} />
-                  <span>{sessionsError()}</span>
-                </div>
-              </Show>
-
-              <Show when={!sessionsLoading()} fallback={<div class="loading-line">加载会话…</div>}>
-                <Show
-                  when={filtered().length > 0}
-                  fallback={
-                    <div class="empty">
-                      <Icon name="message" size={30} />
+          <Show when={!sessionsLoading()} fallback={<div class="loading-line">加载会话…</div>}>
+            <Show
+              when={filtered().length > 0}
+              fallback={
+                <div class="empty">
+                  <Icon name="message" size={30} />
+                  <Show
+                    when={search().trim()}
+                    fallback={
                       <Show
-                        when={search().trim()}
+                        when={filterWorkspaceId()}
                         fallback={
                           <>
                             <h2>还没有会话</h2>
                             <p>新建一个会话开始对话；会话会绑定到当前工作区。</p>
-                            <button class="btn primary" disabled={creating()} onClick={() => void onNewSession()}>
-                              <Icon name="plus" size={16} />
-                              新建会话
-                            </button>
                           </>
                         }
                       >
-                        <h2>没有匹配的会话</h2>
-                        <p>换个关键词，或清空搜索查看全部会话。</p>
+                        <h2>该项目还没有会话</h2>
+                        <p>新建一个会话；它会绑定到当前项目。</p>
+                      </Show>
+                    }
+                  >
+                    <h2>没有匹配的会话</h2>
+                    <p>换个关键词，或清空搜索查看全部会话。</p>
+                  </Show>
+                  <button class="btn primary" disabled={creating()} onClick={() => void onNewSession()}>
+                    <Icon name="plus" size={16} />
+                    新建会话
+                  </button>
+                </div>
+              }
+            >
+              <For each={groups()}>
+                {(group, groupIndex) => (
+                  <div class="group">
+                    <div class="group-head">
+                      <span class="group-title">{group.title}</span>
+                      <Show when={groupIndex() === 0}>
+                        <button class="group-action" disabled={creating()} onClick={() => void onNewSession()}>
+                          <Icon name="plus" size={15} />
+                          新建会话
+                        </button>
                       </Show>
                     </div>
-                  }
-                >
-                  <For each={groups()}>
-                    {(group, groupIndex) => (
-                      <div class="group">
-                        <div class="group-head">
-                          <span class="group-title">{group.title}</span>
-                          <Show when={groupIndex() === 0}>
-                            <button class="group-action" disabled={creating()} onClick={() => void onNewSession()}>
-                              <Icon name="plus" size={15} />
-                              新建会话
-                            </button>
-                          </Show>
-                        </div>
-                        <For each={group.items}>
-                          {(session) =>
-                            sessionRow(
-                              session.sessionId,
-                              session.title,
-                              session.workspaceId,
-                              sessionTime(session),
-                              openRowMenu,
-                            )
-                          }
-                        </For>
-                      </div>
-                    )}
-                  </For>
-                </Show>
-              </Show>
-            </div>
-          </div>
+                    <For each={group.items}>
+                      {(session) =>
+                        sessionRow(
+                          session.sessionId,
+                          session.title,
+                          session.workspaceId,
+                          sessionTime(session),
+                          openRowMenu,
+                        )
+                      }
+                    </For>
+                  </div>
+                )}
+              </For>
+            </Show>
+          </Show>
         </div>
       </div>
 
@@ -288,7 +298,9 @@ export function SessionListPage() {
             onConfirm={() => {
               const target = action().sessionId;
               setDialog(null);
-              void deleteSession(target);
+              void deleteSession(target).then((ok) => {
+                if (ok) dropChat(target);
+              });
             }}
           />
         )}

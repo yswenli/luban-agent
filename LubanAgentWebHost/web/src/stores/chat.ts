@@ -148,10 +148,11 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/** 单个会话的对话状态（页面挂载时创建，卸载时中止在途请求）。 */
+/** 单个会话的对话状态；实例由 `stores/chats.ts` 的会话池长期持有，只有销毁会话时才中止在途流。 */
 export function createChat(sessionId: string) {
   const [items, setItems] = createSignal<ChatItem[]>([]);
   const [loadingHistory, setLoadingHistory] = createSignal(true);
+  const [historyLoaded, setHistoryLoaded] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
   const [streaming, setStreaming] = createSignal(false);
   const [runId, setRunId] = createSignal<string | null>(null);
@@ -162,12 +163,20 @@ export function createChat(sessionId: string) {
 
   let controller: AbortController | null = null;
 
-  async function loadHistory(): Promise<void> {
+  /**
+   * 拉取历史消息。
+   *
+   * 默认只在首次进入时执行：会话实例常驻，切回对话页不能把进行中的流式内容覆盖掉；
+   * 清空消息等需要重新拉取时传 `force = true`。
+   */
+  async function loadHistory(force = false): Promise<void> {
+    if (!force && (historyLoaded() || streaming())) return;
     setLoadingHistory(true);
     setHistoryError(null);
     try {
       const messages = await get<SessionMessage[]>('/session/messages', { sessionId });
       setItems(toHistoryItems(messages ?? []));
+      setHistoryLoaded(true);
     } catch (error) {
       setHistoryError((error as Error).message);
     } finally {

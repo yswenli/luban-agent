@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 
 import { get, post } from '../lib/api';
 import type { Bootstrap, SessionSummary, WebCommand, Workspace } from '../lib/types';
+import { forgetSession, pruneSessions } from './tabs';
 
 export interface ToastItem {
   id: number;
@@ -20,6 +21,18 @@ const [sessionsError, setSessionsError] = createSignal<string | null>(null);
 const [commands, setCommands] = createSignal<WebCommand[]>([]);
 
 const [currentWorkspaceId, setCurrentWorkspaceId] = createSignal<string | null>(null);
+
+/**
+ * 首页左栏选中的项目（仅前端筛选）。
+ *
+ * 与后端「当前工作区」分开保存：筛选只影响右侧列表，切换当前工作区另由
+ * `selectProject` 负责，两者在同一动作里更新以保持新建会话归属一致。
+ */
+const [filterWorkspaceId, setFilterWorkspaceId] = createSignal<string | null>(null);
+
+/** 顶栏点搜索时递增，首页据此把焦点放回搜索框。 */
+const [searchFocusToken, setSearchFocusToken] = createSignal(0);
+
 const [selection, setSelection] = createSignal<{ providerId?: string | null; modelId?: string | null } | null>(null);
 
 /** 每轮下发参数：权限模式默认 default，推理强度空串表示「跟随模型」。 */
@@ -38,6 +51,8 @@ export {
   sessionsError,
   commands,
   currentWorkspaceId,
+  filterWorkspaceId,
+  searchFocusToken,
   selection,
   permissionModeKey,
   setPermissionModeKey,
@@ -77,8 +92,10 @@ export async function refreshSessions(): Promise<void> {
   setSessionsLoading(true);
   setSessionsError(null);
   try {
-    const list = await get<SessionSummary[]>('/session/listDetailed');
-    setSessions(list ?? []);
+    const list = (await get<SessionSummary[]>('/session/listDetailed')) ?? [];
+    setSessions(list);
+    // 已删除的会话不应继续留在顶栏标签里
+    pruneSessions(list.map((session) => session.sessionId));
   } catch (error) {
     setSessionsError((error as Error).message);
   } finally {
@@ -117,6 +134,33 @@ export async function switchWorkspace(workspaceId: string): Promise<void> {
 }
 
 /**
+ * 首页左栏点项目：筛选右侧列表并把该项目设为当前工作区。
+ *
+ * 再点一次已选中的项目则取消筛选（不改回后端工作区，避免来回切换）。
+ */
+export async function selectProject(workspaceId: string): Promise<void> {
+  if (filterWorkspaceId() === workspaceId) {
+    setFilterWorkspaceId(null);
+    return;
+  }
+
+  setFilterWorkspaceId(workspaceId);
+  if (workspaceId !== currentWorkspaceId()) {
+    await switchWorkspace(workspaceId);
+  }
+}
+
+/** 清除项目筛选，恢复展示全部会话。 */
+export function clearProjectFilter(): void {
+  setFilterWorkspaceId(null);
+}
+
+/** 顶栏搜索入口：回到首页并把焦点交给搜索框。 */
+export function focusSessionSearch(): void {
+  setSearchFocusToken((value) => value + 1);
+}
+
+/**
  * 新建工作区并切换过去。
  *
  * 后端要求绝对路径且类型限定 Normal/LlmWiki；网页只创建普通项目。
@@ -133,6 +177,8 @@ export async function createWorkspace(rootPath: string, name?: string): Promise<
     if (workspaceId) {
       await post('/workspace/switch', { workspaceId });
       setCurrentWorkspaceId(workspaceId);
+      // 新项目还没有会话；清掉旧筛选，避免右侧空白让人误以为列表坏了
+      setFilterWorkspaceId(null);
     }
     showToast('已创建项目', 'success');
     return true;
@@ -172,6 +218,7 @@ export async function renameSession(sessionId: string, title: string): Promise<b
 export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
     await post('/session/delete', { sessionId });
+    forgetSession(sessionId);
     await refreshSessions();
     showToast('已删除会话', 'success');
     return true;

@@ -1,36 +1,58 @@
-import { Match, onMount, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, onMount, Show } from 'solid-js';
 
-import { ToastStack } from './components/ToastStack';
 import { Icon } from './components/Icons';
-import { useRoute } from './lib/router';
+import { ToastStack } from './components/ToastStack';
+import { TopBar } from './components/TopBar';
+import { closeSettings, lastView, useRoute } from './lib/router';
 import { ChatPage } from './pages/Chat';
 import { SessionListPage } from './pages/SessionList';
-import { SettingsPage } from './pages/Settings';
+import { SettingsOverlay } from './pages/Settings';
 import { bootError, booting, loadBootstrap } from './stores/app';
+import { rememberSession } from './stores/tabs';
 
 export function App() {
   const route = useRoute();
+
+  createEffect(() => {
+    const current = route();
+    if (current.name !== 'chat') return;
+    rememberSession(current.sessionId);
+  });
 
   onMount(() => {
     void loadBootstrap();
   });
 
+  // 设置是浮层：主区渲染打开设置前的视图
+  const view = createMemo(() => (route().name === 'settings' ? lastView() : route()));
+  const activeSessionId = createMemo(() => {
+    const current = view();
+    return current.name === 'chat' ? current.sessionId : null;
+  });
+  const settingsTab = createMemo(() => {
+    const current = route();
+    return current.name === 'settings' ? current.tab : null;
+  });
+
   return (
     <>
       <Show when={!booting()} fallback={<BootScreen />}>
-        <Show when={bootError()} fallback={
-          <Switch>
-            <Match when={route().name === 'sessions'}>
-              <SessionListPage />
-            </Match>
-            <Match when={route().name === 'chat'}>
-              <ChatPage sessionId={(route() as { name: 'chat'; sessionId: string }).sessionId} />
-            </Match>
-            <Match when={route().name === 'settings'}>
-              <SettingsPage tab={(route() as { name: 'settings'; tab: string }).tab} />
-            </Match>
-          </Switch>
-        }>
+        <Show
+          when={bootError()}
+          fallback={
+            <div class="app">
+              <TopBar activeSessionId={activeSessionId()} />
+
+              <div class="shell">
+                <Show when={activeSessionId()} keyed fallback={<SessionListPage />}>
+                  {(sessionId) => <ChatPage sessionId={sessionId} />}
+                </Show>
+              </div>
+
+              <Show when={settingsTab()}>{(tab) => <SettingsOverlay tab={tab()} onClose={closeSettings} />}</Show>
+            </div>
+          }
+        >
           <ErrorScreen message={bootError() ?? '启动失败'} />
         </Show>
       </Show>
