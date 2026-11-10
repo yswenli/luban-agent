@@ -357,9 +357,13 @@ luban-agent/
 │   ├── Styles/               # 样式主题
 │   └── Program.cs            # 程序入口
 │
-├── LubanAgentWebHost/        # 本地 Agent 服务（SAEA.MVC · net10.0）
-│   ├── Controllers/          # agent / session / workspace / system 四组接口
-│   └── Hosting/              # 运行时、SSE 写出、启动参数、公共守卫
+├── LubanAgentWebHost/        # 本地 Agent 服务（SAEA.MVC · net10.0）+ 浏览器端站点
+│   ├── Controllers/          # 12 个接口控制器（按路由组划分，只做路由与参数透传）
+│   ├── Services/             # 接口业务实现（会话、对话、工作区、知识库、设置…）
+│   ├── Models/               # 浏览器端接口的请求 / 响应模型
+│   ├── Hosting/              # 进程运行时、SSE 写出、启动参数与公共守卫
+│   ├── web/                  # 网页前端源码（SolidJS + TypeScript + Vite）
+│   └── wwwroot/              # 网页构建产物（随 dotnet build 拷到输出目录）
 │
 ├── LubanAgent.Plugin.NewProject/  # 「新建项目」插件
 ├── LubanAgent.Tests/         # MSTest 自动化测试
@@ -438,20 +442,20 @@ luban-agent/
 
 ### 🌐 浏览器端（`LubanAgentWebHost/wwwroot`）
 
-WebHost 同时托管一套网页界面（SolidJS + TypeScript + Vite），源码在 `web/`，构建产物提交在 `LubanAgentWebHost/wwwroot/`，由 csproj 随 `dotnet build` 拷到输出目录的 `wwwroot`。
+WebHost 同时托管一套网页界面（SolidJS + TypeScript + Vite），源码在 `LubanAgentWebHost/web/`，构建产物提交在 `LubanAgentWebHost/wwwroot/`，由 csproj 随 `dotnet build` 拷到输出目录的 `wwwroot`。
 
 ```bash
-cd web
+cd LubanAgentWebHost/web
 npm install
 npm run build          # 产物落 LubanAgentWebHost/wwwroot
 ```
 
-- **`dotnet build` 不依赖 Node**：产物随代码提交；只有改了 `web/` 下的源码才需要重新构建。
+- **`dotnet build` 不依赖 Node**：产物随代码提交；只有改了 `LubanAgentWebHost/web/` 下的源码才需要重新构建。
 - **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
 - **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）。SAEA 没有 SPA 回退，所以不能用 history 路由。
 - **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，写入令牌、用户与端口；该文件不提交（见 `.gitignore`），`vite dev` 下缺失时前端按无令牌运行。
-- **开发生**：先启动 WebHost（`--port` 指定端口），再在 `web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 8080），同一个 `server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去，静态资源仍由 Vite 提供。
-- **范围**：网页版覆盖会话列表、对话（含附件、斜杠命令、工具确认框）与设置页；插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
+- **开发生**：先启动 WebHost（`--port` 指定端口），再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 8080），同一个 `server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去，静态资源仍由 Vite 提供。
+- **范围**：网页版覆盖首页两栏（会话列表 + 新建项目）、对话（附件、斜杠命令、工具确认框）与设置六个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A）；附件单轮最多 5 个，文本类单文件上限 10MB。插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
 
 ---
 

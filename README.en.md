@@ -357,9 +357,13 @@ luban-agent/
 │   ├── Styles/               # Style themes
 │   └── Program.cs            # Entry point
 │
-├── LubanAgentWebHost/        # Local Agent service (SAEA.MVC · net10.0)
-│   ├── Controllers/          # agent / session / workspace / system endpoint groups
-│   └── Hosting/              # Runtime, SSE writer, startup settings, shared guards
+├── LubanAgentWebHost/        # Local Agent service (SAEA.MVC · net10.0) + browser site
+│   ├── Controllers/          # 12 endpoint controllers (one per route group, routing only)
+│   ├── Services/             # Endpoint business logic (sessions, chat, workspaces, wiki, settings…)
+│   ├── Models/               # Request / response models for the browser endpoints
+│   ├── Hosting/              # Process runtime, SSE writer, startup settings, shared guards
+│   ├── web/                  # Web UI sources (SolidJS + TypeScript + Vite)
+│   └── wwwroot/              # Web UI build output (copied into the build output by dotnet build)
 │
 ├── LubanAgent.Plugin.NewProject/  # "New project" plugin
 ├── LubanAgent.Tests/         # MSTest automated tests
@@ -438,20 +442,20 @@ Constraints and known limitations:
 
 ### 🌐 Browser client (`LubanAgentWebHost/wwwroot`)
 
-The WebHost also serves a web UI (SolidJS + TypeScript + Vite). The source lives in `web/`, the build output is committed under `LubanAgentWebHost/wwwroot/`, and the project file copies it to the `wwwroot` folder of the build output on `dotnet build`.
+The WebHost also serves a web UI (SolidJS + TypeScript + Vite). The source lives in `LubanAgentWebHost/web/`, the build output is committed under `LubanAgentWebHost/wwwroot/`, and the project file copies it to the `wwwroot` folder of the build output on `dotnet build`.
 
 ```bash
-cd web
+cd LubanAgentWebHost/web
 npm install
 npm run build          # output goes to LubanAgentWebHost/wwwroot
 ```
 
-- **`dotnet build` does not need Node**: the output is committed; rebuild only after changing sources under `web/`.
+- **`dotnet build` does not need Node**: the output is committed; rebuild only after changing sources under `LubanAgentWebHost/web/`.
 - **Restart the process to pick up a new build**: `IsStaticsCached=True` keeps static file contents in memory after the first request, so a same-named file on disk is not reloaded.
 - **Hash routing**: `#/` (sessions), `#/s/<sessionId>` (chat), `#/settings/<tab>` (settings). SAEA has no SPA fallback, so history routing is not an option.
 - **Runtime config**: the process writes `wwwroot/runtime-config.js` (token, user, port) at startup. The file is not committed (see `.gitignore`); when missing under `vite dev`, the frontend runs without a token.
-- **Development loop**: start the WebHost first (`--port` to choose the port), then run `npm run dev` in `web/`; `VITE_HOST_PORT` sets the upstream port (default 8080) and the single `server.proxy` entry forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a` and `/llmwiki`, while Vite keeps serving the static assets.
-- **Scope**: the web UI covers the session list, chat (attachments, slash commands, tool confirmation dialog) and the settings page; plugins, connectors, `@` context and the Shell command entry point are out of scope for the web UI.
+- **Development loop**: start the WebHost first (`--port` to choose the port), then run `npm run dev` in `LubanAgentWebHost/web/`; `VITE_HOST_PORT` sets the upstream port (default 8080) and the single `server.proxy` entry forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a` and `/llmwiki`, while Vite keeps serving the static assets.
+- **Scope**: the web UI covers the two-column home (session list + new project), chat (attachments, slash commands, tool confirmation dialog) and six settings tabs (provider / model / skill / rule / MCP / A2A); up to 5 attachments per message and 10MB per text attachment. Plugins, connectors, `@` context and the Shell command entry point are out of scope for the web UI.
 
 ---
 
