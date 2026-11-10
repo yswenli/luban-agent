@@ -9,6 +9,8 @@
 		<RootNamespace>LubanAgentWebHost</RootNamespace>
 		<AssemblyName>LubanAgentWebHost</AssemblyName>
 		<StartupObject>LubanAgentWebHost.Program</StartupObject>
+		<!-- 显示版本：顶栏、关于弹窗与 401 页都读程序集版本，改这里即全站生效 -->
+		<Version>2.0.1</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -36,6 +38,8 @@
 		<Content Include="..\lubanagent.png" Link="wwwroot\lubanagent.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="..\lubanagent-chat.png" Link="wwwroot\lubanagent-chat.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="..\lubanagent-settings.png" Link="wwwroot\lubanagent-settings.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-help.png" Link="wwwroot\lubanagent-help.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-about.png" Link="wwwroot\lubanagent-about.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

@@ -55,6 +55,11 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 | ![Chat page: Markdown content, collapsible reasoning and tool call records](lubanagent-chat.png) | ![Settings page: skill list and skill body editor](lubanagent-settings.png) |
 | Chat page: Markdown content, collapsible reasoning and tool call records | Settings page: unified management of Skills, Rules, MCP servers, Providers and Models, with Global/Current Workspace scope switch |
 
+| Help | About |
+|:---:|:---:|
+| ![Help dialog: renders the repository README in place, including route table, commands and previews](lubanagent-help.png) | ![About dialog: repository, author, version and license](lubanagent-about.png) |
+| Help: the repository README is rendered inside the dialog, so commands, configuration and API notes are always at hand | About: repository address, author, version and license |
+
 ---
 
 ## ✨ Core Features
