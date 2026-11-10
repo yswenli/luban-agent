@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 
 import { get, post } from '../lib/api';
-import type { Bootstrap, SessionSummary, WebCommand } from '../lib/types';
+import type { Bootstrap, SessionSummary, WebCommand, Workspace } from '../lib/types';
 
 export interface ToastItem {
   id: number;
@@ -96,6 +96,16 @@ export async function loadCommands(): Promise<void> {
   }
 }
 
+/** 重新拉取工作区列表并回写 bootstrap（新建项目后需要）。 */
+export async function refreshWorkspaces(): Promise<void> {
+  try {
+    const list = await get<Workspace[]>('/workspace/list');
+    setBootstrap((current) => (current ? { ...current, workspaces: list ?? [] } : current));
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+  }
+}
+
 export async function switchWorkspace(workspaceId: string): Promise<void> {
   try {
     await post('/workspace/switch', { workspaceId });
@@ -103,6 +113,32 @@ export async function switchWorkspace(workspaceId: string): Promise<void> {
     showToast('已切换工作区', 'success');
   } catch (error) {
     showToast((error as Error).message, 'error');
+  }
+}
+
+/**
+ * 新建工作区并切换过去。
+ *
+ * 后端要求绝对路径且类型限定 Normal/LlmWiki；网页只创建普通项目。
+ */
+export async function createWorkspace(rootPath: string, name?: string): Promise<boolean> {
+  try {
+    const workspace = await post<{ workspaceId?: string } | null>('/workspace/create', {
+      name: name?.trim() || null,
+      rootPath: rootPath.trim(),
+      type: 'Normal',
+    });
+    await refreshWorkspaces();
+    const workspaceId = workspace?.workspaceId;
+    if (workspaceId) {
+      await post('/workspace/switch', { workspaceId });
+      setCurrentWorkspaceId(workspaceId);
+    }
+    showToast('已创建项目', 'success');
+    return true;
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+    return false;
   }
 }
 

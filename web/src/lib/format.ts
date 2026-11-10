@@ -12,6 +12,18 @@ export function isToday(value: string | null | undefined): boolean {
   return localDayKey(value) === localDayKey(new Date().toISOString());
 }
 
+/** 会话列表分组：今天 / 昨天 / 更早。 */
+export type DayBucket = 'today' | 'yesterday' | 'earlier';
+
+export function dayBucket(value: string | null | undefined): DayBucket {
+  const key = localDayKey(value);
+  if (!key) return 'earlier';
+  if (key === localDayKey(new Date().toISOString())) return 'today';
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return key === localDayKey(yesterday.toISOString()) ? 'yesterday' : 'earlier';
+}
+
 export function formatTime(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);
