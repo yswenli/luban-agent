@@ -49,7 +49,7 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     /// <summary>服务地址；<see cref="StartAsync"/> 成功后可用。</summary>
     public Uri? BaseAddress { get; private set; }
 
-    /// <summary>宿主共享令牌；宿主未启用令牌时为 null。</summary>
+    /// <summary>宿主本次运行的访问令牌；旧版本宿主未启用令牌时为 null。</summary>
     public string? Token { get; private set; }
 
     /// <summary>本次拉起的子进程号；接管已有宿主时为 null。</summary>

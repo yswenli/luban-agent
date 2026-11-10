@@ -15,7 +15,7 @@ export interface SseHandlers {
  * 用 `fetch` + `ReadableStream` 解析 SAEA 的 SSE 响应。
  *
  * 帧格式固定为 `event: {name}\ndata: {json}\n\n`；`: ping` 注释行直接丢弃。
- * 不用 `EventSource`：需要 POST、自定义 Authorization 头与中止控制。
+ * 不用 `EventSource`：需要 POST 请求体、流式中止与逐帧回调；访问凭据由宿主换发的 Cookie 自动携带。
  */
 export async function streamPost(
   path: string,

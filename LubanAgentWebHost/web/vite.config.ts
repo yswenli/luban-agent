@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
 
 // 开发模式下把后端接口前缀转发到 WebHost 实际端口；静态资源仍由 Vite 提供。
-// 端口由 WebHost 的 --port / LubanAgentWeb:Port 决定，这里用环境变量覆盖，默认 8080。
-const hostPort = process.env.VITE_HOST_PORT ?? '8080';
+// 端口由 WebHost 的 --port / LubanAgentWeb:Port 决定，这里用环境变量覆盖，默认与宿主默认端口一致。
+const hostPort = process.env.VITE_HOST_PORT ?? '18080';
 
 // 访问令牌由宿主每次启动随机生成，终端会打印 http://<ip>:<port>/?t=<token>。
 // 开发模式下浏览器直连 Vite、拿不到宿主换发的 Cookie，故把 token 填进 VITE_HOST_TOKEN，

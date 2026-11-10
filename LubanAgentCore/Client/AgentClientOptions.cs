@@ -22,7 +22,7 @@ public sealed record AgentClientOptions
     /// <summary>服务地址（如 <c>http://127.0.0.1:18080</c>）；null 表示自动接管或拉起本地宿主。</summary>
     public Uri? BaseAddress { get; init; }
 
-    /// <summary>共享令牌；仅在指定 <see cref="BaseAddress"/> 直连时使用。自动接管时取宿主发现文件里的令牌。</summary>
+    /// <summary>访问令牌；仅在指定 <see cref="BaseAddress"/> 直连时使用。自动接管时取宿主发现文件里的令牌。</summary>
     public string? Token { get; init; }
 
     /// <summary>未指定 <see cref="BaseAddress"/> 时，是否自动接管已运行的宿主、未运行时再拉起。</summary>

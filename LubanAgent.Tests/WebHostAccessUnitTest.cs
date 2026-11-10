@@ -96,6 +96,19 @@ public class WebHostAccessUnitTest
     }
 
     [TestMethod]
+    public void 只有Base64Url字符的令牌可用()
+    {
+        Assert.IsTrue(WebHostAccess.IsValidToken(WebHostAccess.CreateToken()));
+        Assert.IsTrue(WebHostAccess.IsValidToken("abc-123_XYZ"));
+
+        Assert.IsFalse(WebHostAccess.IsValidToken(null));
+        Assert.IsFalse(WebHostAccess.IsValidToken(""));
+        Assert.IsFalse(WebHostAccess.IsValidToken("abc def"), "空格会截断地址栏与 Set-Cookie");
+        Assert.IsFalse(WebHostAccess.IsValidToken("abc;def"), "分号会截断 Set-Cookie");
+        Assert.IsFalse(WebHostAccess.IsValidToken("abc\r\nX-Evil: 1"), "换行会注入多余的响应头");
+    }
+
+    [TestMethod]
     public void 虚拟网卡不作为局域网入口()
     {
         Assert.IsTrue(WebHostAccess.IsVirtualAdapter("本地连接", "TAP-Windows Adapter V9 for OpenVPN Connect"),

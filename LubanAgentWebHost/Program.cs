@@ -57,8 +57,16 @@ public static class Program
             var configuration = AgentHostBuilder.BuildConfiguration(args);
             var settings = WebHostSettings.Create(configuration, args);
 
-            // 访问令牌：未显式指定时每次启动随机生成，进程退出即失效（不做长期登录态）
+            // 访问令牌：未显式指定时每次启动随机生成，进程退出即失效（不做长期登录态）。
+            // 令牌会原样进地址栏与 Set-Cookie，固定的值必须只含 Base64Url 字符，否则直接拒绝启动
             var accessToken = settings.Token ?? WebHostAccess.CreateToken();
+            if (!WebHostAccess.IsValidToken(accessToken))
+            {
+                throw new InvalidOperationException(
+                    "访问令牌只允许字母、数字、'-' 与 '_'（Base64Url 字符集）："
+                    + "请检查 LubanAgentWeb:Token 配置或 --token 参数");
+            }
+
             settings = settings with { Token = accessToken };
 
             Report("① 加载配置...");

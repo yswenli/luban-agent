@@ -40,7 +40,7 @@ public static class WebApi
     /// <summary>
     /// 执行令牌校验与用户初始化。
     /// </summary>
-    /// <param name="requireToken">是否校验共享令牌（健康检查免校验，便于启动器探测）。</param>
+    /// <param name="requireToken">是否校验访问令牌（健康检查免校验，便于启动器探测）。</param>
     /// <param name="ensureUser">是否等待用户工作区/插件初始化（健康检查不需要，避免探测被初始化耗时拖住）。</param>
     /// <returns>拒绝响应；校验通过返回 null。</returns>
     public static async Task<ActionResult?> GuardAsync(bool requireToken = true, bool ensureUser = true)
@@ -99,7 +99,7 @@ public static class WebApi
     /// 不会因 SAEA 未处理异常而掐断连接。
     /// </remarks>
     /// <param name="action">动作体。</param>
-    /// <param name="requireToken">是否校验共享令牌（健康检查免校验）。</param>
+    /// <param name="requireToken">是否校验访问令牌（健康检查免校验）。</param>
     /// <param name="ensureUser">是否等待用户初始化（健康检查不需要）。</param>
     /// <returns>动作结果；守卫拒绝或异常时返回对应 JSON 壳。</returns>
     public static Task<ActionResult> RunGuardedAsync(

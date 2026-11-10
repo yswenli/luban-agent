@@ -36,7 +36,7 @@ public sealed class AgentServerClient : IDisposable
 
     /// <summary>创建客户端。</summary>
     /// <param name="baseAddress">服务地址。</param>
-    /// <param name="token">可选共享令牌。</param>
+    /// <param name="token">访问令牌；宿主总是要求令牌，直连时必须提供（自动接管时由发现文件给出）。</param>
     /// <param name="httpClient">外部提供的 HttpClient（为 null 时自建并负责释放）。</param>
     public AgentServerClient(Uri baseAddress, string? token = null, HttpClient? httpClient = null)
     {

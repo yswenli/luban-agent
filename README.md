@@ -441,7 +441,7 @@ luban-agent/
 
 - **监听全部网卡，本机与外部网络都可访问**：SAEA 的监听套接字固定绑全接口（`0.0.0.0`），没有绑定地址参数。因此宿主启动即生成一次性访问令牌，接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（地址栏 `?t=`、它换发的 Cookie、`Authorization: Bearer`）一律 401，只有 `/system/health` 免令牌供启动器探活。
 - **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；访问令牌每次启动随机生成（需要固定时用 `LubanAgentWeb:Token` 或 `--token`），进程退出即失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
-- **入口地址与令牌**：宿主启动时在终端打印 `http://<局域网 IP>:<端口>/?t=<令牌>`（并附本机地址）；浏览器打开后令牌换成 HttpOnly Cookie，并 302 到去掉 `t` 的干净地址，令牌不留在历史记录里。终端翻不到时执行 `LubanAgentWebHost token` 重新打印。默认不做 TLS，令牌在局域网内明文传输，风险靠「重启即换令牌」收窄；对公网暴露仍需在反向代理层再加一次鉴权。
+- **入口地址与令牌**：宿主启动时在终端打印 `http://<局域网 IP>:<端口>/?t=<令牌>`（并附本机地址）；浏览器打开后令牌换成 HttpOnly Cookie，并 302 到去掉 `t` 的干净地址，令牌不留在历史记录里。Cookie 是会话级的：关掉浏览器、或宿主重启后都要重新用入口地址进入。终端翻不到时执行 `LubanAgentWebHost token` 重新打印。默认不做 TLS，令牌在局域网内明文传输，风险靠「重启即换令牌」收窄；对公网暴露仍需在反向代理层再加一次鉴权。
 - **断连取消需显式调用**：SAEA 侧无法探测客户端断连，SSE 流被取消或释放后服务端回合仍在跑；客户端 SDK 会在未收到 `done` 时主动 `POST /agent/cancel`。自定义客户端必须照做。
 - **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
 - **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。
@@ -464,7 +464,7 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 - **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
 - **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）。SAEA 没有 SPA 回退，所以不能用 history 路由。
 - **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，只写入用户与端口；访问令牌不落这个文件（它只经地址栏换成 HttpOnly Cookie）。该文件不提交（见 `.gitignore`）。
-- **开发生**：先启动 WebHost（`--port` 指定端口），把终端打印的 `http://<ip>:<port>/?t=<令牌>` 里的令牌填进 `VITE_HOST_TOKEN`，再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 8080），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
+- **开发模式**：先启动 WebHost（`--port` 指定端口），把终端打印的 `http://<ip>:<port>/?t=<令牌>` 里的令牌填进 `VITE_HOST_TOKEN`，再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
 - **顶栏与 SSE 全局**：会话状态常驻前端会话池，顶栏标签与路由解耦——切到首页或设置时回合继续跑，标签上以活动点提示；只有关闭标签、删除会话时才销毁实例并中止在途流。
 - **设置是浮层**：`#/settings/<tab>` 覆盖在当前视图之上，× / Esc / 点遮罩关闭即回到打开前的页面；没有独立的设置整页，也没有「返回应用」。
 - **范围**：网页版覆盖全局顶栏（会话标签 + 新建会话）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、斜杠命令、工具确认框）与设置浮层六个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A）；附件单轮最多 5 个，文本类单文件上限 10MB。插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。

@@ -59,6 +59,33 @@ public static class WebHostAccess
     }
 
     /// <summary>
+    /// 校验令牌能否直接进地址栏与 <c>Set-Cookie</c> 头。
+    /// </summary>
+    /// <remarks>
+    /// 令牌会原样写进这两处：含空格或分号会把 Cookie 截断，含换行则可能注入额外的响应头。
+    /// 因此只接受 Base64Url 字符集（字母、数字、<c>-</c>、<c>_</c>），固定令牌时请照此填写。
+    /// </remarks>
+    /// <param name="token">待校验的令牌。</param>
+    /// <returns>非空且只含 Base64Url 字符时返回 true。</returns>
+    public static bool IsValidToken(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            return false;
+        }
+
+        foreach (var ch in token)
+        {
+            if (!char.IsAsciiLetterOrDigit(ch) && ch != '-' && ch != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// 拼出浏览器可直接打开的入口地址。
     /// </summary>
     /// <param name="baseAddress">监听地址，形如 <c>http://192.168.3.215:18080</c>。</param>
@@ -297,8 +324,24 @@ public static class WebHostAccess
         return kept.Count == 0 ? target : $"{target}?{string.Join("&", kept)}";
     }
 
+    /// <summary>
+    /// 常数时间比对令牌：避免按字符逐位比较泄露前缀匹配长度。
+    /// </summary>
+    /// <param name="actual">请求带来的凭据。</param>
+    /// <param name="expected">本进程令牌。</param>
+    /// <returns>两者完全一致（区分大小写）时返回 true。</returns>
     private static bool FixedEquals(string? actual, string expected)
-        => !string.IsNullOrEmpty(actual) && string.Equals(actual, expected, StringComparison.Ordinal);
+    {
+        if (string.IsNullOrEmpty(actual))
+        {
+            return false;
+        }
+
+        var left = System.Text.Encoding.UTF8.GetBytes(actual);
+        var right = System.Text.Encoding.UTF8.GetBytes(expected);
+        return left.Length == right.Length
+            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(left, right);
+    }
 
     private static string? Blank(string value)
     {

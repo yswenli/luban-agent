@@ -35,7 +35,7 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
         + "<h1 style=\"font-size:1.25rem;margin:0 0 .75rem\">需要访问令牌</h1>"
         + "<p style=\"margin:0 0 .75rem;color:#a8aec0\">直接打开这个地址不会被放行。"
         + "请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>"
-        + "<p style=\"margin:0;color:#a8aec0\">找不到终端？在宿主机上执行 \""
+        + "<p style=\"margin:0;color:#a8aec0\">找不到终端？在宿主机上执行 "
         + "<code style=\"background:#1d212b;padding:.15rem .4rem;border-radius:.25rem\">"
         + "LubanAgentWebHost token</code> 重新打印地址。</p>"
         + "</main></body></html>";
@@ -67,8 +67,14 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
         if (decision == WebEntryDecision.Redirect && !string.IsNullOrEmpty(expected))
         {
             // 令牌已换成 Cookie：地址栏回到干净路径，避免令牌留在历史记录与分享链接里
-            Response.Headers["Location"] = WebHostAccess.StripTokenQuery(Request.RelativeUrl);
             Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(expected);
+            if (!IsReadRequest())
+            {
+                // 302 会把非 GET/HEAD 改成 GET 并丢掉请求体；这类请求直接按令牌已校验放行
+                return base.GetActionResult();
+            }
+
+            Response.Headers["Location"] = WebHostAccess.StripTokenQuery(Request.RelativeUrl);
             return new ContentResult(string.Empty, HttpStatusCode.Found);
         }
 
@@ -76,6 +82,10 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
             ? new ContentResult(UnauthorizedHtml, HttpStatusCode.Unauthorized)
             : WebApi.FailJson(401, "未授权：缺少或错误的访问令牌");
     }
+
+    private bool IsReadRequest()
+        => string.Equals(Request.Method, "GET", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase);
 
     private bool WantsHtml()
         => Request.Headers.TryGetValue("Accept", out var accept)
