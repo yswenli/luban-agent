@@ -123,11 +123,15 @@ export async function refreshWorkspaces(): Promise<void> {
   }
 }
 
+/**
+ * 切换后端当前工作区。
+ *
+ * 成功不提示：首页点项目即触发，属常规导航动作；失败才提示。
+ */
 export async function switchWorkspace(workspaceId: string): Promise<void> {
   try {
     await post('/workspace/switch', { workspaceId });
     setCurrentWorkspaceId(workspaceId);
-    showToast('已切换工作区', 'success');
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
