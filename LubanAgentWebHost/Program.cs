@@ -96,8 +96,12 @@ public static class Program
             application = new SAEAMvcApplication(mvcConfig);
             application.Start();
 
-            Console.WriteLine($"listening http://127.0.0.1:{settings.Port} (user={runtime.UserId})");
-            Report($"⑥ 就绪（仅回环可访问，令牌{(string.IsNullOrEmpty(settings.Token) ? "未启用" : "已启用")}）");
+            Console.WriteLine($"listening on 0.0.0.0:{settings.Port} (user={runtime.UserId})");
+            Report($"⑥ 就绪（监听全部网卡，令牌{(string.IsNullOrEmpty(settings.Token) ? "未启用" : "已启用")}）");
+            if (string.IsNullOrEmpty(settings.Token))
+            {
+                Report("   提示：未启用令牌，任何能访问该端口的人都可以操作本机（读写工作区文件、执行命令）；对公网暴露务必加 --token 并在反向代理层再做一次鉴权。");
+            }
 
             await Task.Delay(Timeout.Infinite, shutdown.Token).ConfigureAwait(false);
             return 0;

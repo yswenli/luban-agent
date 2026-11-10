@@ -402,7 +402,7 @@ luban-agent/
 
 ## 🔗 Unified Agent Service (WebHost)
 
-`LubanAgentWebHost` exposes Agent capabilities as local HTTP/SSE endpoints via SAEA.MVC, so clients (CLI / Codex) only handle UI interaction:
+`LubanAgentWebHost` exposes Agent capabilities as HTTP/SSE endpoints via SAEA.MVC, so clients (CLI / Codex) only handle UI interaction:
 
 | Route | Description |
 |-------|-------------|
@@ -426,8 +426,8 @@ luban-agent/
 
 Constraints and known limitations:
 
-- **Loopback only**: SAEA's listening socket binds all interfaces and offers no bind-address option, so "local only" is enforced by a request-level guard — the server checks whether `REMOTE_ADDR` is a loopback address and returns 403 otherwise. Do not expose it to the internet.
-- **Optional shared token**: setting `LubanAgentWeb:Token` or `--token` requires `Authorization: Bearer <token>` on every endpoint except the health check. When launched automatically, the client generates a one-time token that is never written to disk or logs.
+- **All interfaces, reachable from localhost and external networks**: SAEA's listening socket always binds every interface (`0.0.0.0`) and offers no bind-address option, and the endpoints no longer restrict the request source. Without a token, anyone who can reach the port can operate this machine (read/write workspace files, run commands, read every session); if you expose it to the internet, always add `--token` and another authentication layer at the reverse proxy.
+- **Optional shared token**: setting `LubanAgentWeb:Token` or `--token` requires `Authorization: Bearer <token>` on every endpoint except the health check. When launched automatically, the client generates a one-time token that is never written to disk or logs. Note that `wwwroot/runtime-config.js` contains that token in plaintext and is readable by anyone who can reach the port; it constrains scripts calling the API directly and is not access control for browser users.
 - **Disconnect cancellation must be explicit**: SAEA cannot detect a client disconnect, so the server-side round keeps running after an SSE stream is cancelled or disposed. The client SDK therefore calls `POST /agent/cancel` whenever it ends without receiving `done`. Custom clients must do the same.
 - **Database owned by the WebHost**: session data is `luban-ai-agent.db` in the WebHost program directory (relative connection strings are rebased onto the host program directory). Clients no longer open the database; the working directory only affects relative-path inputs. A same-named database left in a client output directory by an older build is not read — copy it into the WebHost program directory if you want to keep it.
 - **A2A and orchestration progress live on the host side**: A2A server/client roles and the startup worktree reconciliation run inside the WebHost per user workspace; sub-agent orchestration progress is streamed as `orchestration.progress` frames and replayed by the client into its local progress outlet, so UI subscriptions behave the same as when running locally. The A2A runtime starts and stops with the host process; clients only read `/a2a/status`, and `/a2a -start|-stop` degrades to a notice.

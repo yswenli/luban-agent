@@ -18,7 +18,7 @@ using SAEA.MVC;
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
-/// 控制器公共能力：来源校验、可选令牌校验、用户初始化与 JSON 响应壳。
+/// 控制器公共能力：可选令牌校验、用户初始化与 JSON 响应壳。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,18 +42,13 @@ public static class WebApi
     public static AgentWebRuntime Runtime => AgentWebRuntime.Current;
 
     /// <summary>
-    /// 执行来源/令牌校验与用户初始化。
+    /// 执行令牌校验与用户初始化。
     /// </summary>
     /// <param name="requireToken">是否校验共享令牌（健康检查免校验，便于启动器探测）。</param>
     /// <param name="ensureUser">是否等待用户工作区/插件初始化（健康检查不需要，避免探测被初始化耗时拖住）。</param>
     /// <returns>拒绝响应；校验通过返回 null。</returns>
     public static async Task<ActionResult?> GuardAsync(bool requireToken = true, bool ensureUser = true)
     {
-        if (!IsLoopback(Header("REMOTE_ADDR")))
-        {
-            return FailJson(403, "仅允许本机访问");
-        }
-
         if (requireToken && RequiresToken(out var expected) && !HasValidToken(expected!))
         {
             return FailJson(401, "未授权：缺少或错误的访问令牌");
@@ -199,14 +194,4 @@ public static class WebApi
 
         return string.Equals(token, expected, StringComparison.Ordinal);
     }
-
-    /// <summary>
-    /// 判断来源是否为本机。
-    /// </summary>
-    /// <remarks>
-    /// <c>Request.UserHostAddress</c> 取自 <c>HttpMessage.ID</c>，不是真实来源；
-    /// 真实来源由 socket 层写入 <c>REMOTE_ADDR</c> 头，客户端无法伪造。
-    /// </remarks>
-    private static bool IsLoopback(string? remoteAddress)
-        => IPAddress.TryParse(remoteAddress, out var address) && IPAddress.IsLoopback(address);
 }
