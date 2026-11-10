@@ -284,6 +284,23 @@ OpenAI 可用模型（回车确认，未选则默认第一个）:
 
 ---
 
+## 🌐 宿主服务与访问令牌（WebHost）
+
+本程序不直接执行 Agent：对话、文件读写与工具调用都发生在本地宿主进程 `LubanAgentWebHost` 里，本程序只是它的客户端。
+
+- **自动拉起**：本机没有可用宿主时，客户端拉起 `LubanAgentWebHost` 子进程（只下发 `--plugins-dir` 与 `--debug`，端口、令牌、超时都由宿主自己的配置决定，`LubanAgentWeb:Port` 默认 18080）；已有实例在运行时客户端读发现文件并用 `/system/health` 探活，通过即直接接管，不会重复启动。宿主可执行文件按「`AgentClientOptions.ServerPath` → 环境变量 `LUBAN_AGENT_WEBHOST` → 客户端输出目录 → 向上逐级查找 `LubanAgentWebHost/bin/**`」的顺序定位，都找不到时报「未找到 LubanAgentWebHost」。
+- **宿主常驻**：拉起后的宿主不随本程序退出，需要用 `LubanAgentWebHost --stop` 停止；同一个端口只能有一个实例，后启动的那个会因端口占用启动失败。
+- **访问令牌**：宿主监听全部网卡，所以每次启动都会生成一次性令牌，并写入 `%LOCALAPPDATA%\luban-agent\webhost.json`；客户端从该文件读取后自动带 `Authorization: Bearer`，不需要手工填写。
+- **浏览器端**：宿主同时托管网页界面，入口是终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`；打开后令牌换成 HttpOnly Cookie 并 302 回去掉 `t` 的干净地址，宿主重启即失效。
+- **遇到 401 或连不上**：
+  - 在宿主机执行 `LubanAgentWebHost token`，重新打印当前实例的入口地址；
+  - 宿主重启过：令牌随进程失效，旧地址、旧书签与旧的浏览器会话都要重新进入；
+  - 端口被占用：用 `--port <端口>` 换一个端口再启动；
+  - 想彻底重来：`LubanAgentWebHost --stop` 停掉宿主，再重新启动本程序。
+- **安全边界**：令牌有效期内，拿到入口地址即可读写工作区、执行命令；默认不带 TLS，不要把地址转发给他人。完整说明见根 README 的「WebHost 访问令牌与安全」。
+
+---
+
 ## 📖 命令一览
 
 LuBan Agent 提供了简洁而强大的命令系统：

@@ -284,6 +284,23 @@ You: Show me what directories are on drive D
 
 ---
 
+## 🌐 Host Service and Access Token (WebHost)
+
+This program does not execute the agent itself: conversations, file access and tool calls all happen in the local host process `LubanAgentWebHost`, and this program is only its client.
+
+- **Auto launch**: when no host is available locally, the client starts a `LubanAgentWebHost` child process, passing only `--plugins-dir` and `--debug`; port, token and timeouts all come from the host's own configuration (`LubanAgentWeb:Port`, default 18080). If an instance is already running, the client reads the descriptor file, probes `/system/health` and adopts it instead of starting a second one. The host executable is resolved in this order: `AgentClientOptions.ServerPath` → environment variable `LUBAN_AGENT_WEBHOST` → the client output directory → walking up for `LubanAgentWebHost/bin/**`; if none is found the client reports "LubanAgentWebHost not found".
+- **The host stays resident**: a launched host keeps running after this program exits; stop it with `LubanAgentWebHost --stop`. Only one instance can own a port — the one started later fails on the port conflict.
+- **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `%LOCALAPPDATA%\luban-agent\webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
+- **Browser UI**: the host also serves a web UI at the entry address printed in the terminal (`http://<LAN IP>:<port>/?t=<token>`). The token is exchanged for an HttpOnly cookie and the URL is 302-redirected to the clean address; it expires when the host restarts.
+- **Getting a 401 or failing to connect**:
+  - run `LubanAgentWebHost token` on the host machine to print the current entry address again;
+  - after a host restart the token is gone: old links, bookmarks and browser sessions must be replaced;
+  - port already in use: start with `--port <port>`;
+  - to start over: `LubanAgentWebHost --stop`, then launch this program again.
+- **Security boundary**: while the token is valid, anyone with the entry address can read/write workspaces and run commands; there is no TLS by default, so do not forward the address. See "WebHost access token and security" in the root README for the full picture.
+
+---
+
 ## 📖 Command Reference
 
 LuBan Agent provides a simple yet powerful command system:

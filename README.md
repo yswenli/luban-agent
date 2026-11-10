@@ -27,7 +27,7 @@
 | **[LubanAgentCore](LubanAgentCore/)** | 核心类库 | Agent 运行时、工具系统、技能系统、会话存储、LLM Wiki 检索、工作区管理、连接器（含云效）、插件宿主、传输协议（DTO/路由/SSE 帧）、客户端 SDK（HTTP 实现与子进程启动器）与 A2A 协作 |
 | **[LubanAgentCli](LubanAgentCli/)** | 命令行 TUI | 基于 Terminal.Gui v2 的全屏终端界面（Claude Code 风格），可安装为 dotnet tool |
 | **[LubanAgentCodex](LubanAgentCodex/)** | 桌面客户端 | 基于 Avalonia UI 的跨平台图形界面，双栏布局（侧边栏 + 对话区）+ 暗色主题 |
-| **[LubanAgentWebHost](LubanAgentWebHost/)** | 本地 Agent 服务 | 基于 SAEA.MVC 的 HTTP/SSE 宿主，把对话、会话、工作区能力暴露为本地接口 |
+| **[LubanAgentWebHost](LubanAgentWebHost/)** | 本地 Agent 服务 | 基于 SAEA.MVC 的轻量高性能 HTTP/SSE 宿主：IOCP 完成端口、自宿主，不依赖 ASP.NET Core / Kestrel；把对话、会话、工作区能力暴露为本地接口 |
 | **[LubanAgent.Plugin.NewProject](LubanAgent.Plugin.NewProject/)** | Codex 插件 | 「新建项目」插件，纯代码 UI，构建后自动铺装到 Codex 运行目录 `plugins/` |
 | **[LubanAgent.Tests](LubanAgent.Tests/)** | 测试工程 | MSTest 自动化测试（连接器、NewProject 插件、Skill/Rule 后端、传输协议等） |
 
@@ -216,6 +216,8 @@ dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 直接打开 `http://<局域网 IP>:18080/` 会被拒绝（401）：入口必须带本次运行的令牌，换到 Cookie 后地址栏会自动回到干净 URL。
 
 WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时先按发现文件接管已在运行的实例，确实没有才拉起子进程；端口、超时与用户身份取宿主的 `LubanAgentWeb` 配置，访问令牌由宿主每次启动生成并写入发现文件，客户端只读不自造。
+
+> 🔐 令牌的三种携带方式、401 怎么处理、多设备与重启后的行为、以及必须了解的风险边界，见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 
 ### 5. 配置 AI Provider 并开始对话
 
@@ -450,9 +452,9 @@ luban-agent/
 
 约束与已知限制：
 
-- **监听全部网卡，本机与外部网络都可访问**：SAEA 的监听套接字固定绑全接口（`0.0.0.0`），没有绑定地址参数。因此宿主启动即生成一次性访问令牌，接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（地址栏 `?t=`、它换发的 Cookie、`Authorization: Bearer`）一律 401，只有 `/system/health` 免令牌供启动器探活。
+- **监听全部网卡，本机与外部网络都可访问**：SAEA.MVC 未暴露绑定地址参数（`HttpSocket` 不传 IP，固定绑 `0.0.0.0`）。因此宿主启动即生成一次性访问令牌，接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（地址栏 `?t=`、它换发的 Cookie、`Authorization: Bearer`）一律 401，只有 `/system/health` 免令牌供启动器探活。
 - **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；访问令牌每次启动随机生成（需要固定时用 `LubanAgentWeb:Token` 或 `--token`），进程退出即失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
-- **入口地址与令牌**：宿主启动时在终端打印 `http://<局域网 IP>:<端口>/?t=<令牌>`（并附本机地址）；浏览器打开后令牌换成 HttpOnly Cookie，并 302 到去掉 `t` 的干净地址，令牌不留在历史记录里。Cookie 是会话级的：关掉浏览器、或宿主重启后都要重新用入口地址进入。终端翻不到时执行 `LubanAgentWebHost token` 重新打印。默认不做 TLS，令牌在局域网内明文传输，风险靠「重启即换令牌」收窄；对公网暴露仍需在反向代理层再加一次鉴权。
+- **入口地址与令牌**：终端会打印带令牌的入口地址，浏览器打开后令牌换成 HttpOnly Cookie 并 302 回干净地址。完整用法与风险边界见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 - **断连取消需显式调用**：SAEA 侧无法探测客户端断连，SSE 流被取消或释放后服务端回合仍在跑；客户端 SDK 会在未收到 `done` 时主动 `POST /agent/cancel`。自定义客户端必须照做。
 - **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
 - **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。
@@ -479,6 +481,44 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 - **顶栏与 SSE 全局**：会话状态常驻前端会话池，顶栏标签与路由解耦——切到首页或设置时回合继续跑，标签上以活动点提示；只有关闭标签、删除会话时才销毁实例并中止在途流。
 - **设置是浮层**：`#/settings/<tab>` 覆盖在当前视图之上，× / Esc / 点遮罩关闭即回到打开前的页面；没有独立的设置整页，也没有「返回应用」。
 - **范围**：网页版覆盖全局顶栏（会话标签 + 新建会话）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、斜杠命令、工具确认框）与设置浮层六个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A）；附件单轮最多 5 个，文本类单文件上限 10MB。插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
+
+---
+
+## 🔐 WebHost 访问令牌与安全
+
+宿主把监听套接字绑在 `0.0.0.0`（SAEA.MVC 未暴露绑定地址参数），同网段任何设备只要拿到地址就能连上；而这条通道背后是能读写工作区、执行命令的 Agent。所以宿主每次启动都生成一次性访问令牌，全站默认拒绝，只认下面列出的三种凭据。
+
+### 令牌怎么用
+
+| 场景 | 做法 |
+|------|------|
+| 首次进入（浏览器） | 打开终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`，宿主换发 Cookie 后 302 到去掉 `t` 的干净地址 |
+| 终端翻不到了 | 在宿主机执行 `LubanAgentWebHost token`，重新打印当前实例的入口地址 |
+| 多台设备 | 同一次运行内共用同一个入口地址进入即可，每台设备各自拿到自己的会话 Cookie |
+| 宿主重启后 | 令牌随进程失效，必须用新打印的地址重新进入（不做长期登录） |
+| CLI / Codex / 插件 | 自动带 `Authorization: Bearer <令牌>`，令牌从发现文件读取，无需手工填写 |
+| 自研客户端 | 用 `Authorization: Bearer`，或先访问 `/?t=<令牌>` 换 Cookie |
+
+- **令牌形态**：32 字节密码学随机数（`RandomNumberGenerator`）的 Base64Url 文本，43 个字符。
+- **要固定令牌**：用 `LubanAgentWeb:Token` 配置或 `--token`。值**只允许字母、数字、`-`、`_`**；含空格、分号或换行会截断 Cookie、污染响应头，宿主直接拒绝启动而不是降级放行。
+- **浏览器侧不落令牌**：令牌换成 `luban_auth` Cookie（`Path=/; HttpOnly; SameSite=Lax`，无过期时间即会话级），URL 里的 `t` 被 302 抹掉、不留在历史记录；页面脚本也读不到——`runtime-config.js` 只写 `userId`/`port`。
+- **401 长什么样**：浏览器直接访问不带令牌的地址，会看到中文提示页（含「到终端复制带 `?t=` 的地址」与 `LubanAgentWebHost token` 两条自助指引）；API 客户端收到 HTTP 401 与统一响应壳（`success: false`、`code: 401`、`message` 说明原因）。
+
+### 门禁覆盖范围与实现要点
+
+- **单点拦截，覆盖全部入口**：判定挂在 `SAEA.MVC.HttpContext.GetActionResult()`，命中路由的接口、SSE 流、附件上传与静态资源走同一道闸；控制器动作内还有 `WebApi.GuardAsync` 第二道复核。
+- **只放行一个路径**：`/system/health` 免令牌供启动器探活，只回 `status`/`version`/`serverTime`，不含用户身份，也不等待用户初始化。
+- **`?t=` 优先**：地址栏带了令牌就只认它——带错令牌时即使手里握有有效 Cookie 也返回 401，避免错误入口被旧凭据掩盖。
+- **常数时间比对**：校验用 `CryptographicOperations.FixedTimeEquals`，不按字符逐位短路，避免泄漏令牌前缀长度。
+- **失败即关门**：门禁靠反射替换 SAEA 内部请求上下文类型，替换失败会抛异常终止启动，不会静默退化成不鉴权。
+- **非读请求不 302**：只有 GET/HEAD 会被重定向改写；带 `?t=` 的 POST 等请求校验通过后原样执行，避免丢请求体。
+
+### 风险边界（务必了解）
+
+- **不加密传输**：默认没有 TLS，令牌与全部对话内容在局域网内明文传输。令牌每次重启更换只能收窄窗口，不能替代加密。
+- **发现文件是明文**：`%LOCALAPPDATA%\luban-agent\webhost.json` 记录端口与令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
+- **拿到地址即有完整权限**：令牌有效期内，持有入口地址者可读写工作区、执行命令。不要把这条地址发到群聊、工单或截图中。
+- **对公网暴露需自行加固**：前置反向代理加 TLS 与额外鉴权，并限制来源网段；本项目不提供公网部署方案。
 
 ---
 
