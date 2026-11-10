@@ -12,9 +12,11 @@ import {
   createSession,
   createWorkspace,
   deleteSession,
+  deleteWorkspace,
   filterWorkspaceId,
   refreshSessions,
   renameSession,
+  renameWorkspace,
   searchFocusToken,
   selectProject,
   sessions,
@@ -29,6 +31,10 @@ type RowAction =
   | { kind: 'rename'; sessionId: string; title: string }
   | { kind: 'delete'; sessionId: string; title: string };
 
+type ProjectAction =
+  | { kind: 'rename'; workspaceId: string; name: string }
+  | { kind: 'delete'; workspaceId: string; name: string };
+
 /** 会话的展示时间：优先更新时间。 */
 function sessionTime(session: { updatedAt?: string | null; createdAt: string }): string {
   return session.updatedAt ?? session.createdAt;
@@ -38,6 +44,8 @@ export function SessionListPage() {
   const [search, setSearch] = createSignal('');
   const [rowMenu, setRowMenu] = createSignal<{ x: number; y: number; sessionId: string } | null>(null);
   const [dialog, setDialog] = createSignal<RowAction | null>(null);
+  const [projectMenu, setProjectMenu] = createSignal<{ x: number; y: number; workspaceId: string } | null>(null);
+  const [projectDialog, setProjectDialog] = createSignal<ProjectAction | null>(null);
   const [creating, setCreating] = createSignal(false);
   const [newProject, setNewProject] = createSignal(false);
 
@@ -102,6 +110,19 @@ export function SessionListPage() {
     return sessions().find((session) => session.sessionId === menu.sessionId) ?? null;
   });
 
+  function openProjectMenu(event: MouseEvent, workspaceId: string) {
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const position = menuAt(rect, { width: 168, height: 92, align: 'end' });
+    setProjectMenu({ ...position, workspaceId });
+  }
+
+  const activeProject = createMemo(() => {
+    const menu = projectMenu();
+    if (!menu) return null;
+    return workspaces().find((workspace) => workspace.workspaceId === menu.workspaceId) ?? null;
+  });
+
   return (
     <div class="home-body">
       <aside class="home-side">
@@ -122,21 +143,41 @@ export function SessionListPage() {
         <div class="side-list">
           <For each={workspaces()}>
             {(workspace) => (
-              <button
+              <div
                 class="side-item"
                 classList={{ selected: workspace.workspaceId === filterWorkspaceId() }}
+                role="button"
+                tabIndex={0}
                 title={
                   workspace.workspaceId === filterWorkspaceId()
                     ? `${workspace.rootPath} · 再点一次取消筛选`
                     : workspace.rootPath
                 }
                 onClick={() => void selectProject(workspace.workspaceId)}
+                onKeyDown={(event) => {
+                  // 行内「更多」按钮的按键不触发行点击
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    void selectProject(workspace.workspaceId);
+                  }
+                }}
               >
                 <span class="ws-badge" style={{ background: workspaceColor(workspace.workspaceId) }}>
                   {workspaceInitial(workspace.name)}
                 </span>
                 <span class="side-name">{workspace.name || workspace.rootPath}</span>
-              </button>
+                <span class="session-actions">
+                  <button
+                    class="icon-btn"
+                    title="更多"
+                    aria-label="项目操作"
+                    onClick={(event) => openProjectMenu(event, workspace.workspaceId)}
+                  >
+                    <Icon name="more" size={16} />
+                  </button>
+                </span>
+              </div>
             )}
           </For>
           <Show when={workspaces().length === 0}>
@@ -300,6 +341,81 @@ export function SessionListPage() {
               setDialog(null);
               void deleteSession(target).then((ok) => {
                 if (ok) dropChat(target);
+              });
+            }}
+          />
+        )}
+      </Show>
+
+      <Show when={projectMenu()}>
+        {(menu) => (
+          <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, 'min-width': '168px' }} onClose={() => setProjectMenu(null)}>
+            <button
+              class="menu-item"
+              onClick={() => {
+                const project = activeProject();
+                setProjectMenu(null);
+                if (project) {
+                  setProjectDialog({ kind: 'rename', workspaceId: project.workspaceId, name: project.name ?? '' });
+                }
+              }}
+            >
+              <Icon name="pencil" size={15} />
+              重命名
+            </button>
+            <button
+              class="menu-item"
+              onClick={() => {
+                const project = activeProject();
+                setProjectMenu(null);
+                if (project) {
+                  setProjectDialog({ kind: 'delete', workspaceId: project.workspaceId, name: project.name ?? '' });
+                }
+              }}
+            >
+              <Icon name="trash" size={15} />
+              删除
+            </button>
+          </PopMenu>
+        )}
+      </Show>
+
+      <Show when={projectDialog()?.kind === 'rename' ? (projectDialog() as Extract<ProjectAction, { kind: 'rename' }>) : null}>
+        {(action) => (
+          <TextPromptDialog
+            title="重命名项目"
+            subtitle="只改显示名，磁盘目录不变"
+            label="名称"
+            initialValue={action().name}
+            confirmText="保存"
+            onClose={() => setProjectDialog(null)}
+            onConfirm={(value) => {
+              const target = action().workspaceId;
+              setProjectDialog(null);
+              void renameWorkspace(target, value);
+            }}
+          />
+        )}
+      </Show>
+
+      <Show when={projectDialog()?.kind === 'delete' ? (projectDialog() as Extract<ProjectAction, { kind: 'delete' }>) : null}>
+        {(action) => (
+          <ConfirmActionDialog
+            title="删除项目"
+            message={(() => {
+              const count = sessions().filter((session) => session.workspaceId === action().workspaceId).length;
+              const cascade = count > 0 ? `该项目下的 ${count} 个会话会一并删除，` : '';
+              return `确定删除项目「${truncate(action().name || '未命名项目', 40)}」？${cascade}磁盘目录不受影响。`;
+            })()}
+            onClose={() => setProjectDialog(null)}
+            onConfirm={() => {
+              const target = action().workspaceId;
+              const removed = sessions()
+                .filter((session) => session.workspaceId === target)
+                .map((session) => session.sessionId);
+              setProjectDialog(null);
+              void deleteWorkspace(target).then((ok) => {
+                if (ok) removed.forEach((sessionId) => dropChat(sessionId));
               });
             }}
           />

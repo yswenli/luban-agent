@@ -192,6 +192,58 @@ export async function createWorkspace(rootPath: string, name?: string): Promise<
   }
 }
 
+/**
+ * 重命名项目：只改显示名，不移动磁盘目录。
+ */
+export async function renameWorkspace(workspaceId: string, name: string): Promise<boolean> {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+
+  try {
+    await post('/workspace/rename', { workspaceId, name: trimmed });
+    await refreshWorkspaces();
+    showToast('已重命名项目', 'success');
+    return true;
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+    return false;
+  }
+}
+
+/**
+ * 删除项目（工作区）：逻辑删除，级联删除该项目下的会话，磁盘目录保持不动。
+ *
+ * 删的正好是当前工作区时自动切到剩余第一个，避免之后新建的会话落到「未绑定项目」；
+ * 若原本正筛选着这个项目，选中态跟随切换后的当前工作区，不留「无选中」的空档。
+ */
+export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
+  const wasFiltered = filterWorkspaceId() === workspaceId;
+  try {
+    await post('/workspace/delete', { workspaceId });
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+    return false;
+  }
+
+  if (wasFiltered) setFilterWorkspaceId(null);
+
+  await refreshWorkspaces();
+  if (currentWorkspaceId() === workspaceId) {
+    const next = (bootstrap()?.workspaces ?? [])[0] ?? null;
+    if (next) {
+      await switchWorkspace(next.workspaceId);
+    } else {
+      setCurrentWorkspaceId(null);
+    }
+  }
+  // 选中态始终跟随当前工作区：左栏「选中」既表示筛选，也表示新建会话归属哪个项目
+  if (wasFiltered) setFilterWorkspaceId(currentWorkspaceId());
+
+  await refreshSessions();
+  showToast('已删除项目', 'success');
+  return true;
+}
+
 export async function createSession(title?: string): Promise<string | null> {
   try {
     const session = await post<{ sessionId?: string } | null>('/session/create', {
