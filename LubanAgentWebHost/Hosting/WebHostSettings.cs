@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using Microsoft.Extensions.Configuration;
-
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>

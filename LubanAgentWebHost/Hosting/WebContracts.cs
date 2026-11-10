@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Protocol.Dtos;
-
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>首屏引导数据。</summary>
