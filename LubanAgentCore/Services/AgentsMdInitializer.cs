@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/17
-*描述：工作区 AGENTS.md 初始化服务：提示词装配、旧文件读取、结果规范化、落盘与校验提示，CLI/GUI 共用
+*描述：工作区 AGENTS.md 初始化服务：提示词装配、旧文件读取、结果规范化（补「Skill 流程遵守」与「协作约定」固定章节）、落盘与校验提示，CLI/GUI 共用
 *
 *****************************************************************************/
 
@@ -95,7 +95,7 @@ public interface IAgentsMdInitializer
     string BuildPrompt(AgentsMdOptions options);
 
     /// <summary>
-    /// 规范化模型输出：剥离外层代码围栏、统一换行、补「Skill 流程遵守」固定章节、补尾部换行，得到可落盘的 Markdown
+    /// 规范化模型输出：剥离外层代码围栏、统一换行、补「Skill 流程遵守」与「协作约定」两个固定章节、补尾部换行，得到可落盘的 Markdown
     /// </summary>
     /// <param name="llmOutput">模型原始输出</param>
     /// <returns>规范化后的 Markdown；无有效内容时返回空字符串</returns>
@@ -204,6 +204,7 @@ public class AgentsMdInitializer : IAgentsMdInitializer
         if (text.Length == 0) return string.Empty;
 
         text = EnsureSkillDirective(text);
+        text = EnsureCollabConvention(text);
         return text + "\n";
     }
 
@@ -220,6 +221,28 @@ public class AgentsMdInitializer : IAgentsMdInitializer
         "不得擅自增删步骤、跳过环节或改写流程；与「方案确认」等通用协作规则冲突时，以 skill 的流程为准。";
 
     /// <summary>
+    /// 固定章节标题：协作约定。模型输出缺失时由本服务确定性补齐。
+    /// </summary>
+    public const string CollabConventionHeading = "## 协作约定（优先于助手默认行为）";
+
+    /// <summary>
+    /// 固定章节正文：协作约定条目。逐条列出中文交流、证据可核、任务范围、包版本、方案比选等通用规则。
+    /// </summary>
+    public const string CollabConventionContent =
+        "- 全程中文；结论先行，再给一句话依据。回复精简但不省略依据与风险。\n" +
+        "- 位置以「文件 + 符号/章节」为主锚，`文件:行号` 为辅；编辑后重新核对行号再引用。\n" +
+        "- 有上游设计依据时给出处（如 `docs/superpowers/specs/<文件>.md` 的章节）；没有就写「无上游设计依据」，不编造。\n" +
+        "- 代码与注释不写「见 PRD §X」「按设计 vX」这类溯源标记，规则直接写完整；跨文件引用用「文件名 + 主题」。\n" +
+        "- 严格按任务范围执行，不顺手改无关文件或重构；范围外问题先报告，然后继续原任务。必要的连带改动（接口调用方、README 中英同步）不算扩面。\n" +
+        "- 改动代码后不得自行修改项目的包版本（`.csproj` 的 `<Version>`），也不得增删、升级或降级 `PackageReference` 版本；包版本管理由用户处理，除非当次任务明确要求。\n" +
+        "- 多文件改动、对外行为变更、不可逆操作或存在多种合理实现时：先给 2–3 个方案 + 权衡，暂停等明确许可再动手；中途失效回到比选，不自行换方案。\n" +
+        "- 不执行 `git push`、`reset --hard`、`clean`、改写已有提交，除非当次点名。\n" +
+        "- 凭据不写入代码/注释/文档/日志/提交；文档只写位置。\n" +
+        "- 未实际运行的构建/测试不得声称通过，报告附关键输出或退出码；环境缺失导致的失败写「环境原因」，只做静态核对写「未运行」。\n" +
+        "- 具体执行类任务（落码、代码审查、测试补齐、批量文档同步等）一律交给子代理完成；主会话只做需求澄清、方案比选、任务拆解、委派与验收，不亲自改代码。子代理返回后由主会话复核改动范围与构建/测试证据再下结论，不直接采信其自述。\n" +
+        "- 流程型 skill（brainstorming / grilling 等）只让渡「步骤顺序」，不因 skill 放宽范围与证据要求。";
+
+    /// <summary>
     /// 确保正文包含「Skill 流程遵守」固定章节；已存在时原样返回，避免重复初始化造成重复追加。
     /// </summary>
     /// <param name="markdown">已剥离围栏、统一换行的 Markdown 正文</param>
@@ -234,6 +257,22 @@ public class AgentsMdInitializer : IAgentsMdInitializer
         }
 
         return $"{markdown}\n\n{SkillDirectiveHeading}\n\n{SkillDirectiveContent}";
+    }
+
+    /// <summary>
+    /// 确保正文包含「协作约定」固定章节；已存在时原样返回，避免重复初始化造成重复追加。
+    /// </summary>
+    /// <param name="markdown">已剥离围栏、统一换行的 Markdown 正文</param>
+    /// <returns>补章后的 Markdown 正文</returns>
+    private static string EnsureCollabConvention(string markdown)
+    {
+        // 模型可能已按提示词生成该章节，标题命中即视为已存在，保持幂等
+        if (markdown.Contains("## 协作约定", StringComparison.Ordinal))
+        {
+            return markdown;
+        }
+
+        return $"{markdown}\n\n{CollabConventionHeading}\n\n{CollabConventionContent}";
     }
 
     /// <inheritdoc/>
@@ -256,13 +295,14 @@ public class AgentsMdInitializer : IAgentsMdInitializer
     {
         return $@"请校验 {targetPath} 的完整性：
 
-1. 逐章核对是否包含 full 模式 10 个章节：Metadata、角色定位、业务场景、能力清单、工具与API、权限与授权、禁止行为、异常处理、输入输出规约、协作与调度接口（末尾另须有固定章节，见第 6 条）。
+1. 逐章核对是否包含 full 模式 10 个章节：Metadata、角色定位、业务场景、能力清单、工具与API、权限与授权、禁止行为、异常处理、输入输出规约、协作与调度接口（末尾另须有固定章节，见第 6、7 条）。
 2. 若为 lite 模式，核对 4 个章节：Metadata、能力清单、工具与API、边界（含禁止行为与异常处理）。
 3. 检查「能力清单」「工具与API」是否为 Markdown 表格。
 4. 检查「禁止行为」「异常处理」在 full 模式下是否独立成章。
 5. 检查所有命令、路径、工具名是否与工作区实际内容一致，是否存在编造。
 6. 检查是否包含「Skill 流程遵守」章节：须写明调用 brainstorming、grilling（grill-me）等流程型 skill 时严格按其步骤与顺序执行，不得擅自增删步骤、跳过环节或改写流程。
-7. 列出缺失或空泛的章节，并给出补齐后的内容。";
+7. 检查是否包含「协作约定（优先于助手默认行为）」章节：须写明全程中文、结论先行、依据可核（文件 + 符号为主锚、行号为辅、无依据时明写「无上游设计依据」）、任务范围约束、包版本约束（不得自行改 `<Version>` 或增删升降 `PackageReference`）、方案比选与暂停确认、禁止破坏性 git 操作、凭据不入库、未运行不得声称通过、执行类任务交子代理。
+8. 列出缺失或空泛的章节，并给出补齐后的内容。";
     }
 
     /// <summary>
