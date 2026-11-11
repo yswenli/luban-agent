@@ -354,6 +354,8 @@ a {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* 首页左栏项目列表用浅底色，与右侧会话区（--surface）区分开；圆角由 .shell 的 overflow 裁剪 */
+  background: #fbfbfb;
   padding: 18px 10px 16px 20px;
   overflow-y: auto;
 }
