@@ -2,7 +2,7 @@
 
 - 日期：2026-11-11
 - 范围：`luban-agent` / `LubanAgentWebHost`（一期）、`luban-agent` / `LubanAgentCore.Client` + `LubanAgentCli` + `LubanAgentCodex`（二期）
-- 状态：待确认
+- 状态：已按审查结论修订（见 §13），待批准实施
 
 ## 1. 意图
 
@@ -69,20 +69,29 @@
 - **语义快照**（见 6.2）
 - **尾帧环形缓冲**：`(seq, frame)`，容量可配（默认 2000 帧）。只用于「快照之后到最新」的缝隙补帧，不承担全量重放
 - **订阅者列表**：每个订阅者一个有界 `Channel<AgentSseFrame>`（容量 512）
+- 轮次内的 scope 与宿主实例归 hub 所有；`AgentWebRuntime` 只做登记与取消转发
 
-发布路径：帧进入 hub 后，先更新快照与缓冲（同一把锁），再对每个订阅者 `TryWrite`。**发布永不阻塞**：写不进队列说明该订阅者已慢到失去意义，直接摘除该订阅者（并记一条日志），后台轮次继续。
+发布路径（顺序是契约，不是实现细节）：
+
+1. 帧进入 hub 后，在**同一把锁**内：更新快照与环形缓冲（分配 seq）→ 对每个订阅者 `TryWrite`。
+2. **发布永不阻塞**：写不进队列说明该订阅者已慢到失去意义，摘除该订阅者（记一条日志），并 `TryComplete()` 其队列唤醒 pump，后台轮次继续。
+3. **心跳不经过 hub**：心跳在传输层是 `null` 帧，hub 收到即丢弃，不分配 seq、不进快照、不进缓冲；`SsePump` 的 `: ping` 改由每个订阅者 pump 按 `Settings.HeartbeatSeconds` 自己的空闲计时发出。
+4. **订阅与补发原子**：`Subscribe(runId)` 在同一把锁内完成「复制 seq > fromSeq 的 backlog → 登记订阅者」，返回 backlog + 订阅者句柄；否则并发发布时必然漏帧。`/agent/chat` 的首个订阅者等价于 `fromSeq = 0`。
+5. **收尾顺序**：轮次进入终态 → 发布 `done`（或已发布的 `error`）→ 完成所有订阅者通道。pump 读到通道完成即退出并写 `SsePump.Complete`，action 返回、SAEA 关连接。
+6. **抢占**：同会话新轮次到来时，先取消旧轮次并**等待其收尾（上限 10s，超时只记日志）**，再登记新轮次——避免同会话两个宿主实例并存。
 
 ### 6.2 快照
 
 快照是「把这一轮到目前为止的语义状态压成一个对象」，字段与前端 `ChatItem` 的 assistant 分支对齐：
 
+- `runId` / `sessionId` / `startedAt`：续流后前端用它填 `runId()`，停止按钮才能精确取消本轮（不给就从快照路径来的前端永远只有 `null`，`/agent/cancel` 会变成无条件取消）
 - `text`：累积的 `text.delta`
 - `thinking`：累积的 `think.delta`
 - `tools[]`：`{callId, name, argumentsText, status, resultText}`，由 `tool.started` / `tool.completed` / `tool.failed` 累积
 - `plans[]`：`plan.item` 累积；`progress[]`：`orchestration.progress` 累积
 - `attachmentsAdded` / `attachmentsSkipped`：计数
 - `notices[]`：`{tone, text}`，覆盖 `tool.denied`、`attachment.added`、`attachment.skipped`、`error` 这些在前端是独立 notice 条目的帧——重开后它们不能凭空消失，只留计数是不够的
-- `pendingConfirmation`：当前等待中的工具确认（`tool.confirm` 的载荷），用于重开后仍能弹确认框
+- `pendingConfirmation`：当前等待中的工具确认（`tool.confirm` 的载荷 + `expiresAt`），用于重开后仍能弹确认框；`expiresAt` 让前端按剩余时间倒数，而不是从原始 `timeoutSeconds` 重新开始
 - `seq`：生成快照时对应的帧序号
 
 快照在每帧发布时增量更新，成本 O(1)。内存占用与这一轮的正文长度同阶，轮次结束后随 run 一起释放。
@@ -97,10 +106,12 @@
 
 | 请求形态 | 服务端行为 |
 |---|---|
-| 该会话无轮次（或已过保留期） | 返回 `204`，前端改走 `loadHistory(true)` |
+| 该会话无轮次（或已过保留期） | 返回 `204`（空体），前端改走 `loadHistory(true)` |
 | 有轮次，`fromSeq` 缺省（页面刷新后内存为空） | 先发 1 帧 `run.snapshot`（6.2 的快照），再发缓冲中 `seq > snapshot.seq` 的帧，之后转实时 |
 | 有轮次，带 `fromSeq`（二期客户端断线重连，UI 状态还在） | 只发 `seq > fromSeq` 的帧；若 `fromSeq` 已滑出缓冲窗口，改发 `run.snapshot` + `run.resync` 提示（二期处理） |
 | 轮次在 attach 前已结束 | 一律回 `204`，由前端 `loadHistory(true)` 拿完整回答（保留期只用于让 `active` 能解释终态） |
+
+`204` 必须在前端有专门分支：`web/src/lib/sse.ts` 现在把所有非 `text/event-stream` 响应都交给 `onError`，而 `toApiError` 会把空体 204 变成「请求失败（HTTP 204）」。施工时给 `streamPost` 的 `SseHandlers` 加 `onEmpty?: () => void`，`response.status === 204` 直接回调它并返回——否则「跑完瞬间重开」必然弹一条假错误。
 
 新增事件名 `run.snapshot`（写入 `LubanAgentCore/Protocol/Events/AgentSseEventNames.cs`），载荷即 6.2 的快照。
 
@@ -113,10 +124,10 @@
 
 1. 解析与校验保持原样（`400` / `503` 仍在切换 `Content-Type` 之前）。
 2. 校验通过后**创建轮次**（hub 内建 scope + 宿主），而不是在请求内建 scope 交给轮次用。
-3. 后台 `Task.Run`（或 `Task.Factory.StartNew` + `LongRunning`）执行原来的 `StreamFramesAsync`，产出直接 `Publish` 给 hub，**不碰 `HttpResponse`**。
-4. 当前 HTTP 连接注册为第一个订阅者，用自己的写循环从 channel 取帧写 socket；写失败只注销订阅者，**不取消轮次**。
-5. `finally` 只剩「注销订阅者」；轮次的取消只来自 `/agent/cancel`、同会话新轮次抢占（`BeginRun` 已有语义）、宿主关闭（`ShutdownToken`）。
-6. 订阅者 pump 结束（正常收到 `done` 或写失败）后 action 返回，SAEA 关连接，行为与现在一致。
+3. 后台 `Task.Run`（或 `Task.Factory.StartNew` + `LongRunning`）执行原来的 `StreamFramesAsync`，产出直接 `Publish` 给 hub，**不碰 `HttpResponse`**；心跳不再由 producer 产出，`null` 帧在 hub 入口即丢弃。
+4. 当前 HTTP 连接注册为第一个订阅者（`fromSeq = 0`），用自己的 pump 从 channel 取帧写 socket；写失败只注销订阅者，**不取消轮次**。
+5. `finally` 只剩「注销订阅者」；轮次的取消只来自 `/agent/cancel`、同会话新轮次抢占（`BeginRun` 的取消 + 等待收尾）、宿主关闭（`ShutdownToken`）。
+6. 订阅者 pump 结束（读到通道完成，或写失败）后 action 返回，SAEA 关连接，行为与现在一致。
 
 `SsePump` 仍然只在订阅者 pump 线程调用，避免 `HttpResponse` 被后台线程触碰。
 
@@ -126,11 +137,13 @@
   0. `streaming()` 为 true（本地流还活着）→ 直接返回，绝不重复订阅
   1. `POST /agent/active`
   2. 不活跃 → 若本地尚无内容则 `loadHistory(true)`，结束
-  3. 活跃 → `streamPost('/agent/attach', { sessionId })`；收到 `run.snapshot` 时新建 assistant 气泡并按快照填 `text` / `thinking` / `tools` / `plans` / `progress` / `notices`，`pendingConfirmation` 直接进确认弹窗状态
+  3. 活跃 → `streamPost('/agent/attach', { sessionId })`；收到 `run.snapshot` 时新建 assistant 气泡并按快照填 `runId` / `text` / `thinking` / `tools` / `plans` / `progress` / `notices`，`pendingConfirmation` 直接进确认弹窗状态（按 `expiresAt` 算剩余秒）
   4. 后续帧走 `applyFrame`
-- `pages/Chat.tsx` 的 `onMount`：`loadHistory()` 之后调用 `chat.resume()`。
+  5. `attach` 回 `204` 时按 `streamPost` 的 `onEmpty` 回调走 `loadHistory(true)`
+- `pages/Chat.tsx` 的 `onMount`：**`await chat.loadHistory()` 之后**再 `void chat.resume()`。不能并行：`loadHistory` 内部是整表 `setItems`，与快照重建竞态会把快照气泡冲掉。
 - 断线自动重连：`streamPost` 的 `onError` 若非用户主动停止（`AbortController` 未 abort），按 1s / 2s / 4s 退避重试 `resume()`，最多 3 次；耗尽后按现有逻辑显示错误提示。
 - 顶部会话标签的「进行中」指示继续用 `streaming()`，不需要新状态。
+- `components/TopBar.tsx` 关标签仍是 `dropChat()`（abort 本地流），改造后这只是「本地离开」，原注释「即视为结束该会话的本次浏览」要改成同等口径。
 
 ### 6.6 生命周期与清理
 
@@ -144,9 +157,9 @@
 
 - **`/session/delete` 拒绝删除进行中的会话**：`WebSessionService.DeleteAsync` 在归属校验（`CheckOwnerAsync`）之后、`DeleteSessionAsync` 之前加一道判定——该会话在 hub 里有 `Stage == Running` 的轮次 → `FailJson(409, "该会话正在进行中，请先停止再删除")`，**不执行任何删除**。判定必须早于软删，否则轮次跑完还会往已删会话里写。
 - 前端不需要新交互：`web/src/stores/app.ts` 的 `deleteSession` 已有失败 toast 通路，409 的 message 直接弹出来；删除按钮是否提前置灰由施工定，服务端判定是硬约束。
-- **`/session/clearMessages` 保持「先取消再清空」**：清空不销毁会话，先取消可避免「已清空却又长出一条回答」的幽灵数据。
-- 前端 `chats.ts` 的 `dropChat` 仍只负责本地止流，服务端轮次由上面两条接口约定收尾。
-- **删除工作区时若连带有进行中的会话，同样拒绝**：`/workspace/delete` 会连带删除该工作区下的会话（前端 `SessionList.tsx` 的「删除项目」把整组会话一起丢掉），判定口径与单会话删除一致——先查 hub 里该工作区下是否有 `Running` 轮次，有则 `409` + 「该工作区下有正在进行中的会话，请先停止」。
+- **`/session/clearMessages` 改为「先取消再清空」**（现状并不取消，`WebSessionService.ClearMessagesAsync` 只清库）：清空不销毁会话，先取消可避免「已清空却又长出一条回答」的幽灵数据；取消后等待轮次收尾（同 §6.1 抢占的上限）再清库。
+- 前端 `chats.ts` 的 `dropChat` 仍只负责本地止流；服务端轮次由上面两条接口约定收尾。凡是删除失败（409/其它）的路径都不能 `dropChat`——现有调用点已经是 `if (ok)` 才销毁（`pages/SessionList.tsx`、`pages/Chat.tsx`），实施时复核一遍即可。
+- **删除工作区时若连带有进行中的会话，同样拒绝**：`/workspace/delete` 会连带删除该工作区下的会话（前端 `SessionList.tsx` 的「删除项目」把整组会话一起丢掉），判定口径与单会话删除一致——先用 `ISessionWorkspaceQuery.GetByWorkspaceAsync(workspaceId, userId)` 取该工作区下的会话，再查 hub 里这些会话是否有 `Running` 轮次，有则 `409` + 「该工作区下有正在进行中的会话，请先停止」。该查询接口已在用（`ListByWorkspaceAsync`），不需要新增抽象。
 
 ## 7. 边界与错误
 
@@ -169,8 +182,9 @@
 1. `RunStreamingAsync` 的 `finally` 区分两种收尾：
    - `ct` 被取消（用户按停止 / UI 关闭）→ 保持现状，调 `/agent/cancel`；
    - 读流出错或 EOF 但没收到 `done` → **不 cancel**，用 `fromSeq`（已 yield 到的帧序号）调 `/agent/attach` 续上，退避重连最多 3 次。
-2. 服务端回 `run.snapshot` + `run.resync`（断线期间超出缓冲窗口）时，转换成一个新的 `AgentStreamEvent`（`RunResyncEvent`），由 CLI / Codex 的会话 ViewModel 用整段文本替换当前气泡。
-3. 本机模式（不接 WebHost）没有 HTTP 边界，不存在该问题，不改。
+2. **seq 的传输通道必须先落地**（一期不动，但落点写死）：SSE 标准 `id: {seq}` 行。`AgentSseFrame` 现在是纯 `(Name, Data)` 记录、`ToText()` 不写 `id:`、`TryParse` 也不认 `id:`，所以二期要给 `AgentSseFrame` 加一个可空 `Seq` 成员，`ToText()` 在非空时前置 `id:` 行，`TryParse` 回填；前端 `lib/sse.ts` 的 `dispatch` 同步解析 `id:`。不做这一步，`fromSeq` 在客户端根本无从得知。
+3. 服务端回 `run.snapshot` + `run.resync`（断线期间超出缓冲窗口）时，转换成一个新的 `AgentStreamEvent`（`RunResyncEvent`），由 CLI / Codex 的会话 ViewModel 用整段文本替换当前气泡。
+4. 本机模式（不接 WebHost）没有 HTTP 边界，不存在该问题，不改。
 
 一期只定契约、不改 Core 客户端；二期开工时再核对 `AgentStreamEvent` 的既有消费点。
 
@@ -195,6 +209,9 @@
 5. 冒烟「等待工具确认时关页面」：重开后确认框仍在，点允许后流程继续。
 6. 冒烟「删除正在跑的会话」：被拒绝并提示「该会话正在进行中」，会话仍在、轮次继续跑完；停止后再删成功。删除工作区同理。
 7. `README.md` / `README.en.md` 的接口表补 `/agent/active`、`/agent/attach` 两行（中英同步）。
+8. 冒烟「续流后点停止」：利用快照带回的 `runId`，`/agent/cancel` 只取消本轮；控制台确认不是「无条件取消当前轮次」。
+9. 冒烟「进行中点清空消息」：轮次先被取消并收尾，随后库清空，之后不再冒出半截回答。
+10. 冒烟「跑完瞬间重开」不出现「请求失败（HTTP 204）」提示（验证 `attach` 的 204 空响应分支）。
 
 ## 11. 留给施工的决定
 
@@ -210,4 +227,23 @@
 3. **轮次归属会话，不归属发起客户端**：单机单用户下，CLI/Codex 远程模式与网页操作同一会话时互为可见、可停止。若要求隔离，则 hub 键与两个新端点入参都要加客户端标识，属于契约级改动。
 4. **`AgentRunHub` 放 `LubanAgentCore`**：只依赖 `IAgentHost` / `DiContainer` / `AgentSseFrame`，进 Core 可被 `LubanAgent.Tests` 直接覆盖，二期客户端可复用；WebHost 只留 SAEA 胶水。
 5. **显式取消/失败的部分内容不补写落库**：保持现有回合边界语义，不在本次引入「中断消息」。
-6. **删除进行中的会话一律拒绝**（409 + 提示），不做「先取消再删」；`/session/clearMessages` 仍先取消再清空。这条把原先「关页面即取消」顺带兜住的清理责任显式化。
+6. **删除进行中的会话一律拒绝**（409 + 提示），不做「先取消再删」；`/session/clearMessages` 则是先取消再清空（现状未取消，属本次补齐）。这条把原先「关页面即取消」顺带兜住的清理责任显式化。
+
+## 13. 审查修订（2026-11-11）
+
+上一版审查逐条核对了代码前提，以下是必须落进文档的修正（已并入上文，此处留索引）：
+
+| # | 问题 | 修订落点 |
+|---|---|---|
+| 1 | `/session/clearMessages` 现状**并不取消**（`WebSessionService.ClearMessagesAsync` 只清库，全仓 `CancelRun` 只有 `WebAgentService.CancelAsync` 一处），原文写「保持先取消」与代码不符 | §6.7 改为「新增先取消再清空」；§10 第 9 条 |
+| 2 | `attach` 回 `204` 时前端 `sse.ts` 会走 `onError` 并弹「请求失败（HTTP 204）」，`resume()` 的「先 active 再 attach」必然踩到轮次结束窗口 | §6.3 新增 `onEmpty` 分支；§6.5 第 5 步；§10 第 10 条 |
+| 3 | 快照不带 `runId`，续流后的前端 `runId()` 停在 null，`/agent/cancel` 退化为无条件取消 | §6.2 增加 `runId`/`sessionId`/`startedAt`；§10 第 8 条 |
+| 4 | 心跳是 `null` 帧，改造后若进 hub 会撑大 seq、污染快照；文档未交代归谁发 | §6.1 发布路径第 3 条；§6.4 第 3 条 |
+| 5 | 「订阅 + 补发」原子性未写死，并发发布会漏帧 | §6.1 发布路径第 4 条 |
+| 6 | 订阅者队列满被摘除时 pump 会永久阻塞在 `ReadAsync` | §6.1 发布路径第 2 条（`TryComplete`） |
+| 7 | 轮次收尾到关闭订阅者通道的顺序未写，`/agent/chat` 的 action 可能挂住 | §6.1 发布路径第 5 条 |
+| 8 | 抢占只写「新轮次取消旧轮次」，未要求等旧轮次收尾，会出现同会话两个宿主实例 | §6.1 发布路径第 6 条 |
+| 9 | 工作区删除判定缺少会话集合来源 | §6.7 明确用 `ISessionWorkspaceQuery.GetByWorkspaceAsync` |
+| 10 | 二期 `fromSeq` 的传输通道（seq 怎么到客户端）完全未定 | §8 第 2 条：SSE `id:` 行 + `AgentSseFrame.Seq` |
+
+附带两条口径（非阻断）：快照的 `pendingConfirmation` 需带 `expiresAt`（否则重开后的倒计时从满值重来，服务端其实可能已过期）；`Chat.tsx` 必须 `await loadHistory()` 再 `resume()`（`loadHistory` 是整表覆盖，与快照重建竞态）。
