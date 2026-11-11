@@ -50,7 +50,8 @@ public sealed class ProviderController : Controller
     /// </summary>
     /// <remarks>
     /// 与桌面端设置页同一语义：同名只更新密钥与基址，显示名 / 超时 / 自定义模型按表单差值落盘；
-    /// <see cref="ProviderSaveRequest.ApiKey"/> 留空表示沿用已有密钥（新建时不接受留空）。
+    /// <see cref="ProviderSaveRequest.ApiKey"/> 留空表示沿用已有密钥（新建时不接受留空）；
+    /// 提交 <see cref="ProviderSaveRequest.OriginalName"/> 且与新标识不同时按重命名处理。
     /// </remarks>
     /// <param name="payload">包装后的 <see cref="ProviderSaveRequest"/> JSON。</param>
     /// <returns>保存后的供应商项（密钥仍为掩码）。</returns>

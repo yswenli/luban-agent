@@ -373,6 +373,51 @@ public class ConfigManager : IAppConfigReader, IConnectorConfigWriter, IAgentMod
         Save();
     }
 
+    /// <summary>
+    /// 重命名 Provider（原地改标识），并把当前选中模型里的供应商标识一并迁移
+    /// </summary>
+    /// <param name="oldName">原标识</param>
+    /// <param name="newName">新标识</param>
+    /// <returns>重命名后的 Provider 配置</returns>
+    /// <exception cref="InvalidOperationException">原标识不存在或新标识已被占用时抛出</exception>
+    /// <remarks>
+    /// 只改标识，API Key / 基址 / 显示名 / 自定义模型原样保留；选中模型前缀与刷新模型缓存一并迁移。
+    /// 与 <see cref="AddProvider"/> 一致：名称统一小写。
+    /// 已构建的聊天客户端不会因此刷新，调用方如需立即生效应重建 Agent。
+    /// </remarks>
+    public ProviderConfig RenameProvider(string oldName, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName))
+            throw new ArgumentException("Provider 名称不能为空", nameof(newName));
+
+        var normalizedOld = oldName?.Trim().ToLowerInvariant() ?? string.Empty;
+        var normalizedNew = newName.Trim().ToLowerInvariant();
+
+        var provider = GetProvider(normalizedOld)
+            ?? throw new InvalidOperationException($"Provider '{oldName}' 不存在");
+
+        if (normalizedNew == provider.Name)
+            return provider;
+
+        if (GetProvider(normalizedNew) != null)
+            throw new InvalidOperationException($"Provider '{normalizedNew}' 已存在");
+
+        var oldPrefix = provider.Name + ":";
+        var previousName = provider.Name;
+        provider.Name = normalizedNew;
+        if (!string.IsNullOrEmpty(_config.SelectedModel)
+            && _config.SelectedModel.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            _config.SelectedModel = normalizedNew + ":" + _config.SelectedModel[oldPrefix.Length..];
+        }
+
+        // 刷新得到的模型缓存按名称存键，跟着改名迁移，否则新标识的模型列表会变空
+        _providerService?.MoveFetchedModels(previousName, normalizedNew);
+
+        Save();
+        return provider;
+    }
+
     /// <summary>选中模型变更时触发（model 为新值，null 表示清空）。</summary>
     public event Action<string?>? SelectedModelChanged;
 

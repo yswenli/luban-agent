@@ -42,6 +42,9 @@ public sealed record ProviderSaveRequest
     /// <summary>标识（小写）。</summary>
     public string Name { get; init; } = string.Empty;
 
+    /// <summary>原标识；与 <see cref="Name"/> 不同时表示重命名，为空时按标识是否已存在判定新建 / 更新。</summary>
+    public string? OriginalName { get; init; }
+
     /// <summary>API Key 明文；留空表示不修改。</summary>
     public string? ApiKey { get; init; }
 

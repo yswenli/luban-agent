@@ -298,6 +298,24 @@ export async function selectModel(providerId: string, modelId: string): Promise<
 }
 
 /**
+ * 刷新全局供应商清单与当前模型选择（供应商保存 / 删除后调用）。
+ *
+ * 不走 `loadBootstrap()`：它会置 `booting=true`，整页闪回启动页并卸载设置弹层；
+ * 这里只回写 bootstrap 里的 providers / selection，顶栏模型名与模型下拉随之更新。
+ */
+export async function refreshProviders(): Promise<void> {
+  try {
+    const data = await get<Bootstrap>('/system/bootstrap');
+    setBootstrap((current) =>
+      current ? { ...current, providers: data.providers ?? [], selection: data.selection ?? null } : current,
+    );
+    setSelection(data.selection ?? null);
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+  }
+}
+
+/**
  * 补齐某供应商的模型列表。
  *
  * 首屏 bootstrap 只读该用户的模型缓存，全新环境里缓存为空，下拉会没有任何模型；

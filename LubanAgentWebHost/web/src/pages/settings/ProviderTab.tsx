@@ -2,7 +2,7 @@ import { createEffect, createSignal, Show } from 'solid-js';
 
 import { resetAgent, settingsApi } from '../../lib/settings';
 import type { ProviderListItem } from '../../lib/types';
-import { showToast } from '../../stores/app';
+import { refreshProviders, showToast } from '../../stores/app';
 import { AreaField, FormActions, SettingsPane, TextField } from './Shared';
 
 interface ProviderForm {
@@ -42,7 +42,8 @@ export function ProviderTab() {
       name: item.name,
       apiKey: '',
       baseUrl: item.baseUrl ?? '',
-      displayName: item.displayName,
+      // 列表的 displayName 在未设置时会回退成标识，这里反推回空串，避免改名后把旧标识固化成显示名
+      displayName: item.displayName === item.name ? '' : item.displayName,
       timeout: item.networkTimeoutSeconds ? String(item.networkTimeoutSeconds) : '',
       customModels: item.customModels ?? [],
     });
@@ -75,12 +76,25 @@ export function ProviderTab() {
     setForm((current) => ({ ...current, [key]: value }));
 
   const save = async () => {
-    if (!form().name.trim()) {
+    const name = form().name.trim();
+    if (!name) {
       showToast('供应商标识不能为空', 'error');
       return;
     }
 
-    if (!active() && !form().apiKey.trim()) {
+    // 标识改动即重命名：沿用原供应商的密钥，不算新建
+    const current = active();
+    const renaming = current !== null && current !== name;
+    if (renaming && items().some((item) => item.name === name)) {
+      showToast(`供应商标识「${name}」已存在`, 'error');
+      return;
+    }
+    if (current === null && items().some((item) => item.name === name)) {
+      showToast(`供应商标识「${name}」已存在，请从左侧列表选择后编辑`, 'error');
+      return;
+    }
+
+    if (current === null && !form().apiKey.trim()) {
       showToast('新建供应商时 API Key 不能为空', 'error');
       return;
     }
@@ -88,7 +102,8 @@ export function ProviderTab() {
     setBusy(true);
     try {
       const saved = await settingsApi.saveProvider({
-        name: form().name.trim(),
+        name,
+        originalName: renaming ? current : null,
         apiKey: form().apiKey.trim() || null,
         baseUrl: form().baseUrl.trim() || null,
         displayName: form().displayName.trim() || null,
@@ -96,8 +111,9 @@ export function ProviderTab() {
         customModels: form().customModels,
       });
       await resetAgent();
+      await refreshProviders();
       showToast('供应商已保存', 'success');
-      await reload(saved?.name ?? form().name.trim());
+      await reload(saved?.name ?? name);
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -114,6 +130,7 @@ export function ProviderTab() {
     try {
       await settingsApi.deleteProvider(name);
       await resetAgent();
+      await refreshProviders();
       showToast('供应商已删除', 'success');
       setActive(null);
       setForm(empty());
@@ -146,7 +163,7 @@ export function ProviderTab() {
         <TextField
           label="标识"
           value={form().name}
-          hint="小写；作为唯一键"
+          hint="小写；作为唯一键，改动即重命名"
           onInput={(v) => patch('name', v)}
         />
         <TextField label="显示名" value={form().displayName} onInput={(v) => patch('displayName', v)} />

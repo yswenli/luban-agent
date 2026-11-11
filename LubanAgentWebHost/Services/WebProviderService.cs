@@ -99,6 +99,7 @@ public static class WebProviderService
     /// <remarks>
     /// 与桌面端设置页同一语义：同名只更新密钥与基址，显示名 / 超时 / 自定义模型按表单差值落盘；
     /// <see cref="ProviderSaveRequest.ApiKey"/> 留空表示沿用已有密钥（新建时不接受留空）。
+    /// 提交 <see cref="ProviderSaveRequest.OriginalName"/> 且与新标识不同时按重命名处理，此时密钥同样可留空。
     /// </remarks>
     /// <param name="payload">包装后的 <see cref="ProviderSaveRequest"/> JSON。</param>
     /// <returns>保存后的供应商项（密钥仍为掩码）。</returns>
@@ -115,11 +116,27 @@ public static class WebProviderService
             return WebApi.FailJson(400, "Name 不能为空");
         }
 
+        var originalName = string.IsNullOrWhiteSpace(input.OriginalName)
+            ? null
+            : input.OriginalName.Trim().ToLowerInvariant();
         var apiKey = input.ApiKey?.Trim() ?? string.Empty;
         var baseUrl = string.IsNullOrWhiteSpace(input.BaseUrl) ? null : input.BaseUrl.Trim();
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
         var config = scope.GetRequiredService<ConfigManager>();
+
+        // 标识改动即重命名：按前端带来的原标识定位现有供应商，避免被当成「新建」而误判 API Key 必填。
+        // 原标识已不存在（并发删除等）时退回按新标识判定，与未传原标识的行为一致。
+        if (originalName is not null && originalName != name && config.GetProvider(originalName) is not null)
+        {
+            if (config.GetProvider(name) is not null)
+            {
+                return WebApi.FailJson(400, $"供应商 '{name}' 已存在");
+            }
+
+            config.RenameProvider(originalName, name);
+        }
+
         var existing = config.GetProvider(name);
         if (existing is null && string.IsNullOrEmpty(apiKey))
         {

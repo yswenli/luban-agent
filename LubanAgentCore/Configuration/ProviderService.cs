@@ -44,6 +44,19 @@ public sealed class ProviderService
     public List<string> GetAllModels(string providerName, List<string>? customModels = null)
         => ProviderHelper.GetAllModels(providerName, _cache, customModels);
 
+    /// <summary>把刷新得到的模型列表从旧名称迁移到新名称（重命名 Provider 时用）。</summary>
+    /// <param name="oldProviderName">原名称</param>
+    /// <param name="newProviderName">新名称</param>
+    public void MoveFetchedModels(string oldProviderName, string newProviderName)
+    {
+        if (string.IsNullOrWhiteSpace(oldProviderName) || string.IsNullOrWhiteSpace(newProviderName))
+            return;
+
+        var models = _cache.GetFetched(oldProviderName);
+        if (models.Count > 0)
+            _cache.SetFetched(newProviderName, models.ToList());
+    }
+
     /// <summary>从远程端点刷新 Provider 的模型列表，失败时回退到本地模型列表。</summary>
     public Task<List<string>> RefreshModelsAsync(string providerName, string apiKey, string? baseUrl = null, CancellationToken cancellationToken = default)
         => ProviderHelper.RefreshModelsAsync(providerName, apiKey, _cache, baseUrl, cancellationToken);
