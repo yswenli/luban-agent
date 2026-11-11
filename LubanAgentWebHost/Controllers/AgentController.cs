@@ -29,6 +29,18 @@ public sealed class AgentController : Controller
     [HttpPost]
     public Task<ActionResult> Chat(string payload) => WebAgentService.ChatAsync(payload);
 
+    /// <summary>探活：该会话是否有正在进行的回合。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentActiveRequest"/> JSON。</param>
+    /// <returns><c>{ active, runId, startedAt }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> Active(string payload) => WebAgentService.ActiveAsync(payload);
+
+    /// <summary>接上该会话正在进行的回合（SSE）；无活跃回合返回 204。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentAttachRequest"/> JSON。</param>
+    /// <returns>SSE 标记结果。</returns>
+    [HttpPost]
+    public Task<ActionResult> Attach(string payload) => WebAgentService.AttachAsync(payload);
+
     /// <summary>回传工具确认结果。</summary>
     /// <param name="payload">包装后的 <see cref="AgentConfirmRequest"/> JSON。</param>
     /// <returns>是否写入成功。</returns>

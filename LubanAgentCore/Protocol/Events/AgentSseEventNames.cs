@@ -11,7 +11,7 @@ namespace LubanAgentCore.Protocol.Events;
 
 /// <summary>
 /// SSE 事件名。前 10 个与框架 <c>LuBan.AIAgent.Protocol.AgentEventProtocol</c> 口径一致；
-/// 后 4 个是宿主在传输层补写的事件（框架没有对应的事件类型）。
+/// 其余是宿主在传输层补写的事件（框架没有对应的事件类型）。
 /// </summary>
 public static class AgentSseEventNames
 {
@@ -56,4 +56,7 @@ public static class AgentSseEventNames
 
     /// <summary>编排进度；载荷见 <see cref="OrchestrationProgressPayload"/>。</summary>
     public const string OrchestrationProgress = "orchestration.progress";
+
+    /// <summary>续流快照；载荷即 <see cref="Hosting.AgentRunSnapshot"/>（仅在接上已进行中的回合时下发一次）。</summary>
+    public const string RunSnapshot = "run.snapshot";
 }

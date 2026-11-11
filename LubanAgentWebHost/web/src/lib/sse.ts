@@ -7,6 +7,8 @@ export interface SseFrame {
 
 export interface SseHandlers {
   onFrame: (frame: SseFrame) => void;
+  /** 服务端以 204 空体表示「没有可续的轮次」；不设该回调时按错误处理。 */
+  onEmpty?: () => void;
   onError?: (error: unknown) => void;
   onClose?: () => void;
 }
@@ -32,6 +34,13 @@ export async function streamPost(
       return;
     }
     handlers.onError?.(error);
+    return;
+  }
+
+  // 204 空体是「没有可续的轮次」的正常应答，必须先于 Content-Type 判定拦下：
+  // 否则会被当成非 SSE 响应，前端看到「请求失败（HTTP 204）」
+  if (response.status === 204) {
+    handlers.onEmpty?.();
     return;
   }
 

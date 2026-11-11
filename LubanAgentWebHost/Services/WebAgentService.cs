@@ -122,6 +122,10 @@ public static class WebAgentService
     /// <summary>流式对话（SSE，装配工具与确认）。</summary>
     /// <param name="payload">包装后的 <see cref="AgentChatRequest"/> JSON。</param>
     /// <returns>SSE 标记结果。</returns>
+    /// <remarks>
+    /// 轮次归属会话而不是这条连接：本次连接断开只摘订阅者，轮次继续在后台跑完，
+    /// 客户端重开页面后可用 <see cref="AgentApiRoutes.Agent.Attach"/> 接上。
+    /// </remarks>
     public static Task<ActionResult> ChatAsync(string payload) => WebApi.RunGuardedAsync(async () =>
     {
         if (!WebApi.TryReadPayload<AgentChatRequest>(payload, out var input) || input is null)
@@ -136,86 +140,199 @@ public static class WebAgentService
         }
 
         // 以下校验必须全部在切换 Content-Type 之前完成：一旦开始写 SSE 就不能再改状态码
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
-        if (scope.GetService(typeof(IAgentHost)) is not IAgentHost host)
+        var userId = WebApi.Runtime.UserId;
+        SessionResolution resolution;
+        await using (var probe = WebApi.Runtime.CreateRequestScope(userId))
         {
-            return WebApi.FailJson(503, AgentDisabled);
+            if (probe.GetService(typeof(IAgentHost)) is not IAgentHost)
+            {
+                return WebApi.FailJson(503, AgentDisabled);
+            }
+
+            resolution = await WebSessionResolver
+                .ResolveAsync(probe, userId, input.SessionId)
+                .ConfigureAwait(false);
+            if (!resolution.Ok)
+            {
+                return WebApi.FailJson(resolution.Code, resolution.Error ?? "会话解析失败");
+            }
         }
 
-        var resolution = await WebSessionResolver
-            .ResolveAsync(scope, WebApi.Runtime.UserId, input.SessionId)
-            .ConfigureAwait(false);
-        if (!resolution.Ok)
-        {
-            return WebApi.FailJson(resolution.Code, resolution.Error ?? "会话解析失败");
-        }
-
-        var sideFrames = new ConcurrentQueue<AgentSseFrame>();
-
-        // 编排进度：子代理在工具调用内部执行，进度不进对话流；
-        // 订阅本作用域内的出口，逐条转成 orchestration.progress 帧
-        var progressSink = scope.GetService<HostOrchestrationProgressSink>();
-        void OnProgress(OrchestrationProgressEvent progress) => sideFrames.Enqueue(
-            AgentSseFrame.Create(AgentSseEventNames.OrchestrationProgress, OrchestrationProgressPayload.From(progress)));
-        if (progressSink is not null)
-        {
-            progressSink.Progress += OnProgress;
-        }
-
-        var request = new AgentRunRequest
-        {
-            Input = prompt,
-            SessionId = resolution.SessionId,
-            SystemPrompt = string.IsNullOrWhiteSpace(input.System) ? null : input.System,
-            Attachments = NormalizeAttachments(input.Attachments),
-            EnableTools = input.EnableTools,
-            ReasoningEffort = ParseEffort(input.ReasoningEffort),
-            PermissionMode = ParsePermissionMode(input.PermissionMode),
-            OnPlannedAction = (toolName, arguments) => sideFrames.Enqueue(
-                AgentSseFrame.Create(AgentSseEventNames.PlanItem, new { toolName, arguments })),
-            OnUserDenied = (toolName, arguments) => sideFrames.Enqueue(
-                AgentSseFrame.Create(AgentSseEventNames.ToolDenied, new { toolName, arguments }))
-        };
-
-        var (runCts, runId) = WebApi.Runtime.BeginRun(WebApi.Runtime.UserId, resolution.SessionId);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(runCts.Token, WebApi.Runtime.ShutdownToken);
-        var response = WebApi.Response;
-
+        // 起轮次：作用域、宿主实例与取消源都由轮次中心持有，连接只是它的一个订阅者
+        AgentRunHandle run;
         try
         {
-            // 写响应头也可能失败（客户端已断）：放进 try 才能保证登记被收尾
-            SsePump.Begin(response);
-
-            await foreach (var frame in StreamFramesAsync(host, request, resolution, sideFrames, runId, linked.Token)
-                .ConfigureAwait(false))
+            run = await WebApi.Runtime.Runs.StartAsync(userId, resolution.SessionId, async (handle, ct) =>
             {
-                var writable = frame is null
-                    ? SsePump.TryWriteHeartbeat(response)
-                    : SsePump.TryWrite(response, frame);
+                var sideFrames = new ConcurrentQueue<AgentSseFrame>();
 
-                if (!writable)
+                // 编排进度：子代理在工具调用内部执行，进度不进对话流；
+                // 订阅本轮作用域内的出口，逐条转成 orchestration.progress 帧
+                var progressSink = handle.Host.Services.GetService<HostOrchestrationProgressSink>();
+                void OnProgress(OrchestrationProgressEvent progress) => handle.Publish(
+                    AgentSseFrame.Create(AgentSseEventNames.OrchestrationProgress, OrchestrationProgressPayload.From(progress)));
+                if (progressSink is not null)
                 {
-                    break;
+                    progressSink.Progress += OnProgress;
+                }
+
+                var request = new AgentRunRequest
+                {
+                    Input = prompt,
+                    SessionId = resolution.SessionId,
+                    SystemPrompt = string.IsNullOrWhiteSpace(input.System) ? null : input.System,
+                    Attachments = NormalizeAttachments(input.Attachments),
+                    EnableTools = input.EnableTools,
+                    ReasoningEffort = ParseEffort(input.ReasoningEffort),
+                    PermissionMode = ParsePermissionMode(input.PermissionMode),
+                    OnPlannedAction = (toolName, arguments) => sideFrames.Enqueue(
+                        AgentSseFrame.Create(AgentSseEventNames.PlanItem, new { toolName, arguments })),
+                    OnUserDenied = (toolName, arguments) => sideFrames.Enqueue(
+                        AgentSseFrame.Create(AgentSseEventNames.ToolDenied, new { toolName, arguments }))
+                };
+
+                try
+                {
+                    await foreach (var frame in StreamFramesAsync(handle.Host, request, resolution, sideFrames, handle.RunId, ct)
+                        .ConfigureAwait(false))
+                    {
+                        // null（心跳占位）由轮次中心丢弃：心跳改由每个订阅者的写出泵自己发
+                        handle.Publish(frame);
+                    }
+                }
+                finally
+                {
+                    if (progressSink is not null)
+                    {
+                        progressSink.Progress -= OnProgress;
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return WebApi.FailJson(503, WebApi.SafeErrorMessage(ex));
+        }
+
+        // 当前连接即第一个订阅者：从零开始收，不需要快照帧
+        var response = WebApi.Response;
+        AgentRunAttachResult? attach = null;
+        try
+        {
+            SsePump.Begin(response);
+            attach = run.Subscribe(0, snapshotOnGap: false);
+            if (attach is null)
+            {
+                // 轮次在「起轮次」与「订阅」之间就已收尾，帧随通道关闭一起消失：
+                // 给出明确信号，否则界面会静默停在半截
+                SsePump.TryWrite(response, AgentSseFrame.ForError("本轮已结束，请重新加载该会话查看结果"));
+                SsePump.TryWrite(response, AgentSseFrame.ForDone(resolution.SessionId));
+                return new AgentEventStreamResult();
+            }
+
+            foreach (var pending in attach.Pending)
+            {
+                if (!SsePump.TryWrite(response, pending))
+                {
+                    return new AgentEventStreamResult();
                 }
             }
+
+            await SsePump.RunAsync(
+                response,
+                attach.Subscription.Reader,
+                TimeSpan.FromSeconds(Math.Max(1, WebApi.Runtime.Settings.HeartbeatSeconds)),
+                WebApi.Runtime.ShutdownToken).ConfigureAwait(false);
         }
         finally
         {
-            if (progressSink is not null)
-            {
-                progressSink.Progress -= OnProgress;
-            }
-
+            // 只摘订阅者：断连不再取消轮次
+            attach?.Subscription.Dispose();
             SsePump.Complete(response);
-
-            // 写出失败（客户端断连）或调用方提前停止枚举时，回合仍可能挂在 LLM/工具调用上。
-            // 这里取消链接令牌让底层尽快收尾；正常结束时取消是空操作。
-            CancelQuietly(linked);
-            WebApi.Runtime.EndRun(WebApi.Runtime.UserId, resolution.SessionId, runCts);
         }
 
         return new AgentEventStreamResult();
     });
+
+    /// <summary>探活：该会话是否有正在进行的回合。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentActiveRequest"/> JSON。</param>
+    /// <returns><c>{ active, runId, startedAt }</c>。</returns>
+    public static Task<ActionResult> ActiveAsync(string payload) => WebApi.RunGuardedAsync(() =>
+    {
+        if (!WebApi.TryReadPayload<AgentActiveRequest>(payload, out var input) || input is null
+            || string.IsNullOrWhiteSpace(input.SessionId))
+        {
+            return Task.FromResult(WebApi.FailJson(400, "sessionId 不能为空"));
+        }
+
+        var run = WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, input.SessionId.Trim());
+        return Task.FromResult(WebApi.OkJson(new { active = run is not null, runId = run?.RunId, startedAt = run?.StartedAt }));
+    });
+
+    /// <summary>接上该会话正在进行的回合（SSE）。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentAttachRequest"/> JSON。</param>
+    /// <returns>SSE 标记结果；无活跃回合返回 204 空体。</returns>
+    /// <remarks>
+    /// 首帧可能是 <c>run.snapshot</c>（前端内存为空时）或直接补发缺失帧，
+    /// 随后与首连接一样按订阅者泵逐帧写出。
+    /// </remarks>
+    public static Task<ActionResult> AttachAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<AgentAttachRequest>(payload, out var input) || input is null
+            || string.IsNullOrWhiteSpace(input.SessionId))
+        {
+            return WebApi.FailJson(400, "sessionId 不能为空");
+        }
+
+        var run = WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, input.SessionId.Trim());
+        if (run is null)
+        {
+            return NoContent();
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.RunId)
+            && !string.Equals(input.RunId.Trim(), run.RunId, StringComparison.Ordinal))
+        {
+            return NoContent();
+        }
+
+        // 先订阅：一旦写出响应头就改不了状态码，而「轮次已收尾」只可能在这里判出来
+        var attach = run.Subscribe(input.FromSeq);
+        if (attach is null)
+        {
+            return NoContent();
+        }
+
+        var response = WebApi.Response;
+        try
+        {
+            SsePump.Begin(response);
+            foreach (var pending in attach.Pending)
+            {
+                if (!SsePump.TryWrite(response, pending))
+                {
+                    return new AgentEventStreamResult();
+                }
+            }
+
+            await SsePump.RunAsync(
+                response,
+                attach.Subscription.Reader,
+                TimeSpan.FromSeconds(Math.Max(1, WebApi.Runtime.Settings.HeartbeatSeconds)),
+                WebApi.Runtime.ShutdownToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            attach.Subscription.Dispose();
+            SsePump.Complete(response);
+        }
+
+        return new AgentEventStreamResult();
+    });
+
+    /// <summary>空体响应（204）。</summary>
+    /// <returns>空体结果。</returns>
+    private static ActionResult NoContent() => new EmptyResult { Status = HttpStatusCode.NoContent };
 
     /// <summary>回传工具确认结果。</summary>
     /// <param name="payload">包装后的 <see cref="AgentConfirmRequest"/> JSON。</param>
@@ -397,22 +514,6 @@ public static class WebAgentService
         }
 
         yield return AgentSseFrame.ForDone(resolution.SessionId);
-    }
-
-    /// <summary>
-    /// 取消链接令牌并吞掉「已释放」异常。
-    /// </summary>
-    /// <param name="cts">待取消的取消源。</param>
-    private static void CancelQuietly(CancellationTokenSource cts)
-    {
-        try
-        {
-            cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // 已被其他路径收尾释放，忽略
-        }
     }
 
     private static List<string> NormalizeAttachments(IReadOnlyList<string>? sources)

@@ -54,6 +54,16 @@ public static class WebLlmWikiService
         }
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+
+        // 彼此独立的守卫先放行：级联删除会连同会话一起清掉，其中有正在跑的轮次时先拒绝
+        var sessions = await scope.GetRequiredService<ISessionWorkspaceQuery>()
+            .GetByWorkspaceAsync(workspaceId, WebApi.Runtime.UserId)
+            .ConfigureAwait(false);
+        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, s.SessionId)))
+        {
+            return WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
+        }
+
         await scope.GetRequiredService<ILlmWikiManagementService>()
             .DeleteAsync(workspaceId)
             .ConfigureAwait(false);

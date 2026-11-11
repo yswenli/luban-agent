@@ -20,7 +20,6 @@ public sealed class AgentWebRuntime : IAsyncDisposable
 {
     private readonly AgentHostServices _host;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _userPreparation = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, RunRegistration> _runs = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
 
     private AgentWebRuntime(AgentHostServices host, WebHostSettings settings)
@@ -30,6 +29,7 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         UserId = string.IsNullOrWhiteSpace(settings.UserId)
             ? LocalUserDefaults.DefaultUserId
             : settings.UserId.Trim();
+        Runs = new AgentRunHub(userId => _host.Root.CreateUserScope(userId), log: Log);
     }
 
     /// <summary>当前进程的运行时（<see cref="Program"/> 启动时创建）。</summary>
@@ -43,6 +43,9 @@ public sealed class AgentWebRuntime : IAsyncDisposable
 
     /// <summary>进程关闭令牌。</summary>
     public CancellationToken ShutdownToken => _shutdown.Token;
+
+    /// <summary>进行中轮次的登记中心。</summary>
+    public AgentRunHub Runs { get; }
 
     /// <summary>创建并登记运行时。</summary>
     /// <param name="host">已构建的宿主服务。</param>
@@ -134,75 +137,13 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         await PluginBootstrap.InitializeAsync(scope, Log, Settings.PluginsDir);
     }
 
-    /// <summary>登记一次回合的取消源；同会话已有回合时先取消旧回合。</summary>
-    /// <param name="userId">用户标识。</param>
-    /// <param name="sessionId">会话标识。</param>
-    /// <returns>本轮取消源与本轮标识（调用方在回合结束后 <see cref="EndRun"/>）。</returns>
-    public (CancellationTokenSource Cts, string RunId) BeginRun(string userId, string sessionId)
-    {
-        var key = RunKey(userId, sessionId);
-        var cts = new CancellationTokenSource();
-        var runId = Guid.NewGuid().ToString("N");
-        if (_runs.TryRemove(key, out var previous))
-        {
-            TryCancel(previous.Cts);
-            previous.Cts.Dispose();
-        }
-
-        _runs[key] = new RunRegistration(runId, cts);
-        return (cts, runId);
-    }
-
     /// <summary>取消指定会话正在进行的回合。</summary>
     /// <param name="userId">用户标识。</param>
     /// <param name="sessionId">会话标识。</param>
     /// <param name="runId">本轮标识；非空时只有登记的仍是本轮才取消。</param>
     /// <returns>是否确有回合被取消。</returns>
     public bool CancelRun(string userId, string sessionId, string? runId = null)
-    {
-        if (!_runs.TryGetValue(RunKey(userId, sessionId), out var run))
-        {
-            return false;
-        }
-
-        // 取消请求迟到（回合已换代）：按标识拒绝，避免误伤刚开的新回合
-        if (!string.IsNullOrWhiteSpace(runId) && !string.Equals(run.RunId, runId, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        TryCancel(run.Cts);
-        return true;
-    }
-
-    /// <summary>回合结束：移除登记（仅当登记项仍是本次的取消源）。</summary>
-    /// <param name="userId">用户标识。</param>
-    /// <param name="sessionId">会话标识。</param>
-    /// <param name="cts">本轮取消源。</param>
-    public void EndRun(string userId, string sessionId, CancellationTokenSource cts)
-    {
-        var key = RunKey(userId, sessionId);
-        if (_runs.TryGetValue(key, out var current) && ReferenceEquals(current.Cts, cts))
-        {
-            _runs.TryRemove(key, out _);
-        }
-
-        cts.Dispose();
-    }
-
-    private static string RunKey(string userId, string sessionId) => $"{userId}\u0001{sessionId}";
-
-    private static void TryCancel(CancellationTokenSource cts)
-    {
-        try
-        {
-            cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // 已被回合收尾释放，忽略
-        }
-    }
+        => Runs.Cancel(userId, sessionId, runId);
 
     /// <summary>输出宿主诊断信息（标准输出由启动器读取，仅作为日志）。</summary>
     /// <param name="message">文案。</param>
@@ -211,20 +152,10 @@ public sealed class AgentWebRuntime : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        // 先让各订阅者泵收到关闭信号，再等轮次收尾（超时只记日志）
         _shutdown.Cancel();
-        foreach (var pair in _runs)
-        {
-            TryCancel(pair.Value.Cts);
-            pair.Value.Cts.Dispose();
-        }
-
-        _runs.Clear();
+        await Runs.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();
         await _host.DisposeAsync().ConfigureAwait(false);
     }
-
-    /// <summary>一次回合的登记项。</summary>
-    /// <param name="RunId">本轮标识（随 <c>session</c> 帧下发，取消时回传）。</param>
-    /// <param name="Cts">本轮取消源。</param>
-    private sealed record RunRegistration(string RunId, CancellationTokenSource Cts);
 }

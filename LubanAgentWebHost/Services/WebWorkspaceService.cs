@@ -140,8 +140,18 @@ public static class WebWorkspaceService
         }
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+
+        // 级联删除会连同会话一起清掉：其中若有正在跑的轮次，先拒绝
+        var sessions = await scope.GetRequiredService<ISessionWorkspaceQuery>()
+            .GetByWorkspaceAsync(input!.WorkspaceId.Trim(), WebApi.Runtime.UserId)
+            .ConfigureAwait(false);
+        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, s.SessionId)))
+        {
+            return WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
+        }
+
         var deleted = await scope.GetRequiredService<IWorkspaceManager>()
-            .DeleteWorkspaceAsync(input!.WorkspaceId.Trim())
+            .DeleteWorkspaceAsync(input.WorkspaceId.Trim())
             .ConfigureAwait(false);
         return deleted
             ? WebApi.OkJson(new { deleted = true })

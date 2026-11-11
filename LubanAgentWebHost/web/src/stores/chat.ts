@@ -202,6 +202,293 @@ export function createChat(sessionId: string) {
     });
   }
 
+  /** 追加一条提示；key 非空时按它去重（快照重放用，避免同页多次重连叠加同一条提示）。 */
+  function pushNotice(text: string, tone: 'info' | 'warn' | 'error' | 'ok', key?: string): void {
+    setItems((list) => {
+      const id = key ?? nextId();
+      if (key !== undefined && list.some((item) => item.kind === 'notice' && item.id === id)) {
+        return list;
+      }
+      return [...list, { kind: 'notice', id, text, tone }];
+    });
+  }
+
+  /** 应用一帧到指定 assistant 气泡；返回 true 表示本轮已结束（done）。 */
+  function applyFrame(assistantId: string, event: string, data: unknown, noticeKey?: string): boolean {
+    const payload = (data ?? {}) as Record<string, unknown>;
+    switch (event) {
+      case 'session':
+        if (typeof payload.runId === 'string') setRunId(payload.runId);
+        return false;
+
+      case 'think.delta':
+        updateAssistant(assistantId, (item) => {
+          item.thinking += String(payload.delta ?? '');
+        });
+        return false;
+
+      case 'text.delta':
+        updateAssistant(assistantId, (item) => {
+          item.text += String(payload.delta ?? '');
+        });
+        return false;
+
+      case 'tool.started':
+        updateAssistant(assistantId, (item) => {
+          item.tools.push({
+            callId: String(payload.callId ?? nextId()),
+            name: String(payload.name ?? 'tool'),
+            argumentsText: pretty(payload.arguments),
+            status: 'running',
+          });
+        });
+        return false;
+
+      case 'tool.completed':
+        updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
+          tool.status = 'done';
+          tool.resultSummary = String(payload.resultSummary ?? '');
+        });
+        return false;
+
+      case 'tool.failed':
+        updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
+          tool.status = 'failed';
+          tool.error = String(payload.error ?? '工具执行失败');
+        });
+        return false;
+
+      case 'tool.denied':
+        pushNotice(`已拒绝工具调用：${String(payload.toolName ?? '')}`, 'warn', noticeKey);
+        return false;
+
+      case 'tool.confirm':
+        setConfirmation({
+          confirmationId: String(payload.confirmationId ?? ''),
+          toolName: String(payload.toolName ?? '工具调用'),
+          arguments: payload.arguments,
+          timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
+        });
+        return false;
+
+      case 'attachment.added':
+        pushNotice(`已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`, 'info', noticeKey);
+        return false;
+
+      case 'attachment.skipped':
+        pushNotice(`附件已跳过：${String(payload.source ?? '')} — ${String(payload.reason ?? '')}`, 'warn', noticeKey);
+        return false;
+
+      case 'plan.item':
+        setPlans((list) => [...list, { toolName: String(payload.toolName ?? ''), arguments: payload.arguments }]);
+        return false;
+
+      case 'orchestration.progress': {
+        const text = String(payload.message ?? payload.text ?? '');
+        if (text) setProgress((list) => [...list, text]);
+        return false;
+      }
+
+      case 'error':
+        pushNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
+        return false;
+
+      case 'done':
+        return true;
+
+      default:
+        return false;
+    }
+  }
+
+  /** 用 run.snapshot 重建整条 assistant 气泡（仅页面刷新、内存为空时）。 */
+  function restoreFromSnapshot(assistantId: string, payload: Record<string, unknown>): void {
+    const tools = Array.isArray(payload.tools)
+      ? (payload.tools as Record<string, unknown>[]).map((tool) => ({
+          callId: String(tool.callId ?? nextId()),
+          name: String(tool.name ?? 'tool'),
+          argumentsText: pretty(tool.arguments),
+          status: (tool.status as ToolStatus) ?? 'running',
+          resultSummary: tool.resultSummary === undefined || tool.resultSummary === null
+            ? undefined
+            : String(tool.resultSummary),
+          error: tool.error === undefined || tool.error === null ? undefined : String(tool.error),
+        }))
+      : [];
+
+    const bubble: ChatItem = {
+      kind: 'assistant',
+      id: assistantId,
+      text: String(payload.text ?? ''),
+      thinking: String(payload.thinking ?? ''),
+      tools,
+      streaming: true,
+      history: false,
+      time: String(payload.startedAt ?? new Date().toISOString()),
+    };
+
+    // 同一页面内重连（上次流断在中途）时，尾部那条未落库的 assistant 气泡就是本轮的半成品：
+    // 直接替换它，否则重试一次就多出一份重复正文。
+    // 不能只看列表最后一项——工具被拒 / 附件被跳过 / 报错都会往尾部追加 notice，
+    // 那些情况下半成品气泡已不在末尾，按末尾判断会变成「旧正文 + 完整正文」两份。
+    setItems((list) => {
+      let index = -1;
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const item = list[i];
+        if (item.kind === 'assistant' && !item.history) {
+          index = i;
+          break;
+        }
+      }
+      if (index < 0) return [...list, bubble];
+
+      const next = list.slice();
+      next[index] = bubble;
+      return next;
+    });
+    setPlans(Array.isArray(payload.plans) ? (payload.plans as PlanEntry[]) : []);
+    setProgress(Array.isArray(payload.progress) ? (payload.progress as string[]) : []);
+
+    // notice 类条目由同一套 applyFrame 回放，文案与实时路径完全一致；
+    // 按「轮次 + 序号」给稳定的 id，同页多次重连不会把同一条提示叠多份
+    const noticeKeyPrefix = `${String(payload.runId ?? '')}#`;
+    for (const [noticeIndex, notice] of (
+      (payload.notices as { event?: string; data?: string }[] | undefined) ?? []
+    ).entries()) {
+      if (typeof notice.event !== 'string' || typeof notice.data !== 'string') continue;
+      try {
+        applyFrame(assistantId, notice.event, JSON.parse(notice.data), `${noticeKeyPrefix}${noticeIndex}`);
+      } catch {
+        /* 坏载荷忽略 */
+      }
+    }
+
+    const pendingConfirm = payload.pendingConfirmation as Record<string, unknown> | null | undefined;
+    if (pendingConfirm) {
+      const expiresAt = Date.parse(String(pendingConfirm.expiresAt ?? ''));
+      const remaining = Number.isFinite(expiresAt)
+        ? Math.max(1, Math.round((expiresAt - Date.now()) / 1000))
+        : Number(pendingConfirm.timeoutSeconds ?? 60);
+      setConfirmation({
+        confirmationId: String(pendingConfirm.confirmationId ?? ''),
+        toolName: String(pendingConfirm.toolName ?? '工具调用'),
+        arguments: pendingConfirm.arguments,
+        timeoutSeconds: remaining,
+      });
+    }
+
+    if (typeof payload.runId === 'string') setRunId(payload.runId);
+  }
+
+  /** 结束本轮本地流状态（停止 / 断线 / 正常收尾共用）。 */
+  function finishStream(assistantId: string | null, done: boolean): void {
+    if (assistantId) {
+      updateAssistant(assistantId, (item) => {
+        item.streaming = false;
+      });
+    }
+    setStreaming(false);
+    setRunId(null);
+    setConfirmation(null);
+    controller = null;
+    if (done) void refreshSessions();
+  }
+
+  /** 探活并接上服务端正在进行的轮次；本地流还活着时直接返回。 */
+  async function resume(): Promise<void> {
+    // streaming 为真但 controller 已释放，说明上一轮流死在了半路（如 SSE 出错未复位），
+    // 这种残留状态不能挡住续流，否则该会话永远接不上。
+    if (streaming() && controller !== null) return;
+
+    let active = false;
+    try {
+      const state = await post<{ active?: boolean }>('/agent/active', { sessionId });
+      active = state?.active === true;
+    } catch {
+      // 探活失败按「无活跃轮次」处理，不阻塞进入会话
+      active = false;
+    }
+
+    if (!active) {
+      if (!historyLoaded() || items().length === 0) await loadHistory(true);
+      return;
+    }
+
+    const assistantId = nextId();
+    controller = new AbortController();
+    setStreaming(true);
+    setRunId(null);
+
+    for (let attempt = 0; ; attempt += 1) {
+      let done = false;
+      // 探活通过、attach 时轮次已跑完（跑完与 attach 之间的竞态）
+      let empty = false;
+      let started = false;
+      await streamPost(
+        '/agent/attach',
+        { sessionId },
+        {
+          onFrame: ({ event, data }) => {
+            if (event === 'run.snapshot') {
+              restoreFromSnapshot(assistantId, (data ?? {}) as Record<string, unknown>);
+              started = true;
+              return;
+            }
+            if (!started) {
+              // 极端情况下快照帧之前先到实时帧：懒建一个空气泡，后续帧照常累积
+              started = true;
+              setItems((list) => [
+                ...list,
+                {
+                  kind: 'assistant',
+                  id: assistantId,
+                  text: '',
+                  thinking: '',
+                  tools: [],
+                  streaming: true,
+                  history: false,
+                  time: new Date().toISOString(),
+                },
+              ]);
+            }
+            if (applyFrame(assistantId, event, data)) done = true;
+          },
+          onEmpty: () => {
+            empty = true;
+          },
+          onError: () => {
+            /* 由外层循环按 done / empty / aborted / 重试次数判定 */
+          },
+          onClose: () => {
+            /* 同上 */
+          },
+        },
+        controller.signal,
+      );
+
+      if (empty) {
+        // 轮次已结束：内容在库里，直接补历史；不能重试（重试只会一直 204）
+        await loadHistory(true);
+        finishStream(started ? assistantId : null, true);
+        return;
+      }
+      if (done) {
+        finishStream(assistantId, true);
+        return;
+      }
+      if (controller === null || controller.signal.aborted) {
+        finishStream(assistantId, false);
+        return;
+      }
+      if (attempt >= 3) {
+        finishStream(assistantId, false);
+        showToast('续流失败，请重新打开该会话', 'error');
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+    }
+  }
+
   async function send(text: string, permissionMode: string, effort: string): Promise<void> {
     const prompt = text.trim();
     if (!prompt) return;
@@ -267,136 +554,21 @@ export function createChat(sessionId: string) {
       },
       {
         onFrame: ({ event, data }) => {
-          const payload = (data ?? {}) as Record<string, unknown>;
-          switch (event) {
-            case 'session':
-              if (typeof payload.runId === 'string') setRunId(payload.runId);
-              break;
-
-            case 'think.delta':
-              updateAssistant(assistantId, (item) => {
-                item.thinking += String(payload.delta ?? '');
-              });
-              break;
-
-            case 'text.delta':
-              updateAssistant(assistantId, (item) => {
-                item.text += String(payload.delta ?? '');
-              });
-              break;
-
-            case 'tool.started':
-              updateAssistant(assistantId, (item) => {
-                item.tools.push({
-                  callId: String(payload.callId ?? nextId()),
-                  name: String(payload.name ?? 'tool'),
-                  argumentsText: pretty(payload.arguments),
-                  status: 'running',
-                });
-              });
-              break;
-
-            case 'tool.completed':
-              updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
-                tool.status = 'done';
-                tool.resultSummary = String(payload.resultSummary ?? '');
-              });
-              break;
-
-            case 'tool.failed':
-              updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
-                tool.status = 'failed';
-                tool.error = String(payload.error ?? '工具执行失败');
-              });
-              break;
-
-            case 'tool.denied':
-              setItems((list) => [
-                ...list,
-                {
-                  kind: 'notice',
-                  id: nextId(),
-                  text: `已拒绝工具调用：${String(payload.toolName ?? '')}`,
-                  tone: 'warn',
-                },
-              ]);
-              break;
-
-            case 'tool.confirm':
-              setConfirmation({
-                confirmationId: String(payload.confirmationId ?? ''),
-                toolName: String(payload.toolName ?? '工具调用'),
-                arguments: payload.arguments,
-                timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
-              });
-              break;
-
-            case 'attachment.added':
-              setItems((list) => [
-                ...list,
-                {
-                  kind: 'notice',
-                  id: nextId(),
-                  text: `已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`,
-                  tone: 'info',
-                },
-              ]);
-              break;
-
-            case 'attachment.skipped':
-              setItems((list) => [
-                ...list,
-                {
-                  kind: 'notice',
-                  id: nextId(),
-                  text: `附件已跳过：${String(payload.source ?? '')} — ${String(payload.reason ?? '')}`,
-                  tone: 'warn',
-                },
-              ]);
-              break;
-
-            case 'plan.item':
-              setPlans((list) => [...list, { toolName: String(payload.toolName ?? ''), arguments: payload.arguments }]);
-              break;
-
-            case 'orchestration.progress': {
-              const text = String(payload.message ?? payload.text ?? '');
-              if (text) setProgress((list) => [...list, text]);
-              break;
-            }
-
-            case 'error':
-              setItems((list) => [
-                ...list,
-                { kind: 'notice', id: nextId(), text: String(payload.message ?? '对话失败'), tone: 'error' },
-              ]);
-              break;
-
-            case 'done':
-              done = true;
-              break;
-
-            default:
-              break;
-          }
+          if (applyFrame(assistantId, event, data)) done = true;
         },
         onError: (error) => {
-          setItems((list) => [
-            ...list,
-            { kind: 'notice', id: nextId(), text: (error as Error).message ?? '对话连接失败', tone: 'error' },
-          ]);
+          pushNotice((error as Error).message ?? '对话连接失败', 'error');
+          // 失败分支不会触发 onClose：这里必须自己收尾，否则 streaming 永久为真，
+          // 输入框卡在「停止」、再次进入会话时 resume() 也被短路
+          finishStream(assistantId, false);
         },
         onClose: () => {
-          updateAssistant(assistantId, (item) => {
-            item.streaming = false;
-          });
-          setStreaming(false);
-          setRunId(null);
-          setConfirmation(null);
-          controller = null;
-          if (done) {
-            void refreshSessions();
+          // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者），
+          // 但本页已收不到后续帧，明确告知用户而不是让气泡静默停住
+          if (!done && !controller?.signal.aborted) {
+            pushNotice('连接已中断，本轮仍在后台运行；重新进入该会话可继续接收', 'warn');
           }
+          finishStream(assistantId, done);
         },
       },
       controller.signal,
@@ -547,6 +719,7 @@ export function createChat(sessionId: string) {
     plans,
     progress,
     loadHistory,
+    resume,
     send,
     stop,
     resolveConfirm,

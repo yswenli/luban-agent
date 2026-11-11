@@ -196,6 +196,12 @@ public static class WebSessionService
             return failure;
         }
 
+        // 判定必须早于软删：轮次跑完还会往会话里写，删了就成了幽灵写入
+        if (WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, input.SessionId.Trim()))
+        {
+            return WebApi.FailJson(409, "该会话正在进行中，请先停止再删除");
+        }
+
         await scope.GetRequiredService<ISessionManager>()
             .DeleteSessionAsync(input.SessionId.Trim())
             .ConfigureAwait(false);
@@ -415,8 +421,18 @@ public static class WebSessionService
             return failure;
         }
 
+        // 清空期间若还有轮次在跑，它会把新一轮消息写回刚清空的会话：先停再清
+        var sessionId = input.SessionId.Trim();
+        var stopped = await WebApi.Runtime.Runs
+            .CancelAndWaitAsync(WebApi.Runtime.UserId, sessionId)
+            .ConfigureAwait(false);
+        if (!stopped && WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, sessionId))
+        {
+            return WebApi.FailJson(409, "本轮对话尚未停止，请稍后重试");
+        }
+
         await scope.GetRequiredService<ISessionManager>()
-            .ClearMessagesAsync(input.SessionId.Trim())
+            .ClearMessagesAsync(sessionId)
             .ConfigureAwait(false);
         return WebApi.OkJson(new { cleared = true });
     });
@@ -433,6 +449,17 @@ public static class WebSessionService
         var workspaceId = string.IsNullOrWhiteSpace(input?.WorkspaceId)
             ? scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId
             : input!.WorkspaceId.Trim();
+
+        // 批量删会话前先判定：删掉之后运行中这一轮的内容无法回填
+        var running = string.IsNullOrWhiteSpace(workspaceId)
+            ? (await manager.GetUserSessionsAsync().ConfigureAwait(false)).Select(session => session.SessionId)
+            : (await scope.GetRequiredService<ISessionWorkspaceQuery>()
+                .GetByWorkspaceAsync(workspaceId, WebApi.Runtime.UserId)
+                .ConfigureAwait(false)).Select(session => session.SessionId);
+        if (WebApi.Runtime.Runs.IsAnyRunning(WebApi.Runtime.UserId, running))
+        {
+            return WebApi.FailJson(409, "有会话正在进行中，请先停止");
+        }
 
         await manager.ClearAllSessionsAsync(workspaceId).ConfigureAwait(false);
         return WebApi.OkJson(new { cleared = true, current = manager.CurrentSession?.SessionId });

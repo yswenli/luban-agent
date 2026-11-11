@@ -32,6 +32,12 @@ public static class AgentApiRoutes
 
         /// <summary>丢弃服务端该会话已缓存的 Agent（配置变更后重建）。</summary>
         public const string Reset = "/agent/reset";
+
+        /// <summary>探活：该会话是否有正在进行的回合。</summary>
+        public const string Active = "/agent/active";
+
+        /// <summary>接上该会话正在进行的回合（SSE）；无活跃回合返回 204。</summary>
+        public const string Attach = "/agent/attach";
     }
 
     /// <summary>会话相关接口。</summary>

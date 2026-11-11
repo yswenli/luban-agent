@@ -72,7 +72,11 @@ export function ChatPage(props: { sessionId: string }) {
 
   onMount(() => {
     void loadCommands();
-    void chat.loadHistory();
+    void (async () => {
+      // 整表覆盖必须先在快照重建之前完成
+      await chat.loadHistory();
+      await chat.resume();
+    })();
     if (sessions().length === 0) void refreshSessions();
     // 不在这里 abort：会话实例常驻，切换页面时流式回合继续在后台跑
   });

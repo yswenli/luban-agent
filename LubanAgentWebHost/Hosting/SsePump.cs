@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using System.Threading.Channels;
+
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -53,6 +55,77 @@ public static class SsePump
         catch (Exception)
         {
             // 连接已断：无需再处理
+        }
+    }
+
+    /// <summary>
+    /// 订阅者 pump：从轮次通道取帧写 socket，空闲时按心跳间隔补 <c>: ping</c>。
+    /// </summary>
+    /// <param name="response">当前响应。</param>
+    /// <param name="reader">该订阅者的帧通道。</param>
+    /// <param name="heartbeat">心跳间隔。</param>
+    /// <param name="ct">退出令牌（宿主关闭时用）。</param>
+    /// <returns>通道完成或写失败时返回。</returns>
+    /// <remarks>
+    /// 心跳由每个订阅者自己的 pump 发出，不进轮次编号、不进重放缓冲：
+    /// 否则重连拿到的序号里会混进无人消费的占位帧。
+    /// </remarks>
+    public static async Task RunAsync(
+        HttpResponse response,
+        ChannelReader<AgentSseFrame> reader,
+        TimeSpan heartbeat,
+        CancellationToken ct = default)
+    {
+        using var timer = new PeriodicTimer(heartbeat);
+        var tick = timer.WaitForNextTickAsync(ct).AsTask();
+        // 读任务只在被消费后重建：心跳分支继续等待同一个 read，
+        // 否则每个心跳周期都会丢掉一个没人 await 的 WaitToReadAsync
+        var read = reader.WaitToReadAsync(ct).AsTask();
+        while (true)
+        {
+            var winner = await Task.WhenAny(read, tick).ConfigureAwait(false);
+
+            if (ReferenceEquals(winner, tick))
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!TryWriteHeartbeat(response))
+                {
+                    return;
+                }
+
+                tick = timer.WaitForNextTickAsync(ct).AsTask();
+                continue;
+            }
+
+            bool more;
+            try
+            {
+                more = await read.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            while (reader.TryRead(out var frame))
+            {
+                if (!TryWrite(response, frame))
+                {
+                    return;
+                }
+            }
+
+            if (!more)
+            {
+                // 轮次收尾：通道已完成，帧已排空
+                return;
+            }
+
+            read = reader.WaitToReadAsync(ct).AsTask();
         }
     }
 

@@ -40,7 +40,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
     const index = list.indexOf(sessionId);
     const wasActive = props.activeSessionId === sessionId;
     forgetSession(sessionId);
-    // 关标签即视为结束该会话的本次浏览：销毁实例并中止在途流
+    // 关标签只是本地离开：销毁本地实例并中止这条本地流；服务端轮次由 hub 继续跑，重开时自动续上
     dropChat(sessionId);
     if (!wasActive) return;
 
