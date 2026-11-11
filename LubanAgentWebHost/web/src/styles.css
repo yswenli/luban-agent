@@ -1610,10 +1610,6 @@ a {
   user-select: none;
 }
 
-.settings-panel > .app-footer {
-  padding: 0 0 12px;
-}
-
 /* ── 设置浮层 ─────────────────────────────────────────────────────────── */
 
 .settings-overlay {

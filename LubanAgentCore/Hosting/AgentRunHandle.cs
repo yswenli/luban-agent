@@ -90,6 +90,9 @@ public sealed class AgentRunHandle
     private readonly Action<string> _log;
     private readonly CancellationTokenSource _runCts;
 
+    /// <summary>尾帧缓冲上限；构造时由 <see cref="AgentRunHubOptions.BacklogCapacity"/> 钳到非负，避免负数导致空队列出队。</summary>
+    private readonly int _backlogCapacity;
+
     private readonly Queue<(int Seq, AgentSseFrame Frame)> _backlog = new();
     private readonly List<(AgentRunSubscription Subscription, ChannelWriter<AgentSseFrame> Writer)> _subscribers = [];
 
@@ -104,7 +107,9 @@ public sealed class AgentRunHandle
     private string _text = "";
     private string _thinking = "";
     private AgentRunConfirmationSnapshot? _pendingConfirmation;
-    private AgentRunStage _stage = AgentRunStage.Running;
+
+    /// <summary>当前阶段；锁内写、锁外读（<see cref="IsCompleted"/> / <see cref="Stage"/>），用 volatile 保证可见性。</summary>
+    private volatile AgentRunStage _stage = AgentRunStage.Running;
 
     internal AgentRunHandle(
         string runId,
@@ -124,6 +129,7 @@ public sealed class AgentRunHandle
         _runCts = runCts;
         _options = options;
         _log = log;
+        _backlogCapacity = Math.Max(0, options.BacklogCapacity);
         StartedAt = DateTimeOffset.UtcNow;
     }
 
@@ -207,7 +213,7 @@ public sealed class AgentRunHandle
             Accumulate(frame, seq);
 
             _backlog.Enqueue((seq, frame));
-            while (_backlog.Count > _options.BacklogCapacity)
+            while (_backlog.Count > _backlogCapacity)
             {
                 _backlog.Dequeue();
             }
@@ -372,7 +378,7 @@ public sealed class AgentRunHandle
         };
 
         // 快照里的 Seq 就是缓冲末尾的序号，正文/工具/提示也都是同一把锁内取的最新值，
-// 因此不需要再补发缓冲里的帧
+        // 因此不需要再补发缓冲里的帧
         return [AgentSseFrame.Create(AgentSseEventNames.RunSnapshot, snapshot)];
     }
 

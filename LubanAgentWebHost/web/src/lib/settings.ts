@@ -19,6 +19,17 @@ import type {
  */
 export type ScopeValue = string;
 
+/** 保存供应商的请求体；`originalName` 非空表示改名，服务端按重命名处理并迁移密钥与选中模型。 */
+export interface ProviderSaveRequest {
+  name: string;
+  originalName?: string | null;
+  apiKey?: string | null;
+  baseUrl?: string | null;
+  displayName?: string | null;
+  networkTimeoutSeconds?: number | null;
+  customModels?: string[];
+}
+
 interface ListResponse<T> {
   items: T[];
 }
@@ -57,7 +68,7 @@ export const settingsApi = {
   /* ── 供应商 ── */
   listProviders: async (): Promise<ProviderListItem[]> =>
     (await get<ListResponse<ProviderListItem>>('/provider/list'))?.items ?? [],
-  saveProvider: (body: Record<string, unknown>): Promise<ProviderListItem> =>
+  saveProvider: (body: ProviderSaveRequest): Promise<ProviderListItem> =>
     post<ProviderListItem>('/provider/save', body),
   deleteProvider: (name: string): Promise<void> => post<void>('/provider/delete', { name }),
 

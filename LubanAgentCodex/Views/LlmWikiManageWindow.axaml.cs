@@ -433,10 +433,8 @@ public partial class LlmWikiManageWindow : Window
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
         try
         {
-            // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
-            if (_isWorkspaceRunning is not null && await _isWorkspaceRunning(item.WorkspaceId))
+            if (await Dialogs.RejectDeleteIfWorkspaceRunningAsync(this, _isWorkspaceRunning, item.WorkspaceId))
             {
-                await Dialogs.ShowErrorAsync(this, "该工作区下有正在进行中的会话，请先停止再删除");
                 return;
             }
 

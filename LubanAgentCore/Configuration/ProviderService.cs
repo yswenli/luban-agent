@@ -44,7 +44,7 @@ public sealed class ProviderService
     public List<string> GetAllModels(string providerName, List<string>? customModels = null)
         => ProviderHelper.GetAllModels(providerName, _cache, customModels);
 
-    /// <summary>把刷新得到的模型列表从旧名称迁移到新名称（重命名 Provider 时用）。</summary>
+    /// <summary>把刷新得到的模型列表从旧名称迁移到新名称（重命名 Provider 时用），并清掉旧标识下的记录。</summary>
     /// <param name="oldProviderName">原名称</param>
     /// <param name="newProviderName">新名称</param>
     public void MoveFetchedModels(string oldProviderName, string newProviderName)
@@ -55,6 +55,9 @@ public sealed class ProviderService
         var models = _cache.GetFetched(oldProviderName);
         if (models.Count > 0)
             _cache.SetFetched(newProviderName, models.ToList());
+
+        // 旧标识不再对应任何 Provider：留着会让日后同名新建的 Provider 凭空继承这批模型
+        _cache.Remove(oldProviderName);
     }
 
     /// <summary>从远程端点刷新 Provider 的模型列表，失败时回退到本地模型列表。</summary>

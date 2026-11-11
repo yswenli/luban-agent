@@ -35,4 +35,7 @@ public sealed class ProviderCache
 
     /// <summary>记录刷新得到的模型列表。</summary>
     public void SetFetched(string providerKey, List<string> models) => _fetchedModels[providerKey] = models;
+
+    /// <summary>丢弃某个 Provider 的刷新结果（重命名后清理旧标识）。</summary>
+    public void Remove(string providerKey) => _fetchedModels.TryRemove(providerKey, out _);
 }

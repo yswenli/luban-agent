@@ -375,10 +375,8 @@ public partial class Sidebar : UserControl
 
                     var display = string.IsNullOrWhiteSpace(ws.Name) ? GetDisplayName(ws.RootPath) : ws.Name;
 
-                    // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
-                    if (WorkspaceRunningProvider is not null && await WorkspaceRunningProvider(ws.WorkspaceId))
+                    if (await Dialogs.RejectDeleteIfWorkspaceRunningAsync(owner, WorkspaceRunningProvider, ws.WorkspaceId))
                     {
-                        await Dialogs.ShowErrorAsync(owner, "该工作区下有正在进行中的会话，请先停止再删除");
                         return;
                     }
 
@@ -902,10 +900,8 @@ public partial class Sidebar : UserControl
             var parentWindow = TopLevel.GetTopLevel(this) as Window;
             if (parentWindow == null) return;
 
-            // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
-            if (WorkspaceRunningProvider is not null && await WorkspaceRunningProvider(model.WorkspaceId))
+            if (await Dialogs.RejectDeleteIfWorkspaceRunningAsync(parentWindow, WorkspaceRunningProvider, model.WorkspaceId))
             {
-                await Dialogs.ShowErrorAsync(parentWindow, "该工作区下有正在进行中的会话，请先停止再删除");
                 return;
             }
 

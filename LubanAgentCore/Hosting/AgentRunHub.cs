@@ -14,7 +14,7 @@ namespace LubanAgentCore.Hosting;
 /// <summary>轮次中心参数。</summary>
 public sealed record AgentRunHubOptions
 {
-    /// <summary>尾帧环形缓冲容量（帧数）。</summary>
+    /// <summary>尾帧环形缓冲容量（帧数）；负数按 0 处理（不保留任何尾帧）。</summary>
     public int BacklogCapacity { get; init; } = 2000;
 
     /// <summary>单个订阅者的有界队列容量（帧数）。</summary>
@@ -67,6 +67,7 @@ public sealed class AgentRunHub : IAsyncDisposable
     /// <param name="sessionId">会话标识。</param>
     /// <param name="body">对话体；收到轮次句柄与取消令牌。</param>
     /// <returns>本轮句柄。</returns>
+    /// <exception cref="AgentRunConflictException">同会话上一轮在 <see cref="AgentRunHubOptions.PreemptTimeout"/> 内未收尾，本轮未能登记。</exception>
     public async Task<AgentRunHandle> StartAsync(
         string userId,
         string sessionId,
@@ -115,7 +116,7 @@ public sealed class AgentRunHub : IAsyncDisposable
 
                 if (attempt >= 2)
                 {
-                    throw new InvalidOperationException("轮次登记冲突，请重试");
+                    throw new AgentRunConflictException("同会话上一轮尚未结束，请先停止后再发送");
                 }
 
                 // 让出一次后重试：下一轮循环会取消当前登记者并按抢占流程等待它收尾

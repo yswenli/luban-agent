@@ -57,7 +57,4 @@ public sealed class SessionRunRegistry
         var sessions = await query.GetByWorkspaceAsync(workspaceId, userId);
         return sessions.Any(session => _running.ContainsKey(session.SessionId));
     }
-
-    /// <summary>当前运行中的会话标识快照（诊断与提示用）。</summary>
-    public IReadOnlyCollection<string> RunningSessionIds => _running.Keys.ToArray();
 }

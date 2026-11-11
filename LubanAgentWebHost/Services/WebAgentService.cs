@@ -209,6 +209,10 @@ public static class WebAgentService
                 }
             }).ConfigureAwait(false);
         }
+        catch (AgentRunConflictException)
+        {
+            return WebApi.FailJson(409, "上一轮尚未结束，请先停止后再发送");
+        }
         catch (Exception ex)
         {
             return WebApi.FailJson(503, WebApi.SafeErrorMessage(ex));

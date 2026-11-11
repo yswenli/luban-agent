@@ -45,7 +45,11 @@ public class AgentRunHubUnitTest
             => throw new NotSupportedException();
     }
 
-    private static AgentRunHub NewHub(int backlog = 16, int subscriber = 4, AgentRunHubOptions? overrides = null)
+    private static AgentRunHub NewHub(
+        int backlog = 16,
+        int subscriber = 4,
+        TimeSpan? preemptTimeout = null,
+        TimeSpan? shutdownTimeout = null)
     {
         var root = new DiContainer()
             .AddSingleton<IAgentHost>(new FakeAgentHost())
@@ -58,8 +62,8 @@ public class AgentRunHubUnitTest
             {
                 BacklogCapacity = backlog,
                 SubscriberCapacity = subscriber,
-                PreemptTimeout = overrides?.PreemptTimeout ?? TimeSpan.FromSeconds(10),
-                ShutdownTimeout = overrides?.ShutdownTimeout ?? TimeSpan.FromSeconds(10)
+                PreemptTimeout = preemptTimeout ?? TimeSpan.FromSeconds(10),
+                ShutdownTimeout = shutdownTimeout ?? TimeSpan.FromSeconds(10)
             });
     }
 
@@ -424,11 +428,9 @@ public class AgentRunHubUnitTest
     public async Task 取消等待超时返回false且轮次仍在跑()
     {
         // 对话体故意不响应取消令牌，模拟「收尾迟迟不结束」：调用方必须拿到 false 而不是被无限挂住
-        var hub = NewHub(overrides: new AgentRunHubOptions
-        {
-            PreemptTimeout = TimeSpan.FromMilliseconds(150),
-            ShutdownTimeout = TimeSpan.FromMilliseconds(150)
-        });
+        var hub = NewHub(
+            preemptTimeout: TimeSpan.FromMilliseconds(150),
+            shutdownTimeout: TimeSpan.FromMilliseconds(150));
         try
         {
             await hub.StartAsync("u", "s1", (_, _) => Task.Delay(Timeout.Infinite));

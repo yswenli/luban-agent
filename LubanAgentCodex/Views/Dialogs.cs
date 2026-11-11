@@ -346,6 +346,28 @@ public static class Dialogs
     }
 
     /// <summary>
+    /// 工作区下存在运行中的会话时给出错误提示并返回 true，调用方据此直接结束删除流程。
+    /// </summary>
+    /// <param name="owner">所属窗口。</param>
+    /// <param name="isRunning">工作区运行态判定；为空表示无法判定，按「没有运行中会话」放行。</param>
+    /// <param name="workspaceId">工作区标识。</param>
+    /// <returns>true 表示已提示并应中止删除。</returns>
+    /// <remarks>级联删掉会话之后本轮仍会继续写库，界面里的活动消息也会变成孤儿。</remarks>
+    public static async Task<bool> RejectDeleteIfWorkspaceRunningAsync(
+        Window? owner,
+        Func<string, Task<bool>>? isRunning,
+        string workspaceId)
+    {
+        if (isRunning is null || !await isRunning(workspaceId))
+        {
+            return false;
+        }
+
+        await ShowErrorAsync(owner, "该工作区下有正在进行中的会话，请先停止再删除");
+        return true;
+    }
+
+    /// <summary>
     /// 美观的信息提示对话框：信息图标 + 说明 + 确定(主) 按钮
     /// </summary>
     public static async Task ShowInfoAsync(Window? owner, string message)

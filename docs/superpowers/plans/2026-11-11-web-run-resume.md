@@ -1285,3 +1285,27 @@ npm run build
 | M8 | `LubanAgent.Tests/AgentRunHubUnitTest.cs` | 缺「无轮次取消」「取消超时」路径覆盖 | ✅ 补 2 条；`BuildPending` 缺口→快照已由既有「环形缓冲滑窗」用例覆盖 |
 
 前端仍无自动化测试（仓库现状），I1 / I2 / M1 / M2 / M5 的运行时效果需靠 Task 13 Step 3 的第 1–4、9 条人工冒烟验证。
+
+## 附录 D：提交后二轮审查与处理（2026-11-11）
+
+`6258700..4a924de` 落库后用户要求复审，按 Standards / Spec 两轴并行审查（Standards 14 条、Spec 5 条，均无 Critical、无硬性规范违规）。裁决：**断线重试按设计实现，其余按建议修复**。逐条处理如下。
+
+| 编号 | 位置 | 问题 | 处理 |
+|---|---|---|---|
+| S1 | `AgentRunHub.StartAsync` / `WebAgentService.ChatAsync` | 抢占超时导致登记失败被兜成 503，前端重试无门 | ✅ 新增 `AgentRunConflictException`；`ChatAsync` 在其专属 catch 回 `409「上一轮尚未结束，请先停止后再发送」`，通用异常仍 503 |
+| S2 | `AgentRunHandle.IsCompleted` / `Stage` | 终态在锁内写、锁外读，无非 `volatile` 保证 | ✅ 读改 `Volatile.Read`，`Finish` 内改 `Volatile.Write` |
+| S3 | `ProviderService.MoveFetchedModels` | 只写新键不删旧键，「迁移」名不副实，旧标识会残留模型缓存 | ✅ `ProviderCache` 增 `Remove`，迁移后清掉旧键 |
+| S4 | `AgentRunHandle` 快照注释 | 续行掉到第 0 列 | ✅ 补缩进 |
+| S5 | `AgentRunHandle` 尾帧缓冲 | `BacklogCapacity` 配负数会 `Dequeue` 空队列抛异常 | ✅ 构造时 `Math.Max(0, …)` 钳制，`AgentRunHubOptions` 注释同步 |
+| S6 | Codex 四处 / CLI 三处运行态守卫 | 同一 4 行块重复 | ◑ Codex 三处抽到 `Dialogs.RejectDeleteIfWorkspaceRunningAsync`；CLI 三处保留（一处判全局 `IsAnyRunning`、两处判工作区，参数需四个，抽 helper 不减少可读成本） |
+| S7 | `AgentRunHubUnitTest.NewHub` | 收整个 `AgentRunHubOptions` 却只取两个字段，其余静默忽略 | ✅ 改收 `TimeSpan? preemptTimeout` / `shutdownTimeout` |
+| S8 | `AgentAttachRequest.RunId` / `FromSeq` | 服务端已实现但客户端不传，契约无文档 | ✅ README 中英各补一句 `attach` 的可选入参语义（不删：`fromSeq` 缺口判定是设计 §10 的验收项） |
+| S9 | `SessionRunRegistry.RunningSessionIds` | 全仓零调用 | ✅ 删除（客户端计划对应代码块同步删该行） |
+| S12 | `settings.ts` / `ProviderTab.tsx` | `originalName` 走 `Record<string, unknown>`，重命名入参无类型约束 | ✅ 新增 `ProviderSaveRequest` 供 `saveProvider` 使用 |
+| S13 | `styles.css` | `Settings.tsx` 删页脚后 `.settings-panel > .app-footer` 成死规则 | ✅ 删除该规则（`.app-footer` 与 `.boot > .app-footer` 仍被 `App.tsx` 使用，保留） |
+| S14 | `WebAgentService.ActiveAsync` | 同步 lambda + `Task.FromResult` 与同文件风格不一致 | ⏸ 保留：改 `async` 需假 `await` 或以 `CS1998` 告警换风格，无实质收益 |
+| P1 | `chat.ts` `send` 的 `onError` | 断线后不重试，本页收不到后台轮次余下内容（设计 §6.5 明确要求退避重试） | ✅ 新增 `recoverAfterDrop`：1s / 2s / 4s 退避重试 `resume()`，最多 3 次，耗尽才提示；`resume()` 改返回 `true/false` 供判定。偏差一处：「本地流还在跑」短路返回 `true`（返回 `false` 会让重试循环反复 attach，耗尽后掐掉用户新发的轮次） |
+| P2 | `WebAgentService.ActiveAsync` / `AttachAsync` | 设计 §10 要求单测覆盖 204 / 空 `sessionId` 400 / `runId` 不符分支 | ⏸ 未补：`LubanAgent.Tests` 未引用 `LubanAgentWebHost`，动作层依赖静态 `AgentWebRuntime.Current` 与用户初始化（真实库、工作区目录），属集成测试成本；核心分支（`Subscribe(fromSeq)` 的缺口→快照、无缺口→补缓冲）已由 hub 单测覆盖，HTTP 壳层三态改由 Task 13 Step 3 人工冒烟覆盖 |
+| P3 | `chat.ts` 提示去重 | 实时提示用 `local-N`、回放用 `runId#序号`，同页重连会重复显示断线前的提示 | ✅ 会话内累计 `renderedNotices`，快照回放跳过已渲染前缀，按 `notices.length` 对齐计数 |
+| P4 | `WebSessionService.ClearAllAsync` | 「有会话正在进行中，请先停止」与 `/workspace/delete` 文案不一致 | ✅ 按范围区分：带 `workspaceId` 用工作区文案，全局清空保留原文案 |
+| P5 | `AgentsMdInitializerUnitTest` | 「协作约定」只抽查 4 个关键词，793 字正文与 12 条顺序无回归保护 | ✅ 改为逐行字面量拼接后整段 `Contains`，并断言条数为 12 |

@@ -398,9 +398,6 @@ public sealed class SessionRunRegistry
 
     /// <summary>是否有任一会话正在运行。</summary>
     public bool IsAnyRunning => !_running.IsEmpty;
-
-    /// <summary>当前运行中的会话标识快照（诊断与提示用）。</summary>
-    public IReadOnlyCollection<string> RunningSessionIds => _running.Keys.ToArray();
 }
 ```
 
@@ -660,3 +657,9 @@ git status --short
 **B3（终审：已由独立子代理完成）** 首次尝试派独立审查子代理因会话额度不足（5 小时用量上限）失败，当时记为作者自审。后续额度恢复后已实跑独立只读终审，结论 **有条件合并、无 Critical**，2 条 Important 均落在 Web 端续流状态机（与本计划 B 部分无关），修复与逐条处理见 `2026-11-11-web-run-resume.md` 附录 C。
 
 针对本计划（CLI / Codex）的终审意见只有一条口径争议：**CLI 的 `/clear` 运行中不拒绝**，与 Codex 同名命令行为相反。按既定口径保留不改（CLI 的 `/clear` 只清显示文档、不删库，内容已入库，重开会话可见）。终审同时确认：CLI / Codex 的删会话、清空、删工作区、退出各入口均已覆盖运行态判定，`SessionRunRegistry` 的进入/退出成对（`finally` + `Dispose` 兜底），LRU 驱逐跳过运行中会话。自审阶段记录的两条 Minor（`MainWindowViewModel.cs:1283` 忽略返回值但 `false` 不可达、`ClearMessages()` 层无单测）结论不变。
+
+**B4（提交后二轮审查，已处理）** 用户复审 `6258700..4a924de` 后要求按建议修复，本计划范围内两处改动：
+
+- Codex 三处「运行中先拒绝」块（侧栏删工作区、侧栏删知识库、`WorkManageWindow` / `LlmWikiManageWindow` 删除）抽成 `LubanAgentCodex/Views/Dialogs.cs` 的 `RejectDeleteIfWorkspaceRunningAsync(owner, isRunning, workspaceId)`；`null` 委托仍按「无运行中会话」放行，行为不变。
+- `SessionRunRegistry.RunningSessionIds` 全仓零调用，删除（本文件 Task 1 Step 1 的代码块同步删该行）。
+- 保留项：CLI 三处守卫不抽公共 helper——`SessionCommand` 判全局 `IsAnyRunning`、`WorkCommand` / `LlmWikiCommand` 判工作区，参数需四个，抽出来不减少可读成本。

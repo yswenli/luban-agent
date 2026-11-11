@@ -162,6 +162,10 @@ export function createChat(sessionId: string) {
   const [progress, setProgress] = createSignal<string[]>([]);
 
   let controller: AbortController | null = null;
+  /** 会话实例是否已销毁（关标签）：销毁后不再挂新的订阅。 */
+  let disposed = false;
+  /** 本轮已实时渲染的提示条数；快照回放时跳过这段前缀，避免同页重连重复显示。 */
+  let renderedNotices = 0;
 
   /**
    * 拉取历史消息。
@@ -202,15 +206,37 @@ export function createChat(sessionId: string) {
     });
   }
 
-  /** 追加一条提示；key 非空时按它去重（快照重放用，避免同页多次重连叠加同一条提示）。 */
-  function pushNotice(text: string, tone: 'info' | 'warn' | 'error' | 'ok', key?: string): void {
+  /**
+   * 追加一条提示；key 非空时按它去重（快照重放用，避免同页多次重连叠加同一条提示）。
+   * 返回 true 表示本次真正追加了一条（被去重拦下时为 false）。
+   */
+  function pushNotice(text: string, tone: 'info' | 'warn' | 'error' | 'ok', key?: string): boolean {
+    let appended = false;
     setItems((list) => {
       const id = key ?? nextId();
       if (key !== undefined && list.some((item) => item.kind === 'notice' && item.id === id)) {
         return list;
       }
+      appended = true;
       return [...list, { kind: 'notice', id, text, tone }];
     });
+    return appended;
+  }
+
+  /**
+   * 渲染一条提示并按需累计实时条数。
+   *
+   * 实时帧（无稳定 key）每追加一条就记一笔，供快照回放跳过已渲染前缀；
+   * 回放帧带 `${runId}#${序号}`，不计数，否则重连一次计数就翻倍。
+   */
+  function pushFrameNotice(
+    text: string,
+    tone: 'info' | 'warn' | 'error' | 'ok',
+    noticeKey?: string,
+  ): void {
+    if (pushNotice(text, tone, noticeKey) && noticeKey === undefined) {
+      renderedNotices += 1;
+    }
   }
 
   /** 应用一帧到指定 assistant 气泡；返回 true 表示本轮已结束（done）。 */
@@ -259,7 +285,7 @@ export function createChat(sessionId: string) {
         return false;
 
       case 'tool.denied':
-        pushNotice(`已拒绝工具调用：${String(payload.toolName ?? '')}`, 'warn', noticeKey);
+        pushFrameNotice(`已拒绝工具调用：${String(payload.toolName ?? '')}`, 'warn', noticeKey);
         return false;
 
       case 'tool.confirm':
@@ -272,11 +298,11 @@ export function createChat(sessionId: string) {
         return false;
 
       case 'attachment.added':
-        pushNotice(`已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`, 'info', noticeKey);
+        pushFrameNotice(`已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`, 'info', noticeKey);
         return false;
 
       case 'attachment.skipped':
-        pushNotice(`附件已跳过：${String(payload.source ?? '')} — ${String(payload.reason ?? '')}`, 'warn', noticeKey);
+        pushFrameNotice(`附件已跳过：${String(payload.source ?? '')} — ${String(payload.reason ?? '')}`, 'warn', noticeKey);
         return false;
 
       case 'plan.item':
@@ -290,7 +316,7 @@ export function createChat(sessionId: string) {
       }
 
       case 'error':
-        pushNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
+        pushFrameNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
         return false;
 
       case 'done':
@@ -349,12 +375,15 @@ export function createChat(sessionId: string) {
     setPlans(Array.isArray(payload.plans) ? (payload.plans as PlanEntry[]) : []);
     setProgress(Array.isArray(payload.progress) ? (payload.progress as string[]) : []);
 
-    // notice 类条目由同一套 applyFrame 回放，文案与实时路径完全一致；
-    // 按「轮次 + 序号」给稳定的 id，同页多次重连不会把同一条提示叠多份
+    // 快照携带本轮全部提示（服务端按发生顺序累积），文案由同一套 applyFrame 生成；
+    // 按「轮次 + 序号」给稳定 id，同页多次重连不会把同一条提示叠多份。
+    // 同页重连时断线前的提示已实时渲染过，跳过这段前缀只补新增部分；
+    // 页面刷新后计数为 0，全部回放。
+    const notices = (payload.notices as { event?: string; data?: string }[] | undefined) ?? [];
+    const alreadyRendered = renderedNotices;
     const noticeKeyPrefix = `${String(payload.runId ?? '')}#`;
-    for (const [noticeIndex, notice] of (
-      (payload.notices as { event?: string; data?: string }[] | undefined) ?? []
-    ).entries()) {
+    for (const [noticeIndex, notice] of notices.entries()) {
+      if (noticeIndex < alreadyRendered) continue;
       if (typeof notice.event !== 'string' || typeof notice.data !== 'string') continue;
       try {
         applyFrame(assistantId, notice.event, JSON.parse(notice.data), `${noticeKeyPrefix}${noticeIndex}`);
@@ -362,6 +391,8 @@ export function createChat(sessionId: string) {
         /* 坏载荷忽略 */
       }
     }
+    // 计数按快照里的总条数对齐（不回退：快照理论上不会比已渲染的更少）
+    renderedNotices = Math.max(alreadyRendered, notices.length);
 
     const pendingConfirm = payload.pendingConfirmation as Record<string, unknown> | null | undefined;
     if (pendingConfirm) {
@@ -394,27 +425,38 @@ export function createChat(sessionId: string) {
     if (done) void refreshSessions();
   }
 
-  /** 探活并接上服务端正在进行的轮次；本地流还活着时直接返回。 */
-  async function resume(): Promise<void> {
+  /**
+   * 探活并接上服务端正在进行的轮次；本地流还活着时直接返回。
+   *
+   * 返回值：true = 本轮已有结论（已接上并收到 done、attach 回 204 后已补历史、
+   * 或探活显示已无活跃轮次且历史已补齐）；false = 没能判定/接上（探活失败、被中止、
+   * 内部 attach 重试耗尽），调用方可据此重试。
+   */
+  async function resume(assistantId?: string): Promise<boolean> {
+    // 会话实例已销毁（关标签）：绝不再挂新的订阅，否则留下无人读取的流
+    if (disposed) return false;
+
     // streaming 为真但 controller 已释放，说明上一轮流死在了半路（如 SSE 出错未复位），
     // 这种残留状态不能挡住续流，否则该会话永远接不上。
-    if (streaming() && controller !== null) return;
+    // 反之本地流确实在跑：本轮已有订阅者，重试不该再插一手。
+    if (streaming() && controller !== null) return true;
 
     let active = false;
     try {
       const state = await post<{ active?: boolean }>('/agent/active', { sessionId });
       active = state?.active === true;
     } catch {
-      // 探活失败按「无活跃轮次」处理，不阻塞进入会话
-      active = false;
+      // 探活本身失败（网络未恢复）：状态未知，交给调用方决定是否重试
+      return false;
     }
 
     if (!active) {
+      // 轮次已结束（跑完或被停止）：正文已入库，补历史即视为本轮收尾完成
       if (!historyLoaded() || items().length === 0) await loadHistory(true);
-      return;
+      return true;
     }
 
-    const assistantId = nextId();
+    const targetId = assistantId ?? nextId();
     controller = new AbortController();
     setStreaming(true);
     setRunId(null);
@@ -430,7 +472,7 @@ export function createChat(sessionId: string) {
         {
           onFrame: ({ event, data }) => {
             if (event === 'run.snapshot') {
-              restoreFromSnapshot(assistantId, (data ?? {}) as Record<string, unknown>);
+              restoreFromSnapshot(targetId, (data ?? {}) as Record<string, unknown>);
               started = true;
               return;
             }
@@ -441,7 +483,7 @@ export function createChat(sessionId: string) {
                 ...list,
                 {
                   kind: 'assistant',
-                  id: assistantId,
+                  id: targetId,
                   text: '',
                   thinking: '',
                   tools: [],
@@ -451,7 +493,7 @@ export function createChat(sessionId: string) {
                 },
               ]);
             }
-            if (applyFrame(assistantId, event, data)) done = true;
+            if (applyFrame(targetId, event, data)) done = true;
           },
           onEmpty: () => {
             empty = true;
@@ -469,24 +511,47 @@ export function createChat(sessionId: string) {
       if (empty) {
         // 轮次已结束：内容在库里，直接补历史；不能重试（重试只会一直 204）
         await loadHistory(true);
-        finishStream(started ? assistantId : null, true);
-        return;
+        finishStream(started ? targetId : null, true);
+        return true;
       }
       if (done) {
-        finishStream(assistantId, true);
-        return;
+        finishStream(targetId, true);
+        return true;
       }
       if (controller === null || controller.signal.aborted) {
-        finishStream(assistantId, false);
-        return;
+        finishStream(targetId, false);
+        return false;
       }
       if (attempt >= 3) {
-        finishStream(assistantId, false);
+        finishStream(targetId, false);
         showToast('续流失败，请重新打开该会话', 'error');
-        return;
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
     }
+  }
+
+  /**
+   * 流式响应中途出错后的自动续流。
+   *
+   * 断连只摘订阅者，服务端轮次通常仍在跑：按 1s / 2s / 4s 退避重新 attach，
+   * 最多 3 次；任一成功即把后续帧接回同一条 assistant 气泡。
+   * 3 次都失败才提示错误并交回原有收尾逻辑（不再重复提示一次）。
+   */
+  async function recoverAfterDrop(assistantId: string, error: unknown): Promise<void> {
+    // 先释放本地流状态：resume() 会被「streaming 且 controller 非空」直接短路
+    finishStream(assistantId, false);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+      // 等待期间关掉了标签：不再续流，也不提示
+      if (disposed) return;
+      // 探活/attach 任一步得到结论即结束：本轮还在跑就接着收帧，已跑完就补历史
+      if (await resume(assistantId)) return;
+    }
+
+    pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
+    finishStream(assistantId, false);
   }
 
   async function send(text: string, permissionMode: string, effort: string): Promise<void> {
@@ -505,6 +570,8 @@ export function createChat(sessionId: string) {
     const ready = attachments.filter((item) => item.status === 'ready' && item.path);
 
     const assistantId = nextId();
+    // 新一轮开始：重置提示计数，快照回放按「已实时渲染条数」跳过前缀
+    renderedNotices = 0;
     const now = new Date().toISOString();
 
     const userItem: ChatItem = {
@@ -557,10 +624,14 @@ export function createChat(sessionId: string) {
           if (applyFrame(assistantId, event, data)) done = true;
         },
         onError: (error) => {
-          pushNotice((error as Error).message ?? '对话连接失败', 'error');
-          // 失败分支不会触发 onClose：这里必须自己收尾，否则 streaming 永久为真，
-          // 输入框卡在「停止」、再次进入会话时 resume() 也被短路
-          finishStream(assistantId, false);
+          // 用户主动停止时不续流，直接收尾
+          if (controller?.signal.aborted) {
+            finishStream(assistantId, false);
+            return;
+          }
+          // 断线：按 1s / 2s / 4s 退避重试续流，最多 3 次；耗尽后才提示
+          // 错误分支不会触发 onClose（sse.ts 在错误路径只调 onError），收尾由续流逻辑负责
+          void recoverAfterDrop(assistantId, error);
         },
         onClose: () => {
           // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者），
@@ -701,6 +772,7 @@ export function createChat(sessionId: string) {
   }
 
   function dispose(): void {
+    disposed = true;
     controller?.abort();
     pending().forEach((item) => {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);

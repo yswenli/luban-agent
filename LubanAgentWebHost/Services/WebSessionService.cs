@@ -458,7 +458,9 @@ public static class WebSessionService
                 .ConfigureAwait(false)).Select(session => session.SessionId);
         if (WebApi.Runtime.Runs.IsAnyRunning(WebApi.Runtime.UserId, running))
         {
-            return WebApi.FailJson(409, "有会话正在进行中，请先停止");
+            return string.IsNullOrWhiteSpace(workspaceId)
+                ? WebApi.FailJson(409, "有会话正在进行中，请先停止")
+                : WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
         }
 
         await manager.ClearAllSessionsAsync(workspaceId).ConfigureAwait(false);
