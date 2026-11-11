@@ -57,7 +57,7 @@
 
 轮次中心放 `LubanAgentCore/Hosting/AgentRunHub.cs`：它只需要 `IAgentHost`、`DiContainer`、`AgentSseFrame`，不碰 SAEA，符合「没有不可共享依赖的薄层并入 Core」的拆分原则。WebHost 侧只留 SSE 胶水（`Hosting/SsePump.cs`、`Hosting/AgentEventStreamResult.cs`）。
 
-`LubanAgentWebHost/Hosting/AgentWebRuntime.cs` 以 `Runtime.Runs` 暴露它，现有的 `BeginRun` / `CancelRun` / `EndRun` 保留为薄委托，`/agent/cancel` 与 `WebAgentService.CancelAsync` 不需要改。
+`LubanAgentWebHost/Hosting/AgentWebRuntime.cs` 以 `Runtime.Runs` 暴露它，`CancelRun` 保留为薄委托，`/agent/cancel` 与 `WebAgentService.CancelAsync` 不需要改。`BeginRun` / `EndRun` 随 `ChatAsync` 改造删除：轮次登记与取消源都由 hub 自己持有，全仓没有第二个调用点（改造前只有 `WebAgentService.ChatAsync` 用）。
 
 放在 Core 的直接收益：`LubanAgent.Tests`（只引 Core / Plugin.NewProject / Codex，不引 WebHost）能对快照累积、环形缓冲、订阅者摘除、`active/attach` 判定直接写单测；二期客户端复用同一套语义。
 
@@ -87,10 +87,10 @@
 - `runId` / `sessionId` / `startedAt`：续流后前端用它填 `runId()`，停止按钮才能精确取消本轮（不给就从快照路径来的前端永远只有 `null`，`/agent/cancel` 会变成无条件取消）
 - `text`：累积的 `text.delta`
 - `thinking`：累积的 `think.delta`
-- `tools[]`：`{callId, name, argumentsText, status, resultText}`，由 `tool.started` / `tool.completed` / `tool.failed` 累积
-- `plans[]`：`plan.item` 累积；`progress[]`：`orchestration.progress` 累积
+- `tools[]`：`{callId, name, arguments, status, resultSummary, error}`，由 `tool.started` / `tool.completed` / `tool.failed` 累积；`arguments` 保留原始 JSON（缩进与展示仍由前端 `pretty()` 决定）
+- `plans[]`：`plan.item` 累积（`{toolName, arguments}`）；`progress[]`：`orchestration.progress` 累积（字符串）
 - `attachmentsAdded` / `attachmentsSkipped`：计数
-- `notices[]`：`{tone, text}`，覆盖 `tool.denied`、`attachment.added`、`attachment.skipped`、`error` 这些在前端是独立 notice 条目的帧——重开后它们不能凭空消失，只留计数是不够的
+- `notices[]`：`{event, data}`——原样存 `tool.denied`、`attachment.added`、`attachment.skipped`、`error` 这几类在前端是独立 notice 条目的帧，重开后由前端用同一套 `applyFrame` 回放。既保证这些条目不会凭空消失，又不用把中文文案搬进 Core（Core 只做传输，不持有 UI 文案）
 - `pendingConfirmation`：当前等待中的工具确认（`tool.confirm` 的载荷 + `expiresAt`），用于重开后仍能弹确认框；`expiresAt` 让前端按剩余时间倒数，而不是从原始 `timeoutSeconds` 重新开始
 - `seq`：生成快照时对应的帧序号
 
@@ -100,16 +100,16 @@
 
 沿用「路由只认 `/{controller}/{action}`」与既有 `payload` 单字段约定，新增两个动作到 `AgentController`：
 
-**`POST /agent/active`**，入参 `{sessionId}`，返回 `{active, runId, stage, startedAt}`。轮次结束后的保留期内仍返回 `active=false` + 终态信息，便于前端区分「没有轮次」与「刚跑完还没落库」。
+**`POST /agent/active`**，入参 `{sessionId}`，返回 `{active, runId, startedAt}`：有进行中的轮次时 `active=true` 并带上本轮标识，否则 `active=false`（`runId` / `startedAt` 缺省）。前端只据此决定「要不要 attach」。
 
 **`POST /agent/attach`**，入参 `{sessionId, runId?, fromSeq?}`，返回 SSE 流：
 
 | 请求形态 | 服务端行为 |
 |---|---|
-| 该会话无轮次（或已过保留期） | 返回 `204`（空体），前端改走 `loadHistory(true)` |
+| 该会话无进行中的轮次 | 返回 `204`（空体），前端改走 `loadHistory(true)` |
 | 有轮次，`fromSeq` 缺省（页面刷新后内存为空） | 先发 1 帧 `run.snapshot`（6.2 的快照），再发缓冲中 `seq > snapshot.seq` 的帧，之后转实时 |
 | 有轮次，带 `fromSeq`（二期客户端断线重连，UI 状态还在） | 只发 `seq > fromSeq` 的帧；若 `fromSeq` 已滑出缓冲窗口，改发 `run.snapshot` + `run.resync` 提示（二期处理） |
-| 轮次在 attach 前已结束 | 一律回 `204`，由前端 `loadHistory(true)` 拿完整回答（保留期只用于让 `active` 能解释终态） |
+| 轮次在 attach 前已结束 | 一律回 `204`，由前端 `loadHistory(true)` 拿完整回答 |
 
 `204` 必须在前端有专门分支：`web/src/lib/sse.ts` 现在把所有非 `text/event-stream` 响应都交给 `onError`，而 `toApiError` 会把空体 204 变成「请求失败（HTTP 204）」。施工时给 `streamPost` 的 `SseHandlers` 加 `onEmpty?: () => void`，`response.status === 204` 直接回调它并返回——否则「跑完瞬间重开」必然弹一条假错误。
 
@@ -126,7 +126,7 @@
 2. 校验通过后**创建轮次**（hub 内建 scope + 宿主），而不是在请求内建 scope 交给轮次用。
 3. 后台 `Task.Run`（或 `Task.Factory.StartNew` + `LongRunning`）执行原来的 `StreamFramesAsync`，产出直接 `Publish` 给 hub，**不碰 `HttpResponse`**；心跳不再由 producer 产出，`null` 帧在 hub 入口即丢弃。
 4. 当前 HTTP 连接注册为第一个订阅者（`fromSeq = 0`），用自己的 pump 从 channel 取帧写 socket；写失败只注销订阅者，**不取消轮次**。
-5. `finally` 只剩「注销订阅者」；轮次的取消只来自 `/agent/cancel`、同会话新轮次抢占（`BeginRun` 的取消 + 等待收尾）、宿主关闭（`ShutdownToken`）。
+5. `finally` 只剩「注销订阅者」；轮次的取消只来自 `/agent/cancel`、同会话新轮次抢占（hub 的取消 + 等待收尾）、宿主关闭（`ShutdownToken`）。
 6. 订阅者 pump 结束（读到通道完成，或写失败）后 action 返回，SAEA 关连接，行为与现在一致。
 
 `SsePump` 仍然只在订阅者 pump 线程调用，避免 `HttpResponse` 被后台线程触碰。
@@ -147,7 +147,7 @@
 
 ### 6.6 生命周期与清理
 
-- 轮次结束（`Done` / `Cancelled` / `Failed`）后，hub 中保留 60 秒（可配）再移除；保留期内 `active` 仍返回终态供排查，但 `attach` 一律回 `204`（内容已在 DB，前端走 `loadHistory`）。
+- 轮次结束（`Done` / `Cancelled` / `Failed`）后立即从 hub 移除：`active` 回 `false`、`attach` 回 `204`，前端按 `loadHistory` 拿完整回答。不做终态保留期——前端只需要「活跃 / 不活跃」两态，排查靠日志；少一套定时清理就少一处能把 run 与 scope 泄漏在内存里的地方。顺序固定为「发布 `done` → 完成订阅者通道 → 释放 scope → 移除登记」。
 - 宿主关闭：`ShutdownToken` 触发时取消全部轮次并等待其收尾（与现有 `AgentWebRuntime` 的关闭流程一致）。
 - 轮次的 scope 与宿主实例在轮次移除时释放（`await using` / `DisposeAsync`）。
 
@@ -171,7 +171,7 @@
 | 重开时轮次已跑完 | `attach` 回 `204` → 前端 `loadHistory(true)`，看到完整回答 |
 | 重开时轮次刚失败或被取消 | `attach` 回 `204`；该轮内容从不落库（`SessionChatHistoryProvider.StoreChatHistoryAsync` 只在回合正常结束时写），重开看不到这半截——与现状一致，见 §4 非目标 |
 | 删除进行中的会话 | 拒绝：`409` + 「该会话正在进行中，请先停止再删除」，会话与轮次都保持原样（见 6.7）；删除工作区若连带这样的会话同样拒绝；`/session/clearMessages` 则是先取消再清空 |
-| 同一会话并发两轮 | 沿用 `BeginRun` 语义：新轮次取消旧轮次 |
+| 同一会话并发两轮 | 沿原有序语义：新轮次取消旧轮次并等其收尾（上限 10s） |
 | 宿主进程崩溃 | 该轮丢失，`active` 无记录 |
 | 多标签页同时打开同一会话 | 广播：两个订阅者各自收到完整序列 |
 
@@ -215,7 +215,7 @@
 
 ## 11. 留给施工的决定
 
-- 缓冲容量、保留期、订阅者队列容量的具体默认值与配置项落点（是 `WebHostSettings` 还是 `appsettings.json`）。
+- 缓冲容量与订阅者队列容量的具体默认值与配置项落点（是 `WebHostSettings` 还是 `appsettings.json`）。
 - hub 在 Core，创建用户 scope 的能力得由 WebHost 传入（`Func<DiContainer>` 之类的工厂委托），具体注入形态由施工定。
 - 快照的序列化形态（直接复用 DTO，还是匿名对象）。
 - 前端 `resume()` 的重试退避具体参数与「进行中」标签的文案。
@@ -223,7 +223,7 @@
 ## 12. 本设计中由我定下的判断（可推翻）
 
 1. **快照是全量的，不是缝隙填充**：`run.snapshot` 到达即重建整条 assistant 气泡（正文/思考/工具/计划/进度/notice/待确认），因为它只在「页面刷新、内存为空」时下发。
-2. **`attach` 不服务已结束的轮次**：终态一律 `204`，内容走 `/session/messages`；保留期只让 `active` 能解释终态。
+2. **`attach` 不服务已结束的轮次**：终态一律 `204`，内容走 `/session/messages`；终态轮次立即移除，`active` 只回「活跃 / 不活跃」两态。
 3. **轮次归属会话，不归属发起客户端**：单机单用户下，CLI/Codex 远程模式与网页操作同一会话时互为可见、可停止。若要求隔离，则 hub 键与两个新端点入参都要加客户端标识，属于契约级改动。
 4. **`AgentRunHub` 放 `LubanAgentCore`**：只依赖 `IAgentHost` / `DiContainer` / `AgentSseFrame`，进 Core 可被 `LubanAgent.Tests` 直接覆盖，二期客户端可复用；WebHost 只留 SAEA 胶水。
 5. **显式取消/失败的部分内容不补写落库**：保持现有回合边界语义，不在本次引入「中断消息」。
