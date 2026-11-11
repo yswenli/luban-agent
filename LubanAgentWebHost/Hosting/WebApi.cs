@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using SAEA.Sockets.Interface;
+
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -33,6 +35,11 @@ public static class WebApi
 
     /// <summary>当前响应。</summary>
     public static HttpResponse Response => HttpContextBase.Current!.Response;
+
+    /// <summary>
+    /// 当前请求的连接载体（SSE 写出前由 <see cref="SsePump"/> 判定对端是否还在）。
+    /// </summary>
+    public static IUserToken? Connection => (HttpContextBase.Current as GatedHttpContext)?.Connection;
 
     /// <summary>当前进程运行时。</summary>
     public static AgentWebRuntime Runtime => AgentWebRuntime.Current;

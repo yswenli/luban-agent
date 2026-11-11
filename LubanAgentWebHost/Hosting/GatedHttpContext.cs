@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using SAEA.Sockets.Interface;
+
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -33,6 +35,20 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
     public GatedHttpContext(IWebHost webHost)
         : base(webHost)
     {
+    }
+
+    /// <summary>本次请求所属的连接载体（SSE 写出前据此判定对端是否还在）。</summary>
+    public IUserToken? Connection { get; private set; }
+
+    /// <summary>
+    /// 记录连接载体后交回 MVC 的默认处理。
+    /// </summary>
+    /// <param name="userToken">本次请求的连接载体。</param>
+    /// <param name="httpMessage">已解析的请求报文。</param>
+    public override void HttpHandle(IUserToken userToken, HttpMessage httpMessage)
+    {
+        Connection = userToken;
+        base.HttpHandle(userToken, httpMessage);
     }
 
     /// <summary>

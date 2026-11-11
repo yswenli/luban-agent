@@ -220,6 +220,8 @@ public static class WebAgentService
 
         // 当前连接即第一个订阅者：从零开始收，不需要快照帧
         var response = WebApi.Response;
+        // 连接载体：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
+        var connection = WebApi.Connection;
         AgentRunAttachResult? attach = null;
         try
         {
@@ -229,14 +231,14 @@ public static class WebAgentService
             {
                 // 轮次在「起轮次」与「订阅」之间就已收尾，帧随通道关闭一起消失：
                 // 给出明确信号，否则界面会静默停在半截
-                SsePump.TryWrite(response, AgentSseFrame.ForError("本轮已结束，请重新加载该会话查看结果"));
-                SsePump.TryWrite(response, AgentSseFrame.ForDone(resolution.SessionId));
+                SsePump.TryWrite(response, connection, AgentSseFrame.ForError("本轮已结束，请重新加载该会话查看结果"));
+                SsePump.TryWrite(response, connection, AgentSseFrame.ForDone(resolution.SessionId));
                 return new AgentEventStreamResult();
             }
 
             foreach (var pending in attach.Pending)
             {
-                if (!SsePump.TryWrite(response, pending))
+                if (!SsePump.TryWrite(response, connection, pending))
                 {
                     return new AgentEventStreamResult();
                 }
@@ -244,6 +246,7 @@ public static class WebAgentService
 
             await SsePump.RunAsync(
                 response,
+                connection,
                 attach.Subscription.Reader,
                 TimeSpan.FromSeconds(Math.Max(1, WebApi.Runtime.Settings.HeartbeatSeconds)),
                 WebApi.Runtime.ShutdownToken).ConfigureAwait(false);
@@ -308,12 +311,14 @@ public static class WebAgentService
         }
 
         var response = WebApi.Response;
+        // 连接载体：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
+        var connection = WebApi.Connection;
         try
         {
             SsePump.Begin(response);
             foreach (var pending in attach.Pending)
             {
-                if (!SsePump.TryWrite(response, pending))
+                if (!SsePump.TryWrite(response, connection, pending))
                 {
                     return new AgentEventStreamResult();
                 }
@@ -321,6 +326,7 @@ public static class WebAgentService
 
             await SsePump.RunAsync(
                 response,
+                connection,
                 attach.Subscription.Reader,
                 TimeSpan.FromSeconds(Math.Max(1, WebApi.Runtime.Settings.HeartbeatSeconds)),
                 WebApi.Runtime.ShutdownToken).ConfigureAwait(false);
