@@ -142,7 +142,7 @@ public sealed record AgentRunAttachResult(
 
 **为什么：** 续流的「断点前状态」必须先有稳定的传输形状；这个形状同时是 hub 单测的断言对象，必须先落地。
 
-- [ ] **Step 1：新增 `AgentRunSnapshot.cs`**
+- [x] **Step 1：新增 `AgentRunSnapshot.cs`**
 
 ```csharp
 namespace LubanAgentCore.Hosting;
@@ -201,14 +201,14 @@ public sealed record AgentRunConfirmationSnapshot
 }
 ```
 
-- [ ] **Step 2：`AgentSseEventNames` 追加常量**（放在 `OrchestrationProgress` 之后）
+- [x] **Step 2：`AgentSseEventNames` 追加常量**（放在 `OrchestrationProgress` 之后）
 
 ```csharp
 /// <summary>续流快照；载荷即 <see cref="Hosting.AgentRunSnapshot"/>（仅 attach 时下发一次）。</summary>
 public const string RunSnapshot = "run.snapshot";
 ```
 
-- [ ] **Step 3：编译**
+- [x] **Step 3：编译**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -217,7 +217,7 @@ dotnet build LubanAgentCore\LubanAgentCore.csproj -v m
 
 期望：`Build succeeded`。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `dotnet build LubanAgentCore\LubanAgentCore.csproj -v m` → 「已成功生成」，0 错误 / 4 警告（4 条均为既有 `System.Security.Cryptography.Pkcs 8.0.1` 的 NU1902/NU1903 漏洞告警，与本次改动无关）。
 
 ---
 
@@ -228,7 +228,7 @@ dotnet build LubanAgentCore\LubanAgentCore.csproj -v m
 
 **为什么：** 设计 §6.1 的 6 条发布路径全部落在这一个类型里；把它与「登记/抢占」拆开，单测才能只测从不阻塞的发布路径。
 
-- [ ] **Step 1：类型骨架**
+- [x] **Step 1：类型骨架**
 
 ```csharp
 using System.Threading.Channels;
@@ -248,7 +248,7 @@ public sealed class AgentRunSubscription : IDisposable
 }
 ```
 
-- [ ] **Step 2：字段与构造**
+- [x] **Step 2：字段与构造**
 
 `AgentRunHandle` 由 hub 构造（`internal` 构造），传入：`runId`、`sessionId`、`IAgentHost host`、`DiContainer services`、`CancellationToken runToken`、`AgentRunHubOptions options`、`Action<string> log`。
 
@@ -269,7 +269,7 @@ public sealed class AgentRunSubscription : IDisposable
 - `internal void Cancel()` —— 轮次级取消源 `Cancel()`（`OperationCanceledException` 吞掉「已释放」）。hub 的抢占与 `Runs.Cancel` 都走它。
 - `internal Task Completion { get; set; }`
 
-- [ ] **Step 3：`Publish(AgentSseFrame? frame)`**
+- [x] **Step 3：`Publish(AgentSseFrame? frame)`**
 
 严格按设计 §6.1 的顺序，**同一把锁内**完成「分配 seq → 更新快照 → 入缓冲 → 广播」，锁外做摘除：
 
@@ -279,7 +279,7 @@ public sealed class AgentRunSubscription : IDisposable
 4. 遍历 `_subscribers`：`sub.Reader` 对应的 `ChannelWriter.TryWrite(frame)` 为 false → 记入待摘除列表。
 5. 锁外：对待摘除订阅者 `TryComplete()` + 从 `_subscribers` 移除 + `_log($"订阅者过慢已摘除：run={RunId}")`。
 
-- [ ] **Step 4：`Accumulate(frame)`——快照增量**
+- [x] **Step 4：`Accumulate(frame)`——快照增量**
 
 | 帧名 | 累积动作 |
 |---|---|
@@ -298,7 +298,7 @@ public sealed class AgentRunSubscription : IDisposable
 
 载荷解析统一走 `JsonDocument.Parse(frame.Data)` + `TryGetProperty`，解析失败只记日志、不抛（帧内容由框架产出，不应让 hub 因一个坏帧崩掉轮次）。
 
-- [ ] **Step 5：`Subscribe(int? fromSeq, bool snapshotOnGap = true)`——订阅与补发原子**
+- [x] **Step 5：`Subscribe(int? fromSeq, bool snapshotOnGap = true)`——订阅与补发原子**
 
 锁内完成：
 
@@ -312,20 +312,22 @@ public sealed class AgentRunSubscription : IDisposable
 
 `run.snapshot` 帧用 `AgentSseFrame.Create(AgentSseEventNames.RunSnapshot, snapshot)` 生成（camelCase 由 `AgentEventProtocol.SerializePayload` 保证）。
 
-- [ ] **Step 6：`Unsubscribe` / `Finish` / `DisposeAsync`**
+- [x] **Step 6：`Unsubscribe` / `Finish` / `DisposeAsync`**
 
 - `Unsubscribe(sub)`：锁内移除 + 锁外 `TryComplete()`，幂等（重复调用不抛）。
-- `internal void Finish(AgentRunStage stage)`：锁内置 `_stage = stage`、取走 `_subscribers` 并清空 → 锁外逐个 `TryComplete()` → `Completion.TrySetResult()`。**必须在释放 scope 之前调用**（设计 §6.1 收尾顺序）。
+- `internal void Finish(AgentRunStage stage)`：锁内置 `_stage = stage`、取走 `_subscribers` 并清空 → 锁外逐个 `TryComplete()`。**必须在释放 scope 之前调用**（设计 §6.1 收尾顺序）。
+
+> 施工落定：`Completion` 直接就是 hub 里那个 `Task.Run` 的返回任务，不在 `Finish` 里 `TrySetResult`——`Finish` 之后还要释放作用域、摘登记，`Completion` 完成判定必须晚于这两步，否则抢占方会在旧作用域尚未释放时开新轮次。原文「`Finish` 完成 `Completion`」已按此实现修正。
 - `DisposeAsync()`：`await Services.DisposeAsync()`（`DiContainer` 已实现 `IAsyncDisposable`）。
 
-- [ ] **Step 7：编译**
+- [x] **Step 7：编译**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
 dotnet build LubanAgentCore\LubanAgentCore.csproj -v m
 ```
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 与 Task 3 一并实跑 `dotnet build LubanAgentCore\LubanAgentCore.csproj -v m` → 「已成功生成」，0 错误（`AgentRunHandle` 引用的 `AgentRunHubOptions` 在 Task 3 才落地，故编译合并到 Task 3 Step 5 一次执行）。
 
 ---
 
@@ -336,7 +338,7 @@ dotnet build LubanAgentCore\LubanAgentCore.csproj -v m
 
 **为什么：** `AgentWebRuntime` 现有的 `BeginRun` / `EndRun` 只登记取消源，不带作用域、不等待收尾；把这些职责搬进 hub 后，`WebHost` 侧只保留一层薄委托和 SSE 胶水。
 
-- [ ] **Step 1：选项与字段**
+- [x] **Step 1：选项与字段**
 
 ```csharp
 public sealed record AgentRunHubOptions
@@ -350,7 +352,7 @@ public sealed record AgentRunHubOptions
 
 `AgentRunHub` 持有：`Func<string, DiContainer> _scopeFactory`、`AgentRunHubOptions _options`、`ConcurrentDictionary<string, AgentRunHandle> _runs`（键 `userId\u0001sessionId`，与 `AgentWebRuntime.RunKey` 同口径）、`CancellationTokenSource _shutdown`。日志走 `Action<string>`（默认空实现；WebHost 传 `AgentWebRuntime.Log`）。
 
-- [ ] **Step 2：`StartAsync`**
+- [x] **Step 2：`StartAsync`**
 
 1. `previous = _runs` 中的同会话轮次 → `previous.Cancel()` → `await previous.Completion.WaitAsync(_options.PreemptTimeout)`；`TimeoutException` 只记日志（`"抢占等待旧轮次收尾超时"`），继续。
 2. `var scope = _scopeFactory(userId);` → `scope.GetService(typeof(IAgentHost)) as IAgentHost`；为 null 时 `await scope.DisposeAsync()` 后抛 `InvalidOperationException("当前作用域解析不到 IAgentHost")`（`ChatAsync` 的 `503` 已在前置校验拦过，这里是兜底）。
@@ -386,7 +388,7 @@ handle.Completion = Task.Run(async () =>
 
 6. 返回 handle。`body` 里已经发布过 `done`（沿用 `StreamFramesAsync` 的收尾帧），`Finish` 只负责关通道。
 
-- [ ] **Step 3：查询与取消**
+- [x] **Step 3：查询与取消**
 
 - `Find`：`_runs.TryGetValue` 且 `!handle.IsCompleted` 才返回（终结即视为无轮次）。
 - `IsRunning`：`Find != null`。
@@ -394,11 +396,11 @@ handle.Completion = Task.Run(async () =>
 - `Cancel(userId, sessionId, runId?)`：`runId` 非空且与登记不符 → false（迟到取消不误伤新轮次，沿用 `AgentWebRuntime.CancelRun` 口径）；相符 → `handle.Cancel()` → true。
 - `CancelAndWaitAsync(...)`：`Cancel` 后 `await handle.Completion.WaitAsync(_options.PreemptTimeout)`，超时返回 false（调用方据返回值决定是否继续删/清）。
 
-- [ ] **Step 4：`ShutdownAsync`**
+- [x] **Step 4：`ShutdownAsync`**
 
 `_shutdown.Cancel()` → 取 `_runs` 快照 → 逐个 `await Completion.WaitAsync(_options.ShutdownTimeout)`（超时只记日志）→ `_shutdown.Dispose()`。重复调用幂等（`CancellationTokenSource` 已释放时直接返回）。
 
-- [ ] **Step 5：编译**
+- [x] **Step 5：编译**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -416,7 +418,7 @@ dotnet build LubanAgentCore\LubanAgentCore.csproj -v m
 
 **为什么：** hub 放 Core 的唯一理由就是能被 `LubanAgent.Tests` 直接覆盖；快照 / 缓冲 / 摘除 / 抢占这些判定靠手动冒烟验不出来。
 
-- [ ] **Step 1：测试脚手架**
+- [x] **Step 1：测试脚手架**
 
 `FakeAgentHost` 实现 `IAgentHost` 六个成员（`IsInitialized => false`、`Services => null!`、`CurrentSessionId => null`、`InitializeAsync(string sessionId, CancellationToken ct = default, AgentBuildOverrides? overrides = null) => Task.CompletedTask`、`Reset` 空、`RunStreamingAsync` 抛 `NotSupportedException`）——hub 只把 host 当透传句柄，测试里不用它跑流。
 
@@ -430,7 +432,7 @@ return new AgentRunHub(_ => root.CreateScope(), new AgentRunHubOptions { Backlog
 
 > 注意：`CreateScope()` 返回子容器，测试里不要 Assert 其释放，只断言行为。
 
-- [ ] **Step 2：用例清单（全部为 `[TestMethod]`，中文方法名，与既有测试风格一致）**
+- [x] **Step 2：用例清单（全部为 `[TestMethod]`，中文方法名，与既有测试风格一致）**
 
 1. `帧按序分配seq并进入缓冲`：`Publish` 3 帧 → `Subscribe(null)` 的 `Pending` 首帧是 `run.snapshot` 且 `Seq == 3`，其后无 backlog；`Subscribe(0)` 的 `Pending` 依次是 3 帧。
 2. `空帧不进序列`：`Publish(null)` 后 `Subscribe(null)` 的 `snapshot.Seq == 0`。
@@ -443,7 +445,7 @@ return new AgentRunHub(_ => root.CreateScope(), new AgentRunHubOptions { Backlog
 9. `取消只命中指定runId`：两轮（用不同 session 或先结束第一轮）→ `Cancel(..., "过期runId")` 返回 false，轮次仍在跑；正确 runId 返回 true 且 `Stage` 变 `Cancelled`。
 10. `工作区判定`：`IsAnyRunning` 在同一用户多会话下为 true；全部结束/取消后为 false。
 
-- [ ] **Step 3：跑测试**
+- [x] **Step 3：跑测试**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -452,7 +454,7 @@ dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj --filter "FullyQualifiedNam
 
 期望：10 条全绿。若某条因「时序不可控」不稳，**改测试的同步方式**（用 `TaskCompletionSource` 卡住 body），不要用 `Task.Delay` 赌时序。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj --filter "FullyQualifiedName~AgentRunHubUnitTest"` → 「已通过! - 失败: 0，通过: 10，已跳过: 0，总计: 10」。首轮两处断言有误（比对 `Data` 原文而非标签），改为 `Tag(frame)` 取值后复跑全绿。
 
 ---
 
@@ -462,7 +464,7 @@ dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj --filter "FullyQualifiedNam
 - Modify: `luban-agent/LubanAgentCore/Protocol/AgentApiRoutes.cs`
 - Create: `luban-agent/LubanAgentCore/Protocol/Dtos/AgentRunRequests.cs`
 
-- [ ] **Step 1：`AgentApiRoutes.Agent` 追加两个常量**（放在 `Reset` 之后）
+- [x] **Step 1：`AgentApiRoutes.Agent` 追加两个常量**（放在 `Reset` 之后）
 
 ```csharp
 /// <summary>探活：该会话是否有正在进行的回合。</summary>
@@ -472,7 +474,7 @@ public const string Active = "/agent/active";
 public const string Attach = "/agent/attach";
 ```
 
-- [ ] **Step 2：新增 `AgentRunRequests.cs`**
+- [x] **Step 2：新增 `AgentRunRequests.cs`**
 
 ```csharp
 namespace LubanAgentCore.Protocol.Dtos;
@@ -491,9 +493,9 @@ public sealed record AgentAttachRequest
 }
 ```
 
-- [ ] **Step 3：编译**（同 Task 3 Step 5 命令）
+- [x] **Step 3：编译**（同 Task 3 Step 5 命令）
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 随 Task 6 Step 2 一并实跑 `dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m` → 「已成功生成」，0 错误。
 
 ---
 
@@ -504,7 +506,7 @@ public sealed record AgentAttachRequest
 
 **为什么：** 心跳从 producer 挪到「每个订阅者自己的 pump」（设计 §6.1 第 3 条）；同一个循环串行写帧与 `: ping`，保持「同一 socket 单写者」。
 
-- [ ] **Step 1：新增 `RunAsync`**（`using System.Threading.Channels;` 写到文件头）
+- [x] **Step 1：新增 `RunAsync`**（`using System.Threading.Channels;` 写到文件头）
 
 ```csharp
 /// <summary>订阅者 pump：从轮次通道取帧写 socket，空闲时按心跳间隔补 <c>: ping</c>。</summary>
@@ -550,7 +552,7 @@ public static async Task RunAsync(
 
 > 注意：`WaitToReadAsync` 与 `WaitForNextTickAsync` 每次循环都重建任务，不要缓存已完成的 tick。
 
-- [ ] **Step 2：编译**
+- [x] **Step 2：编译**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -559,7 +561,7 @@ dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m
 
 期望：通过（此时 `WebAgentService` 未改，`ChatAsync` 仍走旧路径）。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m` → 「已成功生成」，0 错误（`ChatAsync` 此时仍是旧路径，符合本步预期）。
 
 ---
 
@@ -571,7 +573,7 @@ dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m
 
 **为什么：** 这是唯一「轮次不再随连接死」的落点。改造后 `finally` 只剩注销订阅者。
 
-- [ ] **Step 1：`ChatAsync` 结构**
+- [x] **Step 1：`ChatAsync` 结构**
 
 ```csharp
 public static Task<ActionResult> ChatAsync(string payload) => WebApi.RunGuardedAsync(async () =>
@@ -686,7 +688,7 @@ public static Task<ActionResult> ChatAsync(string payload) => WebApi.RunGuardedA
 - `Subscribe(0, snapshotOnGap: false)`：这是「从零开始收」，不需要快照帧；前端 `send` 也不解析 `run.snapshot`。
 - `StreamFramesAsync` 的 `yield return null`（心跳占位）保留：它仍用于「宿主静默时排空旁路帧」，只是 `null` 由 hub 丢弃。
 
-- [ ] **Step 2：`AttachAsync`**
+- [x] **Step 2：`AttachAsync`**
 
 ```csharp
 public static Task<ActionResult> AttachAsync(string payload) => WebApi.RunGuardedAsync(async () =>
@@ -739,7 +741,7 @@ private static ActionResult NoContent() => new EmptyResult { Status = HttpStatus
 
 > **不要用 `SAEA.Http.Model.HttpEmptyResult`**：它继承 `HttpActionResult`（只实现 `IHttpResult`），而控制器动作的返回类型与 `WebApi.*Json` 都是 `SAEA.MVC.ActionResult`，两者不可互换。`SAEA.MVC.EmptyResult`（该包已导出、实现 `IEmptyResult`）才是「空体 + 指定状态码」的可用类型，已在 `SAEA.MVC 26.10.8.1` 的 `bin` 里核对过 `Status` 属性与无参构造。
 
-- [ ] **Step 3：`ActiveAsync`**
+- [x] **Step 3：`ActiveAsync`**
 
 ```csharp
 public static Task<ActionResult> ActiveAsync(string payload) => WebApi.RunGuardedAsync(async () =>
@@ -759,7 +761,7 @@ public static Task<ActionResult> ActiveAsync(string payload) => WebApi.RunGuarde
 
 > `async` 无 `await` 会产生 CS1998 警告：上面两个动作体里确实没有 `await` 的，改成**非 async** 返回 `Task.FromResult(...)`，或保留 `await` 结构（`AttachAsync` 里 `SsePump.RunAsync` 就有 `await`；`ActiveAsync` 请写成 `WebApi.RunGuardedAsync(() => Task.FromResult<ActionResult>(...))` 形态，避免警告）。
 
-- [ ] **Step 4：`AgentController` 追加两个动作**
+- [x] **Step 4：`AgentController` 追加两个动作**
 
 ```csharp
 /// <summary>探活：该会话是否有正在进行的回合。</summary>
@@ -771,7 +773,7 @@ public Task<ActionResult> Active(string payload) => WebAgentService.ActiveAsync(
 public Task<ActionResult> Attach(string payload) => WebAgentService.AttachAsync(payload);
 ```
 
-- [ ] **Step 5：编译**
+- [x] **Step 5：编译**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -780,7 +782,7 @@ dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m
 
 期望：通过；`WebAgentService` 里不再出现 `WebApi.Runtime.BeginRun` / `EndRun`（Task 8 才删这两个方法，本步允许 hub 与旧登记并存一编译周期）。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m` → 「已成功生成」，0 错误。施工落定：① `Runs` 与旧登记的替换在本次一并完成（Task 8 Step 1 提前），否则 `Runtime.Runs` 不解析；② 计划里的 `handle.Services` 改为 `handle.Host.Services`（`AgentRunHandle` 只暴露 `Host`，作用域持有在内部）；③ `CancelQuietly` 已删除——`ChatAsync` 不再取消轮次，留着就是死代码。
 
 ---
 
@@ -793,7 +795,7 @@ dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m
 
 **为什么：** 「关页面不再顺带取消」之后，原先被这个副作用兜住的删除/清空必须显式判定（设计 §6.7）。
 
-- [ ] **Step 1：`AgentWebRuntime` 换掉登记表**
+- [x] **Step 1：`AgentWebRuntime` 换掉登记表**
 
 - 加 `public AgentRunHub Runs { get; }`，构造函数里 `Runs = new AgentRunHub(userId => _host.Root.CreateUserScope(userId), log: Log);`
 - `CancelRun` 改为 `=> Runs.Cancel(userId, sessionId, runId);`
@@ -802,12 +804,12 @@ dotnet build LubanAgentWebHost\LubanAgentWebHost.csproj -v m
 
 ```csharp
 _shutdown.Cancel();                 // 先让各订阅者 pump 退出
-await Runs.ShutdownAsync().ConfigureAwait(false);
+await Runs.DisposeAsync().ConfigureAwait(false);   // 内部取消全部轮次并按 ShutdownTimeout 等收尾
 _shutdown.Dispose();
 await _host.DisposeAsync().ConfigureAwait(false);
 ```
 
-- [ ] **Step 2：`WebSessionService.DeleteAsync` 加 409**
+- [x] **Step 2：`WebSessionService.DeleteAsync` 加 409**
 
 在 `CheckOwnerAsync` 之后、`DeleteSessionAsync` 之前插入：
 
@@ -820,7 +822,7 @@ if (WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, input.SessionId.Trim())
 
 判定必须早于软删，否则轮次跑完还会往已删会话里写。
 
-- [ ] **Step 3：`WebSessionService.ClearMessagesAsync` 改为先取消再清空**
+- [x] **Step 3：`WebSessionService.ClearMessagesAsync` 改为先取消再清空**
 
 在 `CheckOwnerAsync` 通过之后、`ClearMessagesAsync` 之前插入：
 
@@ -836,7 +838,7 @@ if (!stopped && WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, input.Sessi
 
 > 无轮次时 `CancelAndWaitAsync` 返回 `true`（无需取消即视为已停止），保证「没有轮次也照常清空」。
 
-- [ ] **Step 4：`WebWorkspaceService.DeleteAsync` 加工作区判定**
+- [x] **Step 4：`WebWorkspaceService.DeleteAsync` 加工作区判定**
 
 在拿到 `input.WorkspaceId` 之后、`DeleteWorkspaceAsync` 之前：
 
@@ -850,7 +852,7 @@ if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, s.Ses
 }
 ```
 
-- [ ] **Step 5：编译 + 跑既有测试**
+- [x] **Step 5：编译 + 跑既有测试**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -858,7 +860,7 @@ dotnet build LubanAgent.slnx -v m
 dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj --filter "FullyQualifiedName~AgentRunHubUnitTest"
 ```
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `dotnet build LubanAgent.slnx -v m` → 「已成功生成」，0 错误；实跑全量 `dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj` → 「已通过! - 失败: 0，通过: 452，已跳过: 0，总计: 452」（含本任务新增的 10 条 hub 用例）。施工偏差：`CancelAndWaitAsync` 实现在「本就无轮次」时返回 `false`（不是计划里写的那样返回 `true`），调用方用紧随其后的 `IsRunning` 区分「无需取消」与「取消超时」，两处判定都已按此实现。
 
 ---
 
@@ -869,7 +871,7 @@ dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj --filter "FullyQualifiedNam
 
 **为什么：** 现状 `!response.ok` 之外还会因 `content-type` 不含 `text/event-stream` 走 `onError`，`toApiError` 把空体 204 变成「请求失败（HTTP 204）」（`lib/api.ts` `parseEnvelope` 与 `toApiError` 的兜底文案）。`resume()` 必然踩到「跑完瞬间」。
 
-- [ ] **Step 1：`SseHandlers` 增加可选回调**
+- [x] **Step 1：`SseHandlers` 增加可选回调**
 
 ```ts
 export interface SseHandlers {
@@ -881,7 +883,7 @@ export interface SseHandlers {
 }
 ```
 
-- [ ] **Step 2：`streamPost` 在判定 Content-Type 之前先拦 204**
+- [x] **Step 2：`streamPost` 在判定 Content-Type 之前先拦 204**
 
 ```ts
 if (response.status === 204) {
@@ -896,14 +898,14 @@ if (!response.ok || !contentType.includes('text/event-stream') || !response.body
 }
 ```
 
-- [ ] **Step 3：构建**
+- [x] **Step 3：构建**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent\LubanAgentWebHost\web
 npm run build
 ```
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `npx tsc --noEmit` → 退出码 0；`npm run build` → `✓ 37 modules transformed`、`✓ built in 2.46s`，产物 `wwwroot/assets/index-Dri-UNi1.js`（176.03 kB）。
 
 ---
 
@@ -916,7 +918,7 @@ npm run build
 
 **为什么：** 断线重开后要「无点击自动续上」，且不能把 `loadHistory` 的整表覆盖与快照重建撞在一起。
 
-- [ ] **Step 1：抽出 `applyFrame`**
+- [x] **Step 1：抽出 `applyFrame`**
 
 把 `send` 里 `onFrame` 的 `switch` 原样搬进 `createChat` 内的函数（`updateAssistant` / `updateTool` 已在该作用域）：
 
@@ -946,7 +948,7 @@ onFrame: ({ event, data }) => {
 },
 ```
 
-- [ ] **Step 2：快照重建 + `resume()`**
+- [x] **Step 2：快照重建 + `resume()`**
 
 ```ts
 /** 用 run.snapshot 重建整条 assistant 气泡（仅页面刷新、内存为空时）。 */
@@ -1096,11 +1098,11 @@ async function resume(): Promise<void> {
 > `empty` 必须单独判：`onEmpty` 之后再重试只会一次次拿到 `204`，看起来像「续流失败」。
 > 重试会重新收到 `run.snapshot`；因为 `restoreFromSnapshot` 会替换尾部未落库气泡，重复快照不会产生第二份正文。
 
-- [ ] **Step 3：导出 `resume`**
+- [x] **Step 3：导出 `resume`**
 
 `return { …, resume }` 加进 `createChat` 的返回对象。
 
-- [ ] **Step 4：`Chat.tsx` 挂载顺序**
+- [x] **Step 4：`Chat.tsx` 挂载顺序**
 
 ```ts
 onMount(() => {
@@ -1114,7 +1116,7 @@ onMount(() => {
 });
 ```
 
-- [ ] **Step 5：`TopBar.tsx` 注释口径**
+- [x] **Step 5：`TopBar.tsx` 注释口径**
 
 `closeTab` 的注释改为：
 
@@ -1122,7 +1124,7 @@ onMount(() => {
 // 关标签只是本地离开：销毁本地实例并中止这条本地流；服务端轮次由 hub 继续跑，重开时自动续上
 ```
 
-- [ ] **Step 6：构建**
+- [x] **Step 6：构建**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent\LubanAgentWebHost\web
@@ -1131,7 +1133,7 @@ npm run build
 
 期望：`vite build` 通过（`tsc` 未在 build 脚本里，类型错误靠 IDE / `npx tsc --noEmit` 自查，自查结果写进验证记录）。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `npx tsc --noEmit` 退出码 0；`npm run build` → `✓ built in 2.46s`。施工落定：① `restoreFromSnapshot` 内的局部变量命名为 `pendingConfirm`（原名 `pending` 会遮蔽同名的待发附件信号）；② `send` 的 `onClose` 收敛为 `finishStream(assistantId, done)`，与原逻辑等价；③ 快照里 `resultSummary` / `error` 对 `null` 也按 `undefined` 处理，避免 `String(null) === 'null'`。
 
 ---
 
@@ -1142,17 +1144,17 @@ npm run build
 - Review: `web/src/pages/SessionList.tsx:347`、`:422`
 - Review: `web/src/pages/Chat.tsx:648`
 
-- [ ] **Step 1：核对三点**
+- [x] **Step 1：核对三点**
 
 1. `deleteSession` / `deleteWorkspace` 失败时只 `showToast` 并 `return false`，不透传异常（已满足，409 文案会直接弹出）。
 2. 两个调用点都是 `if (ok) dropChat(...)`（已满足，删除失败不会销毁本地实例、不会停掉还在跑的轮次）。
 3. `Chat.tsx` 删除当前会话的路径同样以 `ok` 为门（已满足）。
 
-- [ ] **Step 2：把核对结论写进验证记录**
+- [x] **Step 2：把核对结论写进验证记录**
 
 若发现某处不是 `if (ok)` 门控，改为门控后再继续；不要顺手改按钮置灰等交互（设计 §6.7：服务端判定是硬约束）。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 静态核对（未运行，纯代码走查）：`stores/app.ts` 的 `deleteWorkspace`（`:219`）与 `deleteSession`（`:274`）均在 `catch` 里 `showToast(...)` 后 `return false`，不外抛；`pages/SessionList.tsx:347-348`、`:422-423` 与 `pages/Chat.tsx:650-652` 三处调用点全部为 `if (ok)` 门控后才 `dropChat(...)`。`409` 文案会直接弹 toast，本地实例与后台轮次不受影响。**无代码改动。**
 
 ---
 
@@ -1162,7 +1164,7 @@ npm run build
 - Modify: `luban-agent/README.md`（接口表 `:438-456`、约束段 `:463`）
 - Modify: `luban-agent/README.en.md`（同位置）
 
-- [ ] **Step 1：接口表补两行**（紧跟 `POST /agent/cancel`）
+- [x] **Step 1：接口表补两行**（紧跟 `POST /agent/cancel`）
 
 ```markdown
 | `POST /agent/active` | 探活：该会话是否有正在进行的回合 |
@@ -1176,7 +1178,7 @@ npm run build
 | `POST /agent/attach` | Attach to the round in progress (SSE, snapshot first); `204` when there is none |
 ```
 
-- [ ] **Step 2：改写「断连取消需显式调用」这条约束**
+- [x] **Step 2：改写「断连取消需显式调用」这条约束**
 
 中文新文案：
 
@@ -1184,7 +1186,7 @@ npm run build
 
 英文对应同义改写（保留 `409` 与两个新路由的表达）。
 
-- [ ] **Step 3：核对中英结构一致**
+- [x] **Step 3：核对中英结构一致**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -1193,13 +1195,13 @@ Select-String -Path README.md,README.en.md -Pattern '/agent/(active|attach)'
 
 期望：两份文件各命中 2 行，行号相邻。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ✅ 2026-11-11 实跑 `Select-String -Path README.md,README.en.md -Pattern '/agent/(active|attach)'` → 两份文件各命中 3 行：新增两行接口表相邻（`:444` / `:445`），第 3 行在改写后的约束段（`:465`，该段同时提到两个路由，故比计划预期的 2 行多 1 行）。
 
 ---
 
 ## Task 13：全量验收
 
-- [ ] **Step 1：后端构建 + 测试**
+- [x] **Step 1：后端构建 + 测试**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent
@@ -1209,7 +1211,7 @@ dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj -v m
 
 期望：构建 0 error；测试全绿（含 Task 4 的 10 条）。
 
-- [ ] **Step 2：前端构建**
+- [x] **Step 2：前端构建**
 
 ```powershell
 cd D:\WorkBench\Walle\luban\luban-agent\LubanAgentWebHost\web
@@ -1231,11 +1233,17 @@ npm run build
 | 9 | 多标签页同会话 | 两个标签都能续流并各自完整输出 |
 | 10 | `attach` 无活跃轮次直连（curl / 控制台） | `204` 空体 |
 
-- [ ] **Step 4：变更清单复核**
+- [x] **Step 4：变更清单复核**
 
 `git -C D:\WorkBench\Walle\luban\luban-agent status --short`，确认**没有**把用户 WIP 文件（见 §0 第 2 条）带入本次改动；`wwwroot/assets/index-*` 的删增属构建产物，提交时按需处理。
 
-**验证记录：** ⬜ 未执行
+**验证记录：** ⚠️ 部分执行（2026-11-11）。
+
+- Step 1 ✅ 实跑 `dotnet build LubanAgent.slnx -v m` → 「已成功生成」，退出码 0；`dotnet test LubanAgent.Tests\LubanAgent.Tests.csproj -v m` → 「已通过! - 失败: 0，通过: 452，已跳过: 0，总计: 452」，退出码 0。终审修复后复跑：构建 0 错误、20 个警告（均为既有 NU1902/NU1903 与 Avalonia AVLN3001）；测试 456 通过 / 0 失败（含新增的「无轮次时取消返回 false」「取消等待超时返回 false 且轮次仍在跑」两条）。
+- Step 2 ✅ 实跑 `npx tsc --noEmit`（退出码 0）+ `npm run build` → `✓ built in 2.46s`；终审修复后复跑 `npx tsc --noEmit` 退出码 0、`npm run build` → `✓ built in 1.86s`，产物 `wwwroot/assets/index-DK6w7RpJ.js`。
+- Step 3 ❌ **未执行**：10 条均需启动宿主并接真实模型做交互式浏览器验证，本回合未启动服务、未连接模型，不臆断通过；须人工按表逐条走。
+- Step 4 ✅ 实跑 `git status --short`：本次改动落在 `LubanAgentCore/{Hosting,Protocol}`、`LubanAgentWebHost/{Controllers,Hosting,Services,web/src}`、`LubanAgent.Tests`、`README*.md`、计划文档；用户 WIP 文件（`ConfigManager.cs`、`ProviderService.cs`、`AgentApiJson.cs`、`ProviderController.cs`、`ProviderContracts.cs`、`WebProviderService.cs`、`web/src/stores/app.ts`、`Settings.tsx`、`ProviderTab.tsx`、`wwwroot/index.html`）保持原状未被本次触碰。`wwwroot/assets` 的删增（`index-XzOqHh6n.js` / `index-CC20lCS5.js` → `index-Dri-UNi1.js`）是 `vite build` 的产物替换，非源码改动。
+- 补充静态核对：`ActionResult.Status` 由 MVC 执行器统一落盘（`JsonResult` 自身只有构造器、无状态成员），故 `EmptyResult { Status = NoContent }` 可产出 204 空体；**此结论来自反射查看 `SAEA.MVC.dll`，未经运行验证**。
 
 ---
 
@@ -1255,3 +1263,25 @@ npm run build
 - hub + 单测（Task 1–4）独立于 WebHost：回滚只需删除新增文件，`LubanAgent.slnx` 仍可编译。
 - `ChatAsync` 改造（Task 7）是唯一「行为切换点」：回滚该文件即回到「断连即取消」；`Attach` / `Active` 两个动作留在控制器上不会产生副作用（没人调用）。
 - 前端 `resume()` 回滚：`Chat.tsx` 的 `onMount` 去掉 `await chat.resume()` 即回到「只拉历史」。
+
+---
+
+## 附录 C：独立终审结论与处理（2026-11-11）
+
+独立审查子代理（只读）结论：**有条件合并，无 Critical**；2 条 Important、8 条 Minor，已按下表处理。
+
+| 编号 | 位置 | 问题 | 处理 |
+|---|---|---|---|
+| I1 | `web/src/stores/chat.ts` `restoreFromSnapshot` | 只替换「列表最后一项」，尾部是 notice 时半成品气泡不在末尾 → 旧正文与快照正文并存 | ✅ 改为回扫「最后一个非 history 的 assistant」原位替换 |
+| I2 | `web/src/stores/chat.ts` `send` 的 `onError` / `resume()` | SSE 出错分支不触发 `onClose`，`streaming` 永久为真：输入框卡在「停止」、`resume()` 被短路 | ✅ `onError` 里补 `finishStream(assistantId, false)`；`resume()` 的短路条件改为「`streaming()` 且 `controller` 非空」，残留状态不再挡住续流 |
+| I3 | `LubanAgentCli/App/ViewModels/CommandViewModel.cs` 的 `/clear` | CLI 运行中不拒绝清屏，与 Codex 同名命令相反 | ⏸ 按既定口径保留（只清显示文档、不删库），不改；差异记于客户端计划附录 A |
+| M1 | `web/src/stores/chat.ts` 快照 notice 重放 | 同页多次重连把同一条提示叠加多份 | ✅ `applyFrame` 增加可选 `noticeKey`，notice 统一走 `pushNotice` 按 key 去重；快照回放用「runId#序号」作 key |
+| M2 | `web/src/stores/chat.ts` `send` 的 `onClose` | 流中断无任何提示 | ✅ `done === false` 且未主动中止时补一条「连接已中断，本轮仍在后台运行」的警告 |
+| M3 | `WebSessionService.ClearAllAsync`、`WebLlmWikiService.DeleteAsync` | 批量清空 / 知识库删除会级联删会话，却缺 `409` 判定 | ✅ 两处补运行态判定，文案与 `/workspace/delete` 一致（前者无 workspaceId 时按当前用户全部会话判定） |
+| M4 | `AgentRunHandle.BuildSnapshotPending` | `AddRange(_backlog.Where(x => x.Seq > snapshot.Seq))` 恒为空 | ✅ 删除死代码，改为单帧返回 + 注释说明快照已含缓冲全部内容 |
+| M5 | `web/src/stores/chat.ts` `resume()` 的「实时帧先于快照」分支 | 注释写懒建气泡，实际是空转，后续 delta 全丢 | ✅ 真的追加一个空气泡 |
+| M6 | `AgentRunHandle.Completion` / `AgentRunHub.StartAsync` | `Completion` 默认 `Task.CompletedTask`，`TryAdd` 与赋值之间被抢占方/取消方读到会误判「已收尾」 | ✅ 改为构造即创建 `TaskCompletionSource`，收尾末尾 `MarkCompleted()` 置位 |
+| M7 | `SsePump.RunAsync` | 每次循环新建 `WaitToReadAsync`，心跳分支 `continue` 时旧任务无人 await | ✅ `read` 提升到循环外，只在被消费后重建 |
+| M8 | `LubanAgent.Tests/AgentRunHubUnitTest.cs` | 缺「无轮次取消」「取消超时」路径覆盖 | ✅ 补 2 条；`BuildPending` 缺口→快照已由既有「环形缓冲滑窗」用例覆盖 |
+
+前端仍无自动化测试（仓库现状），I1 / I2 / M1 / M2 / M5 的运行时效果需靠 Task 13 Step 3 的第 1–4、9 条人工冒烟验证。
