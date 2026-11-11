@@ -25,6 +25,7 @@ public class SessionCommand : CommandBase
     private readonly IChatSessionService _sessions;
     private readonly ISessionMessageQuery _messageQuery;
     private readonly IWorkspaceManagementService _workspaces;
+    private readonly SessionRunRegistry _runRegistry;
 
     /// <summary>
     /// 命令名称
@@ -45,16 +46,18 @@ public class SessionCommand : CommandBase
     /// <param name="sessions">会话管理服务</param>
     /// <param name="messageQuery">会话消息查询（列表预览）</param>
     /// <param name="workspaces">工作区管理服务（提供当前工作区ID）</param>
+    /// <param name="runRegistry">会话运行态登记（判断是否有会话正在进行中）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
     public SessionCommand(ConfigManager configManager, IConfiguration configuration, IChatSessionService sessions, ISessionManager sessionManager, ISessionMessageQuery messageQuery,
-        IWorkspaceManagementService workspaces, ITuiOutputWriter writer, ITuiUiService ui)
+        IWorkspaceManagementService workspaces, SessionRunRegistry runRegistry, ITuiOutputWriter writer, ITuiUiService ui)
         : base(configManager, configuration, writer, ui)
     {
         _sessions = sessions;
         _sessionManager = sessionManager;
         _messageQuery = messageQuery;
         _workspaces = workspaces;
+        _runRegistry = runRegistry;
     }
 
     /// <summary>
@@ -265,6 +268,13 @@ public class SessionCommand : CommandBase
     /// </summary>
     private async Task ClearAllSessionsAsync()
     {
+        // 运行中先拒绝：删库之后本轮仍会继续写；一旦删掉再恢复，这一轮内容无法回填
+        if (_runRegistry.IsAnyRunning)
+        {
+            Writer.WriteError("有会话正在进行中，请先停止再删除");
+            return;
+        }
+
         if (!Ui.Confirm("删除全部会话", "确认物理删除全部会话及消息数据？此操作不可恢复", defaultValue: false))
         {
             Writer.WriteInfo("已取消");

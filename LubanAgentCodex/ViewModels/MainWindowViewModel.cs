@@ -232,6 +232,39 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsRunning => _currentSession?.IsRunning ?? false;
 
     /// <summary>
+    /// 是否有任一会话正在运行；退出确认据此提示会中断回合。
+    /// </summary>
+    public bool IsAnySessionRunning => _sessions.Values.Any(session => session.IsRunning);
+
+    /// <summary>
+    /// 指定工作区下是否有会话正在运行；删除工作区（会级联删会话）前据此拒绝。
+    /// </summary>
+    /// <param name="workspaceId">工作区标识。</param>
+    /// <returns>true 表示该工作区下存在运行中的会话。</returns>
+    public async Task<bool> HasRunningSessionInWorkspaceAsync(string workspaceId)
+    {
+        if (string.IsNullOrEmpty(workspaceId)) return false;
+
+        var running = _sessions.Values
+            .Where(session => session.IsRunning)
+            .Select(session => session.SessionId)
+            .ToList();
+        if (running.Count == 0) return false;
+
+        var query = Services.GetService<ISessionWorkspaceQuery>();
+        if (query is null) return false;
+
+        var userId = Services.ResolveUserKey();
+        foreach (var sessionId in running)
+        {
+            var owner = await query.GetSessionWorkspaceIdAsync(sessionId, userId);
+            if (string.Equals(owner, workspaceId, StringComparison.Ordinal)) return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 当前会话是否处于"已请求取消、等待收尾"的停止中状态（转发自 <see cref="CurrentSession"/>）。
     /// </summary>
     public bool IsStopping => _currentSession?.IsStopping ?? false;
@@ -623,8 +656,18 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case "/clear":
-                ClearMessages();
-                Messages.Add(new SystemMessageItem { Content = "会话已清空" });
+                if (ClearMessages())
+                {
+                    Messages.Add(new SystemMessageItem { Content = "会话已清空" });
+                }
+                else
+                {
+                    Messages.Add(new SystemMessageItem
+                    {
+                        Content = "该会话正在进行中，请先停止再清空",
+                        IsError = true
+                    });
+                }
                 break;
 
             case "/mode":
@@ -773,7 +816,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private void ShowWorkManager(string[] args)
     {
-        var window = new WorkManageWindow(Services);
+        var window = new WorkManageWindow(Services, HasRunningSessionInWorkspaceAsync);
         window.Show();
     }
 
@@ -782,7 +825,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private void ShowLlmWikiManager(string[] args)
     {
-        var window = new LlmWikiManageWindow(Services);
+        var window = new LlmWikiManageWindow(Services, HasRunningSessionInWorkspaceAsync);
         window.Show();
     }
 
@@ -1253,6 +1296,17 @@ public partial class MainWindowViewModel : ObservableObject
         }
         else if (args[0] == "-clear" || args[0] == "clear")
         {
+            // 运行中先拒绝：删库之后本轮仍会继续写，内存里的活动消息也会变成孤儿
+            if (_currentSession?.IsRunning == true)
+            {
+                Messages.Add(new SystemMessageItem
+                {
+                    Content = "该会话正在进行中，请先停止再删除",
+                    IsError = true
+                });
+                return;
+            }
+
             sessionManager.ClearCurrentSession();
             ClearMessages();
             Messages.Add(new SystemMessageItem { Content = "会话已清空" });
@@ -1400,12 +1454,22 @@ public partial class MainWindowViewModel : ObservableObject
     private const int MaxHistoryToolCards = 2000;
 
     /// <summary>
-    /// 清空当前会话消息流
+    /// 清空当前会话消息流。
     /// </summary>
-    public void ClearMessages()
+    /// <returns>true 表示已清空（无当前会话时视为无需清理）；false 表示当前会话正在运行，已拒绝。</returns>
+    public bool ClearMessages()
     {
-        _currentSession?.Clear();
+        var session = _currentSession;
+        if (session is null)
+        {
+            ClearPendingAttachments();
+            return true;
+        }
+
+        if (!session.TryClear()) return false;
+
         ClearPendingAttachments();
+        return true;
     }
 }
 

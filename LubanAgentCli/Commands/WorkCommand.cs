@@ -23,6 +23,7 @@ public class WorkCommand : CommandBase
 {
     private readonly IWorkspaceManagementService _workspaces;
     private readonly ISessionWorkspaceQuery _sessionQuery;
+    private readonly SessionRunRegistry _runRegistry;
     private readonly string _userId;
 
     /// <summary>
@@ -42,6 +43,7 @@ public class WorkCommand : CommandBase
     /// <param name="configuration">应用配置</param>
     /// <param name="workspaces">工作区管理服务（名称/路径解析与增删改查）</param>
     /// <param name="sessionQuery">会话与工作区绑定查询（会话数统计）</param>
+    /// <param name="runRegistry">进程级会话运行态登记（删除工作区前判断是否有会话在跑）</param>
     /// <param name="userContext">当前用户上下文</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
@@ -50,6 +52,7 @@ public class WorkCommand : CommandBase
         IConfiguration configuration,
         IWorkspaceManagementService workspaces,
         ISessionWorkspaceQuery sessionQuery,
+        SessionRunRegistry runRegistry,
         IUserContext userContext,
         ITuiOutputWriter writer,
         ITuiUiService ui)
@@ -57,6 +60,7 @@ public class WorkCommand : CommandBase
     {
         _workspaces = workspaces;
         _sessionQuery = sessionQuery;
+        _runRegistry = runRegistry;
         _userId = userContext.ResolveUserKey();
     }
 
@@ -345,6 +349,13 @@ public class WorkCommand : CommandBase
         if (target == null)
         {
             Writer.WriteError($"找不到工作区: {keyword}");
+            return;
+        }
+
+        // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+        if (await _runRegistry.IsWorkspaceRunningAsync(_sessionQuery, target.WorkspaceId, _userId))
+        {
+            Writer.WriteError("该工作区下有正在进行中的会话，请先停止再删除");
             return;
         }
 

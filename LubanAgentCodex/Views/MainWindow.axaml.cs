@@ -187,6 +187,7 @@ public partial class MainWindow : Window
                 // 先注入运行状态查询，确保随后的 LoadWorkspaces 重建列表时能恢复运行徽标
                 _sidebar.SessionRunningProvider = _viewModel.IsSessionRunning;
                 _sidebar.SessionPendingConfirmProvider = _viewModel.IsSessionConfirmationPending;
+                _sidebar.WorkspaceRunningProvider = _viewModel.HasRunningSessionInWorkspaceAsync;
                 _sidebar.SetServiceProvider(services);
                 _sidebar.WorkspaceSelected += OnWorkspaceSelected;
                 _sidebar.SessionSelected += OnSessionSelected;
@@ -275,11 +276,14 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task<bool> ConfirmExitAsync()
     {
+        var running = _viewModel?.IsAnySessionRunning == true;
         return await Dialogs.ShowConfirmAsync(
             this,
             "退出确认",
             "确定要退出 Luban Agent 吗？",
-            "退出后当前会话将关闭，未发送的内容不会保存。",
+            running
+                ? "正在运行的回合会被中断，未发送的内容不会保存。"
+                : "退出后当前会话将关闭，未发送的内容不会保存。",
             "退出",
             danger: true);
     }

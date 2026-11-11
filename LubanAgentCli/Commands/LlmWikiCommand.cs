@@ -35,6 +35,9 @@ internal sealed class LlmWikiCommand : CommandBase
     private readonly IWorkspaceManager _workspaceManager;
     private readonly IWorkspaceManagementService _workspaces;
     private readonly ILlmWikiManagementService _wiki;
+    private readonly ISessionWorkspaceQuery _sessionQuery;
+    private readonly SessionRunRegistry _runRegistry;
+    private readonly string _userId;
     private readonly ConversationViewModel? _conversation;
 
     /// <summary>
@@ -55,6 +58,9 @@ internal sealed class LlmWikiCommand : CommandBase
     /// <param name="workspaceManager">工作区管理器（当前工作区与授权门禁）</param>
     /// <param name="workspaces">工作区管理服务（-delete 的关键字匹配）</param>
     /// <param name="wiki">LLM Wiki 管理服务</param>
+    /// <param name="sessionQuery">会话与工作区绑定查询（-delete 前判断是否有会话在跑）</param>
+    /// <param name="runRegistry">进程级会话运行态登记</param>
+    /// <param name="userContext">当前用户上下文</param>
     /// <param name="conversation">会话 ViewModel（可为 null）</param>
     /// <param name="writer">TUI 输出写入器</param>
     /// <param name="ui">TUI 模态交互服务</param>
@@ -64,6 +70,9 @@ internal sealed class LlmWikiCommand : CommandBase
         IWorkspaceManager workspaceManager,
         IWorkspaceManagementService workspaces,
         ILlmWikiManagementService wiki,
+        ISessionWorkspaceQuery sessionQuery,
+        SessionRunRegistry runRegistry,
+        IUserContext userContext,
         ConversationViewModel? conversation,
         ITuiOutputWriter writer,
         ITuiUiService ui)
@@ -72,6 +81,9 @@ internal sealed class LlmWikiCommand : CommandBase
         _workspaceManager = workspaceManager;
         _workspaces = workspaces;
         _wiki = wiki;
+        _sessionQuery = sessionQuery;
+        _runRegistry = runRegistry;
+        _userId = userContext.ResolveUserKey();
         _conversation = conversation;
     }
 
@@ -464,6 +476,13 @@ internal sealed class LlmWikiCommand : CommandBase
         if (target == null)
         {
             Writer.WriteError($"找不到 LLM Wiki 知识库: {keyword}");
+            return;
+        }
+
+        // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+        if (await _runRegistry.IsWorkspaceRunningAsync(_sessionQuery, target.WorkspaceId, _userId))
+        {
+            Writer.WriteError("该工作区下有正在进行中的会话，请先停止再删除");
             return;
         }
 

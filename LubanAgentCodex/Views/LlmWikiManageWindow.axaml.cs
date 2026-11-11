@@ -24,6 +24,7 @@ public partial class LlmWikiManageWindow : Window
 {
     private readonly DiContainer _services;
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly Func<string, Task<bool>>? _isWorkspaceRunning;
     // 窗口级作用域：管理服务为 scoped，窗口生命周期内复用一份，关闭时释放
     private readonly DiContainer _scope;
     private readonly ILlmWikiManagementService _wiki;
@@ -46,10 +47,12 @@ public partial class LlmWikiManageWindow : Window
     /// 随后列出可管理（索引、检索、重建、lint）的知识库工作区。
     /// </summary>
     /// <param name="services">应用服务容器，用于创建工作区隔离的作用域并关闭窗口时释放。</param>
-    public LlmWikiManageWindow(DiContainer services)
+    /// <param name="isWorkspaceRunning">查询指定工作区下是否有会话正在运行；null 表示不做运行态判定。</param>
+    public LlmWikiManageWindow(DiContainer services, Func<string, Task<bool>>? isWorkspaceRunning = null)
     {
         _services = services;
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        _isWorkspaceRunning = isWorkspaceRunning;
         _scope = services.CreateUserScope(services.ResolveUserKey());
         _wiki = _scope.GetRequiredService<ILlmWikiManagementService>();
         Closed += (_, _) => _scope.Dispose();
@@ -430,6 +433,13 @@ public partial class LlmWikiManageWindow : Window
         if (_llmWikiListBox?.SelectedItem is not LlmWikiItem item) return;
         try
         {
+            // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+            if (_isWorkspaceRunning is not null && await _isWorkspaceRunning(item.WorkspaceId))
+            {
+                await Dialogs.ShowErrorAsync(this, "该工作区下有正在进行中的会话，请先停止再删除");
+                return;
+            }
+
             var ok = await Dialogs.ShowConfirmAsync(this, "删除 LLM Wiki 知识库",
                 $"删除 '{item.Name}' 将同时删除其下所有会话和索引，确认？",
                 okText: "删除", danger: true);

@@ -246,10 +246,18 @@ public partial class SessionViewModel : ObservableObject
     /// <summary>
     /// 清空消息流与运行中节点。
     /// </summary>
-    public void Clear()
+    /// <remarks>
+    /// 会话正在运行时拒绝：本轮消息仍在增长，清空会让当前助手消息脱离集合（界面看不到、内容丢失），
+    /// 收尾时也无处回填。需要清空请先停止本轮。
+    /// </remarks>
+    /// <returns>true 表示已清空；false 表示会话正在运行，未做任何清理。</returns>
+    public bool TryClear()
     {
+        if (IsRunning) return false;
+
         Messages.Clear();
         _runningNodes.Clear();
+        return true;
     }
 
     /// <summary>

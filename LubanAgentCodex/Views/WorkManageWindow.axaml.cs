@@ -23,6 +23,7 @@ namespace LubanAgentCodex.Views;
 public partial class WorkManageWindow : Window
 {
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly Func<string, Task<bool>>? _isWorkspaceRunning;
     private ListBox? _workspaceListBox;
     private Button? _addButton;
     private Button? _switchButton;
@@ -33,9 +34,11 @@ public partial class WorkManageWindow : Window
     /// 初始化工作区管理窗口并加载 XAML 定义，随后异步加载当前用户的全部工作区列表。
     /// </summary>
     /// <param name="services">应用服务容器，用于解析工作区管理器。</param>
-    public WorkManageWindow(DiContainer services)
+    /// <param name="isWorkspaceRunning">查询指定工作区下是否有会话正在运行；null 表示不做运行态判定。</param>
+    public WorkManageWindow(DiContainer services, Func<string, Task<bool>>? isWorkspaceRunning = null)
     {
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        _isWorkspaceRunning = isWorkspaceRunning;
         InitializeComponent();
         LoadWorkspaces();
     }
@@ -114,6 +117,13 @@ public partial class WorkManageWindow : Window
         if (_workspaceListBox?.SelectedItem is not WorkspaceItem item) return;
         try
         {
+            // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+            if (_isWorkspaceRunning is not null && await _isWorkspaceRunning(item.WorkspaceId))
+            {
+                await Dialogs.ShowErrorAsync(this, "该工作区下有正在进行中的会话，请先停止再删除");
+                return;
+            }
+
             var ok = await Dialogs.ShowConfirmAsync(this, "删除工作区",
                 $"删除 '{item.Name}' 将同时删除其下所有会话和索引，确认？",
                 okText: "删除", danger: true);

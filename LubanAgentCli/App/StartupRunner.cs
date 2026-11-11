@@ -65,6 +65,9 @@ internal static class StartupRunner
                 // TUI 特定：注册 TitleService
                 services.AddSingleton<TitleService>();
 
+                // 会话运行态登记：供 /session -clear 判断是否有会话正在进行中
+                services.AddSingleton<SessionRunRegistry>();
+
                 // 会话 / 工作区 / 对话改走统一 Agent 服务；必须在容器构建前覆盖。
                 connection?.RegisterInto(services);
             },

@@ -42,6 +42,11 @@ public partial class Sidebar : UserControl
     public Func<string, bool>? SessionRunningProvider { get; set; }
 
     /// <summary>
+    /// 工作区运行态查询（由主窗口注入）：指定工作区下是否有会话正在运行。
+    /// </summary>
+    public Func<string, Task<bool>>? WorkspaceRunningProvider { get; set; }
+
+    /// <summary>
     /// 会话待确认状态查询（由主窗口注入，用于重建列表时恢复徽标）。
     /// </summary>
     public Func<string, bool>? SessionPendingConfirmProvider { get; set; }
@@ -369,6 +374,14 @@ public partial class Sidebar : UserControl
                     if (owner == null) return;
 
                     var display = string.IsNullOrWhiteSpace(ws.Name) ? GetDisplayName(ws.RootPath) : ws.Name;
+
+                    // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+                    if (WorkspaceRunningProvider is not null && await WorkspaceRunningProvider(ws.WorkspaceId))
+                    {
+                        await Dialogs.ShowErrorAsync(owner, "该工作区下有正在进行中的会话，请先停止再删除");
+                        return;
+                    }
+
                     var ok = await Dialogs.ShowConfirmAsync(owner, "确认删除",
                         $"确定要删除工作区 \"{display}\" 吗？",
                         "删除后将逻辑删除该工作区，并级联清理其会话与关联的 LLM Wiki 向量索引。",
@@ -531,6 +544,13 @@ public partial class Sidebar : UserControl
                     {
                         var parentWindow = TopLevel.GetTopLevel(this) as Window;
                         if (parentWindow == null) return;
+
+                        // 运行中先拒绝：删库之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+                        if (SessionRunningProvider?.Invoke(sessionCopy.SessionId) == true)
+                        {
+                            await Dialogs.ShowErrorAsync(parentWindow, "该会话正在进行中，请先停止再删除");
+                            return;
+                        }
 
                         var result = await Dialogs.ShowConfirmAsync(parentWindow, "确认删除",
                             $"确定要删除会话 \"{sessionCopy.Title ?? "新会话"}\" 吗？",
@@ -881,6 +901,13 @@ public partial class Sidebar : UserControl
         {
             var parentWindow = TopLevel.GetTopLevel(this) as Window;
             if (parentWindow == null) return;
+
+            // 运行中先拒绝：级联删会话之后本轮仍会继续写，界面里的活动消息也会变成孤儿
+            if (WorkspaceRunningProvider is not null && await WorkspaceRunningProvider(model.WorkspaceId))
+            {
+                await Dialogs.ShowErrorAsync(parentWindow, "该工作区下有正在进行中的会话，请先停止再删除");
+                return;
+            }
 
             var confirmed = await Dialogs.ShowConfirmAsync(parentWindow, "删除知识库",
                 "确定要删除知识库吗？",

@@ -65,6 +65,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     // 待重建 Agent（模型切换 / AGENTS.md 变更）；运行中置位、本轮结束后消费
     private volatile bool _pendingAgentReset;
 
+    // 会话运行态登记（运行中禁止删除该会话的全局命令据此判断）
+    private readonly SessionRunRegistry? _runRegistry;
+
     // 流式 token 合批缓冲：消费线程追加、节流冲刷时取出，替代逐 token Invoke 洪峰
     private readonly object _streamLock = new();
     private readonly StringBuilder _pendingThinking = new();
@@ -128,8 +131,27 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// </summary>
     public string PermissionModeDisplay => PermissionModeRules.ToKey(PermissionMode);
 
+    private bool _isRunning;
+
     /// <summary>当前是否正在运行 agent 对话。</summary>
-    public bool IsRunning { get; private set; }
+    /// <remarks>运行态同步登记到 <see cref="SessionRunRegistry"/>，供 /session -clear 等全局命令判断。</remarks>
+    public bool IsRunning
+    {
+        get => _isRunning;
+        private set
+        {
+            if (_isRunning == value) return;
+            _isRunning = value;
+            if (value)
+            {
+                _runRegistry?.Enter(_sessionId);
+            }
+            else
+            {
+                _runRegistry?.Exit(_sessionId);
+            }
+        }
+    }
 
     /// <summary>
     /// 当前挂起的确认块（工具确认 / 权限模式二次确认）。非空时，焦点会被切换到会话区，
@@ -186,6 +208,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         // 编排进度出口：本机由框架直接 Publish，远程由 HttpAgentHost 收到 SSE 帧后 Raise；
         // 两种模式下都从这里订阅，界面无需区分（未注册时为 null，仅无进度反馈）
         _orchestrationSink = services.GetService<HostOrchestrationProgressSink>();
+
+        // 运行态登记：/session -clear 等全局命令据此刻判断是否有会话正在进行中
+        _runRegistry = services.GetService<SessionRunRegistry>();
 
         _configManager.SelectedModelChanged += OnSelectedModelChanged;
     }
@@ -1122,6 +1147,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// </summary>
     public void Dispose()
     {
+        _runRegistry?.Exit(_sessionId);
         _configManager.SelectedModelChanged -= OnSelectedModelChanged;
         _streamThrottle?.Dispose();
         _streamThrottle = null;
