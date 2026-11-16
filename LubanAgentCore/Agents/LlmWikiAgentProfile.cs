@@ -59,7 +59,8 @@ public class LlmWikiAgentProfile : AgentProfileBase
     {
         _workspace = workspace;
         _systemPrompt = "你是一个 LLM Wiki 知识库问答专家，维护并基于 wiki 知识库回答问题。优先使用 wiki 工具检索与沉淀知识；wiki 无相关内容时再回落原始资料。";
-        _toolGroups = new[] { "wiki", "retrieval", "filesystem", "context", "log", "skill", "skillmanage", "mcpmanage" };
+        // webfile：Web 宿主注册的「取文件链接」工具；其它宿主未注册该组，列出来也无副作用
+        _toolGroups = new[] { "wiki", "retrieval", "filesystem", "context", "log", "skill", "skillmanage", "mcpmanage", "webfile" };
         LoadLlmWikiConfig();
         _systemPrompt = $"{_systemPrompt}\n\n{WikiDefaults.Schema}";
         if (_wiki.SchemaPath != null)

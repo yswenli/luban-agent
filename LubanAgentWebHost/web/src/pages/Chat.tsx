@@ -262,7 +262,7 @@ export function ChatPage(props: { sessionId: string }) {
                 </div>
               </Show>
 
-              <Index each={chat.items()}>{(item) => <ChatRow item={item} />}</Index>
+              <Index each={chat.items()}>{(item) => <ChatRow item={item} workspaceId={session()?.workspaceId ?? undefined} />}</Index>
 
               <Show when={chat.plans().length > 0}>
                 <div class="plan-strip">
@@ -659,7 +659,7 @@ export function ChatPage(props: { sessionId: string }) {
   );
 }
 
-function ChatRow(props: { item: () => ChatItem }) {
+function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
   const notice = () => {
     const value = props.item();
     return value.kind === 'notice' ? value : null;
@@ -721,7 +721,7 @@ function ChatRow(props: { item: () => ChatItem }) {
 
             <Show when={item().text}>
               <div class="assistant-text">
-                <Markdown text={item().text} />
+                <Markdown text={item().text} workspaceId={props.workspaceId} />
               </div>
             </Show>
 

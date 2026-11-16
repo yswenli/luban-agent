@@ -24,6 +24,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- 文件路径解析、请求头基地址等纯逻辑是 internal，单测需要直接验证 -->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>LubanAgent.Tests</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
+
+	<ItemGroup>
 		<None Update="appsettings.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

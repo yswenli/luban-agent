@@ -1525,6 +1525,59 @@ a {
   padding: 16px 20px 18px;
 }
 
+/* 文件预览弹层：文本原样、Markdown 排版、图片按原尺寸查看、HTML 关在沙箱 iframe 里 */
+
+.file-preview-state {
+  padding: 20px 0 24px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.file-preview-state.is-error {
+  color: var(--danger);
+}
+
+.file-preview-text {
+  margin: 0;
+  padding: 0 0 18px;
+  font-family: var(--mono);
+  font-size: 12.8px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.file-preview-md {
+  padding-bottom: 16px;
+}
+
+.file-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 220px);
+  margin: 0 auto 18px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+/* 原尺寸：让图片自身尺寸溢出，交给 .dialog-body 滚动查看细节 */
+.file-preview-image.is-original {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.file-preview-html {
+  width: 100%;
+  height: min(70vh, 620px);
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 .countdown {
   flex: 1;
   align-self: center;

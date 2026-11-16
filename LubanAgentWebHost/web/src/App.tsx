@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, onMount, Show } from 'solid-js';
 
 import { Icon } from './components/Icons';
+import { FilePreviewDialog } from './components/FilePreviewDialog';
 import { AboutDialog, ConnectionHelpDialog } from './components/InfoDialogs';
 import { ToastStack } from './components/ToastStack';
 import { TopBar } from './components/TopBar';
@@ -51,6 +52,7 @@ export function App() {
               </div>
 
               <Show when={settingsTab()}>{(tab) => <SettingsOverlay tab={tab()} onClose={closeSettings} />}</Show>
+              <FilePreviewDialog />
 
               <footer class="app-footer">Luban Agent @ yswenli</footer>
             </div>

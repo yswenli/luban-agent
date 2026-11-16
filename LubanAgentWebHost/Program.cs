@@ -95,6 +95,9 @@ public static class Program
                 services.AddScoped<HostOrchestrationProgressSink>();
                 services.ReplaceScoped<IOrchestrationProgressSink>(
                     sp => sp.GetRequiredService<HostOrchestrationProgressSink>());
+
+                // 取文件链接工具：模型拿到工作区文件后据此给出可点击的宿主绝对地址
+                services.AddScoped<ILuBanToolPlugin, WebFileLinkToolPlugin>();
             });
             runtime = AgentWebRuntime.Create(host, settings);
 
