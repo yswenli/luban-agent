@@ -259,6 +259,7 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<IUserContext>(), _writer, _ui),
             nameof(WorkCommand) => (TCommand)(object)new WorkCommand(configManager, configuration,
                 _services.GetRequiredService<IWorkspaceManagementService>(),
+                _services.GetRequiredService<ISessionManager>(),
                 _services.GetRequiredService<ISessionWorkspaceQuery>(),
                 _services.GetRequiredService<SessionRunRegistry>(),
                 _services.GetRequiredService<IUserContext>(), _writer, _ui),

@@ -22,6 +22,7 @@ namespace LubanAgentCli.Commands;
 public class WorkCommand : CommandBase
 {
     private readonly IWorkspaceManagementService _workspaces;
+    private readonly ISessionManager _sessions;
     private readonly ISessionWorkspaceQuery _sessionQuery;
     private readonly SessionRunRegistry _runRegistry;
     private readonly string _userId;
@@ -42,6 +43,7 @@ public class WorkCommand : CommandBase
     /// <param name="configManager">配置管理器</param>
     /// <param name="configuration">应用配置</param>
     /// <param name="workspaces">工作区管理服务（名称/路径解析与增删改查）</param>
+    /// <param name="sessions">会话管理器（切换工作区后补建会话载体）</param>
     /// <param name="sessionQuery">会话与工作区绑定查询（会话数统计）</param>
     /// <param name="runRegistry">进程级会话运行态登记（删除工作区前判断是否有会话在跑）</param>
     /// <param name="userContext">当前用户上下文</param>
@@ -51,6 +53,7 @@ public class WorkCommand : CommandBase
         ConfigManager configManager,
         IConfiguration configuration,
         IWorkspaceManagementService workspaces,
+        ISessionManager sessions,
         ISessionWorkspaceQuery sessionQuery,
         SessionRunRegistry runRegistry,
         IUserContext userContext,
@@ -59,6 +62,7 @@ public class WorkCommand : CommandBase
         : base(configManager, configuration, writer, ui)
     {
         _workspaces = workspaces;
+        _sessions = sessions;
         _sessionQuery = sessionQuery;
         _runRegistry = runRegistry;
         _userId = userContext.ResolveUserKey();
@@ -157,6 +161,8 @@ public class WorkCommand : CommandBase
         {
             var ws = workspaces[selected];
             await _workspaces.SwitchAsync(ws.WorkspaceId);
+            // 切换只恢复最近会话；CLI 需要会话载体，没有时由宿主补建，激活槽位才能跟到新工作区
+            await SessionBootstrap.EnsureAsync(_sessions, ws.WorkspaceId);
             Writer.WriteSuccess($"已切换到工作区: {ws.Name}");
             Writer.WriteInfo($"  根目录: {ws.RootPath}");
             Writer.WriteInfo($"  授权状态: {(ws.IsAuthorized ? "已授权" : "未授权")}");
@@ -275,6 +281,8 @@ public class WorkCommand : CommandBase
         }
 
         await _workspaces.SwitchAsync(target.WorkspaceId);
+        // 切换只恢复最近会话；CLI 需要会话载体，没有时由宿主补建，激活槽位才能跟到新工作区
+        await SessionBootstrap.EnsureAsync(_sessions, target.WorkspaceId);
 
         Writer.WriteSuccess($"已切换到工作区: {target.Name}");
         Writer.WriteInfo($"  根目录: {target.RootPath}");

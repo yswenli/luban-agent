@@ -94,6 +94,11 @@ public interface IWorkspaceManager
     /// <summary>
     /// 切换工作区
     /// </summary>
+    /// <remarks>
+    /// 只恢复该工作区最近活跃的会话；工作区没有会话时清空当前会话指针，<b>不</b>隐式新建。
+    /// 需要「进入工作区即有会话」的宿主（CLI / 桌面端）在切换后调用
+    /// <see cref="SessionBootstrap.EnsureAsync"/> 自行补建。
+    /// </remarks>
     /// <param name="workspaceId">工作区ID</param>
     Task SwitchWorkspaceAsync(string workspaceId);
 
@@ -137,7 +142,7 @@ public interface IWorkspaceManager
     Task EnsureConfigDirectoryAsync(WorkspaceInfo workspace);
 
     /// <summary>
-    /// 设置当前工作区并恢复最近会话（用于启动时）
+    /// 设置当前工作区并恢复最近会话（用于启动时；无会话时不新建，语义同 <see cref="SwitchWorkspaceAsync"/>）
     /// </summary>
     /// <param name="workspaceId">工作区ID</param>
     Task SetCurrentAsync(string workspaceId);
@@ -362,7 +367,9 @@ public class WorkspaceManager : IWorkspaceManager
         lock (_currentLock) _current = newCurrent;
         CurrentWorkspaceChanged?.Invoke(newCurrent);
 
-        // 3. 恢复最近活跃会话；无会话时自动创建“新会话”。
+        // 3. 恢复最近活跃会话；该工作区没有会话时清空指针，不隐式新建。
+        //    切换只是导航，不能因为「看了一眼工作区」就落一条空会话（首页每次切换多出一条「新会话」即由此而来）；
+        //    需要会话载体的宿主在切换后自行调用 SessionBootstrap.EnsureAsync 补建。
         //    失败兜底：宁可无会话（可见、可恢复），也不能保留上一工作区会话（静默串写数据）。
         try
         {
@@ -370,11 +377,11 @@ public class WorkspaceManager : IWorkspaceManager
             if (latest != null)
                 await _sessionManager.SetCurrentSessionAsync(latest.SessionId);
             else
-                await _sessionManager.CreateSessionAsync(title: "新会话", workspaceId: workspaceId);
+                _sessionManager.ClearCurrentSession();
         }
         catch (Exception ex)
         {
-            Logger.Error("恢复/创建工作区会话失败", ex, workspaceId);
+            Logger.Error("恢复工作区会话失败", ex, workspaceId);
             _sessionManager.ClearCurrentSession();
         }
 
@@ -390,7 +397,7 @@ public class WorkspaceManager : IWorkspaceManager
     /// </summary>
     public async Task SetCurrentAsync(string workspaceId)
     {
-        // 复用 SwitchWorkspaceAsync 的完整流程，确保会话恢复与配置检查
+        // 复用 SwitchWorkspaceAsync 的完整流程：恢复最近会话（无则不建）、确保配置目录、刷新活跃时间
         await SwitchWorkspaceAsync(workspaceId);
     }
 

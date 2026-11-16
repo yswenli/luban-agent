@@ -251,7 +251,7 @@ public sealed class HttpSessionManager(AgentServerClient client) : ISessionManag
     }
 
     /// <summary>
-    /// 从服务端拉取当前活动会话（工作区切换后服务端已恢复/新建会话，本地镜像需同步）。
+    /// 从服务端拉取当前活动会话（工作区切换后服务端只恢复最近会话，没有则为空，本地镜像需同步）。
     /// </summary>
     /// <param name="ct">取消令牌。</param>
     /// <returns>服务端的当前会话；未设置时为 null。</returns>

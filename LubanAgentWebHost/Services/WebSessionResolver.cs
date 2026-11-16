@@ -30,6 +30,7 @@ public sealed record SessionResolution(bool Ok, int Code, string? Error, string 
 /// <remarks>
 /// 未指定会话时复用该用户最近活跃的会话；一个都没有时新建并标记 <c>created</c>，
 /// 不静默新建替代「指定但不存在」的会话（后者按 404 处理）。
+/// 「查最近 + 补建」由调用方提供的 <paramref name="creationGate"/> 串行化：并发请求同时发现无会话时只补建一条。
 /// </remarks>
 public static class WebSessionResolver
 {
@@ -43,14 +44,18 @@ public static class WebSessionResolver
     /// <param name="services">请求作用域容器。</param>
     /// <param name="userId">宿主身份。</param>
     /// <param name="requestedSessionId">调用方指定的会话；空白表示复用最后一次。</param>
+    /// <param name="creationGate">该用户的会话补建闸门（见 <see cref="AgentWebRuntime.GetSessionCreationGate"/>）。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>解析结果。</returns>
     public static async Task<SessionResolution> ResolveAsync(
         DiContainer services,
         string userId,
         string? requestedSessionId,
+        SemaphoreSlim creationGate,
         CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(creationGate);
+
         var sessions = services.GetRequiredService<ISessionManager>();
 
         if (!string.IsNullOrWhiteSpace(requestedSessionId))
@@ -82,8 +87,26 @@ public static class WebSessionResolver
             return SessionResolution.Success(latest.SessionId, false);
         }
 
-        var workspaceId = services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId;
-        var created = await sessions.CreateSessionAsync(null, workspaceId).ConfigureAwait(false);
-        return SessionResolution.Success(created.SessionId, true);
+        // 慢路径：确实没有会话才补建。等锁期间别的请求可能已经补建，故锁内重查一次再决定。
+        await creationGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            latest = (await sessions.GetUserSessionsAsync().ConfigureAwait(false))
+                .OrderByDescending(s => s.UpdatedAt ?? s.CreatedAt)
+                .FirstOrDefault();
+
+            if (latest is not null)
+            {
+                return SessionResolution.Success(latest.SessionId, false);
+            }
+
+            var workspaceId = services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId;
+            var created = await sessions.CreateSessionAsync(null, workspaceId).ConfigureAwait(false);
+            return SessionResolution.Success(created.SessionId, true);
+        }
+        finally
+        {
+            creationGate.Release();
+        }
     }
 }

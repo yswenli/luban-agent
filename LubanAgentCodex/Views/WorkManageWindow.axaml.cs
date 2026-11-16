@@ -23,6 +23,7 @@ namespace LubanAgentCodex.Views;
 public partial class WorkManageWindow : Window
 {
     private readonly IWorkspaceManager _workspaceManager;
+    private readonly ISessionManager _sessionManager;
     private readonly Func<string, Task<bool>>? _isWorkspaceRunning;
     private ListBox? _workspaceListBox;
     private Button? _addButton;
@@ -38,6 +39,7 @@ public partial class WorkManageWindow : Window
     public WorkManageWindow(DiContainer services, Func<string, Task<bool>>? isWorkspaceRunning = null)
     {
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
+        _sessionManager = services.GetRequiredService<ISessionManager>();
         _isWorkspaceRunning = isWorkspaceRunning;
         InitializeComponent();
         LoadWorkspaces();
@@ -103,6 +105,8 @@ public partial class WorkManageWindow : Window
         try
         {
             await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
+            // 切换只恢复最近会话；桌面端需要会话载体，没有时由宿主补建
+            await SessionBootstrap.EnsureAsync(_sessionManager, item.WorkspaceId);
             LoadWorkspaces();
         }
         catch (Exception ex)
@@ -165,6 +169,8 @@ public partial class WorkManageWindow : Window
             if (_workspaceManager.CurrentWorkspace?.WorkspaceId != item.WorkspaceId)
             {
                 await _workspaceManager.SetCurrentAsync(item.WorkspaceId);
+                // 切换只恢复最近会话；桌面端需要会话载体，没有时由宿主补建
+                await SessionBootstrap.EnsureAsync(_sessionManager, item.WorkspaceId);
                 switched = true;
             }
 

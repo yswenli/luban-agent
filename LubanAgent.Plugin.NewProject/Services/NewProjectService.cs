@@ -424,28 +424,10 @@ public sealed class NewProjectService : INewProjectService
             EndOperation(Step, "切换当前工作区", $"当前工作区：{workspace.Name}", StepStatus.Succeeded, watch.Elapsed);
 
             // ── 4. 会话：必须「新建」而非复用（陷阱③：复用分支会恢复旧会话）────────────────
+            // 工作区切换只恢复最近会话、不再隐式建会话，故首次与重跑都在这里显式新建
             watch = BeginOperation(Step, "准备执行会话", "向导操作的载体与操作记录数据源");
             var sessionTitle = string.IsNullOrWhiteSpace(spec.Name) ? "新建项目" : $"新建项目：{spec.Name}";
-            string sessionId;
-            if (createdWorkspace)
-            {
-                // 首次：SetCurrentAsync 已为全新工作区自动建好「新会话」，直接采用并改名
-                var auto = sessionManager.CurrentSession;
-                if (auto is not null && !string.IsNullOrWhiteSpace(auto.SessionId))
-                {
-                    sessionId = auto.SessionId;
-                    await sessionManager.UpdateSessionTitleAsync(sessionId, sessionTitle);
-                }
-                else
-                {
-                    sessionId = (await sessionManager.CreateSessionAsync(sessionTitle, workspace.WorkspaceId)).SessionId;
-                }
-            }
-            else
-            {
-                // 重跑：显式新建会话，不使用 SwitchWorkspaceAsync 恢复的旧会话
-                sessionId = (await sessionManager.CreateSessionAsync(sessionTitle, workspace.WorkspaceId)).SessionId;
-            }
+            var sessionId = (await sessionManager.CreateSessionAsync(sessionTitle, workspace.WorkspaceId)).SessionId;
 
             spec.WorkspaceId = workspace.WorkspaceId;
             spec.SessionId = sessionId;

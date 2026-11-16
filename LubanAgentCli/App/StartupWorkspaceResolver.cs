@@ -68,8 +68,12 @@ internal static class StartupWorkspaceResolver
             notices.Add(authorized ? "工作区已授权" : "工作区未授权，文件操作将受限");
         }
 
-        // 设置为当前工作区（内部恢复最近活跃会话，无则新建“新会话”）
+        // 设置为当前工作区（只恢复该工作区最近活跃会话，不隐式新建）
         await workspaceManager.SetCurrentAsync(target.WorkspaceId);
+
+        // CLI 进入工作区即需要会话载体（对话区、页脚与会话槽位绑定）：没有会话时由宿主显式补建
+        await SessionBootstrap.EnsureAsync(
+            services.GetRequiredService<ISessionManager>(), target.WorkspaceId);
 
         // worktree 启动对账：登记与磁盘不一致时以启动提示呈现（不阻塞进入工作区）
         // 远程模式下登记表归服务端，本进程读不到真实数据，跳过以免误报孤儿 worktree。

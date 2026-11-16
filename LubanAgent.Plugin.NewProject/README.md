@@ -143,9 +143,9 @@ LubanAgent.Plugin.NewProject/
 1. 探测同路径工作区（`WorkspaceIdGenerator.Compute` + `IWorkspaceManager.GetWorkspaceAsync`）；
    存在即**复用**，不存在才 `CreateWorkspaceAsync`（同路径重复创建会抛「工作区已存在」）；
 2. `EnsureAuthorizedAsync` 落库授权；
-3. `SetCurrentAsync` 切为当前工作区（内部会恢复/新建会话）；
-4. 会话**必须新建**：首次采用 `SetCurrentAsync` 自动建的「新会话」并改名，
-   重跑分支**显式** `CreateSessionAsync("新建项目：{名称}")`，不复用它恢复的旧会话；
+3. `SetCurrentAsync` 切为当前工作区（只恢复该工作区最近活跃会话，不隐式新建）；
+4. 会话**必须新建**：首次与重跑分支**都显式** `CreateSessionAsync("新建项目：{名称}")`，
+   不复用 `SetCurrentAsync` 恢复出来的旧会话；
 5. 档案快照写入工作区 `<工作区根>/.luban-agent/plugin-newproject/spec.json`（走源生成上下文）；
 6. 重新发 `host.RegisterSkill(清单技能)` × 6 → 落到**新**工作区；
 7. `host.RegisterMcpServer("yunxiao")` → 该会话首次对话时由宿主按 `ConnectorRegistry` 的暴露面解析并注入（MCP 是会话级）；前提是 `config.json` 的 `connectors` 节已声明 `yunxiao`（未声明则解析返回 `null` 并告警跳过）；

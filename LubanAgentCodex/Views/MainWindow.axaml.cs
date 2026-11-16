@@ -681,20 +681,16 @@ public partial class MainWindow : Window
             if (!ws.IsAuthorized)
                 await workspaceManager.EnsureAuthorizedAsync(ws);
 
-            // SetCurrentAsync 内部已恢复或新建当前会话（SwitchWorkspaceAsync）
+            // SetCurrentAsync 只恢复该工作区的最近会话，不隐式新建（SwitchWorkspaceAsync）
             await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
 
-            // 知识库（LLM Wiki）工作区：自动加载当前会话历史，无需在列表中选择。
-            // 复用 SetCurrentAsync 已恢复/新建的 CurrentSession，避免重复建会话（知识库只保留一个会话）
+            // 桌面端进入工作区即需要会话载体：没有会话时由宿主补建（知识库同样只保留一个会话）
+            var sessionManager = services.GetRequiredService<ISessionManager>();
+            var current = await SessionBootstrap.EnsureAsync(sessionManager, ws.WorkspaceId);
+
+            // 知识库（LLM Wiki）工作区：自动加载当前会话历史，无需在列表中选择
             if (ws.Type == WorkspaceTypes.LlmWiki)
             {
-                var sessionManager = services.GetRequiredService<LuBan.AIAgent.Sessions.ISessionManager>();
-                var current = sessionManager.CurrentSession;
-                if (current == null)
-                {
-                    // 异常兜底：当前会话缺失则新建
-                    current = await sessionManager.CreateSessionAsync(title: "知识库对话");
-                }
                 await _viewModel!.LoadSessionHistoryAsync(current.SessionId);
             }
 
@@ -755,6 +751,9 @@ public partial class MainWindow : Window
 
             // 决策：右键非当前工作区时先切过去，保证生成时的文件访问与落盘都作用于目标工作区
             await workspaceManager.SetCurrentAsync(ws.WorkspaceId);
+
+            // 生成要写进当前会话：切换只恢复最近会话，没有时由宿主补建
+            await SessionBootstrap.EnsureAsync(services.GetRequiredService<ISessionManager>(), ws.WorkspaceId);
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -921,7 +920,12 @@ public partial class MainWindow : Window
                     {
                         // 恢复到用户此前所在工作区，避免意外切换会话；索引按 workspaceId 归属新知识库
                         if (previous != null)
+                        {
                             await workspaceManager.SetCurrentAsync(previous.WorkspaceId);
+                            // 切换只恢复最近会话，桌面端需要会话载体：没有时由宿主补建，避免回不到对话区
+                            await SessionBootstrap.EnsureAsync(
+                                vm.Services.GetRequiredService<ISessionManager>(), previous.WorkspaceId);
+                        }
                         vm.BusyOverlayVisible = false;
                         _sidebar?.SetServiceProvider(vm.Services);
                     }

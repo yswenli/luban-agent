@@ -20,6 +20,7 @@ public sealed class AgentWebRuntime : IAsyncDisposable
 {
     private readonly AgentHostServices _host;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _userPreparation = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionCreationGates = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
 
     private AgentWebRuntime(AgentHostServices host, WebHostSettings settings)
@@ -46,6 +47,18 @@ public sealed class AgentWebRuntime : IAsyncDisposable
 
     /// <summary>进行中轮次的登记中心。</summary>
     public AgentRunHub Runs { get; }
+
+    /// <summary>
+    /// 取该用户的「会话补建」互斥闸门。
+    /// </summary>
+    /// <remarks>
+    /// 一轮对话未指定会话时会「复用最近会话，没有则新建」；并发请求同时走到这一步会各建一条同标题空会话。
+    /// 闸门保证同一用户同一时刻只有一个请求在「查最近 + 补建」区间内执行。
+    /// </remarks>
+    /// <param name="userId">用户标识。</param>
+    /// <returns>该用户专属的信号量（进程内复用，不释放）。</returns>
+    public SemaphoreSlim GetSessionCreationGate(string userId)
+        => _sessionCreationGates.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
 
     /// <summary>创建并登记运行时。</summary>
     /// <param name="host">已构建的宿主服务。</param>

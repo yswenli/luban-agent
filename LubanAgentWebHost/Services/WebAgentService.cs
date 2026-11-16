@@ -42,7 +42,8 @@ public static class WebAgentService
         }
 
         var resolution = await WebSessionResolver
-            .ResolveAsync(scope, WebApi.Runtime.UserId, input.SessionId)
+            .ResolveAsync(scope, WebApi.Runtime.UserId, input.SessionId,
+                WebApi.Runtime.GetSessionCreationGate(WebApi.Runtime.UserId))
             .ConfigureAwait(false);
         if (!resolution.Ok)
         {
@@ -150,7 +151,7 @@ public static class WebAgentService
             }
 
             resolution = await WebSessionResolver
-                .ResolveAsync(probe, userId, input.SessionId)
+                .ResolveAsync(probe, userId, input.SessionId, WebApi.Runtime.GetSessionCreationGate(userId))
                 .ConfigureAwait(false);
             if (!resolution.Ok)
             {

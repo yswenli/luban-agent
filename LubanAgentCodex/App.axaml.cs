@@ -177,6 +177,10 @@ public class App : Application
                 await wsManager.EnsureAuthorizedAsync(target);
                 await wsManager.SetCurrentAsync(target.WorkspaceId);
 
+                // 桌面端启动即进入对话区：切换只恢复最近会话，没有时由宿主补建一条
+                await SessionBootstrap.EnsureAsync(
+                    _services.GetRequiredService<ISessionManager>(), target.WorkspaceId);
+
                 // 插件宿主与状态登记必须在「根容器」首次创建：这些单例在构造期注入的 DiContainer
                 // 会被长期持有（PluginManager 延迟解析 IPluginHost、PluginHostContext 借此定位会话 scope），
                 // 若首次创建发生在用户/会话 scope，会形成 captive dependency（该 scope 释放后即不可用）。

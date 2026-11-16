@@ -117,12 +117,13 @@ public interface INewProjectService
     void Reset();
 
     /// <summary>
-    /// Step 2 · 初始化项目环境：建工作区 → 授权 → 置为当前（内部建新会话）→ 装配技能 → 接通云效 → 生成项目助手。
+    /// Step 2 · 初始化项目环境：建工作区 → 授权 → 置为当前 → 显式新建会话 → 装配技能 → 接通云效 → 生成项目助手。
     /// </summary>
     /// <remarks>
     /// <b>重跑幂等</b>：先探测同路径工作区是否已存在；已存在则走「复用」分支
-    /// （<b>禁止</b>再次 <c>CreateWorkspaceAsync</c>），且在 <c>SetCurrentAsync</c> 之后<b>显式新建会话</b>，
-    /// <b>不</b>使用它恢复的旧会话；失败仅回滚本步（新建的工作区用 <c>DeleteWorkspaceAsync</c> 注销，
+    /// （<b>禁止</b>再次 <c>CreateWorkspaceAsync</c>），首次与重跑都在 <c>SetCurrentAsync</c> 之后<b>显式新建会话</b>
+    /// （工作区切换只恢复最近会话，不隐式新建，<b>不</b>复用恢复出来的旧会话）；
+    /// 失败仅回滚本步（新建的工作区用 <c>DeleteWorkspaceAsync</c> 注销，
     /// <b>不删</b> <c>LocalPath</c> 目录）。
     /// </remarks>
     Task<StepResult> InitializeAsync(CancellationToken cancellationToken = default);

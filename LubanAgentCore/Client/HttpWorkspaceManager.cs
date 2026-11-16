@@ -72,7 +72,7 @@ public sealed class HttpWorkspaceManager(AgentServerClient client, HttpSessionMa
 
         SetCurrent(ToInfo(workspace));
 
-        // 切换工作区时服务端会恢复/新建该工作区的活动会话，本地镜像必须同步，
+        // 切换工作区时服务端只恢复该工作区的最近会话（没有则留空，不隐式新建），本地镜像必须同步，
         // 否则随后读取 CurrentSession 会拿到上一个工作区的会话（知识库会话、页脚统计等）
         await sessions.RefreshCurrentAsync().ConfigureAwait(false);
     }
