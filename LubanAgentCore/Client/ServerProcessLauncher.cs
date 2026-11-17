@@ -158,11 +158,12 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     }
 
     /// <summary>
-    /// 构造子进程参数列表：只下发插件根目录与调试开关，端口/令牌/超时由宿主配置决定。
+    /// 构造子进程参数列表：下发插件根目录与调试开关，端口/令牌/超时由宿主配置决定。
     /// </summary>
     /// <remarks>
-    /// 插件只随客户端分发：把客户端的插件根目录交给宿主进程扫描，避免两处各带一份插件。
-    /// 目录不存在时不下发，让宿主回落自身默认目录。
+    /// 插件根有两个：客户端的插件目录（<c>--plugins-dir</c>），以及 Web 端自装的插件目录
+    /// （<c>--web-plugins-dir</c>，仅在显式配置且有值时追加）。目录不存在时不下发，
+    /// 让宿主回落自身默认目录。
     /// </remarks>
     /// <param name="options">客户端参数。</param>
     /// <returns>参数列表（不含可执行文件名）。</returns>
@@ -178,6 +179,16 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
         {
             args.Add("--plugins-dir");
             args.Add(pluginsDirectory);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.WebPluginsDirectory))
+        {
+            var webPluginsDirectory = Path.GetFullPath(options.WebPluginsDirectory!);
+            if (Directory.Exists(webPluginsDirectory))
+            {
+                args.Add("--web-plugins-dir");
+                args.Add(webPluginsDirectory);
+            }
         }
 
         if (options.Debug)

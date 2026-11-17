@@ -70,7 +70,18 @@ public partial class SettingsWindow
             return;
         }
 
-        // 工作区配置（技能 / 规则 / MCP）
+        // 技能：进入草稿态（不落盘），保存时按名称生成目录
+        if (Tab == SettingsTabKind.Skill)
+        {
+            _isNewSkillDraft = true;
+            SelectedItemKey = null;
+            if (_itemList != null) _itemList.SelectedItem = null;
+            BuildEditor();
+            SetHint("填写 name 与 description 后点击「保存」，目录名将按名称生成。", false);
+            return;
+        }
+
+        // 工作区配置（规则 / MCP）
         var created = Tab == SettingsTabKind.Mcp
             ? _vm.Mcp.CreateDefault(ScopeRoot)
             : _vm.SkillRule.CreateDefault(Tab, ScopeRoot);
@@ -83,11 +94,49 @@ public partial class SettingsWindow
         SetHint(created.Message, false);
     }
 
+    // ---------------- 导入 ----------------
+
+    /// <summary>
+    /// 导入技能 ZIP 包：包内条目按「任意前缀 &lt;目录&gt;/SKILL.md」识别，同名目录以新导入内容覆盖。
+    /// </summary>
+    private async Task ImportSkillsAsync()
+    {
+        if (Tab != SettingsTabKind.Skill) return;
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择技能 ZIP 包",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("ZIP 包") { Patterns = new[] { "*.zip" } } },
+        });
+
+        var path = files.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => !string.IsNullOrEmpty(p));
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            var result = _vm.SkillRule.ImportSkills(stream, ScopeRoot);
+            if (!result.Ok) { SetHint(result.Message, true); return; }
+
+            _isNewSkillDraft = false;
+            SelectedItemKey = result.Key;
+            RefreshItems();
+            BuildEditor();
+            SetHint(result.Message, false);
+        }
+        catch (Exception ex)
+        {
+            SetHint($"导入失败：{ex.Message}", true);
+        }
+    }
+
     // ---------------- 保存 ----------------
 
     private async void OnSaveClick(object? sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(SelectedItemKey)) return;
+        if (string.IsNullOrEmpty(SelectedItemKey)
+            && !(Tab == SettingsTabKind.Skill && _isNewSkillDraft)) return;
 
         try
         {
@@ -127,9 +176,10 @@ public partial class SettingsWindow
         var form = new SkillForm(
             GetText("name"), GetText("description"), GetText("category"), GetText("triggers"), GetText("body"));
 
-        var saved = _vm.SkillRule.SaveSkill(SelectedItemKey, form, ScopeRoot);
+        var saved = _vm.SkillRule.SaveSkill(_isNewSkillDraft ? null : SelectedItemKey, form, ScopeRoot);
         if (!saved.Ok) { SetHint(saved.Message, true); return Task.CompletedTask; }
 
+        _isNewSkillDraft = false;
         SelectedItemKey = saved.Key;
         RefreshItems();
         BuildEditor();
@@ -399,6 +449,9 @@ public partial class SettingsWindow
         var canApply = CanApply();
         if (_applyBtn != null) _applyBtn.IsVisible = canApply;
 
+        // 导入 ZIP 仅技能页可用
+        if (_importItemBtn != null) _importItemBtn.IsVisible = Tab == SettingsTabKind.Skill;
+
         if (Tab == SettingsTabKind.Model)
         {
             // 模型：内联操作，隐藏新建 / 删除 / 保存
@@ -419,7 +472,7 @@ public partial class SettingsWindow
             if (_deleteItemBtn != null)
             {
                 _deleteItemBtn.IsVisible = true;
-                _deleteItemBtn.IsEnabled = !string.IsNullOrEmpty(SelectedItemKey);
+                _deleteItemBtn.IsEnabled = !_isNewSkillDraft && !string.IsNullOrEmpty(SelectedItemKey);
             }
             if (_saveBtn != null) _saveBtn.IsVisible = true;
         }

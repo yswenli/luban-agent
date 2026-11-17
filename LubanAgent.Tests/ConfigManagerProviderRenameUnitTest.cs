@@ -10,8 +10,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Configuration;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

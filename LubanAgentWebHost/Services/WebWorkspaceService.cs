@@ -128,7 +128,7 @@ public static class WebWorkspaceService
         return WebApi.OkJson(WorkspaceMapping.ToDto(current));
     });
 
-    /// <summary>删除工作区（级联清理会话与知识库索引）。</summary>
+    /// <summary>删除工作区（物理清理会话、索引与 .luban-agent 配置目录，保留根目录文件）。</summary>
     /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>
     /// <returns>删除结果。</returns>
     public static Task<ActionResult> DeleteAsync(string payload) => WebApi.RunGuardedAsync(async () =>

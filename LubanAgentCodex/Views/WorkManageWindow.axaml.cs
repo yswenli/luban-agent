@@ -127,11 +127,11 @@ public partial class WorkManageWindow : Window
             }
 
             var ok = await Dialogs.ShowConfirmAsync(this, "删除工作区",
-                $"删除 '{item.Name}' 将同时删除其下所有会话和索引，确认？",
+                $"删除 '{item.Name}' 将同时删除其下所有会话和索引，并清理 .luban-agent 配置目录（工作区目录里的其它文件保留），确认？",
                 okText: "删除", danger: true);
             if (!ok) return;
 
-            // 统一走 Core 级联删除（会话软删 → LLM Wiki 索引清理 → 工作区逻辑删），
+            // 统一走 Core 级联删除（物理清理消息/会话/LLM Wiki 索引/.luban-agent 配置），
             // 避免各宿主自行编排导致语义分叉或残留孤儿索引。
             var wasCurrent = _workspaceManager.CurrentWorkspace?.WorkspaceId == item.WorkspaceId;
 

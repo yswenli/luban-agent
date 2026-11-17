@@ -40,6 +40,11 @@ public sealed class ProviderController : Controller
     [HttpPost]
     public Task<ActionResult> Select(string payload) => WebProviderService.SelectAsync(payload);
 
+    /// <summary>内置供应商预设清单（「新建」下拉用）。</summary>
+    /// <returns><c>{ items }</c>，顺序与框架预设表一致，末项为「自定义」。</returns>
+    [HttpGet]
+    public Task<ActionResult> Presets() => WebProviderService.PresetsAsync();
+
     /// <summary>列出供应商（API Key 掩码）。</summary>
     /// <returns>供应商清单。</returns>
     [HttpGet]

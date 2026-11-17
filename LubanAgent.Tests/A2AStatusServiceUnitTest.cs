@@ -7,14 +7,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.A2A;
-using LuBan.AIAgent.A2A.Abstractions;
-using LuBan.AIAgent.A2A.Models;
-
-using LubanAgentCore.A2A.Runtime;
-
-using Microsoft.Extensions.Options;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

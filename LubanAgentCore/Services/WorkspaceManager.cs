@@ -148,11 +148,12 @@ public interface IWorkspaceManager
     Task SetCurrentAsync(string workspaceId);
 
     /// <summary>
-    /// 删除工作区：逻辑删除工作区记录，并级联清理其下所有会话与 LLM Wiki 索引。
+    /// 删除工作区：物理清理会话、消息、LLM Wiki 索引与工作区记录，并删除根目录下的 .luban-agent。
     /// </summary>
     /// <remarks>
     /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现宿主 A 走物理删除、宿主 B 走逻辑删除，
     /// 且遗漏清理 llmwiki_file/llmwiki_chunk 而残留孤儿索引的情况）。
+    /// 工作区/知识库根目录及用户文件保留，只清理 Agent 配置目录与数据库记录。
     /// </remarks>
     /// <param name="workspaceId">工作区ID</param>
     /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
@@ -509,12 +510,12 @@ public class WorkspaceManager : IWorkspaceManager
     }
 
     /// <summary>
-    /// 删除工作区：逻辑删除工作区记录，并清理其下所有会话与 LLM Wiki 索引。
+    /// 删除工作区：物理清理会话、消息、LLM Wiki 索引与工作区记录，并删除根目录下的 .luban-agent。
     /// </summary>
     /// <remarks>
-    /// 统一入口，避免各宿主各自实现导致语义分叉（曾出现 Sidebar 走物理删除、管理窗口走逻辑删除，
-    /// 且 Sidebar 遗漏清理 llmwiki_file/llmwiki_chunk 而残留孤儿索引的情况）。
-    /// 清理顺序固定为：会话软删 → LLM Wiki 文件/切块物理删 → 工作区逻辑删。
+    /// 保留工作区/知识库根目录以及其中用户自己的文件，只清理 Agent 自己写下的配置目录；
+    /// 清理顺序固定为：消息/worktree → 会话 → LLM Wiki 文件/切块 → 工作区记录 → .luban-agent。
+    /// 目录删除失败只记日志、不阻断数据库清理，避免被占用的文件卡住整次删除。
     /// </remarks>
     /// <param name="workspaceId">工作区ID</param>
     /// <returns>是否执行了删除；工作区ID 为空时返回 false。</returns>
@@ -522,16 +523,26 @@ public class WorkspaceManager : IWorkspaceManager
     {
         if (string.IsNullOrWhiteSpace(workspaceId)) return false;
 
+        var workspace = await _repo.GetByWorkspaceIdAsync(workspaceId, _userId);
+
+        // 消息与 worktree 记录只带 SessionId，先按工作区取全部会话ID（含此前单独删过的会话）
+        var sessionIds = await _sessionRepo.GetAllSessionIdsByWorkspaceAsync(workspaceId, _userId);
+
+        await new SessionMessageRepository().PurgeBySessionIdsAsync(sessionIds);
+        await new WorktreeSessionRepository().PurgeBySessionIdsAsync(sessionIds);
+        await _sessionRepo.PurgeByWorkspaceAsync(workspaceId, _userId);
+
         var wikiFileRepo = new LlmWikiFileRepository();
         var wikiChunkRepo = new LlmWikiChunkRepository();
-
-        await _sessionRepo.SoftDeleteByWorkspaceAsync(workspaceId, _userId);
         await wikiFileRepo.DeleteByWorkspaceAsync(workspaceId);
         await wikiChunkRepo.DeleteByWorkspaceAsync(workspaceId);
-        await _repo.LogicDeleteAsync(w => w.WorkspaceId == workspaceId && w.UserId == _userId);
 
-        // 若删除的正是当前工作区：移除其注入的 PathGuard 根目录，并清空当前引用与会话，
-        // 避免后续操作仍然指向一个已被逻辑删除的工作区。
+        await _repo.PurgeByWorkspaceAsync(workspaceId, _userId);
+
+        // 只删 Agent 配置目录，工作区/知识库根目录及用户文件原样保留
+        DeleteConfigDirectory(workspace?.RootPath);
+
+        // 若删除的正是当前工作区：清空当前引用与会话，避免后续操作仍指向已删除的工作区
         WorkspaceInfo? target;
         lock (_currentLock) target = _current;
 
@@ -542,6 +553,40 @@ public class WorkspaceManager : IWorkspaceManager
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 删除工作区根目录下的 Agent 配置目录（.luban-agent），保留根目录及其它文件。
+    /// </summary>
+    /// <remarks>
+    /// 删除失败（编辑器/索引进程占用文件等）只记警告并返回，不阻断数据库清理；
+    /// 目标目录名做二次校验，避免根路径异常时误删其它目录。
+    /// </remarks>
+    /// <param name="rootPath">工作区根目录。</param>
+    internal static void DeleteConfigDirectory(string? rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath)) return;
+
+        try
+        {
+            var configDir = Path.GetFullPath(Path.Combine(rootPath, ".luban-agent"));
+            var dirName = Path.GetFileName(
+                configDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            if (!string.Equals(dirName, ".luban-agent", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Warn($"跳过配置目录删除：目标不是 .luban-agent。path={configDir}");
+                return;
+            }
+
+            if (!Directory.Exists(configDir)) return;
+
+            Directory.Delete(configDir, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"删除工作区配置目录失败，已继续清理数据库。rootPath={rootPath}", ex);
+        }
     }
 
     /// <summary>
@@ -588,11 +633,8 @@ public class WorkspaceManager : IWorkspaceManager
         Directory.CreateDirectory(mcpsDir);
         Directory.CreateDirectory(tempDir);
 
-        // 如果 skills 目录为空，写入内置 skills
-        if (!Directory.EnumerateFileSystemEntries(skillsDir).Any())
-        {
-            WriteBuiltinSkills(skillsDir);
-        }
+        // 同步内置 Skills：目录为空时全量播种；已存在时只刷新未被用户改动过的旧副本
+        SyncBuiltinSkillFiles(skillsDir, _builtinSkills.All);
 
         // 如果 rules 目录为空，写入内置 rules
         if (!Directory.EnumerateFileSystemEntries(rulesDir).Any())
@@ -651,28 +693,124 @@ public class WorkspaceManager : IWorkspaceManager
         };
     }
 
+    /// <summary>内置 Skill 播种清单的文件名：记录每个目录上次由宿主写入的内容哈希。</summary>
+    private const string BuiltinSkillSeedManifest = ".seeded.json";
+
     /// <summary>
-    /// 将内置 Skills 写入目录（SKILL.md 格式）
+    /// 同步内置 Skills 到目录：缺失且无删除记录的补写；未被用户改动过的旧副本按当前内置内容刷新。
     /// </summary>
-    private void WriteBuiltinSkills(string skillsDir)
+    /// <remarks>
+    /// 以 <c>.seeded.json</c> 记录播种时的内容哈希，用于区分「用户改过的副本」与「宿主播种的过期副本」：
+    /// 仅当文件内容仍等于记录哈希时才允许覆盖；清单缺该 id 时（升级前播种、无清单），
+    /// 退回比较 frontmatter —— 与当前内置逐字一致才视为播种副本，否则按用户内容保留。
+    /// 清单已记录某个 id 但目录已被删除时不再补写（视为用户主动删除）。
+    /// </remarks>
+    /// <param name="skillsDir">技能根目录（<c>.luban-agent/skills</c>）。</param>
+    /// <param name="skills">内置技能集合。</param>
+    internal static void SyncBuiltinSkillFiles(string skillsDir, IEnumerable<ISkill> skills)
     {
-        foreach (var skill in _builtinSkills.All)
+        var manifestPath = Path.Combine(skillsDir, BuiltinSkillSeedManifest);
+        var manifestExists = File.Exists(manifestPath);
+        var recorded = ReadSkillSeedManifest(manifestPath);
+        var next = new Dictionary<string, string>(recorded, StringComparer.OrdinalIgnoreCase);
+        var changed = false;
+
+        foreach (var skill in skills)
         {
             try
             {
                 var skillDir = Path.Combine(skillsDir, skill.Id);
-                Directory.CreateDirectory(skillDir);
-                
                 var skillFile = Path.Combine(skillDir, "SKILL.md");
                 var content = FormatSkillMd(skill);
+                var contentHash = HashSkillContent(content);
+
+                if (!File.Exists(skillFile))
+                {
+                    // 清单已记录过该 id 且文件不存在 → 用户主动删除，不补写
+                    if (manifestExists && recorded.ContainsKey(skill.Id)) continue;
+
+                    Directory.CreateDirectory(skillDir);
+                    File.WriteAllText(skillFile, content);
+                    next[skill.Id] = contentHash;
+                    changed = true;
+                    continue;
+                }
+
+                var fileHash = HashSkillContent(File.ReadAllText(skillFile));
+                if (string.Equals(fileHash, contentHash, StringComparison.Ordinal))
+                {
+                    // 已是最新内置内容：补记哈希（首次迁移或清单丢失时也能建立基线）
+                    if (!string.Equals(recorded.GetValueOrDefault(skill.Id), contentHash, StringComparison.Ordinal))
+                    {
+                        next[skill.Id] = contentHash;
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                // 与记录不一致 → 用户改过；无记录（老工作区）时按 frontmatter 判断是否为播种副本
+                if (recorded.TryGetValue(skill.Id, out var seedHash))
+                {
+                    if (!string.Equals(seedHash, fileHash, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                }
+                else if (!HasBuiltinFrontmatter(File.ReadAllText(skillFile), skill))
+                {
+                    // 升级前播种的旧副本没有清单；frontmatter 与新内置不一致即视为用户内容，保留
+                    continue;
+                }
+
                 File.WriteAllText(skillFile, content);
+                next[skill.Id] = contentHash;
+                changed = true;
             }
             catch (Exception ex)
             {
                 Logger.Error($"写入内置 Skill 失败: {skill.Id}", ex);
             }
         }
+
+        if (changed) WriteSkillSeedManifest(manifestPath, next);
     }
+
+    private static Dictionary<string, string> ReadSkillSeedManifest(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            var map = JsonSerializer.Deserialize(File.ReadAllText(path), ConfigJsonContext.Default.DictionaryStringString);
+            return map is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            // 清单损坏按「无记录」处理：既有文件一律保留，不冒覆盖用户改动的风险
+            Logger.Error($"读取内置 Skill 播种清单失败: {path}", ex);
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void WriteSkillSeedManifest(string path, Dictionary<string, string> hashes)
+    {
+        try
+        {
+            var ordered = hashes
+                .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+            File.WriteAllText(path, JsonSerializer.Serialize(ordered, ConfigJsonContext.Default.DictionaryStringString));
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"写入内置 Skill 播种清单失败: {path}", ex);
+        }
+    }
+
+    private static string HashSkillContent(string content)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
     /// <summary>
     /// 将内置 Rules 写入目录（JSON 格式）。
@@ -714,20 +852,41 @@ public class WorkspaceManager : IWorkspaceManager
     private static string FormatSkillMd(ISkill skill)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine($"name: {skill.Name}");
-        sb.AppendLine($"description: {skill.Description}");
-        sb.AppendLine($"category: {skill.Category}");
-        
-        if (skill.TriggerKeywords.Any())
-        {
-            sb.AppendLine($"triggers: {string.Join(", ", skill.TriggerKeywords)}");
-        }
-        
-        sb.AppendLine("---");
+        AppendSkillFrontmatter(sb, skill);
         sb.AppendLine();
         sb.AppendLine(skill.PromptTemplate);
         
         return sb.ToString();
+    }
+
+    /// <summary>内置 Skill 渲染出的 frontmatter 块（含首尾 <c>---</c> 与行尾换行）。</summary>
+    private static string FormatSkillFrontmatter(ISkill skill)
+    {
+        var sb = new StringBuilder();
+        AppendSkillFrontmatter(sb, skill);
+        return sb.ToString();
+    }
+
+    /// <summary>文件 frontmatter 是否与当前内置渲染结果逐字一致（识别升级前无清单的播种副本）。</summary>
+    private static bool HasBuiltinFrontmatter(string fileText, ISkill skill)
+        => NormalizeNewlines(fileText).StartsWith(NormalizeNewlines(FormatSkillFrontmatter(skill)), StringComparison.Ordinal);
+
+    /// <summary>换行归一：跨平台/跨次写入的 CRLF 与 LF 差异不应被误判成内容不同。</summary>
+    private static string NormalizeNewlines(string text)
+        => text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private static void AppendSkillFrontmatter(StringBuilder sb, ISkill skill)
+    {
+        sb.AppendLine("---");
+        sb.AppendLine($"name: {skill.Name}");
+        sb.AppendLine($"description: {skill.Description}");
+        sb.AppendLine($"category: {skill.Category}");
+
+        if (skill.TriggerKeywords.Any())
+        {
+            sb.AppendLine($"triggers: {string.Join(", ", skill.TriggerKeywords)}");
+        }
+
+        sb.AppendLine("---");
     }
 }

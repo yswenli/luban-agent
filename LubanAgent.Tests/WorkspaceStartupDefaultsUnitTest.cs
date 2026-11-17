@@ -9,8 +9,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Hosting;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

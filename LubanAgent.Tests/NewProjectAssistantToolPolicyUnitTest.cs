@@ -12,9 +12,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Abstractions;
-using LubanAgent.Plugin.NewProject.Services;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

@@ -104,7 +104,7 @@ internal sealed class FooterView : View
 
             if (p.TotalTokens > 0)
             {
-                col += Write(col, $"{FormatTokens(p.TotalTokens)} tok", TuiTheme.SystemMessage, viewport.Width);
+                col += Write(col, $"当前会话已消费 {FormatTokens(p.TotalTokens)} token", TuiTheme.SystemMessage, viewport.Width);
             }
         }
 
@@ -143,7 +143,7 @@ internal sealed class FooterView : View
     }
 
     /// <summary>
-    /// 格式化 token 数量（超过 1000 时显示为 x.xk）。
+    /// 格式化 token 数量（1000 及以上显示为 x.xk）。
     /// </summary>
     /// <param name="tokens">token 数量。</param>
     /// <returns>格式化后的字符串。</returns>

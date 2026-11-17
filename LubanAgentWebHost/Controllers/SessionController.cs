@@ -144,4 +144,10 @@ public sealed class SessionController : Controller
     /// <returns>切换结果。</returns>
     [HttpPost]
     public Task<ActionResult> Switch(string payload) => WebSessionService.SwitchAsync(payload);
+
+    /// <summary>设置会话单独使用的模型（只影响该会话，不改全局默认）。</summary>
+    /// <param name="payload">包装后的 <see cref="SessionModelRequest"/> JSON。</param>
+    /// <returns>切换后的选择。</returns>
+    [HttpPost]
+    public Task<ActionResult> SelectModel(string payload) => WebSessionService.SelectModelAsync(payload);
 }

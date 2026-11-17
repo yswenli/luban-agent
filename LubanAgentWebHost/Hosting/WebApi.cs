@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using SAEA.Sockets.Interface;
-
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -37,9 +35,9 @@ public static class WebApi
     public static HttpResponse Response => HttpContextBase.Current!.Response;
 
     /// <summary>
-    /// 当前请求的连接载体（SSE 写出前由 <see cref="SsePump"/> 判定对端是否还在）。
+    /// 当前请求的连接通道（SSE 写出前由 <see cref="SsePump"/> 判定对端是否还在）。
     /// </summary>
-    public static IUserToken? Connection => (HttpContextBase.Current as GatedHttpContext)?.Connection;
+    public static IChannel? Connection => (HttpContextBase.Current as GatedHttpContext)?.Connection;
 
     /// <summary>当前进程运行时。</summary>
     public static AgentWebRuntime Runtime => AgentWebRuntime.Current;
@@ -52,7 +50,7 @@ public static class WebApi
     /// <returns>拒绝响应；校验通过返回 null。</returns>
     public static async Task<ActionResult?> GuardAsync(bool requireToken = true, bool ensureUser = true)
     {
-        if (requireToken && RequiresToken(out var expected) && !HasValidToken(expected!))
+        if (requireToken && !HasValidCredential())
         {
             return FailJson(401, "未授权：缺少或错误的访问令牌");
         }
@@ -200,15 +198,23 @@ public static class WebApi
     public static string? Header(string name)
         => Request.Headers.TryGetValue(name, out var value) ? value : null;
 
-    private static bool RequiresToken(out string? expected)
+    /// <summary>
+    /// 请求是否带来有效凭据：固定令牌（<c>Authorization: Bearer</c>）或浏览器会话 Cookie。
+    /// </summary>
+    /// <remarks>
+    /// 与门禁同口径：浏览器用轮换的会话令牌，客户端用进程内固定的宿主令牌。
+    /// 这里的会话判定只读不轮换——轮换由门禁负责，避免动作内把刚下发的新 Cookie 又换掉。
+    /// </remarks>
+    /// <returns>任一凭据有效返回 true。</returns>
+    private static bool HasValidCredential()
     {
-        expected = Runtime.Settings.Token;
-        return !string.IsNullOrEmpty(expected);
-    }
+        var runtime = Runtime;
+        if (WebHostAccess.IsBearerAuthorized(Header("Authorization"), runtime.Settings.Token))
+        {
+            return true;
+        }
 
-    private static bool HasValidToken(string expected)
-    {
         var cookie = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var value) ? value.Value : null;
-        return WebHostAccess.IsAuthorized(cookie, Header("Authorization"), expected);
+        return runtime.Sessions.IsAccepted(cookie);
     }
 }

@@ -17,8 +17,17 @@ public sealed record WebHostSettings
     /// <summary>监听端口；客户端只探活/拉起，不再用随机端口覆盖（可被命令行 <c>--port</c> 覆盖）。</summary>
     public int Port { get; init; } = 18080;
 
-    /// <summary>访问令牌；为空表示启动时随机生成，仅本次运行有效（重启即换）。</summary>
+    /// <summary>访问令牌；为空表示启动时随机生成，仅本次运行有效（重启即换）。只用于 <c>Authorization: Bearer</c>。</summary>
     public string? Token { get; init; }
+
+    /// <summary>浏览器会话令牌的有效期（分钟）；到期后的下一次请求自动换新。</summary>
+    public double SessionTokenMinutes { get; init; } = 15;
+
+    /// <summary>浏览器会话令牌换新后旧值的宽限期（分钟）；覆盖轮换瞬间还在路上的并发请求。</summary>
+    public double SessionGraceMinutes { get; init; } = 5;
+
+    /// <summary>浏览器会话的绝对上限（小时）；到点后任何旧令牌都不再放行，必须重新获取入口地址。</summary>
+    public double SessionMaxHours { get; init; } = 8;
 
     /// <summary>SAEA 的同步等待上限（秒）；必须远大于最长回合（SSE 与同步索引都可能跑很久）。</summary>
     public double TimeoutSeconds { get; init; } = 86400;
@@ -37,10 +46,22 @@ public sealed record WebHostSettings
     /// </remarks>
     public string? PluginsDir { get; init; }
 
+    /// <summary>
+    /// Web 插件根目录；为空时取 <c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="PluginsDir"/> 分开：Web 端自己安装、自己启停的插件落在这里，
+    /// 桌面端（Codex）的插件目录不受影响。两个根都会被扫描，但管理页只呈现本根下的插件。
+    /// </remarks>
+    public string? WebPluginsDir { get; init; }
+
     /// <summary>是否输出框架调试日志。</summary>
     public bool Debug { get; init; }
 
-    /// <summary>从配置文件与命令行构造；命令行 <c>--port/--token/--user/--plugins-dir/--debug</c> 优先。</summary>
+    /// <summary>
+    /// 从配置文件与命令行构造；命令行
+    /// <c>--port/--token/--user/--plugins-dir/--web-plugins-dir/--debug</c> 优先。
+    /// </summary>
     /// <param name="configuration">应用配置。</param>
     /// <param name="args">命令行参数。</param>
     /// <returns>启动参数。</returns>
@@ -51,10 +72,14 @@ public sealed record WebHostSettings
         {
             Port = section.GetValue("Port", 18080),
             Token = NullIfBlank(section["Token"]),
+            SessionTokenMinutes = section.GetValue("SessionTokenMinutes", 15d),
+            SessionGraceMinutes = section.GetValue("SessionGraceMinutes", 5d),
+            SessionMaxHours = section.GetValue("SessionMaxHours", 8d),
             TimeoutSeconds = section.GetValue("TimeoutSeconds", 86400d),
             HeartbeatSeconds = section.GetValue("HeartbeatSeconds", 15),
             UserId = NullIfBlank(section["UserId"]),
             PluginsDir = NullIfBlank(section["PluginsDir"]),
+            WebPluginsDir = NullIfBlank(section["WebPluginsDir"]),
             Debug = section.GetValue("Debug", false)
         };
 
@@ -74,6 +99,9 @@ public sealed record WebHostSettings
                     break;
                 case "--plugins-dir":
                     settings = settings with { PluginsDir = NullIfBlank(TakeValue(args, ref i, inlineValue)) };
+                    break;
+                case "--web-plugins-dir":
+                    settings = settings with { WebPluginsDir = NullIfBlank(TakeValue(args, ref i, inlineValue)) };
                     break;
                 case "--timeout":
                     settings = settings with { TimeoutSeconds = ParseDouble(TakeValue(args, ref i, inlineValue), settings.TimeoutSeconds) };

@@ -47,11 +47,17 @@ public class LlmWikiFileRepository : AgentRepository<DbLlmWikiFile>, ILlmWikiFil
     }
 
     /// <summary>
-    /// 物理删除工作区的所有文件索引
+    /// 物理删除工作区的所有文件索引（含软删标记的记录）
     /// </summary>
     public async Task DeleteByWorkspaceAsync(string workspaceId)
     {
-        await DeleteAsync(f => f.WorkspaceId == workspaceId);
+        if (string.IsNullOrWhiteSpace(workspaceId)) return;
+
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        await db.Deleteable<DbLlmWikiFile>()
+            .Where(f => f.WorkspaceId == workspaceId)
+            .ExecuteCommandAsync();
     }
 }
 
@@ -67,11 +73,17 @@ public class LlmWikiChunkRepository : AgentRepository<DbLlmWikiChunk>, ILlmWikiC
     public LlmWikiChunkRepository(long tenantId = LuBanOrmConst.DefaultTenantId) : base(tenantId) { }
 
     /// <summary>
-    /// 物理删除工作区的所有切块
+    /// 物理删除工作区的所有切块（含软删标记的切块）
     /// </summary>
     public async Task DeleteByWorkspaceAsync(string workspaceId)
     {
-        await DeleteAsync(c => c.WorkspaceId == workspaceId);
+        if (string.IsNullOrWhiteSpace(workspaceId)) return;
+
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        await db.Deleteable<DbLlmWikiChunk>()
+            .Where(c => c.WorkspaceId == workspaceId)
+            .ExecuteCommandAsync();
     }
 
     /// <summary>

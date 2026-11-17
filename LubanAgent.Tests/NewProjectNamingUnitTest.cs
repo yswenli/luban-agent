@@ -7,9 +7,6 @@
 *      代码组名全大写 CSXMY；令牌 {code}/{Code}/{CODE} 区分大小写）
 *****************************************************************************/
 
-using LubanAgent.Plugin.NewProject.Abstractions;
-using LubanAgent.Plugin.NewProject.Configuration;
-
 namespace LubanAgent.Tests;
 
 /// <summary>

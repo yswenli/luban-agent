@@ -23,20 +23,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="10.1.0">
+    <PackageReference Include="coverlet.collector" Version="10.1.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
-    <PackageReference Include="MSTest.TestAdapter" Version="4.5.2" />
-    <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.5.3" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.5.3" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 被测产品程序集（含其传递的框架引用）：云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/） -->
     <!-- 产品侧连接器配置写入器（ConfigManager : IConnectorConfigWriter） -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
-    <!-- Web 宿主侧文件预览与取链接的纯逻辑（路径解析 / 类型判定 / 绝对地址拼装）供单测覆盖 -->
+    <!-- Web 宿主侧插件路径与页面清单纯函数（WebPluginPaths / PluginPageManifest / zip 解包校验） -->
     <ProjectReference Include="..\LubanAgentWebHost\LubanAgentWebHost.csproj" />
     <!-- 传输协议（DTO/路由/SSE 帧）、客户端 SDK、A2A 协作均已并入 LubanAgentCore，不再单独引用 -->
     <!-- 「新建项目」插件的共享能力层（步骤状态归并等纯逻辑，供单测覆盖；UI 部分不参与测试） -->

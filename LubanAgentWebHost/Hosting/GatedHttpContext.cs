@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using SAEA.Sockets.Interface;
-
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -28,7 +26,10 @@ namespace LubanAgentWebHost.Hosting;
 public sealed class GatedHttpContext : SAEA.MVC.HttpContext
 {
     /// <summary>无令牌提示页（浏览器直接访问时返回，纯 HTML 不依赖前端脚本）。</summary>
-    private static readonly string UnauthorizedHtml = BuildUnauthorizedHtml();
+    private static readonly string UnauthorizedHtml = BuildUnauthorizedHtml(expired: false);
+
+    /// <summary>会话到期提示页（浏览器会话超过绝对上限后返回）。</summary>
+    private static readonly string ExpiredHtml = BuildUnauthorizedHtml(expired: true);
 
     /// <summary>创建上下文实例（SAEA 按 <c>(IWebHost)</c> 构造）。</summary>
     /// <param name="webHost">宿主。</param>
@@ -37,18 +38,18 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
     {
     }
 
-    /// <summary>本次请求所属的连接载体（SSE 写出前据此判定对端是否还在）。</summary>
-    public IUserToken? Connection { get; private set; }
+    /// <summary>本次请求所属的连接通道（SSE 写出前据此判定对端是否还在）。</summary>
+    public IChannel? Connection { get; private set; }
 
     /// <summary>
-    /// 记录连接载体后交回 MVC 的默认处理。
+    /// 记录连接通道后交回 MVC 的默认处理。
     /// </summary>
-    /// <param name="userToken">本次请求的连接载体。</param>
+    /// <param name="channel">本次请求的连接通道。</param>
     /// <param name="httpMessage">已解析的请求报文。</param>
-    public override void HttpHandle(IUserToken userToken, HttpMessage httpMessage)
+    public override void HttpHandle(IChannel channel, HttpMessage httpMessage)
     {
-        Connection = userToken;
-        base.HttpHandle(userToken, httpMessage);
+        Connection = channel;
+        base.HttpHandle(channel, httpMessage);
     }
 
     /// <summary>
@@ -57,21 +58,36 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
     /// <returns>响应结果。</returns>
     public override IHttpResult GetActionResult()
     {
-        var expected = AgentWebRuntime.Current.Settings.Token;
+        var runtime = AgentWebRuntime.Current;
         var entryToken = Request.Query.TryGetValue(WebHostAccess.TokenQueryName, out var query) ? query : null;
         var cookieToken = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var cookie) ? cookie.Value : null;
         var authorization = Request.Headers.TryGetValue("Authorization", out var header) ? header : null;
 
-        var decision = WebHostAccess.Decide(Request.Url, entryToken, cookieToken, authorization, expected);
+        var decision = WebHostAccess.Decide(
+            Request.Url,
+            entryToken,
+            cookieToken,
+            authorization,
+            runtime.Settings.Token,
+            runtime.Sessions,
+            out var issueToken);
+
         if (decision == WebEntryDecision.Allow)
         {
+            // 轮换后把新令牌滑回浏览器：活动页面因此不必刷新就能一直续下去
+            if (!string.IsNullOrEmpty(issueToken)
+                && !string.Equals(issueToken, cookieToken, StringComparison.Ordinal))
+            {
+                Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken);
+            }
+
             return base.GetActionResult();
         }
 
-        if (decision == WebEntryDecision.Redirect && !string.IsNullOrEmpty(expected))
+        if (decision == WebEntryDecision.Redirect && !string.IsNullOrEmpty(issueToken))
         {
             // 令牌已换成 Cookie：地址栏回到干净路径，避免令牌留在历史记录与分享链接里
-            Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(expected);
+            Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken);
             if (!IsReadRequest())
             {
                 // 302 会把非 GET/HEAD 改成 GET 并丢掉请求体；这类请求直接按令牌已校验放行
@@ -82,19 +98,23 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
             return new ContentResult(string.Empty, HttpStatusCode.Found);
         }
 
+        var expired = decision == WebEntryDecision.Expired;
         return WantsHtml()
-            ? new ContentResult(UnauthorizedHtml, HttpStatusCode.Unauthorized)
-            : WebApi.FailJson(401, "未授权：缺少或错误的访问令牌");
+            ? new ContentResult(expired ? ExpiredHtml : UnauthorizedHtml, HttpStatusCode.Unauthorized)
+            : WebApi.FailJson(401, expired
+                ? "未授权：浏览器会话已过期，请重新获取入口地址"
+                : "未授权：缺少或错误的访问令牌");
     }
 
     /// <summary>
-    /// 生成无令牌提示页：正文之外附「帮助」与「关于」，让拿不到令牌的用户也能自行排查。
+    /// 生成无令牌/会话过期提示页：正文之外附「帮助」与「关于」，让拿不到令牌的用户也能自行排查。
     /// </summary>
     /// <remarks>
     /// 该页在门禁拦截时直接返回，拿不到任何接口数据，故作者、仓库与版本只能内置（版本取宿主程序集）。
     /// </remarks>
+    /// <param name="expired">是否为「会话已过绝对上限」而非「缺令牌」。</param>
     /// <returns>完整 HTML。</returns>
-    private static string BuildUnauthorizedHtml()
+    private static string BuildUnauthorizedHtml(bool expired)
     {
         var assembly = typeof(GatedHttpContext).Assembly;
         // InformationalVersion 形如 1.0.0+<commit>，页面只显示语义版本
@@ -103,13 +123,20 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
                       ?? assembly.GetName().Version?.ToString()
                       ?? "unknown";
 
+        var favicon = BuildFaviconLink();
+        var heading = expired ? "会话已过期" : "需要访问令牌";
+        var lead = expired
+            ? "浏览器会话已超过绝对上限，之前那个入口地址不再放行。"
+            : "直接打开这个地址不会被放行。";
+
         return $$"""
 <!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>需要访问令牌 · LuBan Agent</title>
+{{favicon}}
+<title>{{heading}} · LuBan Agent</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -138,14 +165,15 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
 </head>
 <body>
 <main>
-  <h1>需要访问令牌</h1>
-  <p>直接打开这个地址不会被放行。</p>
+  <h1>{{heading}}</h1>
+  <p>{{lead}}</p>
   <details open>
     <summary>帮助</summary>
     <p>请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>
     <ul>
       <li>找不到终端？在宿主机上执行 <code>LubanAgentWebHost token</code> 重新打印地址。</li>
-      <li>令牌随本次运行有效：宿主重启后地址会变，旧书签需要替换。</li>
+      <li>浏览器侧的令牌会定时换新（默认 15 分钟），一直开着的页面自动续期。</li>
+      <li>会话有绝对上限（默认 8 小时），到点或宿主重启后旧地址立即失效，用 <code>token</code> 命令取新地址。</li>
       <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>。</li>
       <li>带令牌的地址等同于完整操作权限，不要转发给他人。</li>
     </ul>
@@ -165,6 +193,34 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
 </body>
 </html>
 """;
+    }
+
+    /// <summary>
+    /// 生成 401 页的站点图标标签。
+    /// </summary>
+    /// <remarks>
+    /// 该页返回后浏览器还会单独拉取图标，而那次请求同样没有令牌、同样会被门禁拦成 401 HTML，
+    /// 所以不能指向 <c>/assets/favicon-*.ico</c> 这类站点路径；这里把构建时拷到
+    /// <c>wwwroot/favicon.ico</c> 的图标编码成 data URI 直接内联。文件缺失时返回空串，页面只是少个图标。
+    /// </remarks>
+    /// <returns><c>&lt;link rel="icon"&gt;</c> 标签；图标不可用时为空串。</returns>
+    private static string BuildFaviconLink()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "favicon.ico");
+            if (!File.Exists(path)) return string.Empty;
+
+            var bytes = File.ReadAllBytes(path);
+            if (bytes.Length == 0) return string.Empty;
+
+            var base64 = Convert.ToBase64String(bytes);
+            return $"""<link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,{base64}">""";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
     }
 
     private bool IsReadRequest()

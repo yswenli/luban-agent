@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Configuration.Providers;
+
 namespace LubanAgentWebHost.Services;
 
 /// <summary>
@@ -67,6 +69,59 @@ public static class WebProviderService
         var (providerId, modelId) = service.GetSelection();
         return WebApi.OkJson(new ModelSelectionDto(providerId, modelId));
     });
+
+    /// <summary>
+    /// 内置供应商预设清单（下拉选择用）。
+    /// </summary>
+    /// <remarks>
+    /// 顺序即框架预设表顺序（内置项之后是「自定义」）；基址优先取宿主端点配置，其次框架内置默认地址。
+    /// </remarks>
+    /// <returns><c>{ items: [{ name, displayName, baseUrl, editableBaseUrl, isCustom, warning }] }</c>。</returns>
+    public static Task<ActionResult> PresetsAsync() => WebApi.RunGuardedAsync(() =>
+    {
+        var items = ProviderCatalog.All
+            .Select(preset =>
+            {
+                var baseUrl = ResolvePresetBaseUrl(preset);
+                return new ProviderPresetDto(
+                    preset.Name,
+                    preset.DisplayName,
+                    baseUrl,
+                    // 无预设地址的内置项（Claude / Gemini 需经第三方代理）也必须自填端点，否则只读空值会让该供应商无法配置
+                    preset.NeedCustomEndpoint || baseUrl.Length == 0,
+                    string.Equals(preset.Name, ProviderCatalog.Custom.Name, StringComparison.Ordinal),
+                    preset.Warning);
+            })
+            .ToList();
+
+        return Task.FromResult(WebApi.OkJson(new { items }));
+    });
+
+    /// <summary>取内置预设的基址：宿主端点配置优先，其次框架内置默认地址；都没有时返回空串（该供应商须由用户自填端点）。</summary>
+    /// <param name="preset">预设项。</param>
+    /// <returns>基址；未知供应商返回空串。</returns>
+    private static string ResolvePresetBaseUrl(ProviderPreset preset)
+    {
+        if (preset.NeedCustomEndpoint)
+        {
+            return preset.DefaultUrl;
+        }
+
+        try
+        {
+            var endpoints = ProviderHelper.GetEndpoints(preset.Name);
+            if (endpoints.Count > 0 && !string.IsNullOrWhiteSpace(endpoints[0].Url))
+            {
+                return endpoints[0].Url!;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // ProviderHelper 未初始化时退回静态默认表
+        }
+
+        return ProviderDefaults.GetDefaultBaseUrl(preset.Name) ?? string.Empty;
+    }
 
     /// <summary>
     /// 列出供应商（API Key 掩码）。

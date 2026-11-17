@@ -15,10 +15,6 @@
 *
 *****************************************************************************/
 
-using System.Text.Json;
-using LubanAgentCore.Configuration;
-using LuBan.AIAgent.Connectors;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

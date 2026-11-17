@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Protocol;
-
 namespace LubanAgentCore.Protocol.Events;
 
 /// <summary>

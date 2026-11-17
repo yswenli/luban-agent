@@ -3,48 +3,93 @@ import { For, Show } from 'solid-js';
 
 import { Icon } from '../../components/Icons';
 
+/** 设置页左列表的条目：`label` 为主文本，`sub` 为次要小字，`group` 相同的相邻条目会归到同一分组标题下。 */
+export interface SettingsEntry {
+  key: string;
+  label: string;
+  sub?: string;
+  group?: string;
+}
+
 /** 设置页三栏骨架：左列表 + 右表单。 */
 export function SettingsPane(props: {
   title: string;
   hint?: string;
-  items: string[];
+  items?: string[];
+  /** 分组条目；提供时优先于 `items`。 */
+  entries?: SettingsEntry[];
   activeKey: string | null;
   emptyText: string;
   createLabel?: string;
+  /** 列表上方的额外动作（如导入按钮），与「新建」并排显示在列表外，列表宽度不会挤压按钮。 */
+  headActions?: JSX.Element;
   busy?: boolean;
   onSelect: (key: string) => void;
   onCreate?: () => void;
   children: JSX.Element;
 }) {
+  const count = () => props.entries?.length ?? props.items?.length ?? 0;
+
   return (
     <div class="settings-pane">
-      <div class="settings-list">
-        <div class="settings-list-head">
-          <span class="section-label">{props.title}</span>
-          <span class="spacer" />
-          <Show when={props.createLabel}>
-            <button class="btn ghost" onClick={() => props.onCreate?.()} disabled={props.busy}>
-              <Icon name="plus" size={14} />
-              {props.createLabel}
-            </button>
+      <div class="settings-list-col">
+        <Show when={props.createLabel || props.headActions}>
+          <div class="settings-list-toolbar">
+            <Show when={props.createLabel}>
+              <button class="btn ghost" onClick={() => props.onCreate?.()} disabled={props.busy}>
+                <Icon name="plus" size={14} />
+                {props.createLabel}
+              </button>
+            </Show>
+            {props.headActions}
+          </div>
+        </Show>
+        <div class="settings-list">
+          <div class="settings-list-head">
+            <span class="section-label">{props.title}</span>
+          </div>
+          <Show when={count() > 0} fallback={<div class="settings-list-empty">{props.emptyText}</div>}>
+            <Show
+              when={props.entries}
+              fallback={
+                <For each={props.items ?? []}>
+                  {(key) => (
+                    <button
+                      class="settings-item"
+                      classList={{ active: key === props.activeKey }}
+                      onClick={() => props.onSelect(key)}
+                    >
+                      {key}
+                    </button>
+                  )}
+                </For>
+              }
+            >
+              <For each={props.entries!}>
+                {(entry, index) => {
+                  const previous = () => (index() > 0 ? props.entries![index() - 1] : undefined);
+                  return (
+                    <>
+                      <Show when={entry.group && entry.group !== previous()?.group}>
+                        <div class="settings-group">{entry.group}</div>
+                      </Show>
+                      <button
+                        class="settings-item"
+                        classList={{ active: entry.key === props.activeKey }}
+                        onClick={() => props.onSelect(entry.key)}
+                      >
+                        <span class="settings-item-name">{entry.label}</span>
+                        <Show when={entry.sub}>
+                          <span class="settings-item-sub">{entry.sub}</span>
+                        </Show>
+                      </button>
+                    </>
+                  );
+                }}
+              </For>
+            </Show>
           </Show>
         </div>
-        <Show
-          when={props.items.length > 0}
-          fallback={<div class="settings-list-empty">{props.emptyText}</div>}
-        >
-          <For each={props.items}>
-            {(key) => (
-              <button
-                class="settings-item"
-                classList={{ active: key === props.activeKey }}
-                onClick={() => props.onSelect(key)}
-              >
-                {key}
-              </button>
-            )}
-          </For>
-        </Show>
       </div>
       <div class="settings-form">{props.children}</div>
     </div>
@@ -64,7 +109,7 @@ export function Field(props: { label: string; hint?: string; wide?: boolean; chi
   );
 }
 
-/** 单行文本 / 密码输入。 */
+/** 单行文本 / 密码输入；`readOnly` 为 true 时只读但可选中复制。 */
 export function TextField(props: {
   label: string;
   value: string;
@@ -72,6 +117,7 @@ export function TextField(props: {
   placeholder?: string;
   type?: 'text' | 'password' | 'number';
   wide?: boolean;
+  readOnly?: boolean;
   onInput: (value: string) => void;
 }) {
   return (
@@ -81,6 +127,7 @@ export function TextField(props: {
         type={props.type ?? 'text'}
         value={props.value}
         placeholder={props.placeholder}
+        readOnly={props.readOnly}
         onInput={(event) => props.onInput(event.currentTarget.value)}
       />
     </Field>

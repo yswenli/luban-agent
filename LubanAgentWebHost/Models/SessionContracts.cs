@@ -29,3 +29,9 @@ public sealed record SessionSummaryDto(
     string? WorkspaceId,
     string? Provider,
     string? ModelName);
+
+/// <summary>设置会话单独使用模型。</summary>
+/// <param name="SessionId">会话标识。</param>
+/// <param name="ProviderId">供应商标识。</param>
+/// <param name="ModelId">模型标识。</param>
+public sealed record SessionModelRequest(string? SessionId, string? ProviderId, string? ModelId);

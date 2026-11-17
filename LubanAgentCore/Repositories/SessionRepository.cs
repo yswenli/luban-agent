@@ -106,6 +106,35 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
+    /// 取会话单独选定的模型（限所属用户）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户。</param>
+    /// <returns>供应商与模型标识；会话不存在或未单独选择时两者均为 null。</returns>
+    public async Task<(string? Provider, string? ModelName)> GetModelAsync(string sessionId, string userId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return (null, null);
+
+        var session = await GetFirstAsync(s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+        return session is null ? (null, null) : (session.Provider, session.ModelName);
+    }
+
+    /// <summary>
+    /// 写入会话单独选定的模型（限所属用户）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户。</param>
+    /// <param name="provider">供应商标识。</param>
+    /// <param name="modelName">模型标识。</param>
+    /// <returns>是否命中并更新了该会话。</returns>
+    public async Task<bool> UpdateModelAsync(string sessionId, string userId, string provider, string modelName)
+    {
+        return await UpdateAsync(
+            s => new DbSession { Provider = provider, ModelName = modelName },
+            s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+    }
+
+    /// <summary>
     /// 软删除会话（限所属用户）
     /// </summary>
     public async Task SoftDeleteAsync(string sessionId, string userId)
@@ -186,11 +215,35 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
-    /// 软删除工作区下当前用户的所有会话
+    /// 取工作区下当前用户的全部会话ID（含此前已软删除的会话）
     /// </summary>
-    public async Task SoftDeleteByWorkspaceAsync(string workspaceId, string userId)
+    /// <remarks>
+    /// 消息与 worktree 记录只带 SessionId，删除工作区时要先按工作区取 ID；
+    /// 用 <see cref="ISugarQueryable{T}.ClearFilter"/> 绕开软删过滤器，连同此前单独删除过的会话一起清掉。
+    /// </remarks>
+    public async Task<List<string>> GetAllSessionIdsByWorkspaceAsync(string workspaceId, string userId)
     {
-        await LogicDeleteAsync(s => s.WorkspaceId == workspaceId && s.UserId == userId);
+        if (string.IsNullOrWhiteSpace(workspaceId)) return new List<string>();
+
+        return await AsQueryable()
+            .ClearFilter()
+            .Where(s => s.WorkspaceId == workspaceId && s.UserId == userId)
+            .Select(s => s.SessionId)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 物理删除工作区下当前用户的全部会话（含此前已软删除的会话）
+    /// </summary>
+    public async Task<int> PurgeByWorkspaceAsync(string workspaceId, string userId)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return 0;
+
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        return await db.Deleteable<DbSession>()
+            .Where(s => s.WorkspaceId == workspaceId && s.UserId == userId)
+            .ExecuteCommandAsync();
     }
 
     /// <summary>
@@ -291,6 +344,23 @@ public class SessionMessageRepository : AgentRepository<DbSessionMessage>, ISess
     public async Task ClearMessagesAsync(string sessionId)
     {
         await DeleteAsync(m => m.SessionId == sessionId);
+    }
+
+    /// <summary>
+    /// 物理删除多个会话的全部消息（含软删标记的消息）
+    /// </summary>
+    /// <param name="sessionIds">会话ID集合。</param>
+    /// <returns>删除的行数。</returns>
+    public async Task<int> PurgeBySessionIdsAsync(IReadOnlyCollection<string> sessionIds)
+    {
+        if (sessionIds.Count == 0) return 0;
+
+        var ids = sessionIds.ToList();
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        return await db.Deleteable<DbSessionMessage>()
+            .Where(m => ids.Contains(m.SessionId))
+            .ExecuteCommandAsync();
     }
 
     /// <summary>

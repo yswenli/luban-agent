@@ -12,13 +12,6 @@
 *
 *****************************************************************************/
 
-using LuBan.DI;
-using LuBan.AIAgent.Attachments;
-using LuBan.AIAgent.Hosting;
-using LubanAgentCore.Hosting;
-using LubanAgentCore.Models;
-using LubanAgentCore.Services;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

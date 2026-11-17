@@ -101,4 +101,21 @@ public class WorkspaceRepository : AgentRepository<DbWorkspace>
         await UpdateAsync(w => new DbWorkspace { Name = name, UpdateTime = DateTime.Now },
             w => w.WorkspaceId == workspaceId && w.UserId == userId);
     }
+
+    /// <summary>
+    /// 物理删除工作区记录（含此前已软删除的同路径记录）
+    /// </summary>
+    /// <param name="workspaceId">工作区ID</param>
+    /// <param name="userId">所属用户</param>
+    /// <returns>删除的行数。</returns>
+    public async Task<int> PurgeByWorkspaceAsync(string workspaceId, string userId)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return 0;
+
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        return await db.Deleteable<DbWorkspace>()
+            .Where(w => w.WorkspaceId == workspaceId && w.UserId == userId)
+            .ExecuteCommandAsync();
+    }
 }

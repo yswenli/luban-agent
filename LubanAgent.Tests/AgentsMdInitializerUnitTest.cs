@@ -7,10 +7,6 @@
 *      必定补齐「Skill 流程遵守」与「协作约定」两个固定章节，且重复规范化保持幂等
 *****************************************************************************/
 
-using LubanAgentCore.Services;
-using LuBan.AIAgent.Skills;
-using LuBan.AIAgent.Skills.BuiltIn;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

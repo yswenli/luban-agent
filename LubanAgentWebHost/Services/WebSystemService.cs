@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using EnumCodeType = LuBan.Common.Models.EnumCodeType;
+
 namespace LubanAgentWebHost.Services;
 
 /// <summary>
@@ -126,6 +128,73 @@ public static class WebSystemService
             return WebApi.OkJson(new ReadmeDto(markdown));
         },
         ensureUser: false);
+
+    /// <summary>
+    /// 局域网入口二维码（PNG）：浏览器端「关于」弹窗展示，手机扫码直接打开本实例。
+    /// </summary>
+    /// <remarks>
+    /// 手机上的 <c>127.0.0.1</c> 指向手机自己，所以只编码局域网入口地址；
+    /// 图片由 <see cref="CodeUtil"/> 生成，与终端二维码取同一个地址来源。
+    /// 响应走 SAEA 的 <c>FileResult</c>，自带 <c>Cache-Control: no-cache</c>：
+    /// 地址里带着浏览器会话令牌（会定时轮换、会话到绝对上限即失效），浏览器每次打开弹窗都重新取图，不会留住旧码。
+    /// </remarks>
+    /// <returns>PNG 图片流。</returns>
+    public static Task<ActionResult> EntryQrAsync() => WebApi.RunGuardedAsync(
+        () =>
+        {
+            var runtime = WebApi.Runtime;
+            var settings = runtime.Settings;
+            var entryUrl = WebHostAccess.BuildLanEntryUrl(settings.Port, runtime.Sessions.TakeEntryToken());
+
+            var stream = CodeUtil.Write(entryUrl, EnumCodeType.QRCode, EntryQrSize, EntryQrSize);
+            return Task.FromResult<ActionResult>(new FileResult(stream, "image/png", HttpStatusCode.OK));
+        },
+        ensureUser: false);
+
+    /// <summary>
+    /// 浏览器会话状态：前端定时心跳，顺带让门禁把轮换后的新令牌滑回 Cookie。
+    /// </summary>
+    /// <remarks>不触发用户初始化：只读会话状态，与工作区无关。</remarks>
+    /// <returns>当前令牌与整个会话的到期时刻。</returns>
+    public static Task<ActionResult> SessionAsync() => WebApi.RunGuardedAsync(
+        () =>
+        {
+            var sessions = WebApi.Runtime.Sessions;
+            return Task.FromResult(WebApi.OkJson(new WebSessionDto(
+                sessions.RotateAt,
+                sessions.ExpiresAt,
+                sessions.Policy.Lifetime.TotalSeconds)));
+        },
+        ensureUser: false);
+
+    /// <summary>
+    /// 取当前入口地址：只给持固定令牌的运维命令 <c>LubanAgentWebHost token</c>。
+    /// </summary>
+    /// <remarks>
+    /// 浏览器会话到绝对上限后必须重开，否则终端打印出来的地址永远是过期的；
+    /// 因此这里只认 <c>Authorization: Bearer</c>，不接受浏览器 Cookie——否则拿到 Cookie 的人可以无限续期，
+    /// 绝对上限就失去意义。
+    /// </remarks>
+    /// <returns>入口地址与会话到期时刻。</returns>
+    public static Task<ActionResult> EntryUrlAsync() => WebApi.RunAsync(() =>
+    {
+        var runtime = WebApi.Runtime;
+        if (!WebHostAccess.IsBearerAuthorized(WebApi.Header("Authorization"), runtime.Settings.Token))
+        {
+            return Task.FromResult<ActionResult>(
+                WebApi.FailJson(401, "需要宿主令牌：Authorization: Bearer <令牌>"));
+        }
+
+        var settings = runtime.Settings;
+        var token = runtime.Sessions.TakeEntryToken();
+        return Task.FromResult(WebApi.OkJson(new WebEntryUrlDto(
+            WebHostAccess.BuildLanEntryUrl(settings.Port, token),
+            WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", token),
+            runtime.Sessions.ExpiresAt)));
+    });
+
+    /// <summary>二维码图片边长（像素）：弹窗里按 180px 显示，留足余量给高分屏。</summary>
+    private const int EntryQrSize = 480;
 
     /// <summary>宿主程序集版本。</summary>
     private static string Version =>

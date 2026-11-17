@@ -7,10 +7,6 @@
 *      口径：成功＝裸数组 / 裸对象 / 裸标量（不套 result 外壳）；失败＝带 errorCode 的包裹体（errorCode 是字符串）
 *****************************************************************************/
 
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using LubanAgentCore.Connectors.AliyunDevOps;
-
 namespace LubanAgent.Tests;
 
 /// <summary>
@@ -223,4 +219,4 @@ public class YunxiaoResponseParserUnitTest
         Assert.IsNull(YunxiaoResponseParser.ExtractErrorMessage(null));
     }
 }
-
+

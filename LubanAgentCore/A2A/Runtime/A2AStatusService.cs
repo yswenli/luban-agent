@@ -7,9 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Protocol;
-using LubanAgentCore.Protocol.Dtos;
-
 namespace LubanAgentCore.A2A.Runtime;
 
 /// <summary>

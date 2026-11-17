@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Protocol.Dtos;
-
 namespace LubanAgentCore.Protocol;
 
 /// <summary>

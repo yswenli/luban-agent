@@ -1,11 +1,12 @@
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js';
+import type { JSX } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
 import { AboutDialog, HelpDialog } from '../components/InfoDialogs';
 import { PopMenu, menuAt } from '../components/PopMenu';
 import { dayBucket, formatRelative, truncate } from '../lib/format';
-import { openSession, openSettings } from '../lib/router';
+import { openPlugin, openPlugins, openSession, openSettings, openWiki } from '../lib/router';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import {
   bootstrap,
@@ -15,6 +16,7 @@ import {
   deleteSession,
   deleteWorkspace,
   filterWorkspaceId,
+  projectWorkspaces,
   refreshSessions,
   renameSession,
   renameWorkspace,
@@ -23,9 +25,11 @@ import {
   sessions,
   sessionsError,
   sessionsLoading,
+  wikiWorkspaceIds,
   workspaceName,
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
+import { ensurePluginsLoaded, pluginPageEntries } from '../stores/plugins';
 
 type RowAction =
   | { kind: 'rename'; sessionId: string; title: string }
@@ -40,7 +44,12 @@ function sessionTime(session: { updatedAt?: string | null; createdAt: string }):
   return session.updatedAt ?? session.createdAt;
 }
 
-export function SessionListPage() {
+/**
+ * 首页：左栏项目 + 右栏会话。
+ *
+ * `main` 有值时用它替换右栏内容（插件页面借同一套侧栏渲染），侧栏入口与项目列表保持一致。
+ */
+export function SessionListPage(props: { main?: JSX.Element }) {
   const [search, setSearch] = createSignal('');
   const [rowMenu, setRowMenu] = createSignal<{ x: number; y: number; sessionId: string } | null>(null);
   const [dialog, setDialog] = createSignal<RowAction | null>(null);
@@ -54,6 +63,7 @@ export function SessionListPage() {
 
   onMount(() => {
     void refreshSessions();
+    void ensurePluginsLoaded();
   });
 
   // 顶栏点搜索：回到首页后把焦点交给搜索框（首次加载 token 为 0，不抢焦点）
@@ -63,13 +73,16 @@ export function SessionListPage() {
     queueMicrotask(() => searchEl?.focus());
   });
 
-  const workspaces = () => bootstrap()?.workspaces ?? [];
+  const workspaces = () => projectWorkspaces();
 
   const filtered = createMemo(() => {
     const project = filterWorkspaceId();
     const keyword = search().trim().toLowerCase();
+    const wiki = wikiWorkspaceIds();
 
     return sessions().filter((session) => {
+      // 知识库工作区只在知识库页出现，其会话不进首页列表
+      if (session.workspaceId && wiki.has(session.workspaceId)) return false;
       if (project && session.workspaceId !== project) return false;
       if (!keyword) return true;
       const title = (session.title ?? '').toLowerCase();
@@ -187,7 +200,15 @@ export function SessionListPage() {
         </div>
 
         <div class="side-links">
-          <button class="side-link" onClick={() => openSettings('skill')}>
+          <button class="side-link" onClick={() => openWiki()}>
+            <Icon name="file" size={16} />
+            知识库
+          </button>
+          <button class="side-link" onClick={() => openPlugins()}>
+            <Icon name="plug" size={16} />
+            插件
+          </button>
+          <button class="side-link" onClick={() => openSettings()}>
             <Icon name="settings" size={16} />
             设置
           </button>
@@ -199,11 +220,25 @@ export function SessionListPage() {
             <Icon name="info" size={16} />
             关于
           </button>
+          {/* 插件自带页面的入口：只列已启用且镜像可用的条目，放在这一组底部 */}
+          <Show when={pluginPageEntries().length > 0}>
+            <div class="side-plugin-links">
+              <For each={pluginPageEntries()}>
+                {(entry) => (
+                  <button class="side-link" onClick={() => openPlugin(entry.pluginId, entry.entryId)}>
+                    <Icon name={entry.icon || 'plug'} size={16} />
+                    {entry.label}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
       </aside>
 
-      <div class="home-main">
-        <div class="searchrow home-search">
+      <Show when={!props.main} fallback={props.main}>
+        <div class="home-main">
+          <div class="searchrow home-search">
           <Icon name="search" size={16} />
           <input
             ref={searchEl}
@@ -288,6 +323,7 @@ export function SessionListPage() {
           </Show>
         </div>
       </div>
+      </Show>
 
       <Show when={rowMenu()}>
         {(menu) => (
@@ -410,7 +446,7 @@ export function SessionListPage() {
             message={(() => {
               const count = sessions().filter((session) => session.workspaceId === action().workspaceId).length;
               const cascade = count > 0 ? `该项目下的 ${count} 个会话会一并删除，` : '';
-              return `确定删除项目「${truncate(action().name || '未命名项目', 40)}」？${cascade}磁盘目录不受影响。`;
+              return `确定删除项目「${truncate(action().name || '未命名项目', 40)}」？${cascade}.luban-agent 配置目录会一并清理，磁盘目录其他文件不受影响。`;
             })()}
             onClose={() => setProjectDialog(null)}
             onConfirm={() => {

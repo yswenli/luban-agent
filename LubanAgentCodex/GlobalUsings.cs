@@ -53,6 +53,7 @@ global using LubanAgentCodex.Views;
 
 global using LuBan.AIAgent.Hosting.Commands;
 // LubanAgentCore
+global using LubanAgentCore.Client;
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Hosting;
 global using LubanAgentCore.Infrastructure;

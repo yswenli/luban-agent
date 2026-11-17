@@ -47,6 +47,7 @@
             <TextBlock Grid.Column="5" 
                        Name="TokenUsageText"
                        HorizontalAlignment="Right"
+                       TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource TextTertiaryBrush}"
                        FontSize="12" />
         </Grid>

@@ -12,15 +12,6 @@
 *
 *****************************************************************************/
 
-using LuBan.DI;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Connectors;
-using LubanAgentCore.Services;
-using LubanAgentCore.Services.Management;
-using LubanAgentCore.Services.Management.Models;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

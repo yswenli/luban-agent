@@ -136,7 +136,7 @@ export function McpTab(props: { scope: string }) {
           <AreaField
             label="启动参数"
             value={form().args.join('\n')}
-            rows={5}
+            rows={4}
             wide
             mono
             hint="一行一个参数"

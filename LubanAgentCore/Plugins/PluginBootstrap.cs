@@ -36,6 +36,24 @@ public static class PluginBootstrap
     /// </param>
     public static async Task InitializeAsync(
         DiContainer services, Action<string>? status = null, string? pluginsRoot = null)
+        => await InitializeAsync(services, status, string.IsNullOrWhiteSpace(pluginsRoot) ? null : new[] { pluginsRoot })
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// 扫描多个插件根并恢复启用状态。
+    /// </summary>
+    /// <remarks>
+    /// Web 宿主同时承载两份插件：客户端（桌面端）目录经 <c>--plugins-dir</c> 下发，
+    /// Web 自己安装的插件在独立目录经 <c>--web-plugins-dir</c> 下发；两者都要扫描，才能让
+    /// Web 会话同时用上两份的技能 / MCP。去重后逐个根扫描，随后统一恢复启用状态。
+    /// </remarks>
+    /// <param name="services">宿主服务提供者。</param>
+    /// <param name="status">状态回调（用于闪屏/日志展示）。</param>
+    /// <param name="pluginsRoots">
+    /// 插件根目录集合；为空时按框架默认（<c>&lt;AppContext.BaseDirectory&gt;/plugins</c>）。
+    /// </param>
+    public static async Task InitializeAsync(
+        DiContainer services, Action<string>? status, IEnumerable<string>? pluginsRoots)
     {
         var manager = services.GetService<PluginManager>();
         if (manager is null)
@@ -44,18 +62,26 @@ public static class PluginBootstrap
             return;
         }
 
-        // 路径归一化也可能失败（非法字符/超长）：与扫描失败同口径，只记日志、不阻断宿主启动
-        string root;
-        try
+        var roots = new List<string>();
+        foreach (var candidate in pluginsRoots ?? Array.Empty<string>())
         {
-            root = string.IsNullOrWhiteSpace(pluginsRoot)
-                ? PluginLocation.BuiltinRoot
-                : Path.GetFullPath(pluginsRoot.Trim());
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"插件根目录无效（{pluginsRoot}），跳过插件扫描", ex);
-            return;
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                var root = Path.GetFullPath(candidate.Trim());
+                if (!roots.Contains(root, StringComparer.OrdinalIgnoreCase))
+                {
+                    roots.Add(root);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"插件根目录无效（{candidate}），跳过该目录", ex);
+            }
         }
 
         try
@@ -63,8 +89,8 @@ public static class PluginBootstrap
             status?.Invoke("正在扫描插件…");
             // 刻意不使用 ConfigureAwait(false)：status 回调会直接触碰 UI（闪屏），
             // 必须留在调用方的同步上下文（宿主 UI 线程）上执行。
-            var scanned = await manager.ScanAsync(string.IsNullOrWhiteSpace(pluginsRoot) ? null : new[] { root });
-            Logger.Info($"插件扫描完成：共登记 {scanned} 个插件（根目录 {root}）。");
+            var scanned = await manager.ScanAsync(roots.Count == 0 ? null : roots);
+            Logger.Info($"插件扫描完成：共登记 {scanned} 个插件（根目录 {string.Join("；", roots.Count == 0 ? new[] { PluginLocation.BuiltinRoot } : roots)}）。");
         }
         catch (Exception ex)
         {

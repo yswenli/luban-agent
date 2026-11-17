@@ -9,9 +9,6 @@
 *      迁自框架 LuBan.XTestProject（去厂商化：厂商用例随实现迁入产品测试项目）
 *****************************************************************************/
 
-using System.Text.Json;
-using LubanAgentCore.Connectors.AliyunDevOps.Mcp;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

@@ -46,19 +46,45 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 
 ## 📸 UI Preview
 
-![LuBan Agent web UI overview: project-grouped sessions on the left, multi-tab chat on the right](lubanagent.png)
+![LuBan Agent web UI overview: home entry and horizontally scrollable session tabs on top, project-grouped sessions on the left, multi-tab chat on the right](lubanagent.png)
 
-*Web UI overview: sessions grouped by project on the left, parallel tabbed chats on the right*
+*Web UI overview: the top bar holds the home entry and session tabs; the left column holds projects plus the knowledge base / settings / help / about entries; the right side groups sessions by date*
 
-| Chat & Tool Calls | Skills & Settings |
-|:---:|:---:|
-| ![Chat page: Markdown content, collapsible reasoning and tool call records](lubanagent-chat.png) | ![Settings page: skill list and skill body editor](lubanagent-settings.png) |
-| Chat page: Markdown content, collapsible reasoning and tool call records | Settings page: unified management of Skills, Rules, MCP servers, Providers and Models, with Global/Current Workspace scope switch |
+### Chat: empty state
 
-| Help | About |
-|:---:|:---:|
-| ![Help dialog: renders the repository README in place, including route table, commands and previews](lubanagent-help.png) | ![About dialog: repository, author, version and license](lubanagent-about.png) |
-| Help: the repository README is rendered inside the dialog, so commands, configuration and API notes are always at hand | About: repository address, author, version and license |
+![Chat page empty state: start prompt, model selector, default/follow-model switches, attachment entry and composer](lubanagent-chat1.png)
+
+*New session empty state: the "+" button adds images and files, the model and reasoning mode can be switched, Enter sends and Shift+Enter wraps*
+
+### Chat: Markdown and tool calls
+
+![Chat page: rendered Markdown with tables, history record and token count, back button on the left of the title](lubanagent-chat2.png)
+
+*Chat page: rendered Markdown with tables, history record and token count; the back button returns to the session list or the knowledge base*
+
+### Knowledge base
+
+![Knowledge base page: rename/delete per library on the left, stat cards, indexing and search entries, indexed file list and "Chat" button on the right](lubanagent-llmwiki.png)
+
+*Knowledge base page: wiki page / indexed files / indexed chunks counters with index, rebuild, lint, clear and search; the "Chat" button opens the session bound to that library*
+
+### Settings
+
+![Settings page: global vs current workspace scope switch, eight tabs on the left, skill editor on the right](lubanagent-settings.png)
+
+*Settings page: eight tabs — Providers, Models, Skills, Rules, MCP servers, A2A collaboration, Workspace and Data & usage; on the Skills tab "New / Import ZIP" sit above the list and the body is edited on the right*
+
+### Help
+
+![Help dialog: renders the repository README in place, including badges, project table and previews](lubanagent-help.png)
+
+*Help: the repository README is rendered inside the dialog and stays in sync with the host build*
+
+### About
+
+![About dialog: LAN entry QR code on top, then version, repository, author and license](lubanagent-about.png)
+
+*About: scan the QR code on a phone in the same LAN to open this UI; version, repository, author and license follow below*
 
 ---
 
@@ -88,7 +114,7 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 > Counting note: the 12 rows above list user-facing capabilities; "MCP External Tools" means merging the tools of external MCP servers into the tool set rather than a standalone tool group. The framework actually registers 15 tool groups — 4 management-only groups are not listed separately: `SkillToolGroup` (list/load skills), `SkillManageToolGroup` (write/delete skills), `McpManageToolGroup` (write/delete MCP configs) and `ConnectorManageToolGroup` (connector management); see "Conversational Skill/MCP Management" and "Configuration" below.
 
 ### 🎯 Skill System
-- Nine core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery), plug and play
+- Ten core built-in skills (Brainstorming, Code Review, Documentation, Refactoring, Test Generation, Code Explanation, Debug Assistant, Git Commit, Skill Discovery, AGENTS.md Generation), plug and play
 - **File-based Skills**: Define custom Skills via SKILL.md files, compatible with OpenCode format, auto-loaded from project-level or user-level directories
 - **Conversational Management**: Create, use, and manage Skills and MCP servers through natural language conversation without manual config editing
 
@@ -103,7 +129,9 @@ Operate through natural language—zero learning curve:
 | Create MCP | "Add an MCP server named my-api, command is node server.js" |
 
 **Features**:
-- ✅ Built-in Skills/MCPs cannot be overwritten or deleted, ensuring system stability
+- ✅ Workspace skill files can override same-id built-in Skills (files take precedence over built-ins and config custom Skills); pure built-ins (no same-id directory) cannot be deleted, keeping the system stable
+- ✅ The settings list groups by `category`, shows `name` as the primary text and the directory name underneath; saving only rewrites frontmatter and never moves the directory
+- ✅ Skills can be imported from a ZIP (entries matching `<directory>/SKILL.md`; a same-name directory is replaced by the imported content)
 - ✅ Write/delete operations require user confirmation, preventing accidental operations
 - ✅ Changes take effect automatically in the next conversation turn, no restart needed
 - ✅ Skill ID validation to prevent injection attacks
@@ -205,24 +233,26 @@ Select a workspace on startup, then chat with the Agent in the graphical interfa
 
 ```bash
 # Start manually (port comes from LubanAgentWeb:Port in appsettings.json, default 18080)
-# When ready, the terminal prints the browser entry: http://<lan-ip>:18080/?t=<token>
+# When ready, the terminal prints the browser entry: http://<lan-ip>:18080/?t=<session token>
+# A QR code for the same address is printed below it: scan it on a phone in the same LAN (skipped when a client launches the host with redirected output)
+# The browser token is rotated every 15 minutes by default (open pages renew automatically) and the session is capped at 8 hours
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj
 
 # Health check (the only endpoint without a token)
 curl http://127.0.0.1:18080/system/health
 
-# Reprint the browser entry (reads the running instance's token; fails when no host is running)
+# Reprint the browser entry (uses the host token to fetch the running instance's current entry; fails when no host is running)
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- token
 
 # Stop the resident instance
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 ```
 
-Opening `http://<lan-ip>:18080/` directly is rejected (401): the entry must carry the current run's token, which is then exchanged for a cookie and the URL is redirected back to a clean address.
+Opening `http://<lan-ip>:18080/` directly is rejected (401): the entry must carry the current session token, which is then exchanged for a cookie and the URL is redirected back to a clean address; the same 401 returns once the session ceiling is passed.
 
-The WebHost is a standalone service, so clients don't have to start it manually: when no service address is configured, the client SDK inside `LubanAgentCore` (`Client/`) first adopts an instance that is already running (via the discovery file) and only launches a child process when none exists. Port, timeout and user identity come from the host's `LubanAgentWeb` configuration; the access token is generated by the host on every start and written to the discovery file, so clients only read it. A launched host stays resident after the client exits; stop it with `--stop` (or by ending the host process).
+The WebHost is a standalone service, so clients don't have to start it manually: when no service address is configured, the client SDK inside `LubanAgentCore` (`Client/`) first adopts an instance that is already running (via the discovery file) and only launches a child process when none exists. Port, timeout and user identity come from the host's `LubanAgentWeb` configuration; the host token is generated by the host on every start and written to the discovery file, so clients only read it. A launched host stays resident after the client exits; stop it with `--stop` (or by ending the host process).
 
-> 🔐 The three ways to carry the token, how to recover from a 401, multi-device and post-restart behaviour, and the risk boundaries you must know are covered in "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below.
+> 🔐 How the two credentials (browser session token vs client host token) are split, how to recover from a 401, rotation and the session ceiling, multi-device and post-restart behaviour, and the risk boundaries you must know are covered in "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below.
 
 ### 5. Configure an AI Provider and Start Chatting
 
@@ -451,22 +481,26 @@ luban-agent/
 | `GET /system/health` | Health check (token-free, used by the launcher) |
 | `GET /system/bootstrap` | Browser first-screen data (workspaces, providers and models, permission modes, attachment policy, version) |
 | `GET /system/commands` | Slash-command catalogue for the browser client |
+| `GET /system/entryQr` | LAN entry QR code as PNG (shown in the About dialog; scan it on a phone to open this instance — minted from the current session token on every request) |
+| `GET /system/session` | Rotation and expiry times of the current browser session (used by the frontend heartbeat, which also slides a rotated token back into the cookie) |
+| `GET /system/entryUrl` | Current entry address and expiry (host token only; lets `LubanAgentWebHost token` reprint it and reopens the session family once expired) |
 | `POST /attachment/upload` | Browser attachment upload (JSON + Base64, written to the workspace staging directory) |
 | `GET` / `POST` `/provider/*` | Read/switch the global model selection, pull a provider's models, read/write providers (keys are returned masked only) |
 | `GET` / `POST` `/skill/*`, `/rule/*`, `/mcp/*` | List/read/save/delete file-based skills, rules and MCP servers (scoped to `global` or a workspace) |
 | `GET` / `POST` `/model/*` | List a provider's models and add/rename/delete custom models |
 | `GET` / `POST` `/a2a/*` | A2A runtime status plus read/write of workspace A2A server/client configuration |
+| `GET /file/read` | Read a workspace file's raw content (what relative links and images in a session open; text and images only, out-of-workspace paths and other formats get a notice page) |
 
 Constraints and known limitations:
 
-- **All interfaces, reachable from localhost and external networks**: SAEA.MVC exposes no bind-address option (`HttpSocket` passes no IP and always binds `0.0.0.0`). The host therefore generates a one-time access token on every start, and endpoints, SSE, attachments and static assets all pass through the same gate: anything without a valid credential (the `?t=` entry parameter, the cookie it is exchanged for, or `Authorization: Bearer`) gets 401. Only `/system/health` is token-free so launchers can probe the port.
-- **Standalone service, port and token decided by the host**: the port comes from `LubanAgentWeb:Port` (default 18080); the access token is random per start (`LubanAgentWeb:Token` or `--token` pins it), dies with the process, and a restart requires re-entering through the new address. After starting successfully the host writes its actual address and token to `%LOCALAPPDATA%\luban-agent\webhost.json` and deletes it on a clean exit; a client that reads it probes `/system/health` first, then adopts the running instance instead of launching a duplicate. A launched host stays resident after the client exits — stop it with `LubanAgentWebHost --stop`. Only one instance can own the port, so a second process exits immediately on the port conflict.
-- **Entry address and token**: the terminal prints the entry address carrying the token; opening it exchanges the token for an HttpOnly cookie and 302s back to a clean URL. Full usage and risk boundaries are in "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below.
+- **All interfaces, reachable from localhost and external networks**: SAEA.MVC exposes no bind-address option (`HttpSocket` passes no IP and always binds `0.0.0.0`). Endpoints, SSE, attachments and static assets therefore all pass through the same gate: anything without a valid credential (a browser session token via `?t=` or the cookie it is exchanged for, or a client `Authorization: Bearer` host token) gets 401. Only `/system/health` is token-free so launchers can probe the port.
+- **Standalone service, port and tokens decided by the host**: the port comes from `LubanAgentWeb:Port` (default 18080); both tokens are random per start — the browser session token rotates on use with an 8-hour ceiling, the host token stays fixed for the process lifetime (`LubanAgentWeb:Token` or `--token` pins it) — and both die with the process, so a restart requires re-entering through the new address. After starting successfully the host writes its actual address and host token to `%LOCALAPPDATA%\luban-agent\webhost.json` and deletes it on a clean exit; a client that reads it probes `/system/health` first, then adopts the running instance instead of launching a duplicate. A launched host stays resident after the client exits — stop it with `LubanAgentWebHost --stop`. Only one instance can own the port, so a second process exits immediately on the port conflict.
+- **Entry address and token**: the terminal prints the entry address carrying the session token; opening it exchanges the token for an HttpOnly cookie and 302s back to a clean URL, and an open page keeps renewing through the frontend heartbeat. Once the session ceiling is reached, fetch a new address with `LubanAgentWebHost token`. Full usage and risk boundaries are in "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below.
 - **A disconnect is not a cancellation**: a round lives in the host process's run hub, so an SSE disconnect only removes a subscriber and the round keeps running to completion. When the browser reopens the same session it first probes `POST /agent/active`, then calls `POST /agent/attach` if a round is active (a `run.snapshot` frame first, then live frames); with no active round the response is `204` and the client loads history. `attach` optionally takes `runId` (a mismatch with the current round is treated as no active round, `204`) and `fromSeq` (the highest frame sequence already received; when omitted a snapshot is sent). Stopping explicitly still uses `POST /agent/cancel`; deleting a session that is running, or a workspace containing one, is rejected with `409`, and clearing messages cancels the round and waits for it to wind down first.
 - **Database owned by the WebHost**: session data is `luban-ai-agent.db` in the WebHost program directory (relative connection strings are rebased onto the host program directory). Clients no longer open the database; the working directory only affects relative-path inputs. A same-named database left in a client output directory by an older build is not read — copy it into the WebHost program directory if you want to keep it.
 - **A2A and orchestration progress live on the host side**: A2A server/client roles and the startup worktree reconciliation run inside the WebHost per user workspace; sub-agent orchestration progress is streamed as `orchestration.progress` frames and replayed by the client into its local progress outlet, so UI subscriptions behave the same as when running locally. The A2A runtime starts and stops with the host process; clients only read `/a2a/status`, and `/a2a -start|-stop` degrades to a notice.
 - **Knowledge-base background tasks degrade to synchronous calls**: the `Start*` entry points rely on host-side progress events, which the client has no channel for, so remote mode always falls back to the synchronous path (the `--wait` semantics); callers must show their own busy overlay while it runs.
-- **Plugin directory**: plugins ship only with Codex; when auto-launching, the client passes the Codex plugin directory to the WebHost via `--plugins-dir` so the host scans that single copy. Plugin installation and enabled state remain maintained on the Codex side.
+- **Plugin directories**: Codex plugins are handed to the WebHost via `--plugins-dir`; plugins installed from the web "Plugins" page live in a separate root (`LubanAgentWeb:WebPluginsDir` / `--web-plugins-dir`, default `%LOCALAPPDATA%\LuBan\AIAgent\webhost\plugins`, state file `plugin-states.json`). Both roots are scanned, but the management page only lists and manages the web root, leaving Codex installs and their enabled state untouched.
 - **Single-round sync wait limit**: `LubanAgentWeb:TimeoutSeconds` (default 86400, i.e. 24 hours) must be far larger than the longest round; otherwise SAEA returns 408 mid-round and appends plain text onto the already-open stream.
 - **Tool confirmation**: the wait limit comes from `LuBanAgent:Confirmation:TimeoutSeconds` (default 60); a timeout is treated as a denial.
 
@@ -482,48 +516,60 @@ npm run build          # output goes to LubanAgentWebHost/wwwroot
 
 - **`dotnet build` does not need Node**: the output is committed; rebuild only after changing sources under `LubanAgentWebHost/web/`.
 - **Restart the process to pick up a new build**: `IsStaticsCached=True` keeps static file contents in memory after the first request, so a same-named file on disk is not reloaded.
-- **Hash routing**: `#/` (sessions), `#/s/<sessionId>` (chat), `#/settings/<tab>` (settings). SAEA has no SPA fallback, so history routing is not an option.
-- **Runtime config**: the process writes `wwwroot/runtime-config.js` (user and port only) at startup. The access token is never written there — it only becomes an HttpOnly cookie via the address-bar entry. The file is not committed (see `.gitignore`).
-- **Development loop**: start the WebHost first (`--port` to choose the port), copy the token from the printed `http://<ip>:<port>/?t=<token>` into `VITE_HOST_TOKEN`, then run `npm run dev` in `LubanAgentWebHost/web/`; `VITE_HOST_PORT` sets the upstream port (default 18080, matching the host default) and `server.proxy` forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a` and `/llmwiki` with an added `Authorization` header, while Vite keeps serving the static assets.
+- **Hash routing**: `#/` (sessions), `#/s/<sessionId>` (chat), `#/settings/<tab>` (settings), `#/wiki` (knowledge base), `#/plugins` (plugin management) and `#/plugin/<pluginId>/<entryId>` (a plugin's own page). SAEA has no SPA fallback, so history routing is not an option.
+- **Runtime config**: the process writes `wwwroot/runtime-config.js` (user and port only) at startup. Neither token is written there — the browser one only becomes an HttpOnly cookie via the address-bar entry, the host one only lives in the discovery file. The file is not committed (see `.gitignore`).
+- **Development loop**: start the WebHost first (`--port` to choose the port) and put the **host token** into `VITE_HOST_TOKEN` — take `token` from `%LOCALAPPDATA%\luban-agent\webhost.json`, or the value you passed with `--token` (the `?t=` in the browser entry is a session token: it can only be exchanged for a cookie and cannot be used as a Bearer token); then run `npm run dev` in `LubanAgentWebHost/web/`; `VITE_HOST_PORT` sets the upstream port (default 18080, matching the host default) and `server.proxy` forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a`, `/llmwiki`, `/plugin` and `/plugin-web` with an added `Authorization` header, while Vite keeps serving the static assets.
 - **Global top bar and SSE**: session state lives in a frontend-wide chat pool, so tabs are decoupled from routing — a running turn keeps streaming when you switch to the home page or settings, signalled by an activity dot on its tab. Only closing a tab or deleting a session disposes the instance and aborts the stream.
 - **Settings is an overlay**: `#/settings/<tab>` covers the current view; closing it with ×, Esc or a backdrop click returns to where you were. There is no separate settings page and no "back to app" link.
-- **Scope**: the web UI covers the global top bar (session tabs + new session), the two-column home (project filter plus create/rename/delete project on the left, session list with create/rename/delete session on the right), chat (attachments, slash commands, tool confirmation dialog) and the six-tab settings overlay (provider / model / skill / rule / MCP / A2A); up to 5 attachments per message and 10MB per text attachment. Plugins, connectors, `@` context and the Shell command entry point are out of scope for the web UI.
+- **Scope**: the web UI covers the global top bar (home entry + session tabs), the two-column home (project filter plus create/rename/delete project on the left, session list with create/rename/delete session on the right), chat (attachments, slash commands, tool confirmation dialog, back button on the left of a tab title), the knowledge-base page (create/rename/index/rebuild/search, with a "Chat" button at the bottom that opens a session for that library), the plugin management overlay (install / upgrade / enable / disable / uninstall for web plugins only), plugin pages (a same-origin iframe; a plugin with a page shows an entry at the bottom of the left sidebar once enabled) and the eight-tab settings overlay (provider / model / skill / rule / MCP / A2A / workspace / data & usage); up to 5 attachments per message and 10MB per text attachment. Connectors, `@` context and the Shell command entry point are out of scope for the web UI.
 
 ---
 
 ## 🔐 WebHost Access Token and Security
 
-The host binds its listening socket to `0.0.0.0` (SAEA.MVC exposes no bind-address option), so any device on the same network can connect once it knows the address — and behind that channel is an Agent that can read/write workspaces and run commands. The host therefore generates a one-time access token on every start and denies everything by default, accepting only the credentials listed below.
+The host binds its listening socket to `0.0.0.0` (SAEA.MVC exposes no bind-address option), so any device on the same network can connect once it knows the address — and behind that channel is an Agent that can read/write workspaces and run commands. The host therefore denies everything by default and accepts exactly two credential kinds: a **session token** for browsers (short-lived, rotated automatically, with a hard ceiling) and a **host token** for clients (fixed for the process lifetime, `Authorization: Bearer` only).
+
+### Two credential kinds
+
+| Credential | Who uses it | Out-of-the-box behaviour |
+|------------|-------------|--------------------------|
+| Session token (`?t=` / `luban_auth` cookie) | Browsers | Random on start; rotated every 15 minutes by default, previous value honoured for a 5-minute grace period, session capped at 8 hours |
+| Host token (`Authorization: Bearer`) | CLI / Codex / plugins / your own client | Random on start (pin it with `LubanAgentWeb:Token`); unchanged for the process lifetime |
 
 ### Using the token
 
 | Scenario | What to do |
 |----------|------------|
-| First entry (browser) | Open `http://<lan-ip>:<port>/?t=<token>` as printed in the terminal; the host exchanges it for a cookie and 302s to the same path without `t` |
-| Terminal output is gone | Run `LubanAgentWebHost token` on the host machine to reprint the current instance's entry address |
-| Multiple devices | Within one run, all devices share the same entry address and each gets its own session cookie |
-| After a restart | The token dies with the process; enter again through the newly printed address (no long-term login) |
-| CLI / Codex / plugins | Send `Authorization: Bearer <token>` automatically, reading the token from the discovery file — no manual input |
-| Your own client | Use `Authorization: Bearer`, or visit `/?t=<token>` first to obtain the cookie |
+| First entry (browser) | Open `http://<lan-ip>:<port>/?t=<session token>` as printed in the terminal; the host exchanges it for a cookie and 302s to the same path without `t` |
+| Page left open | The web UI pings `/system/session` every 60 seconds; the host rotates the token on the first request after expiry and writes it back as a cookie, so no manual refresh is needed |
+| Terminal output is gone | Run `LubanAgentWebHost token` on the host machine; it uses the host token to fetch the running instance's current entry address and QR code |
+| Multiple devices | Enter through the same address; each device keeps its own cookie but they share one session token family — a heartbeat from any device drives rotation, and the previous value stays valid during the grace period |
+| Session ceiling reached | 8 hours by default (`LubanAgentWeb:SessionMaxHours`); the old address then returns 401 and you fetch a new one with `token` |
+| After a restart | Both tokens die with the process; enter again through the newly printed address (no long-term login) |
+| CLI / Codex / plugins | Send `Authorization: Bearer <host token>` automatically, reading the token from the discovery file — no manual input |
 
-- **Token shape**: Base64Url text of 32 cryptographically random bytes (`RandomNumberGenerator`), 43 characters.
-- **Pinning a token**: use `LubanAgentWeb:Token` or `--token`. Only letters, digits, `-` and `_` are allowed; a value containing spaces, semicolons or newlines would truncate the cookie or corrupt headers, so the host refuses to start instead of degrading.
-- **The browser never stores the token in readable form**: it is exchanged for a `luban_auth` cookie (`Path=/; HttpOnly; SameSite=Lax`, no expiry, i.e. session-scoped); the `t` parameter is removed by a 302 so it does not stay in history, and page scripts cannot read it either — `runtime-config.js` only contains `userId`/`port`.
-- **What a 401 looks like**: a browser hitting the address without a token gets a Chinese help page (pointing at the terminal entry address and at `LubanAgentWebHost token`); API clients get HTTP 401 with the standard envelope (`success: false`, `code: 401`, `message` explaining why).
+- **Token shape**: Base64Url text of 32 cryptographically random bytes (`RandomNumberGenerator`), 43 characters; both kinds look the same and differ only in lifetime.
+- **Session timings are configurable**: `LubanAgentWeb:SessionTokenMinutes` (default 15), `SessionGraceMinutes` (default 5), `SessionMaxHours` (default 8). Invalid values (zero or negative) make the host refuse to start instead of silently falling back.
+- **Pinning the host token**: use `LubanAgentWeb:Token` or `--token`. Only letters, digits, `-` and `_` are allowed; a value containing spaces, semicolons or newlines would truncate the cookie or corrupt headers, so the host refuses to start instead of degrading. Pinning affects the client token only — browser rotation is unaffected.
+- **The browser never stores the token in readable form**: the session token is exchanged for a `luban_auth` cookie (`Path=/; HttpOnly; SameSite=Lax`, session-scoped); the `t` parameter is removed by a 302 so it does not stay in history, and page scripts cannot read it either — `runtime-config.js` only contains `userId`/`port`. Rotated values are written back by the gate via `Set-Cookie`; the frontend never touches them.
+- **What a 401 looks like**: a browser hitting the address without a token gets a Chinese help page (pointing at the terminal entry address and at `LubanAgentWebHost token`); once the session ceiling is passed the page says the session expired. API clients get HTTP 401 with the standard envelope (`success: false`, `code: 401`, `message` explaining why). Any 401 inside the web UI replaces the whole page with an "token expired" notice instead of leaving a UI that cannot do anything.
 
 ### Gate coverage and implementation notes
 
 - **One interception point covering every entry**: the decision hangs on `SAEA.MVC.HttpContext.GetActionResult()`, so routed endpoints, SSE streams, attachment uploads and static assets all pass the same gate; a second check (`WebApi.GuardAsync`) runs inside controller actions.
 - **Exactly one path is exempt**: `/system/health` is token-free so launchers can probe the port; it returns only `status`/`version`/`serverTime`, carries no user identity and does not wait for user initialization.
-- **`?t=` wins**: if the URL carries a token, only that value is accepted — a wrong token returns 401 even when a valid cookie is present, so a bad entry is not masked by an old credential.
+- **Browser credentials are judged as session tokens**: when the URL or the cookie carries a session token, only that value is accepted — a wrong token returns 401 even when a valid cookie is present, so a bad entry is not masked by an old credential. `Bearer` is a separate credential, checked first and unaffected by browser rotation or the session ceiling.
+- **Rotation happens inside the gate**: the first request after expiry gets a fresh token plus `Set-Cookie`, while the previous value stays valid for the grace period (covering requests already in flight); once the session ceiling is reached every session token is answered with "expired".
+- **The QR code follows the current token**: `/system/entryQr` mints the URL from the current session token on every request and is served with `Cache-Control: no-cache`, so a stale code is never cached.
 - **Constant-time comparison**: validation uses `CryptographicOperations.FixedTimeEquals` instead of short-circuiting character by character, so token prefix length does not leak.
 - **Fail closed**: the gate replaces SAEA's internal request-context type via reflection; if that fails, startup throws instead of silently running without authentication.
 - **Non-read requests are not redirected**: only GET/HEAD get a 302; a POST carrying `?t=` is executed as-is once validated, so its body is not lost.
 
 ### Risk boundaries (read this)
 
-- **No transport encryption**: there is no TLS by default, so the token and all conversation content travel in plaintext on the LAN. Rotating the token on every restart narrows the window; it does not replace encryption.
-- **The discovery file is plaintext**: `%LOCALAPPDATA%\luban-agent\webhost.json` records the port and token with no extra ACL hardening, so any process or user on the same machine that can read that profile can read it. It is only appropriate for a single-user machine.
+- **No transport encryption**: there is no TLS by default, so the token and all conversation content travel in plaintext on the LAN. Rotating on restart and during runtime narrows the window; it does not replace encryption.
+- **Rotation is not revocation**: rotation only shortens the window for a leaked-but-unused token; a token that keeps being used keeps getting renewed and ends at the session ceiling (8 hours by default). That ceiling is the only force-expiry switch.
+- **The discovery file is plaintext**: `%LOCALAPPDATA%\luban-agent\webhost.json` records the port and host token with no extra ACL hardening, so any process or user on the same machine that can read that profile can read it. It is only appropriate for a single-user machine.
 - **Possession of the address means full access**: while the token is valid, whoever holds the entry address can read/write workspaces and run commands. Do not paste that address into chat groups, tickets or screenshots.
 - **Internet exposure needs your own hardening**: front it with a reverse proxy that adds TLS and additional authentication, and restrict source networks; this project ships no public-deployment story.
 

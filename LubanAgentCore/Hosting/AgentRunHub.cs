@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Collections.Concurrent;
-
 namespace LubanAgentCore.Hosting;
 
 /// <summary>轮次中心参数。</summary>

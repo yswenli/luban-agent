@@ -1,0 +1,294 @@
+/* ==========================================================================
+   截图取景与标注层（全屏覆盖，独立于应用主题，固定深色）
+   ========================================================================== */
+
+.vws-root {
+  position: fixed;
+  inset: 0;
+  /* 盖住应用内所有弹层与轻提示（最高 200），截图期间不允许被遮挡 */
+  z-index: 300;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.vws-root:not(.is-tool):not(.is-selecting) {
+  cursor: default;
+}
+
+.vws-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.vws-size {
+  position: absolute;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.vws-text {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 4px;
+  border: 0;
+  /* 用 outline 不用 border：不参与布局，首行文字起点才不会偏 */
+  outline: 1px dashed currentColor;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: currentColor;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.vws-text::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.vws-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+/* ------------------------------- 标注工具栏 ------------------------------- */
+
+.vws-tb {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vws-tb__bar,
+.vws-tb__options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #2b2b2b;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+}
+
+.vws-tb__options {
+  gap: 6px;
+  padding: 4px 8px;
+  max-width: calc(100vw - 16px);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
+}
+
+.vws-tb__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #f2f2f2;
+  cursor: pointer;
+}
+
+.vws-tb__btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.vws-tb__btn.is-active {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.vws-tb__btn.is-primary {
+  background: #1677ff;
+  color: #fff;
+}
+
+.vws-tb__btn.is-primary:hover {
+  background: #3b8cff;
+}
+
+.vws-tb__btn:disabled {
+  background: transparent;
+  opacity: 0.38;
+  cursor: default;
+}
+
+.vws-tb__btn svg {
+  display: block;
+}
+
+/* 箭头样式：三个并排图标按钮，压低高度对齐二级工具栏 */
+.vws-tb__btn--style {
+  width: 24px;
+  height: 22px;
+}
+
+.vws-tb__btn--style svg {
+  width: 14px;
+  height: 14px;
+}
+
+.vws-tb__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.vws-tb__label {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.vws-tb__switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.24);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vws-tb__switch.is-on {
+  background: #1677ff;
+}
+
+.vws-tb__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.vws-tb__switch.is-on .vws-tb__knob {
+  transform: translateX(12px);
+}
+
+/* 尺寸 / 描边宽度手输框：0.1px 起，隐藏原生步进箭头省空间，方向键仍可微调 */
+.vws-tb__num {
+  width: 46px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f2;
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.vws-tb__num:focus {
+  outline: none;
+  border-color: #1677ff;
+  background: rgba(22, 119, 255, 0.18);
+}
+
+.vws-tb__num::-webkit-outer-spin-button,
+.vws-tb__num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 字号下拉：默认 12，暗色皮肤下选项也要可读 */
+.vws-tb__select {
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f2;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.vws-tb__select:focus {
+  outline: none;
+  border-color: #1677ff;
+}
+
+.vws-tb__select option {
+  background: #2b2b2b;
+  color: #f2f2f2;
+}
+
+.vws-tb__unit {
+  margin-left: -3px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 取色器：统一成小方块，点一下打开系统颜色面板 */
+.vws-tb__pick {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vws-tb__pick:focus {
+  outline: none;
+  border-color: #1677ff;
+}
+
+.vws-tb__pick::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.vws-tb__pick::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.vws-tb__pick::-moz-color-swatch {
+  border: none;
+  border-radius: 2px;
+}

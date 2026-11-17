@@ -7,9 +7,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Orchestration.Models;
-
 namespace LubanAgentCore.Protocol.Events;
 
 /// <summary>

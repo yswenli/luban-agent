@@ -18,9 +18,9 @@ namespace LubanAgentWebHost.Controllers;
 /// </remarks>
 public sealed class SkillController : Controller
 {
-    /// <summary>列出作用域内的技能名。</summary>
+    /// <summary>列出作用域内的技能（目录名 + 显示名 + 分类）。</summary>
     /// <param name="scope"><c>global</c> 或工作区标识；缺省按全局。</param>
-    /// <returns>技能名数组。</returns>
+    /// <returns>技能摘要数组。</returns>
     [HttpGet]
     public Task<ActionResult> List(string? scope) => WebSkillService.ListAsync(scope);
 
@@ -33,9 +33,15 @@ public sealed class SkillController : Controller
 
     /// <summary>保存技能。</summary>
     /// <param name="payload">包装后的 <see cref="SkillSaveRequest"/> JSON。</param>
-    /// <returns>保存后的条目键。</returns>
+    /// <returns>保存后的条目键（目录名）。</returns>
     [HttpPost]
     public Task<ActionResult> Save(string payload) => WebSkillService.SaveAsync(payload);
+
+    /// <summary>导入技能 ZIP 包。</summary>
+    /// <param name="payload">包装后的 <see cref="SkillImportRequest"/> JSON。</param>
+    /// <returns>导入与跳过的目录名。</returns>
+    [HttpPost]
+    public Task<ActionResult> Import(string payload) => WebSkillService.ImportAsync(payload);
 
     /// <summary>删除技能。</summary>
     /// <param name="payload">包装后的 <see cref="SettingsKeyRequest"/> JSON。</param>

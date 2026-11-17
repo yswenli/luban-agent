@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Repositories;
-
 namespace LubanAgentCore.Client;
 
 /// <summary>

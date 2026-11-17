@@ -10,14 +10,6 @@
 *
 *****************************************************************************/
 
-using System.Text.Json;
-
-using LuBan.AIAgent.Hosting;
-using LuBan.DI;
-
-using LubanAgentCore.Hosting;
-using LubanAgentCore.Protocol.Events;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

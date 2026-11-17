@@ -288,7 +288,7 @@ OpenAI 可用模型（回车确认，未选则默认第一个）:
 
 本程序不直接执行 Agent：对话、文件读写与工具调用都发生在本地宿主进程 `LubanAgentWebHost` 里，本程序只是它的客户端。
 
-- **自动拉起**：本机没有可用宿主时，客户端拉起 `LubanAgentWebHost` 子进程（只下发 `--plugins-dir` 与 `--debug`，端口、令牌、超时都由宿主自己的配置决定，`LubanAgentWeb:Port` 默认 18080）；已有实例在运行时客户端读发现文件并用 `/system/health` 探活，通过即直接接管，不会重复启动。宿主可执行文件按「`AgentClientOptions.ServerPath` → 环境变量 `LUBAN_AGENT_WEBHOST` → 客户端输出目录 → 向上逐级查找 `LubanAgentWebHost/bin/**`」的顺序定位，都找不到时报「未找到 LubanAgentWebHost」。
+- **自动拉起**：本机没有可用宿主时，客户端拉起 `LubanAgentWebHost` 子进程（下发 `--plugins-dir`、`--debug`，并在 `AgentClientOptions.WebPluginsDirectory` 有值时追加 `--web-plugins-dir`；端口、令牌、超时都由宿主自己的配置决定，`LubanAgentWeb:Port` 默认 18080）；已有实例在运行时客户端读发现文件并用 `/system/health` 探活，通过即直接接管，不会重复启动。宿主可执行文件按「`AgentClientOptions.ServerPath` → 环境变量 `LUBAN_AGENT_WEBHOST` → 客户端输出目录 → 向上逐级查找 `LubanAgentWebHost/bin/**`」的顺序定位，都找不到时报「未找到 LubanAgentWebHost」。
 - **宿主常驻**：拉起后的宿主不随本程序退出，需要用 `LubanAgentWebHost --stop` 停止；同一个端口只能有一个实例，后启动的那个会因端口占用启动失败。
 - **访问令牌**：宿主监听全部网卡，所以每次启动都会生成一次性令牌，并写入 `%LOCALAPPDATA%\luban-agent\webhost.json`；客户端从该文件读取后自动带 `Authorization: Bearer`，不需要手工填写。
 - **浏览器端**：宿主同时托管网页界面，入口是终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`；打开后令牌换成 HttpOnly Cookie 并 302 回去掉 `t` 的干净地址，宿主重启即失效。

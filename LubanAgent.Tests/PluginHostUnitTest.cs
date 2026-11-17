@@ -13,16 +13,6 @@
 *
 *****************************************************************************/
 
-using LuBan.DI;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.Hosting;
-using LuBan.AIAgent.Plugins;
-using LubanAgentCore.Plugins;
-using LubanAgentCore.Configuration;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

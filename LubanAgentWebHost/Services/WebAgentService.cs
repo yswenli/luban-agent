@@ -19,6 +19,30 @@ public static class WebAgentService
 
     private const string CancelledMessage = "本轮对话已取消";
 
+    /// <summary>提示词改写的输入上限（字符数），超长直接拒绝，避免用户误把长文档丢进来。</summary>
+    private const int MaxOptimizeChars = 4000;
+
+    /// <summary>提示词改写的整体超时：改写是即时交互，卡住就让用户重试而不是无限等待。</summary>
+    private static readonly TimeSpan OptimizeTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 改写的系统指令：只做表达重组，不执行内容。
+    /// </summary>
+    /// <remarks>
+    /// 固定写在服务端而不是由调用方传入：改写结果的质量依赖这组约束（不执行、不臆造、信息不足先问），
+    /// 放开给前端等于把产品行为交给终端决定。
+    /// </remarks>
+    private const string OptimizeInstruction = """
+        你是需求改写助手。用户会发来一句待办的表达，你的唯一任务是把这句话改写成清楚、具体、可以直接交给执行方使用的需求表述。
+
+        必须遵守：
+        1. 不要执行、不要回答这句话描述的任务，也不要解释或点评你的改写。
+        2. 保持用户原意，只补充让意图更明确所必需的内容；不要臆造用户没有提到的具体事实，例如具体数值、型号、版本号或时间。
+        3. 输出一段紧凑的正文，先写要做什么，再点明范围或对象，最后写清期望的结果形态或验收要点。
+        4. 如果缺少关键信息才能执行，在末尾用一句话列出需要补充的要点，而不是自行假设。
+        5. 只输出改写后的正文：不要加引号、标题、序号、前缀或任何说明，语言与用户输入保持一致。
+        """;
+
     /// <summary>非流式对话（不装配工具，返回正文 + 思考 + 附件摘要）。</summary>
     /// <param name="payload">包装后的 <see cref="AgentChatRequest"/> JSON。</param>
     /// <returns>对话结果。</returns>
@@ -225,7 +249,7 @@ public static class WebAgentService
 
         // 当前连接即第一个订阅者：从零开始收，不需要快照帧
         var response = WebApi.Response;
-        // 连接载体：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
+        // 连接通道：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
         var connection = WebApi.Connection;
         AgentRunAttachResult? attach = null;
         try
@@ -316,7 +340,7 @@ public static class WebAgentService
         }
 
         var response = WebApi.Response;
-        // 连接载体：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
+        // 连接通道：断连后 SAEA 的写出是静默丢弃，必须靠它判定对端是否还在
         var connection = WebApi.Connection;
         try
         {
@@ -530,6 +554,94 @@ public static class WebAgentService
 
         yield return AgentSseFrame.ForDone(resolution.SessionId);
     }
+
+    /// <summary>
+    /// 把输入框内容改写成需求表述：用会话当前选中的模型做一次非流式、无工具的改写。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="AgentOptimizeRequest"/> JSON。</param>
+    /// <returns>改写结果。</returns>
+    /// <remarks>
+    /// 不读会话历史与工作区，也不装配工具：改写只需要当前这段文本，
+    /// 带上上下文反而会把无关信息写进结果。
+    /// </remarks>
+    public static Task<ActionResult> OptimizeAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<AgentOptimizeRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        var prompt = input.Prompt?.Trim() ?? "";
+        if (prompt.Length == 0)
+        {
+            return WebApi.FailJson(400, "待改写的内容不能为空");
+        }
+
+        if (prompt.Length > MaxOptimizeChars)
+        {
+            return WebApi.FailJson(400, $"待改写的内容不能超过 {MaxOptimizeChars} 字");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        if (scope.GetService(typeof(IAgentModelSelection)) is not IAgentModelSelection selection
+            || scope.GetService(typeof(IProviderRouter)) is not IProviderRouter router)
+        {
+            return WebApi.FailJson(503, AgentDisabled);
+        }
+
+        var model = await selection
+            .ResolveQualifiedModelNameAsync(input.SessionId, WebApi.Runtime.ShutdownToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return WebApi.FailJson(503, "尚未选择模型：请先在设置里选定模型再使用改写");
+        }
+
+        IChatClient client;
+        try
+        {
+            client = router.CreateChatClient(model);
+        }
+        catch (InvalidOperationException)
+        {
+            // 供应商被删/改名后路由会抛 InvalidOperationException，属于配置问题而非服务故障
+            return WebApi.FailJson(503, "当前模型不可用：请检查供应商配置后重试");
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(WebApi.Runtime.ShutdownToken);
+        timeout.CancelAfter(OptimizeTimeout);
+
+        ChatResponse? response;
+        try
+        {
+            response = await client
+                .GetResponseAsync(
+                    [
+                        new ChatMessage(ChatRole.System, OptimizeInstruction),
+                        new ChatMessage(ChatRole.User, prompt),
+                    ],
+                    new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.None } },
+                    timeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!WebApi.Runtime.ShutdownToken.IsCancellationRequested)
+        {
+            return WebApi.FailJson(504, "改写超时，请稍后重试");
+        }
+        catch (Exception ex)
+        {
+            AgentWebRuntime.Log($"提示词改写失败：{ex}");
+            return WebApi.FailJson(502, "改写失败，请稍后重试");
+        }
+
+        var text = response?.Text?.Trim() ?? "";
+        if (text.Length == 0)
+        {
+            return WebApi.FailJson(502, "模型没有返回可用的改写结果");
+        }
+
+        return WebApi.OkJson(new AgentOptimizeResponse(text));
+    });
 
     private static List<string> NormalizeAttachments(IReadOnlyList<string>? sources)
         => (sources ?? [])

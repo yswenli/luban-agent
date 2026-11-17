@@ -7,10 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Threading.Channels;
-
-using SAEA.Sockets.Interface;
-
 namespace LubanAgentWebHost.Hosting;
 
 /// <summary>
@@ -36,17 +32,17 @@ public static class SsePump
 
     /// <summary>写出一帧。</summary>
     /// <param name="response">当前响应。</param>
-    /// <param name="connection">本次请求的连接载体；为 null 时不判定连接状态。</param>
+    /// <param name="connection">本次请求的连接通道；为 null 时不判定连接状态。</param>
     /// <param name="frame">帧。</param>
     /// <returns>连接是否仍可写。</returns>
-    public static bool TryWrite(HttpResponse response, IUserToken? connection, AgentSseFrame frame)
+    public static bool TryWrite(HttpResponse response, IChannel? connection, AgentSseFrame frame)
         => TrySend(response, connection, Utf8.GetBytes(frame.ToText()));
 
     /// <summary>写出心跳注释行。</summary>
     /// <param name="response">当前响应。</param>
-    /// <param name="connection">本次请求的连接载体；为 null 时不判定连接状态。</param>
+    /// <param name="connection">本次请求的连接通道；为 null 时不判定连接状态。</param>
     /// <returns>连接是否仍可写。</returns>
-    public static bool TryWriteHeartbeat(HttpResponse response, IUserToken? connection)
+    public static bool TryWriteHeartbeat(HttpResponse response, IChannel? connection)
         => TrySend(response, connection, Encoding.ASCII.GetBytes(AgentSseFrame.HeartbeatText));
 
     /// <summary>结束响应（关闭连接）。</summary>
@@ -67,7 +63,7 @@ public static class SsePump
     /// 订阅者 pump：从轮次通道取帧写 socket，空闲时按心跳间隔补 <c>: ping</c>。
     /// </summary>
     /// <param name="response">当前响应。</param>
-    /// <param name="connection">本次请求的连接载体；为 null 时不判定连接状态。</param>
+    /// <param name="connection">本次请求的连接通道；为 null 时不判定连接状态。</param>
     /// <param name="reader">该订阅者的帧通道。</param>
     /// <param name="heartbeat">心跳间隔。</param>
     /// <param name="ct">退出令牌（宿主关闭时用）。</param>
@@ -78,7 +74,7 @@ public static class SsePump
     /// </remarks>
     public static async Task RunAsync(
         HttpResponse response,
-        IUserToken? connection,
+        IChannel? connection,
         ChannelReader<AgentSseFrame> reader,
         TimeSpan heartbeat,
         CancellationToken ct = default)
@@ -138,16 +134,16 @@ public static class SsePump
 
     /// <summary>连接是否仍可写。</summary>
     /// <remarks>
-    /// 载体的 socket 已在断开时被回收（<c>Socket</c> 置空）或标记为未连接，
-    /// 这两种情况 SAEA 都会静默丢弃数据并在内部记一条错误，故这里直接判定为不可写。
+    /// 连接通道在收口时把活跃状态置为 false（重复关闭不再触发关闭委托），此后再写只会被静默丢弃
+    /// 并在内部记一条错误，故这里直接判定为不可写。
     /// 载体为 null 表示调用方没提供连接信息，按旧行为尝试写出。
     /// </remarks>
-    /// <param name="connection">本次请求的连接载体。</param>
+    /// <param name="connection">本次请求的连接通道。</param>
     /// <returns>是否可写。</returns>
-    private static bool IsWritable(IUserToken? connection)
-        => connection is null || connection.Socket is { Connected: true };
+    private static bool IsWritable(IChannel? connection)
+        => connection is null || connection.IsActive;
 
-    private static bool TrySend(HttpResponse response, IUserToken? connection, byte[] data)
+    private static bool TrySend(HttpResponse response, IChannel? connection, byte[] data)
     {
         if (!IsWritable(connection))
         {

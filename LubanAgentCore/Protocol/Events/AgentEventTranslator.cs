@@ -7,9 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Text.Json;
-using LuBan.AIAgent.Hosting;
-
 namespace LubanAgentCore.Protocol.Events;
 
 /// <summary>

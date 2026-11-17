@@ -51,14 +51,26 @@
                              Background="Transparent"
                              BorderThickness="0"
                              Margin="16,0,8,0" />
-                    <Button Grid.Row="1"
-                            Name="NewItemBtn"
-                            Content="＋ 新建"
-                            Margin="16,8,8,16"
-                            Padding="8,6"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Center"
-                            Classes="dlgGhost" />
+                    <Grid Grid.Row="1"
+                          ColumnDefinitions="*,*"
+                          Margin="16,8,8,16">
+                        <Button Grid.Column="0"
+                                Name="ImportItemBtn"
+                                Content="导入 ZIP"
+                                Margin="0,0,4,0"
+                                Padding="8,6"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Classes="dlgGhost" />
+                        <Button Grid.Column="1"
+                                Name="NewItemBtn"
+                                Content="＋ 新建"
+                                Margin="4,0,0,0"
+                                Padding="8,6"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Classes="dlgGhost" />
+                    </Grid>
                 </Grid>
 
                 <Border Grid.Column="1" Background="{DynamicResource DividerBrush}" />

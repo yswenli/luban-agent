@@ -159,6 +159,7 @@ public partial class SettingsWindow
     private void OnScopeChanged()
     {
         SelectedItemKey = null;
+        _isNewSkillDraft = false;
         RefreshItems();
         BuildEditor();
     }
@@ -205,6 +206,13 @@ public partial class SettingsWindow
         }
 
         // 工作区配置（技能 / 规则 / MCP）
+        if (Tab == SettingsTabKind.Skill)
+        {
+            ApplySkillGroupedList();
+            UpdateActionBar();
+            return;
+        }
+
         var strs = _vm.EnumerateFileItems().ToList();
         _itemList.ItemsSource = strs;
         if (SelectedItemKey != null && strs.Contains(SelectedItemKey))
@@ -215,6 +223,50 @@ public partial class SettingsWindow
             _itemList.SelectedItem = SelectedItemKey;
         }
         UpdateActionBar();
+    }
+
+    /// <summary>
+    /// 技能页左栏：按分类分组，组内按显示名排序；主文本是 frontmatter 的 name，
+    /// 目录名与显示名不同时以「name（目录）」的形式并排展示，便于区分同名技能。
+    /// </summary>
+    private void ApplySkillGroupedList()
+    {
+        if (_itemList == null) return;
+
+        var entries = _vm.SkillRule.ListSkillEntries(ScopeRoot);
+        var items = new List<SettingsListItem>();
+        string? currentGroup = null;
+
+        foreach (var entry in entries
+                     .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? 1 : 0)
+                     .ThenBy(e => e.Category, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var group = string.IsNullOrWhiteSpace(entry.Category) ? "未分类" : entry.Category;
+            if (group != currentGroup)
+            {
+                items.Add(new SettingsListItem { Display = group, IsHeader = true });
+                currentGroup = group;
+            }
+
+            items.Add(new SettingsListItem
+            {
+                Key = entry.Id,
+                Display = string.Equals(entry.Id, entry.Name, StringComparison.OrdinalIgnoreCase)
+                    ? entry.Name
+                    : $"{entry.Name}（{entry.Id}）",
+            });
+        }
+
+        _itemList.ItemsSource = items;
+
+        var selectable = items.Where(i => !i.IsHeader).ToList();
+        var match = SelectedItemKey != null
+            ? selectable.FirstOrDefault(i => i.Key.Equals(SelectedItemKey, StringComparison.OrdinalIgnoreCase))
+            : null;
+        var target = match ?? selectable.FirstOrDefault();
+        _itemList.SelectedItem = target;
+        SelectedItemKey = target?.Key;
     }
 
     /// <summary>

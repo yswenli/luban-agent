@@ -3,11 +3,13 @@ import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch 
 import { Icon, type IconName } from '../components/Icons';
 import { bootstrap, currentWorkspaceId, workspaceName } from '../stores/app';
 import { A2aTab } from './settings/A2aTab';
+import { DataTab } from './settings/DataTab';
 import { McpTab } from './settings/McpTab';
 import { ModelTab } from './settings/ModelTab';
 import { ProviderTab } from './settings/ProviderTab';
 import { RuleTab } from './settings/RuleTab';
 import { SkillTab } from './settings/SkillTab';
+import { WorkspaceTab } from './settings/WorkspaceTab';
 
 interface TabDef {
   id: string;
@@ -17,15 +19,21 @@ interface TabDef {
   scoped: boolean;
   /** 只支持工作区作用域（A2A）。 */
   workspaceOnly?: boolean;
+  /** 直接作用于「当前工作区」（授权、配置目录、AGENTS.md），没有全局作用域。 */
+  requiresWorkspace?: boolean;
 }
 
+// 导航顺序即用户使用频率顺序：供应商与模型在前，文件型配置（技能/规则/MCP）随后，A2A 协作垫底，
+// 新增的工作区治理与数据清理排在最后。
 const tabs: TabDef[] = [
+  { id: 'provider', label: '供应商', icon: 'folder', scoped: false },
+  { id: 'model', label: '模型', icon: 'brain', scoped: false },
   { id: 'skill', label: '技能', icon: 'spark', scoped: true },
   { id: 'rule', label: '规则', icon: 'shield', scoped: true },
   { id: 'mcp', label: 'MCP 服务', icon: 'terminal', scoped: true },
   { id: 'a2a', label: 'A2A 协作', icon: 'message', scoped: true, workspaceOnly: true },
-  { id: 'provider', label: '供应商', icon: 'folder', scoped: false },
-  { id: 'model', label: '模型', icon: 'brain', scoped: false },
+  { id: 'workspace', label: '工作区', icon: 'file', scoped: false, requiresWorkspace: true },
+  { id: 'data', label: '数据与用量', icon: 'grid', scoped: false },
 ];
 
 /**
@@ -62,6 +70,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
   /** 需要工作区但当前没有：给出提示，不渲染表单。 */
   const needWorkspace = () =>
     (activeTab().workspaceOnly && scope() === 'global') ||
+    (!!activeTab().requiresWorkspace && !currentWorkspaceId()) ||
     (scope() === 'workspace' && !currentWorkspaceId());
 
   const scopeNotice = () =>
@@ -124,11 +133,13 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               <div>
                 <div class="dialog-title">{activeTab().label}</div>
                 <div class="dialog-sub">
-                  {showScope()
-                    ? scope() === 'global'
-                      ? '作用域：★ 全局'
-                      : `作用域：${workspaceName(currentWorkspaceId()) || '当前工作区'}`
-                    : '作用域：固定全局'}
+                  {activeTab().requiresWorkspace
+                    ? `作用域：${workspaceName(currentWorkspaceId()) || '当前工作区'}`
+                    : showScope()
+                      ? scope() === 'global'
+                        ? '作用域：★ 全局'
+                        : `作用域：${workspaceName(currentWorkspaceId()) || '当前工作区'}`
+                      : '作用域：固定全局'}
                 </div>
               </div>
             </div>
@@ -160,6 +171,12 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                 </Match>
                 <Match when={activeTab().id === 'model'}>
                   <ModelTab />
+                </Match>
+                <Match when={activeTab().id === 'workspace'}>
+                  <WorkspaceTab />
+                </Match>
+                <Match when={activeTab().id === 'data'}>
+                  <DataTab />
                 </Match>
               </Switch>
             </Show>

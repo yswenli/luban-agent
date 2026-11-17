@@ -14,17 +14,6 @@
 *
 *****************************************************************************/
 
-using LuBan.DI;
-using LuBan.AIAgent.Configuration;
-using LuBan.AIAgent.MCP;
-using LuBan.AIAgent.Tools.McpManage;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Services.Management;
-using LubanAgentCore.Services.Management.Models;
-using LubanAgentCodex.ViewModels.Settings;
-using LubanAgentCodex.Views;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace LubanAgent.Tests;
 
 [TestClass]
@@ -76,7 +65,7 @@ public class SettingsViewModelUnitTest
         var outcome = vm.SaveSkill("old", new SkillForm(" MySkill ", " 说明 ", " custom ", " a,b ", "正文"), "C:\\ws");
 
         Assert.IsTrue(outcome.Ok);
-        Assert.AreEqual("MySkill", outcome.Key);
+        Assert.AreEqual("old", outcome.Key, "已有条目的键是目录名，不随显示名变化");
 
         var saved = skills.Saved.Single();
         Assert.AreEqual("old", saved.OriginalId);
@@ -365,10 +354,20 @@ public class SettingsViewModelUnitTest
 
         public IReadOnlyList<string> ListFileIds(string? workspaceRoot) => FileIds;
 
+        public IReadOnlyList<SkillFileEntry> ListFileEntries(string? workspaceRoot)
+            => FileIds.Select(id => new SkillFileEntry(id, id, "")).ToList();
+
         public SkillFileContent? ReadFile(string id, string? workspaceRoot) => null;
 
-        public void SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot)
-            => Saved.Add((originalId, content, workspaceRoot));
+        public string SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot)
+        {
+            Saved.Add((originalId, content, workspaceRoot));
+            // 与真实实现一致：已有条目沿用目录名，新建按显示名生成
+            return string.IsNullOrEmpty(originalId) ? content.Name : originalId;
+        }
+
+        public SkillImportResult ImportZip(Stream zipStream, string? workspaceRoot)
+            => new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
     }
 
     private sealed class FakeRuleManagementService : IRuleManagementService

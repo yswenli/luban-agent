@@ -141,7 +141,7 @@ export function RuleTab(props: { scope: string }) {
         <AreaField
           label="引导正文"
           value={form().content}
-          rows={10}
+          rows={8}
           wide
           mono
           placeholder="命中规则后追加给模型的引导文本；可留空。"

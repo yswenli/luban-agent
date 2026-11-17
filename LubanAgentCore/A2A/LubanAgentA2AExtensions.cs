@@ -15,8 +15,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Protocol;
-
 namespace LubanAgentCore.A2A;
 
 /// <summary>

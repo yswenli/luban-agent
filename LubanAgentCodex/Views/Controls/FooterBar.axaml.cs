@@ -109,9 +109,10 @@ public partial class FooterBar : UserControl
     {
         if (_tokenUsageText == null) return;
         
-        var display = tokens > 1000 
-            ? $"{tokens / 1000.0:F1}k tok"
-            : $"{tokens} tok";
+        // 阈值与 CLI 页脚保持一致：1000 起用 k 简写，避免两端对同一数值显示不同
+        var display = tokens >= 1000
+            ? $"当前会话已消费 {tokens / 1000.0:F1}k token"
+            : $"当前会话已消费 {tokens} token";
         
         _tokenUsageText.Text = display;
     }

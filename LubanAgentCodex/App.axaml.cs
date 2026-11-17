@@ -17,8 +17,6 @@
 
 namespace LubanAgentCodex;
 
-using LubanAgentCore.Client;
-
 /// <summary>
 /// Avalonia 应用程序
 /// </summary>

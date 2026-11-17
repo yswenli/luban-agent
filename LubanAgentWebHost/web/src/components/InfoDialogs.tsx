@@ -94,6 +94,10 @@ export function AboutDialog(props: { onClose: () => void }) {
         </button>
       }
     >
+      <figure class="about-qr">
+        <img src="/system/entryQr" alt="手机扫码打开本界面" width="180" height="180" />
+        <figcaption>手机与电脑连同一局域网，扫码即可在手机上打开本界面</figcaption>
+      </figure>
       <p class="about-intro">
         基于 Microsoft Agent Framework 的 AI Agent 解决方案：一套核心运行时，命令行 TUI、跨平台桌面客户端与本地 Agent 服务三端统一。
       </p>
@@ -138,7 +142,8 @@ export function ConnectionHelpDialog(props: { onClose: () => void }) {
     >
       <ul class="about-steps">
         <li>
-          宿主的浏览器入口带一次性令牌（<code>?t=</code> 参数）。令牌随本次运行有效，宿主重启后旧地址会失效。
+          宿主的浏览器入口带会话令牌（<code>?t=</code> 参数）。令牌会定时换新，页面一直开着会自动续期；
+          会话另有最长时限，超过时限或宿主重启后旧地址失效。
         </li>
         <li>在宿主机终端执行 <code>LubanAgentWebHost token</code>，重新打印「浏览器入口」并整条复制打开。</li>
         <li>找不到终端或宿主已退出：重新启动 <code>LubanAgentWebHost</code>，再看启动日志里的浏览器入口。</li>

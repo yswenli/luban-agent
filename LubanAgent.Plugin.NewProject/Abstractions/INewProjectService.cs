@@ -124,7 +124,7 @@ public interface INewProjectService
     /// （<b>禁止</b>再次 <c>CreateWorkspaceAsync</c>），首次与重跑都在 <c>SetCurrentAsync</c> 之后<b>显式新建会话</b>
     /// （工作区切换只恢复最近会话，不隐式新建，<b>不</b>复用恢复出来的旧会话）；
     /// 失败仅回滚本步（新建的工作区用 <c>DeleteWorkspaceAsync</c> 注销，
-    /// <b>不删</b> <c>LocalPath</c> 目录）。
+    /// 保留 <c>LocalPath</c> 目录与用户文件，仅清理项目内的 <c>.luban-agent</c> 配置）。
     /// </remarks>
     Task<StepResult> InitializeAsync(CancellationToken cancellationToken = default);
 

@@ -160,7 +160,7 @@ LubanAgent.Plugin.NewProject/
 面板的「中止并清理」与残留横幅的「清理后重来」走同一实现，顺序固定：
 
 1. **先**删本插件写入的技能与 MCP：`host.UnregisterSkill(清单技能)` × 6 + `host.UnregisterMcpServer("yunxiao")`；
-2. **再**注销本项目工作区：`DeleteWorkspaceAsync(WorkspaceId)`（**逻辑删，不删** `LocalPath` 目录）；
+2. **再**注销本项目工作区：`DeleteWorkspaceAsync(WorkspaceId)`（清理该项目的数据库记录与 `.luban-agent` 配置目录，**不删** `LocalPath` 目录及用户文件）；
 3. 远端产物**一律不自动删除**，只把孤儿条数写进时间线与日志（P3/P5 有真实远端产物后再做清单化展示）；
 4. 清空档案与操作记录（等价于「标记未完成」：不留误导性进度），并补一条「中止并清理」时间线记录。
 
@@ -492,7 +492,7 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - 框架 `FileSystemToolPlugin.DeleteDirectoryAsync`（`luban-framework/LuBan.AIAgent/Tools/FileSystem/FileSystemToolPlugin.cs:807`）
   用的是裸 `Directory.Delete`，删 git 目录（含只读 pack）会失败且只报「权限不足」。Step 3「清空后重克隆」
   改由助手 `RunPythonAsync` 的 `shutil.rmtree(onerror=清只读)` 执行（策略层只把 `DeleteDirectoryAsync` 放开为「工作区内放行」作契约兜底）；
-  插件自己的「中止并清理」**不删本地目录**——只做 `host.UnregisterSkill` / `UnregisterMcpServer` + `DeleteWorkspaceAsync`（逻辑删），
+  插件自己的「中止并清理」**不删本地目录与用户文件**——只做 `host.UnregisterSkill` / `UnregisterMcpServer` + `DeleteWorkspaceAsync`（清理数据库记录与 `.luban-agent` 配置目录），
   故 `LubanAgentCore.Utils.DirectoryCleaner` 在本插件内已**无调用点**（只剩 `LubanAgent.Tests/DirectoryCleanerUnitTest` 引用）；框架那个要改需重新发包。
 - **（待查）** Step 4 真机实测走「连库未带口令」分支（`1045 Access denied … (using password: NO)`）。
   口令按方案 A 内联进提示词，链路需复核「界面口令是否真的传进本轮提示词」，以及 `1045` 分支的文案是否明确引导用户回填口令后重跑

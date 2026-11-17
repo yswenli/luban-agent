@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Runtime.CompilerServices;
-
 namespace LubanAgentCore.Client;
 
 /// <summary>

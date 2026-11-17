@@ -31,12 +31,32 @@ public sealed record SettingsKeyRequest
 public sealed record SettingsKeyResult(string Key);
 
 /// <summary>技能文件内容。</summary>
-/// <param name="Name">技能名（目录名）。</param>
+/// <param name="Id">目录名（条目的稳定键）。</param>
+/// <param name="Name">技能显示名（frontmatter 的 name）。</param>
 /// <param name="Description">描述。</param>
 /// <param name="Category">分类。</param>
 /// <param name="Triggers">触发词。</param>
 /// <param name="Body">正文 Markdown。</param>
-public sealed record SkillFileDto(string Name, string Description, string Category, string Triggers, string Body);
+public sealed record SkillFileDto(string Id, string Name, string Description, string Category, string Triggers, string Body);
+
+/// <summary>技能列表项（不读正文，供左侧分组列表用）。</summary>
+/// <param name="Id">目录名。</param>
+/// <param name="Name">显示名。</param>
+/// <param name="Category">分类。</param>
+public sealed record SkillFileSummaryDto(string Id, string Name, string Category);
+
+/// <summary>导入技能 ZIP 包。</summary>
+public sealed record SkillImportRequest
+{
+    /// <summary>作用域（<c>global</c> 或工作区标识）。</summary>
+    public string Scope { get; init; } = "global";
+
+    /// <summary>原始文件名（仅用于提示，不参与落盘路径）。</summary>
+    public string FileName { get; init; } = string.Empty;
+
+    /// <summary>ZIP 内容的 Base64。</summary>
+    public string ContentBase64 { get; init; } = string.Empty;
+}
 
 /// <summary>保存技能。</summary>
 public sealed record SkillSaveRequest
@@ -44,7 +64,7 @@ public sealed record SkillSaveRequest
     /// <summary>作用域（<c>global</c> 或工作区标识）。</summary>
     public string Scope { get; init; } = "global";
 
-    /// <summary>原条目键；新建时为 null（改名时用于移动目录）。</summary>
+    /// <summary>原条目键（目录名）；新建时为 null。保存时目录不变，只改 frontmatter。</summary>
     public string? OriginalId { get; init; }
 
     /// <summary>技能名。</summary>

@@ -22,8 +22,6 @@
 *****************************************************************************/
 
 #if !PUBLISH_AOT
-using System.Reflection;
-using System.Threading;
 
 namespace LubanAgentCli.Infrastructure;
 

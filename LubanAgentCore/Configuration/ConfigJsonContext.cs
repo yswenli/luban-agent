@@ -32,6 +32,7 @@ namespace LubanAgentCore.Configuration;
 [JsonSerializable(typeof(CustomRuleConfig))]
 [JsonSerializable(typeof(McpServerConfig))]
 [JsonSerializable(typeof(ConnectorWorkspaceEntry))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal partial class ConfigJsonContext : JsonSerializerContext
 {
 }

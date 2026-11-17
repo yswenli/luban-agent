@@ -43,6 +43,16 @@ public sealed record AgentClientOptions
     /// </remarks>
     public string? PluginsDirectory { get; init; }
 
+    /// <summary>
+    /// Web 端专用插件根目录；null 时不下发，由宿主回落
+    /// <c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="PluginsDirectory"/> 并存：前者是客户端（桌面端）插件目录，
+    /// 本参数给 Web 端自己安装的插件用，两边互不覆盖。目录不存在时不下发。
+    /// </remarks>
+    public string? WebPluginsDirectory { get; init; }
+
     /// <summary>等待服务就绪的超时时间。</summary>
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(60);
 

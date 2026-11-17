@@ -53,6 +53,12 @@ public sealed class AgentController : Controller
     [HttpPost]
     public Task<ActionResult> Cancel(string payload) => WebAgentService.CancelAsync(payload);
 
+    /// <summary>把输入框内容改写成更清晰的需求表述（不装配工具、不读会话历史）。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentOptimizeRequest"/> JSON。</param>
+    /// <returns>改写结果。</returns>
+    [HttpPost]
+    public Task<ActionResult> Optimize(string payload) => WebAgentService.OptimizeAsync(payload);
+
     /// <summary>丢弃该会话服务端缓存的 Agent（配置变更后按最新配置重建）。</summary>
     /// <param name="payload">包装后的 <see cref="AgentResetRequest"/> JSON；<c>payload</c> 可为空。</param>
     /// <returns>固定成功。</returns>

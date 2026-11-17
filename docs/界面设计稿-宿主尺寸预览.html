@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>云效 DevOps 工作台 Web 插件 · 宿主尺寸界面预览</title>
+<style>
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --surface-2:#f7f8fa; --surface-3:#eef0f4;
+  --border:#e5e7eb; --border-strong:#d5d9e0; --text:#17191d; --text-dim:#5f6670; --text-faint:#9aa1ab;
+  --accent:#3d5afe; --accent-hover:#2f4bea; --accent-soft:#eef1ff;
+  --danger:#d92d20; --danger-soft:#fef3f2; --warn:#b54708; --warn-soft:#fffaeb;
+  --ok:#067647; --ok-soft:#ecfdf3;
+  --radius-sm:8px; --radius:12px; --radius-lg:18px;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+  --shadow:0 1px 3px rgba(16,24,40,.06),0 10px 30px rgba(16,24,40,.07);
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Cascadia Code',monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--surface-3);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none;padding:0}
+button:disabled{cursor:not-allowed;opacity:.5}
+.stage{padding:22px 26px 40px}
+.stage-head{max-width:1120px;margin:0 auto 12px}
+.stage-head h1{margin:0 0 4px;font-size:18px;font-weight:650;letter-spacing:.2px}
+.stage-head p{margin:0;color:var(--text-dim);font-size:13px}
+.stage-head .meta{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.stage-head .meta span{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--text-dim)}
+.demo{max-width:1120px;margin:0 auto 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.demo .lab{font-size:12px;color:var(--text-faint)}
+.demo button{height:30px;padding:0 12px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);font-size:12px;color:var(--text-dim)}
+.demo button:hover{background:var(--surface-2)}
+.picker{max-width:1120px;margin:0 auto 12px;display:flex;gap:6px;flex-wrap:wrap}
+.picker button{height:30px;padding:0 11px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);font-size:12px;color:var(--text-dim)}
+.picker button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.canvas-wrap{max-width:1120px;margin:0 auto;display:flex;justify-content:center}
+.frame{width:826px;height:694px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.screen{display:none;height:100%;flex-direction:column;min-height:0}
+.screen.active{display:flex}
+.nav{flex:0 0 44px;height:44px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--surface)}
+.nav .brand{font-size:13px;font-weight:650;white-space:nowrap;color:var(--text);padding-right:10px;border-right:1px solid var(--border)}
+.nav .crumb{display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-size:12px;color:var(--text-faint)}
+.nav .crumb .sep{color:var(--border-strong)}
+.nav .crumb b{color:var(--text);font-weight:650}
+.nav .conn{font-size:11px;color:var(--ok);background:var(--ok-soft);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.content{flex:1;min-height:0;overflow:auto;padding:10px 12px}
+.foot{flex:0 0 46px;height:46px;border-top:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 12px}
+.foot .acts{display:flex;gap:8px;flex:0 0 auto}
+.btn{height:34px;padding:0 14px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--surface);font-size:13px;color:var(--text-dim);white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--accent-hover)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent)}
+.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.card{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:8px 10px;margin-bottom:6px}
+.card:last-child{margin-bottom:0}
+.card h3{margin:0 0 8px;font-size:13px;font-weight:650}
+.card .sub{font-size:12px;color:var(--text-dim);margin:0 0 8px}
+.card.soft{background:var(--surface-2)}
+.notice{border-radius:var(--radius-sm);padding:6px 9px;font-size:12px;line-height:1.45;margin-bottom:6px;border:1px solid transparent}
+.notice.info{background:var(--accent-soft);color:#27348b;border-color:#dfe4ff}
+.notice.warn{background:var(--warn-soft);color:var(--warn);border-color:#fedf89}
+.notice.danger{background:var(--danger-soft);color:var(--danger);border-color:#fecdca}
+.notice.ok{background:var(--ok-soft);color:var(--ok);border-color:#abefc6}
+.notice b{font-weight:650}
+.muted{color:var(--text-dim)}
+.faint{color:var(--text-faint)}
+.tiny{font-size:12px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row.between{justify-content:space-between}
+.row.end{justify-content:flex-end}
+.grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid2.equal{grid-template-columns:1fr 1fr}
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
+.field label{font-size:12px;color:var(--text-dim);font-weight:600}
+.input{height:34px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);padding:0 10px;font-size:13px;width:100%;outline:none}
+.input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.input:disabled{background:var(--surface-2);color:var(--text-faint)}
+.help{font-size:11px;color:var(--text-faint);line-height:1.4}
+.chip{display:inline-flex;align-items:center;white-space:nowrap;flex:0 0 auto;border-radius:999px;padding:1px 8px;font-size:11px;line-height:1.6;border:1px solid var(--border);background:var(--surface-2);color:var(--text-dim)}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:#abefc6}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:#fedf89}
+.chip.accent{background:var(--accent-soft);color:var(--accent);border-color:#dfe4ff}
+.chip.danger{background:var(--danger-soft);color:var(--danger);border-color:#fecdca}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;background:var(--surface)}
+.item.on{border-color:var(--accent);background:var(--accent-soft)}
+.item .t{font-size:13px;font-weight:600;margin:0}
+.item .d{font-size:11px;color:var(--text-dim);margin:2px 0 0}
+.item.disabled{opacity:.55;background:var(--surface-2)}
+.bars{display:flex;flex-direction:column;gap:0}
+.step{display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border)}
+.step:last-child{border-bottom:none}
+.step .dot{width:16px;height:16px;border-radius:50%;flex:0 0 16px;margin-top:2px;background:var(--surface-3);border:1px solid var(--border-strong);font-size:10px;text-align:center;line-height:14px;color:var(--text-dim)}
+.step .dot.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.step .dot.now{background:var(--accent);border-color:var(--accent);color:#fff}
+.step .dot.fail{background:var(--danger);border-color:var(--danger);color:#fff}
+.step .txt{font-size:12px}
+.step .txt small{display:block;color:var(--text-faint);font-size:11px}
+.tabs{display:flex;gap:6px;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.tabs button{height:30px;padding:0 12px;border-radius:var(--radius-sm);font-size:12px;background:var(--surface-2);color:var(--text-dim)}
+.tabs button.on{background:var(--accent-soft);color:var(--accent);font-weight:650}
+.content.board{display:flex;flex-direction:column}
+.content.board .kanban{flex:0 0 auto}
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;min-height:0}
+.kcol{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;display:flex;flex-direction:column;gap:6px;min-height:330px}
+.kcol .kh{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:650}
+.kcol .kh .n{font-size:11px;color:var(--text-faint);font-weight:500}
+.task{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:8px;box-shadow:var(--shadow-sm)}
+.task .tt{font-size:12px;font-weight:600;line-height:1.45;margin:0 0 4px}
+.task .tm{font-size:11px;color:var(--text-dim);margin:0 0 4px}
+.task .tf{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;margin-top:6px;overflow:hidden}
+.task .tf .btn{flex:0 0 auto}
+.code{font-family:var(--mono);font-size:11px;line-height:1.6;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;white-space:pre-wrap;word-break:break-all;color:var(--text-dim);margin:0}
+.code .add{color:var(--ok)}
+.code .del{color:var(--danger)}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:4px 8px;font-size:12px}
+.kv .k{color:var(--text-faint)}
+.tokens{display:grid;grid-template-columns:repeat(2,1fr);gap:2px 14px;font-size:11px}
+.tokens div{display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding:2px 0}
+.tokens code{font-family:var(--mono);color:var(--text-dim)}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid var(--border-strong);vertical-align:-1px;margin-right:5px}
+.treeline{border-left:2px solid var(--accent-soft);padding-left:10px;margin:6px 0 6px 4px}
+.treeline .lv2{margin-left:14px;border-left:2px solid var(--border);padding-left:10px}
+.treeline .lv3{margin-left:28px;border-left:2px solid var(--border);padding-left:10px}
+.treeline .node{font-size:12px;padding:3px 0}
+.scroll-y{overflow:auto;min-height:0}
+.foot .acts .btn{padding:0 12px}
+/* 流程总览 */
+.flowchain{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.fnode{flex:1 1 0;min-width:118px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:7px 9px;box-shadow:var(--shadow-sm)}
+.fnode .fn-t{font-size:12px;font-weight:650;line-height:1.35;margin:0}
+.fnode .fn-d{font-size:11px;color:var(--text-dim);line-height:1.4;margin:3px 0 0}
+.fnode.home{border-color:var(--accent);background:var(--accent-soft)}
+.fnode.gate{border-color:#fedf89;background:var(--warn-soft)}
+.fnode .lv{display:inline-block;font-size:10px;color:var(--text-faint);border:1px solid var(--border);border-radius:999px;padding:0 6px;margin-bottom:4px}
+.farrow{display:flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:52px;flex-direction:column;color:var(--text-faint);font-size:10px;line-height:1.25;text-align:center}
+.farrow i{display:block;width:100%;height:1px;background:var(--border-strong);margin:3px 0;position:relative}
+.farrow i:after{content:'';position:absolute;right:0;top:-2px;border-left:5px solid var(--border-strong);border-top:2.5px solid transparent;border-bottom:2.5px solid transparent}
+.branchrow{display:flex;gap:8px;align-items:flex-start;margin-top:7px;padding-left:10px;border-left:2px dashed var(--border-strong)}
+.branchrow .cond{flex:0 0 160px;font-size:11px;color:var(--warn);background:var(--warn-soft);border:1px solid #fedf89;border-radius:var(--radius-sm);padding:4px 7px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.branchrow .bl{flex:1;display:flex;flex-direction:column;gap:5px}
+.branchrow .bl .bl-item{font-size:11px;color:var(--text-dim);line-height:1.45}
+.branchrow .bl .bl-item b{color:var(--text);font-weight:650}
+.lvtable{width:100%;border-collapse:collapse;font-size:11px}
+.lvtable th,.lvtable td{text-align:left;padding:4px 6px;border-bottom:1px dashed var(--border);vertical-align:top}
+.lvtable th{color:var(--text-faint);font-weight:600;width:64px}
+.lvtable td b{font-weight:650}
+/* 项目列表 */
+.proj{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:9px 11px;margin-bottom:7px;cursor:pointer;display:flex;align-items:center;gap:12px}
+.proj:hover{border-color:var(--accent);background:var(--accent-soft)}
+.proj.on{border-color:var(--accent);background:var(--accent-soft)}
+.proj.fresh{border-left:3px solid var(--warn)}
+.proj .pi{flex:1;min-width:0}
+.proj .pt{font-size:13px;font-weight:650;margin:0}
+.proj .pd{font-size:11px;color:var(--text-dim);margin:2px 0 0}
+.proj .pa{flex:0 0 auto;display:flex;align-items:center;gap:8px}
+.drawer{border:1px dashed var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);padding:8px;margin-bottom:8px}
+.drawer .field{margin-bottom:3px}
+.drawer.hide{display:none}
+.hide{display:none}
+.hsteps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.hstep{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:7px 9px}
+.hstep .hd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;line-height:1.35}
+.hstep .hs{font-size:11px;color:var(--text-faint);line-height:1.35;margin-top:3px}
+.hstep.now{border-color:var(--accent);background:var(--accent-soft)}
+.hstep.done{border-color:#abefc6;background:var(--ok-soft)}
+.hstep.fail{border-color:#fecdca;background:var(--danger-soft)}
+.hstep .mini{width:16px;height:16px;border-radius:50%;flex:0 0 16px;background:var(--surface-3);border:1px solid var(--border-strong);font-size:10px;text-align:center;line-height:14px;color:var(--text-dim)}
+.hstep.done .mini{background:var(--ok);border-color:var(--ok);color:#fff}
+.hstep.now .mini{background:var(--accent);border-color:var(--accent);color:#fff}
+.hstep.fail .mini{background:var(--danger);border-color:var(--danger);color:#fff}
+.metric{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+.metric .m{display:flex;flex-direction:column}
+.metric .m b{font-size:16px;line-height:1.3}
+.metric .m span{font-size:11px;color:var(--text-faint)}
+.progress{height:7px;border-radius:999px;background:var(--surface-3);overflow:hidden;margin-top:5px}
+.progress i{display:block;height:100%;background:var(--accent)}
+/* 首页左右分栏 */
+.content.split{display:flex;gap:10px;overflow:hidden}
+.content.fill{display:flex;flex-direction:column;overflow:hidden}
+.content.fill>*{flex:1;min-height:0}
+.pane{display:flex;flex-direction:column;min-height:0;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.pane.left{flex:0 0 246px}
+.pane.right{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;padding:9px}
+.pane-h{flex:0 0 auto;padding:8px 9px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.pane-h .ph-t{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:650;gap:6px}
+.pane-f{flex:0 0 auto;padding:5px 9px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text-faint);line-height:1.45}
+.projlist{flex:1;min-height:0;overflow-y:auto;padding:6px}
+.projlist .proj{display:block;margin-bottom:5px;padding:6px 8px}
+.projlist .proj:last-child{margin-bottom:0}
+.projlist .proj .pt{font-size:12px;line-height:1.4}
+.projlist .proj .pd{font-size:10.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.projlist .pmeta{display:flex;gap:4px;margin-top:4px;flex-wrap:nowrap;overflow:hidden}
+.projlist .pmeta .chip{font-size:10px;padding:0 6px}
+.projlist .proj.on .pt{color:var(--accent)}
+.panel{display:flex;flex-direction:column;gap:8px}
+.panel .card{margin-bottom:0}
+.panel.hide{display:none}
+.panel-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.panel-h .pt2{font-size:14px;font-weight:650;margin:0;line-height:1.35}
+.panel-h .pm2{font-size:11px;color:var(--text-dim);margin:2px 0 0}
+.statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.statrow .s{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:5px 8px}
+.statrow .s b{display:block;font-size:15px;line-height:1.35}
+.statrow .s span{font-size:10.5px;color:var(--text-faint);white-space:nowrap}
+.entry{display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:8px 10px;cursor:pointer}
+.entry:hover{border-color:var(--accent);background:var(--accent-soft)}
+.entry .ei{flex:1;min-width:0}
+.entry .et{font-size:13px;font-weight:650;margin:0;line-height:1.4}
+.entry .ed{font-size:11px;color:var(--text-dim);margin:2px 0 0;line-height:1.45}
+.entry .en{flex:0 0 auto;text-align:right;font-size:10.5px;color:var(--text-faint);line-height:1.45;white-space:nowrap}
+.entry .ea{flex:0 0 auto;color:var(--accent);font-size:16px;line-height:1}
+.dist{display:flex;flex-direction:column;gap:5px}
+.dist .drow{display:flex;align-items:center;gap:7px;font-size:11px}
+.dist .drow .dn{flex:0 0 52px;color:var(--text-dim)}
+.dist .drow .db{flex:1;height:6px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.dist .drow .db i{display:block;height:100%;background:var(--accent)}
+.dist .drow .dv{flex:0 0 20px;text-align:right;color:var(--text-faint)}
+.recent .rrow{display:flex;justify-content:space-between;gap:6px;font-size:11px;padding:2px 0;border-bottom:1px dashed var(--border)}
+.recent .rrow:last-child{border-bottom:none}
+/* 迭代测试 · 用例与计划 */
+.tcase{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:5px 8px;margin-bottom:5px}
+.tcase:last-child{margin-bottom:0}
+.tcase .tc-h{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.tcase .tc-t{font-size:12px;font-weight:600;margin:0;line-height:1.4}
+.tcase .tc-m{font-size:10.5px;color:var(--text-faint);margin:1px 0 0}
+.input.sm2{height:30px;font-size:12px;padding:0 8px}
+.field.tight{margin-bottom:5px;gap:2px}
+/* 任务评论 */
+.cmt{border-left:2px solid var(--border);padding:1px 0 1px 8px;margin-bottom:5px}
+.cmt:last-of-type{margin-bottom:0}
+.cmt .cm-h{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-faint)}
+.cmt .cm-h b{font-size:12px;color:var(--text);font-weight:650}
+.cmt p{margin:2px 0 0;font-size:12px;color:var(--text-dim);line-height:1.5}
+/* 项目初始化：模板下拉多选与三端流水线 */
+.msel{position:relative}
+.msel-h{width:100%;height:30px;display:flex;align-items:center;gap:6px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);padding:0 8px;font-size:12px;text-align:left;cursor:pointer}
+.msel-h:after{content:'▾';flex:0 0 auto;color:var(--text-faint);font-size:10px}
+.msel-h .v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msel-h .n{flex:0 0 auto;color:var(--text-faint);font-size:11px;padding-left:6px}
+.msel-pop{border:1px solid var(--border-strong);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--surface);padding:3px 4px 4px;margin-top:-1px}
+.msel-pop.hide{display:none}
+.mopt{display:flex;align-items:center;gap:6px;padding:1px 4px;border-radius:5px;font-size:11px;cursor:pointer}
+.mopt:hover{background:var(--surface-2)}
+.mck{width:13px;height:13px;flex:0 0 13px;border:1px solid var(--border-strong);border-radius:3px;background:var(--surface);position:relative}
+.mopt.on .mck{background:var(--accent);border-color:var(--accent)}
+.mopt.on .mck:after{content:'';position:absolute;left:3.5px;top:0.5px;width:4px;height:7px;border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(40deg)}
+.mopt .mname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mopt .mhint{flex:0 0 auto;font-size:10px;color:var(--text-faint)}
+.linerow{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dashed var(--border)}
+.linerow:last-of-type{border-bottom:none}
+.linerow .role{flex:0 0 52px;font-size:11.5px;font-weight:650}
+.linerow .sel{flex:1;min-width:0}
+.linerow .sel .input{height:28px;font-size:11.5px;padding:0 8px}
+.linerow .dir{flex:0 0 82px;font-size:10.5px;font-family:var(--mono);color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lhead{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-faint);padding:1px 0}
+.lhead span{flex:1;min-width:0}
+.lhead span:first-child{flex:0 0 79px}
+.lhead span.c2fix{flex:0 0 82px}
+.chk{width:15px;height:15px;flex:0 0 15px;border:1px solid var(--border-strong);border-radius:4px;background:var(--surface);display:inline-block;position:relative}
+.chk.on{background:var(--accent);border-color:var(--accent)}
+.chk.on:after{content:'';position:absolute;left:4px;top:1px;width:5px;height:8px;border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(40deg)}
+.pbox{border:1px solid #dfe4ff;background:var(--accent-soft);border-radius:var(--radius-sm);padding:6px 8px;margin-top:6px}
+.pbox .ph{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:650;color:#27348b;margin-bottom:4px}
+.frow{display:flex;align-items:center;gap:5px}
+.frow label{flex:0 0 58px;font-size:11px;color:#3b478f;text-align:right}
+.frow .input{height:26px;font-size:11.5px;padding:0 7px;background:var(--surface)}
+.derive{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:4px 7px}
+.derive .dr{display:flex;align-items:center;gap:5px;font-size:10.5px;line-height:1.6;white-space:nowrap;overflow:hidden}
+.derive .dr .k{flex:0 0 30px;color:var(--text-faint)}
+.derive .dr .from{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+.derive .dr i{flex:0 0 auto;font-style:normal;color:var(--accent);font-size:10px}
+.derive .dr b{flex:0 0 auto;font-family:var(--mono);font-size:10px;font-weight:650;color:#27348b}
+.linerow .pname{flex:1;min-width:0;padding-right:3px;font-family:var(--mono);font-size:10px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stepper{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);flex-wrap:nowrap;overflow:hidden}
+.stepper .sp{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.stepper .sp i{width:14px;height:14px;border-radius:50%;background:var(--surface-3);border:1px solid var(--border-strong);font-size:9px;line-height:12px;text-align:center;font-style:normal;color:var(--text-dim)}
+.stepper .sp.done i{background:var(--ok);border-color:var(--ok);color:#fff}
+.stepper .sp.now i{background:var(--accent);border-color:var(--accent);color:#fff}
+.stepper .ar{color:var(--text-faint);flex:0 0 auto}
+/* PRD 工作台：来源切换与拆分明细 */
+.srcrow{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.src{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);padding:4px 8px;cursor:pointer;min-width:0}
+.src b{display:block;font-size:12px;font-weight:650;line-height:1.45}
+.src span{display:block;font-size:10.5px;color:var(--text-faint);line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src.on{border-color:var(--accent);background:var(--accent-soft)}
+.src.on b{color:var(--accent)}
+.src.on span{color:#4a56a8}
+.src.off{opacity:.55;cursor:not-allowed;background:var(--surface)}
+.mtab{width:100%;border-collapse:collapse;font-size:11px}
+.mtab th{text-align:left;color:var(--text-faint);font-weight:600;padding:2px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
+.mtab td{padding:1px 6px;border-bottom:1px dashed var(--border);color:var(--text-dim)}
+.mtab td b{color:var(--text);font-weight:600}
+.mtab tr:last-child td{border-bottom:none}
+.mtab .num{width:44px;white-space:nowrap}
+.dense .treeline{margin:4px 0 4px 4px}
+.dense .treeline .node{padding:1px 0;line-height:1.45}
+/* 长文本与大数据量：统一截断、区内滚动、列头固定；栅格子项 min-width:0 防止 nowrap 撑破列宽 */
+.grid2>*{min-width:0}
+.grid3>*{min-width:0}
+.task .tt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.task .tm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tcase .tc-t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cmt p{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.proj .pt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entry .et{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entry .ed{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item .t,.item .d{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel-h .pt2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.treeline .node{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtab td{word-break:break-word}
+.mtab .path{display:block;font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcol{max-height:330px;overflow-y:auto;overscroll-behavior:contain}
+.kcol .kh{position:sticky;top:-8px;margin:-8px -8px 4px;padding:8px 8px 4px;background:var(--surface-2);z-index:1}
+/* 屏 0 为说明屏，信息密度更高，局部收紧间距 */
+[data-screen="0"] .card{margin-bottom:6px}
+[data-screen="0"] .branchrow{margin-top:5px}
+[data-screen="0"] .lvtable th,[data-screen="0"] .lvtable td{padding:3px 6px}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="stage-head">
+    <h1>云效 DevOps 工作台 Web 插件 · 宿主尺寸界面预览</h1>
+    <p>按宿主真实运行环境绘制：插件是嵌在宿主 1120px 居中卡片里的同源 iframe，实际可用区域约 826 × 694 像素（含 1px 边框，文档内视口 824 × 692；按宿主真实样式实测，见「设计令牌与硬约束」屏）。下方十屏按真实用户流转顺序组织，屏与屏之间可以直接点击走通。</p>
+    <div class="meta">
+      <span>基准尺寸 826 × 694（实测）</span>
+      <span>首页左列表右统计</span>
+      <span>首次打开先做云效连接</span>
+      <span>四个入口：详情 / 任务 / 测试 / PRD</span>
+      <span>正文 14px / 按钮 34px</span>
+      <span>完整中文文案 · 无引用型简写</span>
+    </div>
+  </div>
+  <div class="demo">
+    <span class="lab">演示入口：</span>
+    <button type="button" data-go="1">模拟首次打开（未配置连接）</button>
+    <button type="button" data-go="2">直接进入插件首页</button>
+    <button type="button" data-go="0">查看信息架构总览</button>
+    <span class="lab">下方十枚屏签仅用于浏览设计稿，不是产品内导航。</span>
+  </div>
+  <div class="picker" id="picker"></div>
+  <div class="canvas-wrap">
+    <div class="frame" id="frame">
+
+      <!-- 屏 0：信息架构与页面流转总览 -->
+      <section class="screen" data-screen="0">
+        <div class="nav"></div>
+        <div class="content" style="padding-bottom:2px">
+          <div class="card" style="border-color:#dfe4ff;background:var(--accent-soft)">
+            <h3>一、入口与首页：连接配置是门禁，项目列表才是首页</h3>
+            <div class="flowchain">
+              <div class="fnode"><span class="lv">入口</span><p class="fn-t">插件首次打开</p><p class="fn-d">宿主点开插件时触发</p></div>
+              <div class="farrow"><span>判断</span><i></i><span>是否已保存连接</span></div>
+              <div class="fnode gate"><span class="lv">否</span><p class="fn-t">云效连接</p><p class="fn-d">全屏阻断，配置完成后才放行</p></div>
+              <div class="farrow"><span>保存成功</span><i></i><span>自动进入</span></div>
+              <div class="fnode home"><span class="lv">首页</span><p class="fn-t">项目列表</p><p class="fn-d">左栏项目列表，右栏默认项目统计</p></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>二、首页是左右分栏：左栏选项目，右栏切换内容</h3>
+            <div class="branchrow">
+              <div class="cond">左栏 · 项目列表</div>
+              <div class="bl">
+                <div class="bl-item">顶部是<b>搜索框</b>，按最近访问排序；项目多时<b>只在左栏内部滚动</b>；每项标注初始化状态，<b>插件内不提供新建项目</b>。</div>
+              </div>
+            </div>
+            <div class="branchrow">
+              <div class="cond">右栏 · 未选项目</div>
+              <div class="bl"><div class="bl-item">默认展示<b>项目统计</b>：项目总数、初始化进度、迭代任务分布与最近访问；不选项目时右栏始终停在这一态。</div></div>
+            </div>
+            <div class="branchrow">
+              <div class="cond">右栏 · 选中项目</div>
+              <div class="bl">
+                <div class="bl-item">右栏给出<b>四个入口</b>：项目详情 / 迭代任务看板 / 迭代测试 / PRD 工作台（默认同步云效，也可上传本地文档）。</div>
+                <div class="bl-item">未初始化项目点入口，先复制母版库成新库（换代号即换库名、子目录名与流水线名），再复制三条只绑 dev 的流水线。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>三、迭代任务看板继续下钻：任务、项目详情、PRD</h3>
+            <div class="branchrow">
+              <div class="cond">从看板出发</div>
+              <div class="bl">
+                <div class="bl-item"><b>点任务卡</b>进「任务详情」看描述与评论，可把上下文带入工作区；<b>点「项目详情」</b>进迭代需求页，切换迭代后看板刷新。</div>
+                <div class="bl-item"><b>点「PRD 工作台」</b>：默认同步云效 PRD，也可上传本地文档，拆分为<b>迭代、需求、任务、测试用例与测试计划</b>，写入当前项目。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid2 equal">
+            <div class="card soft" style="margin:0"><h3>页面层级</h3>
+              <table class="lvtable">
+                <tr><th>入口门禁</th><td><b>云效连接</b>：未配置时不可进入其他业务屏</td></tr>
+                <tr><th>一级</th><td><b>项目列表</b>：插件首页，左栏列表 + 右栏统计 / 项目详情</td></tr>
+                <tr><th>二级</th><td><b>项目初始化</b>（条件）、<b>项目详情</b>、<b>迭代任务看板</b>、<b>迭代测试</b></td></tr>
+                <tr><th>三级</th><td><b>任务详情与工作区</b>（看板下钻）</td></tr>
+                <tr><th>辅助作业</th><td><b>PRD 工作台</b>：首页右栏与看板两处入口都可达，返回按来处</td></tr>
+              </table>
+            </div>
+            <div class="card soft" style="margin:0"><h3>导航与返回原则</h3><p class="tiny muted" style="margin:0">宿主已有顶栏与左侧栏，插件内不再自绘侧栏；每屏用面包屑标层级，底部动作栏给返回与下一步。看板与项目详情回首页，任务详情回看板，首页可回连接设置。禁用入口写明「云效官方支持，本插件未接线」。</p></div>
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="1">演示首次打开</button><button class="btn primary" data-go="2">进入插件首页</button></div></div>
+      </section>
+
+      <!-- 屏 1：云效连接（首次打开门禁） -->
+      <section class="screen" data-screen="1">
+        <div class="nav"></div>
+        <div class="content">
+          <div class="notice warn"><b>首次打开插件，需要先完成云效连接配置。</b>未保存有效凭据前，项目列表、迭代任务看板与其他功能页都不可进入；配置成功后自动进入项目列表。</div>
+          <div class="card">
+            <h3>连接云效</h3><div class="sub">凭据只写入宿主凭据区，页面不回显令牌明文</div>
+            <div class="field"><label>组织访问地址</label><input class="input" value="https://devops.aliyun.com/orgs/tjcEs"><span class="help">仅用于解析 organizationId，不覆盖 OpenAPI Endpoint；私有化 Endpoint 是否支持仍待确认，一期不提供自定义 Endpoint。</span></div>
+            <div class="field"><label>组织编号 organizationId</label><input class="input" value="tjcEs"></div>
+            <div class="field"><label>个人访问令牌</label><input class="input" type="password" value="••••••••••••••••"><span class="help">写入宿主凭据区，凭据键为 connector:yunxiao:token；落盘为明文（与 Provider API Key 同基线），页面 DOM 与日志均不回显令牌明文。</span></div>
+            <div class="row between" style="margin-top:4px"><button class="btn">测试连接</button><span class="chip ok">连接成功 · 组织 tjcEs · 14 个项目可见</span></div>
+          </div>
+          <div class="card soft"><h3>初始化状态</h3><div class="hsteps">
+            <div class="hstep done"><div class="hd"><span class="mini">✓</span>填写组织与凭据</div><div class="hs">已完成</div></div>
+            <div class="hstep done"><div class="hd"><span class="mini">✓</span>校验令牌与权限</div><div class="hs">已完成</div></div>
+            <div class="hstep done"><div class="hd"><span class="mini">✓</span>写入宿主凭据区</div><div class="hs">已完成</div></div>
+            <div class="hstep now"><div class="hd"><span class="mini">4</span>进入项目列表</div><div class="hs">下一步，插件首页</div></div>
+          </div></div>
+          <div class="notice info">云效官方确认 openapi-rdc.aliyuncs.com 为中心版统一接入点，中心版路径必须带 organizationId，Endpoint 固定。保存凭据还需宿主补齐非特权写入端点与可写凭据存储，插件页面调不到 system 特权动作。</div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="0">查看流程</button><button class="btn primary" data-go="2">保存并进入项目列表</button></div></div>
+      </section>
+
+      <!-- 屏 2：项目列表（插件首页，左右分栏） -->
+      <section class="screen active" data-screen="2">
+        <div class="nav"></div>
+        <div class="content split">
+          <div class="pane left">
+            <div class="pane-h">
+              <div class="ph-t"><span>DevOps 项目</span><span class="chip">14 个 · 已初始化 12</span></div>
+              <input class="input sm2" id="proj-search" placeholder="搜索项目名称或编号">
+            </div>
+            <div class="projlist" id="projlist">
+            <div class="proj on" data-pick="同仁医院互联网服务平台|12 个迭代 · 14 个任务 · 最近访问 11-16|已初始化|1|12|4|14|6">
+              <p class="pt">同仁医院互联网服务平台</p>
+              <p class="pd">迭代 24 进行中 · 最近访问 11-16</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">12 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="输液记录数据中心|6 个迭代 · 8 个任务 · 最近访问 11-15|已初始化|1|6|3|8|4">
+              <p class="pt">输液记录数据中心</p>
+              <p class="pd">迭代 12 进行中 · 最近访问 11-15</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">6 迭代</span></div>
+            </div>
+            <div class="proj fresh" data-pick="门诊排班改造|3 个迭代 · 尚未绑定代码库 · 最近访问 11-14|待初始化|0|3|0|0|0">
+              <p class="pt">门诊排班改造</p>
+              <p class="pd">未绑定代码库与流水线 · 最近访问 11-14</p>
+              <div class="pmeta"><span class="chip warn">待初始化</span><span class="chip">3 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="检验报告互认平台|9 个迭代 · 14 个任务 · 最近访问 11-13|已初始化|1|9|5|14|7">
+              <p class="pt">检验报告互认平台</p>
+              <p class="pd">迭代 31 进行中 · 最近访问 11-13</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">9 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="电子病历质控|5 个迭代 · 7 个任务 · 最近访问 11-12|已初始化|1|5|2|7|3">
+              <p class="pt">电子病历质控</p>
+              <p class="pd">迭代 18 进行中 · 最近访问 11-12</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">5 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="护理排班移动端与排班冲突检测改造二期|4 个迭代 · 6 个任务 · 最近访问 11-11|已初始化|1|4|2|6|2">
+              <p class="pt" title="护理排班移动端与排班冲突检测改造二期">护理排班移动端与排班冲突检测改造二期</p>
+              <p class="pd">迭代 9 已结束 · 最近访问 11-11</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">4 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="医技预约中心|7 个迭代 · 11 个任务 · 最近访问 11-10|已初始化|1|7|3|11|5">
+              <p class="pt">医技预约中心</p>
+              <p class="pd">迭代 22 进行中 · 最近访问 11-10</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">7 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="医保结算网关|11 个迭代 · 16 个任务 · 最近访问 11-09|已初始化|1|11|6|16|8">
+              <p class="pt">医保结算网关</p>
+              <p class="pd">迭代 40 进行中 · 最近访问 11-09</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">11 迭代</span></div>
+            </div>
+            <div class="proj fresh" data-pick="患者随访服务|2 个迭代 · 尚未绑定流水线 · 最近访问 11-08|待初始化|0|2|0|0|0">
+              <p class="pt">患者随访服务</p>
+              <p class="pd">未绑定代码库与流水线 · 最近访问 11-08</p>
+              <div class="pmeta"><span class="chip warn">待初始化</span><span class="chip">2 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="药房库存看板|3 个迭代 · 5 个任务 · 最近访问 11-07|已初始化|1|3|2|5|2">
+              <p class="pt">药房库存看板</p>
+              <p class="pd">迭代 7 进行中 · 最近访问 11-07</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">3 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="手术麻醉记录|6 个迭代 · 9 个任务 · 最近访问 11-06|已初始化|1|6|3|9|4">
+              <p class="pt">手术麻醉记录</p>
+              <p class="pd">迭代 15 进行中 · 最近访问 11-06</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">6 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="院感监测预警|4 个迭代 · 4 个任务 · 最近访问 11-05|已初始化|1|4|1|4|1">
+              <p class="pt">院感监测预警</p>
+              <p class="pd">迭代 6 进行中 · 最近访问 11-05</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">4 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="体检报告解读|2 个迭代 · 3 个任务 · 最近访问 11-04|已初始化|1|2|1|3|1">
+              <p class="pt">体检报告解读</p>
+              <p class="pd">迭代 4 进行中 · 最近访问 11-04</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">2 迭代</span></div>
+            </div>
+            <div class="proj" data-pick="统一认证门户|8 个迭代 · 10 个任务 · 最近访问 11-03|已初始化|1|8|4|10|5">
+              <p class="pt">统一认证门户</p>
+              <p class="pd">迭代 26 进行中 · 最近访问 11-03</p>
+              <div class="pmeta"><span class="chip ok">已初始化</span><span class="chip">8 迭代</span></div>
+            </div>
+            </div>
+            <div class="pane-f">上下滚动查看全部 14 个项目<br>新建项目请在云效控制台完成</div>
+          </div>
+
+          <div class="pane right" id="rightpane">
+
+            <div class="panel" id="panel-stats">
+              <div class="panel-h">
+                <div><p class="pt2">项目统计</p><p class="pm2">组织 tjcEs · 北京同仁医院 · 全部 14 个项目</p></div>
+                <span class="chip ok">已连接云效</span>
+              </div>
+              <div class="statrow">
+                <div class="s"><b>14</b><span>项目总数</span></div>
+                <div class="s"><b>12</b><span>已初始化</span></div>
+                <div class="s"><b>2</b><span>待初始化</span></div>
+                <div class="s"><b>82</b><span>可见迭代</span></div>
+              </div>
+              <div class="card">
+                <div class="row between" style="margin-bottom:3px"><b style="font-size:12px">初始化进度</b><span class="tiny faint">12 / 14 · 86%</span></div>
+                <div class="progress"><i style="width:86%"></i></div>
+                <p class="tiny faint" style="margin:5px 0 0">未初始化的项目在点开任一入口前会先进入项目初始化。</p>
+              </div>
+              <div class="card">
+                <h3>迭代任务分布 · 全部项目</h3>
+                <div class="dist">
+                  <div class="drow"><span class="dn">未开始</span><span class="db"><i style="width:42%"></i></span><span class="dv">18</span></div>
+                  <div class="drow"><span class="dn">开发中</span><span class="db"><i style="width:35%;background:var(--warn)"></i></span><span class="dv">15</span></div>
+                  <div class="drow"><span class="dn">待测试</span><span class="db"><i style="width:21%;background:#7f56d9"></i></span><span class="dv">9</span></div>
+                  <div class="drow"><span class="dn">已完成</span><span class="db"><i style="width:62%;background:var(--ok)"></i></span><span class="dv">27</span></div>
+                </div>
+                <p class="tiny faint" style="margin:6px 0 0">列名为统计口径示意，看板列仍取自云效工作流状态枚举。</p>
+              </div>
+              <div class="card soft">
+                <h3>最近访问</h3>
+                <div class="recent">
+                  <div class="rrow"><span>同仁医院互联网服务平台</span><span class="faint">11-16 15:20</span></div>
+                  <div class="rrow"><span>检验报告互认平台</span><span class="faint">11-16 11:02</span></div>
+                  <div class="rrow"><span>医保结算网关</span><span class="faint">11-15 17:48</span></div>
+                </div>
+              </div>
+              <div class="notice info" style="margin:0">从左侧选择一个项目，右栏会切换为该项目的详情、迭代任务、迭代测试与 PRD 工作台四个入口。</div>
+            </div>
+
+            <div class="panel hide" id="panel-project">
+              <div class="panel-h">
+                <div><p class="pt2" id="sel-name">同仁医院互联网服务平台</p><p class="pm2" id="sel-meta">12 个迭代 · 14 个任务 · 最近访问 11-16</p></div>
+                <div class="row" style="gap:5px;flex-wrap:nowrap"><span class="chip ok" id="sel-state">已初始化</span><button class="btn sm ghost" data-panel="stats">项目统计</button></div>
+              </div>
+              <div class="statrow">
+                <div class="s"><b id="sel-iter">12</b><span>迭代</span></div>
+                <div class="s"><b id="sel-req">4</b><span>需求</span></div>
+                <div class="s"><b id="sel-task">14</b><span>任务</span></div>
+                <div class="s"><b id="sel-case">6</b><span>测试用例</span></div>
+              </div>
+              <div class="entry" data-entry="5">
+                <div class="ei"><p class="et">项目详情 · 迭代需求</p><p class="ed">项目标识、关联代码库与流水线，切换当前迭代并查看迭代内需求清单。</p></div>
+                <div class="en"><span id="e-iter">12 迭代</span></div>
+                <span class="ea">›</span>
+              </div>
+              <div class="entry" data-entry="4">
+                <div class="ei"><p class="et">迭代任务</p><p class="ed">按云效状态分列的看板，列内按预计完成时间排序，点任务卡看详情与评论。</p></div>
+                <div class="en"><span id="e-task">14 任务</span></div>
+                <span class="ea">›</span>
+              </div>
+              <div class="entry" data-entry="8">
+                <div class="ei"><p class="et">迭代测试</p><p class="ed">按需求与验收标准生成测试用例，设置测试计划的范围、周期与执行人。</p></div>
+                <div class="en"><span id="e-case">6 用例</span></div>
+                <span class="ea">›</span>
+              </div>
+              <div class="entry" data-entry="7">
+                <div class="ei"><p class="et">PRD 工作台</p><p class="ed">默认同步本项目在云效里的 PRD 与需求描述，也可上传产品给的 PRD 文档；在本项目里拆分迭代、需求、任务、测试用例与测试计划。</p></div>
+                <div class="en"><span id="e-prd">2 份 PRD</span><span class="faint" style="display:block">默认云效同步</span></div>
+                <span class="ea">›</span>
+              </div>
+              <div class="card soft">
+                <div class="row between" style="margin-bottom:3px"><h3 style="margin:0">当前迭代 · 迭代 24</h3><span class="chip accent">进行中</span></div>
+                <div class="row" style="gap:12px;margin-bottom:4px"><span class="tiny faint">11/10 - 11/28</span><span class="tiny faint">任务 14</span><span class="tiny faint">已完成 3</span><span class="tiny faint">逾期 1</span></div>
+                <div class="progress"><i style="width:21%"></i></div>
+                <p class="tiny faint" style="margin:5px 0 0">列名与任务数取自云效工作流状态枚举；切换迭代后看板与测试数据同步刷新。</p>
+              </div>
+              <div class="notice warn hide" id="sel-init" style="margin:0">尚未绑定代码库与流水线，点入口会先进入初始化。<button class="btn sm" data-go="3" style="margin-left:6px">进入项目初始化</button></div>
+              <div class="notice info" id="sel-hint" style="margin:0">四个入口都以当前迭代为上下文；PRD 工作台默认同步云效数据，切换迭代后看板与测试数据同步刷新。</div>
+            </div>
+
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="1">云效连接设置</button><button class="btn" data-panel="stats">项目统计</button><button class="btn primary" data-go="4">进入当前项目看板</button></div></div>
+      </section>
+
+      <!-- 屏 3：项目初始化（首次点击项目） -->
+      <section class="screen" data-screen="3">
+        <div class="nav"></div>
+        <div class="content" style="padding-bottom:0">
+          <div class="notice warn" style="margin-bottom:3px"><b>这个项目尚未初始化。</b>复制母版库建出新库，代号一改库名与流水线名一起换，完成后进入所点入口。</div>
+          <div class="tabs" style="margin-bottom:7px;padding-bottom:7px"><button class="on" data-mode="new">复制母版新建</button><button data-mode="sync">同步既有代码库与流水线</button></div>
+
+          <div id="mode-new">
+            <div class="grid2 equal">
+              <div>
+                <div class="card" style="margin-bottom:0">
+                  <div class="row between" style="margin-bottom:5px"><h3 style="margin:0">第一步 · 复制代码库</h3><span class="chip accent" id="tpl-count">母版库 2 个 · 已选 1</span></div>
+                  <div class="field tight" style="margin-bottom:4px">
+                    <label>母版代码库 · 整库复制</label>
+                    <div class="msel">
+                      <button class="msel-h" type="button"><span class="v" id="tpl-sum">TJCES-Mixed</span><span class="n" id="tpl-num">1 / 2</span></button>
+                      <div class="msel-pop" id="msel-pop">
+                        <div class="mopt on"><span class="mck"></span><span class="mname">TJCES-Mixed</span><span class="mhint">企服版 · 3 子项目</span></div>
+                        <div class="mopt"><span class="mck"></span><span class="mname">RGMS-Mixed</span><span class="mhint">科研基金 · 3 子项目</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field tight" style="margin-bottom:0"><label>新项目代号</label><input class="input sm2" id="proj-code" value="RGMS"><span class="help">代号替换母版里所有带 TJCES 的名字：库名、三个子目录、三条流水线。</span></div>
+                  <div class="sub" style="margin:4px 0 2px;font-size:11px;color:var(--text-faint)">命名派生预览 · 代号 <span id="code-tag">RGMS</span> 替换 TJCES</div>
+                  <div class="derive">
+                    <div class="dr"><span class="k">代码库</span><span class="from">TJCES-Mixed</span><i>→</i><b id="d-lib">RGMS-Mixed</b></div>
+                    <div class="dr"><span class="k">子目录</span><span class="from">TJCES-*（3 个）</span><i>→</i><b id="d-dir">RGMS-*</b></div>
+                    <div class="dr"><span class="k">流水线</span><span class="from">…_Deploy_TJCES-*（3 条）</span><i>→</i><b id="d-pipe">…_Deploy_RGMS-*</b></div>
+                  </div>
+                  <div class="row" style="gap:8px;align-items:flex-start;margin-top:6px">
+                    <div class="field tight" style="flex:1;min-width:0;margin:0"><label>宿主工作区目录</label><input class="input sm2" value="D:/WorkBench/Walle/rgms"></div>
+                    <div class="field tight" style="flex:0 0 90px;margin:0"><label>初始化分支</label><input class="input sm2" value="master" disabled></div>
+                  </div>
+                  <p class="help" style="margin:4px 0 0">母版分支 master；子目录改名无接口，克隆后由宿主改名再提交。</p>
+                </div>
+              </div>
+              <div>
+                <div class="card" style="margin-bottom:0">
+                  <div class="row between" style="margin-bottom:2px"><h3 style="margin:0">第二步 · 复制流水线</h3><span class="row" style="gap:4px;flex:0 0 auto"><span class="chip" id="lib-chip">RGMS-Mixed</span><span class="chip ok" id="pipe-count">dev · 3 条</span></span></div>
+                  <p class="help" style="margin:0 0 2px">母版三条一起复制，名字里的代号换成 RGMS；名字可逐条改。</p>
+                  <div class="lhead"><span></span><span class="c2fix">构建目录</span><span>新流水线名称</span></div>
+                  <div class="linerow"><span class="chk on"></span><span class="role">移动端</span><span class="dir" id="dir-mobile">RGMS-Mobile</span><span class="pname" data-tail="Mobile">CME_DEV_Deploy_RGMS-Mobile</span></div>
+                  <div class="linerow"><span class="chk on"></span><span class="role">管理后台</span><span class="dir" id="dir-admin">RGMS-Admin</span><span class="pname" data-tail="Admin">CME_DEV_Deploy_RGMS-Admin</span></div>
+                  <div class="linerow"><span class="chk on"></span><span class="role">后端</span><span class="dir" id="dir-service">RGMS-Service</span><span class="pname" data-tail="Service">CME_DEV_Deploy_RGMS-Service</span></div>
+                  <div class="pbox">
+                    <div class="ph"><span>后端端口 · 写入 dev 环境变量</span><span style="font-weight:500">1 项</span></div>
+                    <div class="frow"><label>监听端口</label><input class="input" value="8080"></div>
+                  </div>
+                  <div class="notice warn" style="margin:6px 0 0">环境差异由流水线变量实现，只固定 dev；母版流水线须 YAML 化。</div>
+                </div>
+              </div>
+            </div>
+            <div class="notice info" style="margin:7px 0 0;padding:5px 10px">
+              <div class="row between" style="gap:8px">
+                <span style="flex:1;min-width:0">差异预览 · 复制 1 个代码库 + 3 条流水线，替换 4 类名字 + 写入 1 项端口<br><span style="font-family:var(--mono);font-size:10.5px">repo TJCES-Mixed → RGMS-Mixed · dir TJCES-* → RGMS-* · name …_TJCES-* → …_RGMS-* · branch master · port 8080</span></span>
+                <span class="row" style="gap:5px;flex:0 0 auto"><button class="btn sm">重新读取</button><button class="btn sm primary">确认差异</button></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="mode-sync" class="hide">
+            <div class="grid2 equal">
+              <div class="card" style="margin-bottom:0"><h3>同步既有代码库</h3>
+                <div class="field tight"><label>选择代码库</label><select class="input sm2"><option>TJCES-Mixed（已存在 · 含 3 个子项目）</option><option>RGMS-Mixed（已存在 · 含 3 个子项目）</option></select></div>
+                <div class="field tight"><label>工作分支</label><select class="input sm2"><option>master</option><option>develop</option><option>feature-schedule</option></select></div>
+                <div class="field tight" style="margin-bottom:0"><label>宿主工作区目录</label><input class="input sm2" value="D:/WorkBench/Walle/tjces"></div>
+                <div class="notice info" style="margin:7px 0 0">只绑定已有资源，不复制库、不复制流水线；拉取后扫描工作区根目录，识别到 TJCES-Admin、TJCES-Mobile、TJCES-Service 三个子项目，作为构建目录候选。</div>
+              </div>
+              <div class="card" style="margin-bottom:0"><h3>同步既有流水线 · 只绑 dev</h3>
+                <div class="lhead"><span></span><span class="c2fix">构建目录</span><span>既有流水线</span></div>
+                <div class="linerow"><span class="chk on"></span><span class="role">移动端</span><span class="dir">TJCES-Mobile</span><span class="pname">CME_DEV_Deploy_TJCES-Mobile</span></div>
+                <div class="linerow"><span class="chk on"></span><span class="role">管理后台</span><span class="dir">TJCES-Admin</span><span class="pname">CME_DEV_Deploy_TJCES-Admin</span></div>
+                <div class="linerow"><span class="chk on"></span><span class="role">后端</span><span class="dir">TJCES-Service</span><span class="pname">CME_DEV_Deploy_TJCES-Service</span></div>
+                <div class="notice ok" style="margin:7px 0 0">三条都已指向 TJCES-Mixed 的 dev 环境，无需替换 YAML、无需差异确认；某一端没有对应流水线时取消勾选即可跳过。</div>
+                <p class="help" style="margin:5px 0 0">构建目录按子项目锁定；后端端口沿用流水线既有变量，同步模式不改写任何 YAML。</p>
+                <p class="help" style="margin:3px 0 0">流水线名保持母版既有、不做改名；要按新项目代号改名，请走「复制母版新建」。</p>
+              </div>
+            </div>
+            <div class="card" style="margin-top:8px">
+              <div class="row between" style="margin-bottom:4px"><h3 style="margin:0">同步结果预览</h3><span class="chip">只读，不写远端</span></div>
+              <div class="statrow">
+                <div class="s"><b>1</b><span>绑定代码库</span></div>
+                <div class="s"><b>3</b><span>绑定流水线</span></div>
+                <div class="s"><b>3</b><span>构建目录</span></div>
+                <div class="s"><b>0</b><span>远端改动</span></div>
+              </div>
+              <p class="help" style="margin:5px 0 0">同步只做绑定与拉取：不改代码库属性、不新建流水线、不替换 YAML；写入的是项目档案里的资源关联。</p>
+            </div>
+          </div>
+
+          <div class="card soft" id="steps-new" style="margin-top:6px;padding:6px 10px"><div class="row between" style="gap:8px">
+            <div class="stepper">
+              <span class="sp done"><i>✓</i>已复制出新库</span><span class="ar">›</span>
+              <span class="sp done"><i>✓</i>三条流水线已改名</span><span class="ar">›</span>
+              <span class="sp now"><i>3</i>差异待确认</span><span class="ar">›</span>
+              <span class="sp"><i>4</i>生成并绑定</span>
+            </div>
+            <span class="tiny faint" style="white-space:nowrap">完成后进入所选入口</span>
+          </div></div>
+
+          <div class="card soft hide" id="steps-sync" style="margin-top:6px;padding:6px 10px"><div class="row between" style="gap:8px">
+            <div class="stepper">
+              <span class="sp done"><i>✓</i>代码库已绑定</span><span class="ar">›</span>
+              <span class="sp done"><i>✓</i>已确认 master 分支</span><span class="ar">›</span>
+              <span class="sp done"><i>✓</i>3 条流水线已指向</span><span class="ar">›</span>
+              <span class="sp now"><i>4</i>写入项目档案</span>
+            </div>
+            <span class="tiny faint" style="white-space:nowrap">完成后进入所选入口</span>
+          </div></div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="2">返回项目列表</button><button class="btn">重试失败步骤</button><button class="btn primary" data-go="4">完成初始化并进入所选入口</button></div></div>
+      </section>
+
+      <!-- 屏 4：迭代任务看板（项目工作台） -->
+      <section class="screen" data-screen="4">
+        <div class="nav"></div>
+        <div class="content board">
+          <div class="row between" style="margin-bottom:8px">
+            <div class="row">
+              <select class="input" style="width:190px"><option>同仁医院互联网服务平台</option></select>
+              <select class="input" style="width:180px"><option>迭代 24 · 11/10 - 11/28</option></select>
+            </div>
+            <div class="row"><button class="btn sm" data-go="5">项目详情</button><button class="btn sm" data-go="7">PRD 工作台</button><button class="btn sm">刷新</button></div>
+          </div>
+          <div class="notice info" style="margin-bottom:8px">列名、列序与列数取自云效官方 GetWorkitemWorkflow 接口返回的 statuses[]；此处四列仅为示例，禁止硬编码四列，实际列数随工作流状态数变化（可能多于或少于四列）。</div>
+          <div class="kanban">
+            <div class="kcol">
+              <div class="kh"><span>未开始</span><span class="n">5 个任务</span></div>
+              <div class="task"><p class="tt">输液记录导入接口字段映射</p><p class="tm">编号 10231 · 张工 · 预计 11/18</p><div class="tf"><span class="chip">需求拆分</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt">看板状态列动态渲染</p><p class="tm">编号 10234 · 李工 · 预计 11/20</p><div class="tf"><span class="chip accent">前端</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt">测试用例目录初始化</p><p class="tm">编号 10239 · 王工 · 预计 11/22</p><div class="tf"><span class="chip">测试</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt" title="输液记录批量导入接口的字段映射、空值与重复记录校验、越权写入拦截等边界条件实现，并补齐对应回归用例">输液记录批量导入接口的字段映射、空值与重复记录校验、越权写入拦截等边界条件实现，并补齐对应回归用例</p><p class="tm">编号 10241 · 一位名字特别长的负责人工号很长的测试同学 · 预计 11/25</p><div class="tf"><span class="chip">需求拆分</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt">数据量压力样例 · 该列超出可视区后列内滚动</p><p class="tm">编号 10242 · 刘工 · 预计 11/26</p><div class="tf"><span class="chip">测试</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+            </div>
+            <div class="kcol">
+              <div class="kh"><span>开发中</span><span class="n">3 个任务</span></div>
+              <div class="task"><p class="tt">流水线 YAML 替换逻辑</p><p class="tm">编号 10228 · 陈工 · 预计 11/17</p><div class="tf"><span class="chip warn">逾期 2 天</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt">PRD 文档解析器</p><p class="tm">编号 10230 · 刘工 · 预计 11/19</p><div class="tf"><span class="chip accent">后端</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+              <div class="task"><p class="tt">凭据写入接口封装</p><p class="tm">编号 10236 · 张工 · 预计 11/21</p><div class="tf"><span class="chip">安全</span><button class="btn sm ghost" data-go="6">打开任务</button></div></div>
+            </div>
+            <div class="kcol">
+              <div class="kh"><span>已提交</span><span class="n">3 个任务</span></div>
+              <div class="task"><p class="tt">母版库列表拉取</p><p class="tm">编号 10221 · 李工 · 预计 11/14</p><div class="tf"><span class="chip ok">待评审</span><span class="faint tiny">查看进展</span></div></div>
+              <div class="task"><p class="tt">feature 分支创建</p><p class="tm">编号 10224 · 陈工 · 预计 11/15</p><div class="tf"><span class="chip ok">待评审</span><span class="faint tiny">查看进展</span></div></div>
+              <div class="task"><p class="tt">组织编号解析接口</p><p class="tm">编号 10226 · 刘工 · 预计 11/16</p><div class="tf"><span class="chip ok">待评审</span><span class="faint tiny">查看进展</span></div></div>
+            </div>
+            <div class="kcol">
+              <div class="kh"><span>已完成</span><span class="n">3 个任务</span></div>
+              <div class="task"><p class="tt">云效连接校验</p><p class="tm">编号 10212 · 王工 · 11/11 完成</p><div class="tf"><span class="chip ok">已验收</span><span class="faint tiny">已归档</span></div></div>
+              <div class="task"><p class="tt">凭据区读写封装</p><p class="tm">编号 10215 · 刘工 · 11/12 完成</p><div class="tf"><span class="chip ok">已验收</span><span class="faint tiny">已归档</span></div></div>
+              <div class="task"><p class="tt">插件页面骨架</p><p class="tm">编号 10218 · 张工 · 11/13 完成</p><div class="tf"><span class="chip ok">已验收</span><span class="faint tiny">已归档</span></div></div>
+            </div>
+          </div>
+          <div class="card soft" style="margin-top:10px"><h3>迭代 24 概览</h3><div class="metric">
+            <div class="m"><b>14</b><span>任务总数</span></div>
+            <div class="m"><b>4</b><span>状态列（示例）</span></div>
+            <div class="m"><b>3</b><span>已完成</span></div>
+            <div class="m"><b>1</b><span>逾期任务</span></div>
+            <div class="m"><b>4</b><span>关联需求</span></div>
+          </div><div class="progress"><i style="width:21%"></i></div></div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="2">返回项目列表</button><button class="btn" data-go="5">项目详情</button><button class="btn primary" data-go="6">打开选中任务</button></div></div>
+      </section>
+
+      <!-- 屏 5：项目 · 迭代 · 需求（看板下钻） -->
+      <section class="screen" data-screen="5">
+        <div class="nav"></div>
+        <div class="content">
+          <div class="notice info">云效官方已有项目搜索接口，官方托管 MCP 也提供项目搜索与项目详情工具；本仓连接器尚未接线，因此这里显示未接线提示。</div>
+          <div class="grid3" style="height:360px">
+            <div class="card soft" style="display:flex;flex-direction:column;min-height:0">
+              <h3>项目详情</h3><div class="sub">同仁医院互联网服务平台</div>
+              <div class="list scroll-y">
+                <div class="item"><p class="t">项目标识</p><p class="d">proj-8f31c2</p></div>
+                <div class="item"><p class="t">关联代码库</p><p class="d">HOSP-Mixed · 含 3 个子项目</p></div>
+                <div class="item"><p class="t">关联流水线</p><p class="d">3 条 · 移动端 / 管理后台 / 后端</p></div>
+                <div class="item"><p class="t">项目简介</p><p class="d">输液记录回填与迭代任务协同</p></div>
+                <div class="item disabled"><p class="t">编辑项目信息</p><p class="d">本插件未接线，禁用占位</p></div>
+              </div>
+            </div>
+            <div class="card soft" style="display:flex;flex-direction:column;min-height:0">
+              <h3>迭代列表</h3><div class="sub">共 12 个迭代</div>
+              <div class="list scroll-y">
+                <div class="item on"><p class="t">迭代 24 · 11/10 - 11/28</p><p class="d">进行中 · 14 个任务 · 当前迭代</p></div>
+                <div class="item"><p class="t">迭代 23 · 10/20 - 11/07</p><p class="d">已结束 · 18 个任务</p></div>
+                <div class="item"><p class="t">迭代 22 · 09/29 - 10/17</p><p class="d">已结束 · 15 个任务</p></div>
+                <div class="item"><p class="t">迭代 21 · 09/08 - 09/26</p><p class="d">已结束 · 12 个任务</p></div>
+              </div>
+            </div>
+            <div class="card soft" style="display:flex;flex-direction:column;min-height:0">
+              <h3>需求列表</h3><div class="sub">迭代 24 关联需求</div>
+              <div class="list scroll-y">
+                <div class="item"><p class="t">输液记录批量回填</p><p class="d">4 个任务 · 2 个测试用例</p></div>
+                <div class="item"><p class="t">流水线按代码库自动适配</p><p class="d">3 个任务 · 1 个测试用例</p></div>
+                <div class="item"><p class="t">迭代任务看板</p><p class="d">5 个任务 · 3 个测试用例</p></div>
+                <div class="item"><p class="t">PRD 拆分落库</p><p class="d">5 个任务 · 2 个测试用例</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="card soft" style="margin-top:8px"><h3>当前迭代进度</h3><div class="metric">
+            <div class="m"><b>14</b><span>关联任务</span></div>
+            <div class="m"><b>4</b><span>关联需求</span></div>
+            <div class="m"><b>6</b><span>测试用例</span></div>
+            <div class="m"><b>11/28</b><span>迭代结束日期</span></div>
+          </div><div class="progress"><i style="width:62%"></i></div></div>
+          <div class="notice warn" style="margin-top:8px">切换当前迭代后，迭代任务看板的列与任务数据随之刷新；列仍取自工作流状态枚举，排序字段按项目自定义属性动态解析。</div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="2">返回项目列表</button><button class="btn">设为当前迭代</button><button class="btn primary" data-go="4">返回迭代任务看板</button></div></div>
+      </section>
+
+      <!-- 屏 6：任务详情 · 在工作区开始任务（看板下钻） -->
+      <section class="screen" data-screen="6">
+        <div class="nav"></div>
+        <div class="content">
+          <div class="row between" style="margin-bottom:8px"><div class="row"><span class="chip" data-go="4">返回迭代任务看板</span><b style="font-size:13px">流水线 YAML 替换逻辑 · 编号 10228</b></div><span class="chip warn">开发中 · 逾期 2 天</span></div>
+          <div class="grid2">
+            <div>
+              <div class="card">
+                <h3>任务详情</h3>
+                <div class="kv">
+                  <span class="k">所属需求</span><span>以参考流水线为模板生成新代码库流水线</span>
+                  <span class="k">负责人</span><span>陈工 · 预计完成 2026-11-17</span>
+                  <span class="k">所属迭代</span><span>迭代 24 · 11/10 - 11/28</span>
+                  <span class="k">代码库</span><span>HOSP-Mixed · master</span>
+                </div>
+                <div class="sub" style="margin:9px 0 2px">任务描述</div>
+                <p class="tiny muted" style="margin:0">读取参考流水线的 pipelineConfig.flow，替换代码库、构建目录、分支与端口占位符，生成差异预览后再调用创建或更新接口；可视化编排流水线不进入该流程。</p>
+                <div class="sub" style="margin:8px 0 2px">验收标准</div>
+                <p class="tiny muted" style="margin:0">差异预览须人工确认后才提交；失败时只重跑失败步骤，保留已成功产物。</p>
+              </div>
+              <div class="card">
+                <div class="row between" style="margin-bottom:6px"><h3 style="margin:0">评论 · 3 条</h3><span class="chip">取自云效工作项评论</span></div>
+                <div class="cmt"><div class="cm-h"><b>陈工</b><span>11-15 14:20</span><span class="chip accent">最新</span></div><p>参考流水线是 YAML 化的，可以直接读 flow；目标分支建议固定 master，不用每次确认。</p></div>
+                <div class="cmt"><div class="cm-h"><b>李工</b><span>11-15 10:05</span></div><p title="差异预览请把仓库地址、构建目录、分支与端口四类改动分别高亮，超长的仓库地址与流水线名截断显示但保留完整值可复制；评审时要能一眼看出改动点，不要让整段 diff 挤成一坨。">差异预览请把仓库地址、构建目录、分支与端口四类改动分别高亮，超长的仓库地址与流水线名截断显示但保留完整值可复制；评审时要能一眼看出改动点，不要让整段 diff 挤成一坨。</p></div>
+                <div class="cmt"><div class="cm-h"><b>王工</b><span>11-14 17:40</span></div><p>可视化编排那条流水线没有 YAML，选参考流水线时要直接提示不可选。</p></div>
+                <div class="row" style="margin-top:7px;flex-wrap:nowrap"><input class="input" style="height:30px" placeholder="补充一条评论，发表后写入云效"><button class="btn sm">发表</button></div>
+              </div>
+            </div>
+            <div>
+              <div class="card" style="border-color:#dfe4ff;background:var(--accent-soft)">
+                <h3>在工作区开始任务</h3>
+                <p class="tiny" style="margin:0 0 8px;color:#27348b">把任务标题、任务描述与 3 条评论一起作为首轮输入，交给当前项目工作区的头脑风暴技能，先产出方案。</p>
+                <div class="kv">
+                  <span class="k">目标工作区</span><span>D:/WorkBench/Walle/hosp</span>
+                  <span class="k">调用技能</span><span>头脑风暴 brainstorming</span>
+                  <span class="k">带入内容</span><span>标题、描述、评论 3 条、代码库与分支</span>
+                </div>
+                <button class="btn primary" style="width:100%;margin-top:9px">在工作区开始任务</button>
+                <div class="help" style="margin-top:5px">会话建在宿主左侧会话列表，随时可回到宿主里接着聊。</div>
+              </div>
+              <div class="card soft">
+                <div class="row between" style="margin-bottom:4px"><h3 style="margin:0">工作区会话</h3><span class="chip ok">已创建</span></div>
+                <div class="step"><span class="dot done">1</span><span class="txt">首轮输入已发送<small>任务 10228 · 标题、描述与 3 条评论</small></span></div>
+                <div class="step"><span class="dot now">2</span><span class="txt">头脑风暴技能正在产出方案<small>流式回显中 · 可取消，可回到宿主会话继续</small></span></div>
+                <div class="notice info" style="margin:8px 0 0">方案经你确认后才会动代码，这一步由头脑风暴技能自己把关；插件只记录任务与会话的绑定。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="4">返回迭代任务看板</button><button class="btn">在云效中打开</button><button class="btn primary">在工作区开始任务</button></div></div>
+      </section>
+
+      <!-- 屏 7：PRD 工作台（看板辅助入口） -->
+      <section class="screen" data-screen="7">
+        <div class="nav"></div>
+        <div class="content">
+          <div class="card" style="padding:8px 9px;margin-bottom:6px">
+            <div class="row between" style="margin-bottom:5px"><h3 style="margin:0">PRD 来源</h3><span class="tiny faint">拆分目标固定为当前云效项目 · 同仁医院互联网服务平台</span></div>
+            <div class="srcrow">
+              <div class="src on"><b>云效同步</b><span>默认来源 · 2 份 PRD · 11-17 09:40</span></div>
+              <div class="src"><b>本地上传</b><span>支持 Markdown / Word / 纯文本</span></div>
+              <div class="src"><b>宿主工作区</b><span>按相对路径读取 · 目录列举待接线</span></div>
+              <div class="src off"><b>企微云盘</b><span>未接线 · 不产生请求</span></div>
+            </div>
+            <div class="row between" style="margin-top:5px;gap:8px">
+              <p class="tiny faint" style="margin:0;flex:1;min-width:0">已同步需求工作项 4 条与附件 PRD 2 份。本地上传是补充来源，不覆盖同步结果；冲突按来源分段列明细，逐条确认。</p>
+              <button class="btn sm" style="flex:0 0 auto">重新同步</button>
+            </div>
+          </div>
+          <div class="grid2 equal" style="margin-bottom:6px">
+            <div class="card dense" style="margin:0">
+              <div class="row between" style="margin-bottom:2px"><h3 style="margin:0">拆分树 · 当前迭代</h3><span class="chip accent">2 需求 · 3 任务</span></div>
+              <div class="treeline">
+                <div class="node"><b>迭代</b> 24 · 11/10 - 11/28 · 新建</div>
+                <div class="lv2">
+                  <div class="node" title="输液记录批量回填与历史数据迁移的字段映射、校验规则与回填进度可视化"><b>需求</b> 输液记录批量回填与历史数据迁移的字段映射、校验规则与回填进度可视化 · P0</div>
+                  <div class="lv2">
+                    <div class="node">任务 字段映射与校验 · 张工 11/18</div>
+                    <div class="node">任务 批量导入接口 · 刘工 11/19</div>
+                    <div class="lv3"><div class="node">测试用例 空行与重复记录 · P0</div><div class="node">测试用例 越权写入拦截 · P1</div></div>
+                  </div>
+                  <div class="node"><b>需求</b> 迭代任务看板 · P1</div>
+                  <div class="lv2">
+                    <div class="node">任务 状态列动态渲染 · 李工 11/20</div>
+                    <div class="lv3"><div class="node">测试用例 空值与排序 · P1</div></div>
+                  </div>
+                  <div class="node"><b>测试计划</b> 迭代 24 回归测试 · 王工</div>
+                </div>
+              </div>
+              <p class="tiny faint" style="margin:0">逐条可改标题与父级；用例按验收标准生成并去重。</p>
+            </div>
+            <div class="card soft" style="margin:0;display:flex;flex-direction:column">
+              <div class="row between"><h3 style="margin:0">落库目标 · 当前云效项目</h3><span class="chip warn">本仓未接线</span></div>
+              <table class="mtab" style="margin-top:3px">
+                <tr><th style="width:56px">层级</th><th class="num">数量</th><th>写入位置</th></tr>
+                <tr><td><b>迭代</b></td><td>1</td><td>项目内迭代，可与已有迭代合并</td></tr>
+                <tr><td><b>需求</b></td><td>2</td><td>工作项 · 需求，挂当前迭代</td></tr>
+                <tr><td><b>任务</b></td><td>3</td><td>工作项 · 任务，指定父需求</td></tr>
+                <tr><td><b>测试用例</b></td><td>3</td><td>测试用例库，关联需求与验收标准</td></tr>
+                <tr><td><b>测试计划</b></td><td>1</td><td>迭代 24 回归测试，范围取本次用例</td></tr>
+              </table>
+              <div class="notice warn" style="margin:6px 0 0">本仓连接器只含 Codeup 7 与 Flow 6 共 13 个工具，没有项目协作与测试模块工具；上表按云效官方对象的真实字段绘制，写入动作在接线前保持未启用，不发送任何云效写请求。</div>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:0;padding:8px 10px">
+            <div class="row between" style="margin-bottom:2px"><b style="font-size:12px">拆分明细 · 来源段落 → 目标资产 → 落库回执</b><span class="tiny faint">逐条可核对、可改写；失败项只重跑失败项</span></div>
+            <table class="mtab">
+              <tr><th>来源段落</th><th style="width:150px">目标资产</th><th style="width:90px">落库回执</th></tr>
+              <tr><td><b>云效同步</b> · 需求「输液记录批量回填」描述第 2 段</td><td>需求 · 输液记录批量回填</td><td>待写入</td></tr>
+              <tr><td><b>本地上传</b> · 输液记录回填需求说明.md 第 3.1 节</td><td>任务 · 字段映射与校验</td><td>待写入</td></tr>
+              <tr><td><b>本地上传</b> · 输液记录回填需求说明.md 第 4 节验收标准</td><td>测试用例 · 空行与重复记录</td><td>待写入</td></tr>
+            </table>
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="2">返回项目列表</button><button class="btn" data-go="4">在迭代任务看板查看</button><button class="btn primary">生成拆分方案</button></div></div>
+      </section>
+
+      <!-- 屏 8：迭代测试 · 用例生成与测试计划 -->
+      <section class="screen" data-screen="8">
+        <div class="nav"></div>
+        <div class="content fill">
+          <div class="grid2 equal">
+            <div style="display:flex;flex-direction:column;gap:6px;min-height:0">
+              <div class="card" style="margin:0">
+                <div class="row between"><h3 style="margin:0">测试用例生成</h3><span class="chip accent">迭代 24</span></div>
+                <div class="sub" style="margin:6px 0 4px">生成来源</div>
+                <div class="row" style="gap:4px"><span class="chip accent">来自需求</span><span class="chip">来自 PRD</span><span class="chip">来自任务</span><span class="chip">手工补充</span></div>
+                <div class="row between" style="margin-top:7px"><b style="font-size:12px">覆盖范围</b><span class="tiny faint">4 需求 · 12 任务 · 9 条验收标准</span></div>
+                <p class="tiny muted" style="margin:3px 0 0">按需求的验收标准逐条生成，再按任务补边界用例；重复用例自动合并，并保留来源链接便于回溯。</p>
+                <div class="row" style="margin-top:7px;gap:6px"><button class="btn sm primary">生成测试用例</button><button class="btn sm">去重合并</button><span class="chip">本仓未接线 · 演示态</span></div>
+              </div>
+              <div class="card" style="margin:0;flex:1;min-height:0;display:flex;flex-direction:column">
+                <div class="row between" style="margin-bottom:5px"><b style="font-size:13px">生成结果 · 6 条</b><span class="chip">待评审</span></div>
+                <div class="scroll-y" style="flex:1">
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t" title="输液记录批量导入 · 字段映射正确（含空值、重复记录、越权写入与并发回填的边界校验）">输液记录批量导入 · 字段映射正确（含空值、重复记录、越权写入与并发回填的边界校验）</p><span class="chip ok">P0</span></div>
+                <p class="tc-m">TC-2401 · 需求「输液记录批量回填」 · 覆盖 6 个字段</p>
+              </div>
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t">输液记录批量导入 · 空行与重复记录</p><span class="chip ok">P0</span></div>
+                <p class="tc-m">TC-2402 · 需求「输液记录批量回填」 · 边界用例</p>
+              </div>
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t">输液记录批量导入 · 越权写入被拦截</p><span class="chip ">P1</span></div>
+                <p class="tc-m">TC-2403 · 需求「输液记录批量回填」 · 权限校验</p>
+              </div>
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t">流水线按代码库自动适配 · 占位符替换</p><span class="chip ok">P0</span></div>
+                <p class="tc-m">TC-2404 · 需求「流水线按代码库自动适配」 · 差异预览</p>
+              </div>
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t">迭代任务看板 · 状态列动态渲染</p><span class="chip ">P1</span></div>
+                <p class="tc-m">TC-2405 · 需求「迭代任务看板」 · 状态枚举为空时的空态</p>
+              </div>
+              <div class="tcase">
+                <div class="tc-h"><p class="tc-t">迭代任务看板 · 预计完成时间排序</p><span class="chip ">P1</span></div>
+                <p class="tc-m">TC-2406 · 需求「迭代任务看板」 · 空值置末、时区统一</p>
+              </div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;min-height:0">
+              <div class="card" style="margin:0">
+                <div class="row between"><h3 style="margin:0">测试计划设置</h3><span class="chip">草稿</span></div>
+                <div class="field tight" style="margin-top:6px"><label>计划名称</label><input class="input sm2" value="迭代 24 回归测试计划"></div>
+                <div class="grid2 equal" style="gap:6px">
+                  <div class="field tight"><label>关联迭代</label><select class="input sm2"><option>迭代 24 · 11/10 - 11/28</option></select></div>
+                  <div class="field tight"><label>测试环境</label><select class="input sm2"><option>预发布环境</option></select></div>
+                  <div class="field tight"><label>执行人</label><select class="input sm2"><option>王工</option></select></div>
+                  <div class="field tight"><label>计划周期</label><input class="input sm2" value="11/24 - 11/28"></div>
+                </div>
+                <div class="sub" style="margin:4px 0 3px">用例范围</div>
+                <div class="row" style="gap:4px"><span class="chip accent">全部 6 条</span><span class="chip">仅 P0</span><span class="chip">仅冒烟</span></div>
+                <div class="sub" style="margin:7px 0 3px">已选用例</div>
+                <p class="tiny muted" style="margin:0">6 条已勾选 · 覆盖 3 个需求 · 预计执行 42 分钟</p>
+                <div class="row" style="margin-top:8px;gap:6px"><button class="btn sm primary">保存测试计划</button><button class="btn sm">导出用例</button></div>
+              </div>
+              <div class="card soft" style="margin:0">
+                <h3>计划摘要</h3>
+                <div class="kv">
+                  <span class="k">所属项目</span><span>同仁医院互联网服务平台</span>
+                  <span class="k">关联迭代</span><span>迭代 24 · 11/10 - 11/28</span>
+                  <span class="k">用例来源</span><span>需求 4 条 + 任务 12 个</span>
+                  <span class="k">落库状态</span><span>本仓未接线，保存为本地草稿</span>
+                </div>
+              </div>
+              <div class="notice info" style="margin:0">用例与计划最终写入云效测试模块；本插件当前未接线，界面按真实字段绘制，保存动作先落本地草稿并标注未接线。</div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="2">返回项目列表</button><button class="btn">重新生成</button><button class="btn primary">保存测试计划</button></div></div>
+      </section>
+
+      <!-- 屏 9：设计令牌与宿主硬约束 -->
+      <section class="screen" data-screen="9">
+        <div class="nav"></div>
+        <div class="content">
+          <div class="card" style="border-color:#dfe4ff;background:var(--accent-soft)"><h3>宿主尺寸推导（实测）</h3><p class="tiny" style="margin:0">宽度：1120 − 2 外壳边框 − 258 左栏 − 34 主区内边距 = 826px。高度（1440×900）：900 − 32 应用内边距 − 46 顶栏（46px 已含边框） − 5 外壳上边距 − 30 页脚 − 2 外壳边框 − 75 插件页头 − 16 页头下留白 = 694px；外框 826×694、视口 824×692。按宿主真实样式复刻 DOM 在无头浏览器 1440×900 实测所得；此前静态推导的画板高出 41px（漏算页脚等三处），作废。窗口变宽只增两侧留白。</p></div>
+          <div class="grid2 equal">
+            <div>
+              <div class="card"><h3>颜色令牌（完整色值）</h3><div class="tokens">
+                <div><span><i class="swatch" style="background:#f3f4f6"></i>背景</span><code>#f3f4f6</code></div>
+                <div><span><i class="swatch" style="background:#ffffff"></i>卡片</span><code>#ffffff</code></div>
+                <div><span><i class="swatch" style="background:#f7f8fa"></i>次级面</span><code>#f7f8fa</code></div>
+                <div><span><i class="swatch" style="background:#eef0f4"></i>三级面</span><code>#eef0f4</code></div>
+                <div><span><i class="swatch" style="background:#e5e7eb"></i>边框</span><code>#e5e7eb</code></div>
+                <div><span><i class="swatch" style="background:#d5d9e0"></i>强边框</span><code>#d5d9e0</code></div>
+                <div><span><i class="swatch" style="background:#17191d"></i>正文</span><code>#17191d</code></div>
+                <div><span><i class="swatch" style="background:#5f6670"></i>次要文字</span><code>#5f6670</code></div>
+                <div><span><i class="swatch" style="background:#9aa1ab"></i>弱化文字</span><code>#9aa1ab</code></div>
+                <div><span><i class="swatch" style="background:#3d5afe"></i>主色</span><code>#3d5afe</code></div>
+                <div><span><i class="swatch" style="background:#2f4bea"></i>主色悬停</span><code>#2f4bea</code></div>
+                <div><span><i class="swatch" style="background:#eef1ff"></i>主色浅底</span><code>#eef1ff</code></div>
+                <div><span><i class="swatch" style="background:#d92d20"></i>危险</span><code>#d92d20</code></div>
+                <div><span><i class="swatch" style="background:#b54708"></i>警告</span><code>#b54708</code></div>
+                <div><span><i class="swatch" style="background:#067647"></i>成功</span><code>#067647</code></div>
+              </div></div>
+              <div class="card"><h3>控件与排版</h3><p class="tiny muted" style="margin:0 0 6px">系统 UI 字体栈，正文 14px、行高 1.6；卡片 1px 边框加轻投影；纯手写 CSS，不使用 UI 框架与自定义 Web 字体。长文本：任务名、用例名、评论 2 行截断，悬停看全文；列表单行省略。数据量：看板列内滚动、列头固定，列表与树区内滚动，无横向滚动。</p>
+                <div class="tokens">
+                  <div><span>按钮高度</span><code>34px</code></div>
+                  <div><span>紧凑按钮 / 标签</span><code>28px</code></div>
+                  <div><span>控件圆角</span><code>8px</code></div>
+                  <div><span>卡片 / 面板圆角</span><code>12px / 18px</code></div>
+                </div></div>
+            </div>
+            <div>
+              <div class="card"><h3>Web 插件硬约束与导航边界</h3><p class="tiny muted" style="margin:0">同源无 sandbox iframe，Cookie 自动携带；插件页只占主内容区。entryAssembly 必填且入口实现 IPlugin，程序集只能依赖 LuBan.AIAgent；webPage 须在 web 下且防穿越；MIME 仅白名单（mjs / json / map / wasm / woff 不可用）；web 子目录名不得与宿主 controller 同名（14 个保留名，file 尚未纳入拦截）；POST 用 payload 包裹、响应 ApiEnvelope；hash 路由无 SPA 回退；system 特权动作调不到，同源 Cookie 却对全部非特权控制器有效——插件前端只调白名单端点，不得调 MCP 保存、Provider 保存、工作区删除；iframe 以镜像目录为基准，调宿主 REST 须写绝对路径；升级换新 stamp，RequiresRestart 为真须重启宿主才生效；卸载删除失败只留半删目录。</p></div>
+              <div class="card soft"><h3>十屏顺序与返回路径</h3><p class="tiny muted" style="margin:0">屏 0–9：总览、云效连接、项目列表、项目初始化、任务看板、项目详情、任务详情、PRD 工作台、迭代测试、设计令牌。首次打开走连接；首页左选项目、右四个入口；未初始化先初始化；任务详情回看板、PRD 按来处返回、看板与详情回首页。禁用入口写「云效官方支持，尚未接线」。加载与空态见 PRD 空态表。十屏对应九帧：信息架构帧拆两屏、项目列表帧两屏、初始化两帧合一屏。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><div class="acts"><button class="btn" data-go="0">信息架构总览</button><button class="btn primary" data-go="2">返回插件首页</button></div></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+<script>
+var names=[
+ '信息架构总览','首次配置 · 云效连接','首页 · 项目列表','首次项目 · 初始化',
+ '项目工作台 · 迭代任务看板','项目详情 · 迭代需求','任务详情 · 工作区','PRD 工作台',
+ '迭代测试 · 用例与计划','设计令牌与硬约束'
+];
+var crumbs=[
+ ['设计说明','信息架构与页面流转总览'],
+ ['首次打开','初始化配置 · 云效连接'],
+ ['插件首页','项目列表'],
+ ['插件首页','项目列表','首次进入项目','项目初始化'],
+ ['插件首页','项目列表','项目工作台','迭代任务看板'],
+ ['插件首页','项目详情 · 迭代需求'],
+ ['插件首页','项目工作台','任务详情与工作区'],
+ ['插件首页','辅助作业','PRD 工作台'],
+ ['插件首页','项目','迭代测试 · 用例与计划'],
+ ['设计说明','设计令牌与宿主硬约束']
+];
+var picker=document.getElementById('picker');
+var pickerHtml='';
+for(var i=0;i<names.length;i++){
+  pickerHtml+='<button type="button" data-go="'+i+'" class="'+(i===2?'on':'')+'">'+names[i]+'</button>';
+}
+picker.innerHTML=pickerHtml;
+var navs=document.querySelectorAll('.nav');
+for(var n=0;n<navs.length;n++){
+  var c=crumbs[n], parts='';
+  for(var j=0;j<c.length;j++){
+    if(j>0) parts+='<span class="sep">›</span>';
+    parts+=(j===c.length-1?'<b>'+c[j]+'</b>':'<span>'+c[j]+'</span>');
+  }
+  navs[n].innerHTML='<span class="brand">云效 DevOps 工作台</span><div class="crumb">'+parts+'</div><span class="conn">已连接</span>';
+}
+function show(idx){
+  var screens=document.querySelectorAll('.screen');
+  for(var a=0;a<screens.length;a++){screens[a].classList.toggle('active',a===idx);}
+  var pb=document.querySelectorAll('#picker button');
+  for(var b=0;b<pb.length;b++){pb[b].classList.toggle('on',b===idx);}
+  var nb=document.querySelectorAll('.nav .seg button');
+  for(var c=0;c<nb.length;c++){nb[c].classList.toggle('on',Number(nb[c].getAttribute('data-go'))===idx);}
+}
+var pickedInit='1';
+function syncTpl(){
+  var opts=document.querySelectorAll('#msel-pop .mopt');
+  var names='';
+  for(var i=0;i<opts.length;i++){
+    if(opts[i].classList.contains('on')){
+      var nm=opts[i].querySelector('.mname');
+      names+=(names?'、':'')+(nm?nm.textContent:'');
+    }
+  }
+  var on=document.querySelectorAll('#msel-pop .mopt.on');
+  var c=document.getElementById('tpl-count');
+  if(c) c.textContent='母版库 '+opts.length+' 个 · 已选 '+on.length;
+  var num=document.getElementById('tpl-num');
+  if(num) num.textContent=on.length+' / '+opts.length;
+  var sum=document.getElementById('tpl-sum');
+  if(sum) sum.textContent=names||'请选择一个母版代码库';
+}
+function applyCode(){
+  var el=document.getElementById('proj-code');
+  var raw=el&&el.value?el.value:'RGMS';
+  var code=(raw||'').trim().toUpperCase()||'RGMS';
+  var map={dLib:code+'-Mixed',dDir:code+'-*',dPipe:'…_Deploy_'+code+'-*'};
+  var lib=document.getElementById('d-lib'); if(lib) lib.textContent=map.dLib;
+  var dir=document.getElementById('d-dir'); if(dir) dir.textContent=map.dDir;
+  var pip=document.getElementById('d-pipe'); if(pip) pip.textContent=map.dPipe;
+  var tag=document.getElementById('code-tag'); if(tag) tag.textContent=code;
+  var chip=document.getElementById('lib-chip'); if(chip) chip.textContent=map.dLib;
+  var tails=[['dir-mobile','Mobile'],['dir-admin','Admin'],['dir-service','Service']];
+  for(var i=0;i<tails.length;i++){
+    var dn=document.getElementById(tails[i][0]);
+    if(dn) dn.textContent=code+'-'+tails[i][1];
+  }
+  var ps=document.querySelectorAll('#mode-new .linerow .pname');
+  for(var j=0;j<ps.length;j++){
+    ps[j].textContent='CME_DEV_Deploy_'+code+'-'+(ps[j].getAttribute('data-tail')||'');
+  }
+}
+function syncPipe(){
+  var on=document.querySelectorAll('#mode-new .linerow .chk.on');
+  var c=document.getElementById('pipe-count');
+  if(c) c.textContent='dev · '+on.length+' 条';
+}
+function setPanel(name){
+  var map={stats:'panel-stats',project:'panel-project'};
+  for(var k in map){
+    var el=document.getElementById(map[k]);
+    if(el) el.classList.toggle('hide',k!==name);
+  }
+}
+function pickProject(el){
+  var d=(el.getAttribute('data-pick')||'').split('|');
+  if(d.length<8) return;
+  var ps=document.querySelectorAll('#projlist .proj');
+  for(var i=0;i<ps.length;i++) ps[i].classList.toggle('on',ps[i]===el);
+  document.getElementById('sel-name').textContent=d[0];
+  document.getElementById('sel-meta').textContent=d[1];
+  var st=document.getElementById('sel-state');
+  st.textContent=d[2];
+  st.className='chip '+(d[3]==='1'?'ok':'warn');
+  document.getElementById('sel-iter').textContent=d[4];
+  document.getElementById('sel-req').textContent=d[5];
+  document.getElementById('sel-task').textContent=d[6];
+  document.getElementById('sel-case').textContent=d[7];
+  document.getElementById('e-iter').textContent=d[4]+' 迭代';
+  document.getElementById('e-task').textContent=d[6]+' 任务';
+  document.getElementById('e-case').textContent=d[7]+' 用例';
+  var prdMap={'同仁医院互联网服务平台':2,'输液记录数据中心':2,'门诊排班改造':1,'检验报告互认平台':3,'电子病历质控':2,'护理排班移动端与排班冲突检测改造二期':1,'医技预约中心':2,'医保结算网关':3,'患者随访服务':0,'药房库存看板':2,'手术麻醉记录':2,'院感监测预警':1,'体检报告解读':1,'统一认证门户':2};
+  var ep=document.getElementById('e-prd');
+  if(ep){var pc=prdMap[d[0]];ep.textContent=(pc===0?'未同步':(pc||1)+' 份 PRD');}
+  document.getElementById('sel-init').classList.toggle('hide',d[3]==='1');
+  var hint=document.getElementById('sel-hint');
+  if(hint) hint.classList.toggle('hide',d[3]!=='1');
+  pickedInit=d[3];
+  setPanel('project');
+}
+document.addEventListener('click',function(ev){
+  var node=ev.target;
+  while(node && node!==document){
+    if(node.getAttribute){
+      if(node.classList && node.classList.contains('msel-h')){var pop=document.getElementById('msel-pop');if(pop) pop.classList.toggle('hide');return;}
+      if(node.classList && node.classList.contains('mopt')){node.classList.toggle('on');syncTpl();return;}
+      if(node.classList && node.classList.contains('chk')){node.classList.toggle('on');syncPipe();return;}
+      if(node.classList && node.classList.contains('src')){
+        if(!node.classList.contains('off')){
+          var ss=document.querySelectorAll('.srcrow .src');
+          for(var s=0;s<ss.length;s++) ss[s].classList.toggle('on',ss[s]===node);
+        }
+        return;
+      }
+      var pick=node.getAttribute('data-pick');
+      if(pick){pickProject(node);return;}
+      var pn=node.getAttribute('data-panel');
+      if(pn){setPanel(pn);return;}
+      var en=node.getAttribute('data-entry');
+      if(en){show(Number(pickedInit==='1'?en:'3'));return;}
+      var g=node.getAttribute('data-go');
+      if(g!==null && g!==undefined){show(Number(g));return;}
+      var md=node.getAttribute('data-mode');
+      if(md){
+        var tabs=document.querySelectorAll('.tabs button[data-mode]');
+        for(var k=0;k<tabs.length;k++){tabs[k].classList.toggle('on',tabs[k].getAttribute('data-mode')===md);}
+        document.getElementById('mode-new').classList.toggle('hide',md!=='new');
+        document.getElementById('mode-sync').classList.toggle('hide',md!=='sync');
+        var sn=document.getElementById('steps-new'), ss=document.getElementById('steps-sync');
+        if(sn) sn.classList.toggle('hide',md!=='new');
+        if(ss) ss.classList.toggle('hide',md!=='sync');
+        return;
+      }
+    }
+    node=node.parentNode;
+  }
+});
+var searchBox=document.getElementById('proj-search');
+if(searchBox){
+  searchBox.addEventListener('input',function(){
+    var q=(searchBox.value||'').trim().toLowerCase();
+    var ps=document.querySelectorAll('#projlist .proj');
+    for(var i=0;i<ps.length;i++){
+      var hit=!q || (ps[i].textContent||'').toLowerCase().indexOf(q)>=0;
+      ps[i].style.display=hit?'':'none';
+    }
+  });
+}
+var codeBox=document.getElementById('proj-code');
+if(codeBox){
+  codeBox.addEventListener('input',applyCode);
+}
+var initial=parseInt(location.hash.replace('#',''),10);
+show(isNaN(initial)?2:Math.min(Math.max(initial,0),names.length-1));
+window.addEventListener('hashchange',function(){
+  var k=parseInt(location.hash.replace('#',''),10);
+  if(!isNaN(k)) show(Math.min(Math.max(k,0),names.length-1));
+});
+</script>
+</body>
+</html>

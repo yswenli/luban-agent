@@ -25,7 +25,7 @@ namespace LubanAgentCore.Services.Management;
 
 /// <summary>
 /// Skill 管理（内置 + 文件型 + config 自定义）。
-/// 方法面 = 现有 <c>/skill</c> 命令与 Codex 设置页 Skill 页的能力，不新增能力。
+/// 方法面 = <c>/skill</c> 命令、Codex 设置页与 Web 设置页的能力。
 /// </summary>
 /// <remarks>
 /// 三个来源对应三个写回后端：
@@ -57,12 +57,25 @@ public interface ISkillManagementService
     /// <summary>列出文件型 Skill Id（目录名），按名称排序。</summary>
     IReadOnlyList<string> ListFileIds(string? workspaceRoot);
 
+    /// <summary>列出文件型 Skill（目录名 + 显示名 + 分类），按显示名排序；供设置页分组展示。</summary>
+    IReadOnlyList<SkillFileEntry> ListFileEntries(string? workspaceRoot);
+
     /// <summary>读取文件型 Skill；不存在时返回 null。</summary>
     SkillFileContent? ReadFile(string id, string? workspaceRoot);
 
     /// <summary>
-    /// 写入文件型 Skill。<paramref name="originalId"/> 与 <see cref="SkillFileContent.Name"/> 不同时按改名处理
-    /// （移动目录，目标已存在则抛异常）。
+    /// 写入文件型 Skill：已有条目只改 frontmatter（目录不动），新建条目按名称生成目录名（同名目录已存在则抛异常）。
     /// </summary>
-    void SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot);
+    /// <returns>写入后的目录名。</returns>
+    string SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot);
+
+    /// <summary>
+    /// 导入 ZIP 包：包内 <c>skills/&lt;目录&gt;/SKILL.md</c>（或任意 <c>&lt;目录&gt;/SKILL.md</c>）逐条落盘，
+    /// 同名目录以新导入内容覆盖。
+    /// </summary>
+    /// <param name="zipStream">ZIP 内容流（调用方负责释放）。</param>
+    /// <param name="workspaceRoot">作用区根目录；null 表示全局目录。</param>
+    /// <returns>已导入目录名、被拒条目（目录名非法 / SKILL.md 超过 256KB）、未落盘的非 SKILL.md 文件。</returns>
+    /// <exception cref="InvalidOperationException">条目数或解压总大小超过上限。</exception>
+    SkillImportResult ImportZip(Stream zipStream, string? workspaceRoot);
 }

@@ -83,4 +83,21 @@ public class WorktreeSessionRepository : AgentRepository<DbWorktreeSession>
     {
         await DeleteAsync(x => x.SessionId == sessionId);
     }
+
+    /// <summary>
+    /// 物理删除多个会话的 worktree 记录（含软删标记的记录）。
+    /// </summary>
+    /// <param name="sessionIds">会话ID集合。</param>
+    /// <returns>删除的行数。</returns>
+    public async Task<int> PurgeBySessionIdsAsync(IReadOnlyCollection<string> sessionIds)
+    {
+        if (sessionIds.Count == 0) return 0;
+
+        var ids = sessionIds.ToList();
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        return await db.Deleteable<DbWorktreeSession>()
+            .Where(x => ids.Contains(x.SessionId))
+            .ExecuteCommandAsync();
+    }
 }

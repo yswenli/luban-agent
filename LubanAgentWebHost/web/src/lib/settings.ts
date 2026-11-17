@@ -3,12 +3,18 @@ import type {
   A2AClient,
   A2AClientListItem,
   A2AServer,
+  AgentsMdInfo,
+  AgentsMdResult,
+  GlobalSessionStats,
   McpFile,
   ModelItem,
   ProviderListItem,
   ProviderModels,
+  ProviderPreset,
   RuleFile,
   SkillFile,
+  SkillSummary,
+  Workspace,
 } from './types';
 
 /**
@@ -36,12 +42,18 @@ interface ListResponse<T> {
 
 export const settingsApi = {
   /* ── 技能 ── */
-  listSkills: async (scope: ScopeValue): Promise<string[]> =>
-    (await get<ListResponse<string>>('/skill/list', { scope }))?.items ?? [],
+  listSkills: async (scope: ScopeValue): Promise<SkillSummary[]> =>
+    (await get<ListResponse<SkillSummary>>('/skill/list', { scope }))?.items ?? [],
   readSkill: (scope: ScopeValue, key: string): Promise<SkillFile> =>
     get<SkillFile>('/skill/read', { scope, key }),
   saveSkill: (body: Record<string, unknown>): Promise<{ key: string }> =>
     post<{ key: string }>('/skill/save', body),
+  importSkills: (body: {
+    scope: ScopeValue;
+    fileName: string;
+    contentBase64: string;
+  }): Promise<{ imported: string[]; skipped: string[]; ignored: string[] }> =>
+    post<{ imported: string[]; skipped: string[]; ignored: string[] }>('/skill/import', body),
   deleteSkill: (scope: ScopeValue, key: string): Promise<void> =>
     post<void>('/skill/delete', { scope, key }),
 
@@ -68,6 +80,8 @@ export const settingsApi = {
   /* ── 供应商 ── */
   listProviders: async (): Promise<ProviderListItem[]> =>
     (await get<ListResponse<ProviderListItem>>('/provider/list'))?.items ?? [],
+  listProviderPresets: async (): Promise<ProviderPreset[]> =>
+    (await get<ListResponse<ProviderPreset>>('/provider/presets'))?.items ?? [],
   saveProvider: (body: ProviderSaveRequest): Promise<ProviderListItem> =>
     post<ProviderListItem>('/provider/save', body),
   deleteProvider: (name: string): Promise<void> => post<void>('/provider/delete', { name }),
@@ -98,6 +112,27 @@ export const settingsApi = {
     post<{ key: string }>('/a2a/saveClient', body),
   deleteA2A: (scope: ScopeValue, key: string): Promise<void> =>
     post<void>('/a2a/deleteClient', { scope, key }),
+
+  /* ── 工作区 ── */
+  listWorkspaces: async (): Promise<Workspace[]> => (await get<Workspace[]>('/workspace/list')) ?? [],
+  authorizeWorkspace: (workspaceId: string): Promise<Workspace> =>
+    post<Workspace>('/workspace/authorize', { workspaceId }),
+  ensureWorkspaceConfig: (workspaceId: string): Promise<Workspace> =>
+    post<Workspace>('/workspace/ensureConfig', { workspaceId }),
+
+  /* ── AGENTS.md ── */
+  agentsMdInfo: (workspaceId: string): Promise<AgentsMdInfo> =>
+    post<AgentsMdInfo>('/agentsmd/info', { workspaceId }),
+  agentsMdGenerate: (body: Record<string, unknown>): Promise<AgentsMdResult> =>
+    post<AgentsMdResult>('/agentsmd/generate', body),
+  agentsMdSave: (body: Record<string, unknown>): Promise<AgentsMdResult> =>
+    post<AgentsMdResult>('/agentsmd/save', body),
+
+  /* ── 数据与用量 ── */
+  globalStats: (days?: number | null): Promise<GlobalSessionStats> =>
+    get<GlobalSessionStats>('/session/globalStats', { days }),
+  clearAllSessions: (workspaceId?: string | null): Promise<void> =>
+    post<void>('/session/clearAll', { workspaceId: workspaceId ?? null }),
 };
 
 /**

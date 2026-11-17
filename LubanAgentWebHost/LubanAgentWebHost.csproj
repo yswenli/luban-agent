@@ -15,19 +15,19 @@
 
 	<ItemGroup>
 		<!-- SAEA.MVC 只按 /{controller}/{action} 派发，控制器必须与宿主同程序集 -->
-		<PackageReference Include="SAEA.MVC" Version="26.10.8.1" />
+		<PackageReference Include="SAEA.MVC" Version="26.11.16.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 测试工程需要验证 zip 解包校验（写盘、目录穿越、插件根定位），不对外暴露 -->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>LubanAgent.Tests</_Parameter1>
+		</AssemblyAttribute>
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
 		<!-- A2A 运行时随宿主下沉：服务端/客户端角色都在 WebHost 进程内启停（实现已并入 LubanAgentCore） -->
-	</ItemGroup>
-
-	<ItemGroup>
-		<!-- 文件路径解析、请求头基地址等纯逻辑是 internal，单测需要直接验证 -->
-		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-			<_Parameter1>LubanAgent.Tests</_Parameter1>
-		</AssemblyAttribute>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -41,9 +41,13 @@
 		<Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
 		<!-- 浏览器端「帮助」弹窗展示仓库 README：拷到输出根目录，由 /system/readme 读取 -->
 		<Content Include="..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-		<!-- README 的预览图用根目录相对路径，随站点一起放进 wwwroot -->
+		<!-- 401 页把图标内联成 data URI，需要一份固定文件名的源文件（Vite 产物带内容哈希） -->
+		<Content Include="web\src\asserts\favicon.ico" Link="wwwroot\favicon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<!-- README 的预览图用根目录相对路径，随站点一起放进 wwwroot（帮助弹窗直接渲染 README，缺图会 404） -->
 		<Content Include="..\lubanagent.png" Link="wwwroot\lubanagent.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-		<Content Include="..\lubanagent-chat.png" Link="wwwroot\lubanagent-chat.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-chat1.png" Link="wwwroot\lubanagent-chat1.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-chat2.png" Link="wwwroot\lubanagent-chat2.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+		<Content Include="..\lubanagent-llmwiki.png" Link="wwwroot\lubanagent-llmwiki.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="..\lubanagent-settings.png" Link="wwwroot\lubanagent-settings.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="..\lubanagent-help.png" Link="wwwroot\lubanagent-help.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 		<Content Include="..\lubanagent-about.png" Link="wwwroot\lubanagent-about.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

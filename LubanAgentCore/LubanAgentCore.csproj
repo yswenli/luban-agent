@@ -7,21 +7,23 @@
 
 	<ItemGroup>
 		<!-- 框架包走 nexus3 私有源，版本人工控制。
-		     2026.11.9.1 起含文件工具读取修复（分页 / 编码回写 / 表格读取 / 二进制守卫）。 -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.11.9.1" />
-		<PackageReference Include="LuBan.Common" Version="2026.11.9.1" />
-		<PackageReference Include="LuBan.Logging" Version="2026.11.9.1" />
-		<PackageReference Include="LuBan.Orm" Version="2026.11.9.1" />
+		     这四个包必须同版本（避免「新 AIAgent + 旧 Common」混装），
+		     且与 LubanAgent.Plugin.NewProject 引用的 LuBan.AIAgent 版本一致，
+		     否则插件与宿主编译出两套工具定义。 -->
+		<PackageReference Include="LuBan.AIAgent" Version="2026.11.16.1" />
+		<PackageReference Include="LuBan.Common" Version="2026.11.16.1" />
+		<PackageReference Include="LuBan.Logging" Version="2026.11.16.1" />
+		<PackageReference Include="LuBan.Orm" Version="2026.11.16.1" />
 		<!-- 产品侧厂商连接器（云效）已并入本程序集（Connectors/AliyunDevOps/），不再独立成程序集；
 		     宿主仍显式注册（AgentHostBuilder → AddAliyunDevOpsConnector），ALC 回落语义不变。 -->
 		<!-- Microsoft.Extensions.DependencyInjection / Options / Configuration / AI
 		     不再显式声明：统一由 LuBan.AIAgent / Common / Logging 传递提供（10.0.13 / 10.11.0）。
 		     显式钉低版本会触发 NU1605 包降级（NuGet 直接引用最近者优先）。 -->
-		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
-		<PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.32.0" />
+		<PackageReference Include="Microsoft.ML.Tokenizers" Version="3.0.0" />
 		<!-- DPAPI 凭据保护（Security/DpapiCredentialProtector）：net10.0 为平台中立 TFM，
 		     ProtectedData 不在共享框架内，必须显式引用；非 Windows 平台运行时 IsAvailable=false。 -->
-		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
+		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
 		<PackageReference Include="SqlSugarCore" Version="5.1.4.221" />
 		<!-- A2A 协议 SDK（A2A/ 目录）：core 包 + ASP.NET Core 宿主扩展 -->
 		<PackageReference Include="A2A" Version="1.0.0-preview2" />
@@ -29,9 +31,6 @@
 	</ItemGroup>
 
 	<!-- A2A Server 宿主（A2A/Server/A2AServerHost）：基于 ASP.NET Core，仅库引用，不启用 Generic Host -->
-	<ItemGroup>
-		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-	</ItemGroup>
 
 	<ItemGroup>
 		<!-- 测试工程需要验证子进程参数装配（ServerProcessLauncher.BuildArguments），不对外暴露 -->

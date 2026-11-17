@@ -36,6 +36,21 @@ public sealed record ProviderListItemDto(
     IReadOnlyList<string> CustomModels,
     bool IsSelected);
 
+/// <summary>内置供应商预设项（标识与默认基址由框架预设表提供）。</summary>
+/// <param name="Name">标识（小写）。</param>
+/// <param name="DisplayName">显示名。</param>
+/// <param name="BaseUrl">预设基址；「自定义」为空，Azure / Ollama 为占位地址，Claude / Gemini 无预设地址。</param>
+/// <param name="EditableBaseUrl">基址是否仍需用户填写（自定义端点项，以及无预设地址的项）。</param>
+/// <param name="IsCustom">是否为「自定义」项；true 时标识与基址均可编辑。</param>
+/// <param name="Warning">添加时的风险提示（如 Claude 需经 OpenAI 兼容代理），无则为 null。</param>
+public sealed record ProviderPresetDto(
+    string Name,
+    string DisplayName,
+    string BaseUrl,
+    bool EditableBaseUrl,
+    bool IsCustom,
+    string? Warning);
+
 /// <summary>保存供应商。<see cref="ApiKey"/> 留空表示不修改已有密钥。</summary>
 public sealed record ProviderSaveRequest
 {

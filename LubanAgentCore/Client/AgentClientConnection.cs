@@ -7,9 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Services.Management;
-
 namespace LubanAgentCore.Client;
 
 /// <summary>

@@ -12,8 +12,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Connectors.AliyunDevOps;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

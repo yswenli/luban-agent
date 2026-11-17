@@ -8,8 +8,6 @@
 *            id 是 JSON 数字（路径键必须是它，不是 uuid）
 *****************************************************************************/
 
-using LubanAgentCore.Connectors.AliyunDevOps;
-
 namespace LubanAgent.Tests;
 
 /// <summary>

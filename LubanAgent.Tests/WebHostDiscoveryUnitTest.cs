@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LubanAgentCore.Client;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

@@ -490,6 +490,47 @@ public static class WebSessionService
         return WebApi.OkJson(new { sessionId = input.SessionId.Trim() });
     });
 
+    /// <summary>设置会话单独使用的模型（只影响该会话，不改全局默认）。</summary>
+    /// <param name="payload">包装后的 <see cref="SessionModelRequest"/> JSON。</param>
+    /// <returns>切换后的选择。</returns>
+    public static Task<ActionResult> SelectModelAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<SessionModelRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.SessionId))
+        {
+            return WebApi.FailJson(400, "sessionId 不能为空");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.ProviderId) || string.IsNullOrWhiteSpace(input.ModelId))
+        {
+            return WebApi.FailJson(400, "providerId / modelId 不能为空");
+        }
+
+        var sessionId = input.SessionId.Trim();
+        var providerId = input.ProviderId.Trim().ToLowerInvariant();
+        var modelId = input.ModelId.Trim();
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
+        {
+            return failure;
+        }
+
+        var updated = await scope.GetRequiredService<SessionRepository>()
+            .UpdateModelAsync(sessionId, WebApi.Runtime.UserId, providerId, modelId)
+            .ConfigureAwait(false);
+        if (!updated)
+        {
+            return WebApi.FailJson(404, WebSessionResolver.SessionNotFound);
+        }
+
+        return WebApi.OkJson(new ModelSelectionDto(providerId, modelId));
+    });
+
     /// <summary>把数据库会话映射为对外模型。</summary>
     private static SessionInfo ToSessionInfo(DbSession session) => new()
     {

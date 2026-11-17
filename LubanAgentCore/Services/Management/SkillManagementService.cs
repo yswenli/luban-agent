@@ -35,6 +35,15 @@ public sealed class SkillManagementService : ISkillManagementService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LuBanFramework", "AIAgent", "skills");
 
+    /// <summary>单个 SKILL.md 的落盘上限（字节），对齐框架 SkillManageToolOptions.MaxSkillFileBytes。</summary>
+    private const long MaxSkillFileBytes = 256 * 1024;
+
+    /// <summary>一次导入的 ZIP 条目数上限，避免超大包把导入拖死。</summary>
+    private const int MaxImportEntries = 500;
+
+    /// <summary>一次导入的解压总字节上限（防压缩炸弹）。</summary>
+    private const long MaxImportTotalBytes = 8 * 1024 * 1024;
+
     private readonly ConfigManager _config;
     private readonly SkillRegistry _registry;
     private readonly IWorkspaceManager _workspaces;
@@ -62,10 +71,10 @@ public sealed class SkillManagementService : ISkillManagementService
         {
             seen.Add(skill.Id);
 
-            // 合并优先级：硬编码 > 工作区文件 > config.json
-            var origin = _registry.IsBuiltin(skill.Id)
-                ? ManagedOrigin.Builtin
-                : fileIds.Contains(skill.Id) ? ManagedOrigin.File : ManagedOrigin.Config;
+            // 合并优先级：工作区文件 > 硬编码 > config.json；有同名文件时来源记为文件型
+            var origin = fileIds.Contains(skill.Id)
+                ? ManagedOrigin.File
+                : _registry.IsBuiltin(skill.Id) ? ManagedOrigin.Builtin : ManagedOrigin.Config;
 
             // 进入合并视图的内置 / 文件型项本身即「启用」；config 项另读 Enabled（禁用项不进合并视图）
             var enabled = origin != ManagedOrigin.Config
@@ -167,6 +176,12 @@ public sealed class SkillManagementService : ISkillManagementService
     {
         var safeId = EnsureSafeName(id, nameof(id));
 
+        if (CollectOriginFileIds(_workspaces.CurrentWorkspace?.RootPath).Contains(safeId))
+        {
+            throw new NotSupportedException(
+                $"文件型 Skill '{safeId}' 不支持在此启用/禁用，请直接编辑 .luban-agent/skills 目录");
+        }
+
         if (_registry.IsBuiltin(safeId))
         {
             _config.SetBuiltinSkillEnabled(safeId, enabled);
@@ -174,11 +189,6 @@ public sealed class SkillManagementService : ISkillManagementService
         else if (_config.CustomSkills.Any(c => c.Id.Equals(safeId, StringComparison.OrdinalIgnoreCase)))
         {
             _config.SetCustomSkillEnabled(safeId, enabled);
-        }
-        else if (CollectOriginFileIds(_workspaces.CurrentWorkspace?.RootPath).Contains(safeId))
-        {
-            throw new NotSupportedException(
-                $"文件型 Skill '{safeId}' 不支持在此启用/禁用，请直接编辑 .luban-agent/skills 目录");
         }
         else
         {
@@ -204,6 +214,32 @@ public sealed class SkillManagementService : ISkillManagementService
     }
 
     /// <inheritdoc />
+    public IReadOnlyList<SkillFileEntry> ListFileEntries(string? workspaceRoot)
+    {
+        var dir = ResolveDir(workspaceRoot);
+        if (!Directory.Exists(dir)) return Array.Empty<SkillFileEntry>();
+
+        var entries = new List<SkillFileEntry>();
+        foreach (var skillDir in Directory.GetDirectories(dir))
+        {
+            var id = Path.GetFileName(skillDir);
+            var path = Path.Combine(skillDir, "SKILL.md");
+            if (string.IsNullOrWhiteSpace(id) || !File.Exists(path)) continue;
+
+            var (name, _, category, _, _) = ParseSkillMarkdown(File.ReadAllText(path));
+            entries.Add(new SkillFileEntry(
+                id,
+                string.IsNullOrWhiteSpace(name) ? id : name,
+                category ?? ""));
+        }
+
+        return entries
+            .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <inheritdoc />
     public SkillFileContent? ReadFile(string id, string? workspaceRoot)
     {
         var safeId = EnsureSafeName(id, nameof(id));
@@ -215,35 +251,147 @@ public sealed class SkillManagementService : ISkillManagementService
     }
 
     /// <inheritdoc />
-    public void SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot)
+    public string SaveFile(string? originalId, SkillFileContent content, string? workspaceRoot)
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        var name = EnsureSafeName(content.Name?.Trim() ?? "", nameof(content));
-        if (string.IsNullOrEmpty(name))
-            throw new ArgumentException("技能的 name 不能为空", nameof(content));
+        var displayName = content.Name?.Trim() ?? "";
+        // 校验信息直接回给两端 UI（Web 映射为 400），故不带 ArgumentException 的 paramName 后缀
+        if (string.IsNullOrEmpty(displayName))
+            throw new ArgumentException("技能的 name 不能为空");
+        if (displayName.Any(char.IsControl))
+            throw new ArgumentException("技能的 name 不能包含换行或控制字符");
+
+        // description 是模型选择技能的依据，缺失即无法被选中：两端 UI 与服务端统一按必填校验
+        if (NormalizeFrontmatterText(content.Description).Length == 0)
+            throw new ArgumentException("技能的 description 不能为空");
 
         var root = ResolveDir(workspaceRoot);
         Directory.CreateDirectory(root);
 
-        var targetDir = Path.Combine(root, name);
-
-        // 改名：移动目录（与 Codex 设置页原逻辑一致，大小写视为不同）
-        if (!string.IsNullOrEmpty(originalId) && originalId != name)
+        string dirName;
+        if (!string.IsNullOrWhiteSpace(originalId))
         {
-            var oldDir = Path.Combine(root, EnsureSafeName(originalId, nameof(originalId)));
-            if (Directory.Exists(oldDir))
-            {
-                if (Directory.Exists(targetDir))
-                    throw new InvalidOperationException($"已存在同名技能 \"{name}\"，请更换 name。");
-                Directory.Move(oldDir, targetDir);
-            }
+            // 已有条目：目录保持不动，只改 frontmatter（显示名不受文件名规则限制）
+            dirName = EnsureSafeName(originalId, nameof(originalId));
+        }
+        else
+        {
+            // 新建：目录名由名称生成；名称必须同时能作为目录名，同名目录已存在时拒绝
+            if (!IsSafeDirName(displayName))
+                throw new ArgumentException($"技能的 name 不能作为目录名（含非法字符）: '{displayName}'");
+            dirName = displayName;
+            if (Directory.Exists(Path.Combine(root, dirName)))
+                throw new InvalidOperationException($"已存在同名技能目录 \"{dirName}\"，请更换名称。");
         }
 
+        var targetDir = Path.Combine(root, dirName);
         Directory.CreateDirectory(targetDir);
         File.WriteAllText(
             Path.Combine(targetDir, "SKILL.md"),
-            BuildSkillMarkdown(name, content.Description ?? "", content.Category ?? "", content.Triggers ?? "", content.Body ?? ""));
+            BuildSkillMarkdown(
+                displayName,
+                NormalizeFrontmatterText(content.Description),
+                NormalizeFrontmatterText(content.Category),
+                NormalizeFrontmatterText(content.Triggers),
+                content.Body ?? ""));
+
+        return dirName;
+    }
+
+    /// <summary>
+    /// frontmatter 单行值归一：控制字符（含换行 / 制表）与连续空白折叠为单个空格，
+    /// 避免把后续行挤出 frontmatter，也避免出现 "a  b" 这类双空格。
+    /// </summary>
+    private static string NormalizeFrontmatterText(string? value)
+    {
+        var text = value?.Trim() ?? "";
+        if (text.Length == 0) return "";
+        if (!text.Any(char.IsControl) && !text.Contains("  ", StringComparison.Ordinal)) return text;
+
+        var sb = new StringBuilder(text.Length);
+        var lastWasSpace = false;
+        foreach (var ch in text)
+        {
+            if (char.IsControl(ch) || char.IsWhiteSpace(ch))
+            {
+                if (!lastWasSpace && sb.Length > 0)
+                {
+                    sb.Append(' ');
+                    lastWasSpace = true;
+                }
+                continue;
+            }
+
+            sb.Append(ch);
+            lastWasSpace = false;
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <inheritdoc />
+    public SkillImportResult ImportZip(Stream zipStream, string? workspaceRoot)
+    {
+        ArgumentNullException.ThrowIfNull(zipStream);
+
+        var root = ResolveDir(workspaceRoot);
+        Directory.CreateDirectory(root);
+
+        var imported = new List<string>();
+        var skipped = new List<string>();
+        var ignored = new List<string>();
+
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: true);
+        if (archive.Entries.Count > MaxImportEntries)
+            throw new InvalidOperationException($"ZIP 条目数超过上限 {MaxImportEntries}，请拆分后再导入。");
+
+        long totalBytes = 0;
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')) continue;
+
+            var normalized = entry.FullName.Replace('\\', '/').TrimStart('/');
+            var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+            // 形态约定：<任意前缀>/<目录>/SKILL.md，目录名取 SKILL.md 的上一级
+            if (segments.Length < 2 || !segments[^1].Equals("SKILL.md", StringComparison.OrdinalIgnoreCase))
+            {
+                // 伴随文件（脚本、参考文档等）当前不落盘，与非技能文件分开计数，避免混进「跳过」误导用户
+                ignored.Add(normalized);
+                continue;
+            }
+
+            var dirName = segments[^2];
+            if (!IsSafeDirName(dirName))
+            {
+                skipped.Add(dirName);
+                continue;
+            }
+
+            if (entry.Length > MaxSkillFileBytes)
+            {
+                skipped.Add($"{dirName}（大于 {MaxSkillFileBytes / 1024}KB）");
+                continue;
+            }
+
+            totalBytes += entry.Length;
+            if (totalBytes > MaxImportTotalBytes)
+                throw new InvalidOperationException($"ZIP 解压后总大小超过上限 {MaxImportTotalBytes / 1024 / 1024}MB，请拆分后再导入。");
+
+            var targetDir = Path.Combine(root, dirName);
+            Directory.CreateDirectory(targetDir);
+            using (var source = entry.Open())
+            using (var target = File.Create(Path.Combine(targetDir, "SKILL.md")))
+            {
+                source.CopyTo(target);
+            }
+
+            if (!imported.Contains(dirName, StringComparer.OrdinalIgnoreCase))
+                imported.Add(dirName);
+        }
+
+        return new SkillImportResult(imported, skipped, ignored);
     }
 
     // ---------------- 路径与内容解析 ----------------
@@ -289,6 +437,20 @@ public sealed class SkillManagementService : ISkillManagementService
             throw new ArgumentException($"非法名称: '{value}'", paramName);
         }
         return name;
+    }
+
+    /// <summary>ZIP 内目录名是否可安全落盘（非空、无分隔符、无上跳）。</summary>
+    private static bool IsSafeDirName(string? name)
+    {
+        var value = name?.Trim() ?? "";
+        if (value.Length == 0) return false;
+        if (value is "." or ".." || value.Contains("..", StringComparison.Ordinal)
+            || value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || value.Contains('/') || value.Contains('\\'))
+        {
+            return false;
+        }
+        return true;
     }
 
     private static string BuildSkillMarkdown(string name, string desc, string category, string triggers, string body)

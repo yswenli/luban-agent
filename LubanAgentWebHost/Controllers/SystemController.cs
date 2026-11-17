@@ -48,4 +48,25 @@ public sealed class SystemController : Controller
     /// <returns>Markdown 原文。</returns>
     [HttpGet]
     public Task<ActionResult> Readme() => WebSystemService.ReadmeAsync();
+
+    /// <summary>
+    /// 局域网入口二维码（PNG）：手机扫码直接打开本实例。
+    /// </summary>
+    /// <returns>PNG 图片流。</returns>
+    [HttpGet]
+    public Task<ActionResult> EntryQr() => WebSystemService.EntryQrAsync();
+
+    /// <summary>
+    /// 浏览器会话状态（前端心跳；顺便触发会话令牌轮换）。
+    /// </summary>
+    /// <returns>令牌与会话的到期时刻。</returns>
+    [HttpGet]
+    public Task<ActionResult> Session() => WebSystemService.SessionAsync();
+
+    /// <summary>
+    /// 当前入口地址（终端 <c>token</c> 命令用，只认固定令牌）。
+    /// </summary>
+    /// <returns>入口地址与会话到期时刻。</returns>
+    [HttpGet]
+    public Task<ActionResult> EntryUrl() => WebSystemService.EntryUrlAsync();
 }

@@ -34,6 +34,13 @@ public sealed class SkillRuleTabViewModel(DiContainer? services)
             ? Skills?.ListFileIds(scopeRoot).ToList() ?? []
             : Rules?.ListFileIds(scopeRoot).ToList() ?? [];
 
+    /// <summary>
+    /// 列出技能条目（目录名 + 显示名 + 分类），供左栏按分类分组。
+    /// </summary>
+    /// <param name="scopeRoot">作用区根目录（null=用户级全局）。</param>
+    public IReadOnlyList<SkillFileEntry> ListSkillEntries(string? scopeRoot)
+        => Skills?.ListFileEntries(scopeRoot) ?? [];
+
     /// <summary>条目是否已存在。</summary>
     /// <param name="kind">技能或规则。</param>
     /// <param name="name">条目键。</param>
@@ -54,9 +61,9 @@ public sealed class SkillRuleTabViewModel(DiContainer? services)
         => Rules?.ReadFile(key, scopeRoot);
 
     /// <summary>
-    /// 保存技能（含必填校验）。
+    /// 保存技能（含必填校验）。目录名不变，仅改写 frontmatter；新建时目录名按显示名生成。
     /// </summary>
-    /// <param name="oldKey">原条目键；新建时为 null。</param>
+    /// <param name="oldKey">原条目键（目录名）；新建时为 null。</param>
     /// <param name="form">表单内容。</param>
     /// <param name="scopeRoot">作用区根目录（null=全局）。</param>
     public SettingsOutcome SaveSkill(string? oldKey, SkillForm form, string? scopeRoot)
@@ -67,9 +74,10 @@ public sealed class SkillRuleTabViewModel(DiContainer? services)
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(description))
             return SettingsOutcome.Failure("技能的 name 与 description 不能为空。");
 
+        string key;
         try
         {
-            (Skills ?? throw new InvalidOperationException("Skill 管理服务不可用"))
+            key = (Skills ?? throw new InvalidOperationException("Skill 管理服务不可用"))
                 .SaveFile(oldKey, new SkillFileContent(
                     name, description, form.Category.Trim(), form.Triggers.Trim(), form.Body), scopeRoot);
         }
@@ -78,7 +86,43 @@ public sealed class SkillRuleTabViewModel(DiContainer? services)
             return SettingsOutcome.Failure($"保存失败：{ex.Message}");
         }
 
-        return SettingsOutcome.Success(key: name);
+        return SettingsOutcome.Success(key: key);
+    }
+
+    /// <summary>
+    /// 导入技能 ZIP 包（同名目录以新导入内容覆盖）。
+    /// </summary>
+    /// <param name="zipStream">ZIP 内容流（调用方负责释放）。</param>
+    /// <param name="scopeRoot">作用区根目录（null=全局）。</param>
+    public SettingsOutcome ImportSkills(Stream zipStream, string? scopeRoot)
+    {
+        try
+        {
+            var result = (Skills ?? throw new InvalidOperationException("Skill 管理服务不可用"))
+                .ImportZip(zipStream, scopeRoot);
+
+            if (result.Imported.Count == 0)
+            {
+                if (result.Skipped.Count > 0)
+                {
+                    return SettingsOutcome.Failure(
+                        $"未导入任何技能：{result.Skipped.Count} 个条目被拒（目录名非法，或 SKILL.md 超过大小上限）。");
+                }
+
+                return SettingsOutcome.Failure(result.Ignored.Count > 0
+                    ? $"ZIP 包内没有找到 SKILL.md（另有 {result.Ignored.Count} 个非 SKILL.md 文件）。"
+                    : "ZIP 包内没有找到 SKILL.md。");
+            }
+
+            var message = $"已导入 {result.Imported.Count} 个技能";
+            if (result.Skipped.Count > 0) message += $"，跳过 {result.Skipped.Count} 个条目";
+            if (result.Ignored.Count > 0) message += $"，{result.Ignored.Count} 个非 SKILL.md 文件未导入（仅支持单文件技能）";
+            return SettingsOutcome.Success(message + "。", result.Imported[0]);
+        }
+        catch (Exception ex)
+        {
+            return SettingsOutcome.Failure($"导入失败：{ex.Message}");
+        }
     }
 
     /// <summary>

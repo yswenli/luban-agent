@@ -34,22 +34,25 @@ public readonly record struct SettingsOutcome(bool Ok, string Message = "", stri
 }
 
 /// <summary>
-/// 中栏列表项（供应商 / 模型 / A2A 用；技能/规则/MCP 直接展示字符串键）。
+/// 中栏列表项（供应商 / 模型 / A2A / 技能用；规则与 MCP 直接展示字符串键）。
 /// </summary>
 public sealed class SettingsListItem
 {
-    /// <summary>条目键（供应商=Name，模型=provider:model，A2A=文件名）。</summary>
+    /// <summary>条目键（供应商=Name，模型=provider:model，A2A=文件名，技能=目录名）；分组标题为空串。</summary>
     public string Key { get; init; } = "";
 
     /// <summary>列表展示文本。</summary>
     public string Display { get; init; } = "";
+
+    /// <summary>是否为不可选中的分组标题（技能页按分类分组时使用）。</summary>
+    public bool IsHeader { get; init; }
 
     /// <inheritdoc />
     public override string ToString() => Display;
 }
 
 /// <summary>技能表单（窗口采集，VM 负责校验与落盘）。</summary>
-/// <param name="Name">技能名（必填）。</param>
+/// <param name="Name">技能显示名（必填；与目录名无关）。</param>
 /// <param name="Description">描述（必填）。</param>
 /// <param name="Category">分类。</param>
 /// <param name="Triggers">触发词（逗号分隔）。</param>

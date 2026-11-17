@@ -9,13 +9,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Abstractions;
-using LuBan.AIAgent.Hosting;
-using LuBan.DI;
-
-using LubanAgentCodex.ViewModels;
-using LubanAgentCodex.ViewModels.Messages;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

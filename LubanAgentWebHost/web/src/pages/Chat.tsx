@@ -4,9 +4,11 @@ import { ConfirmActionDialog, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
 import { Markdown } from '../components/Markdown';
 import { PopMenu, menuAt } from '../components/PopMenu';
+import { ScreenshotOverlay } from '../components/screenshot/ScreenshotOverlay';
+import { isCaptureSupported } from '../components/screenshot/capture';
 import { post } from '../lib/api';
 import { formatBytes, formatTime, isImageMediaType, truncate } from '../lib/format';
-import { openSettings, openSessions } from '../lib/router';
+import { openSettings, openSessions, openWiki } from '../lib/router';
 import type { StoredAttachment, WebCommand } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import type { ChatItem, ToolCard } from '../stores/chat';
@@ -14,7 +16,6 @@ import { dropChat, getChat } from '../stores/chats';
 import {
   bootstrap,
   commands,
-  currentModelLabel,
   cyclePermissionMode,
   deleteSession,
   loadCommands,
@@ -24,11 +25,13 @@ import {
   refreshProviderModels,
   refreshSessions,
   renameSession,
-  selectModel,
-  selection,
+  selectSessionModel,
+  sessionModel,
+  sessionModelLabel,
   sessions,
   setReasoningEffort,
   showToast,
+  wikiWorkspaceIds,
   workspaceName,
 } from '../stores/app';
 
@@ -46,6 +49,9 @@ export function ChatPage(props: { sessionId: string }) {
   const [commandIndex, setCommandIndex] = createSignal(0);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [dialog, setDialog] = createSignal<'rename' | 'delete' | null>(null);
+  const [screenshotOpen, setScreenshotOpen] = createSignal(false);
+  /** 改写请求在途：期间锁住输入与发送，避免改写到一半又被编辑 */
+  const [optimizing, setOptimizing] = createSignal(false);
 
   let scrollEl!: HTMLDivElement;
   let textareaEl!: HTMLTextAreaElement;
@@ -102,6 +108,7 @@ export function ChatPage(props: { sessionId: string }) {
   }
 
   async function submit() {
+    if (optimizing()) return;
     if (chat.streaming()) {
       await chat.stop();
       return;
@@ -156,7 +163,7 @@ export function ChatPage(props: { sessionId: string }) {
         openSessions();
         return;
       case 'action:openLlmWiki':
-        showToast('本版暂不支持 LLM Wiki 管理', 'info');
+        openWiki();
         return;
       default:
         showToast(`暂不支持命令 ${command.name}`, 'info');
@@ -206,12 +213,48 @@ export function ChatPage(props: { sessionId: string }) {
     void addFiles(files);
   }
 
-  const plusMenuHeight = 104;
+  /**
+   * 把输入框里的内容改写成需求表述。
+   * 只替换文字，不动已附的文件；结果直接覆盖、不提供撤销。
+   */
+  async function optimizeInput() {
+    const text = input();
+    if (!text.trim() || optimizing()) return;
+    setOptimizing(true);
+    try {
+      const result = await post<{ text: string }>('/agent/optimize', {
+        prompt: text,
+        sessionId: props.sessionId,
+      });
+      if (result.text) {
+        setInput(result.text);
+        queueMicrotask(resizeTextarea);
+      }
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    } finally {
+      setOptimizing(false);
+    }
+  }
+
+  const plusMenuHeight = 140;
+  /** 抓屏依赖安全上下文：内网 http 下浏览器不提供 getDisplayMedia，菜单项直接置灰 */
+  const captureSupported = isCaptureSupported();
   const effortOptions = ['', 'None', 'Low', 'Medium', 'High'] as const;
+
+  /** 后退：知识库会话回知识库页，其余回会话列表。 */
+  const goBack = () => {
+    const workspaceId = session()?.workspaceId;
+    if (workspaceId && wikiWorkspaceIds().has(workspaceId)) openWiki();
+    else openSessions();
+  };
 
   return (
     <>
       <div class="chat-head">
+        <button class="icon-btn" title="返回列表" onClick={goBack}>
+          <Icon name="arrow-left" size={18} />
+        </button>
         <span
           class="ws-badge sm"
           style={{ background: workspaceColor(session()?.workspaceId) }}
@@ -227,8 +270,8 @@ export function ChatPage(props: { sessionId: string }) {
         </span>
         <div class="spacer" />
         <Show when={totalTokens() > 0}>
-          <span class="faint mono" title="累计 Token">
-            {totalTokens()} tok
+          <span class="faint mono" title="当前会话 Token 用量">
+            当前会话已消费 {totalTokens()} token
           </span>
         </Show>
         <button
@@ -262,6 +305,7 @@ export function ChatPage(props: { sessionId: string }) {
                 </div>
               </Show>
 
+              {/* 会话没绑工作区时传 undefined（不改写相对链接）：让宿主回落到「当前工作区」会读到另一个项目的同名文件 */}
               <Index each={chat.items()}>{(item) => <ChatRow item={item} workspaceId={session()?.workspaceId ?? undefined} />}</Index>
 
               <Show when={chat.plans().length > 0}>
@@ -339,10 +383,18 @@ export function ChatPage(props: { sessionId: string }) {
               </div>
             </Show>
 
+            <Show when={optimizing()}>
+              <div class="composer-busy">
+                <span class="busy-dot" />
+                处理中…
+              </div>
+            </Show>
+
             <textarea
               ref={(element) => (textareaEl = element)}
               value={input()}
               rows={1}
+              disabled={optimizing()}
               placeholder="给 Luban Agent 发送消息（Enter 发送，Shift+Enter 换行）"
               onInput={(event) => {
                 setInput(event.currentTarget.value);
@@ -385,6 +437,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="pill-btn"
                 title="添加图片和文件 / 命令"
+                disabled={optimizing()}
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
                   setPlusMenu(menuAt(rect, { width: 214, height: plusMenuHeight, gap: 6, align: 'start' }));
@@ -395,17 +448,19 @@ export function ChatPage(props: { sessionId: string }) {
 
               <button
                 class="pill-btn value"
-                title="切换模型（全局生效）"
+                title="切换本会话模型（不影响其他会话）"
+                disabled={optimizing()}
                 onClick={openModelMenu}
               >
                 <Icon name="spark" size={14} />
-                <span class="model-name">{currentModelLabel()}</span>
+                <span class="model-name">{sessionModelLabel(props.sessionId)}</span>
                 <Icon name="chevron-down" size={13} />
               </button>
 
               <button
                 class="pill-btn value"
                 title="切换权限模式"
+                disabled={optimizing()}
                 onClick={() => {
                   cyclePermissionMode();
                 }}
@@ -417,6 +472,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="pill-btn value"
                 title="推理强度"
+                disabled={optimizing()}
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
                   setEffortMenu(menuAt(rect, { width: 170, height: 190, gap: 6, align: 'start' }));
@@ -429,10 +485,19 @@ export function ChatPage(props: { sessionId: string }) {
               <div class="spacer" />
 
               <button
+                class="optimize-btn"
+                title="把输入内容改写成更清晰的需求表述"
+                disabled={!input().trim() || optimizing() || chat.streaming()}
+                onClick={() => void optimizeInput()}
+              >
+                <Icon name="wand" size={16} />
+              </button>
+
+              <button
                 class="send-btn"
                 classList={{ stop: chat.streaming() }}
                 title={chat.streaming() ? '停止本轮' : '发送'}
-                disabled={!chat.streaming() && (!input().trim() || chat.pending().some((item) => item.status === 'uploading'))}
+                disabled={optimizing() || (!chat.streaming() && (!input().trim() || chat.pending().some((item) => item.status === 'uploading')))}
                 onClick={() => void submit()}
               >
                 <Icon name={chat.streaming() ? 'stop' : 'arrow-up'} size={17} />
@@ -479,6 +544,26 @@ export function ChatPage(props: { sessionId: string }) {
       <Show when={plusMenu()}>
         {(menu) => (
           <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, 'min-width': '214px' }} onClose={() => setPlusMenu(null)}>
+            <button
+              class="menu-item"
+              disabled={!captureSupported}
+              title={
+                captureSupported
+                  ? '框选屏幕区域并标注，确认后作为附件加入'
+                  : '当前访问地址不是安全上下文，浏览器不允许抓屏；请改用 https 或 localhost 打开'
+              }
+              onClick={() => {
+                setPlusMenu(null);
+                setScreenshotOpen(true);
+              }}
+            >
+              <Icon name="camera" size={16} />
+              截图
+              <div class="spacer" />
+              <Show when={!captureSupported}>
+                <span class="sub">需 https</span>
+              </Show>
+            </button>
             <button
               class="menu-item"
               onClick={() => {
@@ -548,16 +633,23 @@ export function ChatPage(props: { sessionId: string }) {
                       <button
                         class="menu-item"
                         classList={{
-                          active: selection()?.providerId === provider.id && selection()?.modelId === model,
+                          active:
+                            sessionModel(props.sessionId)?.providerId === provider.id &&
+                            sessionModel(props.sessionId)?.modelId === model,
                         }}
                         onClick={() => {
                           setModelMenu(null);
-                          void selectModel(provider.id, model);
+                          void selectSessionModel(props.sessionId, provider.id, model);
                         }}
                       >
                         <span class="mono">{model}</span>
                         <div class="spacer" />
-                        <Show when={selection()?.providerId === provider.id && selection()?.modelId === model}>
+                        <Show
+                          when={
+                            sessionModel(props.sessionId)?.providerId === provider.id &&
+                            sessionModel(props.sessionId)?.modelId === model
+                          }
+                        >
                           <Icon name="check" size={15} />
                         </Show>
                       </button>
@@ -655,6 +747,13 @@ export function ChatPage(props: { sessionId: string }) {
           }}
         />
       </Show>
+
+      <ScreenshotOverlay
+        open={screenshotOpen()}
+        onCapture={(file) => void addFiles([file])}
+        onClose={() => setScreenshotOpen(false)}
+        onError={(message) => showToast(message, 'error')}
+      />
     </>
   );
 }
@@ -716,7 +815,7 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
             </Show>
 
             <Show when={item().tools.length > 0}>
-              <Index each={item().tools}>{(tool) => <ToolCardView tool={tool} />}</Index>
+              <ToolGroupView tools={() => item().tools} />
             </Show>
 
             <Show when={item().text}>
@@ -749,6 +848,37 @@ function AttachmentChip(props: { attachment: StoredAttachment }) {
       <span class="name">{name()}</span>
       <span class="faint">{size()}</span>
     </div>
+  );
+}
+
+/**
+ * 工具调用整组折叠：与「思考过程」同款样式，默认收起，摘要只留数量与整体状态。
+ * 展开后再逐条看工具卡片，每张卡片仍可单独展开参数与结果。
+ */
+function ToolGroupView(props: { tools: () => ToolCard[] }) {
+  const running = createMemo(() => props.tools().some((tool) => tool.status === 'running'));
+
+  const tone = createMemo(() => {
+    const tools = props.tools();
+    if (tools.some((tool) => tool.status === 'running')) return { className: 'running', label: '执行中' };
+    if (tools.some((tool) => tool.status === 'failed')) return { className: 'failed', label: '有失败' };
+    if (tools.some((tool) => tool.status === 'denied')) return { className: 'denied', label: '已拒绝' };
+    if (tools.some((tool) => tool.status === 'done')) return { className: 'done', label: '完成' };
+    return { className: 'history', label: '历史记录' };
+  });
+
+  return (
+    <details class="tool-group" classList={{ 'is-live': running() }}>
+      <summary>
+        <Icon name="terminal" size={14} />
+        工具调用
+        <span class="faint">{props.tools().length} 个</span>
+        <span class={`status ${tone().className}`}>{tone().label}</span>
+      </summary>
+      <div class="tool-group-body">
+        <Index each={props.tools()}>{(tool) => <ToolCardView tool={tool} />}</Index>
+      </div>
+    </details>
   );
 }
 

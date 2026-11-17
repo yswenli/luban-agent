@@ -510,7 +510,7 @@ public sealed class NewProjectService : INewProjectService
             _host?.LogError("[newproject] Step 2 初始化失败", ex);
             FailRunningOperation(Step, ex.Message, total.Elapsed);
 
-            // 仅回滚本步：新建的工作区逻辑注销（不删 LocalPath 目录，陷阱②）
+            // 仅回滚本步：新建的工作区注销（保留 LocalPath 目录与用户文件；项目内 .luban-agent 配置一并清理，陷阱②）
             if (createdWorkspace && workspace is not null)
             {
                 try
@@ -518,7 +518,7 @@ public sealed class NewProjectService : INewProjectService
                     var deleted = await workspaceManager.DeleteWorkspaceAsync(workspace.WorkspaceId);
                     Record(Step, "回滚本步",
                         deleted
-                            ? $"已注销本步新建的工作区「{workspace.Name}」（本地目录 {spec.LocalPath} 未被删除）。"
+                            ? $"已注销本步新建的工作区「{workspace.Name}」（本地目录 {spec.LocalPath} 未被删除，.luban-agent 配置已清理；重跑本步会重新铺装）。"
                             : $"工作区「{workspace.Name}」注销未生效，请到工作区列表手动清理。",
                         deleted ? StepStatus.Succeeded : StepStatus.Failed, TimeSpan.Zero);
                 }
@@ -2328,7 +2328,7 @@ public sealed class NewProjectService : INewProjectService
             }
         }
 
-        // ── 2. 注销本项目工作区（逻辑删；**不删** LocalPath 目录）──
+        // ── 2. 注销本项目工作区（清理会话/索引/.luban-agent；**不删** LocalPath 目录与用户文件）──
         var unregistered = false;
         var workspaceId = spec?.WorkspaceId;
         if (!string.IsNullOrWhiteSpace(workspaceId))

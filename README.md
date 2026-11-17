@@ -46,19 +46,45 @@
 
 ## 📸 界面预览
 
-![LuBan Agent 网页界面主视图：左侧按项目分组的会话列表，右侧多标签对话区](lubanagent.png)
+![LuBan Agent 网页界面主视图：顶栏是首页入口与可横向滚动的会话标签，左侧按项目分组的会话列表，右侧多标签对话区](lubanagent.png)
 
-*网页界面主视图：左侧按项目分组管理会话，右侧多标签并行对话*
+*网页界面主视图：顶栏左侧为首页入口与会话标签栏，左栏是「项目」和知识库/设置/帮助/关于入口，右侧按日期分组管理会话*
 
-| 对话与工具调用 | 技能与设置 |
-|:---:|:---:|
-| ![对话页：Markdown 正文、思考过程折叠与工具调用记录](lubanagent-chat.png) | ![设置页：技能列表与技能正文编辑表单](lubanagent-settings.png) |
-| 对话页：Markdown 正文、可折叠的思考过程与工具调用记录 | 设置页：技能、规则、MCP、供应商、模型统一管理，支持全局/当前工作区切换 |
+### 对话：新会话空态
 
-| 帮助 | 关于 |
-|:---:|:---:|
-| ![帮助弹窗：弹窗内直接渲染仓库 README，含路由表、命令与预览图](lubanagent-help.png) | ![关于弹窗：仓库、作者、版本与许可](lubanagent-about.png) |
-| 帮助页：弹窗内直接渲染仓库 README，命令、配置与接口说明随时可查 | 关于页：仓库地址、作者、版本与许可信息 |
+![对话页空态：开始对话提示、模型选择、默认/跟随模型开关、附件入口与发送框](lubanagent-chat1.png)
+
+*新会话空态：左下角「+」添加图片与文件，可切换模型与思考模式，Enter 发送、Shift+Enter 换行*
+
+### 对话：Markdown 与工具调用
+
+![对话页：Markdown 正文与表格渲染、历史记录与 token 计数，标题左侧带返回按钮](lubanagent-chat2.png)
+
+*对话页：Markdown 正文与表格渲染、历史记录与 token 计数，标题左侧可返回到会话列表或知识库*
+
+### 知识库
+
+![知识库页：左侧知识库列表可重命名与删除，右侧统计卡、索引与检索入口、已索引文件清单与「对话」按钮](lubanagent-llmwiki.png)
+
+*知识库页：wiki 页面 / 已索引文件 / 已索引切块统计，支持索引、重建、Lint、清空索引与检索，底部「对话」直接进入该知识库的会话*
+
+### 设置
+
+![设置页：全局与当前工作区作用域切换，左侧八个页签，右侧技能编辑表单](lubanagent-settings.png)
+
+*设置页：供应商、模型、技能、规则、MCP 服务、A2A 协作、工作区、数据与用量八个页签；技能页「新建 / 导入 ZIP」在列表上方，右侧直接编辑正文*
+
+### 帮助
+
+![帮助弹窗：弹窗内直接渲染仓库 README，含徽章、项目表与预览图](lubanagent-help.png)
+
+*帮助页：弹窗内直接渲染仓库 README，命令、配置与接口说明随宿主构建同步*
+
+### 关于
+
+![关于弹窗：局域网扫码入口二维码，下方是版本、仓库、作者与许可](lubanagent-about.png)
+
+*关于页：手机与电脑连同一局域网即可扫码打开本界面，下方是版本、仓库、作者与许可信息*
 
 ---
 
@@ -88,7 +114,7 @@
 > 计数口径：上表 12 行是面向使用者的能力清单，其中「MCP 外部工具」指把外部 MCP 服务器的工具并入工具集，不是独立工具组。框架实际注册 15 个工具组，另有 4 个管理类未单列——`SkillToolGroup`（列出/加载 Skill）、`SkillManageToolGroup`（写入删除 Skill）、`McpManageToolGroup`（写入删除 MCP 配置）、`ConnectorManageToolGroup`（连接器管理），见下文「对话式 Skill/MCP 管理」与「配置说明」。
 
 ### 🎯 Skill 系统
-- 内置九大核心技能（头脑风暴、代码审查、文档生成、代码重构、测试生成、代码解释、调试助手、Git 提交、技能发现），即插即用
+- 内置十大核心技能（头脑风暴、代码审查、文档生成、代码重构、测试生成、代码解释、调试助手、Git 提交、技能发现、AGENTS.md 规约生成），即插即用
 - **文件化 Skill**：通过 SKILL.md 文件定义自定义 Skill，兼容 OpenCode 格式，项目级/用户级目录自动加载
 - **对话式管理**：通过自然语言对话创建、使用和管理 Skill 与 MCP 服务器，无需手动编辑配置文件
 
@@ -103,7 +129,9 @@
 | 创建 MCP | "添加一个 MCP 服务器，名称是 my-api，命令是 node server.js" |
 
 **特性**：
-- ✅ 内置 Skill/MCP 不可覆盖删除，保证系统稳定
+- ✅ 工作区技能文件可覆盖同名内置 Skill（文件优先于内置与 config 自定义）；纯内置（无同名目录）不可删除，保证系统稳定
+- ✅ 设置页左侧按 `category` 分组、主文本为 `name`、小字为目录名；保存只改 frontmatter，不移动目录
+- ✅ 技能支持 ZIP 导入（包内按 `<目录>/SKILL.md` 识别，同名目录以新导入为准）
 - ✅ 写入/删除操作需用户确认（Default / AcceptEdits 必弹；Plan 模式仅记计划不落盘；Bypass 放行），防止误操作
 - ✅ Skill 写入当轮即可用；MCP 配置下一轮对话生效（新客户端需重建 Agent 才连接），无需重启
 - ✅ Skill ID 合法性校验，防止注入攻击
@@ -205,24 +233,26 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 
 ```bash
 # 手工启动（端口取自 appsettings.json 的 LubanAgentWeb:Port，默认 18080）
-# 启动完成后终端会打印浏览器入口：http://<局域网 IP>:18080/?t=<本次令牌>
+# 启动完成后终端会打印浏览器入口：http://<局域网 IP>:18080/?t=<本次会话令牌>
+# 入口下方还会打印同一地址的二维码，手机（同一局域网）直接扫码打开；宿主由客户端拉起、输出被重定向时不打印
+# 浏览器令牌默认每 15 分钟自动换新（页面开着会自动续期），会话最长 8 小时
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj
 
 # 健康检查（唯一免令牌的接口）
 curl http://127.0.0.1:18080/system/health
 
-# 重新打印浏览器入口（读运行中实例的令牌；宿主未运行会报错）
+# 重新打印浏览器入口（凭宿主令牌向运行中实例取当前入口；宿主未运行会报错）
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- token
 
 # 停止常驻实例
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 ```
 
-直接打开 `http://<局域网 IP>:18080/` 会被拒绝（401）：入口必须带本次运行的令牌，换到 Cookie 后地址栏会自动回到干净 URL。
+直接打开 `http://<局域网 IP>:18080/` 会被拒绝（401）：入口必须带当前会话令牌，换到 Cookie 后地址栏会自动回到干净 URL；会话超过绝对上限后旧地址同样 401。
 
-WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时先按发现文件接管已在运行的实例，确实没有才拉起子进程；端口、超时与用户身份取宿主的 `LubanAgentWeb` 配置，访问令牌由宿主每次启动生成并写入发现文件，客户端只读不自造。
+WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时先按发现文件接管已在运行的实例，确实没有才拉起子进程；端口、超时与用户身份取宿主的 `LubanAgentWeb` 配置，宿主令牌由宿主每次启动生成并写入发现文件，客户端只读不自造。
 
-> 🔐 令牌的三种携带方式、401 怎么处理、多设备与重启后的行为、以及必须了解的风险边界，见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
+> 🔐 两类凭据（浏览器会话令牌 / 客户端宿主令牌）的分工、401 怎么处理、轮换与绝对上限、多设备与重启后的行为、以及必须了解的风险边界，见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 
 ### 5. 配置 AI Provider 并开始对话
 
@@ -451,22 +481,26 @@ luban-agent/
 | `GET /system/health` | 健康检查（免令牌，供启动器探活） |
 | `GET /system/bootstrap` | 浏览器端首屏数据（工作区、供应商与模型、权限模式、附件策略、版本） |
 | `GET /system/commands` | 浏览器端斜杠命令清单 |
+| `GET /system/entryQr` | 局域网入口二维码 PNG（关于弹窗展示，手机扫码直接打开本实例，每次按当前会话令牌现生成） |
+| `GET /system/session` | 当前浏览器会话的轮换与到期时刻（前端心跳用，顺带把轮换后的令牌滑回 Cookie） |
+| `GET /system/entryUrl` | 当前入口地址与到期时刻（只认宿主令牌，供 `LubanAgentWebHost token` 重新打印，会话到期时自动重开） |
 | `POST /attachment/upload` | 浏览器端附件上传（JSON + Base64，落盘到工作区暂存目录） |
 | `GET` / `POST` `/provider/*` | 读取/切换全局模型选择、按供应商拉取模型列表、供应商读写（密钥只回传掩码） |
 | `GET` / `POST` `/skill/*`、`/rule/*`、`/mcp/*` | 文件型技能/规则/MCP 的列表、读取、保存、删除（按 `global` 或工作区作用域） |
 | `GET` / `POST` `/model/*` | 按供应商列出模型、增删改自定义模型 |
 | `GET` / `POST` `/a2a/*` | A2A 运行状态，以及工作区 A2A 服务端/客户端配置的读写 |
+| `GET /file/read` | 按工作区读取文件原文（会话内相对链接与图片点击后打开；只回传文本与图片，越界与其它格式回提示页） |
 
 约束与已知限制：
 
-- **监听全部网卡，本机与外部网络都可访问**：SAEA.MVC 未暴露绑定地址参数（`HttpSocket` 不传 IP，固定绑 `0.0.0.0`）。因此宿主启动即生成一次性访问令牌，接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（地址栏 `?t=`、它换发的 Cookie、`Authorization: Bearer`）一律 401，只有 `/system/health` 免令牌供启动器探活。
-- **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；访问令牌每次启动随机生成（需要固定时用 `LubanAgentWeb:Token` 或 `--token`），进程退出即失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
-- **入口地址与令牌**：终端会打印带令牌的入口地址，浏览器打开后令牌换成 HttpOnly Cookie 并 302 回干净地址。完整用法与风险边界见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
+- **监听全部网卡，本机与外部网络都可访问**：SAEA.MVC 未暴露绑定地址参数（`HttpSocket` 不传 IP，固定绑 `0.0.0.0`）。因此接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（浏览器会话令牌 `?t=` / 它换发的 Cookie、客户端 `Authorization: Bearer` 宿主令牌）一律 401，只有 `/system/health` 免令牌供启动器探活。
+- **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；两类令牌都在启动时随机生成——浏览器会话令牌随访问自动轮换、默认最长 8 小时，宿主令牌进程内固定（需要固定时用 `LubanAgentWeb:Token` 或 `--token`），进程退出后两者都失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与宿主令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
+- **入口地址与令牌**：终端会打印带会话令牌的入口地址，浏览器打开后令牌换成 HttpOnly Cookie 并 302 回干净地址；页面开着时由前端心跳续期，到期后可用 `LubanAgentWebHost token` 重新取地址。完整用法与风险边界见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 - **断连不等于取消**：一轮对话挂在宿主进程内的轮次中心上，SSE 连接断开只移除订阅者，轮次继续跑完；浏览器重开同一会话时先 `POST /agent/active` 探活，有活跃轮次则 `POST /agent/attach` 续流（先补 `run.snapshot`，再转实时帧），无活跃轮次回 `204` 并由客户端拉历史。`attach` 可选带 `runId`（与当前轮次不符时按无活跃处理回 `204`）与 `fromSeq`（已收到的最大帧序号，缺省则下发快照）。主动停止仍走 `POST /agent/cancel`；删除进行中的会话、删除含进行中会话的工作区会被 `409` 拒绝，清空消息会先取消并等轮次收尾。
 - **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
 - **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。
 - **知识库后台任务降级为同步**：索引/重建/ingest 的 `Start*` 入口依赖宿主侧进度事件，客户端没有该通道，因此远程模式下一律回落到同步路径（`--wait` 语义），调用期间界面遮罩需自行展示。
-- **插件目录**：插件只随 Codex 分发；自动拉起时客户端通过 `--plugins-dir` 把 Codex 的插件目录交给 WebHost 扫描，避免两处各带一份插件。插件安装/启用状态仍由 Codex 侧维护。
+- **插件目录**：桌面端（Codex）的插件经 `--plugins-dir` 交给 WebHost 扫描；网页「插件」页安装的插件落在独立根（`LubanAgentWeb:WebPluginsDir` / `--web-plugins-dir`，缺省 `%LOCALAPPDATA%\LuBan\AIAgent\webhost\plugins`，状态文件 `plugin-states.json`）。两个根都会被扫描，但管理页只列出并操作 Web 根下的插件，桌面端的安装与启用状态不受影响。
 - **单回合同步等待上限**：`LubanAgentWeb:TimeoutSeconds`（默认 86400，即 24 小时）必须远大于最长回合，否则 SAEA 会在回合中途返回 408 并把纯文本追写在已开启的流上。
 - **工具确认**：确认等待上限取 `LuBanAgent:Confirmation:TimeoutSeconds`（默认 60），超时按拒绝处理。
 
@@ -482,48 +516,60 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 
 - **`dotnet build` 不依赖 Node**：产物随代码提交；只有改了 `LubanAgentWebHost/web/` 下的源码才需要重新构建。
 - **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
-- **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）。SAEA 没有 SPA 回退，所以不能用 history 路由。
-- **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，只写入用户与端口；访问令牌不落这个文件（它只经地址栏换成 HttpOnly Cookie）。该文件不提交（见 `.gitignore`）。
-- **开发模式**：先启动 WebHost（`--port` 指定端口），把终端打印的 `http://<ip>:<port>/?t=<令牌>` 里的令牌填进 `VITE_HOST_TOKEN`，再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
+- **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）、`#/wiki`（知识库）、`#/plugins`（插件管理）、`#/plugin/<pluginId>/<entryId>`（插件自带页面）。SAEA 没有 SPA 回退，所以不能用 history 路由。
+- **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，只写入用户与端口；两类令牌都不落这个文件（浏览器侧只经地址栏换成 HttpOnly Cookie，宿主令牌只在发现文件里）。该文件不提交（见 `.gitignore`）。
+- **开发模式**：先启动 WebHost（`--port` 指定端口），把**宿主令牌**填进 `VITE_HOST_TOKEN` —— 取 `%LOCALAPPDATA%\luban-agent\webhost.json` 的 `token`，或启动时用 `--token` 指定（浏览器入口里的 `?t=` 是会话令牌，只能换 Cookie，不能当 Bearer 用）；再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki`、`/plugin`、`/plugin-web` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
 - **顶栏与 SSE 全局**：会话状态常驻前端会话池，顶栏标签与路由解耦——切到首页或设置时回合继续跑，标签上以活动点提示；只有关闭标签、删除会话时才销毁实例并中止在途流。
 - **设置是浮层**：`#/settings/<tab>` 覆盖在当前视图之上，× / Esc / 点遮罩关闭即回到打开前的页面；没有独立的设置整页，也没有「返回应用」。
-- **范围**：网页版覆盖全局顶栏（会话标签 + 新建会话）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、斜杠命令、工具确认框）与设置浮层六个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A）；附件单轮最多 5 个，文本类单文件上限 10MB。插件、连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
+- **范围**：网页版覆盖全局顶栏（首页入口 + 会话标签）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、斜杠命令、工具确认框、标签左侧返回按钮）、知识库页（建库/重命名/索引/重建/检索，底部「对话」直接进入该库的会话）、插件管理浮层（安装 / 升级 / 启停 / 卸载 Web 插件，只作用于 Web 插件根）与插件自带页面（同源 iframe，启用且有页面时出现在左侧栏底部）、设置浮层八个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A / 工作区 / 数据与用量）；附件单轮最多 5 个，文本类单文件上限 10MB。连接器、`@` 上下文与 Shell 命令入口不在网页版范围内。
 
 ---
 
 ## 🔐 WebHost 访问令牌与安全
 
-宿主把监听套接字绑在 `0.0.0.0`（SAEA.MVC 未暴露绑定地址参数），同网段任何设备只要拿到地址就能连上；而这条通道背后是能读写工作区、执行命令的 Agent。所以宿主每次启动都生成一次性访问令牌，全站默认拒绝，只认下面列出的三种凭据。
+宿主把监听套接字绑在 `0.0.0.0`（SAEA.MVC 未暴露绑定地址参数），同网段任何设备只要拿到地址就能连上；而这条通道背后是能读写工作区、执行命令的 Agent。所以全站默认拒绝，只认两类凭据：浏览器用的**会话令牌**（短命、自动轮换、有绝对上限）与客户端用的**宿主令牌**（进程内固定，只走 `Authorization: Bearer`）。
+
+### 两类凭据
+
+| 凭据 | 谁用 | 出厂行为 |
+|------|------|----------|
+| 会话令牌（`?t=` / `luban_auth` Cookie） | 浏览器 | 启动随机生成；默认每 15 分钟换新、旧值 5 分钟宽限，会话最长 8 小时 |
+| 宿主令牌（`Authorization: Bearer`） | CLI / Codex / 插件 / 自研客户端 | 启动随机生成（可用 `LubanAgentWeb:Token` 固定），进程内不变 |
 
 ### 令牌怎么用
 
 | 场景 | 做法 |
 |------|------|
-| 首次进入（浏览器） | 打开终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`，宿主换发 Cookie 后 302 到去掉 `t` 的干净地址 |
-| 终端翻不到了 | 在宿主机执行 `LubanAgentWebHost token`，重新打印当前实例的入口地址 |
-| 多台设备 | 同一次运行内共用同一个入口地址进入即可，每台设备各自拿到自己的会话 Cookie |
-| 宿主重启后 | 令牌随进程失效，必须用新打印的地址重新进入（不做长期登录） |
-| CLI / Codex / 插件 | 自动带 `Authorization: Bearer <令牌>`，令牌从发现文件读取，无需手工填写 |
-| 自研客户端 | 用 `Authorization: Bearer`，或先访问 `/?t=<令牌>` 换 Cookie |
+| 首次进入（浏览器） | 打开终端打印的 `http://<局域网 IP>:<端口>/?t=<会话令牌>`，宿主换发 Cookie 后 302 到去掉 `t` 的干净地址 |
+| 页面一直开着 | 前端每 60 秒请求一次 `/system/session`；令牌到期后的第一次请求由宿主换新并回写 Cookie，不必手动刷新 |
+| 终端翻不到了 | 在宿主机执行 `LubanAgentWebHost token`，凭宿主令牌向运行实例取当前入口地址与二维码重新打印 |
+| 多台设备 | 同一入口地址进入即可；各设备的 Cookie 各自保存，但共用同一个会话令牌族——任一台的心跳都会推动轮换，旧值在宽限期内仍可用 |
+| 超过会话绝对上限后 | 默认 8 小时（`LubanAgentWeb:SessionMaxHours`）；到点后旧地址一律 401，用 `token` 命令取新地址 |
+| 宿主重启后 | 两类令牌都随进程失效，必须用新打印的地址重新进入（不做长期登录） |
+| CLI / Codex / 插件 | 自动带 `Authorization: Bearer <宿主令牌>`，令牌从发现文件读取，无需手工填写 |
 
-- **令牌形态**：32 字节密码学随机数（`RandomNumberGenerator`）的 Base64Url 文本，43 个字符。
-- **要固定令牌**：用 `LubanAgentWeb:Token` 配置或 `--token`。值**只允许字母、数字、`-`、`_`**；含空格、分号或换行会截断 Cookie、污染响应头，宿主直接拒绝启动而不是降级放行。
-- **浏览器侧不落令牌**：令牌换成 `luban_auth` Cookie（`Path=/; HttpOnly; SameSite=Lax`，无过期时间即会话级），URL 里的 `t` 被 302 抹掉、不留在历史记录；页面脚本也读不到——`runtime-config.js` 只写 `userId`/`port`。
-- **401 长什么样**：浏览器直接访问不带令牌的地址，会看到中文提示页（含「到终端复制带 `?t=` 的地址」与 `LubanAgentWebHost token` 两条自助指引）；API 客户端收到 HTTP 401 与统一响应壳（`success: false`、`code: 401`、`message` 说明原因）。
+- **令牌形态**：32 字节密码学随机数（`RandomNumberGenerator`）的 Base64Url 文本，43 个字符；两类令牌同形，只是有效期不同。
+- **会话时长可配**：`LubanAgentWeb:SessionTokenMinutes`（默认 15）、`SessionGraceMinutes`（默认 5）、`SessionMaxHours`（默认 8）。值非法（≤0 等）宿主直接拒绝启动，不做静默兜底。
+- **要固定宿主令牌**：用 `LubanAgentWeb:Token` 配置或 `--token`。值**只允许字母、数字、`-`、`_`**；含空格、分号或换行会截断 Cookie、污染响应头，宿主直接拒绝启动而不是降级放行。固定的是给客户端用的那个，浏览器侧的轮换不受影响。
+- **浏览器侧不落令牌**：会话令牌换成 `luban_auth` Cookie（`Path=/; HttpOnly; SameSite=Lax`，会话级），URL 里的 `t` 被 302 抹掉、不留在历史记录；页面脚本也读不到——`runtime-config.js` 只写 `userId`/`port`。轮换后的新值同样由门禁以 `Set-Cookie` 回写，前端不参与。
+- **401 长什么样**：浏览器直接访问不带令牌的地址，会看到中文提示页（含「到终端复制带 `?t=` 的地址」与 `LubanAgentWebHost token` 两条自助指引）；会话超绝对上限时提示页换成「会话已过期」。API 客户端收到 HTTP 401 与统一响应壳（`success: false`、`code: 401`、`message` 说明原因）。网页里任意接口收到 401 会整页换成「令牌已过期」提示，不再渲染一个点不动的界面。
 
 ### 门禁覆盖范围与实现要点
 
 - **单点拦截，覆盖全部入口**：判定挂在 `SAEA.MVC.HttpContext.GetActionResult()`，命中路由的接口、SSE 流、附件上传与静态资源走同一道闸；控制器动作内还有 `WebApi.GuardAsync` 第二道复核。
 - **只放行一个路径**：`/system/health` 免令牌供启动器探活，只回 `status`/`version`/`serverTime`，不含用户身份，也不等待用户初始化。
-- **`?t=` 优先**：地址栏带了令牌就只认它——带错令牌时即使手里握有有效 Cookie 也返回 401，避免错误入口被旧凭据掩盖。
+- **浏览器凭据优先判会话**：地址栏或 Cookie 带会话令牌时只认它——带错令牌时即使手里握有有效 Cookie 也返回 401，避免错误入口被旧凭据掩盖；`Bearer` 是另一类凭据，先判且不受浏览器会话的轮换与上限影响。
+- **轮换在门禁内完成**：会话令牌到期后的第一次请求换新并 `Set-Cookie`，旧值在宽限期内仍放行（覆盖轮换瞬间还在路上的并发请求）；会话族的绝对上限到点后，所有会话令牌一律回「已过期」。
+- **二维码跟随当前令牌**：`/system/entryQr` 每次请求现取当前会话令牌并带 `Cache-Control: no-cache`，不会留着一张早已轮换掉的旧码。
 - **常数时间比对**：校验用 `CryptographicOperations.FixedTimeEquals`，不按字符逐位短路，避免泄漏令牌前缀长度。
 - **失败即关门**：门禁靠反射替换 SAEA 内部请求上下文类型，替换失败会抛异常终止启动，不会静默退化成不鉴权。
 - **非读请求不 302**：只有 GET/HEAD 会被重定向改写；带 `?t=` 的 POST 等请求校验通过后原样执行，避免丢请求体。
 
 ### 风险边界（务必了解）
 
-- **不加密传输**：默认没有 TLS，令牌与全部对话内容在局域网内明文传输。令牌每次重启更换只能收窄窗口，不能替代加密。
-- **发现文件是明文**：`%LOCALAPPDATA%\luban-agent\webhost.json` 记录端口与令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
+- **不加密传输**：默认没有 TLS，令牌与全部对话内容在局域网内明文传输。令牌每次重启更换、运行期轮换只能收窄窗口，不能替代加密。
+- **轮换不等于收回权限**：轮换只缩短「泄漏但没被使用」的窗口；一个被持续使用的令牌会一路续期，终点是绝对上限（默认 8 小时）。到点后必须重新取地址，这也是唯一能强制失效的开关。
+- **发现文件是明文**：`%LOCALAPPDATA%\luban-agent\webhost.json` 记录端口与宿主令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
 - **拿到地址即有完整权限**：令牌有效期内，持有入口地址者可读写工作区、执行命令。不要把这条地址发到群聊、工单或截图中。
 - **对公网暴露需自行加固**：前置反向代理加 TLS 与额外鉴权，并限制来源网段；本项目不提供公网部署方案。
 

@@ -12,10 +12,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Configuration;
-using LubanAgentCore.Configuration;
-using LubanAgentCore.Services.Management;
-
 namespace LubanAgent.Tests;
 
 [TestClass]

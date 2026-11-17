@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createEffect, createSignal, For, Show } from 'solid-js';
 
 import { truncate } from '../lib/format';
 import { openSession, openSessions } from '../lib/router';
@@ -23,6 +23,23 @@ import { Icon } from './Icons';
  */
 export function TopBar(props: { activeSessionId: string | null }) {
   const [creating, setCreating] = createSignal(false);
+  let tabsEl: HTMLDivElement | undefined;
+
+  // 标签多到溢出时，把当前标签滚进可视区（新开的会话在末尾，不滚就看不见）
+  createEffect(() => {
+    const id = props.activeSessionId;
+    if (!id || !tabsEl) return;
+    tabsEl.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+
+  // 鼠标滚轮只有纵向 delta，横向溢出容器不会自动滚动，这里把纵向滚动转成横向
+  function onTabsWheel(event: WheelEvent): void {
+    if (!tabsEl || event.deltaX || !event.deltaY) return;
+    if (tabsEl.scrollWidth <= tabsEl.clientWidth) return;
+    tabsEl.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }
 
   async function createTab(): Promise<void> {
     if (creating()) return;
@@ -53,8 +70,8 @@ export function TopBar(props: { activeSessionId: string | null }) {
 
   return (
     <div class="app-topbar">
-      <button class="icon-btn" title="会话列表" onClick={() => openSessions()}>
-        <Icon name="grid" size={17} />
+      <button class="icon-btn" title="首页" onClick={() => openSessions()}>
+        <Icon name="home" size={17} />
       </button>
       <button
         class="icon-btn"
@@ -67,7 +84,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
         <Icon name="search" size={17} />
       </button>
 
-      <div class="session-tabs">
+      <div class="session-tabs" ref={(el) => (tabsEl = el)} onWheel={onTabsWheel}>
         <For each={openSessionIds()}>
           {(sessionId) => {
             const chat = getChat(sessionId);
@@ -80,6 +97,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
               <div
                 class="session-tab"
                 classList={{ active: props.activeSessionId === sessionId }}
+                data-session-id={sessionId}
                 title={`${project()} / ${title()}`}
               >
                 <button class="session-tab-main" onClick={() => openSession(sessionId)}>
@@ -108,11 +126,11 @@ export function TopBar(props: { activeSessionId: string | null }) {
             );
           }}
         </For>
-
-        <button class="icon-btn" title="新建会话" disabled={creating()} onClick={() => void createTab()}>
-          <Icon name="plus" size={17} />
-        </button>
       </div>
+
+      <button class="icon-btn" title="新建会话" disabled={creating()} onClick={() => void createTab()}>
+        <Icon name="plus" size={17} />
+      </button>
 
       <div class="spacer" />
 

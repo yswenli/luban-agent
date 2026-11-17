@@ -15,11 +15,6 @@
 *
 *****************************************************************************/
 
-using LuBan.Orm.Interfaces;
-using LuBan.Orm.Models;
-
-using SqlSugar;
-
 namespace LubanAgentCore.Repositories;
 
 /// <summary>

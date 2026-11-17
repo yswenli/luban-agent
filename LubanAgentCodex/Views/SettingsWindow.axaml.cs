@@ -45,12 +45,16 @@ public partial class SettingsWindow : Window
     /// <summary>供应商编辑器中「自定义模型」行容器，供保存时收集。</summary>
     private StackPanel? _providerCustomModelsPanel;
 
+    /// <summary>技能页「新建」草稿态：未落盘，保存时按名称生成目录。</summary>
+    private bool _isNewSkillDraft;
+
     private StackPanel? _categoryPanel;
     private StackPanel? _topBar;
     private ListBox? _itemList;
     private ScrollViewer? _editorHost;
     private TextBlock? _hintText;
     private Button? _newItemBtn;
+    private Button? _importItemBtn;
     private Button? _deleteItemBtn;
     private Button? _applyBtn;
     private Button? _saveBtn;
@@ -96,17 +100,30 @@ public partial class SettingsWindow : Window
         _editorHost = this.FindControl<ScrollViewer>("EditorHost");
         _hintText = this.FindControl<TextBlock>("HintText");
         _newItemBtn = this.FindControl<Button>("NewItemBtn");
+        _importItemBtn = this.FindControl<Button>("ImportItemBtn");
         _deleteItemBtn = this.FindControl<Button>("DeleteItemBtn");
         _applyBtn = this.FindControl<Button>("ApplyBtn");
         _saveBtn = this.FindControl<Button>("SaveBtn");
 
         if (_itemList != null)
         {
+            // 容器会被回收复用：标题禁用，普通条目恢复可用
+            _itemList.ContainerPrepared += (s, e) =>
+            {
+                if (e.Container is ListBoxItem container)
+                {
+                    var isHeader = container.DataContext is SettingsListItem { IsHeader: true };
+                    container.IsEnabled = !isHeader;
+                    container.Focusable = !isHeader;
+                }
+            };
+
             _itemList.SelectionChanged += (s, e) =>
             {
                 var key = GetSelectedItemKey();
-                if (key != null && key != SelectedItemKey)
+                if (!string.IsNullOrEmpty(key) && key != SelectedItemKey)
                 {
+                    _isNewSkillDraft = false;
                     SelectedItemKey = key;
                     BuildEditor();
                 }
@@ -114,6 +131,7 @@ public partial class SettingsWindow : Window
         }
 
         if (_newItemBtn != null) _newItemBtn.Click += (s, e) => NewItem();
+        if (_importItemBtn != null) _importItemBtn.Click += async (s, e) => await ImportSkillsAsync();
         if (_deleteItemBtn != null) _deleteItemBtn.Click += async (s, e) => await DeleteItemAsync();
         if (_applyBtn != null) _applyBtn.Click += (s, e) => ApplyConfig();
         if (_saveBtn != null) _saveBtn.Click += OnSaveClick;
@@ -137,6 +155,7 @@ public partial class SettingsWindow : Window
     {
         Tab = kind;
         SelectedItemKey = null;
+        _isNewSkillDraft = false;
         BuildCategoryNav();
         BuildTopBar();
         RefreshItems();
@@ -153,7 +172,8 @@ public partial class SettingsWindow : Window
         if (_editorHost == null) return;
 
         var key = SelectedItemKey;
-        if (string.IsNullOrEmpty(key))
+        var isSkillDraft = Tab == SettingsTabKind.Skill && _isNewSkillDraft;
+        if (string.IsNullOrEmpty(key) && !isSkillDraft)
         {
             _editorHost.Content = new TextBlock
             {
@@ -171,7 +191,14 @@ public partial class SettingsWindow : Window
 
         try
         {
-            BuildTabEditor(host, Tab, key);
+            if (isSkillDraft)
+            {
+                BuildSkillEditor(host, null);
+            }
+            else
+            {
+                BuildTabEditor(host, Tab, key!);
+            }
         }
         catch (Exception ex)
         {

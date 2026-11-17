@@ -382,11 +382,11 @@ public partial class Sidebar : UserControl
 
                     var ok = await Dialogs.ShowConfirmAsync(owner, "确认删除",
                         $"确定要删除工作区 \"{display}\" 吗？",
-                        "删除后将逻辑删除该工作区，并级联清理其会话与关联的 LLM Wiki 向量索引。",
+                        "删除后将清理该工作区的会话、索引与 .luban-agent 配置目录，工作区目录及其它文件保留。",
                         "确定删除", danger: true);
                     if (ok)
                     {
-                        // D6：统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 LLM Wiki 索引），
+                        // D6：统一走 WorkspaceManager.DeleteWorkspaceAsync（清理会话/索引/.luban-agent 配置 + 工作区记录），
                         // 避免此前「物理删除且遗漏 llmwiki_file/llmwiki_chunk 清理」留下的孤儿索引。
                         await _workspaceManager!.DeleteWorkspaceAsync(ws.WorkspaceId);
                         LoadWorkspaces();
@@ -907,12 +907,12 @@ public partial class Sidebar : UserControl
 
             var confirmed = await Dialogs.ShowConfirmAsync(parentWindow, "删除知识库",
                 "确定要删除知识库吗？",
-                "删除后将无法恢复，相关的会话和数据也会被删除。",
+                "删除后将无法恢复，相关的会话、索引与 .luban-agent 配置目录也会被清理；知识库目录里的其它文件保留。",
                 "确定删除", danger: true);
             if (confirmed != true) return;
 
-            // 统一走 WorkspaceManager.DeleteWorkspaceAsync（逻辑删 + 级联清会话 + 清 llmwiki_file/llmwiki_chunk 索引），
-            // 取代此前「物理删工作区 + 逐个软删会话」的写法——后者会残留孤儿向量索引。
+            // 统一走 WorkspaceManager.DeleteWorkspaceAsync（清理会话/消息/worktree + llmwiki_file/llmwiki_chunk 索引
+            // + 工作区记录 + .luban-agent 配置目录），取代此前「物理删工作区 + 逐个软删会话」的写法——后者会残留孤儿向量索引。
             await _workspaceManager!.DeleteWorkspaceAsync(model.WorkspaceId);
 
             LoadLlmWikiItems();

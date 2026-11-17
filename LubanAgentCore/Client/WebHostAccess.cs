@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Net.NetworkInformation;
-
 namespace LubanAgentCore.Client;
 
 /// <summary>访问门禁的判定结果。</summary>
@@ -21,7 +19,10 @@ public enum WebEntryDecision
     Redirect,
 
     /// <summary>拒绝。</summary>
-    Unauthorized
+    Unauthorized,
+
+    /// <summary>浏览器侧会话已过绝对上限，需要重新获取入口地址。</summary>
+    Expired
 }
 
 /// <summary>
@@ -30,11 +31,12 @@ public enum WebEntryDecision
 /// <remarks>
 /// <para>
 /// 宿主监听全部网卡，直接放开 <c>GET /</c> 等于把整个 Agent（读写工作区、执行命令）交给同网段任何人。
-/// 因此进程启动即生成一次性令牌，只接受三种携带方式：地址栏 <c>?t=</c>（首次进入）、
+/// 因此进程启动即生成访问令牌，只接受三种携带方式：地址栏 <c>?t=</c>（首次进入）、
 /// 由它换来的 Cookie（浏览器后续请求）、<c>Authorization: Bearer</c>（CLI / Codex / 插件）。
 /// </para>
 /// <para>
-/// 令牌随进程生命周期存在，重启即失效；不做长期登录态。
+/// 两类凭据分工不同：地址栏与 Cookie 只认 <see cref="WebSessionTokens"/> 签发的轮换令牌（短命、活动页面自动续期、
+/// 有绝对上限）；<c>Bearer</c> 只认进程内固定的宿主令牌，客户端因此不会被浏览器会话的过期时间踢下线。
 /// </para>
 /// </remarks>
 public static class WebHostAccess
@@ -49,8 +51,9 @@ public static class WebHostAccess
     public const string HealthPath = "/system/health";
 
     /// <summary>
-    /// 生成一次性的访问令牌。
+    /// 生成访问令牌。
     /// </summary>
+    /// <remarks>宿主固定令牌与浏览器会话令牌都用它生成，两者只是有效期不同。</remarks>
     /// <returns>32 字节随机数的 Base64Url 文本（43 个字符，可直接进 URL 与 Cookie）。</returns>
     public static string CreateToken()
     {
@@ -89,10 +92,22 @@ public static class WebHostAccess
     /// 拼出浏览器可直接打开的入口地址。
     /// </summary>
     /// <param name="baseAddress">监听地址，形如 <c>http://192.168.3.215:18080</c>。</param>
-    /// <param name="token">本进程令牌。</param>
+    /// <param name="token">浏览器会话令牌。</param>
     /// <returns>形如 <c>http://192.168.3.215:18080/?t=xxx</c>。</returns>
     public static string BuildEntryUrl(string baseAddress, string token)
         => $"{baseAddress.TrimEnd('/')}/?{TokenQueryName}={Uri.EscapeDataString(token)}";
+
+    /// <summary>
+    /// 拼出手机可直接打开的入口地址（本机监听的局域网地址）。
+    /// </summary>
+    /// <remarks>
+    /// 手机上的 <c>127.0.0.1</c> 指向手机自己，所以对外入口一律取 <see cref="GetPreferredLanHost"/>。
+    /// </remarks>
+    /// <param name="port">本实例监听端口。</param>
+    /// <param name="token">浏览器会话令牌。</param>
+    /// <returns>形如 <c>http://192.168.3.215:18080/?t=xxx</c>。</returns>
+    public static string BuildLanEntryUrl(int port, string token)
+        => BuildEntryUrl($"http://{GetPreferredLanHost()}:{port}", token);
 
     /// <summary>
     /// 取一个适合在局域网内打开的 IPv4 地址。
@@ -195,19 +210,25 @@ public static class WebHostAccess
     /// </summary>
     /// <param name="url">请求路径（不含查询串，形如 <c>/session/list</c>）。</param>
     /// <param name="entryToken">地址栏 <c>?t=</c> 的值；未携带为 null。</param>
-    /// <param name="cookieToken">Cookie 里的凭据值；未携带为 null。</param>
+    /// <param name="cookieToken">Cookie 里的浏览器会话令牌；未携带为 null。</param>
     /// <param name="authorization"><c>Authorization</c> 头原值；未携带为 null。</param>
-    /// <param name="expectedToken">本进程令牌；为空表示配置异常。</param>
+    /// <param name="bearerToken">进程内固定的宿主令牌，只用于 <c>Bearer</c>；为空表示未启用。</param>
+    /// <param name="sessions">浏览器会话令牌状态机；为空表示不接受浏览器凭据。</param>
+    /// <param name="issueToken">需要回写 Cookie 的当前会话令牌；无需回写时为 null。</param>
     /// <returns>判定结果。</returns>
     public static WebEntryDecision Decide(
         string? url,
         string? entryToken,
         string? cookieToken,
         string? authorization,
-        string? expectedToken)
+        string? bearerToken,
+        WebSessionTokens? sessions,
+        out string? issueToken)
     {
-        // 令牌缺失属于启动异常：宁可全部拒绝，也不能放开
-        if (string.IsNullOrEmpty(expectedToken))
+        issueToken = null;
+
+        // 两类凭据都没配属于启动异常：宁可全部拒绝，也不能放开
+        if (string.IsNullOrEmpty(bearerToken) && sessions is null)
         {
             return WebEntryDecision.Unauthorized;
         }
@@ -217,34 +238,57 @@ public static class WebHostAccess
             return WebEntryDecision.Allow;
         }
 
+        // 客户端（CLI / Codex / 插件）用固定令牌：不受浏览器会话的轮换与绝对上限影响
+        if (IsBearerAuthorized(authorization, bearerToken))
+        {
+            return WebEntryDecision.Allow;
+        }
+
+        if (sessions is null)
+        {
+            return WebEntryDecision.Unauthorized;
+        }
+
         // 地址栏带了令牌就只认它：带错令牌不该靠旧 Cookie 蒙混过关
         if (!string.IsNullOrEmpty(entryToken))
         {
-            return FixedEquals(entryToken, expectedToken)
-                ? WebEntryDecision.Redirect
-                : WebEntryDecision.Unauthorized;
+            return FromSession(sessions.Check(entryToken), WebEntryDecision.Redirect, out issueToken);
         }
 
-        return IsAuthorized(cookieToken, authorization, expectedToken)
-            ? WebEntryDecision.Allow
-            : WebEntryDecision.Unauthorized;
+        return FromSession(sessions.Check(cookieToken), WebEntryDecision.Allow, out issueToken);
     }
 
-    /// <summary>已持有凭据（Cookie 或 Bearer）时是否放行。</summary>
-    /// <param name="cookieToken">Cookie 里的凭据值。</param>
-    /// <param name="authorization"><c>Authorization</c> 头原值。</param>
-    /// <param name="expectedToken">本进程令牌。</param>
-    /// <returns>任一凭据与令牌一致则返回 true。</returns>
-    public static bool IsAuthorized(string? cookieToken, string? authorization, string? expectedToken)
+    /// <summary>把会话令牌判定结果映射成门禁结论。</summary>
+    /// <param name="check">会话令牌判定结果。</param>
+    /// <param name="accepted">通过时给出的结论（地址栏入口是 <see cref="WebEntryDecision.Redirect"/>）。</param>
+    /// <param name="issueToken">需要回写 Cookie 的令牌。</param>
+    /// <returns>门禁结论。</returns>
+    private static WebEntryDecision FromSession(
+        WebSessionCheck check,
+        WebEntryDecision accepted,
+        out string? issueToken)
     {
-        if (string.IsNullOrEmpty(expectedToken))
+        switch (check.State)
         {
-            return false;
+            case WebSessionState.Accepted:
+                issueToken = check.Token;
+                return accepted;
+            case WebSessionState.Expired:
+                issueToken = null;
+                return WebEntryDecision.Expired;
+            default:
+                issueToken = null;
+                return WebEntryDecision.Unauthorized;
         }
-
-        return FixedEquals(cookieToken, expectedToken)
-            || FixedEquals(ReadBearerToken(authorization), expectedToken);
     }
+
+    /// <summary>是否携带了正确的宿主固定令牌（<c>Authorization: Bearer</c>）。</summary>
+    /// <param name="authorization"><c>Authorization</c> 头原值。</param>
+    /// <param name="bearerToken">进程内固定的宿主令牌。</param>
+    /// <returns>头里是 Bearer 且与宿主令牌一致时返回 true。</returns>
+    public static bool IsBearerAuthorized(string? authorization, string? bearerToken)
+        => !string.IsNullOrEmpty(bearerToken)
+           && FixedEquals(ReadBearerToken(authorization), bearerToken);
 
     /// <summary>是否为免令牌的健康检查路径。</summary>
     /// <param name="url">请求路径。</param>
@@ -287,7 +331,7 @@ public static class WebHostAccess
     /// 走原始头而不是 SAEA 的 <c>HttpCookie</c>：后者会把 <c>Host</c>（含端口）塞进 <c>Domain</c>，
     /// 浏览器可能整条拒收；不带 Domain 即按主机名生效，IP 访问同样可用。
     /// </remarks>
-    /// <param name="token">本进程令牌。</param>
+    /// <param name="token">浏览器会话令牌（轮换后的当前值）。</param>
     /// <returns>形如 <c>luban_auth=xxx; Path=/; HttpOnly; SameSite=Lax</c>。</returns>
     public static string BuildAuthCookie(string token)
         => $"{AuthCookieName}={token}; Path=/; HttpOnly; SameSite=Lax";
@@ -330,7 +374,7 @@ public static class WebHostAccess
     /// <param name="actual">请求带来的凭据。</param>
     /// <param name="expected">本进程令牌。</param>
     /// <returns>两者完全一致（区分大小写）时返回 true。</returns>
-    private static bool FixedEquals(string? actual, string expected)
+    internal static bool FixedEquals(string? actual, string expected)
     {
         if (string.IsNullOrEmpty(actual))
         {

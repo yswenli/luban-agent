@@ -38,6 +38,9 @@ public static class AgentApiRoutes
 
         /// <summary>接上该会话正在进行的回合（SSE）；无活跃回合返回 204。</summary>
         public const string Attach = "/agent/attach";
+
+        /// <summary>把输入框内容改写成需求表述（不装配工具、不读历史）。</summary>
+        public const string Optimize = "/agent/optimize";
     }
 
     /// <summary>会话相关接口。</summary>
@@ -149,6 +152,9 @@ public static class AgentApiRoutes
 
         /// <summary>斜杠命令清单（浏览器端）。</summary>
         public const string Commands = "/system/commands";
+
+        /// <summary>局域网入口二维码（PNG，浏览器端「关于」弹窗展示，手机扫码打开）。</summary>
+        public const string EntryQr = "/system/entryQr";
     }
 
     /// <summary>附件接口（浏览器端上传，源码见宿主）。</summary>
@@ -191,6 +197,9 @@ public static class AgentApiRoutes
 
         /// <summary>保存技能。</summary>
         public const string Save = "/skill/save";
+
+        /// <summary>导入技能 ZIP 包。</summary>
+        public const string Import = "/skill/import";
 
         /// <summary>删除技能。</summary>
         public const string Delete = "/skill/delete";

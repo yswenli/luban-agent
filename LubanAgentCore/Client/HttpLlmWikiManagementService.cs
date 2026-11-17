@@ -7,12 +7,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Retrieval;
-using LuBan.AIAgent.Wiki;
-
-using LubanAgentCore.Services.Management;
-using LubanAgentCore.Services.Management.Models;
-
 namespace LubanAgentCore.Client;
 
 /// <summary>

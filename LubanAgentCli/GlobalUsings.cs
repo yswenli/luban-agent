@@ -92,5 +92,6 @@ global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using System.Collections.Concurrent;
 global using System.Collections.ObjectModel;
 global using System.Diagnostics;
+global using System.Reflection;
 global using System.Runtime.InteropServices;
 global using Terminal.Gui.Text;

@@ -136,7 +136,16 @@ export interface PendingAttachment {
 
 /* ── 设置页（文件型条目与供应商 / 模型） ─────────────────────────────── */
 
+/** 技能列表项：`id` 是目录名（稳定键），`name` 是 frontmatter 里的显示名。 */
+export interface SkillSummary {
+  id: string;
+  name: string;
+  category: string;
+}
+
 export interface SkillFile {
+  /** 目录名；新建时为占位空串。 */
+  id: string;
   name: string;
   description: string;
   category: string;
@@ -173,6 +182,19 @@ export interface ProviderListItem {
   networkTimeoutSeconds?: number | null;
   customModels: string[];
   isSelected: boolean;
+}
+
+/** 内置供应商预设（后端 `/provider/presets`）。 */
+export interface ProviderPreset {
+  name: string;
+  displayName: string;
+  baseUrl: string;
+  /** 基址是否仍需用户填写（自定义端点项，以及无预设地址的项）。 */
+  editableBaseUrl: boolean;
+  /** 是否为「自定义」项；true 时标识与基址均可编辑。 */
+  isCustom: boolean;
+  /** 添加时的风险提示（如 Claude 需经代理），无则为 null。 */
+  warning?: string | null;
 }
 
 export interface ModelItem {
@@ -212,4 +234,138 @@ export interface A2AClient {
   registerAsSubAgent: boolean;
   remoteAgentName?: string | null;
   allowAll: boolean;
+}
+
+/* ── 工作区 AGENTS.md 初始化 ─────────────────────────────────────────── */
+
+export interface AgentsMdInfo {
+  workspaceId: string;
+  workspaceName: string;
+  rootPath: string;
+  fileName: string;
+  targetPath: string;
+  exists: boolean;
+  existingLength: number;
+}
+
+export interface AgentsMdResult {
+  targetPath: string;
+  markdown: string;
+  verificationPrompt: string;
+  sessionId?: string | null;
+}
+
+/* ── 全局用量 ─────────────────────────────────────────────────────────── */
+
+export interface GlobalSessionStats {
+  totalSessions: number;
+  totalMessages: number;
+  totalTokens: number;
+  days: number;
+  averageDailyTokens: number;
+}
+
+/* ── LLM Wiki 知识库 ─────────────────────────────────────────────────── */
+
+export interface WikiStatus {
+  pageCount: number;
+  lastRebuildSummary?: string | null;
+  indexedFiles: number;
+  indexedChunks: number;
+}
+
+export interface WikiFileInfo {
+  filePath: string;
+  language?: string | null;
+  chunkCount: number;
+  indexedTime: string;
+}
+
+export interface RetrievalHit {
+  chunkId: number;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  chunkType: string;
+  symbolName?: string | null;
+  language: string;
+  content: string;
+  score: number;
+}
+
+export interface IndexReport {
+  scannedFiles: number;
+  newFiles: number;
+  updatedFiles: number;
+  skippedFiles: number;
+  deletedFiles: number;
+  totalChunks: number;
+  embeddedChunks: number;
+  reusedChunks: number;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface LintFinding {
+  kind: string;
+  path: string;
+  detail: string;
+}
+
+export interface WikiLintReport {
+  findings: LintFinding[];
+  pageCount: number;
+}
+
+/* ── 插件（Web 插件根，与桌面端隔离） ────────────────────────────────── */
+
+export interface PluginSkillInfo {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface PluginMcpInfo {
+  name: string;
+  transport?: string | null;
+}
+
+/** 插件的页面入口；`url` 指向当前镜像，插件未启用或镜像失败时为空串。 */
+export interface PluginPageInfo {
+  entryId: string;
+  label: string;
+  icon?: string | null;
+  webPage: string;
+  url: string;
+}
+
+export type PluginState = 'installed' | 'enabled' | 'disabled' | 'error';
+
+export interface PluginItem {
+  id: string;
+  name: string;
+  version: string;
+  author?: string | null;
+  description?: string | null;
+  state: PluginState;
+  isBuiltin: boolean;
+  requiresRestart: boolean;
+  lastError?: string | null;
+  skills: PluginSkillInfo[];
+  mcpServers: PluginMcpInfo[];
+  pages: PluginPageInfo[];
+  /** 页面镜像失败原因；成功或无需镜像时为 null。 */
+  pageError?: string | null;
+}
+
+export interface PluginList {
+  rootPath: string;
+  items: PluginItem[];
+}
+
+export interface PluginChangeResult {
+  id: string;
+  state: string;
+  warnings: string[];
+  plugin?: PluginItem | null;
 }

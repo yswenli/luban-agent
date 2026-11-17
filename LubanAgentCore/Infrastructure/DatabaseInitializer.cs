@@ -53,6 +53,7 @@ public static class DatabaseInitializer
         EnsureIsCompactedColumn();
         EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
+        EnsureSessionModelColumns();
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureAttachmentsColumn();
         EnsureA2ATaskTable();
@@ -243,6 +244,26 @@ public static class DatabaseInitializer
         {
             new SessionRepository().Context.Ado
                 .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN WorkspaceId TEXT");
+        }
+        catch { /* 列已存在，忽略 */ }
+    }
+
+    /// <summary>
+    /// 兜底迁移：ai_session 新增 ModelName / Provider 列（会话单独选定的模型）
+    /// </summary>
+    private static void EnsureSessionModelColumns()
+    {
+        try
+        {
+            new SessionRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN ModelName TEXT");
+        }
+        catch { /* 列已存在，忽略 */ }
+
+        try
+        {
+            new SessionRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN Provider TEXT");
         }
         catch { /* 列已存在，忽略 */ }
     }

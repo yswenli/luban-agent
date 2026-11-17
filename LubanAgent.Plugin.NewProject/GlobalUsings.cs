@@ -40,6 +40,7 @@ global using LuBan.AIAgent.Plugins.Base;
 global using LuBan.AIAgent.Plugins.Lifecycle;
 global using LuBan.AIAgent.Plugins.Security;
 global using LuBan.AIAgent.Sessions;
+global using LuBan.DI;
 global using LubanAgent.Plugin.NewProject.Abstractions;
 global using LubanAgent.Plugin.NewProject.Configuration;
 global using LubanAgent.Plugin.NewProject.Serialization;

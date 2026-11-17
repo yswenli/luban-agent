@@ -36,14 +36,19 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "rootPath 必须是绝对路径");
         }
 
+        // 未填名称时默认取目录名（与项目一致）；盘根等取不到目录名时交给核心层的知识库默认名
+        var name = string.IsNullOrWhiteSpace(input.Name)
+            ? Path.GetFileName(Path.TrimEndingDirectorySeparator(rootPath))
+            : input.Name.Trim();
+
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
         var workspace = await scope.GetRequiredService<ILlmWikiManagementService>()
-            .CreateAsync(rootPath, string.IsNullOrWhiteSpace(input.Name) ? null : input.Name!.Trim())
+            .CreateAsync(rootPath, string.IsNullOrWhiteSpace(name) ? null : name)
             .ConfigureAwait(false);
         return WebApi.OkJson(WorkspaceMapping.ToDto(workspace));
     });
 
-    /// <summary>删除知识库工作区并级联清理会话与索引。</summary>
+    /// <summary>删除知识库工作区并清理会话、索引与 .luban-agent 配置目录。</summary>
     /// <param name="payload">包装后的 <see cref="LlmWikiWorkspaceRequest"/> JSON。</param>
     /// <returns>删除结果。</returns>
     public static Task<ActionResult> DeleteAsync(string payload) => WebApi.RunGuardedAsync(async () =>

@@ -19,7 +19,7 @@ namespace LubanAgentWebHost.Hosting;
 /// 只能改两个私有字段：<c>SAEAMvcApplication._webHost</c> 与 <c>WebHost._httpContentType</c>。
 /// </para>
 /// <para>
-/// 这两个名字来自 SAEA 26.10.8.1；升级 SAEA 后字段改名会让下面的代码抛异常而不是静默不鉴权，
+/// 这两个名字按 SAEA 26.11.16.1 核对过；升级 SAEA 后字段改名会让下面的代码抛异常而不是静默不鉴权，
 /// 此时按新版本字段名同步本类即可。安装必须在 <c>Start()</c> 之前完成。
 /// </para>
 /// </remarks>

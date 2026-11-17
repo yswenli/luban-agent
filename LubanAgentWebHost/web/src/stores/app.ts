@@ -193,16 +193,22 @@ export async function createWorkspace(rootPath: string, name?: string): Promise<
 }
 
 /**
- * 重命名项目：只改显示名，不移动磁盘目录。
+ * 重命名工作区：只改显示名，不移动磁盘目录。
+ *
+ * @param successText 成功提示文案（项目与知识库共用一个接口，提示语按入口区分）。
  */
-export async function renameWorkspace(workspaceId: string, name: string): Promise<boolean> {
+export async function renameWorkspace(
+  workspaceId: string,
+  name: string,
+  successText = '已重命名项目',
+): Promise<boolean> {
   const trimmed = name.trim();
   if (!trimmed) return false;
 
   try {
     await post('/workspace/rename', { workspaceId, name: trimmed });
     await refreshWorkspaces();
-    showToast('已重命名项目', 'success');
+    showToast(successText, 'success');
     return true;
   } catch (error) {
     showToast((error as Error).message, 'error');
@@ -211,7 +217,7 @@ export async function renameWorkspace(workspaceId: string, name: string): Promis
 }
 
 /**
- * 删除项目（工作区）：逻辑删除，级联删除该项目下的会话，磁盘目录保持不动。
+ * 删除项目（工作区）：物理清理会话、索引与 .luban-agent 配置目录，磁盘根目录及用户文件保持不动。
  *
  * 删的正好是当前工作区时自动切到剩余第一个，避免之后新建的会话落到「未绑定项目」；
  * 若原本正筛选着这个项目，选中态跟随切换后的当前工作区，不留「无选中」的空档。
@@ -229,7 +235,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
 
   await refreshWorkspaces();
   if (currentWorkspaceId() === workspaceId) {
-    const next = (bootstrap()?.workspaces ?? [])[0] ?? null;
+    const next = projectWorkspaces()[0] ?? null;
     if (next) {
       await switchWorkspace(next.workspaceId);
     } else {
@@ -245,10 +251,20 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
 }
 
 export async function createSession(title?: string): Promise<string | null> {
+  return createSessionInWorkspace(currentWorkspaceId(), title);
+}
+
+/**
+ * 在指定工作区新建会话，不改变后端「当前工作区」。
+ *
+ * 知识库会话归属知识库工作区，但首页不展示知识库项目；若复用 `createSession`
+ * 先切工作区，之后首页「新建会话」会莫名落进知识库。
+ */
+export async function createSessionInWorkspace(workspaceId: string | null, title?: string): Promise<string | null> {
   try {
     const session = await post<{ sessionId?: string } | null>('/session/create', {
       title: title ?? null,
-      workspaceId: currentWorkspaceId(),
+      workspaceId,
     });
     const sessionId = session?.sessionId ?? null;
     await refreshSessions();
@@ -291,7 +307,28 @@ export async function selectModel(providerId: string, modelId: string): Promise<
       modelId,
     });
     setSelection(data ?? { providerId, modelId });
-    showToast('已切换模型（全局生效）', 'success');
+    showToast('已设为新会话默认模型', 'success');
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+  }
+}
+
+/**
+ * 切换单个会话使用的模型。
+ *
+ * 只落该会话（`ai_session.Provider/ModelName`），不改全局默认；服务端下一轮按会话解析模型。
+ */
+export async function selectSessionModel(sessionId: string, providerId: string, modelId: string): Promise<void> {
+  try {
+    await post<{ providerId?: string; modelId?: string }>('/session/selectModel', {
+      sessionId,
+      providerId,
+      modelId,
+    });
+    setSessions((list) =>
+      list.map((item) => (item.sessionId === sessionId ? { ...item, provider: providerId, modelName: modelId } : item)),
+    );
+    showToast('已切换本会话模型', 'success');
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
@@ -355,8 +392,18 @@ export function permissionModeLabel(): string {
   return modes.find((mode) => mode.key === permissionModeKey())?.displayName ?? '默认 (Default)';
 }
 
-export function currentModelLabel(): string {
-  const selected = selection();
+/** 会话当前使用的模型：会话单独选过就用会话的，否则跟随全局默认。 */
+export function sessionModel(sessionId: string): { providerId?: string | null; modelId?: string | null } | null {
+  const session = sessions().find((item) => item.sessionId === sessionId);
+  if (session?.provider && session.modelName) {
+    return { providerId: session.provider, modelId: session.modelName };
+  }
+  return selection();
+}
+
+/** 会话模型的展示名（供应商显示名 / 模型名）。 */
+export function sessionModelLabel(sessionId: string): string {
+  const selected = sessionModel(sessionId);
   if (!selected?.providerId || !selected.modelId) return '未选择模型';
   const provider = bootstrap()?.providers.find((item) => item.id === selected.providerId);
   return `${provider?.displayName ?? selected.providerId} / ${selected.modelId}`;
@@ -365,4 +412,21 @@ export function currentModelLabel(): string {
 export function workspaceName(workspaceId: string | null | undefined): string {
   if (!workspaceId) return '';
   return bootstrap()?.workspaces.find((item) => item.workspaceId === workspaceId)?.name ?? '';
+}
+
+/** 知识库工作区类型（`Workspace.Type`），只在知识库页展示，不进首页项目列表。 */
+export const LLM_WIKI_TYPE = 'LlmWiki';
+
+/** 首页「项目」列表：排除知识库工作区。 */
+export function projectWorkspaces(): Workspace[] {
+  return (bootstrap()?.workspaces ?? []).filter((item) => item.type !== LLM_WIKI_TYPE);
+}
+
+/** 知识库工作区标识集合：首页会话列表据此隐藏知识库内的会话。 */
+export function wikiWorkspaceIds(): Set<string> {
+  return new Set(
+    (bootstrap()?.workspaces ?? [])
+      .filter((item) => item.type === LLM_WIKI_TYPE)
+      .map((item) => item.workspaceId),
+  );
 }

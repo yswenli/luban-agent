@@ -26,7 +26,7 @@ namespace LubanAgentCore.Services.Management.Models;
 /// <summary>
 /// <c>SKILL.md</c> 的可编辑字段（frontmatter 的 name/description/category/triggers + 正文）。
 /// </summary>
-/// <param name="Name">name（必填，同时作为目录名）。</param>
+/// <param name="Name">name（必填，仅作显示名，与目录名无关）。</param>
 /// <param name="Description">description（必填）。</param>
 /// <param name="Category">category（可空）。</param>
 /// <param name="Triggers">triggers（逗号分隔，可空）。</param>

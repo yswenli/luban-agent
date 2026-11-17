@@ -137,3 +137,9 @@ global using Microsoft.AspNetCore.Hosting;
 global using Microsoft.AspNetCore.Hosting.Server;
 global using Microsoft.AspNetCore.Hosting.Server.Features;
 global using Microsoft.AspNetCore.Http;
+
+// 由代码文件上移的命名空间（2026-11-12 规范化）
+global using LuBan.AIAgent.Protocol;
+global using LuBan.Orm.Interfaces;
+global using System.Net.NetworkInformation;
+global using System.Threading.Channels;

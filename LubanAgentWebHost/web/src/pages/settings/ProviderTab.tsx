@@ -1,9 +1,9 @@
-import { createEffect, createSignal, Show } from 'solid-js';
+import { createSignal, onMount, Show } from 'solid-js';
 
 import { resetAgent, settingsApi } from '../../lib/settings';
-import type { ProviderListItem } from '../../lib/types';
+import type { ProviderListItem, ProviderPreset } from '../../lib/types';
 import { refreshProviders, showToast } from '../../stores/app';
-import { AreaField, FormActions, SettingsPane, TextField } from './Shared';
+import { AreaField, FormActions, SelectField, SettingsPane, TextField } from './Shared';
 
 interface ProviderForm {
   name: string;
@@ -23,25 +23,64 @@ const empty = (): ProviderForm => ({
   customModels: [],
 });
 
+/** 比较基址时忽略首尾空白、大小写与末尾斜杠，避免与预设默认值误判不一致。 */
+const normalizeUrl = (url: string | null | undefined) => (url ?? '').trim().replace(/\/+$/, '').toLowerCase();
+
 /**
  * 供应商页：直连本机 `config.json`，与桌面端设置页同一存储。
  *
  * 密钥只写不读：列表接口返回掩码，表单留空表示沿用已有密钥。
+ * 顶部下拉列出后端预设（框架内置供应商 + 自定义）：选中内置项时标识与基址按预设固定，
+ * 只有「自定义」或预设标明需自填端点的项（Azure / Ollama，以及无预设地址的 Claude / Gemini）才允许编辑基址。
  */
 export function ProviderTab() {
   const [items, setItems] = createSignal<ProviderListItem[]>([]);
+  const [presets, setPresets] = createSignal<ProviderPreset[]>([]);
+  const [presetKey, setPresetKey] = createSignal('custom');
   const [active, setActive] = createSignal<string | null>(null);
   const [form, setForm] = createSignal<ProviderForm>(empty());
   const [busy, setBusy] = createSignal(false);
 
   const masked = () => items().find((item) => item.name === active())?.apiKeyMask ?? '';
 
+  const customKey = () => presets().find((preset) => preset.isCustom)?.name ?? 'custom';
+
+  const currentPreset = () => presets().find((preset) => preset.name === presetKey());
+
+  /** 选中「自定义」（含预设尚未加载时）即可自由填写标识与基址。 */
+  const isCustom = () => currentPreset()?.isCustom ?? true;
+
+  const nameEditable = () => isCustom();
+
+  const baseUrlEditable = () => isCustom() || (currentPreset()?.editableBaseUrl ?? true);
+
+  /**
+   * 标识与基址都对得上某个内置预设时视为内置项；基址已改成别的地址则按自定义处理，保证端点仍可编辑。
+   * 预设本身没有默认地址的项（Claude / Gemini，端点天然由用户提供）只按标识匹配，避免其保存后回落成「自定义」。
+   */
+  const matchPreset = (name: string, baseUrl: string | null | undefined): string => {
+    const key = name.trim().toLowerCase();
+    const current = normalizeUrl(baseUrl);
+    const hit = presets().find(
+      (preset) =>
+        !preset.isCustom &&
+        preset.name.toLowerCase() === key &&
+        (preset.baseUrl === '' || current === '' || current === normalizeUrl(preset.baseUrl)),
+    );
+    return hit?.name ?? customKey();
+  };
+
   const open = (item: ProviderListItem) => {
     setActive(item.name);
+    const preset = matchPreset(item.name, item.baseUrl);
+    setPresetKey(preset);
+    // 内置项的基址留空时按预设值回填，让表单直接展示实际使用的地址
+    const presetBaseUrl = presets().find((entry) => entry.name === preset)?.baseUrl ?? '';
+    const storedBaseUrl = (item.baseUrl ?? '').trim();
     setForm({
       name: item.name,
       apiKey: '',
-      baseUrl: item.baseUrl ?? '',
+      baseUrl: storedBaseUrl || (preset === customKey() ? '' : presetBaseUrl),
       // 列表的 displayName 在未设置时会回退成标识，这里反推回空串，避免改名后把旧标识固化成显示名
       displayName: item.displayName === item.name ? '' : item.displayName,
       timeout: item.networkTimeoutSeconds ? String(item.networkTimeoutSeconds) : '',
@@ -49,8 +88,18 @@ export function ProviderTab() {
     });
   };
 
+  const loadPresets = async () => {
+    if (presets().length > 0) return;
+    try {
+      setPresets(await settingsApi.listProviderPresets());
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    }
+  };
+
   const reload = async (keep?: string | null) => {
     try {
+      await loadPresets();
       const list = await settingsApi.listProviders();
       setItems(list);
       const next = keep ?? active();
@@ -61,6 +110,7 @@ export function ProviderTab() {
         open(list[0]);
       } else {
         setActive(null);
+        setPresetKey(customKey());
         setForm(empty());
       }
     } catch (error) {
@@ -68,12 +118,32 @@ export function ProviderTab() {
     }
   };
 
-  createEffect(() => {
+  onMount(() => {
     void reload(null);
   });
 
   const patch = <K extends keyof ProviderForm>(key: K, value: ProviderForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  /** 选中内置预设时按预设预填标识与基址；选「自定义」只解除只读，保留当前输入。 */
+  const selectPreset = (key: string) => {
+    const preset = presets().find((entry) => entry.name === key);
+    if (!preset) return;
+    setPresetKey(preset.name);
+    if (preset.isCustom) return;
+    setForm((current) => ({ ...current, name: preset.name, baseUrl: preset.baseUrl }));
+  };
+
+  const baseUrlHint = () => {
+    if (isCustom()) return undefined;
+    const preset = currentPreset();
+    if (!preset) return undefined;
+    const head = preset.editableBaseUrl
+      ? '该内置供应商需自行填写端点地址'
+      : '内置默认地址；需要修改请在「供应商」中选「自定义」';
+    const warning = (preset.warning ?? '').trim().replace(/\s+/g, ' ');
+    return warning ? `${head}；${warning}` : head;
+  };
 
   const save = async () => {
     const name = form().name.trim();
@@ -124,7 +194,7 @@ export function ProviderTab() {
   const remove = async () => {
     const name = active();
     if (!name) return;
-    if (!window.confirm(`删除供应商「${name}」？如果当前模型属于它，模型选择会一并清空。`)) return;
+    if (!window.confirm(`删除供应商「${name}」？如果当前模型属于它，模型选择会一并清空；已单独选过该供应商模型的会话将回落到默认模型。`)) return;
 
     setBusy(true);
     try {
@@ -133,6 +203,7 @@ export function ProviderTab() {
       await refreshProviders();
       showToast('供应商已删除', 'success');
       setActive(null);
+      setPresetKey(customKey());
       setForm(empty());
       await reload(null);
     } catch (error) {
@@ -156,14 +227,27 @@ export function ProviderTab() {
       }}
       onCreate={() => {
         setActive(null);
+        setPresetKey(customKey());
         setForm(empty());
       }}
     >
       <div class="field-grid">
+        {/* 预设异步加载：加载完成后再渲染下拉，避免选项后到时选中态与表单不一致；加载失败则退化为纯手填 */}
+        <Show when={presets().length > 0}>
+          <SelectField
+            label="供应商"
+            wide
+            value={presetKey()}
+            options={presets().map((preset) => ({ value: preset.name, label: preset.displayName }))}
+            hint="选内置供应商时，标识与基址按预设固定（个别需自填端点）；选「自定义」可自行填写"
+            onChange={selectPreset}
+          />
+        </Show>
         <TextField
           label="标识"
           value={form().name}
-          hint="小写；作为唯一键，改动即重命名"
+          readOnly={!nameEditable()}
+          hint={nameEditable() ? '小写；作为唯一键，改动即重命名' : '内置供应商标识固定；需要修改请在「供应商」中选「自定义」'}
           onInput={(v) => patch('name', v)}
         />
         <TextField label="显示名" value={form().displayName} onInput={(v) => patch('displayName', v)} />
@@ -179,7 +263,9 @@ export function ProviderTab() {
           label="BaseUrl"
           value={form().baseUrl}
           wide
+          readOnly={!baseUrlEditable()}
           placeholder="留空使用默认地址"
+          hint={baseUrlHint()}
           onInput={(v) => patch('baseUrl', v)}
         />
         <TextField
@@ -192,7 +278,7 @@ export function ProviderTab() {
         <AreaField
           label="自定义模型"
           value={form().customModels.join('\n')}
-          rows={6}
+          rows={4}
           wide
           mono
           hint="一行一个；保存时按差值增删"

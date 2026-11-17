@@ -15,6 +15,12 @@ const paths: Record<string, () => JSX.Element> = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </>
   ),
+  home: () => (
+    <>
+      <path d="M4 10.5 12 4l8 6.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+      <path d="M9.5 21v-6h5v6" />
+    </>
+  ),
   search: () => (
     <>
       <circle cx="11" cy="11" r="6.5" />
@@ -109,6 +115,20 @@ const paths: Record<string, () => JSX.Element> = {
     </>
   ),
   spark: () => <path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2 2.8 2.8m0-12.8-2.8 2.8m-7.2 7.2-2.8 2.8" />,
+  wand: () => (
+    <>
+      <path d="M6 18 15.5 8.5" />
+      <path d="m14 7 3 3" />
+      <path d="M18 4v3M20.5 5.5h-3" />
+      <path d="M6.5 4.5v2M5.5 5.5h2" />
+    </>
+  ),
+  camera: () => (
+    <>
+      <path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </>
+  ),
   shield: () => (
     <>
       <path d="M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6Z" />
@@ -125,6 +145,13 @@ const paths: Record<string, () => JSX.Element> = {
     <>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
       <path d="M12 11v5m-2.5-2.5h5" />
+    </>
+  ),
+  plug: () => (
+    <>
+      <path d="M9 3v6M15 3v6" />
+      <path d="M6 9h12v2.5A5.5 5.5 0 0 1 12.5 17h-1A5.5 5.5 0 0 1 6 11.5Z" />
+      <path d="M12 17v4" />
     </>
   ),
 };

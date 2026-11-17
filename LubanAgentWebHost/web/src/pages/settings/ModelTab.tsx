@@ -6,8 +6,9 @@ import { selectModel, selection, showToast } from '../../stores/app';
 import { FormActions, SettingsPane, TextField } from './Shared';
 
 /**
- * 模型页：按供应商维护自定义模型，并把某个模型设为全局当前模型。
+ * 模型页：按供应商维护自定义模型，并把某个模型设为「新会话默认模型」。
  *
+ * 单个会话实际使用哪个模型在对话页切换；这里只决定没单独选过模型的会话跟随哪个默认。
  * 列表只读本机清单；「刷新」会向远端拉取（有 API Key 时才真正发请求）。
  */
 export function ModelTab() {
@@ -182,6 +183,10 @@ export function ModelTab() {
           </button>
         </div>
 
+        <div class="field-hint">
+          这里选的是「新会话默认模型」；已单独选过模型的会话不受影响，单个会话的模型在对话页底部切换。
+        </div>
+
         <Show when={models().length > 0} fallback={<div class="settings-list-empty">该供应商暂无模型。</div>}>
           <div class="model-list">
             <For each={models()}>
@@ -194,10 +199,10 @@ export function ModelTab() {
                   <span class="spacer" />
                   <Show
                     when={!model.isSelected}
-                    fallback={<span class="tag current">当前</span>}
+                    fallback={<span class="tag current">新会话默认</span>}
                   >
                     <button class="btn ghost" onClick={() => void setCurrent(model.modelId)} disabled={busy()}>
-                      设为当前
+                      设为新会话默认
                     </button>
                   </Show>
                   <Show when={model.isCustom}>

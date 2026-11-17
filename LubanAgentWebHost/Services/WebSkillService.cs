@@ -17,9 +17,9 @@ namespace LubanAgentWebHost.Services;
 /// </remarks>
 public static class WebSkillService
 {
-    /// <summary>列出作用域内的技能名。</summary>
+    /// <summary>列出作用域内的技能（目录名 + 显示名 + 分类）。</summary>
     /// <param name="scope"><c>global</c> 或工作区标识；缺省按全局。</param>
-    /// <returns>技能名数组。</returns>
+    /// <returns>技能摘要数组。</returns>
     public static Task<ActionResult> ListAsync(string? scope) => WebApi.RunGuardedAsync(async () =>
     {
         await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
@@ -31,8 +31,11 @@ public static class WebSkillService
             return error;
         }
 
-        var ids = requestScope.GetRequiredService<ISkillManagementService>().ListFileIds(root);
-        return WebApi.OkJson(new { items = ids });
+        var entries = requestScope.GetRequiredService<ISkillManagementService>().ListFileEntries(root);
+        var items = entries
+            .Select(e => new SkillFileSummaryDto(e.Id, e.Name, e.Category))
+            .ToList();
+        return WebApi.OkJson(new { items });
     });
 
     /// <summary>读取技能内容。</summary>
@@ -58,12 +61,13 @@ public static class WebSkillService
         var content = requestScope.GetRequiredService<ISkillManagementService>().ReadFile(key.Trim(), root);
         return content is null
             ? WebApi.FailJson(404, "技能不存在")
-            : WebApi.OkJson(new SkillFileDto(content.Name, content.Description, content.Category, content.Triggers, content.Body));
+            : WebApi.OkJson(new SkillFileDto(
+                key.Trim(), content.Name, content.Description, content.Category, content.Triggers, content.Body));
     });
 
     /// <summary>保存技能。</summary>
     /// <param name="payload">包装后的 <see cref="SkillSaveRequest"/> JSON。</param>
-    /// <returns>保存后的条目键。</returns>
+    /// <returns>保存后的条目键（目录名）。</returns>
     public static Task<ActionResult> SaveAsync(string payload) => WebApi.RunGuardedAsync(async () =>
     {
         if (!WebApi.TryReadPayload<SkillSaveRequest>(payload, out var input) || input is null)
@@ -71,9 +75,57 @@ public static class WebSkillService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        if (string.IsNullOrWhiteSpace(input.Name))
+        // name / description 必填校验由 SkillManagementService.SaveFile 统一承担（抛 ArgumentException → 400）
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var (root, error) = await SettingsScope
+            .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
+            .ConfigureAwait(false);
+        if (error is not null)
         {
-            return WebApi.FailJson(400, "技能名不能为空");
+            return error;
+        }
+
+        string key;
+        try
+        {
+            key = requestScope.GetRequiredService<ISkillManagementService>().SaveFile(
+                input.OriginalId,
+                new SkillFileContent(
+                    input.Name.Trim(), input.Description, input.Category, input.Triggers, input.Body),
+                root);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // 名称为空/含非法字符、同名目录冲突都属用户输入问题：回 400 让前端直接提示
+            return WebApi.FailJson(400, ex.Message);
+        }
+
+        return WebApi.OkJson(new SettingsKeyResult(key));
+    });
+
+    /// <summary>导入技能 ZIP 包。</summary>
+    /// <param name="payload">包装后的 <see cref="SkillImportRequest"/> JSON。</param>
+    /// <returns>已导入、被拒与未落盘（非 SKILL.md）的条目。</returns>
+    public static Task<ActionResult> ImportAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<SkillImportRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.ContentBase64))
+        {
+            return WebApi.FailJson(400, "ZIP 内容不能为空");
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(input.ContentBase64);
+        }
+        catch (FormatException)
+        {
+            return WebApi.FailJson(400, "ZIP 内容不是合法的 Base64");
         }
 
         await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
@@ -85,12 +137,23 @@ public static class WebSkillService
             return error;
         }
 
-        var name = input.Name.Trim();
-        requestScope.GetRequiredService<ISkillManagementService>().SaveFile(
-            input.OriginalId,
-            new SkillFileContent(name, input.Description, input.Category, input.Triggers, input.Body),
-            root);
-        return WebApi.OkJson(new SettingsKeyResult(name));
+        using var stream = new MemoryStream(bytes, writable: false);
+        SkillImportResult result;
+        try
+        {
+            result = requestScope.GetRequiredService<ISkillManagementService>().ImportZip(stream, root);
+        }
+        catch (InvalidDataException)
+        {
+            return WebApi.FailJson(400, "不是有效的 ZIP 包");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // 条目数 / 解压总大小超限：属用户输入问题
+            return WebApi.FailJson(400, ex.Message);
+        }
+
+        return WebApi.OkJson(new { imported = result.Imported, skipped = result.Skipped, ignored = result.Ignored });
     });
 
     /// <summary>删除技能。</summary>

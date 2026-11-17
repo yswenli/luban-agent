@@ -7,8 +7,6 @@
 *      口径：列表接口 pipelineId/pipelineName 与详情接口 id/name 的<b>拼写差异 + 数字型 id</b>都要吃得住
 *****************************************************************************/
 
-using LubanAgentCore.Connectors.AliyunDevOps;
-
 namespace LubanAgent.Tests;
 
 /// <summary>

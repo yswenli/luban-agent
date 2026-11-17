@@ -27,6 +27,10 @@ public sealed class AgentWebRuntime : IAsyncDisposable
     {
         _host = host;
         Settings = settings;
+        Sessions = new WebSessionTokens(WebSessionPolicy.Create(
+            settings.SessionTokenMinutes,
+            settings.SessionGraceMinutes,
+            settings.SessionMaxHours));
         UserId = string.IsNullOrWhiteSpace(settings.UserId)
             ? LocalUserDefaults.DefaultUserId
             : settings.UserId.Trim();
@@ -38,6 +42,15 @@ public sealed class AgentWebRuntime : IAsyncDisposable
 
     /// <summary>启动参数。</summary>
     public WebHostSettings Settings { get; }
+
+    /// <summary>
+    /// 浏览器会话令牌（地址栏 <c>?t=</c> 与 <c>luban_auth</c> Cookie 用）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="WebHostSettings.Token"/>（只走 <c>Bearer</c>、进程内固定）分开，
+    /// 让浏览器侧可以短命轮换，而 CLI / Codex / 插件不受影响。
+    /// </remarks>
+    public WebSessionTokens Sessions { get; }
 
     /// <summary>宿主身份（单机单用户）。</summary>
     public string UserId { get; }
@@ -147,7 +160,34 @@ public sealed class AgentWebRuntime : IAsyncDisposable
             Log("启动 A2A 失败：" + ex.Message);
         }
 
-        await PluginBootstrap.InitializeAsync(scope, Log, Settings.PluginsDir);
+        await PluginBootstrap.InitializeAsync(scope, Log, PluginRoots());
+
+        // 插件页面镜像：输出目录可能被重建或覆盖，启动时整棵重建（幂等）
+        try
+        {
+            await WebPluginService.RebuildMirrorsAsync(scope).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log("插件页面镜像重建失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 需要扫描的插件根：Web 自己的插件目录 + 客户端（桌面端）下发的插件目录。
+    /// </summary>
+    /// <returns>去重后的插件根集合。</returns>
+    private IReadOnlyList<string> PluginRoots()
+    {
+        var roots = new List<string>
+        {
+            WebPluginPaths.ResolveWebPluginsRoot(Settings.WebPluginsDir),
+            WebPluginPaths.ResolveDesktopPluginsRoot(Settings.PluginsDir)
+        };
+
+        return roots
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>取消指定会话正在进行的回合。</summary>

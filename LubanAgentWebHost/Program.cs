@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Diagnostics;
-
 namespace LubanAgentWebHost;
 
 /// <summary>
@@ -37,7 +35,7 @@ public static class Program
         // 入口命令：宿主已在运行，按其自述文件重新打印带令牌的地址
         if (args.Length > 0 && string.Equals(args[0], "token", StringComparison.OrdinalIgnoreCase))
         {
-            return PrintEntryUrls();
+            return await PrintEntryUrlsAsync().ConfigureAwait(false);
         }
 
         using var shutdown = new CancellationTokenSource();
@@ -57,7 +55,8 @@ public static class Program
             var configuration = AgentHostBuilder.BuildConfiguration(args);
             var settings = WebHostSettings.Create(configuration, args);
 
-            // 访问令牌：未显式指定时每次启动随机生成，进程退出即失效（不做长期登录态）。
+            // 宿主固定令牌（只走 Authorization: Bearer，给 CLI / Codex / 插件用）：未显式指定时每次启动随机生成。
+            // 浏览器侧的令牌是另一套：由运行时按会话策略轮换，地址栏 ?t= 与 luban_auth Cookie 只认它。
             // 令牌会原样进地址栏与 Set-Cookie，固定的值必须只含 Base64Url 字符，否则直接拒绝启动
             var accessToken = settings.Token ?? WebHostAccess.CreateToken();
             if (!WebHostAccess.IsValidToken(accessToken))
@@ -68,6 +67,19 @@ public static class Program
             }
 
             settings = settings with { Token = accessToken };
+
+            // 插件状态文件与桌面端分开：未显式配置时落到 Web 自己的默认路径，
+            // 避免 Web 的启停状态污染客户端（Codex）的插件状态。
+            if (string.IsNullOrWhiteSpace(configuration["LuBanAgent:Plugins:StateFile"]))
+            {
+                configuration = new ConfigurationBuilder()
+                    .AddConfiguration(configuration)
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["LuBanAgent:Plugins:StateFile"] = WebPluginPaths.DefaultStateFilePath
+                    })
+                    .Build();
+            }
 
             Report("① 加载配置...");
             configuration.InitConfigUtil();
@@ -143,11 +155,17 @@ public static class Program
                 StartedAt = DateTimeOffset.Now
             });
 
+            var lanEntryUrl = WebHostAccess.BuildLanEntryUrl(settings.Port, runtime.Sessions.Current);
+
             Console.WriteLine($"listening on 0.0.0.0:{settings.Port} (user={runtime.UserId})");
             Report("⑥ 就绪（监听全部网卡，已启用访问令牌）");
-            Report($"   浏览器入口：{WebHostAccess.BuildEntryUrl($"http://{WebHostAccess.GetPreferredLanHost()}:{settings.Port}", accessToken)}");
-            Report($"   本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", accessToken)}");
-            Report("   令牌随本次运行有效，重启后换成新地址；随时用 LubanAgentWebHost token 重新打印。");
+            Report($"   浏览器入口：{lanEntryUrl}");
+            Report($"   本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", runtime.Sessions.Current)}");
+            Report($"   浏览器令牌每 {settings.SessionTokenMinutes:0.##} 分钟自动换新（活动页面自动续期），"
+                + $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后用 LubanAgentWebHost token 重新取地址。");
+
+            // 手机扫码要走的正是局域网地址（127.0.0.1 在手机上指向手机自己），故只印这一个
+            PrintEntryQr(lanEntryUrl);
 
             await Task.Delay(Timeout.Infinite, shutdown.Token).ConfigureAwait(false);
             return 0;
@@ -235,10 +253,12 @@ public static class Program
     /// 打印在运行实例的浏览器入口。
     /// </summary>
     /// <remarks>
-    /// 令牌随进程生成、退出即失效，故一律读自述文件里的当前值；宿主未运行时报错，不做任何猜测。
+    /// 浏览器入口里的令牌是会话令牌，由宿主轮换、超过绝对上限即失效，本地算不出来，
+    /// 所以先凭自述文件里的固定令牌请求 <c>/system/entryUrl</c>；宿主未运行时报错，不做任何猜测。
+    /// 旧版宿主没有该接口（404），此时地址栏里的固定令牌仍然可用，退回旧拼法。
     /// </remarks>
-    /// <returns>退出码：0 已打印；1 没有可用实例。</returns>
-    private static int PrintEntryUrls()
+    /// <returns>退出码：0 已打印；1 没有可用实例或取不到入口。</returns>
+    private static async Task<int> PrintEntryUrlsAsync()
     {
         var descriptor = WebHostDiscovery.TryRead();
         if (descriptor is null)
@@ -257,10 +277,108 @@ public static class Program
             return 0;
         }
 
+        var lookup = await RequestEntryUrlAsync(descriptor.BaseAddress, descriptor.Token).ConfigureAwait(false);
+        WebEntryUrlDto? entry = lookup.Entry;
+        if (entry is null && lookup.Unsupported)
+        {
+            // 旧版宿主没有会话令牌：地址栏里放固定令牌仍然放行
+            Console.Error.WriteLine("[webhost] 运行中的实例版本较旧（没有 /system/entryUrl），改用自述文件里的固定令牌");
+            entry = new WebEntryUrlDto(
+                WebHostAccess.BuildLanEntryUrl(port, descriptor.Token),
+                WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{port}", descriptor.Token),
+                DateTimeOffset.MaxValue);
+        }
+
+        if (entry is null)
+        {
+            Console.Error.WriteLine($"[webhost] 取不到入口地址：{lookup.Error}");
+            return 1;
+        }
+
         Console.WriteLine($"[webhost] 运行中：pid={descriptor.ProcessId} {descriptor.BaseAddress}");
-        Console.WriteLine($"[webhost] 浏览器入口：{WebHostAccess.BuildEntryUrl($"http://{WebHostAccess.GetPreferredLanHost()}:{port}", descriptor.Token)}");
-        Console.WriteLine($"[webhost] 本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{port}", descriptor.Token)}");
+        Console.WriteLine($"[webhost] 浏览器入口：{entry.LanUrl}");
+        Console.WriteLine($"[webhost] 本机入口：  {entry.LocalUrl}");
+        if (entry.ExpiresAt != DateTimeOffset.MaxValue)
+        {
+            Console.WriteLine($"[webhost] 本次会话最长到 {entry.ExpiresAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}，之后需再次执行本命令。");
+        }
+
+        PrintEntryQr(entry.LanUrl);
         return 0;
+    }
+
+    /// <summary>
+    /// 用固定令牌向运行中的宿主取当前入口地址。
+    /// </summary>
+    /// <param name="baseAddress">宿主监听地址。</param>
+    /// <param name="token">自述文件里的固定令牌。</param>
+    /// <returns>入口地址；<c>Unsupported</c> 表示宿主没有该接口（旧版本），<c>Error</c> 为失败原因。</returns>
+    private static async Task<(WebEntryUrlDto? Entry, bool Unsupported, string? Error)> RequestEntryUrlAsync(
+        string baseAddress,
+        string token)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{baseAddress.TrimEnd('/')}/system/entryUrl");
+            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+
+            using var response = await http.SendAsync(request).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return (null, true, "宿主没有 /system/entryUrl");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return (null, false, $"HTTP {(int)response.StatusCode}");
+            }
+
+            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var envelope = AgentApiJson.Deserialize<ApiEnvelope>(text);
+            if (envelope is not { Success: true })
+            {
+                return (null, false, envelope?.Message ?? "宿主未返回入口地址");
+            }
+
+            var entry = envelope.GetData<WebEntryUrlDto>();
+            return entry is null
+                ? (null, false, "响应里没有入口地址")
+                : (entry, false, null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            return (null, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 在终端里打印局域网入口的二维码，手机扫码即可打开本实例。
+    /// </summary>
+    /// <remarks>
+    /// 输出被重定向时（客户端拉起的宿主子进程没有控制台）直接跳过：
+    /// 二维码是给人扫的，把几十行色块塞进被捕获的日志没有意义。
+    /// </remarks>
+    /// <param name="entryUrl">带令牌的局域网入口地址。</param>
+    private static void PrintEntryQr(string entryUrl)
+    {
+        if (Console.IsOutputRedirected)
+        {
+            return;
+        }
+
+        try
+        {
+            entryUrl.WriteQrCode();
+            Console.WriteLine("[webhost] 手机扫上面的二维码即可打开（与电脑处于同一局域网）");
+        }
+        catch (Exception ex)
+        {
+            // 二维码只是便利入口，画不出来不能影响启动与地址打印
+            Console.Error.WriteLine($"[webhost] 生成二维码失败：{ex.Message}");
+        }
     }
 
     private static void Report(string message) => AgentWebRuntime.Log(message);

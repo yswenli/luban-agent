@@ -1,3 +1,4 @@
+import { blockForAuth } from '../stores/session';
 import type { ApiEnvelope } from './types';
 
 export class ApiError extends Error {
@@ -42,22 +43,29 @@ function buildQuery(params?: Record<string, string | number | boolean | null | u
   return text ? `?${text}` : '';
 }
 
+/** 401 说明浏览器侧的令牌已失效，前端无法自愈，统一置位整页提示。 */
+function fail(status: number, code: number, message: string): ApiError {
+  const error = new ApiError(code, message);
+  if (code === 401 || status === 401) blockForAuth(message);
+  return error;
+}
+
 async function parseEnvelope<T>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) {
     if (response.ok) return undefined as T;
-    throw new ApiError(response.status, `请求失败（HTTP ${response.status}）`);
+    throw fail(response.status, response.status, `请求失败（HTTP ${response.status}）`);
   }
 
   let envelope: ApiEnvelope<T>;
   try {
     envelope = JSON.parse(text) as ApiEnvelope<T>;
   } catch {
-    throw new ApiError(response.status, text.slice(0, 200));
+    throw fail(response.status, response.status, text.slice(0, 200));
   }
 
   if (!envelope.success) {
-    throw new ApiError(envelope.code || response.status, envelope.message || '请求失败');
+    throw fail(response.status, envelope.code || response.status, envelope.message || '请求失败');
   }
 
   return envelope.data as T;
@@ -111,11 +119,11 @@ export async function toApiError(response: Response): Promise<ApiError> {
     try {
       const envelope = JSON.parse(text) as ApiEnvelope<unknown>;
       if (envelope && envelope.success === false) {
-        return new ApiError(envelope.code || response.status, envelope.message || '请求失败');
+        return fail(response.status, envelope.code || response.status, envelope.message || '请求失败');
       }
     } catch {
       /* 非 JSON：走兜底 */
     }
   }
-  return new ApiError(response.status, `请求失败（HTTP ${response.status}）`);
+  return fail(response.status, response.status, `请求失败（HTTP ${response.status}）`);
 }

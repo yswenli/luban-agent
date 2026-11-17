@@ -7,15 +7,6 @@
 *
 *****************************************************************************/
 
-using System.Reflection;
-
-using LuBan.AIAgent.Hosting;
-
-using LubanAgentCore.Client;
-using LubanAgentCore.Protocol;
-using LubanAgentCore.Protocol.Dtos;
-using LubanAgentCore.Protocol.Events;
-
 namespace LubanAgent.Tests;
 
 [TestClass]
@@ -265,6 +256,64 @@ public class AgentProtocolUnitTest
             new AgentClientOptions { PluginsDirectory = missing });
 
         Assert.IsFalse(args.Contains("--plugins-dir"), "目录不存在时交给宿主回落默认目录");
+    }
+
+    [TestMethod]
+    public void 启动器Web插件目录存在时追加web_plugins_dir参数()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"luban-web-plugins-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var args = ServerProcessLauncher.BuildArguments(
+                new AgentClientOptions { WebPluginsDirectory = root });
+
+            var index = args.IndexOf("--web-plugins-dir");
+            Assert.IsTrue(index >= 0, "Web 插件目录存在时必须下发 --web-plugins-dir");
+            Assert.AreEqual(Path.GetFullPath(root), args[index + 1]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void 启动器Web插件目录未配置或不存在时不下发web_plugins_dir参数()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), $"luban-web-plugins-missing-{Guid.NewGuid():N}");
+
+        var unset = ServerProcessLauncher.BuildArguments(new AgentClientOptions());
+        Assert.IsFalse(unset.Contains("--web-plugins-dir"), "未配置 Web 插件目录时不应下发");
+
+        var absent = ServerProcessLauncher.BuildArguments(
+            new AgentClientOptions { WebPluginsDirectory = missing });
+        Assert.IsFalse(absent.Contains("--web-plugins-dir"), "目录不存在时交给宿主回落默认目录");
+    }
+
+    [TestMethod]
+    public void 启动器同时下发桌面端与Web插件目录()
+    {
+        var desktop = Path.Combine(Path.GetTempPath(), $"luban-plugins-{Guid.NewGuid():N}");
+        var web = Path.Combine(Path.GetTempPath(), $"luban-web-plugins-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(desktop);
+        Directory.CreateDirectory(web);
+        try
+        {
+            var args = ServerProcessLauncher.BuildArguments(
+                new AgentClientOptions { PluginsDirectory = desktop, WebPluginsDirectory = web });
+
+            var desktopIndex = args.IndexOf("--plugins-dir");
+            var webIndex = args.IndexOf("--web-plugins-dir");
+            Assert.IsTrue(desktopIndex >= 0 && webIndex >= 0);
+            Assert.AreEqual(Path.GetFullPath(desktop), args[desktopIndex + 1]);
+            Assert.AreEqual(Path.GetFullPath(web), args[webIndex + 1]);
+        }
+        finally
+        {
+            Directory.Delete(desktop, recursive: true);
+            Directory.Delete(web, recursive: true);
+        }
     }
 
     [TestMethod]

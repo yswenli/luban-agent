@@ -14,8 +14,6 @@
 *
 *****************************************************************************/
 
-using LuBan.DI;
-
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>

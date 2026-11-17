@@ -58,12 +58,14 @@ public partial class SettingsWindow
         }
     }
 
-    private void BuildSkillEditor(StackPanel host, string key)
+    private void BuildSkillEditor(StackPanel host, string? key)
     {
-        var content = _vm.SkillRule.ReadSkill(key, ScopeRoot);
+        var isDraft = string.IsNullOrEmpty(key);
+        var content = isDraft ? null : _vm.SkillRule.ReadSkill(key!, ScopeRoot);
 
-        SetField("name", AddField(host, "name（必填）",
-            string.IsNullOrWhiteSpace(content?.Name) ? key : content!.Name));
+        SetField("name", AddField(host,
+            isDraft ? "name（显示名，必填；目录名按名称生成）" : $"name（显示名，必填；目录名 {key} 不变）",
+            string.IsNullOrWhiteSpace(content?.Name) ? (isDraft ? "" : key!) : content!.Name));
         SetField("description", AddField(host, "description（必填）", content?.Description ?? ""));
         SetField("category", AddField(host, "category",
             string.IsNullOrWhiteSpace(content?.Category) ? "custom" : content!.Category));
