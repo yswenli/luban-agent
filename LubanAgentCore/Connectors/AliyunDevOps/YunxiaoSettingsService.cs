@@ -1,7 +1,7 @@
 /****************************************************************************
 *Copyright @ yswenli All Rights Reserved.
 *CLR版本： .net10.0
-*命名空间：LubanAgentCodex.Security
+*命名空间：LubanAgentCore.Connectors.AliyunDevOps
 *文件名： YunxiaoSettingsService
 *版本号： V1.0.0.0
 *唯一标识：新建
@@ -12,7 +12,7 @@
 *
 *****************************************************************************/
 
-namespace LubanAgentCodex.Security;
+namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
 /// 云效连接配置读写门面：组织 ID 落 <see cref="YunxiaoApiOptions"/>（运行时即时生效）并持久化，
@@ -27,7 +27,7 @@ namespace LubanAgentCodex.Security;
 /// PAT 只经 <see cref="ICredentialStore"/> 流转，<b>不回显</b>到 UI（设置页仅显示「已配置」）。
 /// </para>
 /// </remarks>
-public sealed class YunxiaoSettingsService
+public sealed class YunxiaoSettingsService : IYunxiaoSettingsService
 {
     private readonly ICredentialStore _store;
     private readonly YunxiaoApiOptions _options;

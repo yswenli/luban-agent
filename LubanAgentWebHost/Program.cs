@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Plugins.Security;
+
 namespace LubanAgentWebHost;
 
 /// <summary>
@@ -101,6 +103,17 @@ public static class Program
             {
                 // A2A：注册 SDK 实现与运行时生命周期（实际启动在用户工作区就绪后由 AgentWebRuntime 触发）
                 services.AddLubanAgentA2A(configuration);
+
+                // C28：可写凭据存储覆盖框架默认只读实现（ConfigurationCredentialStore.SetAsync 抛 NotSupportedException）；
+                // 云效设置服务供 YunxiaoController 的工作台服务使用。
+                services.AddSingleton<LubanAgentCore.Security.CredentialStore>();
+                services.ReplaceSingleton<ICredentialStore>(d => d.GetRequiredService<LubanAgentCore.Security.CredentialStore>());
+                services.AddSingleton<LubanAgentCore.Connectors.AliyunDevOps.YunxiaoSettingsService>();
+                // 测试缝合点接口桥接：仍按具体类注册（消费方不改），接口指向同一单例
+                services.TryAddSingleton<LubanAgentCore.Connectors.AliyunDevOps.IYunxiaoSettingsService>(
+                    d => d.GetRequiredService<LubanAgentCore.Connectors.AliyunDevOps.YunxiaoSettingsService>());
+                // 云效工作台编排（YunxiaoController → WebYunxiaoService → 本服务）
+                services.AddSingleton<YunxiaoWorkbenchService>();
 
                 // 编排进度出口：框架默认注册 no-op，这里换成可订阅实现并按请求作用域隔离，
                 // 供 /agent/chat 把子代理进度转成 orchestration.progress 帧

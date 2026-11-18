@@ -121,7 +121,7 @@ public class App : Application
                         d => d.GetRequiredService<CredentialStore>());
                     services.ReplaceSingleton<IYunxiaoCredentialProvider>(
                         d => new Security.CodexYunxiaoCredentialProvider(d.GetRequiredService<ICredentialStore>()));
-                    services.AddSingleton<Security.YunxiaoSettingsService>();
+                    services.AddSingleton<LubanAgentCore.Connectors.AliyunDevOps.YunxiaoSettingsService>();
 
                     // 会话 / 工作区 / 对话改走统一 Agent 服务；必须在容器构建前覆盖
                     connection?.RegisterInto(services);
@@ -135,7 +135,7 @@ public class App : Application
                 // 把持久化的云效组织 ID 回填到运行时共享选项（配置节点未提供时），使本次启动即生效
                 try
                 {
-                    _services.GetRequiredService<Security.YunxiaoSettingsService>().ApplyPersistedOrganizationId();
+                    _services.GetRequiredService<LubanAgentCore.Connectors.AliyunDevOps.YunxiaoSettingsService>().ApplyPersistedOrganizationId();
                 }
                 catch (Exception ex)
                 {

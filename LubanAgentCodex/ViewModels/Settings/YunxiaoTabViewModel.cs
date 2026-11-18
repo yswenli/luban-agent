@@ -12,6 +12,8 @@
 *
 *****************************************************************************/
 
+using LubanAgentCore.Connectors.AliyunDevOps;
+
 namespace LubanAgentCodex.ViewModels.Settings;
 
 /// <summary>
