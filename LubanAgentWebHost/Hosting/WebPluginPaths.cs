@@ -206,7 +206,8 @@ public static class WebPluginPaths
     private static readonly HashSet<string> HostControllerNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "plugin", "session", "agent", "attachment", "mcp", "model", "llmwiki",
-        "a2a", "agentsmd", "system", "provider", "skill", "rule", "workspace"
+        "a2a", "agentsmd", "system", "provider", "skill", "rule", "workspace",
+        "yunxiao"
     };
 
     /// <summary>

@@ -82,6 +82,13 @@ public class WebPluginHostUnitTest
     }
 
     [TestMethod]
+    public void 控制器同名目录_含云效工作台控制器yunxiao()
+    {
+        Assert.IsTrue(WebPluginPaths.IsHostControllerDirectoryName("yunxiao"));
+        Assert.IsTrue(WebPluginPaths.IsHostControllerDirectoryName("YunXiao"));
+    }
+
+    [TestMethod]
     public void 镜像戳_八位十六进制且每次不同()
     {
         var first = WebPluginPaths.CreateStamp();
