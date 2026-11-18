@@ -358,7 +358,7 @@ a {
 }
 
 .home-side {
-  flex: 0 0 258px;
+  flex: 0 0 200px;
   min-width: 0;
   /* 项目数多时只滚项目列表：标题与底部入口固定，避免「设置/知识库」被顶出可视区 */
   min-height: 0;
