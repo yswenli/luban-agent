@@ -26,8 +26,8 @@ public sealed record WebHostSettings
     /// <summary>浏览器会话令牌换新后旧值的宽限期（分钟）；覆盖轮换瞬间还在路上的并发请求。</summary>
     public double SessionGraceMinutes { get; init; } = 5;
 
-    /// <summary>浏览器会话的绝对上限（小时）；到点后任何旧令牌都不再放行，必须重新获取入口地址。</summary>
-    public double SessionMaxHours { get; init; } = 8;
+    /// <summary>浏览器会话的绝对上限（小时）；<c>0</c> 表示不设上限，会话随宿主进程存活。</summary>
+    public double SessionMaxHours { get; init; } = 0;
 
     /// <summary>SAEA 的同步等待上限（秒）；必须远大于最长回合（SSE 与同步索引都可能跑很久）。</summary>
     public double TimeoutSeconds { get; init; } = 86400;
@@ -60,7 +60,7 @@ public sealed record WebHostSettings
 
     /// <summary>
     /// 从配置文件与命令行构造；命令行
-    /// <c>--port/--token/--user/--plugins-dir/--web-plugins-dir/--debug</c> 优先。
+    /// <c>--port/--host-token/--user/--plugins-dir/--web-plugins-dir/--debug</c> 优先。
     /// </summary>
     /// <param name="configuration">应用配置。</param>
     /// <param name="args">命令行参数。</param>
@@ -74,7 +74,7 @@ public sealed record WebHostSettings
             Token = NullIfBlank(section["Token"]),
             SessionTokenMinutes = section.GetValue("SessionTokenMinutes", 15d),
             SessionGraceMinutes = section.GetValue("SessionGraceMinutes", 5d),
-            SessionMaxHours = section.GetValue("SessionMaxHours", 8d),
+            SessionMaxHours = section.GetValue("SessionMaxHours", 0d),
             TimeoutSeconds = section.GetValue("TimeoutSeconds", 86400d),
             HeartbeatSeconds = section.GetValue("HeartbeatSeconds", 15),
             UserId = NullIfBlank(section["UserId"]),
@@ -91,7 +91,7 @@ public sealed record WebHostSettings
                 case "--port":
                     settings = settings with { Port = ParseInt(TakeValue(args, ref i, inlineValue), settings.Port) };
                     break;
-                case "--token":
+                case "--host-token":
                     settings = settings with { Token = NullIfBlank(TakeValue(args, ref i, inlineValue)) };
                     break;
                 case "--user":

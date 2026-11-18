@@ -171,9 +171,9 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
     <summary>帮助</summary>
     <p>请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>
     <ul>
-      <li>找不到终端？在宿主机上执行 <code>LubanAgentWebHost token</code> 重新打印地址。</li>
+      <li>找不到终端？在宿主机上执行 <code>LubanAgentWebHost --token</code> 重新打印地址。</li>
       <li>浏览器侧的令牌会定时换新（默认 15 分钟），一直开着的页面自动续期。</li>
-      <li>会话有绝对上限（默认 8 小时），到点或宿主重启后旧地址立即失效，用 <code>token</code> 命令取新地址。</li>
+      <li>会话默认不设绝对上限，但宿主重启后旧地址立即失效；配置了 <code>SessionMaxHours</code> 时到点同样失效，都用 <code>LubanAgentWebHost --token</code> 取新地址。</li>
       <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>。</li>
       <li>带令牌的地址等同于完整操作权限，不要转发给他人。</li>
     </ul>

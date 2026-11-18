@@ -190,7 +190,65 @@ public class WebHostAccessUnitTest
     {
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => WebSessionPolicy.Create(0, 5, 8));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => WebSessionPolicy.Create(15, -1, 8));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => WebSessionPolicy.Create(15, 5, 0));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => WebSessionPolicy.Create(15, 5, -1));
+
+        // 0 合法且表示不设上限
+        var unlimited = WebSessionPolicy.Create(15, 5, 0);
+        Assert.IsFalse(unlimited.HasMaxLifetime);
+        Assert.AreEqual(TimeSpan.Zero, unlimited.MaxLifetime);
+        Assert.IsFalse(WebSessionPolicy.Default.HasMaxLifetime, "默认策略不应再带会话绝对上限");
+    }
+
+    [TestMethod]
+    public void 命令行用host_token钉住宿主令牌且会话上限默认不设()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        // --token 已让给「打印入口」命令，钉住固定令牌改走 --host-token
+        var pinned = LubanAgentWebHost.Hosting.WebHostSettings.Create(configuration, ["--host-token", "abc_123"]);
+        Assert.AreEqual("abc_123", pinned.Token);
+        Assert.AreEqual(0d, pinned.SessionMaxHours, "会话绝对上限默认 0，即不设上限");
+
+        var byConfig = LubanAgentWebHost.Hosting.WebHostSettings.Create(
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["LubanAgentWeb:Token"] = "from_config",
+                ["LubanAgentWeb:SessionMaxHours"] = "2"
+            }).Build(),
+            []);
+        Assert.AreEqual("from_config", byConfig.Token);
+        Assert.AreEqual(2d, byConfig.SessionMaxHours);
+
+        // --token 不再兼作固定令牌：它只触发打印入口
+        Assert.IsNull(LubanAgentWebHost.Hosting.WebHostSettings.Create(configuration, ["--token"]).Token);
+    }
+
+    [TestMethod]
+    public void 会话不设绝对上限时长期活动也不失效()
+    {
+        var time = new ManualTime();
+        var sessions = new WebSessionTokens(
+            WebSessionPolicy.Create(lifetimeMinutes: 15, graceMinutes: 5, maxHours: 0),
+            initialToken: "first",
+            time);
+
+        Assert.AreEqual(
+            DateTimeOffset.MaxValue,
+            sessions.ExpiresAt,
+            "不设上限时到期时刻给 MaxValue，调用方据此跳过到期提示");
+
+        // 连续续期 1000 小时（远超旧的 8 小时上限）都不该被拒
+        for (var i = 0; i < 4000; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(15));
+            Assert.AreEqual(
+                WebEntryDecision.Allow,
+                WebHostAccess.Decide("/", null, sessions.Current, null, "tok", sessions, out _),
+                $"第 {i + 1} 次续期不该被拒");
+        }
+
+        var current = sessions.Current;
+        Assert.AreEqual(current, sessions.TakeEntryToken(), "不设上限时重复取地址不该重开会话族");
     }
 
     [TestMethod]

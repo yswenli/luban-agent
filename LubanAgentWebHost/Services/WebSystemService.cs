@@ -168,7 +168,7 @@ public static class WebSystemService
         ensureUser: false);
 
     /// <summary>
-    /// 取当前入口地址：只给持固定令牌的运维命令 <c>LubanAgentWebHost token</c>。
+    /// 取当前入口地址：只给持固定令牌的运维命令 <c>LubanAgentWebHost --token</c>。
     /// </summary>
     /// <remarks>
     /// 浏览器会话到绝对上限后必须重开，否则终端打印出来的地址永远是过期的；

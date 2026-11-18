@@ -293,7 +293,7 @@ OpenAI 可用模型（回车确认，未选则默认第一个）:
 - **访问令牌**：宿主监听全部网卡，所以每次启动都会生成一次性令牌，并写入 `%LOCALAPPDATA%\luban-agent\webhost.json`；客户端从该文件读取后自动带 `Authorization: Bearer`，不需要手工填写。
 - **浏览器端**：宿主同时托管网页界面，入口是终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`；打开后令牌换成 HttpOnly Cookie 并 302 回去掉 `t` 的干净地址，宿主重启即失效。
 - **遇到 401 或连不上**：
-  - 在宿主机执行 `LubanAgentWebHost token`，重新打印当前实例的入口地址；
+  - 在宿主机执行 `LubanAgentWebHost --token`，重新打印当前实例的入口地址；
   - 宿主重启过：令牌随进程失效，旧地址、旧书签与旧的浏览器会话都要重新进入；
   - 端口被占用：用 `--port <端口>` 换一个端口再启动；
   - 想彻底重来：`LubanAgentWebHost --stop` 停掉宿主，再重新启动本程序。

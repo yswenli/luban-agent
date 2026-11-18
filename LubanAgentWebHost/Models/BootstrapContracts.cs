@@ -73,14 +73,14 @@ public sealed record ReadmeDto(string Markdown);
 
 /// <summary>浏览器会话状态（前端心跳与「关于」弹窗用）。</summary>
 /// <param name="RotateAt">当前令牌的到期时刻；到期后的下一次请求会自动换新。</param>
-/// <param name="ExpiresAt">会话绝对到期时刻；此后必须重新获取入口地址。</param>
+/// <param name="ExpiresAt">会话绝对到期时刻；未配置上限时为 <see cref="DateTimeOffset.MaxValue"/>。</param>
 /// <param name="LifetimeSeconds">单个令牌的有效期（秒）。</param>
 public sealed record WebSessionDto(DateTimeOffset RotateAt, DateTimeOffset ExpiresAt, double LifetimeSeconds);
 
-/// <summary>宿主当前入口地址（由终端 <c>token</c> 命令凭固定令牌取回）。</summary>
+/// <summary>宿主当前入口地址（由终端 <c>--token</c> 命令凭固定令牌取回）。</summary>
 /// <param name="LanUrl">局域网入口（手机扫码用）。</param>
 /// <param name="LocalUrl">本机入口。</param>
-/// <param name="ExpiresAt">会话绝对到期时刻。</param>
+/// <param name="ExpiresAt">会话绝对到期时刻；未配置上限时为 <see cref="DateTimeOffset.MaxValue"/>。</param>
 public sealed record WebEntryUrlDto(string LanUrl, string LocalUrl, DateTimeOffset ExpiresAt);
 
 /// <summary>斜杠命令（浏览器端）。</summary>

@@ -8,7 +8,7 @@ const hostPort = process.env.VITE_HOST_PORT ?? '18080';
 // 开发模式下浏览器直连 Vite、拿不到宿主换发的 Cookie，故把「宿主令牌」填进 VITE_HOST_TOKEN，
 // 由代理在转发时补 Authorization 头；生产模式不读这个变量。
 // 注意：浏览器入口里的 ?t= 是会话令牌，只能换 Cookie，不能当 Bearer 用；
-// 宿主令牌取自 %LOCALAPPDATA%\luban-agent\webhost.json 的 token，或启动宿主时用 --token 指定的值。
+// 宿主令牌取自 %LOCALAPPDATA%\luban-agent\webhost.json 的 token，或启动宿主时用 --host-token 指定的值。
 const hostToken = process.env.VITE_HOST_TOKEN;
 const hostAuthHeaders = hostToken ? { Authorization: `Bearer ${hostToken}` } : undefined;
 

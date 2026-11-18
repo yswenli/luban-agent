@@ -23,10 +23,16 @@ public sealed record WebSessionPolicy
     /// <summary>换新后旧令牌的宽限期；轮换瞬间还在路上的并发请求仍可放行。</summary>
     public TimeSpan Grace { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>整个会话族的绝对上限；到点后任何旧令牌都不再放行，必须重新获取入口地址。</summary>
-    public TimeSpan MaxLifetime { get; init; } = TimeSpan.FromHours(8);
+    /// <summary>
+    /// 整个会话族的绝对上限；到点后任何旧令牌都不再放行，必须重新获取入口地址。
+    /// <see cref="TimeSpan.Zero"/> 表示不设上限，会话随宿主进程存活。
+    /// </summary>
+    public TimeSpan MaxLifetime { get; init; } = TimeSpan.Zero;
 
-    /// <summary>默认参数（15 分钟 / 5 分钟 / 8 小时）。</summary>
+    /// <summary>是否配置了绝对上限；未配置时只靠令牌轮换约束泄漏窗口。</summary>
+    public bool HasMaxLifetime => MaxLifetime > TimeSpan.Zero;
+
+    /// <summary>默认参数（15 分钟 / 5 分钟 / 不设绝对上限）。</summary>
     public static WebSessionPolicy Default { get; } = new();
 
     /// <summary>
@@ -34,7 +40,7 @@ public sealed record WebSessionPolicy
     /// </summary>
     /// <param name="lifetimeMinutes">单个令牌的有效期（分钟），必须大于 0。</param>
     /// <param name="graceMinutes">旧令牌宽限期（分钟），不得小于 0。</param>
-    /// <param name="maxHours">会话族绝对上限（小时），必须大于 0。</param>
+    /// <param name="maxHours">会话族绝对上限（小时），不得小于 0；<c>0</c> 表示不设上限。</param>
     /// <returns>时间参数。</returns>
     /// <exception cref="ArgumentOutOfRangeException">参数越界（配置写错时直接暴露，不做静默兜底）。</exception>
     public static WebSessionPolicy Create(double lifetimeMinutes, double graceMinutes, double maxHours)
@@ -49,16 +55,16 @@ public sealed record WebSessionPolicy
             throw new ArgumentOutOfRangeException(nameof(graceMinutes), "会话令牌宽限期不能为负数");
         }
 
-        if (maxHours <= 0)
+        if (maxHours < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(maxHours), "会话令牌绝对上限必须大于 0 小时");
+            throw new ArgumentOutOfRangeException(nameof(maxHours), "会话令牌绝对上限不能为负数（0 表示不设上限）");
         }
 
         return new WebSessionPolicy
         {
             Lifetime = TimeSpan.FromMinutes(lifetimeMinutes),
             Grace = TimeSpan.FromMinutes(graceMinutes),
-            MaxLifetime = TimeSpan.FromHours(maxHours)
+            MaxLifetime = maxHours > 0 ? TimeSpan.FromHours(maxHours) : TimeSpan.Zero
         };
     }
 }
@@ -103,7 +109,8 @@ public readonly record struct WebSessionCheck(WebSessionState State, string? Tok
 /// </para>
 /// <para>
 /// 绝对上限（<see cref="WebSessionPolicy.MaxLifetime"/>）从会话族创建/重开时算起，到点后连当前令牌也拒绝，
-/// 只能由宿主侧持固定令牌的接口（<c>LubanAgentWebHost token</c>）重开会话族。
+/// 只能由宿主侧持固定令牌的接口（<c>LubanAgentWebHost --token</c>）重开会话族。默认不设上限，
+/// 此时会话跟着宿主进程走：令牌仍按 <see cref="WebSessionPolicy.Lifetime"/> 轮换，宿主重启才需要重新取地址。
 /// </para>
 /// </remarks>
 public sealed class WebSessionTokens
@@ -148,14 +155,14 @@ public sealed class WebSessionTokens
         }
     }
 
-    /// <summary>会话族的绝对到期时刻；此后必须重新获取入口地址。</summary>
+    /// <summary>会话族的绝对到期时刻；未配置上限时为 <see cref="DateTimeOffset.MaxValue"/>。</summary>
     public DateTimeOffset ExpiresAt
     {
         get
         {
             lock (_gate)
             {
-                return _startedAt + _policy.MaxLifetime;
+                return _policy.HasMaxLifetime ? _startedAt + _policy.MaxLifetime : DateTimeOffset.MaxValue;
             }
         }
     }
@@ -187,7 +194,7 @@ public sealed class WebSessionTokens
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            if (now - _startedAt >= _policy.MaxLifetime)
+            if (_policy.HasMaxLifetime && now - _startedAt >= _policy.MaxLifetime)
             {
                 return WebSessionCheck.Expired;
             }
@@ -229,7 +236,7 @@ public sealed class WebSessionTokens
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            if (now - _startedAt >= _policy.MaxLifetime)
+            if (_policy.HasMaxLifetime && now - _startedAt >= _policy.MaxLifetime)
             {
                 return false;
             }
@@ -258,7 +265,7 @@ public sealed class WebSessionTokens
         lock (_gate)
         {
             var now = _time.GetUtcNow();
-            if (now - _startedAt < _policy.MaxLifetime)
+            if (!_policy.HasMaxLifetime || now - _startedAt < _policy.MaxLifetime)
             {
                 return _current;
             }

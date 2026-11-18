@@ -16,7 +16,7 @@ namespace LubanAgentCore.Client;
 /// <para>
 /// 宿主是独立服务：监听端口、共享令牌、超时与用户身份都以宿主自己的配置为准。
 /// 客户端启动时先读发现文件并对 <c>/system/health</c> 探活，通过即直接接管；
-/// 只有宿主确实不在运行时才启动子进程，且不传 <c>--port</c>/<c>--token</c> 这类连接参数。
+/// 只有宿主确实不在运行时才启动子进程，且不传 <c>--port</c>/<c>--host-token</c> 这类连接参数。
 /// </para>
 /// <para>
 /// 拉起后宿主常驻：客户端退出不再结束它（用 <c>LubanAgentWebHost --stop</c> 显式停止），

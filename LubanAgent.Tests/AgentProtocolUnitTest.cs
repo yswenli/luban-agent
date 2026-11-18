@@ -221,7 +221,7 @@ public class AgentProtocolUnitTest
         var args = ServerProcessLauncher.BuildArguments(
             new AgentClientOptions { Debug = true });
 
-        foreach (var flag in new[] { "--port", "--token", "--timeout", "--user" })
+        foreach (var flag in new[] { "--port", "--token", "--host-token", "--timeout", "--user" })
         {
             Assert.IsFalse(args.Contains(flag), $"端口/令牌等以宿主配置为准，不应下发 {flag}");
         }

@@ -20,8 +20,8 @@ public static class Program
     /// 启动 WebHost。
     /// </summary>
     /// <param name="args">
-    /// 命令行参数：<c>token</c>（打印在运行实例的浏览器入口）、<c>--stop</c>（停止在运行实例）、
-    /// <c>--port</c> / <c>--token</c> / <c>--user</c> / <c>--timeout</c> / <c>--debug</c>。
+    /// 命令行参数：<c>--token</c>（打印在运行实例的浏览器入口）、<c>--stop</c>（停止在运行实例）、
+    /// <c>--port</c> / <c>--host-token</c> / <c>--user</c> / <c>--timeout</c> / <c>--debug</c>。
     /// </param>
     /// <returns>退出码：0 正常，非 0 表示启动失败或命令失败。</returns>
     public static async Task<int> Main(string[] args)
@@ -35,7 +35,7 @@ public static class Program
         }
 
         // 入口命令：宿主已在运行，按其自述文件重新打印带令牌的地址
-        if (args.Length > 0 && string.Equals(args[0], "token", StringComparison.OrdinalIgnoreCase))
+        if (args.Any(static arg => string.Equals(arg, "--token", StringComparison.OrdinalIgnoreCase)))
         {
             return await PrintEntryUrlsAsync().ConfigureAwait(false);
         }
@@ -65,7 +65,7 @@ public static class Program
             {
                 throw new InvalidOperationException(
                     "访问令牌只允许字母、数字、'-' 与 '_'（Base64Url 字符集）："
-                    + "请检查 LubanAgentWeb:Token 配置或 --token 参数");
+                    + "请检查 LubanAgentWeb:Token 配置或 --host-token 参数");
             }
 
             settings = settings with { Token = accessToken };
@@ -175,7 +175,9 @@ public static class Program
             Report($"   浏览器入口：{lanEntryUrl}");
             Report($"   本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", runtime.Sessions.Current)}");
             Report($"   浏览器令牌每 {settings.SessionTokenMinutes:0.##} 分钟自动换新（活动页面自动续期），"
-                + $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后用 LubanAgentWebHost token 重新取地址。");
+                + (settings.SessionMaxHours > 0
+                    ? $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后用 LubanAgentWebHost --token 重新取地址。"
+                    : "会话不设绝对上限，宿主重启后用 LubanAgentWebHost --token 重新取地址。"));
 
             // 手机扫码要走的正是局域网地址（127.0.0.1 在手机上指向手机自己），故只印这一个
             PrintEntryQr(lanEntryUrl);

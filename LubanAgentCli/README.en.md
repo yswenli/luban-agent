@@ -293,7 +293,7 @@ This program does not execute the agent itself: conversations, file access and t
 - **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `%LOCALAPPDATA%\luban-agent\webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
 - **Browser UI**: the host also serves a web UI at the entry address printed in the terminal (`http://<LAN IP>:<port>/?t=<token>`). The token is exchanged for an HttpOnly cookie and the URL is 302-redirected to the clean address; it expires when the host restarts.
 - **Getting a 401 or failing to connect**:
-  - run `LubanAgentWebHost token` on the host machine to print the current entry address again;
+  - run `LubanAgentWebHost --token` on the host machine to print the current entry address again;
   - after a host restart the token is gone: old links, bookmarks and browser sessions must be replaced;
   - port already in use: start with `--port <port>`;
   - to start over: `LubanAgentWebHost --stop`, then launch this program again.

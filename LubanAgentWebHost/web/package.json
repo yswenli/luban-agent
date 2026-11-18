@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "LuBan Agent 浏览器端（由 LubanAgentWebHost 托管，产物输出到 ../wwwroot）",
+  "author": "yswenli",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -15,12 +15,12 @@ export function SessionExpired(props: { message: string }) {
         <h1>令牌已过期</h1>
         <p>{props.message}</p>
         <p>
-          浏览器侧的令牌会定时换新（默认 15 分钟）并有最长会话时限，一直开着的页面会自动续期；
-          超出时限后只能重新取入口地址。
+          浏览器侧的令牌会定时换新（默认 15 分钟），一直开着的页面会自动续期；
+          宿主重启（或配置了会话上限后到点）才需要重新取入口地址。
         </p>
         <p>
           请到启动宿主的终端复制最新的「浏览器入口」地址（带 <code>?t=</code>），
-          或在宿主机上执行 <code>LubanAgentWebHost token</code> 重新打印。
+          或在宿主机上执行 <code>LubanAgentWebHost --token</code> 重新打印。
         </p>
         <div class="boot-actions">
           <button
