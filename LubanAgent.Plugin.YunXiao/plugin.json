@@ -11,7 +11,7 @@
     {
       "id": "yunxiao-workbench",
       "label": "云效工作台",
-      "icon": "project",
+      "icon": "assets/yunxiao.png",
       "webPage": "web/index.html"
     }
   ],

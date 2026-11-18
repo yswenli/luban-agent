@@ -299,8 +299,20 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                     title={entry.label}
                     onClick={() => openPlugin(entry.pluginId, entry.entryId)}
                   >
-                    <Icon name={entry.icon || 'plug'} size={16} />
-                    <Show when={!collapsed()}>{entry.label}</Show>
+                    <Show
+                      when={entry.iconUrl}
+                      fallback={<Icon name={entry.icon || 'plug'} size={16} />}
+                    >
+                      {(url) => (
+                        <img class="side-plugin-logo" src={url()} width={16} height={16} alt="" />
+                      )}
+                    </Show>
+                    <Show when={!collapsed()}>
+                      <span class="side-plugin-label">
+                        {entry.label}
+                        <Icon name="plug" size={10} class="side-plugin-badge" />
+                      </span>
+                    </Show>
                   </button>
                 )}
               </For>

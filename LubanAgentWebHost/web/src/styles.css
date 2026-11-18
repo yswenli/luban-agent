@@ -483,6 +483,31 @@ a {
   border-top: 1px dashed var(--border);
 }
 
+/* 插件自带的图片 logo：按 16px 画，与线性图标同一个视觉尺寸 */
+.side-plugin-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/* 插件页面的标签：右上角挂一个极小 plug 角标，用来区分「插件自带页面」与宿主内置入口 */
+.side-plugin-label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.side-plugin-badge {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  /* 10px 显示下 1.7 的描边约 0.7px，pinch 到看不清，单独加粗一档 */
+  stroke-width: 2.2;
+  color: var(--text-faint);
+}
+
 .side-version {
   padding: 6px 8px 0;
   font-size: 11.5px;

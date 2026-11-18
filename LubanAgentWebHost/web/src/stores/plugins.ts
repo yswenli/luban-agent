@@ -41,6 +41,19 @@ export async function ensurePluginsLoaded(): Promise<void> {
 }
 
 /**
+ * 图标声明有两种写法：Icons.tsx 里的图标名（如 `project`），或插件包内的图片路径（含 `/` 或图片扩展名）。
+ * 后者相对**页面所在目录**（`web/`）解析，拼到页面地址的目录前缀上，形如
+ * `/plugin-web/{id}/{stamp}/web/` + `assets/yunxiao.png`。
+ */
+const ICON_FILE_PATTERN = /\.(png|svg|jpe?g|gif|webp|ico)$/i;
+
+function resolveIconUrl(icon: string | null | undefined, pageUrl: string): string | null {
+  if (!icon || (!icon.includes('/') && !ICON_FILE_PATTERN.test(icon))) return null;
+  const slash = pageUrl.lastIndexOf('/');
+  return slash < 0 ? null : pageUrl.slice(0, slash + 1) + icon;
+}
+
+/**
  * 侧栏的插件页面入口：只取「已启用且页面可用」，按插件与条目顺序排列。
  *
  * 每个条目携带插件标识与条目标识，点击即打开 `#/plugin/{pluginId}/{entryId}`。
@@ -56,6 +69,7 @@ export const pluginPageEntries = createMemo(() =>
           entryId: page.entryId,
           label: page.label || plugin.name || page.entryId,
           icon: page.icon ?? null,
+          iconUrl: resolveIconUrl(page.icon, page.url),
         })),
     ),
 );
