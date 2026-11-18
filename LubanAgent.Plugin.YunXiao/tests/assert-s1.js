@@ -11,9 +11,11 @@
     1. 复制 web/index.html 到临时目录，改写 assets/ 相对引用为绝对 file:// URL，
        在 </body> 前注入探针 <script>（探针同步装 fetch mock，DOM ready 后跑断言，
        最后 document.title = 'PROBE::' + JSON.stringify({results:[...]})）；
-    2. 优先用 spec 命令 --headless=new --dump-dom 抓 title；若 stdout 为空
-       （Edge 157 MSIX launcher 分离进程丢弃 stdout 的已知问题），自动回退
-       CDP（--remote-debugging-port + 原生 WebSocket）读取同一 title 通道；
+    2. 优先走 CDP（--remote-debugging-port + 原生 WebSocket）读 title 通道，
+       并用 Emulation.setDeviceMetricsOverride 把视口精确钉在 826×694
+      （--headless=new 下 --window-size 不可靠：实测视口会回落 800×600）；
+       CDP 不可用时回退 spec 命令 --headless=new --dump-dom（视口靠
+       --window-size 尽力而为，Edge 157 MSIX launcher 还曾丢弃 stdout）；
     3. 逐条打印 PASS/FAIL；任一失败 → 退出码 1。
 
   断言清单（对应设计 §6.2）：
@@ -260,7 +262,7 @@ function killEdgeByUserDataDir(udd) {
   } catch (e) { /* 清理失败不阻塞报告 */ }
 }
 
-/* ---------------- 通道 A：--dump-dom（spec 命令） ---------------- */
+/* ---------------- 通道 B（回退）：--dump-dom（spec 命令） ---------------- */
 
 function tryDumpDom(htmlFile) {
   const udd = path.join(os.tmpdir(), 'yunxiao-s1-dump-udd-' + Date.now());
@@ -281,13 +283,13 @@ function tryDumpDom(htmlFile) {
   }
   killEdgeByUserDataDir(udd);
   if (!out.trim()) {
-    console.log('[channel] --dump-dom 输出为空（Edge 157 MSIX launcher 丢弃 stdout 的已知问题）→ 回退 CDP 通道');
+    console.log('[channel] --dump-dom 输出为空（Edge 157 MSIX launcher 丢弃 stdout 的已知问题），本通道放弃');
     return null;
   }
   return extractFromDom(out);
 }
 
-/* ---------------- 通道 B：CDP（remote-debugging-port + 原生 WebSocket） ---------------- */
+/* ---------------- 通道 A（首选）：CDP（remote-debugging-port + 原生 WebSocket） ---------------- */
 
 function httpGetJson(url, timeoutMs) {
   return new Promise(function (resolve, reject) {
@@ -444,14 +446,23 @@ async function main() {
   let payload = null;
   let channel = '';
 
-  // 通道 A：spec 的 --dump-dom
-  payload = tryDumpDom(htmlFile);
-  if (payload) channel = '--dump-dom';
-
-  // 通道 B：CDP 回退（同一 PROBE::JSON title 通道）
-  if (!payload) {
+  // 通道 A（首选）：CDP —— Emulation.setDeviceMetricsOverride 精确钉住 826×694 视口
+  try {
     payload = await runCdp(htmlFile);
-    channel = 'CDP(remote-debugging-port)';
+    if (payload) channel = 'CDP(remote-debugging-port)';
+  } catch (e) {
+    console.log('[channel] CDP 通道失败: ' + e.message + ' → 回退 --dump-dom');
+  }
+
+  // 通道 B（回退）：spec 的 --dump-dom（视口靠 --window-size 尽力而为）
+  if (!payload) {
+    payload = tryDumpDom(htmlFile);
+    if (payload) channel = '--dump-dom';
+  }
+
+  if (!payload) {
+    console.error('[channel] 两个通道均未取得 PROBE:: 输出');
+    process.exit(2);
   }
 
   console.log('[channel] 捕获成功: ' + channel);
