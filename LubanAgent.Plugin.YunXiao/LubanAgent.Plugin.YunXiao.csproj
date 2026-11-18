@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    「云效 DevOps 工作台」Web 插件（骨架）。
+
+    打包硬约束：
+    1. 插件包 lib/ 只放「插件自身程序集」，宿主程序集（LubanAgentCore 等）不得随包分发：
+       PluginLoadContext 只强制共享框架集（LuBan.* / Microsoft.* / System.*），宿主程序集若出现在 lib/
+       会被加载进插件 ALC，产生第二份 Type 副本，与宿主传入的服务实例类型不一致。
+    2. 本插件面向 Web 宿主，页面在 web/ 下，mini入口程序集只负责「让插件可被加载」，
+       页面数据一律走宿主 REST，插件内不引用云效 SDK、不自行拼云效 HTTP。
+    3. 开发期铺包目标是 Web 插件根（扫描页面入口时只认这个根）；放桌面端插件目录只会被加载、不会出现在左侧栏。
+       铺好后需在插件管理页执行一次「启用」，页面才会被镜像与展示。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>LubanAgent.Plugin.YunXiao</AssemblyName>
+    <RootNamespace>LubanAgent.Plugin.YunXiao</RootNamespace>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
+
+    <!-- 插件包标识（= 目录名 = plugin.json 的 id）；默认铺到 Web 插件根，可用 -p:PluginPackageDir=… 覆盖 -->
+    <PluginPackageId>com.tjces.yunxiao</PluginPackageId>
+    <PluginPackageDir Condition="'$(PluginPackageDir)' == ''">$(LOCALAPPDATA)\LuBan\AIAgent\webhost\plugins\$(PluginPackageId)\</PluginPackageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 框架契约包：运行期由宿主共享框架集提供，插件包 lib/ 不得包含（见文件头打包约束 1）。 -->
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.16.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 清单与页面源文件：铺包时按源目录复制，不走输出目录（输出目录还有框架依赖程序集，整目录复制会误入 lib/）。 -->
+    <PluginWebFile Include="web\**\*" />
+  </ItemGroup>
+
+  <!--
+    插件包铺装：plugin.json + 插件自身 dll/deps.json + web/。
+    刻意不用整目录复制：$(TargetDir) 里的 LuBan.*.dll 属宿主共享集，复制进 lib/ 会破坏 ALC 类型标识。
+  -->
+  <Target Name="StagePluginPackage" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MakeDir Directories="$(PluginPackageDir)lib" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginPackageDir)lib" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).deps.json" DestinationFolder="$(PluginPackageDir)lib" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)plugin.json" DestinationFolder="$(PluginPackageDir)" />
+    <Copy SourceFiles="@(PluginWebFile)" DestinationFiles="@(PluginWebFile->'$(PluginPackageDir)web\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="插件包已铺到：$(PluginPackageDir)（需在插件管理页启用后才显示页面）" />
+  </Target>
+
+</Project>

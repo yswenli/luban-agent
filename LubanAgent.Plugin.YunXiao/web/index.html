@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>云效 DevOps 工作台</title>
+  <link rel="stylesheet" href="assets/base.css" />
+</head>
+<body>
+  <div class="frame">
+    <header class="crumb">
+      <span class="crumb-root">云效 DevOps 工作台</span>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-current" id="crumb-current">连接设置</span>
+    </header>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <main class="content" id="content">
+      <!-- 屏 1：连接设置 -->
+      <section class="screen" id="screen-connect">
+        <div class="panel">
+          <h1 class="panel-title">连接云效</h1>
+          <p class="panel-sub">凭据只写入宿主凭据存储，页面不回显令牌明文。</p>
+
+          <div class="field">
+            <label class="field-label" for="org-address">组织访问地址</label>
+            <input class="field-input" id="org-address" type="text" spellcheck="false"
+                   placeholder="https://devops.aliyun.com/orgs/tjcEs" />
+            <p class="field-help">末段自动解析为组织 ID，可手动修改。</p>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="org-id">组织 ID</label>
+            <input class="field-input" id="org-id" type="text" spellcheck="false" placeholder="tjcEs" />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="org-pat">个人访问令牌（PAT）</label>
+            <input class="field-input" id="org-pat" type="password" autocomplete="off" />
+            <p class="field-help" id="pat-help"></p>
+          </div>
+
+          <div class="result" id="connect-result" hidden></div>
+        </div>
+      </section>
+
+      <!-- 屏 2：项目列表 -->
+      <section class="screen" id="screen-projects" hidden>
+        <div class="split">
+          <aside class="pane pane-left">
+            <div class="pane-h">
+              <div class="pane-title">DevOps 项目</div>
+              <div class="searchrow">
+                <input class="field-input" id="proj-keyword" type="search" placeholder="搜索项目名称或编号" />
+                <button class="btn" id="btn-search" type="button">搜索</button>
+              </div>
+            </div>
+            <div class="projlist" id="proj-list"></div>
+          </aside>
+          <section class="pane pane-right" id="proj-main"></section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <span class="hint" id="action-hint"></span>
+      <div class="actions" id="actions-connect">
+        <button class="btn" id="btn-test" type="button">测试连接</button>
+        <button class="btn btn-primary" id="btn-save" type="button" disabled>保存</button>
+      </div>
+      <div class="actions" id="actions-projects" hidden>
+        <a class="btn-link" id="link-connect" href="#/connect">连接设置</a>
+        <button class="btn" id="btn-reload" type="button">重新加载</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 经典脚本按序加载（无 ES module；资源限 html/css/js/图片白名单） -->
+  <script src="assets/api.js"></script>
+  <script src="assets/app.js"></script>
+  <script src="assets/connect.js"></script>
+  <script src="assets/projects.js"></script>
+</body>
+</html>

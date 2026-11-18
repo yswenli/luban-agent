@@ -1,0 +1,660 @@
+/*
+  云效 DevOps 工作台 · 占位页样式（骨架阶段）。
+
+  约束：
+  1. 令牌取值对齐宿主浅色主题（LubanAgentWebHost/web/src/styles.css 的 :root），不另立配色。
+  2. 字体只用系统栈：宿主静态资源不提供 woff/woff2 MIME，字体文件必须 base64 内嵌，占位页不引入。
+  3. 页面以同源 iframe 嵌入宿主插件区（约 824×692 视口），不自绘顶栏与侧栏，整页不出滚动条，
+     内容超出时由内部区域滚动。
+*/
+
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-sub: #f7f8fa;
+  --surface-sub-2: #eef0f4;
+  --border: #e5e7eb;
+  --border-strong: #d5d9e0;
+  --text: #17191d;
+  --text-sub: #5f6670;
+  --text-weak: #9aa1ab;
+  --accent: #3d5afe;
+  --warn: #b54708;
+  --warn-soft: #fffaeb;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+  --shadow-lg: 0 1px 3px rgba(16, 24, 40, .06), 0 10px 30px rgba(16, 24, 40, .07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+/* ---------- 面包屑 ---------- */
+
+.crumb {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.crumb-sep {
+  color: var(--text-weak);
+}
+
+.crumb-current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- 内容区 ---------- */
+
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.banner {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.banner-main {
+  min-width: 0;
+}
+
+.banner h1 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.banner p {
+  margin: 0;
+  color: var(--text-sub);
+}
+
+/* ---------- 能力卡片 ---------- */
+
+.grid {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.card p {
+  margin: 0;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.chip {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-sub);
+  color: var(--text-sub);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.chip-warn {
+  border-color: #fedf89;
+  background: var(--warn-soft);
+  color: var(--warn);
+  flex: none;
+}
+
+/* ---------- 约束说明 ---------- */
+
+.notes {
+  flex: none;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sub);
+}
+
+.notes h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.notes ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.notes li + li {
+  margin-top: 4px;
+}
+
+.notes code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-sub-2);
+  color: var(--text);
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* ---------- 底部动作栏 ---------- */
+
+.actionbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.hint {
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* =========================================================
+   S1 两屏应用（#/connect 连接设置 · #/projects 项目列表）
+   沿用上文设计令牌；826×694 画板内无纵向溢出、无横向滚动。
+   ========================================================= */
+
+:root {
+  --accent-soft: #edf0ff;
+  --ok: #067647;
+  --ok-soft: #ecfdf3;
+  --ok-border: #abefc6;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --danger-border: #fecdca;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- 全局提示条 ---------- */
+
+.toast {
+  position: fixed;
+  top: 54px;
+  right: 20px;
+  z-index: 60;
+  max-width: 380px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity .18s ease, transform .18s ease, visibility .18s;
+}
+
+.toast.show {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.toast-ok {
+  background: var(--ok);
+}
+
+.toast-err {
+  background: var(--danger);
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 30px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  border-color: var(--border-strong);
+  color: var(--text-sub);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  color: #fff;
+  opacity: .92;
+}
+
+.btn-primary:disabled {
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+  color: #fff;
+  opacity: .7;
+}
+
+.btn-link {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-sub);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: var(--accent);
+}
+
+.actionbar .actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actionbar .hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 屏幕容器 ---------- */
+
+.screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 屏 1：连接设置 ---------- */
+
+.panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.panel-sub {
+  margin: -8px 0 0;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(61, 90, 254, .14);
+}
+
+.field-help {
+  margin: 0;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.result {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.result-ok {
+  background: var(--ok-soft);
+  border: 1px solid var(--ok-border);
+  color: var(--ok);
+}
+
+.result-err {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
+/* ---------- 屏 2：项目列表（左右分栏） ---------- */
+
+.split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.pane-left {
+  flex: 0 0 246px;
+}
+
+.pane-right {
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.pane-h {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.searchrow {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.searchrow .field-input {
+  height: 30px;
+  min-width: 0;
+}
+
+.searchrow .btn {
+  height: 30px;
+  padding: 0 10px;
+  line-height: 28px;
+}
+
+/* 左栏项目列表：栏内滚动，条目单行省略 */
+.projlist {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.proj-item {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.proj-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.proj-item.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.proj-item-name {
+  display: block;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.proj-item.on .proj-item-name {
+  color: var(--accent);
+}
+
+.proj-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.proj-item-id {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.proj-item-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.proj-empty {
+  padding: 18px 10px;
+  color: var(--text-weak);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* 右栏：组织统计卡 / 项目详情卡 */
+.detail-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.statrow {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+.stat b {
+  display: block;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+.stat span {
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px 12px;
+  font-size: 13px;
+}
+
+.kv-k {
+  color: var(--text-sub);
+}
+
+.kv-v {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clamp3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.detail-help {
+  margin: 12px 0 0;
+  color: var(--text-weak);
+  font-size: 12px;
+}

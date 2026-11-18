@@ -1,0 +1,20 @@
+{
+  "id": "com.tjces.yunxiao",
+  "name": "云效 DevOps 工作台",
+  "version": "0.1.0",
+  "author": "Walle",
+  "description": "在 Web 宿主左侧栏打开云效 DevOps 工作台：连接设置、项目列表、项目初始化、PRD 拆分、迭代看板与任务工作区（骨架：页面与宿主取数通道待接线）",
+  "entryAssembly": "LubanAgent.Plugin.YunXiao.dll",
+  "targetApp": "LubanAgentWebHost",
+  "minHostVersion": "2026.10.0",
+  "uiContributions": [
+    {
+      "id": "yunxiao-workbench",
+      "label": "云效工作台",
+      "icon": "project",
+      "webPage": "web/index.html"
+    }
+  ],
+  "permissions": [],
+  "dependencies": []
+}
