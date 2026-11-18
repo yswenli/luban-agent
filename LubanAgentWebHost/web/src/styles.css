@@ -370,14 +370,21 @@ a {
   /* 常态无溢出（由 .side-list 自己滚）；视口过矮时整栏兜底滚动，保证列表与底部入口都够得着 */
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 收起/展开时栏宽平滑变化；transition 只作用于 flex-basis 与 padding，不牵动内部布局 */
+  transition: flex-basis 0.16s ease, padding 0.16s ease;
 }
 
 .side-head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   padding: 0 2px 8px 8px;
+}
+
+/* 项目标题与右侧动作分居两端：中间留出「项目」标签，开关按钮固定在左端 */
+.side-head .side-actions {
+  margin-left: auto;
 }
 
 .side-list {
@@ -479,6 +486,83 @@ a {
 .side-version {
   padding: 6px 8px 0;
   font-size: 11.5px;
+}
+
+/* ── 侧栏收起态（图标窄栏） ──────────────────────────────────────────── */
+
+/* 56px 只放得下图标：项目行只留首字母色块、底部入口只留图标，悬浮说明由 title 提供 */
+.home-side.collapsed {
+  flex: 0 0 56px;
+  align-items: center;
+  padding: 18px 8px 16px;
+}
+
+.home-side.collapsed .side-head {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 8px;
+}
+
+.home-side.collapsed .side-head .side-actions {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-left: 0;
+}
+
+/* 竖排顺序：开关 → 新建项目 → 清空筛选；DOM 里「清空」在前，靠 order 换位（仅收起态） */
+.home-side.collapsed .side-head .side-new-project {
+  order: 1;
+}
+
+.home-side.collapsed .side-head .side-clear-filter {
+  order: 2;
+}
+
+.home-side.collapsed .side-head .icon-btn {
+  width: 34px;
+  height: 34px;
+}
+
+.home-side.collapsed .side-list {
+  /* 撑满窄栏：不加的话列向 shrink-to-fit 会让悬停底色只剩色块那么宽 */
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  /* 56px 栏宽里再预留 10px 滚动条槽位会把色块推歪，收起态不预留 */
+  scrollbar-gutter: auto;
+}
+
+.home-side.collapsed .side-item {
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+.home-side.collapsed .side-links {
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+
+.home-side.collapsed .side-link {
+  justify-content: center;
+  width: 40px;
+  padding: 0;
+}
+
+/* 插件页入口组在收起态仍要画出分隔线，宽度得撑满窄栏 */
+.home-side.collapsed .side-plugin-links {
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-side {
+    transition: none;
+  }
 }
 
 .ws-badge {

@@ -73,6 +73,12 @@ const paths: Record<string, () => JSX.Element> = {
   stop: () => <rect x="6.5" y="6.5" width="11" height="11" rx="2" />,
   'chevron-down': () => <path d="m6 9 6 6 6-6" />,
   'chevron-right': () => <path d="m9 6 6 6-6 6" />,
+  'panel-left': () => (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </>
+  ),
   trash: () => (
     <>
       <path d="M4 7h16" />

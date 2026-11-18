@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import type { JSX } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
@@ -7,6 +7,7 @@ import { AboutDialog, HelpDialog } from '../components/InfoDialogs';
 import { PopMenu, menuAt } from '../components/PopMenu';
 import { dayBucket, formatRelative, truncate } from '../lib/format';
 import { openPlugin, openPlugins, openSession, openSettings, openWiki } from '../lib/router';
+import type { Workspace } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import {
   bootstrap,
@@ -38,6 +39,49 @@ type RowAction =
 type ProjectAction =
   | { kind: 'rename'; workspaceId: string; name: string }
   | { kind: 'delete'; workspaceId: string; name: string };
+
+/** 侧栏收起状态跨页面保持：进出会话页会卸载本组件，信号留在模块级才不会回到展开态。 */
+const SIDEBAR_STORAGE_KEY = 'luban.web.sidebarCollapsed';
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+const [sidebarCollapsed, setSidebarCollapsed] = createSignal(readSidebarCollapsed());
+
+function persistSidebarCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? '1' : '0');
+  } catch {
+    /* 隐私模式或配额满：只影响刷新后恢复，不影响本次操作 */
+  }
+}
+
+/** 窄屏侧栏是横排 chip（见 styles.css 的 max-width: 760px 断点），横向不占正文宽度，收起只会藏掉标签。 */
+const NARROW_SIDEBAR_QUERY = '(max-width: 760px)';
+
+function useNarrowViewport(): () => boolean {
+  const [narrow, setNarrow] = createSignal(window.matchMedia(NARROW_SIDEBAR_QUERY).matches);
+  onMount(() => {
+    const query = window.matchMedia(NARROW_SIDEBAR_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setNarrow(event.matches);
+    setNarrow(query.matches);
+    query.addEventListener('change', onChange);
+    onCleanup(() => query.removeEventListener('change', onChange));
+  });
+  return narrow;
+}
+
+/** 项目行的悬浮说明：收起态没有项目名，得把名字补进 title。 */
+function projectTitle(workspace: Workspace, collapsed: boolean, filtered: boolean): string {
+  const suffix = filtered ? ' · 再点一次取消筛选' : '';
+  if (collapsed) return `${workspace.name || workspace.rootPath}${suffix}`;
+  return `${workspace.rootPath}${suffix}`;
+}
 
 /** 会话的展示时间：优先更新时间。 */
 function sessionTime(session: { updatedAt?: string | null; createdAt: string }): string {
@@ -74,6 +118,16 @@ export function SessionListPage(props: { main?: JSX.Element }) {
   });
 
   const workspaces = () => projectWorkspaces();
+
+  // 窄屏强制展开：栏位变成横排 chip，收起态在窄屏没有意义
+  const narrow = useNarrowViewport();
+  const collapsed = () => sidebarCollapsed() && !narrow();
+
+  function toggleSidebar() {
+    const next = !sidebarCollapsed();
+    setSidebarCollapsed(next);
+    persistSidebarCollapsed(next);
+  }
 
   const filtered = createMemo(() => {
     const project = filterWorkspaceId();
@@ -139,16 +193,33 @@ export function SessionListPage(props: { main?: JSX.Element }) {
 
   return (
     <div class="home-body">
-      <aside class="home-side">
+      <aside class="home-side" classList={{ collapsed: collapsed() }}>
         <div class="side-head">
-          <span class="section-label">项目</span>
+          <Show when={!narrow()}>
+            <button
+              class="icon-btn side-toggle"
+              title={collapsed() ? '展开侧栏' : '收起侧栏'}
+              aria-label={collapsed() ? '展开侧栏' : '收起侧栏'}
+              aria-expanded={!collapsed()}
+              onClick={toggleSidebar}
+            >
+              <Icon name="panel-left" size={17} />
+            </button>
+          </Show>
+          <Show when={!collapsed()}>
+            <span class="section-label">项目</span>
+          </Show>
           <div class="side-actions">
             <Show when={filterWorkspaceId()}>
-              <button class="icon-btn" title="显示全部项目" onClick={() => clearProjectFilter()}>
+              <button
+                class="icon-btn side-clear-filter"
+                title="显示全部项目"
+                onClick={() => clearProjectFilter()}
+              >
                 <Icon name="close" size={15} />
               </button>
             </Show>
-            <button class="icon-btn" title="新建项目" onClick={() => setNewProject(true)}>
+            <button class="icon-btn side-new-project" title="新建项目" onClick={() => setNewProject(true)}>
               <Icon name="new-project" size={17} />
             </button>
           </div>
@@ -162,11 +233,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                 classList={{ selected: workspace.workspaceId === filterWorkspaceId() }}
                 role="button"
                 tabIndex={0}
-                title={
-                  workspace.workspaceId === filterWorkspaceId()
-                    ? `${workspace.rootPath} · 再点一次取消筛选`
-                    : workspace.rootPath
-                }
+                title={projectTitle(workspace, collapsed(), workspace.workspaceId === filterWorkspaceId())}
                 onClick={() => void selectProject(workspace.workspaceId)}
                 onKeyDown={(event) => {
                   // 行内「更多」按钮的按键不触发行点击
@@ -180,54 +247,60 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                 <span class="ws-badge" style={{ background: workspaceColor(workspace.workspaceId) }}>
                   {workspaceInitial(workspace.name)}
                 </span>
-                <span class="side-name">{workspace.name || workspace.rootPath}</span>
-                <span class="session-actions">
-                  <button
-                    class="icon-btn"
-                    title="更多"
-                    aria-label="项目操作"
-                    onClick={(event) => openProjectMenu(event, workspace.workspaceId)}
-                  >
-                    <Icon name="more" size={16} />
-                  </button>
-                </span>
+                <Show when={!collapsed()}>
+                  <span class="side-name">{workspace.name || workspace.rootPath}</span>
+                  <span class="session-actions">
+                    <button
+                      class="icon-btn"
+                      title="更多"
+                      aria-label="项目操作"
+                      onClick={(event) => openProjectMenu(event, workspace.workspaceId)}
+                    >
+                      <Icon name="more" size={16} />
+                    </button>
+                  </span>
+                </Show>
               </div>
             )}
           </For>
-          <Show when={workspaces().length === 0}>
+          <Show when={workspaces().length === 0 && !collapsed()}>
             <span class="side-hint faint">还没有项目，点右上角新建。</span>
           </Show>
         </div>
 
         <div class="side-links">
-          <button class="side-link" onClick={() => openWiki()}>
+          <button class="side-link" title="知识库" onClick={() => openWiki()}>
             <Icon name="file" size={16} />
-            知识库
+            <Show when={!collapsed()}>知识库</Show>
           </button>
-          <button class="side-link" onClick={() => openPlugins()}>
+          <button class="side-link" title="插件" onClick={() => openPlugins()}>
             <Icon name="plug" size={16} />
-            插件
+            <Show when={!collapsed()}>插件</Show>
           </button>
-          <button class="side-link" onClick={() => openSettings()}>
+          <button class="side-link" title="设置" onClick={() => openSettings()}>
             <Icon name="settings" size={16} />
-            设置
+            <Show when={!collapsed()}>设置</Show>
           </button>
-          <button class="side-link" onClick={() => setInfo('help')}>
+          <button class="side-link" title="帮助" onClick={() => setInfo('help')}>
             <Icon name="help" size={16} />
-            帮助
+            <Show when={!collapsed()}>帮助</Show>
           </button>
-          <button class="side-link" onClick={() => setInfo('about')}>
+          <button class="side-link" title="关于" onClick={() => setInfo('about')}>
             <Icon name="info" size={16} />
-            关于
+            <Show when={!collapsed()}>关于</Show>
           </button>
           {/* 插件自带页面的入口：只列已启用且镜像可用的条目，放在这一组底部 */}
           <Show when={pluginPageEntries().length > 0}>
             <div class="side-plugin-links">
               <For each={pluginPageEntries()}>
                 {(entry) => (
-                  <button class="side-link" onClick={() => openPlugin(entry.pluginId, entry.entryId)}>
+                  <button
+                    class="side-link"
+                    title={entry.label}
+                    onClick={() => openPlugin(entry.pluginId, entry.entryId)}
+                  >
                     <Icon name={entry.icon || 'plug'} size={16} />
-                    {entry.label}
+                    <Show when={!collapsed()}>{entry.label}</Show>
                   </button>
                 )}
               </For>

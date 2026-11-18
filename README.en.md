@@ -48,7 +48,7 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 
 ![LuBan Agent web UI overview: home entry and horizontally scrollable session tabs on top, project-grouped sessions on the left, multi-tab chat on the right](lubanagent.png)
 
-*Web UI overview: the top bar holds the home entry and session tabs; the left column holds projects plus the knowledge base / settings / help / about entries; the right side groups sessions by date*
+*Web UI overview: the top bar holds the home entry and session tabs; the left column holds projects plus the knowledge base / settings / help / about entries (collapsible into an icon-only rail); the right side groups sessions by date*
 
 ### Chat: empty state
 
