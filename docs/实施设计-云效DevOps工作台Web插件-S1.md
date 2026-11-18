@@ -211,8 +211,8 @@ public class ProjexClient : IDisposable
 ```
 
 要点：
-- 入参映射以官方文档为准（PRD §4.13.3 行 C1/C2：`POST /oapi/v1/projex/organizations/{organizationId}/projects:search`、`GetProjectInfo`），**接口未实机验证**，接线后第一步跑真实探活，URL/参数按实测校正；
-- 分页沿用客户端通用封装 `YunxiaoPagedResult<T>`（JSON 字段 `result/total/page/perPage`，定义在 `YunxiaoModels.cs`），`perPage` 初值 100、越界截断——projects:search 的真实分页上限**待实测校正**（Codeup 列表接口的 100/150 口径不可直接套用）；
+- **实测结论（2026-11-18 真机取证，已销账）**：URL 形态 `POST /oapi/v1/projex/organizations/{organizationId}/projects:search` 与 `GET .../projects/{projectId}` 实测通过；名称检索**没有** `keyword` 字段，走 `conditions` 的 conditionGroups JSON 串（name + input + BETWEEN + 值数组，官方文档同形）；
+- 分页沿用客户端通用封装 `YunxiaoPagedResult<T>`，但合成方式是「响应体**裸数组** + `X-Total`/`X-Page`/`X-Per-Page` 响应头」（同 Codeup 列表口径，**不是** `result/total` 外壳）；`perPage` 界值 [1, 200]（官方 0–200），越界截断；
 - 错误映射：401/403 → 凭据异常、429 → 限流、5xx/网络 → 服务不可用（同 §3.3）；
 - 新增模型 `YunxiaoProject`（id / name / 标识 / 更新时间等，字段按实测补）加进 `YunxiaoModels.cs`，与 `YunxiaoRepository` 同风格 `JsonPropertyName`。
 
@@ -381,7 +381,7 @@ LubanAgent.Plugin.YunXiao/web/
 
 | 编号 | 事项 | 处置 |
 |------|------|------|
-| R-S1-1 | Projex `projects:search` **未实机验证**（URL/入参按官方文档写） | T10 以真实探活校正；失败按 §3.3 报「能力缺口」，不假装成功 |
+| R-S1-1 | ~~Projex `projects:search` 未实机验证~~ → **已销账（2026-11-18 实测通过）**：URL/详情接口形态正确；检索字段与分页口径按实测校正（conditions 串、裸数组+响应头、[1,200]） | 已完成：真实探活 + `fix: 按真机取证校正 Projex 请求装配与响应解析（T11）` |
 | R-S1-2 | `YunxiaoSettingsService` 移动触碰 Codex 编译面（4 处引用） | T1 先移 + 全量构建 + 回归 Codex 现有测试 |
 | R-S1-6 | **WebHost 默认只读凭据存储**：不替换则保存必抛 `NotSupportedException`（C28 漏做会让服务单测假绿、真机必炸） | T2 照抄桌面端替换段；T3 加一条「SetAsync 真落盘不抛异常」用例钉死 |
 | R-S1-3 | SAEA.MVC 对 `{controller}/{action}` 的大小写与绑定细节 | T5 以 `PluginController` 既有运行为准；前端路径全小写 |
@@ -402,7 +402,7 @@ LubanAgent.Plugin.YunXiao/web/
 **常见坑：**
 1. POST 忘记双层包裹或 Content-Type 带错子串 → SAEA 不绑定参数，表现为「请求格式错误」；
 2. 插件页面用相对路径 fetch → iframe 镜像目录下 404，必须绝对路径 `/yunxiao/...`；
-3. `perPage` 不截断 → 云效 400；前端默认 20、上限 100；
+3. `perPage` 不截断 → 云效 400；前端默认 20、上限 200（官方界值 0–200，实测校正）；
 4. 保存按钮只做前端禁用而不做服务端探活 → 可被直接调 API 绕过（服务端必须二次探活）。
 
 ---

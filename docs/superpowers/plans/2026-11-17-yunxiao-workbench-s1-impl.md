@@ -65,9 +65,9 @@
   - `LubanAgentCore/Connectors/AliyunDevOps/AliyunDevOpsConnectorServiceCollectionExtensions.cs`（注册）
   - `LubanAgent.Tests/ProjexClientUnitTest.cs`（新建）
 - **要做的**：
-  1. `YunxiaoProject`：与 `YunxiaoRepository` 同风格（`[JsonPropertyName]`），字段 `Id`、`Name`、`Identifier`（标识）、`UpdateTime`、`Description`——字段名以实测为准，先按 `projects:search` 常见响应写，T11 校正。
+  1. `YunxiaoProject`：与 `YunxiaoRepository` 同风格（`[JsonPropertyName]`），字段 `Id`、`Name`、`Identifier`（标识）、`UpdateTime`、`Description`——~~字段名以实测为准，T11 校正~~ **已校正（2026-11-18）**：真机字段为 `customCode`（标识）/ `gmtCreate`/`gmtModified`（epoch 毫秒）/ `status`/`creator` 内嵌对象，`YunxiaoProject` 已按此重写，页面投影 `YunxiaoProjectItemDto` 保持 identifier/updateTime 口径。
   2. `ProjexClient`：构造签名照抄 `CodeupClient`（`YunxiaoApiOptions` + `IYunxiaoCredentialProvider` + `PluginPermissionGuard?` + `string? connectorName`）；`HttpClient` 初始化、token 头注入、超时/重试从 `YunxiaoApiOptions` 读——**复制 CodeupClient 的私有辅助方法**（发请求、解 `YunxiaoApiResponse<T>`、错误映射），不新造抽象。
-  3. `SearchProjectsAsync(string organizationId, int page, int perPage, string? keyword, CancellationToken)` → `YunxiaoPagedResult<YunxiaoProject>?`：POST `https://{Endpoint}/oapi/v1/projex/organizations/{organizationId}/projects:search`，body 含 `page`/`perPage`/可选 `conditions`（keyword 检索名，字段名 T11 校正）；`perPage` 上限 100 截断。
+  3. `SearchProjectsAsync(string organizationId, int page, int perPage, string? keyword, CancellationToken)` → `YunxiaoPagedResult<YunxiaoProject>?`：POST `https://{Endpoint}/oapi/v1/projex/organizations/{organizationId}/projects:search`，body 含 `page`/`perPage`/可选 `conditions`（~~字段名 T11 校正~~ **已校正**：名称检索即 conditions 的 conditionGroups JSON 串，无 keyword 字段）；`perPage` 上限 **200** 截断（实测界值 [1,200]）。
   4. DI 注册照抄 CodeupClient 三参形态（含 `PluginPermissionGuard.Default` 兜底）。
   5. 单测（**照仓库先例 `YunxiaoResponseParserUnitTest`：测纯函数，不引 `HttpMessageHandler` 桩**）：请求装配抽纯函数 `BuildSearchRequest(organizationId, page, perPage, keyword)` 返回 URL + body 对象——测 URL 形态（`projects:search`）、perPage=200 截到 100、keyword 透传/缺省；解析侧复用 `YunxiaoResponseParser.JsonOpts` 反序列化真机形态 JSON 夹具——测 `YunxiaoPagedResult<YunxiaoProject>` 的 Items/Total 映射与错误形态（`ParseBusinessError` 同口径）。token 头属 `HttpClient` 装配面，以代码走查 + T11 实机探活覆盖。
 - **验证**：`dotnet test LubanAgent.Tests --filter ProjexClientUnitTest --nologo` 红→绿；全量 build 绿。
@@ -83,7 +83,7 @@
   1. `GetSettingsAsync()`：`{ organizationId, hasPat }`（不回明文）。
   2. `TestConnectionAsync(string payload)`：payload `{ organizationId, pat? }`；pat 省略用已存 PAT（经 `IYunxiaoCredentialProvider.GetPatAsync`）；**探活 = `ProjexClient.SearchProjectsAsync(orgId, page: 1, perPage: 1, keyword: null)` 一发**（顺带 projectCount）；不写任何配置。回 `{ ok, projectCount, message? }`。
   3. `SaveSettingsAsync(string payload)`：payload `{ organizationAddress?, organizationId, pat? }`；address 非空时**从地址解析 orgId**（`https://devops.aliyun.com/orgs/{id}` 取末段，解析不出 400）；先探活后保存，探活失败 `FailJson(409, "连接校验未通过，未保存")`；保存调 `YunxiaoSettingsService.SaveAsync(orgId, pat)`（pat 缺省传 null=保持原值）。
-  4. `ListProjectsAsync()`：`WebApi.QueryInt("page")`/`QueryInt("perPage")`/`Query("keyword")`（默认 page=1、perPage=20、上限 100）；透传 `ProjexClient.SearchProjectsAsync`，回 `{ items, total, page, perPage }`。
+  4. `ListProjectsAsync()`：`WebApi.QueryInt("page")`/`QueryInt("perPage")`/`Query("keyword")`（默认 page=1、perPage=20、上限 **200**）；透传 `ProjexClient.SearchProjectsAsync`，回 `{ items, total, page, perPage }`。
 - **单测**（直接 new `YunxiaoWorkbenchService`，注入假 `ProjexClient`/假 `YunxiaoSettingsService`——两者都是普通类，测试里写最小假实现（方法 `virtual` 或提取接口 `IProjexClient` 二选一，**倾向提取接口**，生产注册不变）；`IYunxiaoCredentialProvider` 是现成接口直接假。壳层 `WebYunxiaoService` 不单测（静态 Runtime 起不来，壳只有转发）：
   1. 探活失败 → 409 且 `SaveAsync` 一次都没被调。
   2. 探活成功 → `SaveAsync(orgId, pat)` 收到正确参数。
@@ -143,7 +143,7 @@
 ### 任务 11：真实云效探活校正 + 端到端手验
 
 - **文件路径**：`ProjexClient.cs` / `YunxiaoModels.cs`（按实测修 URL/字段）
-- **要做的**：用真实 PAT 发一次 `projects:search`（`curl` 或临时单测），校正：URL 形态、请求体字段名（keyword 检索字段）、响应字段名（items 映射）、分页上限。**未实机验证前不许宣称完成**；失败按设计 §3.3 报「能力缺口」。
+- **要做的**：用真实 PAT 发一次 `projects:search`（`curl` 或临时单测），校正：URL 形态、请求体字段名、响应字段名（items 映射）、分页上限。**未实机验证前不许宣称完成**；失败按设计 §3.3 报「能力缺口」。**✅ 已完成（2026-11-18 真机取证）**：URL 形态正确；检索走 conditions（非 keyword）；响应为裸数组 + X-Total/X-Page/X-Per-Page 头；分页界值 [1,200]；标识字段 customCode、时间 gmtCreate/gmtModified（epoch 毫秒）。校正提交：`fix: 按真机取证校正 Projex 请求装配与响应解析（T11）`。
 - **验证**：真实探活回执贴进本计划附录；端到端手验：屏 1 测试连接→保存→屏 2 列表出真实项目。
 
 ---
