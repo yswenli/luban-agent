@@ -8,6 +8,7 @@
 *****************************************************************************/
 
 using LubanAgentCore.Connectors.AliyunDevOps;
+using System.Globalization;
 
 namespace LubanAgentWebHost.Services;
 
@@ -228,7 +229,7 @@ public sealed class YunxiaoWorkbenchService
         CancellationToken cancellationToken = default)
     {
         var safePage = Math.Max(page ?? 1, 1);
-        var safePerPage = Math.Clamp(perPage ?? 20, 1, 100);
+        var safePerPage = Math.Clamp(perPage ?? 20, 1, 200);
 
         var result = await _projects.SearchProjectsAsync(
             _settings.GetOrganizationId() ?? string.Empty,
@@ -237,13 +238,40 @@ public sealed class YunxiaoWorkbenchService
             keyword,
             cancellationToken).ConfigureAwait(false);
 
+        var items = (result?.Items ?? (IReadOnlyList<YunxiaoProject>)Array.Empty<YunxiaoProject>())
+            .Select(ToProjectItem)
+            .ToList();
+
         var data = new YunxiaoProjectListDto(
-            result?.Items ?? (IReadOnlyList<YunxiaoProject>)Array.Empty<YunxiaoProject>(),
+            items,
             result?.Total ?? 0,
             safePage,
             safePerPage);
 
         return YunxiaoWorkbenchResult<YunxiaoProjectListDto>.Success(data);
+    }
+
+    /// <summary>
+    /// Projex 项目 → 页面扁平投影：标识取 <c>customCode</c>，
+    /// 更新时间取 <c>gmtModified</c>（为空退 <c>gmtCreate</c>）并格式化为 <c>yyyy-MM-dd HH:mm:ss</c>。
+    /// </summary>
+    /// <param name="project">Projex 项目（真机字段形态）。</param>
+    /// <returns>页面投影。</returns>
+    private static YunxiaoProjectItemDto ToProjectItem(YunxiaoProject project)
+    {
+        var ms = project.DisplayUpdateTime;
+        var updateTime = ms is null
+            ? null
+            : DateTimeOffset.FromUnixTimeMilliseconds(ms.Value)
+                .ToLocalTime()
+                .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+        return new YunxiaoProjectItemDto(
+            project.Id,
+            project.Name,
+            project.DisplayIdentifier,
+            project.Description,
+            updateTime);
     }
 
     // ---------------- 内部：探活 ----------------

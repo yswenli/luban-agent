@@ -56,12 +56,13 @@ public class YunxiaoApiResponse<T>
 }
 
 /// <summary>
-/// 分页结果（codeup 侧与 projex 侧使用：<c>CodeupClient.SearchRepositoriesAsync</c> 把裸数组与
-/// <c>x-total</c> 响应头合成此对象；<c>ProjexClient.SearchProjectsAsync</c> 的响应体自带
-/// <c>result/total/page/perPage</c> 外壳，直接按本模型反序列化）。
+/// 分页结果（codeup / projex 侧共用的<b>合成载体</b>：接口本身不返回这个外壳——
+/// <c>CodeupClient.SearchRepositoriesAsync</c> 与 <c>ProjexClient.SearchProjectsAsync</c>
+/// 都是「响应体＝裸数组 + <c>X-Total</c>/<c>X-Page</c>/<c>X-Per-Page</c> 响应头」，
+/// 由客户端把两者合成此对象）。
 /// </summary>
 /// <remarks>
-/// <b>不要</b>用于 <c>/flow</c> 侧：流水线列表接口返回裸数组，分页信息不在响应体里
+/// <b>不要</b>用于 <c>/flow</c> 侧：流水线列表接口返回裸数组，分页信息不在响应头里
 /// （<c>FlowClient.ListPipelinesAsync</c> 直接返回 <c>List&lt;YunxiaoPipeline&gt;</c>）。
 /// </remarks>
 public class YunxiaoPagedResult<T>
@@ -855,42 +856,124 @@ public class YunxiaoHostInfo
 /// 云效研发项目（Projex 项目域）。
 /// </summary>
 /// <remarks>
-/// <b>字段名待实测校正</b>：先按 Projex OpenAPI 常见响应形态写，字段名以 T11 实测校正。
-/// 若真机 <c>id</c> 是 JSON 数字，须改整型承载（见 <see cref="YunxiaoPipeline"/> 注释里的历史坑：
-/// <c>AllowReadingFromString</c> 只允许「字符串 → 数字」，数字 id 反序列化进 <c>string?</c> 会抛
-/// <see cref="JsonException"/>）。
+/// <b>真机口径（2026-11-18 取证）</b>：<c>projects:search</c> 与 <c>GET .../projects/{id}</c>
+/// 的元素字段一致——<c>id</c> 为 24 位十六进制<b>字符串</b>；项目标识字段是 <c>customCode</c>
+/// （不是 <c>identifier</c>）；时间为 <c>gmtCreate</c> / <c>gmtModified</c>（<b>epoch 毫秒</b>，
+/// <c>gmtModified</c> 可为 <c>null</c>）；<c>status</c> / <c>creator</c> / <c>modifier</c> 为内嵌对象。
 /// </remarks>
 public class YunxiaoProject
 {
     /// <summary>
-    /// 项目 ID（字段名待实测校正）。
+    /// 项目 ID（24 位十六进制字符串，真机取证确认非数字）。
     /// </summary>
     [JsonPropertyName("id")]
     public string? Id { get; set; }
 
     /// <summary>
-    /// 项目名称（字段名待实测校正）。
+    /// 项目名称。
     /// </summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
     /// <summary>
-    /// 项目标识（字段名待实测校正）。
-    /// </summary>
-    [JsonPropertyName("identifier")]
-    public string? Identifier { get; set; }
-
-    /// <summary>
-    /// 项目描述（字段名待实测校正）。
+    /// 项目描述。
     /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
     /// <summary>
-    /// 更新时间（字段名待实测校正）。
+    /// 项目标识（编号，真机字段名 <c>customCode</c>）。
     /// </summary>
-    [JsonPropertyName("updateTime")]
-    public string? UpdateTime { get; set; }
+    [JsonPropertyName("customCode")]
+    public string? CustomCode { get; set; }
+
+    /// <summary>
+    /// 可见范围（真机观测为 <c>public</c>）。
+    /// </summary>
+    [JsonPropertyName("scope")]
+    public string? Scope { get; set; }
+
+    /// <summary>
+    /// 项目图标地址。
+    /// </summary>
+    [JsonPropertyName("icon")]
+    public string? Icon { get; set; }
+
+    /// <summary>
+    /// 逻辑状态（真机观测为 <c>NORMAL</c>）。
+    /// </summary>
+    [JsonPropertyName("logicalStatus")]
+    public string? LogicalStatus { get; set; }
+
+    /// <summary>
+    /// 项目状态（内嵌对象：<c>name</c> 如「进行中」、<c>id</c> 为状态标识）。
+    /// </summary>
+    [JsonPropertyName("status")]
+    public YunxiaoProjectStatus? Status { get; set; }
+
+    /// <summary>
+    /// 创建人（内嵌对象）。
+    /// </summary>
+    [JsonPropertyName("creator")]
+    public YunxiaoProjectUser? Creator { get; set; }
+
+    /// <summary>
+    /// 修改人（内嵌对象；可为 <c>null</c>）。
+    /// </summary>
+    [JsonPropertyName("modifier")]
+    public YunxiaoProjectUser? Modifier { get; set; }
+
+    /// <summary>
+    /// 创建时间（epoch 毫秒）。
+    /// </summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+
+    /// <summary>
+    /// 修改时间（epoch 毫秒；真机观测可为 <c>null</c>，取用走 <see cref="DisplayUpdateTime"/>）。
+    /// </summary>
+    [JsonPropertyName("gmtModified")]
+    public long? GmtModified { get; set; }
+
+    /// <summary>
+    /// 统一取用项目标识：<see cref="CustomCode"/>。
+    /// </summary>
+    [JsonIgnore]
+    public string? DisplayIdentifier => CustomCode;
+
+    /// <summary>
+    /// 统一取用更新时间（epoch 毫秒）：优先 <see cref="GmtModified"/>，为 <c>null</c> 时退化 <see cref="GmtCreate"/>。
+    /// </summary>
+    [JsonIgnore]
+    public long? DisplayUpdateTime => GmtModified ?? GmtCreate;
+}
+
+/// <summary>
+/// 研发项目状态（<c>status</c> 内嵌对象）。
+/// </summary>
+public class YunxiaoProjectStatus
+{
+    /// <summary>状态名（如「进行中」）。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>状态标识。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+}
+
+/// <summary>
+/// 研发项目用户（<c>creator</c> / <c>modifier</c> 内嵌对象）。
+/// </summary>
+public class YunxiaoProjectUser
+{
+    /// <summary>用户名。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>用户 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
 }
 
 #endregion

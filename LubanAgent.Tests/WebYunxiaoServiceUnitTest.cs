@@ -311,7 +311,18 @@ public class WebYunxiaoServiceUnitTest
         var (_, projects, _, service) = Create();
         projects.Result = new YunxiaoPagedResult<YunxiaoProject>
         {
-            Items = new List<YunxiaoProject> { new() { Id = "p1", Name = "项目一" } },
+            Items = new List<YunxiaoProject>
+            {
+                new()
+                {
+                    Id = "p1",
+                    Name = "项目一",
+                    CustomCode = "DEMO1",
+                    Description = "描述一",
+                    GmtCreate = 1761900000000,
+                    GmtModified = 1762000000000
+                }
+            },
             Total = 42,
             Page = 1,
             PerPage = 20
@@ -323,6 +334,9 @@ public class WebYunxiaoServiceUnitTest
         Assert.AreEqual(20, defaults.Data.PerPage);
         Assert.AreEqual(42, defaults.Data.Total);
         Assert.AreEqual(1, defaults.Data.Items.Count);
+        // 扁平投影：标识取 customCode，更新时间取 gmtModified 格式化
+        Assert.AreEqual("DEMO1", defaults.Data.Items[0].Identifier);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(defaults.Data.Items[0].UpdateTime));
         var first = projects.Calls[^1];
         Assert.AreEqual(1, first.Page);
         Assert.AreEqual(20, first.PerPage);
@@ -332,7 +346,7 @@ public class WebYunxiaoServiceUnitTest
         Assert.IsTrue(clamped.Ok);
         var second = projects.Calls[^1];
         Assert.AreEqual(1, second.Page);
-        Assert.AreEqual(100, second.PerPage);
+        Assert.AreEqual(200, second.PerPage);
         Assert.AreEqual("kw", second.Keyword);
     }
 

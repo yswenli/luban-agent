@@ -34,8 +34,8 @@ public interface IProjexClient
     /// </summary>
     /// <param name="organizationId">组织 ID。</param>
     /// <param name="page">页码（从 1 开始，下限 1）。</param>
-    /// <param name="perPage">每页条数（上限 100，越界自动收敛）。</param>
-    /// <param name="keyword">检索关键字（可选，非空时进请求体）。</param>
+    /// <param name="perPage">每页条数（上限 200，越界自动收敛）。</param>
+    /// <param name="keyword">检索关键字（可选，非空时按名称模糊过滤）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>项目分页结果；空体时为 <c>null</c>。</returns>
     Task<YunxiaoPagedResult<YunxiaoProject>?> SearchProjectsAsync(
@@ -63,8 +63,8 @@ public interface IProjexClient
     /// <remarks>工作台「测试连接 / 保存前探活」专用：以用户本次输入的 PAT 建临时只读调用。</remarks>
     /// <param name="organizationId">组织 ID。</param>
     /// <param name="page">页码（从 1 开始，下限 1）。</param>
-    /// <param name="perPage">每页条数（上限 100，越界自动收敛）。</param>
-    /// <param name="keyword">检索关键字（可选，非空时进请求体）。</param>
+    /// <param name="perPage">每页条数（上限 200，越界自动收敛）。</param>
+    /// <param name="keyword">检索关键字（可选，非空时按名称模糊过滤）。</param>
     /// <param name="pat">本次调用使用的 PAT（必填，空白即拒绝）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>项目分页结果；空体时为 <c>null</c>。</returns>

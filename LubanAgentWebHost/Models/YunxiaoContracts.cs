@@ -50,13 +50,26 @@ public sealed record YunxiaoTestConnectionDto(bool Ok, int ProjectCount, string?
 /// <param name="Saved">是否已保存（探活未通过不会走到这里）。</param>
 public sealed record YunxiaoSaveSettingsDto(bool Saved);
 
+/// <summary>研发项目列表项（面向页面的扁平投影，时间已格式化）。</summary>
+/// <param name="Id">项目 ID。</param>
+/// <param name="Name">项目名称。</param>
+/// <param name="Identifier">项目标识（云效 <c>customCode</c>）。</param>
+/// <param name="Description">项目描述。</param>
+/// <param name="UpdateTime">更新时间（<c>yyyy-MM-dd HH:mm:ss</c>；取 <c>gmtModified</c>，为空退 <c>gmtCreate</c>）。</param>
+public sealed record YunxiaoProjectItemDto(
+    string? Id,
+    string? Name,
+    string? Identifier,
+    string? Description,
+    string? UpdateTime);
+
 /// <summary>研发项目分页列表。</summary>
 /// <param name="Items">项目项。</param>
 /// <param name="Total">总条数。</param>
 /// <param name="Page">当前页码（默认 1，下限 1）。</param>
-/// <param name="PerPage">每页条数（默认 20，上限 100）。</param>
+/// <param name="PerPage">每页条数（默认 20，上限 200）。</param>
 public sealed record YunxiaoProjectListDto(
-    IReadOnlyList<YunxiaoProject> Items,
+    IReadOnlyList<YunxiaoProjectItemDto> Items,
     int Total,
     int Page,
     int PerPage);
