@@ -56,8 +56,9 @@ public class YunxiaoApiResponse<T>
 }
 
 /// <summary>
-/// 分页结果（<b>仅 codeup 侧</b>使用：<c>CodeupClient.SearchRepositoriesAsync</c> 把裸数组与
-/// <c>x-total</c> 响应头合成此对象）。
+/// 分页结果（codeup 侧与 projex 侧使用：<c>CodeupClient.SearchRepositoriesAsync</c> 把裸数组与
+/// <c>x-total</c> 响应头合成此对象；<c>ProjexClient.SearchProjectsAsync</c> 的响应体自带
+/// <c>result/total/page/perPage</c> 外壳，直接按本模型反序列化）。
 /// </summary>
 /// <remarks>
 /// <b>不要</b>用于 <c>/flow</c> 侧：流水线列表接口返回裸数组，分页信息不在响应体里
@@ -844,6 +845,52 @@ public class YunxiaoHostInfo
     /// </summary>
     [JsonPropertyName("aliyunRegionId")]
     public string? AliyunRegionId { get; set; }
+}
+
+#endregion
+
+#region 研发项目（Projex）
+
+/// <summary>
+/// 云效研发项目（Projex 项目域）。
+/// </summary>
+/// <remarks>
+/// <b>字段名待实测校正</b>：先按 Projex OpenAPI 常见响应形态写，字段名以 T11 实测校正。
+/// 若真机 <c>id</c> 是 JSON 数字，须改整型承载（见 <see cref="YunxiaoPipeline"/> 注释里的历史坑：
+/// <c>AllowReadingFromString</c> 只允许「字符串 → 数字」，数字 id 反序列化进 <c>string?</c> 会抛
+/// <see cref="JsonException"/>）。
+/// </remarks>
+public class YunxiaoProject
+{
+    /// <summary>
+    /// 项目 ID（字段名待实测校正）。
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>
+    /// 项目名称（字段名待实测校正）。
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// 项目标识（字段名待实测校正）。
+    /// </summary>
+    [JsonPropertyName("identifier")]
+    public string? Identifier { get; set; }
+
+    /// <summary>
+    /// 项目描述（字段名待实测校正）。
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// 更新时间（字段名待实测校正）。
+    /// </summary>
+    [JsonPropertyName("updateTime")]
+    public string? UpdateTime { get; set; }
 }
 
 #endregion

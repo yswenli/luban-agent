@@ -18,7 +18,7 @@
 namespace LubanAgentCore.Connectors.AliyunDevOps;
 
 /// <summary>
-/// 云效响应体解析器：<b>裸体反序列化</b> + <b>业务错误识别</b>（<c>CodeupClient</c> / <c>FlowClient</c> 共用）。
+/// 云效响应体解析器：<b>裸体反序列化</b> + <b>业务错误识别</b>（<c>CodeupClient</c> / <c>FlowClient</c> / <c>ProjexClient</c> 共用）。
 /// </summary>
 /// <remarks>
 /// <para>
