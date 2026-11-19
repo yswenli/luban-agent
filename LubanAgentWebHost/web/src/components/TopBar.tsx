@@ -2,18 +2,21 @@ import { createEffect, createSignal, For, Show } from 'solid-js';
 
 import { truncate } from '../lib/format';
 import { openSession, openSessions } from '../lib/router';
+import { setThemePreference, themePreference, type ThemePreference } from '../lib/theme';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
-import {
-  bootstrap,
-  createSession,
-  focusSessionSearch,
-  sessions,
-  workspaceName,
-} from '../stores/app';
+import { createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
 import { dropChat, getChat } from '../stores/chats';
 import { forgetSession, openSessionIds } from '../stores/tabs';
 
 import { Icon } from './Icons';
+import { menuAt, PopMenu } from './PopMenu';
+
+/** 主题菜单项：图标只用于区分选项，按钮本身始终是调色板。 */
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: string }[] = [
+  { value: 'follow', label: '跟随系统', icon: 'monitor' },
+  { value: 'dark', label: '深色', icon: 'moon' },
+  { value: 'light', label: '浅色', icon: 'sun' },
+];
 
 /**
  * 全局顶栏：会话入口 + 已打开会话标签。
@@ -23,6 +26,7 @@ import { Icon } from './Icons';
  */
 export function TopBar(props: { activeSessionId: string | null }) {
   const [creating, setCreating] = createSignal(false);
+  const [themeMenu, setThemeMenu] = createSignal<{ x: number; y: number } | null>(null);
   let tabsEl: HTMLDivElement | undefined;
 
   // 标签多到溢出时，把当前标签滚进可视区（新开的会话在末尾，不滚就看不见）
@@ -134,10 +138,47 @@ export function TopBar(props: { activeSessionId: string | null }) {
 
       <div class="spacer" />
 
-      <Show when={bootstrap()?.version}>
-        <span class="faint mono topbar-version" title={bootstrap()!.version ?? ''}>
-          v{bootstrap()!.version!.split('+')[0]}
-        </span>
+      <button
+        class="icon-btn"
+        classList={{ active: themeMenu() !== null }}
+        title="主题"
+        aria-label="主题"
+        aria-haspopup="menu"
+        aria-expanded={themeMenu() !== null}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setThemeMenu(menuAt(rect, { width: 176, height: 126, align: 'end' }));
+        }}
+      >
+        <Icon name="palette" size={17} />
+      </button>
+
+      <Show when={themeMenu()}>
+        {(position) => (
+          <PopMenu
+            style={{ left: `${position().x}px`, top: `${position().y}px`, 'min-width': '176px' }}
+            onClose={() => setThemeMenu(null)}
+          >
+            <For each={THEME_OPTIONS}>
+              {(option) => (
+                <button
+                  class="menu-item"
+                  classList={{ active: themePreference() === option.value }}
+                  onClick={() => {
+                    setThemePreference(option.value);
+                    setThemeMenu(null);
+                  }}
+                >
+                  <Icon name={option.icon} size={15} />
+                  {option.label}
+                  <Show when={themePreference() === option.value}>
+                    <Icon name="check" size={14} class="menu-check" />
+                  </Show>
+                </button>
+              )}
+            </For>
+          </PopMenu>
+        )}
       </Show>
     </div>
   );

@@ -160,6 +160,28 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M12 17v4" />
     </>
   ),
+  palette: () => (
+    <>
+      <path d="M12 3a9 9 0 1 0 0 18h1.2a2.1 2.1 0 0 0 1.6-3.5 2.1 2.1 0 0 1 1.6-3.5h1.4A3.2 3.2 0 0 0 21 10.8 8.7 8.7 0 0 0 12 3Z" />
+      <circle cx="8.2" cy="10.2" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="10.6" cy="6.9" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6.9" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="17.6" cy="10.4" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  monitor: () => (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M12 16v4M9 20h6" />
+    </>
+  ),
+  moon: () => <path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z" />,
+  sun: () => (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5V5M12 19v2.5M2.5 12H5M19 12h2.5M5.2 5.2 7 7M17 17l1.8 1.8M18.8 5.2 17 7M7 17l-1.8 1.8" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof paths | string;

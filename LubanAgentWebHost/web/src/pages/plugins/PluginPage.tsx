@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, Match, Switch } from 'solid-js'
 
 import { Icon } from '../../components/Icons';
 import { openPlugins, openSessions } from '../../lib/router';
+import { applyThemeTo } from '../../lib/theme';
 import type { PluginPageInfo } from '../../lib/types';
 import { showToast } from '../../stores/app';
 import { ensurePluginsLoaded, findPlugin, pluginsLoaded } from '../../stores/plugins';
@@ -126,7 +127,20 @@ export function PluginPage(props: { pluginId: string; entryId: string }) {
             <div class="loading-line">加载插件页面…</div>
           </Match>
           <Match when={state().kind === 'ok' ? frame() : null} keyed>
-            {(target) => <iframe class="plugin-frame" src={target.url} title={label()} />}
+            {(target) => {
+              let frameEl: HTMLIFrameElement | undefined;
+              // 主题切换只重写 iframe 文档上的属性，不重建元素；点「重新加载」时 keyed 换新元素，由 onLoad 重新注入
+              createEffect(() => applyThemeTo(frameEl?.contentDocument));
+              return (
+                <iframe
+                  ref={(el) => (frameEl = el)}
+                  class="plugin-frame"
+                  src={target.url}
+                  title={label()}
+                  onLoad={() => applyThemeTo(frameEl?.contentDocument)}
+                />
+              );
+            }}
           </Match>
         </Switch>
       </div>

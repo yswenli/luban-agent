@@ -3,7 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>云效 DevOps 工作台</title>
+  <!-- 首屏防闪：本页作为同源 iframe 嵌入宿主，宿主 onLoad 才注入 data-theme，
+       在此之前先按宿主同一套存储与系统偏好自行判定，避免深色下白闪。
+       解析规则须与宿主 web/index.html、宿主 src/lib/theme.ts 一致（键 luban.web.theme）。 -->
+  <script>
+    (function () {
+      var mode = 'light';
+      try {
+        var dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var preference = 'follow';
+        try {
+          preference = localStorage.getItem('luban.web.theme') || 'follow';
+        } catch (e) {
+          /* 隐私模式读不到存储时按跟随系统 */
+        }
+        mode = preference === 'dark' ? 'dark' : preference === 'light' ? 'light' : dark ? 'dark' : 'light';
+      } catch (e) {
+        mode = 'light';
+      }
+      document.documentElement.dataset.theme = mode;
+      document.documentElement.style.colorScheme = mode;
+    })();
+  </script>
   <link rel="stylesheet" href="assets/base.css" />
 </head>
 <body>

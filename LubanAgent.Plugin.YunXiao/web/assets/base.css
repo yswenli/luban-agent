@@ -19,8 +19,18 @@
   --text-sub: #5f6670;
   --text-weak: #9aa1ab;
   --accent: #3d5afe;
+  --accent-fill: #3d5afe;
+  --on-accent: #ffffff;
+  --accent-ring: rgba(61, 90, 254, .14);
   --warn: #b54708;
   --warn-soft: #fffaeb;
+  --warn-border: #fedf89;
+  --info: #175cd3;
+  --info-soft: #eff8ff;
+  --info-border: #b2ddff;
+  --toast-bg: #17191d;
+  --toast-ok-bg: #067647;
+  --toast-err-bg: #b42318;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -165,7 +175,7 @@ body {
 }
 
 .chip-warn {
-  border-color: #fedf89;
+  border-color: var(--warn-border);
   background: var(--warn-soft);
   color: var(--warn);
   flex: none;
@@ -247,6 +257,46 @@ body {
   --danger-border: #fecdca;
 }
 
+/* 深色主题：与宿主同族配色，页面底与宿主一致，避免 iframe 与宿主拼色。
+   令牌名沿用上面的浅色定义，只覆盖值；下面 :root 的两块都必须覆盖到。 */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16181c;
+  --surface: #1c1f24;
+  --surface-sub: #21252b;
+  --surface-sub-2: #272c33;
+  --border: #31363f;
+  --border-strong: #3f4652;
+  --text: #e7e9ec;
+  --text-sub: #a2a8b3;
+  --text-weak: #727a86;
+  --accent: #7c93ff;
+  --accent-soft: #232a44;
+  --accent-fill: #4a63e8;
+  --accent-ring: rgba(124, 147, 255, .28);
+  --warn: #f0b429;
+  --warn-soft: #2a2113;
+  --warn-border: #5c4a1f;
+  --info: #79b8ff;
+  --info-soft: #142338;
+  --info-border: #24476e;
+  --ok: #56d364;
+  --ok-soft: #14251a;
+  --ok-border: #2a5138;
+  --danger: #ff7b72;
+  --danger-soft: #2d1a1a;
+  --danger-border: #5d2a2a;
+  --toast-bg: #0f1115;
+  --toast-ok-bg: #1f6b45;
+  --toast-err-bg: #7a2a24;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -261,8 +311,8 @@ body {
   max-width: 380px;
   padding: 8px 14px;
   border-radius: var(--radius-sm);
-  background: var(--text);
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--on-accent);
   font-size: 12.5px;
   line-height: 1.5;
   box-shadow: var(--shadow-lg);
@@ -279,11 +329,11 @@ body {
 }
 
 .toast-ok {
-  background: var(--ok);
+  background: var(--toast-ok-bg);
 }
 
 .toast-err {
-  background: var(--danger);
+  background: var(--toast-err-bg);
 }
 
 /* ---------- 按钮 ---------- */
@@ -315,20 +365,20 @@ body {
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .btn-primary:hover {
-  color: #fff;
+  color: var(--on-accent);
   opacity: .92;
 }
 
 .btn-primary:disabled {
   background: var(--border-strong);
   border-color: var(--border-strong);
-  color: #fff;
+  color: var(--on-accent);
   opacity: .7;
 }
 
@@ -426,7 +476,7 @@ body {
 .field-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(61, 90, 254, .14);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .field-help {
@@ -1048,9 +1098,9 @@ body {
 }
 
 .st-run {
-  border-color: #b2ddff;
-  background: #eff8ff;
-  color: #175cd3;
+  border-color: var(--info-border);
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 .st-ok {
@@ -1163,7 +1213,7 @@ body {
   gap: 8px;
   min-width: 0;
   padding: 6px 8px;
-  border: 1px solid #fedf89;
+  border: 1px solid var(--warn-border);
   border-radius: var(--radius-sm);
   background: var(--warn-soft);
   color: var(--warn);

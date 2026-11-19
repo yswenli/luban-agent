@@ -9,7 +9,7 @@
 		<RootNamespace>LubanAgentWebHost</RootNamespace>
 		<AssemblyName>LubanAgentWebHost</AssemblyName>
 		<StartupObject>LubanAgentWebHost.Program</StartupObject>
-		<!-- 显示版本：顶栏、关于弹窗与 401 页都读程序集版本，改这里即全站生效 -->
+		<!-- 显示版本：「关于」弹窗与 401 页读程序集版本，改这里即全站生效 -->
 		<Version>2.0.1</Version>
 	</PropertyGroup>
 
