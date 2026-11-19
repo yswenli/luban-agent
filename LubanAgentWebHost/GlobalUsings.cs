@@ -12,6 +12,7 @@ global using LuBan.AIAgent.Configuration;
 global using LuBan.AIAgent.Hosting;
 global using LuBan.AIAgent.Hosting.Commands;
 global using LuBan.AIAgent.Orchestration;
+global using LuBan.AIAgent.Plugins.Security;
 global using LuBan.AIAgent.Protocol;
 global using LuBan.AIAgent.Sessions;
 global using LuBan.Common;
@@ -41,6 +42,7 @@ global using LubanAgentCore.Utils;
 global using LubanAgentWebHost.Hosting;
 global using LubanAgentWebHost.Models;
 global using LubanAgentWebHost.Services;
+global using LubanAgentWebHost.Services.Init;
 
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;
@@ -49,7 +51,6 @@ global using SAEA.Http;
 global using SAEA.Http.Base;
 global using SAEA.Http.Model;
 global using SAEA.MVC;
-global using SAEA.Sockets.Interface;
 global using SAEA.Sockets.Pipeline;
 
 global using System.Collections.Concurrent;

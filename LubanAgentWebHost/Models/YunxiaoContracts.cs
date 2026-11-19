@@ -73,3 +73,21 @@ public sealed record YunxiaoProjectListDto(
     int Total,
     int Page,
     int PerPage);
+
+// ── S2 请求 DTO（批次 D · REST 面）────────────────────────────────────────
+// 预检 / 执行 / 流水线预览 / 提交的请求体直接复用服务模型
+// （LubanAgentWebHost.Services.Init 的 PreflightRequest / ExecRequest /
+// PipelinePreviewRequest / PipelineCommitRequest）：均为 positional record，
+// AgentApiJson Web 口径（camelCase、大小写不敏感）可直接反序列化，
+// 按「能复用就复用」原则不重复定义，壳层 TryReadPayload<T> 以服务模型为 T。
+// 仅「重跑」在服务侧无请求模型（RetryAsync 逐参入参），故在此补 wire DTO。
+
+/// <summary>重跑指定失败库（POST /yunxiao/initretry）。</summary>
+public sealed record YunxiaoRetryRequest
+{
+    /// <summary>任务标识。</summary>
+    public string TaskId { get; init; } = string.Empty;
+
+    /// <summary>要重跑的库名清单（服务端只收 failed 库，非 failed 不动）。</summary>
+    public IReadOnlyList<string> RepoNames { get; init; } = [];
+}

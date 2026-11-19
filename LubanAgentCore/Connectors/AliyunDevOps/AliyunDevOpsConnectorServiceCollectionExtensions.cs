@@ -25,7 +25,8 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// 注册项（均为单例，构造链不含 Scoped 服务，可在 <c>ValidateScopes=true</c> 下通过构建校验）：
 /// <see cref="YunxiaoApiOptions"/>、<see cref="IYunxiaoCredentialProvider"/>（宿主可先注册覆盖）、
 /// <see cref="YunxiaoConnector"/>、<see cref="CodeupClient"/>、<see cref="FlowClient"/>、<see cref="ProjexClient"/>
-/// （并以 <see cref="IProjexClient"/> 桥接同一单例，供工作台服务单测替换）；
+/// （并以 <see cref="IProjexClient"/> / <see cref="ICodeupClient"/> / <see cref="IFlowClient"/>
+/// 桥接同一单例，供工作台服务单测替换）；
 /// 并向框架 <c>ConnectorFactoryRegistry</c> 登记提供方工厂（<see cref="YunxiaoConnector.ProviderKey"/>）；
 /// 同时以 <see cref="AliyunCredentialKeyAliases"/> 覆盖框架默认的空凭据键别名实现。
 /// </para>
@@ -88,8 +89,10 @@ public static class AliyunDevOpsConnectorServiceCollectionExtensions
             sp.GetRequiredService<IYunxiaoCredentialProvider>(),
             sp.GetService<PluginPermissionGuard>() ?? PluginPermissionGuard.Default));
 
-        // 接口桥接（测试缝合点）：仍按具体类注册，IProjexClient 指向同一单例
+        // 接口桥接（测试缝合点）：仍按具体类注册，接口指向同一单例
         services.TryAddSingleton<IProjexClient>(sp => sp.GetRequiredService<ProjexClient>());
+        services.TryAddSingleton<ICodeupClient>(sp => sp.GetRequiredService<CodeupClient>());
+        services.TryAddSingleton<IFlowClient>(sp => sp.GetRequiredService<FlowClient>());
 
         // 向框架登记提供方工厂：连接器实例由 ConnectorInstanceHost 按实例名各造一个。
         services.AddConnector<YunxiaoConnector>(YunxiaoConnector.ProviderKey, context =>

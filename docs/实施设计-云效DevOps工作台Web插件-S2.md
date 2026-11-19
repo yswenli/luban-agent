@@ -250,3 +250,63 @@ mock 面：`ICodeupClient`/`IFlowClient`/`IProjexClient`/`ISessionGateway`/`IYun
 3. 母版清单翻页：`x-total` 口径同 Codeup（S1 实测过 Projex 是 `X-Total`，Codeup 侧小写 `x-total`，大小写不敏感解析），只看首页会误判「仅一个母版库」。
 4. 断言脚本视口：CDP 通道首选（`Emulation.setDeviceMetricsOverride`），`--window-size` 在 new headless 下不可靠（S1 实测教训）。
 5. `flow_create_pipeline` 的 content 必须是顶层 `stages:` 新版 YAML（仓库既有真机注释），喂 tb 形态 `flow` 必报「至少要包含一个stage」。
+
+---
+
+## 11. S2b 增补（2026-11-18 实机反馈，用户已拍板）
+
+> 背景：真实组织验证发现三处与现实不符。项目列表口径经确认**不改**（Projex 29 条全量正常）；以下两项进 S2b。
+
+### 11.1 模板源改真值：自定义模板接口（替代 `-Mixed` 命名搜索）
+
+实测：`GET /oapi/v1/codeup/organizations/{orgId}/repositories/templates?templateType=1`（连接器 `ICodeupClient.ListTemplateRepositoriesAsync`，注释本就注明「定位模板仓应优先走本方法」）返回组织登记的自定义模板真值（含单端模板与综合模板，描述自带停用说明）。改动：
+
+1. `GetManifestsAsync.Repos` 数据源由 `SearchRepositoriesAsync` 的 `*-Mixed` 筛选改为 **`ListTemplateRepositoriesAsync(templateType:1)`**（字段 `Name/Description/ProjectId/Path`，`ProjectId` 留给后续 `templateProject` 降级路径）。
+2. 命名派生改**模板名代号前缀替换**（§4.1 修订）：`ParseTemplateCode` = 首个 `-` 前段（`TJCES-Mixed`/`TJCES-Service` 均得 `TJCES`，不再要求 `-Mixed` 后缀）；新名 = `newCode` + 模板名中原代号后的全部后缀（`TJCES-Mixed → RGMS-Mixed`、`TJCES-Service → RGMS-Service`）。
+3. **三子目录改名候选仅当模板名以 `-Mixed` 结尾**（综合库形态）才派生 `{code}-Admin/Mobile/Service`；单端模板无目录改名步骤。执行期以 clone 后实际目录兜底（只改名实际存在的，PRD 7a 口径）。
+4. 流水线名派生同理前缀替换；母版流水线反查仍按 `_DEV_Deploy_{模板代号}-{端}` 匹配。
+
+### 11.2 已存在库「复用 + 补全流水线」模式（替代一律阻断）
+
+用户拍板：初始化遇「新库名已存在」（项目此前已初始化）→ **复用 + 补全**，不再阻断。改动：
+
+1. **预检**：新库名已存在 → 不再列 `conflicts`，改回 `Plan` 的标记（`ReuseExisting:true`）+ 提示「将复用已有库」；结构校验（综合模板三子目录存在性）出 warnings 不阻断；命令序列只列需要新建的库的 git 步骤（复用库无 git 步骤）。
+2. **执行**：FindRepoByNameAsync 命中 → 该库标记 `reuse`，跳过 建组/建库/clone/改名/push（**不发会话指令**）；执行前 TOCTOU 同样自动转复用（不 failed）。
+3. **流水线补全（FR-3）**：preview 逐端标注「已存在（派生名精确命中 `ListPipelinesAsync`）/缺失」；commit 默认**只 create 缺失端**，已存在端跳过并回执「已存在跳过」；覆盖（update）仍走 confirm:true 既有语义。
+4. **会话门禁放宽**：仅当存在需新建的库时才要求 `sessionReady`；全部复用时纯补流水线链路不需要 git 会话。
+5. 重跑幂等：复用库重跑=再补一次缺失流水线（create 前同名 TOCTOU 复查，命中即跳过）。
+
+### 11.3 连带同步
+
+- §4.1 `NamingDeriver` 语义按 11.1 修订；`GitCommandPlanner` 不变（dirs 空已支持跳过）。
+- 前端屏 3：模板下拉展示真实模板（含描述）；预检面板「复用/新建」徽标；F6 diff 预览逐端「已存在/缺失」标注。
+- 断言 assert-s2 同步增补复用态与模板描述渲染判据。
+
+---
+
+## 12. S2c 增补（2026-11-19 实机反馈，用户已拍板）
+
+> 三条：工作区可手输路径新建；无源码自动拉代码切 develop；流水线「已存在→同步信息，缺失→模板复制」。拍板：同步信息=**回显+反向回填**；新建库=**推 master + 本地 develop**（复用库：拉代码切 develop，已定）。
+
+### 12.1 工作区：手输路径新建 + 无源码自动检出
+
+1. F5 共用设置「工作区目录」：下拉之外增**路径输入 +「新建并使用」**——调宿主 `POST /workspace/create`（`WebWorkspaceService.CreateAsync`，rootPath=输入路径），成功后刷新 manifests 工作区列表并选中；非法/不可用路径按宿主 400 语义展示。
+2. **无源码检出规则**：检出目标 `{workspaceRoot}/{新库名}` 不存在或为空 → git 计划含「clone 新库（复用库真 URL）→ 切 develop」；已存在源码 → 不出 git 步骤（幂等）。分支语义：远端有 `develop` 则跟踪（`checkout -b develop origin/develop`），无则本地新建（`checkout -b develop`）。
+
+### 12.2 分支口径（新建库）
+
+- 远端：照旧只推 `master`（模板复制语义不变）；本地：推完后切 `develop`（新库远端无 develop → 本地 `-b develop` 自 master）。工作区最终一律落在 develop 检出（与复用库一致）。
+- `GitCommandPlanner` 产出相应步骤（clone/切分支按 12.1 规则条件化；仍须脱敏红线）。
+
+### 12.3 流水线「同步信息」= 回显 + 反向回填
+
+1. **命名补端口后缀**（实测真名形态）：后端流水线派生名 = `{前缀}_DEV_Deploy_{代号}-Service({端口})`（如 `CME_DEV_Deploy_RGMS-Service(7019)`）；移动端/管理后台不变。端口盒值参与派生（改端口即重派生后端流水线名）。匹配已有流水线按**前缀容忍端口差异**（`...-Service` 前缀命中即算已存在，括号端口仅展示）。
+2. **回显**：`PipelinePreviewItem` 增 `PipelineInfo{Id, ActualName, Port?}`（Exists 时填充，来自 `ListPipelinesAsync` 精确/前缀命中 + 从 ActualName 解析 `(port)`）；F6 端行回显真实名称/ID。
+3. **反向回填**（拍板项）：已存在端把 `ActualName`/解析端口回填表单——后端端口盒 ← `(7019)` 解析值；流水线名输入 ← 实际名；**表单以现实为准**（回填后 dirty 语义重置为已同步态）。
+4. **提交**：已存在端零操作，回执「已存在·已同步信息」（含 Id/ActualName，可追溯）；缺失端照旧「读模板 YAML → 改名新建」（create 前同名 TOCTOU 复查）。
+5. **F6 门禁放宽**（配套）：全复用（无新建库）时 F6 不等 FR-2 任务完成即可同步流水线（newRepoId 来自 `FindRepoByNameAsync`）；有新建库时维持先 FR-2。
+
+### 12.4 连带
+
+- 断言 assert-s2 增补：工作区新建入口渲染、全复用 F6 未锁、后端名含 `({端口})` 派生、已存在端反向回填（端口盒值变化）、同步回执含 Id。
+- §11.1 派生规则并入端口后缀口径；实机校正项（T13）待写操作试验时一并核对真名匹配。

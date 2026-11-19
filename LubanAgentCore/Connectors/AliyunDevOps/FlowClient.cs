@@ -20,7 +20,7 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// <summary>
 /// 云效流水线客户端 - 提供流水线管理、执行等能力
 /// </summary>
-public class FlowClient : IDisposable
+public class FlowClient : IFlowClient, IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly YunxiaoApiOptions _options;

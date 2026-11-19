@@ -7,7 +7,8 @@
   2. 列表项 name / identifier / updateTime：单行省略 + title 悬停全文；
   3. 右栏两态：未选中 → 组织统计卡（total + organizationId）；选中 → 项目详情卡
      （description 超长 3 行截断 + title）；
-  4. 首屏进入自动拉一次列表；「重新加载」刷新；不画初始化 / PRD / 看板等 S2+ 入口；
+  4. 首屏进入自动拉一次列表；「重新加载」刷新；详情卡入口（S2 起）：「项目初始化」
+     可点 → #/init，PRD 拆分 / 看板保持灰态「待接线」；
   5. 云效数据属外部输入：渲染一律 escapeHtml，禁止裸 innerHTML 拼接。
 */
 (function (global) {
@@ -86,7 +87,7 @@
       + '<p class="detail-help">在左侧选择项目后，这里显示项目详情。</p>';
   }
 
-  /** 右栏：选中 → 项目详情卡（description 3 行截断 + title）。 */
+  /** 右栏：选中 → 项目详情卡（description 3 行截断 + title + 功能入口）。 */
   function detailHtml(project) {
     const name = project.name || '（未命名项目）';
     const identifier = project.identifier || '—';
@@ -98,6 +99,20 @@
       + '<span class="kv-k">项目标识</span><span class="kv-v" title="' + escapeHtml(identifier) + '">' + escapeHtml(identifier) + '</span>'
       + '<span class="kv-k">项目描述</span><span class="kv-v clamp3" title="' + escapeHtml(description) + '">' + escapeHtml(description || '—') + '</span>'
       + '<span class="kv-k">更新时间</span><span class="kv-v" title="' + escapeHtml(rawTime) + '">' + escapeHtml(rawTime || '—') + '</span>'
+      + '</div>'
+      + '<div class="detail-entries">'
+      + '<button type="button" class="entry" data-entry="init">'
+      + '<span class="entry-main"><span class="entry-title">项目初始化</span>'
+      + '<span class="entry-sub">复制母版库与流水线，生成新项目骨架</span></span>'
+      + '<span class="entry-arrow">›</span></button>'
+      + '<button type="button" class="entry" disabled>'
+      + '<span class="entry-main"><span class="entry-title">PRD 拆分</span>'
+      + '<span class="entry-sub">待接线</span></span>'
+      + '<span class="entry-arrow">›</span></button>'
+      + '<button type="button" class="entry" disabled>'
+      + '<span class="entry-main"><span class="entry-title">看板</span>'
+      + '<span class="entry-sub">待接线</span></span>'
+      + '<span class="entry-arrow">›</span></button>'
       + '</div>';
   }
 
@@ -150,6 +165,12 @@
       }
     });
     els.reload.addEventListener('click', reload);
+    els.main.addEventListener('click', function (e) {
+      const target = e.target;
+      const entry = target && target.closest ? target.closest('.entry[data-entry="init"]') : null;
+      if (!entry) return;
+      global.location.hash = '#/init';
+    });
     els.list.addEventListener('click', function (e) {
       const target = e.target;
       const item = target && target.closest ? target.closest('.proj-item') : null;

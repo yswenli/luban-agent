@@ -7,8 +7,6 @@
 *
 *****************************************************************************/
 
-using LuBan.AIAgent.Plugins.Security;
-
 namespace LubanAgentWebHost;
 
 /// <summary>
@@ -114,6 +112,12 @@ public static class Program
                     d => d.GetRequiredService<LubanAgentCore.Connectors.AliyunDevOps.YunxiaoSettingsService>());
                 // 云效工作台编排（YunxiaoController → WebYunxiaoService → 本服务）
                 services.AddSingleton<YunxiaoWorkbenchService>();
+                // 云效 S2 项目初始化（YunxiaoController → WebYunxiaoService → 本服务）：
+                // 单例口径——YunxiaoInitService 持执行上下文、InitTaskStore 持任务态文件，均不可按请求重建
+                services.AddSingleton<LubanAgentWebHost.Services.Init.InitTaskStore>();
+                services.AddSingleton<LubanAgentWebHost.Services.Init.ISessionGateway, LubanAgentWebHost.Services.Init.SessionGateway>();
+                services.AddSingleton<LubanAgentWebHost.Services.Init.IWorkspaceDirectoryProvider, LubanAgentWebHost.Services.Init.WorkspaceDirectoryProvider>();
+                services.AddSingleton<LubanAgentWebHost.Services.Init.YunxiaoInitService>();
 
                 // 编排进度出口：框架默认注册 no-op，这里换成可订阅实现并按请求作用域隔离，
                 // 供 /agent/chat 把子代理进度转成 orchestration.progress 帧

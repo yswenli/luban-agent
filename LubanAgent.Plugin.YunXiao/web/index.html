@@ -61,6 +61,112 @@
           <section class="pane pane-right" id="proj-main"></section>
         </div>
       </section>
+
+      <!-- 屏 3：项目初始化（F5 代码库区 / F6 流水线区） -->
+      <section class="screen" id="screen-init" hidden>
+        <div class="split split-init">
+          <aside class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第一步 · 复制代码库</div>
+              <span class="chip" id="tpl-count">母版库 —</span>
+            </div>
+            <div class="pane-body">
+              <div class="blk">
+                <div class="blk-label">母版代码库 · 整库复制</div>
+                <div id="tpl-sel"></div>
+              </div>
+
+              <div class="blk">
+                <label class="blk-label" for="init-code">新项目代号</label>
+                <input class="field-input" id="init-code" type="text" spellcheck="false"
+                       placeholder="如 RGMS" autocomplete="off" />
+                <p class="field-help">代号替换母版里的名字：库名、三个子目录、流水线代号段；每勾选一个母版库即复制出一个新库。</p>
+              </div>
+
+              <div class="blk">
+                <div class="blk-label">命名派生预览 · <span id="derive-tag">未填代号</span></div>
+                <div id="derive-list"></div>
+              </div>
+
+              <div class="blk">
+                <div class="blk-label">共用设置</div>
+                <div class="field">
+                  <label class="field-label" for="init-group">代码组</label>
+                  <select class="field-input" id="init-group"></select>
+                  <input class="field-input" id="init-group-new" type="text" spellcheck="false"
+                         placeholder="新代码组名称" hidden />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="init-workspace">工作区目录</label>
+                  <select class="field-input" id="init-workspace"></select>
+                </div>
+                <div class="field">
+                  <label class="field-label" for="init-branch">初始化分支</label>
+                  <input class="field-input" id="init-branch" type="text" spellcheck="false" value="master" />
+                </div>
+              </div>
+
+              <div class="blk">
+                <div class="row-btn">
+                  <button class="btn" id="btn-preflight" type="button">预检</button>
+                </div>
+                <div class="result" id="preflight-error" hidden></div>
+              </div>
+
+              <div class="blk" id="preflight-panel" hidden>
+                <div class="blk-label">预检结论（零副作用）</div>
+                <div class="kv">
+                  <span class="kv-k">新库名</span><span class="kv-v" id="plan-repo">—</span>
+                  <span class="kv-k">将改名目录</span><span class="kv-v clamp3" id="plan-dirs">—</span>
+                  <span class="kv-k">将复制流水线</span><span class="kv-v clamp3" id="plan-pipes">—</span>
+                  <span class="kv-k">目标分支</span><span class="kv-v" id="plan-branch">—</span>
+                  <span class="kv-k">冲突</span><span class="kv-v clamp3" id="plan-conflicts">—</span>
+                </div>
+                <div class="blk-label">将执行的 git 命令序列</div>
+                <pre class="code-pre" id="git-cmds"></pre>
+                <div class="row-btn">
+                  <button class="btn btn-primary" id="btn-exec" type="button">确认执行</button>
+                </div>
+                <p class="field-help" id="exec-gate"></p>
+              </div>
+
+              <div class="blk" id="task-panel" hidden>
+                <div class="blk-label">复制进度</div>
+                <div class="kv">
+                  <span class="kv-k">任务</span><span class="kv-v" id="task-id">—</span>
+                  <span class="kv-k">状态</span><span class="kv-v" id="task-status">—</span>
+                </div>
+                <div class="tasklist" id="task-libs"></div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第二步 · 复制流水线</div>
+              <span class="chip" id="pipe-repo-tag" title="">新库标签：未预检</span>
+            </div>
+            <div class="pane-body">
+              <div class="result result-err" id="pipe-lock">先完成代码库复制（FR-2 任务完成前，流水线区不可用）。</div>
+              <div class="blk" id="pipe-ends"></div>
+
+              <div class="blk">
+                <div class="row-btn">
+                  <button class="btn" id="btn-preview" type="button">预览差异</button>
+                  <button class="btn btn-primary" id="btn-commit" type="button">提交流水线</button>
+                </div>
+              </div>
+
+              <div class="blk" id="diff-panel" hidden>
+                <div class="blk-label">差异预览</div>
+                <div class="tabs" id="diff-tabs"></div>
+                <pre class="code-pre" id="diff-pre"></pre>
+                <p class="field-help" id="diff-warning"></p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </main>
 
     <footer class="actionbar">
@@ -73,6 +179,10 @@
         <a class="btn-link" id="link-connect" href="#/connect">连接设置</a>
         <button class="btn" id="btn-reload" type="button">重新加载</button>
       </div>
+      <div class="actions" id="actions-init" hidden>
+        <a class="btn-link" id="link-projects" href="#/projects">返回项目列表</a>
+        <button class="btn" id="btn-reload-manifests" type="button">重新读取清单</button>
+      </div>
     </footer>
   </div>
 
@@ -81,5 +191,6 @@
   <script src="assets/app.js"></script>
   <script src="assets/connect.js"></script>
   <script src="assets/projects.js"></script>
+  <script src="assets/init.js"></script>
 </body>
 </html>

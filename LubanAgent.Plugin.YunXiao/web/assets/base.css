@@ -658,3 +658,562 @@ body {
   color: var(--text-weak);
   font-size: 12px;
 }
+
+/* ---------- 屏 2：详情卡入口（S2 起逐个点亮） ---------- */
+
+.detail-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  min-width: 0;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.entry:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  background: var(--surface-sub);
+  border-color: var(--border);
+}
+
+.entry:disabled:hover {
+  border-color: var(--border);
+  background: var(--surface-sub);
+}
+
+.entry-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entry-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-sub);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-arrow {
+  flex: none;
+  color: var(--text-weak);
+}
+
+/* =========================================================
+   S2 屏 3：项目初始化（#/init · F5 代码库区 / F6 流水线区）
+   826×694 画板内两列各自区内滚动；无横向滚动（diff/命令序列块内例外）。
+   ========================================================= */
+
+.split-init .pane {
+  flex: 1 1 0;
+}
+
+.pane-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.blk {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.blk-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.row-btn {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 母版库多选下拉（总数=1 锁定单项） */
+.msel {
+  position: relative;
+  min-width: 0;
+}
+
+.msel-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.msel-h .v {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msel-h .n {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+.msel.locked .msel-h {
+  background: var(--surface-sub);
+  color: var(--text-sub);
+  cursor: default;
+}
+
+.msel-pop {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 168px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.mopt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mopt:hover {
+  background: var(--accent-soft);
+}
+
+.mopt.on {
+  background: var(--accent-soft);
+}
+
+.mck {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.mopt.on .mck {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.mopt-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mopt .mname {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mopt .mhint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-weak);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 锁定态模板描述（长文本省略 + title） */
+.msel-h .mhint {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  font-size: 11px;
+  color: var(--text-weak);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 复用/新建、已存在/缺失徽标（紧凑，不增高行） */
+.badge {
+  flex: none;
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-sub);
+  color: var(--text-sub);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.badge-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.kv-hint {
+  font-size: 11px;
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+/* 命名派生预览（母版名 → 新名，逐行可改写） */
+.dr-seg {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.dr {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 14px minmax(0, 1.2fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.dr .dr-k {
+  color: var(--text-sub);
+  font-size: 11px;
+}
+
+.dr .dr-from {
+  min-width: 0;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dr .dr-ar {
+  flex: none;
+  color: var(--text-weak);
+  font-style: normal;
+  text-align: center;
+}
+
+.dr .field-input {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* 预检面板 */
+.code-pre {
+  flex: none;
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+  color: var(--text);
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+/* 逐库状态列表 */
+.tasklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.taskrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.taskrow .tname {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskrow .tdetail {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskrow .btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+/* 状态徽标 */
+.st {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-sub);
+  color: var(--text-sub);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.st-run {
+  border-color: #b2ddff;
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.st-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.st-err {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* F6 三端行 */
+.endrow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.endrow.off {
+  opacity: .55;
+}
+
+.er-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.er-h input[type="checkbox"] {
+  flex: none;
+  margin: 0;
+}
+
+.er-role {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.frow label {
+  flex: none;
+  width: 60px;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.frow .field-input {
+  flex: 1 1 auto;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.pbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.pbox .ph {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.er-ow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+
+.er-ow input[type="checkbox"] {
+  margin: 0;
+}
+
+.er-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #fedf89;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 11.5px;
+}
+
+.er-confirm .btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  line-height: 22px;
+}
+
+.er-result {
+  padding: 5px 8px;
+  font-size: 11.5px;
+}
+
+/* F6 依赖门禁置灰 */
+.pipe-off {
+  opacity: .55;
+  pointer-events: none;
+}
+
+/* 差异预览 tabs */
+.tabs {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tab {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-sub);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.tab.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#diff-pre {
+  max-height: 220px;
+}

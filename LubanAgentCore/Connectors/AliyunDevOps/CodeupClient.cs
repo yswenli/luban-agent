@@ -23,7 +23,7 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// <remarks>
 /// <b>不再承担 Git 操作</b>：克隆 / 推送一律改由助手经 git 工具组完成。
 /// </remarks>
-public class CodeupClient : IDisposable
+public class CodeupClient : ICodeupClient, IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly YunxiaoApiOptions _options;
