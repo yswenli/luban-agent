@@ -33,3 +33,4 @@
 
 # 运行时生成的静态配置（含令牌），不进仓库
 /LubanAgentWebHost/wwwroot/runtime-config.js
+/logs
