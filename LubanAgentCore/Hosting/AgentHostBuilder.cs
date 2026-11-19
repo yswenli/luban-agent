@@ -87,6 +87,16 @@ public static class AgentHostBuilder
         services.AddLuBanAgentDefaults(configuration);
         services.AddLuBanAgentHost();
 
+        // ── 会话自动命名：三端共用的回合入口装饰器 ─────────────────────
+        // 三端最终都经 IAgentHost.RunStreamingAsync 起一轮，故只在这里挂一次；
+        // 远程客户端不经过本方法，不会重复触发。
+        services.AddSingleton<SessionTitleNotifier>();
+        services.AddSingleton<IAutoTitleStore>(sp => sp.GetRequiredService<SessionRepository>());
+        services.AddScoped<ISessionAutoNamer, SessionAutoNamer>();
+        services.AddScoped<SessionAutoNameRunner>();
+        services.AddScoped<AgentHost>();
+        services.ReplaceScoped<IAgentHost>(sp => new AutoNameAgentHost(sp.GetRequiredService<AgentHost>(), sp));
+
         // 产品侧厂商连接器（云效）：框架只保留「抽象连接器 + 连接器管理」，
         // 厂商实现由宿主显式注册（含提供方工厂与凭据键别名）。
         services.AddAliyunDevOpsConnector(configuration);

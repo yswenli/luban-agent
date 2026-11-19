@@ -31,6 +31,9 @@ public partial class Sidebar : UserControl
     private DiContainer? _services;
     private AgentPluginHost? _pluginHost;
 
+    /// <summary>自动命名完成后的标题变更广播：只影响会话列表展示，远程模式下随列表刷新带出。</summary>
+    private SessionTitleNotifier? _titleNotifier;
+
     // 会话运行徽标：sessionId → 圆点控件（重建列表时按运行集合恢复）
     private readonly Dictionary<string, Border> _sessionRunningBadges = new(StringComparer.Ordinal);
     // 会话待确认徽标：sessionId → 圆点控件
@@ -262,6 +265,14 @@ public partial class Sidebar : UserControl
         _workspaceManager = services.GetRequiredService<IWorkspaceManager>();
         _sessionService = services.GetRequiredService<IChatSessionService>();
         EnsurePluginHost(services);
+
+        // 首条消息的自动命名完成时重建会话列表，标题立即反映到侧边栏
+        if (_titleNotifier is null && services.GetService<SessionTitleNotifier>() is { } notifier)
+        {
+            _titleNotifier = notifier;
+            notifier.Changed += OnSessionTitleChanged;
+        }
+
         LoadWorkspaces();
         LoadLlmWikiItems();
     }
@@ -275,6 +286,15 @@ public partial class Sidebar : UserControl
         var trimmed = rootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var name = Path.GetFileName(trimmed);
         return string.IsNullOrWhiteSpace(name) ? "未命名工作区" : name;
+    }
+
+    /// <summary>
+    /// 自动命名完成：标题只影响列表展示，重建一次工作区/会话树即可。
+    /// </summary>
+    private void OnSessionTitleChanged(SessionTitleChanged change)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) LoadWorkspaces();
+        else Dispatcher.UIThread.Post(LoadWorkspaces);
     }
 
     /// <summary>

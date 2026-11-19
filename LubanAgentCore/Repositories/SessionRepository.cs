@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// Session 仓储
 /// </summary>
-public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQuery
+public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQuery, IAutoTitleStore
 {
     /// <summary>
     /// 创建 Session 仓储实例。
@@ -103,6 +103,41 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     public async Task UpdateTitleAsync(string sessionId, string title, string userId)
     {
         await UpdateAsync(s => new DbSession { Title = title }, s => s.SessionId == sessionId && s.UserId == userId);
+    }
+
+    /// <summary>
+    /// 取会话当前的标题与消息数（限所属用户），供自动命名判定「是否是首条消息 + 是否仍是默认标题」。
+    /// </summary>
+    public async Task<(string? Title, int MessageCount)?> GetAutoTitleStateAsync(string sessionId, string userId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return null;
+
+        var session = await GetFirstAsync(
+            s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+        return session is null ? null : (session.Title, session.MessageCount);
+    }
+
+    /// <summary>
+    /// 仅当标题仍是默认值时覆盖标题（限所属用户）。
+    /// </summary>
+    /// <remarks>
+    /// 条件写在 UPDATE 的 WHERE 里而不是先查后写：生成主题耗时期间用户可能已经手动改名，
+    /// 条件更新保证自动命名永远不会盖掉用户起的名字。
+    /// </remarks>
+    /// <returns>是否命中并更新了该会话。</returns>
+    public async Task<bool> UpdateTitleIfDefaultAsync(
+        string sessionId, string userId, IReadOnlyList<string> defaultTitles, string title)
+    {
+        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrWhiteSpace(title) || defaultTitles.Count == 0)
+        {
+            return false;
+        }
+
+        var defaults = defaultTitles.ToList();
+        return await UpdateAsync(
+            s => new DbSession { Title = title },
+            s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete
+                 && s.Title != null && defaults.Contains(s.Title!));
     }
 
     /// <summary>

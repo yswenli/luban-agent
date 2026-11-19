@@ -59,4 +59,7 @@ public static class AgentSseEventNames
 
     /// <summary>续流快照；载荷即 <see cref="Hosting.AgentRunSnapshot"/>（仅在接上已进行中的回合时下发一次）。</summary>
     public const string RunSnapshot = "run.snapshot";
+
+    /// <summary>会话标题变更（自动命名完成）；载荷 <c>{ sessionId, title }</c>。</summary>
+    public const string SessionTitle = "session.title";
 }

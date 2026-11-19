@@ -205,6 +205,22 @@ public static class WebAgentService
                     progressSink.Progress += OnProgress;
                 }
 
+                // 自动命名在首条消息进入回合后异步完成：完成时本轮流仍开着就补一帧，
+                // 流已收尾时 Publish 自动丢弃（前端会在回合结束刷新会话列表时带出）
+                var titleNotifier = handle.Host.Services.GetService<SessionTitleNotifier>();
+                void OnTitleChanged(SessionTitleChanged change)
+                {
+                    if (!string.Equals(change.SessionId, resolution.SessionId, StringComparison.Ordinal)) return;
+
+                    handle.Publish(AgentSseFrame.Create(
+                        AgentSseEventNames.SessionTitle,
+                        new { sessionId = change.SessionId, title = change.Title }));
+                }
+                if (titleNotifier is not null)
+                {
+                    titleNotifier.Changed += OnTitleChanged;
+                }
+
                 var request = new AgentRunRequest
                 {
                     Input = prompt,
@@ -234,6 +250,11 @@ public static class WebAgentService
                     if (progressSink is not null)
                     {
                         progressSink.Progress -= OnProgress;
+                    }
+
+                    if (titleNotifier is not null)
+                    {
+                        titleNotifier.Changed -= OnTitleChanged;
                     }
                 }
             }).ConfigureAwait(false);
@@ -641,6 +662,42 @@ public static class WebAgentService
         }
 
         return WebApi.OkJson(new AgentOptimizeResponse(text));
+    });
+
+    /// <summary>
+    /// 把一段对话内容概括成不超过 15 字的会话主题。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="AgentAutoSessionNameRequest"/> JSON。</param>
+    /// <returns>主题（标题）。</returns>
+    /// <remarks>
+    /// 与 <see cref="OptimizeAsync"/> 同口径：一次性非流式调用，不读会话历史、不装配工具、关闭思考。
+    /// 自动命名本身在回合入口后台触发，本接口供远程模式与调试复用。
+    /// </remarks>
+    public static Task<ActionResult> AutoSessionNameAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<AgentAutoSessionNameRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.Text))
+        {
+            return WebApi.FailJson(400, "待概括的内容不能为空");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        if (scope.GetService(typeof(ISessionAutoNamer)) is not ISessionAutoNamer namer)
+        {
+            return WebApi.FailJson(503, AgentDisabled);
+        }
+
+        var title = await namer
+            .AutoSessionNameAsync(input.SessionId, input.Text, WebApi.Runtime.ShutdownToken)
+            .ConfigureAwait(false);
+
+        return string.IsNullOrWhiteSpace(title)
+            ? WebApi.FailJson(502, "主题生成失败，请稍后重试")
+            : WebApi.OkJson(new AgentAutoSessionNameResponse(title));
     });
 
     private static List<string> NormalizeAttachments(IReadOnlyList<string>? sources)

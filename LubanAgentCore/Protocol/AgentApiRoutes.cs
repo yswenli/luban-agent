@@ -41,6 +41,9 @@ public static class AgentApiRoutes
 
         /// <summary>把输入框内容改写成需求表述（不装配工具、不读历史）。</summary>
         public const string Optimize = "/agent/optimize";
+
+        /// <summary>把一段对话内容概括成不超过 15 字的会话主题（不装配工具、不读历史）。</summary>
+        public const string AutoSessionName = "/agent/autoSessionName";
     }
 
     /// <summary>会话相关接口。</summary>

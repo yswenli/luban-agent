@@ -41,6 +41,9 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// <summary>编排进度出口；本机由框架 Publish，远程由 HttpAgentHost 收到帧后 Raise。</summary>
     private readonly HostOrchestrationProgressSink? _orchestrationSink;
 
+    /// <summary>自动命名完成后的标题变更广播（本机触发；远程模式标题随列表刷新带出）。</summary>
+    private readonly SessionTitleNotifier? _titleNotifier;
+
     // 由 DI 解析并缓存的页脚引用（会话切换/初始化时刷新状态栏）
     private FooterView? _footerView;
     private FooterDataProvider? _footerProvider;
@@ -212,6 +215,13 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         // 运行态登记：/session -clear 等全局命令据此刻判断是否有会话正在进行中
         _runRegistry = services.GetService<SessionRunRegistry>();
 
+        // 自动命名只在「标题仍是默认值 + 首条消息」时触发一次，完成后由核心层广播标题变更
+        _titleNotifier = services.GetService<SessionTitleNotifier>();
+        if (_titleNotifier is not null)
+        {
+            _titleNotifier.Changed += OnSessionTitleChanged;
+        }
+
         _configManager.SelectedModelChanged += OnSelectedModelChanged;
     }
 
@@ -224,6 +234,32 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
             return;
         }
         _agentHost.Reset(_sessionId);
+    }
+
+    /// <summary>
+    /// 自动命名完成：只刷新本会话的标题（栏目标题、状态栏会话名与页脚）。
+    /// </summary>
+    private void OnSessionTitleChanged(SessionTitleChanged change)
+    {
+        if (!string.Equals(change.SessionId, _sessionId, StringComparison.Ordinal)) return;
+
+        try
+        {
+            _dispatcher.Invoke(() =>
+            {
+                SessionTitle = change.Title;
+                _titleService.SetSessionTitle(change.Title);
+                if (_footerProvider is not null)
+                {
+                    _footerProvider.SessionTitle = change.Title;
+                }
+                _footerView?.SetNeedsDraw();
+            });
+        }
+        catch
+        {
+            // 界面已关闭时刷新标题失败可忽略：不影响会话数据
+        }
     }
 
     /// <summary>

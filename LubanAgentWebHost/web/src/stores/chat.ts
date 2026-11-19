@@ -315,6 +315,11 @@ export function createChat(sessionId: string) {
         return false;
       }
 
+      case 'session.title':
+        // 自动命名完成：重新拉一次会话列表，顶栏标签与首页列表一起更新
+        void refreshSessions();
+        return false;
+
       case 'error':
         pushFrameNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
         return false;

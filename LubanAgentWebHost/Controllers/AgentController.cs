@@ -59,6 +59,12 @@ public sealed class AgentController : Controller
     [HttpPost]
     public Task<ActionResult> Optimize(string payload) => WebAgentService.OptimizeAsync(payload);
 
+    /// <summary>把一段对话内容概括成不超过 15 字的会话主题（不装配工具、不读会话历史）。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentAutoSessionNameRequest"/> JSON。</param>
+    /// <returns>主题（标题）。</returns>
+    [HttpPost]
+    public Task<ActionResult> AutoSessionName(string payload) => WebAgentService.AutoSessionNameAsync(payload);
+
     /// <summary>丢弃该会话服务端缓存的 Agent（配置变更后按最新配置重建）。</summary>
     /// <param name="payload">包装后的 <see cref="AgentResetRequest"/> JSON；<c>payload</c> 可为空。</param>
     /// <returns>固定成功。</returns>
