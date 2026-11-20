@@ -25,6 +25,20 @@ public sealed class ModelController : Controller
     [HttpGet]
     public Task<ActionResult> List(string? providerId) => WebModelService.ListAsync(providerId);
 
+    /// <summary>读取模型能力档案（档位与上下文窗口）。</summary>
+    /// <param name="providerId">供应商标识。</param>
+    /// <param name="modelId">模型标识。</param>
+    /// <returns>档案与派生档位。</returns>
+    [HttpGet]
+    public Task<ActionResult> Profile(string? providerId, string? modelId)
+        => WebModelService.GetProfileAsync(providerId, modelId);
+
+    /// <summary>写入模型能力档案；<c>reset=true</c> 时删除用户登记，恢复内置默认。</summary>
+    /// <param name="payload">包装后的 <see cref="ModelProfileSaveRequest"/> JSON。</param>
+    /// <returns>写入后的档案。</returns>
+    [HttpPost]
+    public Task<ActionResult> SaveProfile(string payload) => WebModelService.SaveProfileAsync(payload);
+
     /// <summary>新增自定义模型。</summary>
     /// <param name="payload">包装后的 <see cref="ModelAddRequest"/> JSON。</param>
     /// <returns>新增后的模型条目。</returns>

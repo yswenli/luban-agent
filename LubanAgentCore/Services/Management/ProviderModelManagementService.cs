@@ -137,6 +137,69 @@ public sealed class ProviderModelManagementService : IProviderModelManagementSer
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public Task<ModelProfile?> GetModelProfileAsync(string providerId, string modelId, CancellationToken ct = default)
+        => Task.FromResult(_config.GetModelProfile(BuildModelKey(providerId, modelId)));
+
+    /// <inheritdoc />
+    public Task SetModelProfileAsync(
+        string providerId,
+        string modelId,
+        ModelProfile? profile,
+        CancellationToken ct = default)
+    {
+        _config.SetModelProfile(BuildModelKey(providerId, modelId), Sanitize(profile));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>拼 <c>provider:model</c> 键；任一为空时返回空串（由配置层拒绝写入）。</summary>
+    private static string BuildModelKey(string? providerId, string? modelId)
+        => string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId)
+            ? string.Empty
+            : $"{providerId.Trim()}:{modelId.Trim()}";
+
+    /// <summary>
+    /// 收敛档案：档位只留标准链路可发的枚举名（None/Low/Medium/High/ExtraHigh），
+    /// 窗口非正数一律视为未知；全空的用户档案按「删除登记」处理。
+    /// </summary>
+    private static ModelProfile? Sanitize(ModelProfile? profile)
+    {
+        if (profile is null) return null;
+
+        var reasoning = profile.Reasoning?
+            .Select(item => item?.Trim())
+            .Where(item => !string.IsNullOrEmpty(item))
+            .Select(item => Enum.TryParse<ReasoningEffort>(item!, true, out var effort) ? effort : (ReasoningEffort?)null)
+            .Where(effort => effort is not null && IsSendable(effort.Value))
+            .Select(effort => effort!.Value.ToString())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            // 按枚举值排序，落盘结果不受用户勾选顺序影响
+            .OrderBy(effort => Enum.Parse<ReasoningEffort>(effort))
+            .ToList();
+
+        if (profile.Reasoning is { Count: 0 })
+        {
+            // 明确登记「不支持」：保留空集合，不能退化成未知
+            reasoning = [];
+        }
+        else if (reasoning is { Count: 0 })
+        {
+            // 给了档位但全部非法：按未知处理，不把「用户填错」解释成「模型不支持」
+            reasoning = null;
+        }
+
+        var window = profile.ContextWindow is > 0 ? profile.ContextWindow : null;
+
+        return reasoning is null && window is null
+            ? null
+            : new ModelProfile { Reasoning = reasoning, ContextWindow = window };
+    }
+
+    /// <summary>标准 <c>reasoning_effort</c> 链路能发出的档位。</summary>
+    private static bool IsSendable(ReasoningEffort effort)
+        => effort is ReasoningEffort.None or ReasoningEffort.Low or ReasoningEffort.Medium
+            or ReasoningEffort.High or ReasoningEffort.ExtraHigh;
+
     private List<string> GetAllModels(string providerId)
         => _providers.GetAllModels(providerId, _config.GetProvider(providerId)?.CustomModels);
 

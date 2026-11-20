@@ -54,6 +54,7 @@ public static class DatabaseInitializer
         EnsureThinkingColumn();
         EnsureWorkspaceIdColumns();
         EnsureSessionModelColumns();
+        EnsureSessionGenerationColumns();
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureAttachmentsColumn();
         EnsureA2ATaskTable();
@@ -264,6 +265,28 @@ public static class DatabaseInitializer
         {
             new SessionRepository().Context.Ado
                 .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN Provider TEXT");
+        }
+        catch { /* 列已存在，忽略 */ }
+    }
+
+    /// <summary>
+    /// 兜底迁移：ai_session 新增 ReasoningEffort / ContextTier 列（会话单独选定的生成参数）
+    /// </summary>
+    private static void EnsureSessionGenerationColumns()
+    {
+        // 列名必须是 ORM 实际落库名：DbSettings.EnableUnderLine=true，DbSession.ReasoningEffort
+        // 落库为 reasoning_effort。用 PascalCase 会建出一条 ORM 永远不会读的重复列。
+        try
+        {
+            new SessionRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN reasoning_effort TEXT");
+        }
+        catch { /* 列已存在，忽略 */ }
+
+        try
+        {
+            new SessionRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN context_tier INTEGER");
         }
         catch { /* 列已存在，忽略 */ }
     }

@@ -23,4 +23,11 @@ public sealed class FileController : Controller
     /// <returns>纯文本内容，或浏览器可直接展示的提示页。</returns>
     [HttpGet]
     public Task<ActionResult> Read(string? workspaceId, string? path) => WebFileService.ReadAsync(workspaceId, path);
+
+    /// <summary>列举工作区内某目录的直接子项（不递归，越界路径拒绝）。</summary>
+    /// <param name="workspaceId">工作区标识；空白时取当前工作区。</param>
+    /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
+    /// <returns>子目录与文件清单。</returns>
+    [HttpGet]
+    public Task<ActionResult> List(string? workspaceId, string? path) => WebFileService.ListAsync(workspaceId, path);
 }

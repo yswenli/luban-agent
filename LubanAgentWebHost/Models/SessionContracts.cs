@@ -35,3 +35,32 @@ public sealed record SessionSummaryDto(
 /// <param name="ProviderId">供应商标识。</param>
 /// <param name="ModelId">模型标识。</param>
 public sealed record SessionModelRequest(string? SessionId, string? ProviderId, string? ModelId);
+
+/// <summary>会话当前生效的生成参数（思考强度 / 上下文档位）。</summary>
+/// <param name="ReasoningEffort">生效的思考强度；null 表示跟随模型。</param>
+/// <param name="ContextTier">生效的上下文预算档位（token）；null 表示未知或未设。</param>
+/// <param name="ReasoningEfforts">该会话模型可选的思考档位（空串=跟随模型；空集合=不显示控件）。</param>
+/// <param name="ContextTiers">该会话模型可选的上下文档位（token；空表示不显示控件）。</param>
+/// <param name="ContextWindow">该会话模型上下文窗口。</param>
+public sealed record SessionGenerationSettingsDto(
+    string? ReasoningEffort,
+    int? ContextTier,
+    IReadOnlyList<string> ReasoningEfforts,
+    IReadOnlyList<int> ContextTiers,
+    int? ContextWindow);
+
+/// <summary>写入会话生成参数（整体替换：字段缺省即清除该覆盖）。</summary>
+/// <param name="SessionId">会话标识；空表示写全局默认。</param>
+/// <param name="ReasoningEffort">思考强度枚举名；null 表示清除覆盖。</param>
+/// <param name="ContextTier">上下文预算档位（token）；null 表示清除覆盖。</param>
+public sealed record SessionGenerationSettingsRequest
+{
+    /// <summary>会话标识；空表示写全局默认。</summary>
+    public string? SessionId { get; init; }
+
+    /// <summary>思考强度枚举名；null 表示清除覆盖。</summary>
+    public string? ReasoningEffort { get; init; }
+
+    /// <summary>上下文预算档位（token）；null 表示清除覆盖。</summary>
+    public int? ContextTier { get; init; }
+}

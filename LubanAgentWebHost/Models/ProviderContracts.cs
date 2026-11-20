@@ -118,6 +118,40 @@ public sealed record ModelAddRequest
     public string ModelId { get; init; } = string.Empty;
 }
 
+/// <summary>模型能力档案（档位 + 上下文窗口）。</summary>
+/// <param name="ProviderId">供应商标识。</param>
+/// <param name="ModelId">模型标识。</param>
+/// <param name="ReasoningEfforts">可发档位；<c>null</c> 表示未知，空数组表示明确不支持。</param>
+/// <param name="ContextWindow">上下文窗口（token）；<c>null</c> 表示未知。</param>
+/// <param name="ContextTiers">按窗口派生的上下文预算档位。</param>
+/// <param name="HasOverride">用户是否手工登记过（决定「恢复内置默认」是否可用）。</param>
+public sealed record ModelProfileDto(
+    string ProviderId,
+    string ModelId,
+    IReadOnlyList<string>? ReasoningEfforts,
+    int? ContextWindow,
+    IReadOnlyList<int> ContextTiers,
+    bool HasOverride);
+
+/// <summary>写入模型能力档案。</summary>
+public sealed record ModelProfileSaveRequest
+{
+    /// <summary>供应商标识。</summary>
+    public string ProviderId { get; init; } = string.Empty;
+
+    /// <summary>模型标识。</summary>
+    public string ModelId { get; init; } = string.Empty;
+
+    /// <summary>可发档位；<c>null</c> 表示未知，空数组表示明确不支持。</summary>
+    public IReadOnlyList<string>? ReasoningEfforts { get; init; }
+
+    /// <summary>上下文窗口（token）；<c>null</c> 表示未知。</summary>
+    public int? ContextWindow { get; init; }
+
+    /// <summary>为 <c>true</c> 时删除用户登记，恢复内置默认。</summary>
+    public bool Reset { get; init; }
+}
+
 /// <summary>重命名模型。</summary>
 public sealed record ModelRenameRequest
 {

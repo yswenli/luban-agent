@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 
 import { get, post } from '../lib/api';
-import type { Bootstrap, SessionSummary, WebCommand, Workspace } from '../lib/types';
+import type { Bootstrap, SessionGenerationSettings, SessionSummary, WebCommand, Workspace } from '../lib/types';
 import { forgetSession, pruneSessions } from './tabs';
 
 export interface ToastItem {
@@ -35,9 +35,16 @@ const [searchFocusToken, setSearchFocusToken] = createSignal(0);
 
 const [selection, setSelection] = createSignal<{ providerId?: string | null; modelId?: string | null } | null>(null);
 
-/** 每轮下发参数：权限模式默认 default，推理强度空串表示「跟随模型」。 */
+/** 每轮下发参数：权限模式默认 default，思考强度由会话生效值决定。 */
 const [permissionModeKey, setPermissionModeKey] = createSignal('default');
-const [reasoningEffort, setReasoningEffort] = createSignal('');
+
+/**
+ * 各会话生效的思考档位与上下文预算档位（键为会话标识）。
+ *
+ * 值来自服务端 `agent/sessionSettings`，含该会话模型的可选档位与窗口；
+ * 不在表里表示尚未拉取，调用方按「跟随模型」处理。
+ */
+const [generationSettings, setGenerationSettings] = createSignal<Record<string, SessionGenerationSettings>>({});
 
 const [toasts, setToasts] = createSignal<ToastItem[]>([]);
 let toastSeed = 0;
@@ -56,8 +63,7 @@ export {
   selection,
   permissionModeKey,
   setPermissionModeKey,
-  reasoningEffort,
-  setReasoningEffort,
+  generationSettings,
   toasts,
 };
 
@@ -328,7 +334,52 @@ export async function selectSessionModel(sessionId: string, providerId: string, 
     setSessions((list) =>
       list.map((item) => (item.sessionId === sessionId ? { ...item, provider: providerId, modelName: modelId } : item)),
     );
+    // 换模型后可选档位与窗口都可能变，重新拉一次生效值；调用方据此判断是否回落
+    await loadSessionGeneration(sessionId);
     showToast('已切换本会话模型', 'success');
+  } catch (error) {
+    showToast((error as Error).message, 'error');
+  }
+}
+
+/**
+ * 取某会话已拉取的生成参数；尚未拉取时为 `null`（调用方按「跟随模型」处理）。
+ */
+export function sessionGeneration(sessionId: string): SessionGenerationSettings | null {
+  return generationSettings()[sessionId] ?? null;
+}
+
+/**
+ * 拉取会话生效的思考档位与上下文预算档位。
+ *
+ * 读失败不改动既有值：设置不是对话的前提，报错只影响控件展示。
+ */
+export async function loadSessionGeneration(sessionId: string): Promise<void> {
+  try {
+    const data = await get<SessionGenerationSettings>('/agent/sessionSettings', { sessionId });
+    setGenerationSettings((map) => ({ ...map, [sessionId]: data }));
+  } catch {
+    /* 拉不到就保持「跟随模型」，不打断对话 */
+  }
+}
+
+/**
+ * 写入会话生效的思考档位与上下文预算档位，成功后就地刷新生效值。
+ *
+ * 两个字段按整体替换提交：`''` / `null` 表示清除覆盖、回到跟随模型。
+ */
+export async function saveSessionGeneration(
+  sessionId: string,
+  reasoningEffort: string,
+  contextTier: number | null,
+): Promise<void> {
+  try {
+    await post('/agent/saveSessionSettings', {
+      sessionId,
+      reasoningEffort: reasoningEffort || null,
+      contextTier,
+    });
+    await loadSessionGeneration(sessionId);
   } catch (error) {
     showToast((error as Error).message, 'error');
   }

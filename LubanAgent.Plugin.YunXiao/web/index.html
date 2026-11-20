@@ -49,13 +49,13 @@
           <div class="field">
             <label class="field-label" for="org-address">组织访问地址</label>
             <input class="field-input" id="org-address" type="text" spellcheck="false"
-                   placeholder="https://devops.aliyun.com/orgs/tjcEs" />
+                   placeholder="https://devops.aliyun.com/orgs/demo-org" />
             <p class="field-help">末段自动解析为组织 ID，可手动修改。</p>
           </div>
 
           <div class="field">
             <label class="field-label" for="org-id">组织 ID</label>
-            <input class="field-input" id="org-id" type="text" spellcheck="false" placeholder="tjcEs" />
+            <input class="field-input" id="org-id" type="text" spellcheck="false" placeholder="demo-org" />
           </div>
 
           <div class="field">
@@ -102,7 +102,7 @@
               <div class="blk">
                 <label class="blk-label" for="init-code">新项目代号</label>
                 <input class="field-input" id="init-code" type="text" spellcheck="false"
-                       placeholder="如 RGMS" autocomplete="off" />
+                       placeholder="如 NEWX" autocomplete="off" />
                 <p class="field-help">代号替换母版里的名字：库名、三个子目录、流水线代号段；每勾选一个母版库即复制出一个新库。</p>
               </div>
 
@@ -121,7 +121,36 @@
                 </div>
                 <div class="field">
                   <label class="field-label" for="init-workspace">工作区目录</label>
-                  <select class="field-input" id="init-workspace"></select>
+                  <!-- S2d §13.1：可搜索组合框（hidden 值承载绑定 workspaceId，原下拉值语义） -->
+                  <input type="hidden" id="init-workspace" value="" />
+                  <div class="ws-combo" id="ws-combo">
+                    <button class="combo-trigger" id="ws-trigger" type="button">
+                      <span class="combo-trigger-v" id="ws-trigger-text">无可用工作区</span>
+                      <span class="combo-trigger-caret">▾</span>
+                    </button>
+                    <div class="combo-pop" id="ws-pop" hidden>
+                      <input class="field-input combo-search" id="ws-search" type="search"
+                             placeholder="搜索路径或名称（子串，不分大小写）" autocomplete="off" />
+                      <div class="combo-list" id="ws-list"></div>
+                      <button class="btn combo-browse" id="ws-browse-btn" type="button">浏览本机目录…</button>
+                      <div class="dir-browser" id="ws-dir-browser" hidden>
+                        <div class="dir-crumb" id="ws-dir-crumb"></div>
+                        <div class="dir-list" id="ws-dir-list"></div>
+                        <div class="dir-actions">
+                          <button class="btn" id="ws-dir-choose" type="button">选此目录</button>
+                          <button class="btn" id="ws-dir-close" type="button">返回列表</button>
+                        </div>
+                        <div class="result er-result" id="ws-dir-error" hidden></div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 默认收起：只有在下拉列表里选了「新建工作区」（或浏览目录选此目录）才展开 -->
+                  <div class="ws-new" id="ws-new" hidden>
+                    <input class="field-input" id="ws-new-path" type="text" spellcheck="false"
+                           placeholder="输入新工作区绝对路径" autocomplete="off" />
+                    <button class="btn" id="btn-ws-create" type="button" disabled>新建并使用</button>
+                  </div>
+                  <div class="result er-result" id="ws-new-result" hidden></div>
                 </div>
                 <div class="field">
                   <label class="field-label" for="init-branch">初始化分支</label>
@@ -140,7 +169,7 @@
                 <div class="blk-label">预检结论（零副作用）</div>
                 <div class="kv">
                   <span class="kv-k">新库名</span><span class="kv-v" id="plan-repo">—</span>
-                  <span class="kv-k">将改名目录</span><span class="kv-v clamp3" id="plan-dirs">—</span>
+                  <span class="kv-k" id="plan-dirs-k">将改名目录</span><span class="kv-v clamp3" id="plan-dirs">—</span>
                   <span class="kv-k">将复制流水线</span><span class="kv-v clamp3" id="plan-pipes">—</span>
                   <span class="kv-k">目标分支</span><span class="kv-v" id="plan-branch">—</span>
                   <span class="kv-k">冲突</span><span class="kv-v clamp3" id="plan-conflicts">—</span>
@@ -151,6 +180,7 @@
                   <button class="btn btn-primary" id="btn-exec" type="button">确认执行</button>
                 </div>
                 <p class="field-help" id="exec-gate"></p>
+                <p class="result result-ok" id="init-done" hidden></p>
               </div>
 
               <div class="blk" id="task-panel" hidden>
@@ -190,6 +220,89 @@
           </section>
         </div>
       </section>
+      <!-- 屏 4：PRD 拆分（同步 → 预览 → 落库） -->
+      <section class="screen" id="screen-prd" hidden>
+        <div class="split split-init">
+          <aside class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第一步 · 选择 PRD 来源</div>
+              <span class="chip" id="prd-project-tag">—</span>
+            </div>
+            <div class="pane-body">
+              <div class="blk">
+                <label class="blk-label" for="prd-source">来源</label>
+                <select class="field-input" id="prd-source">
+                  <option value="sync">云效需求（按迭代同步）</option>
+                  <option value="local">本地上传 / 粘贴正文</option>
+                  <option value="workspace" disabled>宿主工作区文档（待接线）</option>
+                  <option value="wecom" disabled>企业微信云盘（待接线）</option>
+                </select>
+                <p class="field-help">云效需求可叠加本地文档一起拆分。</p>
+              </div>
+
+              <div class="blk">
+                <label class="blk-label" for="prd-sprint">迭代过滤（可选）</label>
+                <input class="field-input" id="prd-sprint" type="text" spellcheck="false"
+                       placeholder="迭代 ID；留空同步项目全部需求" />
+              </div>
+
+              <div class="blk" id="prd-local-blk" hidden>
+                <div class="blk-label">本地 PRD</div>
+                <input class="field-input" id="prd-file" type="file" accept=".md,.txt,.json,.markdown" />
+                <textarea class="field-input prd-textarea" id="prd-text" spellcheck="false"
+                          placeholder="或直接粘贴 PRD 正文（Markdown / 纯文本）"></textarea>
+              </div>
+
+              <div class="blk">
+                <div class="row-btn">
+                  <button class="btn" id="btn-prd-sync" type="button">同步 / 读取</button>
+                  <button class="btn btn-primary" id="btn-prd-preview" type="button">生成拆分预览</button>
+                </div>
+                <div class="result" id="prd-sync-result" hidden></div>
+              </div>
+
+              <div class="blk" id="prd-sync-panel" hidden>
+                <div class="blk-label">同步摘要</div>
+                <div class="kv">
+                  <span class="kv-k">状态</span><span class="kv-v" id="prd-status">—</span>
+                  <span class="kv-k">需求条数</span><span class="kv-v" id="prd-req-count">—</span>
+                  <span class="kv-k">附件份数</span><span class="kv-v" id="prd-att-count">—</span>
+                  <span class="kv-k">告警</span><span class="kv-v clamp3" id="prd-warnings">—</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第二步 · 拆分预览与提交</div>
+              <span class="chip" id="prd-plan-tag">未生成</span>
+            </div>
+            <div class="pane-body">
+              <div class="result" id="prd-empty">先生成拆分预览：需求 / 任务 / 测试用例 / 测试计划会显示在这里。</div>
+
+              <div class="blk" id="prd-plan-panel" hidden>
+                <div class="blk-label">拆分计划</div>
+                <div class="prd-tree" id="prd-plan-tree"></div>
+                <div class="row-btn">
+                  <button class="btn btn-primary" id="btn-prd-submit" type="button">提交到云效</button>
+                </div>
+                <p class="field-help">逐项独立落库；失败项重试时已成功项自动跳过。</p>
+              </div>
+
+              <div class="blk" id="prd-receipt-panel" hidden>
+                <div class="blk-label">提交回执</div>
+                <div class="kv">
+                  <span class="kv-k">成功</span><span class="kv-v" id="prd-ok-count">—</span>
+                  <span class="kv-k">失败</span><span class="kv-v" id="prd-fail-count">—</span>
+                  <span class="kv-k">迭代</span><span class="kv-v" id="prd-sprint-out">—</span>
+                </div>
+                <div class="prd-receipts" id="prd-receipts"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </main>
 
     <footer class="actionbar">
@@ -206,6 +319,10 @@
         <a class="btn-link" id="link-projects" href="#/projects">返回项目列表</a>
         <button class="btn" id="btn-reload-manifests" type="button">重新读取清单</button>
       </div>
+      <div class="actions" id="actions-prd" hidden>
+        <a class="btn-link" href="#/projects">返回项目列表</a>
+        <button class="btn" id="btn-prd-reset" type="button">清空结果</button>
+      </div>
     </footer>
   </div>
 
@@ -215,5 +332,6 @@
   <script src="assets/connect.js"></script>
   <script src="assets/projects.js"></script>
   <script src="assets/init.js"></script>
+  <script src="assets/prd.js"></script>
 </body>
 </html>

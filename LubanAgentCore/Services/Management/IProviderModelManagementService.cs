@@ -59,4 +59,14 @@ public interface IProviderModelManagementService
 
     /// <summary>删除 Provider 的自定义模型（被选中时同时清除选择）。</summary>
     Task DeleteModelAsync(string providerId, string modelId, CancellationToken ct = default);
+
+    /// <summary>读取模型能力档案（用户登记优先，其次内置表；都没有返回 <c>null</c>）。</summary>
+    /// <param name="providerId">供应商标识。</param>
+    /// <param name="modelId">模型标识。</param>
+    /// <param name="ct">取消令牌。</param>
+    Task<ModelProfile?> GetModelProfileAsync(string providerId, string modelId, CancellationToken ct = default);
+
+    /// <summary>写入模型能力档案；<paramref name="profile"/> 为 <c>null</c> 时删除用户登记（恢复内置默认）。</summary>
+    /// <remarks>档位会先过滤到标准链路可发的枚举名，非法项直接丢弃，避免脏配置把请求打成 400。</remarks>
+    Task SetModelProfileAsync(string providerId, string modelId, ModelProfile? profile, CancellationToken ct = default);
 }

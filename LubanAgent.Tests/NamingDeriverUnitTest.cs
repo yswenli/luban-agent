@@ -242,4 +242,170 @@ public class NamingDeriverUnitTest
         Assert.AreEqual("newx-Mixed", plan.RepoName);
         Assert.AreEqual("tplx-Admin", plan.Dirs[0].From);
     }
+
+    // ── S2c §12.3：后端派生名增 (端口) 后缀 ─────────────────────────────
+
+    [TestMethod]
+    public void Derive_BackendPipeline_GainsPortSuffix()
+    {
+        var plan = NamingDeriver.Derive("TPLX", "NEWX",
+        [
+            "ACME_DEV_Deploy_TPLX-Mobile",
+            "ACME_DEV_Deploy_TPLX-Service",
+        ], backendPort: 7001);
+
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", plan.Pipelines[0].To);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service(7001)", plan.Pipelines[1].To);
+    }
+
+    [TestMethod]
+    public void Derive_BackendPortSuffix_ReplacesTemplatePortSuffix()
+    {
+        // 模板真名自带 (端口) 后缀 → 派生名按端口盒值重写端口段（夹具端口一律合成值 7001/9000）
+        var plan = NamingDeriver.Derive("TPLX", "NEWX",
+        [
+            "ACME_DEV_Deploy_TPLX-Service(7001)",
+        ], backendPort: 9000);
+
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service(9000)", plan.Pipelines[0].To);
+    }
+
+    [TestMethod]
+    public void Derive_BackendWithoutPortParam_OmitsPortSuffix()
+    {
+        var plan = NamingDeriver.Derive("TPLX", "NEWX",
+        [
+            "ACME_DEV_Deploy_TPLX-Service(7001)",
+        ]);
+
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service", plan.Pipelines[0].To);
+    }
+
+    // ── S2c §12.3：ParsePipelinePrefix 对 (端口) 后缀免疫 ───────────────
+
+    [TestMethod]
+    public void ParsePipelinePrefix_PortSuffixImmune_ReturnsPrefixBeforeMarker()
+    {
+        Assert.AreEqual("ACME", NamingDeriver.ParsePipelinePrefix("ACME_DEV_Deploy_TPLX-Service(7001)"));
+        Assert.AreEqual("ACME", NamingDeriver.ParsePipelinePrefix("ACME_DEV_Deploy_DEMO-Mobile"));
+    }
+
+    // ── S2c §12.3：StripPortSuffix / ParsePortSuffix ─────────────────────
+
+    [TestMethod]
+    public void StripPortSuffix_RemovesTrailingParenPort()
+    {
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service", NamingDeriver.StripPortSuffix("ACME_DEV_Deploy_NEWX-Service(7001)"));
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service", NamingDeriver.StripPortSuffix("ACME_DEV_Deploy_NEWX-Service(9000)"));
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", NamingDeriver.StripPortSuffix("ACME_DEV_Deploy_NEWX-Mobile"));
+    }
+
+    [TestMethod]
+    public void ParsePortSuffix_ParsesTrailingNumericPort()
+    {
+        Assert.AreEqual(7001, NamingDeriver.ParsePortSuffix("ACME_DEV_Deploy_NEWX-Service(7001)"));
+        Assert.AreEqual(9000, NamingDeriver.ParsePortSuffix("ACME_DEV_Deploy_NEWX-Service(9000)"));
+        Assert.IsNull(NamingDeriver.ParsePortSuffix("ACME_DEV_Deploy_NEWX-Service"));
+        Assert.IsNull(NamingDeriver.ParsePortSuffix("ACME_DEV_Deploy_NEWX-Service(abc)"));
+    }
+
+    // ── S2d §13.3：后缀段比对（前缀容忍 + 端口容忍，前缀不写死） ────────────
+
+    [TestMethod]
+    public void PipelineSuffixSegment_StripsPortAndPrefix_ReturnsMarkerTail()
+    {
+        // 前缀从名字自身解析（ACME / 空前缀取段后一致）；(端口) 先剥离
+        Assert.AreEqual("_DEV_Deploy_NEWX-Mobile", NamingDeriver.PipelineSuffixSegment("ACME_DEV_Deploy_NEWX-Mobile"));
+        Assert.AreEqual("_DEV_Deploy_NEWX-Mobile", NamingDeriver.PipelineSuffixSegment("_DEV_Deploy_NEWX-Mobile"));
+        Assert.AreEqual("_DEV_Deploy_NEWX-Service", NamingDeriver.PipelineSuffixSegment("ACME_DEV_Deploy_NEWX-Service(7001)"));
+        // 无 _DEV_Deploy_ 标记 → 退化为剥离端口后的全名
+        Assert.AreEqual("CUSTOM-PIPE", NamingDeriver.PipelineSuffixSegment("CUSTOM-PIPE"));
+    }
+
+    [TestMethod]
+    public void MatchesPipelineName_空前缀与ACME真名_互认()
+    {
+        // §13.3 根因回归钉子：表单空前缀 vs 真名 ACME_DEV_Deploy_* 双向互认
+        Assert.IsTrue(NamingDeriver.MatchesPipelineName("_DEV_Deploy_NEWX-Mobile", "ACME_DEV_Deploy_NEWX-Mobile"));
+        Assert.IsTrue(NamingDeriver.MatchesPipelineName("ACME_DEV_Deploy_NEWX-Mobile", "_DEV_Deploy_NEWX-Mobile"));
+    }
+
+    [TestMethod]
+    public void MatchesPipelineName_前缀容忍含端口差异组合_互认()
+    {
+        // (7001) vs (9000) + 前缀差异组合（S2c §12.3 端口容忍并入 §13.3 后缀段口径）
+        Assert.IsTrue(NamingDeriver.MatchesPipelineName("_DEV_Deploy_NEWX-Service(9000)", "ACME_DEV_Deploy_NEWX-Service(7001)"));
+        Assert.IsTrue(NamingDeriver.MatchesPipelineName("ACME_DEV_Deploy_NEWX-Service(7001)", "_DEV_Deploy_NEWX-Service(9000)"));
+    }
+
+    [TestMethod]
+    public void MatchesPipelineName_不同代号或端_不命中_空名不命中()
+    {
+        Assert.IsFalse(NamingDeriver.MatchesPipelineName("_DEV_Deploy_NEWX-Mobile", "ACME_DEV_Deploy_OTHX-Mobile"));
+        Assert.IsFalse(NamingDeriver.MatchesPipelineName("_DEV_Deploy_NEWX-Mobile", "ACME_DEV_Deploy_NEWX-Admin"));
+        Assert.IsFalse(NamingDeriver.MatchesPipelineName("", "ACME_DEV_Deploy_NEWX-Mobile"));
+        Assert.IsFalse(NamingDeriver.MatchesPipelineName("_DEV_Deploy_NEWX-Mobile", null));
+    }
+
+    // ── DerivePipelineName：单端派生（S2e §14 修复一：真名可空、永不前导下划线）──
+
+    [TestMethod]
+    public void DerivePipelineName_反查到真名_带真实前缀只换代号段()
+    {
+        // From = ACME 真名 → To 保留 ACME_ 真实前缀与端后缀，只换代号段（前缀不写死，取自真名自身）
+        Assert.AreEqual(
+            "ACME_DEV_Deploy_NEWX-Mobile",
+            NamingDeriver.DerivePipelineName("ACME_DEV_Deploy_TPLX-Mobile", "NEWX", "-Mobile"));
+        Assert.AreEqual(
+            "GRP_DEV_Deploy_NEWX-Admin",
+            NamingDeriver.DerivePipelineName("GRP_DEV_Deploy_TPLX-Admin", "NEWX", "-Admin"));
+    }
+
+    [TestMethod]
+    public void DerivePipelineName_反查不到_兜底无前导下划线()
+    {
+        // From = null → DEV_Deploy_{代号}-{端}（无前导下划线，根因：'' + "_DEV_Deploy_" 拼接产生 _DEV_Deploy_*）
+        Assert.AreEqual("DEV_Deploy_NEWX-Mobile", NamingDeriver.DerivePipelineName(null, "NEWX", "-Mobile"));
+        Assert.AreEqual("DEV_Deploy_NEWX-Admin", NamingDeriver.DerivePipelineName("", "NEWX", "-Admin"));
+        Assert.AreEqual("DEV_Deploy_NEWX-Service", NamingDeriver.DerivePipelineName("   ", "NEWX", "-Service"));
+    }
+
+    [TestMethod]
+    public void DerivePipelineName_空前缀真名或无标记段_同样兜底无前导下划线()
+    {
+        // 真名空前缀（_DEV_Deploy_*）与无标记段（CUSTOM-PIPE）都退化为兜底形态，不得带前导下划线
+        var fromEmptyPrefix = NamingDeriver.DerivePipelineName("_DEV_Deploy_TPLX-Mobile", "NEWX", "-Mobile");
+        Assert.AreEqual("DEV_Deploy_NEWX-Mobile", fromEmptyPrefix);
+        Assert.IsFalse(fromEmptyPrefix.StartsWith("_", StringComparison.Ordinal));
+
+        var fromNoMarker = NamingDeriver.DerivePipelineName("CUSTOM-PIPE", "NEWX", "-Mobile");
+        Assert.AreEqual("DEV_Deploy_NEWX-Mobile", fromNoMarker);
+        Assert.IsFalse(fromNoMarker.StartsWith("_", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void DerivePipelineName_后端端口后缀含port()
+    {
+        // -Service 后缀按 backendPort 重加 (端口)（S2c §12.3 同口径）；母版自带 (端口) 先剥离重派生
+        Assert.AreEqual(
+            "ACME_DEV_Deploy_NEWX-Service(9000)",
+            NamingDeriver.DerivePipelineName("ACME_DEV_Deploy_TPLX-Service(7001)", "NEWX", "-Service", 9000));
+        Assert.AreEqual(
+            "DEV_Deploy_NEWX-Service(7001)",
+            NamingDeriver.DerivePipelineName(null, "NEWX", "-Service(7001)", 7001));
+        // 非后端端不受端口参数影响；后端无端口参数不加端口段
+        Assert.AreEqual(
+            "ACME_DEV_Deploy_NEWX-Mobile",
+            NamingDeriver.DerivePipelineName("ACME_DEV_Deploy_TPLX-Mobile", "NEWX", "-Mobile", 9000));
+        Assert.AreEqual(
+            "ACME_DEV_Deploy_NEWX-Service",
+            NamingDeriver.DerivePipelineName("ACME_DEV_Deploy_TPLX-Service(7001)", "NEWX", "-Service"));
+    }
+
+    [TestMethod]
+    public void DerivePipelineName_非法代号_抛ArgumentException()
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => NamingDeriver.DerivePipelineName(null, "NEW-X", "-Mobile"));
+        Assert.ThrowsExactly<ArgumentException>(() => NamingDeriver.DerivePipelineName(null, "", "-Mobile"));
+    }
 }

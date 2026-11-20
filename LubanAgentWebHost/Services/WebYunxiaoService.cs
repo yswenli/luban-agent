@@ -116,6 +116,40 @@ public static class WebYunxiaoService
         return ToResult(result);
     });
 
+    /// <summary>
+    /// 流水线命名派生（GET /yunxiao/pipelinederive，S2e §14 修复一，零副作用轻量反查+派生）。
+    /// </summary>
+    /// <remarks>
+    /// 参数走查询串（风格照 <c>InitTask</c>）：<c>templateRepoName</c> / <c>newCode</c> 必填，
+    /// <c>ends</c> 可选（<see cref="InitEndConfig"/> 数组 JSON，缺省 = 三端全开；backend 的 port 参与派生）。
+    /// </remarks>
+    /// <returns><c>{ items: [{ end, from, to }] }</c>（from 反查不到为 null；to 永不带前导下划线）。</returns>
+    public static Task<ActionResult> PipelineDeriveAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        IReadOnlyList<InitEndConfig>? ends = null;
+        var endsJson = WebApi.Query("ends");
+        if (!string.IsNullOrWhiteSpace(endsJson))
+        {
+            if (!WebApi.TryReadPayload<List<InitEndConfig>>(endsJson, out var parsed) || parsed is null)
+            {
+                return WebApi.FailJson(400, "ends 不是合法的 JSON");
+            }
+
+            ends = parsed;
+        }
+
+        var input = new DeriveRequest(
+            WebApi.Query("templateRepoName") ?? string.Empty,
+            WebApi.Query("newCode") ?? string.Empty,
+            ends);
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<YunxiaoInitService>();
+
+        var result = await service.DerivePipelinesAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
     /// <summary>执行初始化（POST /yunxiao/initexec，秒回 taskId，后台逐库推进）。</summary>
     /// <param name="payload">包装后的 <see cref="ExecRequest"/> JSON。</param>
     /// <returns><c>{ taskId }</c>（400 参数 / 409 同代号互斥 / 503 会话不可用）。</returns>
@@ -197,6 +231,114 @@ public static class WebYunxiaoService
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.CommitPipelinesAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>
+    /// S2 收口 · 项目初始化完成登记：代码库任务 done 且三端流水线就绪后落盘，
+    /// 供 <c>/yunxiao/projects</c> 判定并标注「已初始化」。
+    /// </summary>
+    /// <param name="payload">POST 原始请求体（SAEA 字符串 payload，内层 JSON 为 <see cref="ProjectInitRequest"/>）。</param>
+    /// <returns>成功 <c>{ ok:true, data:true }</c>；缺键 400。</returns>
+    public static Task<ActionResult> ProjectInitAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<ProjectInitRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<YunxiaoInitService>();
+
+        var result = await service.SaveProjectInitAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>
+    /// S2 收口 · 反查项目初始化完成登记：已初始化项目再次进入初始化页时反显上次配置。
+    /// </summary>
+    /// <param name="payload">POST 原始请求体（内层 JSON 为 <see cref="ProjectInitGetRequest"/>）。</param>
+    /// <returns><c>{ ok:true, data:{...}|null }</c>；缺键 400。</returns>
+    public static Task<ActionResult> ProjectInitGetAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<ProjectInitGetRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<YunxiaoInitService>();
+
+        var result = await service.GetProjectInitAsync(input.ProjectId, input.Identifier, CancellationToken.None)
+            .ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // S3：PRD 同步 + 拆分落库（业务在 Services/Prd 下）
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>PRD 来源信息（GET /yunxiao/prdsource；查询串 <c>projectId</c>）。</summary>
+    /// <returns><c>{ projectId, projectName, testRepos, hasTestRepo, message? }</c>。</returns>
+    public static Task<ActionResult> PrdSourceAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<PrdSyncService>();
+
+        var result = await service
+            .GetSourceAsync(WebApi.Query("projectId"), CancellationToken.None)
+            .ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>PRD 同步（POST /yunxiao/prdsync）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSyncRequest"/> JSON。</param>
+    /// <returns>同步结果（<c>status=failed</c> 仍走成功信封，便于页面回退到本地上传）。</returns>
+    public static Task<ActionResult> PrdSyncAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<PrdSyncRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<PrdSyncService>();
+
+        var result = await service.SyncAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>拆分预览（POST /yunxiao/prdsplitpreview；一次性调用模型）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSplitRequest"/> JSON。</param>
+    /// <returns><c>{ plan, syncStatus, requirementCount, documentNames, warnings }</c>。</returns>
+    public static Task<ActionResult> PrdSplitPreviewAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<PrdSplitRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<PrdSplitService>();
+
+        var result = await service.PreviewAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>拆分提交（POST /yunxiao/prdsplitsubmit；逐项落库并用幂等账本跳过已成功项）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSubmitRequest"/> JSON。</param>
+    /// <returns><c>{ sprintId, receipts, okCount, failedCount, warnings }</c>。</returns>
+    public static Task<ActionResult> PrdSplitSubmitAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<PrdSubmitRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<PrdSubmitService>();
+
+        var result = await service.SubmitAsync(input, CancellationToken.None).ConfigureAwait(false);
         return ToResult(result);
     });
 

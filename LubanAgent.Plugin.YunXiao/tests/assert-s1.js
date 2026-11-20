@@ -80,7 +80,8 @@ const PROBE_JS = String.raw`
     var u = String(url);
     var envelope;
     if (u.indexOf('/yunxiao/settings') !== -1) {
-      envelope = { success: true, code: 'OK', message: '', data: { organizationId: 'tjcEs', hasPat: false } };
+      /* 夹具一律合成组织值（禁用值零夹具红线） */
+      envelope = { success: true, code: 'OK', message: '', data: { organizationId: 'DEMOORG', hasPat: false } };
     } else if (u.indexOf('/yunxiao/projects') !== -1) {
       envelope = { success: true, code: 'OK', message: '', data: {
         total: 3,
@@ -104,7 +105,7 @@ const PROBE_JS = String.raw`
     /* 就绪：bootstrap 完成（组织 ID 回填）且 applyRoute 已把 hash 定在 #/connect */
     var ready = await poll(function () {
       var el = document.getElementById('org-id');
-      return el && el.value === 'tjcEs' && window.location.hash === '#/connect';
+      return el && el.value === 'DEMOORG' && window.location.hash === '#/connect';
     }, 8000, 50);
     if (!ready) record('0', '探针就绪（bootstrap 完成）', false, 'hash=' + window.location.hash);
 

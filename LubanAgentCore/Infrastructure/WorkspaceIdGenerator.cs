@@ -98,6 +98,27 @@ public static class WorkspaceIdGenerator
     }
 
     /// <summary>
+    /// 两个工作区根路径是否指向同一目录（规范化比较：大小写不敏感、尾分隔符归一、解析符号链接）。
+    /// </summary>
+    /// <remarks>
+    /// S2d §13.2 ensure 语义的「规范化命中」判据：等价于
+    /// <c>Normalize(a) == Normalize(b)</c>（<see cref="Normalize"/> 已含 Windows 大写归一）。
+    /// 任一为空或归一化失败即不命中。
+    /// </remarks>
+    /// <param name="a">根路径一。</param>
+    /// <param name="b">根路径二。</param>
+    /// <returns>归一化后等值时为 <c>true</c>。</returns>
+    public static bool IsSameRoot(string? a, string? b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+            return false;
+
+        var na = Normalize(a);
+        var nb = Normalize(b);
+        return na.Length > 0 && string.Equals(na, nb, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 若路径存在且为符号链接/junction，返回其最终真实目标路径；否则返回 null。
     /// </summary>
     /// <param name="fullPath">已转为绝对路径的路径。</param>

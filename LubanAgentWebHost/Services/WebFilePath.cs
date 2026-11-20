@@ -95,6 +95,51 @@ public static class WebFilePath
     }
 
     /// <summary>
+    /// 把相对路径解析为工作区内已存在的目录（相对路径为空时解析为工作区根）。
+    /// </summary>
+    /// <param name="rootPath">工作区根目录。</param>
+    /// <param name="relativePath">相对路径；空白表示工作区根。</param>
+    /// <param name="fullPath">命中时的真实绝对路径；失败为空串。</param>
+    /// <returns>命中工作区内真实目录时返回 true。</returns>
+    public static bool TryResolveDirectory(string? rootPath, string? relativePath, out string fullPath)
+    {
+        fullPath = string.Empty;
+        var root = NormalizeRoot(rootPath);
+        if (root is null) return false;
+
+        var realRoot = ResolveRealPath(root);
+        if (realRoot is null) return false;
+
+        string candidate;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                candidate = root;
+            }
+            else
+            {
+                var relative = NormalizeRelative(relativePath);
+                if (relative is null) return false;
+                candidate = Path.GetFullPath(Path.Combine(root, relative));
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        if (!IsWithin(root, candidate)) return false;
+
+        // 与文件读取同口径：目录本身可能是 junction/符号链接，必须按真实路径再判一次越界
+        var real = ResolveRealPath(candidate);
+        if (real is null || !IsWithin(realRoot, real) || !Directory.Exists(real)) return false;
+
+        fullPath = real;
+        return true;
+    }
+
+    /// <summary>
     /// 把绝对路径逐段解析为真实路径：任一分量是符号链接或 junction 时，替换为其最终目标。
     /// </summary>
     /// <remarks>

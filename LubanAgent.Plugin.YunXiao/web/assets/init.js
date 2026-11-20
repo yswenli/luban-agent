@@ -7,6 +7,9 @@
   2. 新项目代号变更即重算三段派生预览（纯函数 deriveNaming / renameByCode，与后端 NamingDeriver 同口径：
      代号前缀替换 TPLX-Mixed→NEWX-Mixed、TPLX-Service→NEWX-Service；子目录行仅综合库（-Mixed）显示），
      派生行 / F6 端行输入均可单独改写，改后以改写值为准（dirty 标记，代号再变不覆盖手改值）；
+     母版选择 / 代号 / 端口变更后防抖自动调 GET /yunxiao/pipelinederive（S2e §14）刷新「命名派生预览」
+     与 F6 流水线名（dirty > synced > 预检 > 派生 优先级，手改值不覆盖；反查真名落地后默认名无前导下划线）；
+     代码组自动预选（代号同名 → 模板代号同名 → 不挂组；用户改过后不覆盖，纯函数 matchGroupChoice）；
   3. 预检 POST /yunxiao/preflight（零副作用）→ 只读清单 + 每库徽标（新建/复用，复用提示「将复用已有库」）
      + git 命令序列默认展开（只渲染后端脱敏文本，不再拼接任何凭据；全复用时显示「无需 git 操作（全部复用）」）
      + 「确认执行」；门禁：未预检 / 预检失败 / 参数已变 / 需新建库时 sessionReady=false / 有冲突 → 禁用并明示原因；
@@ -39,6 +42,8 @@
 
   const TEMPLATE_REPO_SUFFIX = '-Mixed';
   const PIPELINE_MARKER = '_DEV_Deploy_';
+  /** 标记核心段（空前缀形态用「DEV_Deploy_」，不留前导下划线）。 */
+  const PIPELINE_CORE = 'DEV_Deploy_';
   const CODE_PATTERN = /^[A-Za-z][A-Za-z0-9]*$/;
 
   /** 模板名 → 模板代号（首个 '-' 之前的段："TPLX-Mixed"/"TPLX-Service" → "TPLX"；无 '-' 或空白返回 null）。 */
@@ -68,12 +73,25 @@
     return nCode + text.slice(tCode.length);
   }
 
-  /** 母版流水线名 → 分组前缀（首个 _DEV_Deploy_ 之前；不含该段返回 null）。 */
+  /** 母版流水线名 → 分组前缀（「DEV_Deploy_」核心段之前、去尾下划线；不含该段返回 null）。
+      容忍三种形态：ACME_DEV_… → 'ACME'；_DEV_… → ''；DEV_… → ''。 */
   function parsePipelinePrefix(name) {
-    const text = String(name || '');
+    const text = stripPortSuffix(String(name || ''));
     if (!text) return null;
-    const index = text.indexOf(PIPELINE_MARKER);
-    return index < 0 ? null : text.slice(0, index);
+    const index = text.indexOf(PIPELINE_CORE);
+    return index < 0 ? null : text.slice(0, index).replace(/_+$/, '');
+  }
+
+  /** 剥离流水线名尾部 (端口) 后缀（S2c §12.3：容忍端口差异匹配）。 */
+  function stripPortSuffix(name) {
+    const text = String(name || '');
+    return text.replace(/\([^()]*\)\s*$/, '');
+  }
+
+  /** 从流水线名解析尾部 (数字) 端口（S2c §12.3 反向回填）；解析不出返回 null。 */
+  function parsePortSuffix(name) {
+    const m = /\((\d+)\)\s*$/.exec(String(name || ''));
+    return m ? parseInt(m[1], 10) : null;
   }
 
   /**
@@ -98,11 +116,12 @@
       const text = String(name || '');
       const prefix = parsePipelinePrefix(text);
       if (prefix === null) return;
-      const markerIndex = text.indexOf(PIPELINE_MARKER);
-      const remainder = text.slice(markerIndex + PIPELINE_MARKER.length);
+      const coreIndex = text.indexOf(PIPELINE_CORE);
+      const remainder = text.slice(coreIndex + PIPELINE_CORE.length);
       const dashIndex = remainder.indexOf('-');
       const endSuffix = dashIndex >= 0 ? remainder.slice(dashIndex) : '';
-      pipelines.push({ from: text, to: prefix + PIPELINE_MARKER + nCode + endSuffix });
+      const head = prefix ? prefix + PIPELINE_MARKER : PIPELINE_CORE;
+      pipelines.push({ from: text, to: head + nCode + endSuffix });
     });
 
     return { repoName: renameByCode(tCode + TEMPLATE_REPO_SUFFIX, tCode, nCode), dirs: dirs, pipelines: pipelines };
@@ -156,10 +175,13 @@
       dirDirty: false,
       name: '',
       nameDirty: false,
+      nameFromPlan: false,   // S2d §13.3：预检回填的服务端权威名（绑定代号组合，参数一变失效）
+      derivedFrom: '',       // S2e §14：派生接口反查到的母版真实流水线名（From，展示用）
       tplName: '',
       port: 8080,
       overwrite: false,
       confirmPending: false,
+      synced: false,
       result: null
     };
   }
@@ -180,8 +202,11 @@
     newCode: '',
     templateCode: '',
     groupChoice: '',        // '' = 不挂组；'__new__' = 新建；其余 = 既有组 name
+    groupAuto: '',          // S2e §14 修复二：当前自动预选值（= groupChoice 时可被重匹配）
+    groupDirty: false,      // S2e §14 修复二：用户手动改过组选择（改后不再自动覆盖）
     groupNewName: '',
     workspaceId: '',
+    wsCreating: false,      // 下拉里选中「新建工作区」后为 true：展开手输区，workspaceId 置空
     branch: 'master',
     ends: ENDS.map(makeEnd),
     preflight: null,
@@ -194,7 +219,21 @@
     preview: {},            // end -> { name, diff, warning, content }
     activeDiffEnd: '',
     pipelineIds: {},        // end -> 已提交流水线 id（覆盖用）
-    forceUpdate: {}         // end -> true（卡内确认后按覆盖提交）
+    forceUpdate: {},        // end -> true（卡内确认后按覆盖提交）
+    // S2d §13.1：工作区可搜索组合框 + 迷你目录浏览器（数据仅内存渲染不落盘）
+    wsComboOpen: false,
+    wsQuery: '',
+    wsBrowseOpen: false,
+    wsBrowsePath: '',
+    wsBrowseDirs: [],
+    wsBrowseLoading: false,
+    wsBrowseError: '',
+    planNamesKey: '',       // S2d §13.3：预检回填名绑定的 (templateCode,newCode) 组合
+    // 项目上下文（#/init?projectId=&identifier=&name=）：初始化完成后登记回写，列表据此标注「已初始化」
+    project: { id: '', identifier: '', name: '' },
+    initSaved: false,       // 本次初始化完成登记是否已落盘（防重复提交）
+    restored: false,        // 已初始化项目：本次进入已反显完成登记
+    restoreKey: ''          // 反显归属键（projectId/identifier），换项目时重置
   };
 
   let els = null;
@@ -238,32 +277,151 @@
     return state.newCode ? state.newCode + '-' + endRec.suffix : '';
   }
 
-  /** 端流水线名派生源：所选母版流水线名，缺省用默认模板名（反查标记形态）。 */
+  /** 端流水线名本地占位派生源：所选母版流水线名，缺省用默认模板名（核心段形态，无前导下划线）。
+      S2e §14：刻意不含派生接口反查名（derivedFrom）——占位保持「以预检为准」语义（断言 28）。 */
+  function localTemplateSourceOf(endRec) {
+    const custom = String(endRec.tplName || '').trim();
+    if (custom) return custom;
+    return state.templateCode ? PIPELINE_CORE + state.templateCode + '-' + endRec.suffix : '';
+  }
+
+  /** 端流水线名派生源（展示用）：手选母版名 > 派生接口反查真名 > 默认标记形态。 */
   function templateNameOf(endRec) {
     const custom = String(endRec.tplName || '').trim();
     if (custom) return custom;
-    return state.templateCode ? PIPELINE_MARKER + state.templateCode + '-' + endRec.suffix : '';
+    if (endRec.derivedFrom) return endRec.derivedFrom;
+    return state.templateCode ? PIPELINE_CORE + state.templateCode + '-' + endRec.suffix : '';
   }
 
   function derivedName(endRec) {
-    const source = templateNameOf(endRec);
+    const source = localTemplateSourceOf(endRec);
     if (!source || !state.newCode) return '';
     const prefix = parsePipelinePrefix(source);
     if (prefix === null) return '';
-    const markerIndex = source.indexOf(PIPELINE_MARKER);
-    const remainder = source.slice(markerIndex + PIPELINE_MARKER.length);
+    const coreIndex = source.indexOf(PIPELINE_CORE);
+    const remainder = source.slice(coreIndex + PIPELINE_CORE.length);
     const dashIndex = remainder.indexOf('-');
-    const endSuffix = dashIndex >= 0 ? remainder.slice(dashIndex) : '';
-    return prefix + PIPELINE_MARKER + state.newCode + endSuffix;
+    // 尾部 (端口) 剥离后代号替换；后端端按端口盒值重加 (端口) 后缀（S2c §12.3，与 NamingDeriver 同口径）
+    let endSuffix = dashIndex >= 0 ? remainder.slice(dashIndex) : '';
+    endSuffix = stripPortSuffix(endSuffix);
+    if (endRec.end === 'backend' && endRec.port !== '' && endRec.port !== undefined && endRec.port !== null) {
+      endSuffix = endSuffix + '(' + endRec.port + ')';
+    }
+    const head = prefix ? prefix + PIPELINE_MARKER : PIPELINE_CORE;
+    return head + state.newCode + endSuffix;
   }
 
   function applyDerivation() {
     const first = state.selectedRepos[0] || '';
     state.templateCode = parseTemplateCode(first) || '';
+    // S2d §13.3：预检回填的权威名绑定 (templateCode,newCode) 组合，参数一变即失效回本地占位派生
+    const key = state.templateCode + '|' + state.newCode;
+    if (state.planNamesKey !== key) {
+      state.planNamesKey = key;
+      state.ends.forEach(function (e) { e.nameFromPlan = false; });
+    }
     state.ends.forEach(function (e) {
       if (!e.dirDirty) e.dir = derivedDir(e);
-      if (!e.nameDirty) e.name = derivedName(e);
+      // synced（S2c §12.3 反向回填「已同步」态）与 nameFromPlan（S2d §13.3 预检权威名）
+      // 以现实/预检为准，不被本地派生覆盖
+      if (!e.nameDirty && !e.synced && !e.nameFromPlan) e.name = derivedName(e);
     });
+    // S2e §14 修复二：manifests 加载 / 母版选择 / 代号变更后自动预选代码组
+    autoSelectGroup();
+  }
+
+  /* ---------- S2e §14 修复二：代码组自动预选（代号同名优先，纯函数可测） ---------- */
+
+  /**
+   * 代码组自动预选匹配（纯函数）：与新项目代号同名的组（大小写不敏感精确名）→ 命中；
+   * 无 → 与模板代号同名的组；再无 → 不挂组（''）。
+   */
+  function matchGroupChoice(groups, newCode, templateCode) {
+    const list = groups || [];
+    function find(code) {
+      const c = String(code === undefined || code === null ? '' : code).trim();
+      if (!c) return null;
+      for (let i = 0; i < list.length; i++) {
+        const name = String((list[i] && list[i].name) || '');
+        if (name.toLowerCase() === c.toLowerCase()) return name;
+      }
+      return null;
+    }
+    return find(newCode) || find(templateCode) || '';
+  }
+
+  /** 自动预选代码组：用户改过且当前选择非自动值时不覆盖；否则重匹配（可被代号变更重新触发）。 */
+  function autoSelectGroup() {
+    if (state.groupDirty && state.groupChoice !== state.groupAuto) return;
+    const match = matchGroupChoice(state.groups, state.newCode, state.templateCode);
+    state.groupAuto = match;
+    if (state.groupChoice !== match) {
+      state.groupChoice = match;
+      if (els && els.group) renderGroupSelect();
+    }
+  }
+
+  /* ---------- S2e §14 修复一：流水线派生接口防抖自动刷新 ---------- */
+
+  let deriveTimer = 0;
+  const DERIVE_DEBOUNCE_MS = 300;
+
+  /** 母版选择 / 代号 / 端口变更后防抖刷新派生（防抖窗口内多发并一）。 */
+  function scheduleDeriveRefresh() {
+    if (deriveTimer) global.clearTimeout(deriveTimer);
+    deriveTimer = global.setTimeout(function () {
+      deriveTimer = 0;
+      doDerive();
+    }, DERIVE_DEBOUNCE_MS);
+  }
+
+  function buildDeriveQuery() {
+    return {
+      templateRepoName: state.selectedRepos[0] || '',
+      newCode: state.newCode,
+      ends: JSON.stringify(state.ends.map(function (e) {
+        const item = { end: e.end, on: !!e.enabled };
+        if (e.end === 'backend') {
+          const port = parseInt(e.port, 10);
+          if (!isNaN(port)) item.port = port;
+        }
+        return item;
+      }))
+    };
+  }
+
+  /** 调派生接口刷新「命名派生预览」与 F6 流水线名（失败静默——本地占位派生仍在，不打断输入）。 */
+  async function doDerive() {
+    if (!state.selectedRepos.length || !CODE_PATTERN.test(state.newCode) || !state.templateCode) return;
+    try {
+      const data = await api.get('/yunxiao/pipelinederive', buildDeriveQuery());
+      applyDeriveResult(data);
+    } catch (e) {
+      /* 派生刷新失败静默 */
+    }
+  }
+
+  /**
+   * 派生结果落地（S2d 优先级 dirty > synced > 预检 > 派生）：
+   * 仅最低优先级（非 dirty / 非 synced / 非 nameFromPlan）的流水线名被派生值覆盖；
+   * 反查真名（From）落地后默认名不再带前导下划线（To 由服务端 DerivePipelineName 保证）。
+   */
+  function applyDeriveResult(data) {
+    const items = (data && data.items) || [];
+    if (!items.length) return;
+    let changed = false;
+    items.forEach(function (item) {
+      const rec = findEnd(item.end);
+      if (!rec) return;
+      if (item.from) rec.derivedFrom = String(item.from);
+      const to = String(item.to || '');
+      if (to && !rec.nameDirty && !rec.synced && !rec.nameFromPlan && rec.name !== to) {
+        rec.name = to;
+        changed = true;
+      }
+    });
+    renderDerive();
+    syncEnds();
   }
 
   function markStale() {
@@ -441,16 +599,174 @@
     els.groupNew.hidden = state.groupChoice !== '__new__';
   }
 
+  /* ---------- F5：工作区可搜索组合框（S2d §13.1） ---------- */
+
+  /** 工作区显示名：rootPath 缺省时退 id（列表项与触发器共用）。 */
+  function wsLabel(w) {
+    return String((w && w.rootPath) || (w && w.id) || '');
+  }
+
+  /** 搜索过滤（rootPath / 名称子串，大小写不敏感）；名称取 rootPath 尾段。 */
+  function wsMatches(w, q) {
+    if (!q) return true;
+    const p = wsLabel(w).toLowerCase();
+    const segs = p.split(/[\\/]/).filter(Boolean);
+    const name = segs.length ? segs[segs.length - 1] : '';
+    return p.indexOf(q) >= 0 || name.indexOf(q) >= 0;
+  }
+
   function renderWorkspaceSelect() {
-    let html = '';
-    state.workspaces.forEach(function (w) {
+    // 值承载（hidden #init-workspace）绑定 workspaceId —— 原下拉值语义
+    const current = state.workspaces.filter(function (w) {
+      return String(w.id === undefined || w.id === null ? '' : w.id) === String(state.workspaceId);
+    })[0];
+    const text = state.wsCreating
+      ? '新建工作区'
+      : (current ? wsLabel(current) : (state.workspaces.length ? '请选择工作区' : '无可用工作区'));
+    if (els.wsTriggerText) els.wsTriggerText.textContent = text;
+    if (els.wsTrigger) els.wsTrigger.title = text;
+    if (els.workspace) els.workspace.value = state.workspaceId;
+    // 手输区跟随新建态：默认收起，下拉选「新建工作区」或浏览目录选此目录后才展开
+    if (els.wsNew) els.wsNew.hidden = !state.wsCreating;
+    renderWsComboList();
+  }
+
+  /** 展开/收起手输新建区；展开时把焦点交给路径输入框。 */
+  function setWsNewMode(on) {
+    state.wsCreating = !!on;
+    if (els.wsNew) els.wsNew.hidden = !state.wsCreating;
+    // 重新进入新建态时清掉上一轮的结果提示，避免「已新建工作区」误导
+    if (state.wsCreating && els.wsNewResult) {
+      els.wsNewResult.hidden = true;
+      els.wsNewResult.textContent = '';
+    }
+    if (state.wsCreating && els.wsNewPath) els.wsNewPath.focus();
+  }
+
+  /** 进入新建态：先解除已选工作区，避免用户忘点「新建并使用」时预检沿用旧值。 */
+  function enterWsNewMode() {
+    state.workspaceId = '';
+    if (els.workspace) {
+      els.workspace.value = '';
+      els.workspace.dispatchEvent(new Event('change'));
+    }
+    setWsNewMode(true);
+    renderWorkspaceSelect();
+  }
+
+  function renderWsComboList() {
+    const newOpt = '<div class="combo-opt combo-opt-new" data-wsnew="1">＋ 新建工作区</div>';
+    if (!els.wsList) return;
+    const q = String(state.wsQuery || '').trim().toLowerCase();
+    if (!state.workspaces.length) {
+      els.wsList.innerHTML = '<p class="combo-empty">无可用工作区</p>' + newOpt;
+      return;
+    }
+    const rows = state.workspaces.filter(function (w) { return wsMatches(w, q); });
+    if (!rows.length) {
+      els.wsList.innerHTML = '<p class="combo-empty">无匹配</p>' + newOpt;
+      return;
+    }
+    els.wsList.innerHTML = rows.map(function (w) {
       const id = w.id === undefined || w.id === null ? '' : String(w.id);
-      html += '<option value="' + escapeHtml(id) + '"' + (state.workspaceId === id ? ' selected' : '') + '>'
-        + escapeHtml(w.rootPath || id) + '</option>';
+      const label = wsLabel(w);
+      return '<div class="combo-opt' + (String(state.workspaceId) === id ? ' on' : '') + '" '
+        + 'data-wsid="' + escapeHtml(id) + '" title="' + escapeHtml(label) + '">'
+        + escapeHtml(label) + '</div>';
+    }).join('') + newOpt;
+  }
+
+  function setWsComboOpen(open) {
+    state.wsComboOpen = !!open;
+    if (els.wsPop) els.wsPop.hidden = !state.wsComboOpen;
+    if (state.wsComboOpen) {
+      renderWsComboList();
+      renderWsBrowser();
+      if (els.wsSearch) els.wsSearch.focus();
+    } else {
+      // 收起弹层一并收起目录浏览器（数据仅内存，收起即弃）
+      state.wsBrowseOpen = false;
+    }
+  }
+
+  /* ---- 迷你目录浏览器（GET /workspace/dirs，只读单层，数据仅内存渲染） ---- */
+
+  /** 面包屑段（可点回退）：计算机 → 盘符/根 → 逐级子段。 */
+  function dirCrumbs(p) {
+    const crumbs = [{ label: '计算机', path: '' }];
+    const text = String(p || '');
+    if (!text) return crumbs;
+    const drive = /^([A-Za-z]:)[\\/]?/.exec(text);
+    if (drive) {
+      crumbs.push({ label: drive[1] + '\\', path: drive[1] + '\\' });
+      let acc = drive[1] + '\\';
+      text.slice(drive[0].length).split(/[\\/]/).filter(Boolean).forEach(function (seg) {
+        acc = (acc.charAt(acc.length - 1) === '\\' ? acc : acc + '\\') + seg;
+        crumbs.push({ label: seg, path: acc });
+      });
+      return crumbs;
+    }
+    let acc = '';
+    text.split(/[\\/]/).filter(Boolean).forEach(function (seg) {
+      acc += '/' + seg;
+      crumbs.push({ label: seg, path: acc });
     });
-    if (!state.workspaces.length) html = '<option value="">无可用工作区</option>';
-    els.workspace.innerHTML = html;
-    els.workspace.value = state.workspaceId;
+    return crumbs;
+  }
+
+  function renderWsBrowser() {
+    if (!els.wsDirBrowser) return;
+    els.wsDirBrowser.hidden = !state.wsBrowseOpen;
+    if (!state.wsBrowseOpen) return;
+
+    const crumbs = dirCrumbs(state.wsBrowsePath);
+    els.wsDirCrumb.innerHTML = crumbs.map(function (c, i) {
+      const last = i === crumbs.length - 1;
+      return (i > 0 ? '<span class="crumb-slash">/</span>' : '')
+        + '<span class="' + (last ? 'crumb-cur' : 'crumb-seg') + '" data-path="' + escapeHtml(c.path) + '">'
+        + escapeHtml(c.label) + '</span>';
+    }).join('');
+
+    if (state.wsBrowseLoading) {
+      els.wsDirList.innerHTML = '<p class="combo-empty">加载中…</p>';
+    } else if (!state.wsBrowseDirs.length) {
+      els.wsDirList.innerHTML = '<p class="combo-empty">无子目录</p>';
+    } else {
+      // 仅子目录行（端点只列目录；路径文本一律 escapeHtml）
+      els.wsDirList.innerHTML = state.wsBrowseDirs.map(function (d) {
+        return '<div class="dir-row" data-path="' + escapeHtml(d.path || '') + '" '
+          + 'title="' + escapeHtml(d.path || '') + '">' + escapeHtml(d.name || d.path || '') + '</div>';
+      }).join('');
+    }
+
+    if (els.wsDirChoose) els.wsDirChoose.disabled = !state.wsBrowsePath;
+    if (els.wsDirError) {
+      els.wsDirError.hidden = !state.wsBrowseError;
+      els.wsDirError.textContent = state.wsBrowseError || '';
+    }
+  }
+
+  async function loadWsDirs(path) {
+    state.wsBrowseLoading = true;
+    state.wsBrowseError = '';
+    renderWsBrowser();
+    try {
+      const data = await api.get('/workspace/dirs', path ? { path: path } : undefined);
+      state.wsBrowseDirs = (data && data.dirs) || [];
+      state.wsBrowsePath = path || '';
+    } catch (e) {
+      state.wsBrowseDirs = [];
+      state.wsBrowseError = e && e.message ? e.message : '读取目录失败';
+    } finally {
+      state.wsBrowseLoading = false;
+      renderWsBrowser();
+    }
+  }
+
+  function openWsBrowser() {
+    state.wsBrowseOpen = true;
+    renderWsBrowser();
+    loadWsDirs(state.wsBrowsePath || '');
   }
 
   /** 当前生效的代码组名（不挂组 = 空串）。 */
@@ -496,6 +812,27 @@
     return body;
   }
 
+  /**
+   * S2d §13.3 预检回填（反向回填扩展到预检阶段）：plan.pipelines 为服务端权威名
+   * （带真实前缀，预检回执即正确名），仅在字段未被用户改写（非 dirty）且未被
+   * 预览同步（非 synced）时回填 F6 流水线名——dirty 用户改写优先。
+   */
+  function backfillNamesFromPlan(plan) {
+    const pairs = (plan && plan.pipelines) || [];
+    state.ends.forEach(function (e) {
+      if (e.nameDirty || e.synced) return;
+      for (let i = 0; i < pairs.length; i++) {
+        const to = String((pairs[i] && pairs[i].to) || '');
+        const tail = stripPortSuffix(to);
+        if (to && tail.slice(-(e.suffix.length + 1)) === '-' + e.suffix) {
+          e.name = to;
+          e.nameFromPlan = true;
+          return;
+        }
+      }
+    });
+  }
+
   async function doPreflight() {
     const invalid = validatePreflight();
     els.preflightError.hidden = !invalid;
@@ -508,6 +845,9 @@
       const data = await api.post('/yunxiao/preflight', buildPreflightBody());
       state.preflight = data || {};
       state.preflightStale = false;
+      // S2d §13.3：预检成功后用 plan.pipelines 回填 F6 流水线名（仅非 dirty）
+      backfillNamesFromPlan(state.preflight.plan);
+      renderEnds();
       renderPreflight();
     } catch (e) {
       state.preflight = null;
@@ -548,18 +888,35 @@
           + (reused ? ' <span class="kv-hint">将复用已有库</span>' : '')
         : '');
     els.planRepo.title = repoName;
-    els.planDirs.innerHTML = pairListHtml(plan.dirs);
+    // S2e §14 修复四：复用库无改名动作 → 不显示「将改名目录」对照，改显「结构校验」（子目录存在性/待校验）；
+    // 新建库保持改名对照渲染（按库类型分流）
+    if (reused) {
+      if (els.planDirsK) els.planDirsK.textContent = '结构校验';
+      const checks = (pre.structureChecks && pre.structureChecks.length)
+        ? pre.structureChecks
+        : (pre.warnings || []);
+      els.planDirs.innerHTML = checks.length
+        ? checks.map(function (c) {
+            return '<span class="kv-v" style="display:block;white-space:normal" title="' + escapeHtml(c) + '">'
+              + escapeHtml(c) + '</span>';
+          }).join('')
+        : '—';
+    } else {
+      if (els.planDirsK) els.planDirsK.textContent = '将改名目录';
+      els.planDirs.innerHTML = pairListHtml(plan.dirs);
+    }
     els.planPipes.innerHTML = pairListHtml(plan.pipelines);
     els.planBranch.textContent = state.branch.trim() || '—';
     const conflicts = pre.conflicts || [];
     els.planConflicts.textContent = conflicts.length ? conflicts.join('；') : '无';
     els.planConflicts.title = conflicts.join('\n');
 
-    // git 命令序列：只展示后端脱敏文本，默认展开；全部复用时明示无需 git 操作
+    // git 命令序列：只展示后端脱敏文本，默认展开；零 git 步骤时按成因明示
+    // （全部复用 / 本地已有源码——S2e §14 修复三根即检出场景）
     const steps = pre.gitCommands || [];
     let cmdText = steps.length
       ? steps.map(function (s) { return (s.label || '') + '：' + (s.command || ''); }).join('\n')
-      : '无需 git 操作（全部复用）';
+      : (reused ? '无需 git 操作（全部复用）' : '无需 git 操作（本地已有源码）');
     const warnings = pre.warnings || [];
     if (warnings.length) {
       cmdText += '\n' + warnings.map(function (w) { return '提示：' + w; }).join('\n');
@@ -568,17 +925,16 @@
 
     renderPipeTag(plan.repoName || '');
     updateExecGate();
+    // S2c §12.3.5：预检后重算 F6 门禁——全复用（无新建库）时不等 FR-2 任务即可解锁
+    applyPipeLock();
   }
 
-  /** 是否存在需新建的库（ReusedLibs 未覆盖目标库名 → 需要 git 会话）。 */
-  function needsSessionForNewLib(pre) {
-    const plan = pre && pre.plan ? pre.plan : {};
-    const repoName = plan.repoName || '';
-    const reused = repoName && (pre.reusedLibs || []).indexOf(repoName) >= 0;
-    return !reused;
+  /** 是否有 git 工作量（S2c §12.2）：预检 git 步骤非空 = 有库要 clone/checkout，才要求会话。 */
+  function needsGitWork(pre) {
+    return !!pre && (pre.gitCommands || []).length > 0;
   }
 
-  /** 确认执行门禁：未预检 / 参数已变 / 需新建库时 session 不可用 / 有冲突 / 任务进行中 → 禁用并明示原因。 */
+  /** 确认执行门禁：未预检 / 参数已变 / 有 git 工作量时 session 不可用 / 有冲突 / 任务进行中 → 禁用并明示原因。 */
   function updateExecGate() {
     const pre = state.preflight;
     let reason = '';
@@ -586,9 +942,9 @@
       reason = '未预检或预检失败，无法执行';
     } else if (state.preflightStale) {
       reason = '参数已变更，请重新预检';
-    } else if (needsSessionForNewLib(pre) && (!pre.sessionReady || !state.sessionReady)) {
-      // 口径：存在需新建的库时，manifests.sessionReady 与 preflight.sessionReady 任一 false 即禁用；
-      // 全部复用（ReusedLibs 覆盖目标库）不需要 git 会话 → 不因会话禁用（S2b §11.2）
+    } else if (needsGitWork(pre) && (!pre.sessionReady || !state.sessionReady)) {
+      // S2c §12.2 门禁口径（收紧 S2b）：只要有一个库要 clone/checkout（git 步骤非空）就要求会话；
+      // 仅当全部库已有本地源码检出（零 git 步骤）才免会话
       reason = '工作区会话通路不可用';
     } else if (pre.conflicts && pre.conflicts.length) {
       reason = '存在冲突：' + pre.conflicts.join('；');
@@ -625,6 +981,8 @@
       state.taskId = String(taskId || '');
       state.task = null;
       state.autoPreviewed = false;
+      state.initSaved = false;
+      if (els.initDone) els.initDone.hidden = true;
       els.taskPanel.hidden = false;
       renderTask();
       app.showToast('初始化任务已发起', 'ok');
@@ -727,7 +1085,161 @@
   }
 
   function isPipeUnlocked() {
-    return !!(state.task && normTaskStatus(state.task.status) === 'done');
+    if (state.task && normTaskStatus(state.task.status) === 'done') return true;
+    // 已初始化项目再次进入：登记反显即视为就绪，允许重新预览/提交
+    if (state.restored) return true;
+    // S2c §12.3.5：全复用（预检无新建库）时 F6 不等 FR-2 任务完成，即可预览/同步
+    return isAllReuse();
+  }
+
+  /** 是否全复用（预检无新建库）：目标库命中 ReusedLibs（S2c §12.3.5 F6 门禁放宽判据）。 */
+  function isAllReuse() {
+    const pre = state.preflight;
+    if (!pre || !pre.plan || !pre.plan.repoName) return false;
+    return (pre.reusedLibs || []).indexOf(pre.plan.repoName) >= 0;
+  }
+
+  /* ---------- 初始化完成登记（项目列表「已初始化」判定） ---------- */
+
+  /** 解析 #/init?projectId=&identifier=&name= 的项目上下文；无参数时返回空值。 */
+  function readProjectContext() {
+    const context = { id: '', identifier: '', name: '' };
+    const hash = String(global.location.hash || '');
+    const mark = hash.indexOf('?');
+    if (mark < 0) return context;
+    hash.slice(mark + 1).split('&').forEach(function (pair) {
+      if (!pair) return;
+      const eq = pair.indexOf('=');
+      const key = eq < 0 ? pair : pair.slice(0, eq);
+      let value = '';
+      try {
+        value = eq < 0 ? '' : decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, ' '));
+      } catch (e) {
+        value = '';
+      }
+      if (key === 'projectId') context.id = value;
+      else if (key === 'identifier') context.identifier = value;
+      else if (key === 'name') context.name = value;
+    });
+    return context;
+  }
+
+  /** 代码库侧是否已绑定：任务 done，或全复用（目标库本就存在，无需复制）。 */
+  function codeSideReady() {
+    if (state.task && normTaskStatus(state.task.status) === 'done') return true;
+    return isAllReuse();
+  }
+
+  /** 完成条件：代码库侧就绪 + 每个启用端「已存在」或「提交成功」。 */
+  function isInitComplete() {
+    if (!codeSideReady() || !state.newCode) return false;
+    const enabled = state.ends.filter(function (e) { return e.enabled; });
+    if (!enabled.length) return false;
+    return enabled.every(function (e) {
+      const pv = state.preview[e.end];
+      return !!(pv && pv.exists) || !!(e.result && e.result.ok);
+    });
+  }
+
+  function showInitDone(restored) {
+    if (!els.initDone) return;
+    els.initDone.hidden = false;
+    els.initDone.textContent = restored
+      ? '该项目已完成初始化，已反显上次配置；如需调整，重新预检后预览差异并提交即可。'
+      : '初始化完成：代码库已绑定、三端流水线已就绪，可返回项目列表查看「已初始化」。';
+  }
+
+  /**
+   * 已初始化项目再次进入：把完成登记反显到表单
+   * （母版库 / 新代号 / 代码组 / 分支 / 三端 enable·母版流水线·流水线名·端口）。
+   */
+  function applyInitRecord(record) {
+    if (!record) return false;
+    if (record.templateCode) state.templateCode = record.templateCode;
+    if (record.codename) state.newCode = record.codename;
+    if (record.groupName) {
+      state.groupChoice = record.groupName;
+      state.groupDirty = true;
+    }
+    if (record.branch) state.branch = record.branch;
+    if (Array.isArray(record.selectedRepos) && record.selectedRepos.length) {
+      state.selectedRepos = record.selectedRepos.slice();
+      state.repoNewNames = {};
+      state.repoDirty = {};
+    }
+    if (Array.isArray(record.ends) && record.ends.length) {
+      state.ends = state.ends.map(function (endRec) {
+        const hit = record.ends.find(function (r) { return r.end === endRec.end; });
+        if (!hit) return endRec;
+        return Object.assign({}, endRec, {
+          enabled: hit.enabled !== false,
+          name: hit.name || '',
+          nameDirty: !!hit.name,
+          tplName: hit.templateName || '',
+          derivedFrom: hit.templateName || '',
+          port: hit.port === null || hit.port === undefined ? endRec.port : hit.port
+        });
+      });
+    }
+    state.restored = true;
+    state.initSaved = true;   // 已登记过：不再自动重复登记
+    return true;
+  }
+
+  /** 拉取项目完成登记并反显（失败不阻断页面）。 */
+  async function loadInitRecord(context) {
+    try {
+      const record = await api.post('/yunxiao/projectinitget', {
+        projectId: context.id || '',
+        identifier: context.identifier || ''
+      });
+      if (!record) return;
+      if (applyInitRecord(record)) {
+        renderAll();
+        applyPipeLock();
+        showInitDone(true);
+      }
+    } catch (err) {
+      if (global.console) global.console.warn('读取初始化登记失败', err);
+    }
+  }
+
+  /** 条件满足时落盘一次完成登记（失败不阻断主流程，云效侧已就绪）。 */
+  async function maybeMarkInitComplete() {
+    if (state.initSaved || !isInitComplete()) return;
+    const project = state.project || { id: '', identifier: '', name: '' };
+    const identifier = project.identifier || state.newCode;
+    if (!project.id && !identifier) return;
+
+    state.initSaved = true;
+    try {
+      await api.post('/yunxiao/projectinit', {
+        projectId: project.id || '',
+        identifier: identifier || '',
+        codename: state.newCode,
+        repoName: primaryRepoName() || '',
+        templateCode: state.templateCode || '',
+        groupName: state.groupChoice && state.groupChoice !== '__new__' ? state.groupChoice : (state.groupNewName || ''),
+        branch: state.branch || '',
+        selectedRepos: (state.selectedRepos || []).slice(),
+        ends: state.ends.map(function (e) {
+          const pv = state.preview[e.end] || {};
+          const info = pv.info || null;
+          return {
+            end: e.end,
+            enabled: !!e.enabled,
+            name: (info && info.actualName) || pv.name || e.name || '',
+            templateName: e.tplName || e.derivedFrom || '',
+            port: e.port === '' || e.port === undefined || e.port === null ? null : Number(e.port),
+            pipelineId: state.pipelineIds[e.end] || (info && info.id) || ''
+          };
+        })
+      });
+      showInitDone();
+    } catch (err) {
+      state.initSaved = false;
+      if (global.console) global.console.warn('初始化完成登记失败', err);
+    }
   }
 
   function applyPipeLock() {
@@ -739,6 +1251,11 @@
     if (!unlocked) renderPipeTag(state.preflight && state.preflight.plan ? state.preflight.plan.repoName : '');
   }
 
+  /** S2d §13.3：本地默认派生（预检前占位）标注「以预检为准」，不再当提交真值。 */
+  function showNameHint(e) {
+    return !!(e.name && !e.nameDirty && !e.synced && !e.nameFromPlan);
+  }
+
   function renderEnds() {
     els.pipeEnds.innerHTML = state.ends.map(function (e) {
       const pv = state.preview[e.end];
@@ -747,19 +1264,25 @@
           ? '<span class="badge badge-ok" data-f="exists">已存在（提交时跳过）</span>'
           : '<span class="badge" data-f="exists">缺失（将新建）</span>')
         : '';
+      // S2c §12.3：已存在端反向回填后标记「已同步」态
+      const syncedBadge = e.synced
+        ? '<span class="badge badge-ok" data-f="synced">已同步</span>'
+        : '';
       return '<div class="endrow' + (e.enabled ? '' : ' off') + '" data-end="' + escapeHtml(e.end) + '">'
         + '<div class="er-h">'
         + '<input type="checkbox" data-f="on"' + (e.enabled ? ' checked' : '') + ' />'
         + '<span class="er-role">' + escapeHtml(e.role) + '</span>'
         + existsBadge
+        + syncedBadge
         + '</div>'
-        + '<div class="frow"><label>构建目录</label>'
-        + '<input class="field-input" data-f="dir" value="' + escapeHtml(e.dir) + '" spellcheck="false" /></div>'
+        + '<div class="frow"><label>母版流水线</label>'
+        + '<input class="field-input" data-f="tpl" value="' + escapeHtml(templateNameOf(e)) + '" spellcheck="false" '
+        + 'placeholder="选填 · 反查兜底" /></div>'
         + '<div class="frow"><label>流水线名</label>'
         + '<input class="field-input" data-f="name" value="' + escapeHtml(e.name) + '" spellcheck="false" /></div>'
-        + '<div class="frow"><label>母版流水线</label>'
-        + '<input class="field-input" data-f="tpl" value="' + escapeHtml(e.tplName) + '" spellcheck="false" '
-        + 'placeholder="选填 · 反查兜底" /></div>'
+        // S2d §13.3：本地占位派生标注「以预检为准」（预检回填/同步/手改后不再显示）
+        + '<p class="er-hint" data-f="namehint"' + (showNameHint(e) ? '' : ' hidden') + '>'
+        + '本地派生为占位 · 以预检为准</p>'
         + (e.end === 'backend'
           ? '<div class="pbox"><div class="ph"><span>后端端口 · 写入 dev 环境变量</span></div>'
             + '<div class="frow"><label>监听端口</label>'
@@ -787,6 +1310,7 @@
         on: row.querySelector('[data-f="on"]'),
         dir: row.querySelector('[data-f="dir"]'),
         name: row.querySelector('[data-f="name"]'),
+        namehint: row.querySelector('[data-f="namehint"]'),
         tpl: row.querySelector('[data-f="tpl"]'),
         port: row.querySelector('[data-f="port"]'),
         ow: row.querySelector('[data-f="ow"]'),
@@ -803,9 +1327,10 @@
       if (!refs) return;
       refs.row.classList.toggle('off', !e.enabled);
       refs.on.checked = !!e.enabled;
-      if (refs.dir.value !== e.dir) refs.dir.value = e.dir;
+      if (refs.dir && refs.dir.value !== e.dir) refs.dir.value = e.dir;
       if (refs.name.value !== e.name) refs.name.value = e.name;
-      if (refs.tpl.value !== e.tplName) refs.tpl.value = e.tplName;
+      if (refs.namehint) refs.namehint.hidden = !showNameHint(e);
+      if (refs.tpl.value !== templateNameOf(e)) refs.tpl.value = templateNameOf(e);
       if (refs.port && String(refs.port.value) !== String(e.port)) refs.port.value = e.port;
       refs.ow.checked = !!e.overwrite;
       if (refs.confirm) refs.confirm.hidden = !e.confirmPending;
@@ -840,6 +1365,14 @@
     return '';
   }
 
+  /** 页面锁定：预览/提交进行中禁止所有操作 */
+  function lockPage() {
+    document.querySelector('.content')?.classList.add('blocking');
+  }
+  function unlockPage() {
+    document.querySelector('.content')?.classList.remove('blocking');
+  }
+
   async function doPreview() {
     if (els.btnPreview.disabled) return;
     const repoName = primaryRepoName();
@@ -848,10 +1381,11 @@
       return;
     }
     els.btnPreview.disabled = true;
+    lockPage();
     try {
       const data = await api.post('/yunxiao/pipelinepreview', {
-        // 优先取任务回执的新库 id（LibState.RepoId）；未回填时以库名代填（{{REPO_ID}} 占位待实机校正）
-        newRepoId: lookupRepoId(repoName) || repoName,
+        // 优先取任务回执的新库 id（LibState.RepoId）；全复用无任务时留空 → 后端按 repoName 回查真实 id（S2c §12.3.5）
+        newRepoId: lookupRepoId(repoName) || '',
         newRepoName: repoName,
         templateCode: state.templateCode,
         newCode: state.newCode,
@@ -875,16 +1409,34 @@
           // S2b §11.2：派生名已存在（提交默认跳过）/ 缺失（将新建）
           exists: !!item.exists,
           // 契约带回替换后全文（S2 修复）：提交优先用 content，缺失才由 diff 重建
-          content: item.content
+          content: item.content,
+          // S2c §12.3：已存在端真实流水线信息（回显 + 反向回填）
+          info: item.pipeline || null
         };
+        // 反向回填：已存在端把 ActualName/解析端口回填表单，表单以现实为准（S2c §12.3）
+        if (item.exists && item.pipeline) {
+          const rec = findEnd(item.end);
+          if (rec) {
+            if (item.pipeline.actualName) {
+              rec.name = String(item.pipeline.actualName);
+              rec.nameDirty = false;
+            }
+            if (item.pipeline.port !== undefined && item.pipeline.port !== null) {
+              rec.port = item.pipeline.port;
+            }
+            rec.synced = true;   // 已同步态（dirty 重置为已同步）
+          }
+        }
       });
       const ends = Object.keys(state.preview);
       if (ends.indexOf(state.activeDiffEnd) < 0) state.activeDiffEnd = ends[0] || '';
       renderEnds();
       renderDiff();
+      maybeMarkInitComplete();
     } catch (e) {
       app.showError(e && e.message ? e.message : '流水线差异预览失败');
     } finally {
+      unlockPage();
       els.btnPreview.disabled = !isPipeUnlocked();
     }
   }
@@ -914,14 +1466,7 @@
   }
 
   /* 提交内容来源：预览响应带 content（替换后全文）时优先用；
-     缺失时才由 diff 的 + 行尽力重建（回退）。结果须含顶层 stages: 才外发
-     （后端同口径校验，防止把残缺 YAML 建成流水线）。 */
-  function hasTopLevelStages(text) {
-    return String(text || '').replace(/\r\n/g, '\n').split('\n').some(function (line) {
-      return line.indexOf('stages:') === 0;
-    });
-  }
-
+     缺失时才由 diff 的 + 行尽力重建（回退）。 */
   function reconstructFromDiff(diff) {
     return String(diff || '').split('\n')
       .filter(function (line) { return line.charAt(0) === '+'; })
@@ -937,6 +1482,7 @@
 
   async function doCommit() {
     if (els.btnCommit.disabled) return;
+    lockPage();
     const items = [];
     const submitted = [];
     let localFail = 0;
@@ -950,8 +1496,8 @@
         return;
       }
       const content = contentOf(pv);
-      if (!content || !hasTopLevelStages(content)) {
-        setEndResult(e.end, false, '预览内容缺少顶层 stages:（content 与 diff 重建均不完整），已跳过该端');
+      if (!pv.exists && !content) {
+        setEndResult(e.end, false, '预览内容为空（未反查到母版流水线或 diff 重建失败），已跳过该端');
         localFail++;
         return;
       }
@@ -1000,12 +1546,24 @@
         if (r.ok) {
           if (r.pipelineId) state.pipelineIds[endName] = String(r.pipelineId);
           delete state.forceUpdate[endName];
-          // 回执自带 Message（如「已存在跳过」）时原样展示，否则成功 + id
-          setEndResult(endName, true, r.message || ('成功' + (r.pipelineId ? ' · ' + r.pipelineId : '')));
+          const msg = r.message || '';
+          if (msg.indexOf('已存在') !== -1) {
+            // S2c §12.3.4：已存在端零操作 → 显示「已同步」+ Id/ActualName 可追溯
+            const rec = findEnd(endName);
+            if (rec) rec.synced = true;
+            const trace = [];
+            if (r.pipelineId) trace.push(String(r.pipelineId));
+            if (msg.indexOf('（') !== -1) trace.push(msg.slice(msg.indexOf('（') + 1, msg.lastIndexOf('）')));
+            setEndResult(endName, true, '已同步' + (trace.length ? ' · ' + trace.join(' · ') : ''));
+          } else {
+            // 成功 + id
+            setEndResult(endName, true, msg || ('成功' + (r.pipelineId ? ' · ' + r.pipelineId : '')));
+          }
         } else {
           setEndResult(endName, false, r.message || '提交失败');
         }
       });
+      maybeMarkInitComplete();
     } catch (e) {
       // 整包失败（如 409 覆盖未确认）：message 原样逐端展示
       const message = e && e.message ? e.message : '提交失败';
@@ -1013,13 +1571,21 @@
         setEndResult(endName, false, message);
       });
     } finally {
+      unlockPage();
       els.btnCommit.disabled = !isPipeUnlocked();
     }
   }
 
   /* ---------- 入口与事件 ---------- */
 
+  /** 把 state 中的代号 / 分支回写到输入框（反显与外部状态变更共用，值相同不写避免打断输入）。 */
+  function syncCommonInputs() {
+    if (els.code && els.code.value !== state.newCode) els.code.value = state.newCode;
+    if (els.branch && els.branch.value !== state.branch) els.branch.value = state.branch;
+  }
+
   function renderAll() {
+    syncCommonInputs();
     renderTplSel();
     renderGroupSelect();
     renderWorkspaceSelect();
@@ -1033,10 +1599,22 @@
     updateExecGate();
   }
 
-  /** 首屏进入：拉清单；进行中的任务恢复轮询。 */
+  /** 首屏进入：拉清单；已初始化项目反显登记；进行中的任务恢复轮询。 */
   function enter() {
+    const context = readProjectContext();
+    const key = (context.id || '') + '|' + (context.identifier || '');
+    if (key !== state.restoreKey) {
+      state.restoreKey = key;
+      state.restored = false;
+      state.initSaved = false;
+      if (els && els.initDone) els.initDone.hidden = true;
+    }
+    state.project = context;
     if (!state.reposLoaded && !state.reposLoading) loadManifests();
     renderAll();
+    if ((context.id || context.identifier) && !state.restored) {
+      loadInitRecord(context);
+    }
     if (state.taskId && state.task) {
       const st = normTaskStatus(state.task.status);
       if (st !== 'done' && st !== 'failed') startPolling();
@@ -1054,11 +1632,29 @@
       group: el('init-group'),
       groupNew: el('init-group-new'),
       workspace: el('init-workspace'),
+      wsCombo: el('ws-combo'),
+      wsTrigger: el('ws-trigger'),
+      wsTriggerText: el('ws-trigger-text'),
+      wsPop: el('ws-pop'),
+      wsSearch: el('ws-search'),
+      wsList: el('ws-list'),
+      wsBrowseBtn: el('ws-browse-btn'),
+      wsDirBrowser: el('ws-dir-browser'),
+      wsDirCrumb: el('ws-dir-crumb'),
+      wsDirList: el('ws-dir-list'),
+      wsDirChoose: el('ws-dir-choose'),
+      wsDirClose: el('ws-dir-close'),
+      wsDirError: el('ws-dir-error'),
+      wsNewPath: el('ws-new-path'),
+      wsNew: el('ws-new'),
+      btnWsCreate: el('btn-ws-create'),
+      wsNewResult: el('ws-new-result'),
       branch: el('init-branch'),
       btnPreflight: el('btn-preflight'),
       preflightError: el('preflight-error'),
       preflightPanel: el('preflight-panel'),
       planRepo: el('plan-repo'),
+      planDirsK: el('plan-dirs-k'),
       planDirs: el('plan-dirs'),
       planPipes: el('plan-pipes'),
       planBranch: el('plan-branch'),
@@ -1066,6 +1662,7 @@
       gitCmds: el('git-cmds'),
       btnExec: el('btn-exec'),
       execGate: el('exec-gate'),
+      initDone: el('init-done'),
       taskPanel: el('task-panel'),
       taskId: el('task-id'),
       taskStatus: el('task-status'),
@@ -1090,10 +1687,12 @@
       renderDerive();
       syncEnds();
       markStale();
+      scheduleDeriveRefresh();   // S2e §14 修复一：代号变更 → 防抖刷新派生
     });
 
     els.group.addEventListener('change', function () {
       state.groupChoice = els.group.value;
+      state.groupDirty = true;   // S2e §14 修复二：用户手动改过 → 不再自动覆盖
       els.groupNew.hidden = state.groupChoice !== '__new__';
       markStale();
     });
@@ -1105,6 +1704,136 @@
       state.workspaceId = els.workspace.value;
       markStale();
     });
+
+    // S2d §13.1：工作区可搜索组合框（触发器开合 / 搜索过滤 / 选中绑定 workspaceId）
+    if (els.wsTrigger) {
+      els.wsTrigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setWsComboOpen(!state.wsComboOpen);
+      });
+    }
+    if (els.wsPop) {
+      els.wsPop.addEventListener('click', function (e) {
+        e.stopPropagation();   // 防 document 点击收起逻辑误关弹层
+        const target = e.target;
+        const opt = target && target.closest ? target.closest('.combo-opt') : null;
+        if (opt) {
+          // 「＋ 新建工作区」是动作项，不是数据项：清空已选并展开手输区
+          if (opt.getAttribute('data-wsnew') === '1') {
+            enterWsNewMode();
+            setWsComboOpen(false);
+            return;
+          }
+          // 选中回填原下拉值语义：绑定 workspaceId（hidden 承载 + change 通知）
+          const id = opt.getAttribute('data-wsid') || '';
+          setWsNewMode(false);
+          state.workspaceId = id;
+          if (els.workspace) {
+            els.workspace.value = id;
+            els.workspace.dispatchEvent(new Event('change'));
+          }
+          renderWorkspaceSelect();
+          setWsComboOpen(false);
+          return;
+        }
+        if (target === els.wsBrowseBtn) {
+          openWsBrowser();
+          return;
+        }
+        const crumb = target && target.closest ? target.closest('.crumb-seg') : null;
+        if (crumb) {
+          loadWsDirs(crumb.getAttribute('data-path') || '');
+          return;
+        }
+        const row = target && target.closest ? target.closest('.dir-row') : null;
+        if (row) {
+          loadWsDirs(row.getAttribute('data-path') || '');
+          return;
+        }
+        if (target === els.wsDirChoose) {
+          // 「选此目录」等同进入新建态：先展开手输区再回填，否则回填结果不可见
+          if (state.wsBrowsePath) {
+            if (!state.wsCreating) enterWsNewMode();
+            if (els.wsNewPath) {
+              els.wsNewPath.value = state.wsBrowsePath;
+              syncWsCreateBtn();
+              els.wsNewPath.focus();
+            }
+            setWsComboOpen(false);
+          }
+          return;
+        }
+        if (target === els.wsDirClose) {
+          state.wsBrowseOpen = false;
+          renderWsBrowser();
+        }
+      });
+    }
+    if (els.wsSearch) {
+      els.wsSearch.addEventListener('input', function () {
+        state.wsQuery = els.wsSearch.value;
+        renderWsComboList();
+      });
+    }
+    document.addEventListener('click', function () {
+      if (state.wsComboOpen) setWsComboOpen(false);
+    });
+
+    // 工作区手输新建（S2c §12.1.1）：空路径禁用按钮，成功后重拉 manifests 并选中新工作区
+    function syncWsCreateBtn() {
+      if (!els.wsNewPath || !els.btnWsCreate) return;
+      els.btnWsCreate.disabled = !els.wsNewPath.value.trim();
+    }
+    if (els.wsNewPath) {
+      els.wsNewPath.addEventListener('input', syncWsCreateBtn);
+      syncWsCreateBtn();
+    }
+    if (els.btnWsCreate) {
+      els.btnWsCreate.addEventListener('click', async function () {
+        const path = els.wsNewPath.value.trim();
+        if (!path) return;
+        els.btnWsCreate.disabled = true;
+        if (els.wsNewResult) {
+          els.wsNewResult.hidden = true;
+          els.wsNewResult.textContent = '';
+        }
+        try {
+          // api.js post 已带双层 payload + Bearer（与 /yunxiao 同壳）；字段按 WorkspaceCreateRequest.rootPath。
+          // S2d §13.2：create 为 ensure 幂等语义（规范化命中既有工作区即复用），响应带 reused 标记
+          const data = await api.post('/workspace/create', { rootPath: path, type: 'Normal' });
+          const reused = !!(data && data.reused);
+          await loadManifests();
+          // 成功一律「选中该工作区 + 重拉列表」：按 ensure 响应的 workspaceId 绑定（原下拉值语义）
+          const wid = data && data.workspaceId !== undefined && data.workspaceId !== null
+            ? String(data.workspaceId)
+            : '';
+          if (wid) {
+            state.workspaceId = wid;
+            setWsNewMode(false);
+            renderWorkspaceSelect();
+            markStale();
+          }
+          els.wsNewPath.value = '';
+          syncWsCreateBtn();
+          const tip = reused ? '已复用现有工作区' : '已新建工作区';
+          if (els.wsNewResult) {
+            els.wsNewResult.hidden = false;
+            els.wsNewResult.className = 'result er-result result-ok';
+            els.wsNewResult.textContent = tip;
+          }
+          app.showToast(tip, 'ok');
+        } catch (e) {
+          // 失败（400/500 等）显示宿主 message
+          if (els.wsNewResult) {
+            els.wsNewResult.hidden = false;
+            els.wsNewResult.className = 'result er-result result-err';
+            els.wsNewResult.textContent = e && e.message ? e.message : '新建工作区失败';
+          }
+          syncWsCreateBtn();
+        }
+      });
+    }
+
     els.branch.addEventListener('input', function () {
       state.branch = els.branch.value;
       markStale();
@@ -1141,6 +1870,7 @@
         renderDerive();
         syncEnds();
         markStale();
+        scheduleDeriveRefresh();   // S2e §14 修复一：母版选择变更 → 防抖刷新派生
       }
     });
     document.addEventListener('click', function (e) {
@@ -1202,6 +1932,14 @@
         renderDerive();
       } else if (field === 'port') {
         rec.port = target.value;
+        // 端口盒变更 → 后端流水线名重派生（S2c §12.3：端口盒值参与派生）
+        if (rec.end === 'backend' && !rec.nameDirty) {
+          rec.name = derivedName(rec);
+          const refs = endRefs[rec.end];
+          if (refs && refs.name) refs.name.value = rec.name;
+          renderDerive();
+        }
+        scheduleDeriveRefresh();   // S2e §14 修复一：端口变更 → 防抖刷新派生
       }
       markStale();
     });
@@ -1271,6 +2009,7 @@
     deriveNaming: deriveNaming,
     parseTemplateCode: parseTemplateCode,
     parsePipelinePrefix: parsePipelinePrefix,
-    renameByCode: renameByCode
+    renameByCode: renameByCode,
+    matchGroupChoice: matchGroupChoice   // S2e §14 修复二：代码组自动预选纯函数
   };
 })(window);

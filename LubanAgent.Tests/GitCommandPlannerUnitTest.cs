@@ -165,4 +165,51 @@ public class GitCommandPlannerUnitTest
         StringAssert.Contains(steps[0].Command, "--branch release/2026");
         StringAssert.Contains(steps[^1].Command, "push origin release/2026");
     }
+
+    // ── S2c §12.2：新建库尾部「切 develop」步 ────────────────────────────
+
+    [TestMethod]
+    public void PlanSwitchDevelopLocal_CreatesLocalDevelopFromMaster()
+    {
+        var step = GitCommandPlanner.PlanSwitchDevelopLocal(RepoDir);
+
+        Assert.IsTrue(step.Label.Contains("develop"));
+        Assert.AreEqual($"git -C \"{RepoDir}\" checkout -b develop", step.Command);
+    }
+
+    // ── S2c §12.1.2：PlanLocalCheckout 无源码本地检出序列 ─────────────────
+
+    [TestMethod]
+    public void PlanLocalCheckout_CloneThenSwitchDevelop_InFixedOrder()
+    {
+        var steps = GitCommandPlanner.PlanLocalCheckout(
+            WorkspaceRoot, TemplateRepoUrl, "NEWX-Mixed", Branch);
+
+        Assert.AreEqual(3, steps.Count);
+        Assert.AreEqual($"git clone --branch {Branch} {TemplateRepoUrl} {WorkspaceRoot}/NEWX-Mixed", steps[0].Command);
+        // 两步切 develop：优先跟踪远端，失败时本地新建（fallback 语义）
+        Assert.AreEqual($"git -C \"{WorkspaceRoot}/NEWX-Mixed\" checkout -b develop origin/develop", steps[1].Command);
+        Assert.AreEqual($"git -C \"{WorkspaceRoot}/NEWX-Mixed\" checkout -b develop", steps[2].Command);
+        StringAssert.Contains(steps[1].Label, "跟踪远端 develop");
+        StringAssert.Contains(steps[2].Label, "本地新建 develop");
+    }
+
+    [TestMethod]
+    public void PlanLocalCheckout_CarriesNoSecretsNoControlChars_AndPassesUrlThrough()
+    {
+        var steps = GitCommandPlanner.PlanLocalCheckout(
+            WorkspaceRoot, TemplateRepoUrl, "NEWX-Mixed", Branch);
+
+        foreach (var step in steps)
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(step.Label), "每步都应有可读 Label");
+            foreach (var c in step.Command)
+                Assert.IsFalse(char.IsControl(c), $"命令含空格外的控制字符：{step.Command}");
+        }
+
+        var joined = string.Join(" ", steps.Select(s => s.Command));
+        Assert.IsFalse(joined.Contains("pt-"), "序列不得出现 pt- 前缀凭据明文");
+        Assert.IsFalse(joined.Contains("@"), "序列不得出现 @ 凭据形态");
+        StringAssert.Contains(joined, TemplateRepoUrl);
+    }
 }

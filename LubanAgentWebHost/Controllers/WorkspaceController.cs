@@ -39,11 +39,20 @@ public sealed class WorkspaceController : Controller
     [HttpGet]
     public Task<ActionResult> Search(string? keyword) => WebWorkspaceService.SearchAsync(keyword);
 
-    /// <summary>创建工作区。</summary>
+    /// <summary>创建工作区（S2d §13.2 ensure 幂等语义：rootPath 命中既有工作区即复用）。</summary>
     /// <param name="payload">包装后的 <see cref="WorkspaceCreateRequest"/> JSON。</param>
-    /// <returns>新工作区。</returns>
+    /// <returns>工作区（含 reused 标记）。</returns>
     [HttpPost]
     public Task<ActionResult> Create(string payload) => WebWorkspaceService.CreateAsync(payload);
+
+    /// <summary>
+    /// 浏览本机目录（只读，S2d §13.1）：列指定路径的子目录（单层、不递归、不列文件）；
+    /// path 空/缺省列盘符根。越界/不存在/无权限 → 400/404 语义 message。
+    /// </summary>
+    /// <param name="path">目录路径（绝对）；空/缺省列盘符。</param>
+    /// <returns><c>{dirs:[{name,path}]}</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> Dirs(string? path) => WebWorkspaceService.ListDirsAsync(path);
 
     /// <summary>切换工作区。</summary>
     /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>

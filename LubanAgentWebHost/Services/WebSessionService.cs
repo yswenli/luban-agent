@@ -544,7 +544,7 @@ public static class WebSessionService
     };
 
     /// <summary>校验会话归属；通过返回 null。</summary>
-    private static async Task<ActionResult?> CheckOwnerAsync(DiContainer scope, string sessionId)
+    internal static async Task<ActionResult?> CheckOwnerAsync(DiContainer scope, string sessionId)
     {
         var owner = await scope.GetRequiredService<SessionRepository>()
             .GetOwnerUserIdAsync(sessionId.Trim())

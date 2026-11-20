@@ -5,10 +5,12 @@
 *公司名称：Walle
 *命名空间：LubanAgentWebHost.Services.Init
 *文件名： GitCommandPlanner
-*描述：云效 S2 项目初始化 git 指令序列规划纯函数（设计 §4.2）——
-*      clone 母版 → 批量 mv 改名 → 固定文案 commit → remote set-url 新库 → push
+*描述：云效 S2 项目初始化 git 指令序列规划纯函数（设计 §4.2 + S2c §12.1.2/§12.2）——
+*      PlanCloneRenamePush：clone 母版 → 批量 mv 改名 → 固定文案 commit → remote set-url 新库 → push；
+*      PlanLocalCheckout：无源码本地检出（clone 目标库 → 切 develop）；
+*      PlanSwitchDevelopLocal：新建库尾部切 develop（远端无 develop）。
 *      （展示与执行同一份序列，防展示≠执行；凭据永不进序列）
-*口径：docs/实施设计-云效DevOps工作台Web插件-S2.md §4.2
+*口径：docs/实施设计-云效DevOps工作台Web插件-S2.md §4.2 + §12
 *
 *****************************************************************************/
 
@@ -86,6 +88,63 @@ public static class GitCommandPlanner
 
         return steps;
     }
+
+    /// <summary>
+    /// 规划「无源码本地检出」序列（S2c §12.1.2）：clone 目标库 → 切 <c>develop</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用于复用库（远端已有、本地 <c>{workspaceRoot}/{repoName}</c> 缺失/为空）的自动检出，
+    /// 与新建库的 <see cref="PlanCloneRenamePush"/> 互补。步骤：
+    /// ① <c>git clone --branch {branch} {repoUrl} {workspaceRoot}/{repoName}</c>；
+    /// ② 切 <c>develop</c>：跟踪远端 <c>git -C "{dir}" checkout -b develop origin/develop</c>；
+    /// ③ 本地新建 <c>develop</c> 兜底 <c>git -C "{dir}" checkout -b develop</c>。
+    /// </para>
+    /// <para>
+    /// 分支口径（S2c §12.2）：远端有 <c>develop</c> 则跟踪（②），无则本地新建（③）。
+    /// 本方法<b>两个切分支步骤都出</b>，Label 显式标注「跟踪远端 develop / 本地新建 develop（上一步失败时）」，
+    /// 由会话执行侧按序尝试、②失败才落③——展示与执行同一份序列，避免「展示≠执行」。
+    /// （备选口径：按参数 <c>remoteHasDevelop</c> 二选一，因预检期无远端分支真值，统一出两步更稳，故不采用。）
+    /// </para>
+    /// <para>
+    /// 脱敏红线同 <see cref="PlanCloneRenamePush"/>：<paramref name="repoUrl"/> 为<b>裸 URL</b>，
+    /// 无 <c>pt-</c> 明文、无 <c>@</c> 凭据形态；凭据由会话通路注入。
+    /// </para>
+    /// </remarks>
+    /// <param name="workspaceRoot">工作区根目录。</param>
+    /// <param name="repoUrl">目标库裸 URL（复用库真实克隆地址，无凭据）。</param>
+    /// <param name="repoName">目标库名（落位目录 <c>{workspaceRoot}/{repoName}</c>）。</param>
+    /// <param name="branch">clone 分支（与后续切 develop 无关，用入参）。</param>
+    /// <returns>有序步骤（clone → 跟踪远端 develop → 本地新建 develop 兜底）。</returns>
+    public static IReadOnlyList<GitStep> PlanLocalCheckout(
+        string workspaceRoot,
+        string repoUrl,
+        string repoName,
+        string branch)
+    {
+        if (string.IsNullOrWhiteSpace(repoName))
+            throw new ArgumentException("库名不能为空。", nameof(repoName));
+
+        var repoDir = $"{workspaceRoot}/{repoName}";
+        return new List<GitStep>
+        {
+            new($"检出库 {repoName}", $"git clone --branch {branch} {repoUrl} {repoDir}"),
+            new("跟踪远端 develop", $"git -C \"{repoDir}\" checkout -b develop origin/develop"),
+            new("本地新建 develop（上一步失败时）", $"git -C \"{repoDir}\" checkout -b develop"),
+        };
+    }
+
+    /// <summary>
+    /// 新建库序列尾部「本地切 <c>develop</c>」单步（S2c §12.2）：推完 <c>master</c> 后自 <c>master</c> 本地新建 <c>develop</c>。
+    /// </summary>
+    /// <remarks>
+    /// 新建库远端无 <c>develop</c>，故只需本地 <c>checkout -b develop</c>（不带 <c>origin/develop</c>）。
+    /// 供 <c>PlanCloneRenamePush</c> 产物<b>尾部追加</b>，保持展示与执行同一份序列（无凭据）。
+    /// </remarks>
+    /// <param name="repoDir">已 clone 并落位的库目录。</param>
+    /// <returns>切 <c>develop</c> 步骤。</returns>
+    public static GitStep PlanSwitchDevelopLocal(string repoDir)
+        => new("本地新建 develop（自 master）", $"git -C \"{repoDir}\" checkout -b develop");
 }
 
 /// <summary>

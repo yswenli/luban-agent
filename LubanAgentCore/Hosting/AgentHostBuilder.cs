@@ -158,6 +158,7 @@ public static class AgentHostBuilder
         services.AddScoped<IAgentProfileResolver, CoreAgentProfileResolver>();
         services.AddScoped<IAgentUserResolver, CoreAgentUserResolver>();
         services.AddScoped<IAgentModelSelection, SessionModelSelection>();
+        services.AddScoped<ISessionGenerationSettings, SessionGenerationSettings>();
         services.AddScoped<IModelCapabilityGate, VisionModelCapabilityGate>();
         services.AddScoped<IAgentAttachmentOrchestrator, CoreAttachmentOrchestrator>();
         services.AddScoped<ISessionRuntimeInitializer, CoreSessionRuntimeInitializer>();

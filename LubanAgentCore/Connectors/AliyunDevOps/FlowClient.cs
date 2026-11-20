@@ -67,25 +67,24 @@ public class FlowClient : IFlowClient, IDisposable
     #region 流水线管理 API
 
     /// <summary>
-    /// 列出流水线
+    /// 列出流水线（Token 翻页聚合）。
     /// </summary>
     /// <remarks>
-    /// <b>真机口径（2026-10-22 取证）</b>：成功响应是<b>裸数组</b>（无 <c>{ result: ... }</c> 外壳），
-    /// 元素字段为 <c>pipelineId</c>（数字）/ <c>pipelineName</c> / <c>createAccountId</c> / <c>createTime</c>；
-    /// 分页信息<b>不在</b>响应体里（<c>page</c> / <c>perPage</c> 只是请求参数）。故返回 <see cref="List{T}"/>，
-    /// 不再用带 <c>result</c> 外壳的 <see cref="YunxiaoPagedResult{T}"/>（那个类型对 <c>/flow</c> 侧不成立）。
+    /// <b>云效 Flow API 口径（2026-11-19 校正）</b>：用 <c>maxResults</c> + <c>nextToken</c> Token 翻页
+    /// （不是 <c>page</c>/<c>perPage</c>），响应体是对象
+    /// <c>{"pipelines":[...], "nextToken":"xxx", "totalCount":50}</c>（不是裸数组）。
+    /// 本方法内部做 Token 翻页循环，聚合后返回全量 <c>List</c>；
+    /// 单次 API 的 <c>pipelines</c> 元素不带 <c>pipelineConfig</c>（那是详情接口才有）。
     /// </remarks>
-    /// <param name="pipelineName">流水线名称过滤（可选，<b>服务端精确匹配</b>，幂等检索就靠它）</param>
-    /// <param name="page">页码（从 1 开始）</param>
-    /// <param name="perPage">每页条数（注意：服务端会把过大的值截到 10）</param>
+    /// <param name="pipelineName">流水线名称过滤（可选，服务端精确匹配）</param>
+    /// <param name="perPage">每页条数（注意：服务端会把过大的值截到 10；实机 2026-11-19 取证返回裸数组 + page/perPage 翻页）</param>
     /// <param name="statusList">状态过滤（可选，逗号分隔）</param>
     /// <param name="organizationId">组织 ID（可选，优先于配置）</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>流水线列表；响应体为空时为 <c>null</c>。</returns>
-    public async Task<List<YunxiaoPipeline>?> ListPipelinesAsync(
+    /// <returns>流水线全量列表；无流水线时返回空 <c>List</c>（不返回 null）。</returns>
+    public async Task<List<YunxiaoPipeline>> ListPipelinesAsync(
         string? pipelineName = null,
-        int page = 1,
-        int perPage = 20,
+        int maxResults = 100,
         string? statusList = null,
         string? organizationId = null,
         CancellationToken cancellationToken = default)
@@ -95,24 +94,44 @@ public class FlowClient : IFlowClient, IDisposable
             throw new InvalidOperationException("未配置组织 ID");
 
         var path = $"/oapi/v1/flow/organizations/{orgId}/pipelines";
-        var queryParams = new List<string>
+        var all = new List<YunxiaoPipeline>();
+
+        for (var pageNum = 1; pageNum <= 100; pageNum++) // 安全上限 100 页
         {
-            $"page={page}",
-            $"perPage={perPage}"
-        };
+            const int pageSize = 100;  // 服务端会截到 10，按 page/perPage 翻页直到空页
+            var queryParams = new List<string>
+            {
+                $"page={pageNum}",
+                $"perPage={pageSize}",
+            };
 
-        if (!string.IsNullOrWhiteSpace(pipelineName))
-            queryParams.Add($"pipelineName={Uri.EscapeDataString(pipelineName)}");
-        if (!string.IsNullOrWhiteSpace(statusList))
-            queryParams.Add($"statusList={Uri.EscapeDataString(statusList!)}");
+            if (!string.IsNullOrWhiteSpace(pipelineName))
+                queryParams.Add($"pipelineName={Uri.EscapeDataString(pipelineName)}");
+            if (!string.IsNullOrWhiteSpace(statusList))
+                queryParams.Add($"statusList={Uri.EscapeDataString(statusList!)}");
 
-        var responseBody = await SendRawAsync(
-            HttpMethod.Get,
-            $"{path}?{string.Join("&", queryParams)}",
-            null,
-            cancellationToken);
+            var responseBody = await SendRawAsync(
+                HttpMethod.Get,
+                $"{path}?{string.Join("&", queryParams)}",
+                null,
+                cancellationToken);
 
-        return YunxiaoResponseParser.DeserializeList<YunxiaoPipeline>(responseBody);
+            // 两种响应格式兜底：先试对象容器，再试裸数组
+            List<YunxiaoPipeline>? pageItems = null;
+            var pageObj = YunxiaoResponseParser.DeserializeFlowPage<YunxiaoPipeline>(responseBody);
+            if (pageObj?.Pipelines is { Count: > 0 })
+                pageItems = pageObj.Pipelines;
+            else
+                pageItems = YunxiaoResponseParser.DeserializeList<YunxiaoPipeline>(responseBody);
+
+            // 空页终止（服务端截到 10 时，不能用 "count < perPage" 判断最后一页——因为最后一页是 10 条，倒数第二页也是 10 条）
+            if (pageItems is null or { Count: 0 })
+                break;
+
+            all.AddRange(pageItems);
+        }
+
+        return all;
     }
 
     /// <summary>

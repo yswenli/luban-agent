@@ -56,12 +56,14 @@ public sealed record YunxiaoSaveSettingsDto(bool Saved);
 /// <param name="Identifier">项目标识（云效 <c>customCode</c>）。</param>
 /// <param name="Description">项目描述。</param>
 /// <param name="UpdateTime">更新时间（<c>yyyy-MM-dd HH:mm:ss</c>；取 <c>gmtModified</c>，为空退 <c>gmtCreate</c>）。</param>
+/// <param name="Initialized">是否已完成项目初始化（代码库 + 三端流水线已绑定，本地登记判定）。</param>
 public sealed record YunxiaoProjectItemDto(
     string? Id,
     string? Name,
     string? Identifier,
     string? Description,
-    string? UpdateTime);
+    string? UpdateTime,
+    bool Initialized = false);
 
 /// <summary>研发项目分页列表。</summary>
 /// <param name="Items">项目项。</param>

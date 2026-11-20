@@ -97,6 +97,31 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: relative;
+}
+
+/* 全局遮罩：预览/提交进行中禁止操作 */
+.content.blocking::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.55);
+  z-index: 1000;
+  cursor: progress;
+}
+.content.blocking::after {
+  content: '处理中，请稍候…';
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  background: var(--brand);
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .banner {
@@ -645,6 +670,23 @@ html[data-theme='light'] {
   color: var(--text-weak);
 }
 
+/* 项目列表 · 初始化状态徽标（已初始化 / 待初始化） */
+.proj-item-init {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-weak);
+  border: 1px solid var(--line);
+  background: var(--bg-weak, transparent);
+}
+
+.proj-item-init.ok {
+  color: var(--ok, #1a7f37);
+  border-color: currentColor;
+}
+
 .proj-empty {
   padding: 18px 10px;
   color: var(--text-weak);
@@ -972,6 +1014,196 @@ html[data-theme='light'] {
   color: var(--ok);
 }
 
+/* 工作区手输新建（S2c §12.1.1）：紧凑一行，不增高行 */
+.ws-new {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+/* .ws-new 自带 display:flex，会盖过 UA 的 [hidden]，单独兜一条 */
+.ws-new[hidden] {
+  display: none;
+}
+.ws-new .field-input {
+  flex: 1 1 auto;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.ws-new .btn {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 26px;
+}
+#ws-new-result {
+  margin-top: 2px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* S2d §13.1 工作区可搜索组合框（触发器 + 弹层：搜索框 + 列表 + 目录浏览） */
+.ws-combo {
+  position: relative;
+  min-width: 0;
+}
+.combo-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.combo-trigger-v {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-trigger-caret {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-weak);
+}
+.combo-pop {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.combo-search {
+  width: 100%;
+  height: 26px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 12px;
+}
+.combo-opt {
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-opt:hover,
+.combo-opt.on {
+  background: var(--accent-soft);
+}
+/* 列表末尾的「新建工作区」动作项：与数据项分隔，搜索时始终保留 */
+.combo-opt-new {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+}
+.combo-empty {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+.combo-browse {
+  width: 100%;
+  height: 26px;
+  margin-top: 4px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 24px;
+}
+/* 迷你目录浏览器：面包屑 + 单层子目录行 + 「选此目录」回填（数据仅内存渲染） */
+.dir-browser {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.dir-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.dir-crumb .crumb-seg {
+  padding: 0 3px;
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.dir-crumb .crumb-seg:hover {
+  background: var(--accent-soft);
+}
+.dir-crumb .crumb-cur {
+  color: var(--text);
+  cursor: default;
+}
+.dir-crumb .crumb-slash {
+  color: var(--text-weak);
+}
+.dir-list {
+  max-height: 116px;
+  overflow-y: auto;
+}
+.dir-row {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dir-row:hover {
+  background: var(--accent-soft);
+}
+.dir-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.dir-actions .btn {
+  flex: 1 1 auto;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 24px;
+}
+#ws-dir-error {
+  margin-top: 2px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+/* F6 流水线名占位派生提示（S2d §13.3：以预检为准） */
+.er-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
 .kv-hint {
   font-size: 11px;
   color: var(--text-weak);
@@ -1266,4 +1498,115 @@ html[data-theme='light'] {
 
 #diff-pre {
   max-height: 220px;
+}
+/* ── 屏 4：PRD 拆分 ───────────────────────────────────────────────── */
+
+.prd-textarea {
+  min-height: 180px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.prd-tree {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.prd-node {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.prd-node b {
+  font-weight: 600;
+}
+
+.prd-iter {
+  margin-top: 4px;
+}
+
+.prd-sub {
+  padding-left: 26px;
+  color: var(--text-sub);
+}
+
+.prd-plan {
+  margin-top: 6px;
+}
+
+.prd-meta {
+  color: var(--text-weak);
+  font-size: 11.5px;
+}
+
+.prd-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.prd-badge-task {
+  border-color: var(--info-border);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.prd-badge-case {
+  border-color: var(--warn-border);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.prd-badge-plan {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.prd-receipts {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.prd-receipt {
+  display: flex;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12px;
+}
+
+.prd-receipt.ok .prd-receipt-title {
+  color: var(--text-sub);
+}
+
+.prd-receipt.fail .prd-receipt-title {
+  color: var(--danger);
+}
+
+.prd-receipt-kind {
+  flex: none;
+  min-width: 74px;
+  color: var(--text-weak);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.prd-receipt-title {
+  word-break: break-all;
 }

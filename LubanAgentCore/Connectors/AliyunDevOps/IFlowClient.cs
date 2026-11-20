@@ -20,18 +20,16 @@ namespace LubanAgentCore.Connectors.AliyunDevOps;
 /// </remarks>
 public interface IFlowClient
 {
-    /// <summary>列出流水线。</summary>
-    /// <param name="pipelineName">流水线名检索（可选）。</param>
-    /// <param name="page">页码（从 1 开始）。</param>
-    /// <param name="perPage">每页条数。</param>
-    /// <param name="statusList">状态过滤（可选）。</param>
+    /// <summary>列出流水线（Token 翻页聚合，内部循环拉取全量）。</summary>
+    /// <param name="pipelineName">流水线名检索（可选，服务端精确匹配）。</param>
+    /// <param name="maxResults">单页最大返回条数（默认 100）。</param>
+    /// <param name="statusList">状态过滤（可选，逗号分隔）。</param>
     /// <param name="organizationId">组织 ID（可选）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>流水线列表；响应体为空时为 <c>null</c>。</returns>
-    Task<List<YunxiaoPipeline>?> ListPipelinesAsync(
+    /// <returns>流水线全量列表（空时返回空 <c>List</c>，不返回 null）。</returns>
+    Task<List<YunxiaoPipeline>> ListPipelinesAsync(
         string? pipelineName = null,
-        int page = 1,
-        int perPage = 20,
+        int maxResults = 100,
         string? statusList = null,
         string? organizationId = null,
         CancellationToken cancellationToken = default);

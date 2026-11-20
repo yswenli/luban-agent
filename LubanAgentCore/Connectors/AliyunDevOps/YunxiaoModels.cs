@@ -92,6 +92,30 @@ public class YunxiaoPagedResult<T>
     public int PerPage { get; set; }
 }
 
+/// <summary>
+/// Flow 侧 Token 翻页容器（<c>/flow/organizations/{orgId}/pipelines</c>）。
+/// </summary>
+/// <remarks>
+/// 云效 Flow 列表接口用 <c>maxResults</c> + <c>nextToken</c> Token 翻页（不是
+/// Codeup/Projex 的 <c>page</c>/<c>perPage</c> 页码翻页）；响应体是对象
+/// <c>{"pipelines":[...], "nextToken":"xxx", "totalCount":50}</c>（不是裸数组，
+/// <see cref="YunxiaoResponseParser.DeserializeList{T}"/> 只认裸数组，需要单独容器）。
+/// </remarks>
+public class FlowPipelinePage<T>
+{
+    /// <summary>流水线数组（JSON 字段 <c>pipelines</c>）。</summary>
+    [JsonPropertyName("pipelines")]
+    public List<T>? Pipelines { get; set; }
+
+    /// <summary>下一页 Token（<c>null</c> / 空串 = 最后一页）。</summary>
+    [JsonPropertyName("nextToken")]
+    public string? NextToken { get; set; }
+
+    /// <summary>总数。</summary>
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; set; }
+}
+
 #endregion
 
 #region 代码仓库（Codeup）
@@ -974,6 +998,656 @@ public class YunxiaoProjectUser
     /// <summary>用户 ID。</summary>
     [JsonPropertyName("id")]
     public string? Id { get; set; }
+}
+
+#endregion
+
+#region Projex 迭代
+
+/// <summary>
+/// 云效迭代（Sprint）。
+/// </summary>
+public class YunxiaoSprint
+{
+    /// <summary>迭代 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>迭代名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>迭代描述。</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>状态：<c>TODO</c> 未开始 / <c>DOING</c> 进行中 / <c>ARCHIVED</c> 已完成。</summary>
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    /// <summary>开始日期。</summary>
+    [JsonPropertyName("startDate")]
+    public string? StartDate { get; set; }
+
+    /// <summary>结束日期。</summary>
+    [JsonPropertyName("endDate")]
+    public string? EndDate { get; set; }
+
+    /// <summary>工时容量（小时）。</summary>
+    [JsonPropertyName("capacityHours")]
+    public int? CapacityHours { get; set; }
+
+    /// <summary>是否锁定。</summary>
+    [JsonPropertyName("locked")]
+    public bool? Locked { get; set; }
+
+    /// <summary>创建人。</summary>
+    [JsonPropertyName("creator")]
+    public YunxiaoUserRef? Creator { get; set; }
+
+    /// <summary>修改人。</summary>
+    [JsonPropertyName("modifier")]
+    public YunxiaoUserRef? Modifier { get; set; }
+
+    /// <summary>负责人列表。</summary>
+    [JsonPropertyName("owners")]
+    public List<YunxiaoUserRef>? Owners { get; set; }
+
+    /// <summary>创建时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+
+    /// <summary>修改时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtModified")]
+    public long? GmtModified { get; set; }
+}
+
+/// <summary>
+/// 云效用户引用（<c>{ id, name }</c>）。
+/// </summary>
+public class YunxiaoUserRef
+{
+    /// <summary>用户 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>用户名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+}
+
+#endregion
+
+#region Projex 工作项
+
+/// <summary>
+/// 云效工作项（列表 / 详情同形）。
+/// </summary>
+public class YunxiaoWorkitem
+{
+    /// <summary>工作项 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>编号（如 <c>DSDD-123</c>）。</summary>
+    [JsonPropertyName("serialNumber")]
+    public string? SerialNumber { get; set; }
+
+    /// <summary>标题。</summary>
+    [JsonPropertyName("subject")]
+    public string? Subject { get; set; }
+
+    /// <summary>描述。</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>描述格式：<c>RICHTEXT</c> / <c>MARKDOWN</c>。</summary>
+    [JsonPropertyName("formatType")]
+    public string? FormatType { get; set; }
+
+    /// <summary>分类：<c>Req</c> / <c>Bug</c> / <c>Task</c> 等。</summary>
+    [JsonPropertyName("categoryId")]
+    public string? CategoryId { get; set; }
+
+    /// <summary>逻辑状态：<c>normal</c> / <c>archived</c>。</summary>
+    [JsonPropertyName("logicalStatus")]
+    public string? LogicalStatus { get; set; }
+
+    /// <summary>父工作项 ID。</summary>
+    [JsonPropertyName("parentId")]
+    public string? ParentId { get; set; }
+
+    /// <summary>状态。</summary>
+    [JsonPropertyName("status")]
+    public YunxiaoWorkitemStatus? Status { get; set; }
+
+    /// <summary>所属迭代。</summary>
+    [JsonPropertyName("sprint")]
+    public YunxiaoWorkitemRef? Sprint { get; set; }
+
+    /// <summary>所属项目。</summary>
+    [JsonPropertyName("space")]
+    public YunxiaoWorkitemRef? Space { get; set; }
+
+    /// <summary>负责人。</summary>
+    [JsonPropertyName("assignedTo")]
+    public YunxiaoUserRef? AssignedTo { get; set; }
+
+    /// <summary>创建人。</summary>
+    [JsonPropertyName("creator")]
+    public YunxiaoUserRef? Creator { get; set; }
+
+    /// <summary>修改人。</summary>
+    [JsonPropertyName("modifier")]
+    public YunxiaoUserRef? Modifier { get; set; }
+
+    /// <summary>工作项类型。</summary>
+    [JsonPropertyName("workitemType")]
+    public YunxiaoWorkitemRef? WorkitemType { get; set; }
+
+    /// <summary>创建时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+
+    /// <summary>修改时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtModified")]
+    public long? GmtModified { get; set; }
+
+    /// <summary>状态更新时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("updateStatusAt")]
+    public long? UpdateStatusAt { get; set; }
+
+    /// <summary>自定义字段值（详情接口返回；用于读取「验收标准」等字段）。</summary>
+    [JsonPropertyName("customFieldValues")]
+    public List<YunxiaoCustomFieldValue>? CustomFieldValues { get; set; }
+}
+
+/// <summary>
+/// 工作项自定义字段值（<c>{ fieldId, fieldName, values[] }</c>）。
+/// </summary>
+public class YunxiaoCustomFieldValue
+{
+    /// <summary>字段 ID。</summary>
+    [JsonPropertyName("fieldId")]
+    public string? FieldId { get; set; }
+
+    /// <summary>字段名称（如「验收标准」）。</summary>
+    [JsonPropertyName("fieldName")]
+    public string? FieldName { get; set; }
+
+    /// <summary>字段格式（如 <c>RICHTEXT</c> / <c>LIST</c>）。</summary>
+    [JsonPropertyName("fieldFormat")]
+    public string? FieldFormat { get; set; }
+
+    /// <summary>字段取值。</summary>
+    [JsonPropertyName("values")]
+    public List<YunxiaoCustomFieldValueItem>? Values { get; set; }
+}
+
+/// <summary>
+/// 自定义字段取值项（<c>{ identifier, displayValue }</c>）。
+/// </summary>
+public class YunxiaoCustomFieldValueItem
+{
+    /// <summary>取值标识。</summary>
+    [JsonPropertyName("identifier")]
+    public string? Identifier { get; set; }
+
+    /// <summary>展示值。</summary>
+    [JsonPropertyName("displayValue")]
+    public string? DisplayValue { get; set; }
+}
+
+/// <summary>
+/// 工作项内嵌引用（<c>{ id, name }</c>，用于 <c>sprint</c> / <c>space</c> / <c>workitemType</c>）。
+/// </summary>
+public class YunxiaoWorkitemRef
+{
+    /// <summary>ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// 工作项状态。
+/// </summary>
+public class YunxiaoWorkitemStatus
+{
+    /// <summary>状态 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>状态名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>显示名称。</summary>
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+
+    /// <summary>英文名称（如 <c>TODO</c>）。</summary>
+    [JsonPropertyName("nameEn")]
+    public string? NameEn { get; set; }
+}
+
+/// <summary>
+/// 工作项类型。
+/// </summary>
+public class YunxiaoWorkitemType
+{
+    /// <summary>类型 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>类型名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>类型英文名称。</summary>
+    [JsonPropertyName("nameEn")]
+    public string? NameEn { get; set; }
+
+    /// <summary>分类：<c>Req</c> / <c>Bug</c> / <c>Task</c>。</summary>
+    [JsonPropertyName("categoryId")]
+    public string? CategoryId { get; set; }
+
+    /// <summary>描述。</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>是否启用。</summary>
+    [JsonPropertyName("enable")]
+    public bool? Enable { get; set; }
+
+    /// <summary>是否默认类型。</summary>
+    [JsonPropertyName("defaultType")]
+    public bool? DefaultType { get; set; }
+
+    /// <summary>是否系统默认类型。</summary>
+    [JsonPropertyName("systemDefault")]
+    public bool? SystemDefault { get; set; }
+}
+
+/// <summary>
+/// 工作项工作流（状态集合与列序的真源）。
+/// </summary>
+public class YunxiaoWorkitemWorkflow
+{
+    /// <summary>工作流 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>工作流名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>默认状态 ID。</summary>
+    [JsonPropertyName("defaultStatusId")]
+    public string? DefaultStatusId { get; set; }
+
+    /// <summary>状态列表（顺序即看板列序）。</summary>
+    [JsonPropertyName("statuses")]
+    public List<YunxiaoWorkitemStatus>? Statuses { get; set; }
+}
+
+/// <summary>
+/// 工作项评论。
+/// </summary>
+public class YunxiaoWorkitemComment
+{
+    /// <summary>评论 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>评论内容。</summary>
+    [JsonPropertyName("content")]
+    public string? Content { get; set; }
+
+    /// <summary>内容格式：<c>RICHTEXT</c> / <c>MARKDOWN</c>。</summary>
+    [JsonPropertyName("contentFormat")]
+    public string? ContentFormat { get; set; }
+
+    /// <summary>父评论 ID。</summary>
+    [JsonPropertyName("parentId")]
+    public string? ParentId { get; set; }
+
+    /// <summary>是否置顶。</summary>
+    [JsonPropertyName("top")]
+    public bool? Top { get; set; }
+
+    /// <summary>置顶时间（epoch 毫秒；接口返回数字；待真机确认类型后最终定稿）。</summary>
+    [JsonPropertyName("topTime")]
+    public long? TopTime { get; set; }
+
+    /// <summary>创建时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+
+    /// <summary>修改时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtModified")]
+    public long? GmtModified { get; set; }
+
+    /// <summary>评论人。</summary>
+    [JsonPropertyName("user")]
+    public YunxiaoUserRef? User { get; set; }
+}
+
+/// <summary>
+/// 工作项附件。
+/// </summary>
+public class YunxiaoWorkitemAttachment
+{
+    /// <summary>附件记录 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>文件 ID（取文件详情用）。</summary>
+    [JsonPropertyName("fileId")]
+    public string? FileId { get; set; }
+
+    /// <summary>文件名称。</summary>
+    [JsonPropertyName("fileName")]
+    public string? FileName { get; set; }
+
+    /// <summary>文件大小（字节）。</summary>
+    [JsonPropertyName("size")]
+    public long? Size { get; set; }
+
+    /// <summary>文件后缀。</summary>
+    [JsonPropertyName("suffix")]
+    public string? Suffix { get; set; }
+
+    /// <summary>临时下载地址（有时效）。</summary>
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    /// <summary>创建时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+
+    /// <summary>修改时间（epoch 毫秒；接口返回数字）。</summary>
+    [JsonPropertyName("gmtModified")]
+    public long? GmtModified { get; set; }
+
+    /// <summary>上传人。</summary>
+    [JsonPropertyName("creator")]
+    public YunxiaoUserRef? Creator { get; set; }
+
+    /// <summary>修改人。</summary>
+    [JsonPropertyName("modifier")]
+    public YunxiaoUserRef? Modifier { get; set; }
+}
+
+/// <summary>
+/// 工作项文件（临时下载信息）。
+/// </summary>
+public class YunxiaoWorkitemFile
+{
+    /// <summary>文件 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>文件名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>文件大小（字节）。</summary>
+    [JsonPropertyName("size")]
+    public long? Size { get; set; }
+
+    /// <summary>文件后缀。</summary>
+    [JsonPropertyName("suffix")]
+    public string? Suffix { get; set; }
+
+    /// <summary>临时下载地址（有时效）。</summary>
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+}
+
+/// <summary>
+/// 工作项搜索条件（服务端过滤，对应 <c>workitems:search</c> 的 conditions）。
+/// </summary>
+public class YunxiaoWorkitemSearchCriteria
+{
+    /// <summary>项目 ID（<c>spaceId</c>）。</summary>
+    public string ProjectId { get; init; } = string.Empty;
+
+    /// <summary>工作项分类：<c>Req</c> / <c>Bug</c> / <c>Task</c>。</summary>
+    public string Category { get; init; } = string.Empty;
+
+    /// <summary>迭代 ID（服务端过滤，为空不过滤）。</summary>
+    public string? SprintId { get; init; }
+
+    /// <summary>状态 ID，逗号分隔（为空不过滤）。</summary>
+    public string? Status { get; init; }
+
+    /// <summary>标题包含的关键字（为空不过滤）。</summary>
+    public string? Subject { get; init; }
+
+    /// <summary>负责人 userId，逗号分隔（为空不过滤）。</summary>
+    public string? AssignedTo { get; init; }
+
+    /// <summary>工作项类型 ID，逗号分隔（为空不过滤）。</summary>
+    public string? WorkitemTypeId { get; init; }
+
+    /// <summary>排序字段（默认 <c>gmtCreate</c>）。</summary>
+    public string OrderBy { get; init; } = "gmtCreate";
+
+    /// <summary>排序方向：<c>desc</c> / <c>asc</c>。</summary>
+    public string Sort { get; init; } = "desc";
+
+    /// <summary>页码（从 1 开始）。</summary>
+    public int Page { get; init; } = 1;
+
+    /// <summary>每页条数（1–200）。</summary>
+    public int PerPage { get; init; } = 20;
+}
+
+/// <summary>
+/// 创建工作项请求。
+/// </summary>
+public class YunxiaoCreateWorkitemRequest
+{
+    /// <summary>项目 ID（<c>spaceId</c>，必填）。</summary>
+    public string ProjectId { get; init; } = string.Empty;
+
+    /// <summary>标题（必填）。</summary>
+    public string Subject { get; init; } = string.Empty;
+
+    /// <summary>工作项类型 ID（必填，取自工作项类型列表）。</summary>
+    public string WorkitemTypeId { get; init; } = string.Empty;
+
+    /// <summary>负责人 userId（必填）。</summary>
+    public string AssignedTo { get; init; } = string.Empty;
+
+    /// <summary>所属迭代 ID（可选）。</summary>
+    public string? SprintId { get; init; }
+
+    /// <summary>描述（可选）。</summary>
+    public string? Description { get; init; }
+
+    /// <summary>描述格式：<c>RICHTEXT</c> / <c>MARKDOWN</c>（可选）。</summary>
+    public string? FormatType { get; init; }
+
+    /// <summary>父工作项 ID（可选）。</summary>
+    public string? ParentId { get; init; }
+
+    /// <summary>标签 ID 列表（可选）。</summary>
+    public IReadOnlyList<string>? Labels { get; init; }
+
+    /// <summary>自定义字段值（可选，键为字段 ID）。</summary>
+    public IReadOnlyDictionary<string, object?>? CustomFieldValues { get; init; }
+}
+
+/// <summary>
+/// 云效「创建即返回 id」类接口的响应体（<c>{ "id": "..." }</c>）。
+/// </summary>
+internal sealed class YunxiaoIdResult
+{
+    /// <summary>新建对象 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+}
+
+#endregion
+
+#region 平台用户
+
+/// <summary>
+/// 云效当前用户（<c>GET /oapi/v1/platform/user</c>）。
+/// </summary>
+public class YunxiaoCurrentUser
+{
+    /// <summary>用户 ID（工作项 <c>assignedTo</c> 用该值）。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>登录账号。</summary>
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
+
+    /// <summary>姓名。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>昵称。</summary>
+    [JsonPropertyName("nickName")]
+    public string? NickName { get; set; }
+
+    /// <summary>邮箱。</summary>
+    [JsonPropertyName("email")]
+    public string? Email { get; set; }
+}
+
+#endregion
+
+#region 测试（Testhub）
+
+/// <summary>
+/// 云效测试用例库（<c>GET .../testhub/organizations/{orgId}/testRepo/list</c>，响应为裸数组）。
+/// </summary>
+public class YunxiaoTestRepo
+{
+    /// <summary>用例库标识（创建用例时的 <c>testRepoId</c>）。</summary>
+    [JsonPropertyName("testRepoIdentifier")]
+    public string? TestRepoIdentifier { get; set; }
+
+    /// <summary>用例库名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>描述。</summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>作用域。</summary>
+    [JsonPropertyName("scope")]
+    public string? Scope { get; set; }
+
+    /// <summary>创建时间（epoch 毫秒；接口返回数字，声明为字符串会导致反序列化失败）。</summary>
+    [JsonPropertyName("gmtCreate")]
+    public long? GmtCreate { get; set; }
+}
+
+/// <summary>
+/// 创建测试用例请求。
+/// </summary>
+/// <remarks>
+/// 目标接口 <c>POST .../testRepos/{testRepoId}/testcases</c>；<see cref="TestRepoId"/> 只用于拼 URL，不进请求体。
+/// </remarks>
+public class YunxiaoCreateTestcaseRequest
+{
+    /// <summary>用例库 ID（必填，取自用例库列表的 <c>testRepoIdentifier</c>）。</summary>
+    public string TestRepoId { get; init; } = string.Empty;
+
+    /// <summary>用例标题（必填）。</summary>
+    public string Subject { get; init; } = string.Empty;
+
+    /// <summary>负责人 userId（可选）。</summary>
+    public string? AssignedTo { get; init; }
+
+    /// <summary>目录 ID（可选）。</summary>
+    public string? DirectoryId { get; init; }
+
+    /// <summary>前置条件（可选）。</summary>
+    public string? PreCondition { get; init; }
+
+    /// <summary>标签（可选）。</summary>
+    public IReadOnlyList<string>? Labels { get; init; }
+
+    /// <summary>自定义字段值（可选）。</summary>
+    public IReadOnlyDictionary<string, object?>? CustomFieldValues { get; init; }
+
+    /// <summary>测试步骤（可选，按云效原始结构透传）。</summary>
+    public IReadOnlyList<object>? TestSteps { get; init; }
+}
+
+/// <summary>
+/// 云效测试用例（创建响应最小集）。
+/// </summary>
+public class YunxiaoTestcase
+{
+    /// <summary>用例 ID。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>用例标题。</summary>
+    [JsonPropertyName("subject")]
+    public string? Subject { get; set; }
+}
+
+/// <summary>
+/// 创建测试计划请求。
+/// </summary>
+/// <remarks>
+/// <b>未真机验证</b>：官方 MCP 包未提供「创建测试计划」工具，本请求按云效文档路径
+/// <c>POST .../testhub/organizations/{orgId}/testPlans</c> 实现，仅传最小字段集；
+/// 若云效调整字段名，调用会以错误回执暴露，不影响已创建的用例与工作项。
+/// </remarks>
+public class YunxiaoCreateTestPlanRequest
+{
+    /// <summary>计划名称（必填）。</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>关联项目 ID（<c>spaceIdentifier</c>，可选）。</summary>
+    public string? ProjectId { get; init; }
+
+    /// <summary>关联迭代 ID（<c>sprintIdentifier</c>，可选）。</summary>
+    public string? SprintId { get; init; }
+
+    /// <summary>开始日期（<c>yyyy-MM-dd</c>，可选）。</summary>
+    public string? StartDate { get; init; }
+
+    /// <summary>结束日期（<c>yyyy-MM-dd</c>，可选）。</summary>
+    public string? EndDate { get; init; }
+
+    /// <summary>负责人 userId 列表（可选）。</summary>
+    public IReadOnlyList<string>? Managers { get; init; }
+
+    /// <summary>纳入计划的用例 ID 列表（可选）。</summary>
+    public IReadOnlyList<string>? CaseIds { get; init; }
+}
+
+/// <summary>
+/// 云效测试计划（创建响应最小集）。
+/// </summary>
+public class YunxiaoTestPlan
+{
+    /// <summary>计划标识（部分响应返回该字段）。</summary>
+    [JsonPropertyName("testPlanIdentifier")]
+    public string? TestPlanIdentifier { get; set; }
+
+    /// <summary>计划 ID（部分响应返回该字段）。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>计划名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
 }
 
 #endregion

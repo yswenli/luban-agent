@@ -45,9 +45,42 @@ export interface Bootstrap {
   providers: ProviderSummary[];
   selection?: { providerId?: string | null; modelId?: string | null } | null;
   permissionModes: PermissionMode[];
+  /** 当前（全局）模型可选的思考档位；空串表示跟随模型，空数组表示不显示控件。 */
   reasoningEfforts: string[];
+  /** 当前（全局）模型可选的上下文预算档位（token）；空数组表示不显示控件。 */
+  contextTiers: number[];
+  /** 当前（全局）模型上下文窗口（token）。 */
+  contextWindow?: number | null;
   attachments: AttachmentPolicy;
   confirmation: { timeoutSeconds: number };
+}
+
+/** 模型能力档案（服务端 `model/profile`）。 */
+export interface ModelProfile {
+  providerId: string;
+  modelId: string;
+  /** 可发档位；`null` 表示未知，空数组表示明确不支持。 */
+  reasoningEfforts?: string[] | null;
+  /** 上下文窗口（token）；`null` 表示未知。 */
+  contextWindow?: number | null;
+  /** 按窗口派生的上下文预算档位。 */
+  contextTiers: number[];
+  /** 是否已有用户登记（决定「恢复内置默认」是否可用）。 */
+  hasOverride: boolean;
+}
+
+/** 会话生效的生成参数（服务端 `agent/sessionSettings`）。 */
+export interface SessionGenerationSettings {
+  /** 生效的思考档位（枚举名）；`null` 表示跟随模型。 */
+  reasoningEffort?: string | null;
+  /** 生效的上下文预算档位（token）；`null` 表示未知或未设。 */
+  contextTier?: number | null;
+  /** 该会话模型可选的思考档位；空串表示跟随模型，空数组表示不显示控件。 */
+  reasoningEfforts: string[];
+  /** 该会话模型可选的上下文预算档位（token）；空数组表示不显示控件。 */
+  contextTiers: number[];
+  /** 该会话模型上下文窗口（token）。 */
+  contextWindow?: number | null;
 }
 
 export interface SessionSummary {

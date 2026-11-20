@@ -1,9 +1,22 @@
 import { createEffect, createSignal, For, Show } from 'solid-js';
 
-import { settingsApi } from '../../lib/settings';
-import type { ModelItem, ProviderListItem } from '../../lib/types';
+import { Modal } from '../../components/Dialog';
+import { resetAgent, settingsApi } from '../../lib/settings';
+import type { ModelItem, ModelProfile, ProviderListItem } from '../../lib/types';
 import { selectModel, selection, showToast } from '../../stores/app';
 import { FormActions, SettingsPane, TextField } from './Shared';
+
+/** 标准链路能发出的思考档位，顺序即弹窗里的勾选顺序。 */
+const SENDABLE_EFFORTS = ['None', 'Low', 'Medium', 'High', 'ExtraHigh'] as const;
+
+/** 档位显示名；与对话页保持一致。 */
+const EFFORT_LABELS: Record<string, string> = {
+  None: '不思考',
+  Low: '低',
+  Medium: '中',
+  High: '高',
+  ExtraHigh: '极高',
+};
 
 /**
  * 模型页：按供应商维护自定义模型，并把某个模型设为「新会话默认模型」。
@@ -17,6 +30,14 @@ export function ModelTab() {
   const [models, setModels] = createSignal<ModelItem[]>([]);
   const [newModel, setNewModel] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+
+  /** 能力档案弹窗：目标模型 + 服务端回读结果 + 编辑中的档位与窗口。 */
+  const [profileTarget, setProfileTarget] = createSignal<ModelItem | null>(null);
+  const [profile, setProfile] = createSignal<ModelProfile | null>(null);
+  const [profileMode, setProfileMode] = createSignal<'unknown' | 'none' | 'some'>('unknown');
+  const [profileEfforts, setProfileEfforts] = createSignal<string[]>([]);
+  const [profileWindow, setProfileWindow] = createSignal('');
+  const [profileBusy, setProfileBusy] = createSignal(false);
 
   const providerLabel = (name: string) => providers().find((item) => item.name === name)?.displayName ?? name;
 
@@ -162,6 +183,90 @@ export function ModelTab() {
     }
   };
 
+  /** 回读结果同步到编辑态：`null`=未知、空数组=明确不支持、非空=可选档位。 */
+  const applyProfile = (info: ModelProfile) => {
+    setProfile(info);
+    const efforts = info.reasoningEfforts;
+    setProfileMode(efforts == null ? 'unknown' : efforts.length === 0 ? 'none' : 'some');
+    setProfileEfforts([...(efforts ?? [])]);
+    setProfileWindow(info.contextWindow != null ? String(info.contextWindow) : '');
+  };
+
+  const openProfile = async (model: ModelItem) => {
+    const providerId = active();
+    if (!providerId) return;
+
+    setProfileTarget(model);
+    setProfile(null);
+    setProfileMode('unknown');
+    setProfileEfforts([]);
+    setProfileWindow('');
+    setProfileBusy(true);
+    try {
+      const info = await settingsApi.getModelProfile(providerId, model.modelId);
+      applyProfile(info);
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const toggleEffort = (name: string) => {
+    setProfileEfforts((list) => (list.includes(name) ? list.filter((item) => item !== name) : [...list, name]));
+  };
+
+  /** 按三态把勾选结果翻译成请求字段：未知=null、明确不支持=[]、指定档位=勾选集合。 */
+  const effortsForSave = (): string[] | null => {
+    switch (profileMode()) {
+      case 'unknown':
+        return null;
+      case 'none':
+        return [];
+      default:
+        return profileEfforts();
+    }
+  };
+
+  const saveProfile = async (reset: boolean) => {
+    const providerId = active();
+    const target = profileTarget();
+    if (!providerId || !target) return;
+
+    if (!reset && profileMode() === 'some' && profileEfforts().length === 0) {
+      showToast('已选「指定档位」但一项都没勾；要表示不支持请选「不支持思考」', 'error');
+      return;
+    }
+
+    const windowText = profileWindow().trim();
+    const window = windowText === '' ? null : Number(windowText);
+    if (!reset) {
+      if (window !== null && (!Number.isInteger(window) || window <= 0)) {
+        showToast('上下文窗口必须是正整数（留空表示未知）', 'error');
+        return;
+      }
+    }
+
+    setProfileBusy(true);
+    try {
+      const info = await settingsApi.saveModelProfile({
+        providerId,
+        modelId: target.modelId,
+        reasoningEfforts: reset ? undefined : effortsForSave(),
+        contextWindow: reset ? undefined : window,
+        reset,
+      });
+      applyProfile(info);
+      // 配置已落盘；重建 Agent 让下一次对话立刻按新档位下发
+      await resetAgent();
+      showToast(reset ? '已恢复内置默认' : '能力档案已保存', 'success');
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
   return (
     <SettingsPane
       title="模型"
@@ -197,6 +302,9 @@ export function ModelTab() {
                     <span class="tag">自定义</span>
                   </Show>
                   <span class="spacer" />
+                  <button class="btn ghost" onClick={() => void openProfile(model)} disabled={busy() || profileBusy()}>
+                    能力
+                  </button>
                   <Show
                     when={!model.isSelected}
                     fallback={<span class="tag current">新会话默认</span>}
@@ -233,6 +341,107 @@ export function ModelTab() {
             添加
           </button>
         </FormActions>
+      </Show>
+
+      <Show when={profileTarget()}>
+        {(target) => (
+          <Modal
+            title="模型能力"
+            subtitle={`${providerLabel(active() ?? '')} / ${target().modelId}`}
+            onClose={() => setProfileTarget(null)}
+            footer={
+              <>
+                <button
+                  class="btn ghost"
+                  disabled={profileBusy() || !profile()?.hasOverride}
+                  onClick={() => void saveProfile(true)}
+                >
+                  恢复内置默认
+                </button>
+                <span class="spacer" />
+                <button class="btn ghost" onClick={() => setProfileTarget(null)}>
+                  关闭
+                </button>
+                <button class="btn primary" disabled={profileBusy() || !profile()} onClick={() => void saveProfile(false)}>
+                  {profileBusy() ? '保存中…' : '保存'}
+                </button>
+              </>
+            }
+          >
+            <div class="form-stack">
+              <div class="field">
+                <div class="section-label">思考档位</div>
+                <div class="field-hint">
+                  三态互斥：「未知」不登记，对话页只给「跟随模型」；「不支持思考」明确不显示档位控件；
+                  「指定档位」按勾选下发。
+                </div>
+                <div class="field-grid">
+                  <label class="check-field">
+                    <input
+                      type="radio"
+                      name="profile-mode"
+                      checked={profileMode() === 'unknown'}
+                      onChange={() => setProfileMode('unknown')}
+                    />
+                    <span>未知（不登记）</span>
+                  </label>
+                  <label class="check-field">
+                    <input
+                      type="radio"
+                      name="profile-mode"
+                      checked={profileMode() === 'none'}
+                      onChange={() => setProfileMode('none')}
+                    />
+                    <span>不支持思考</span>
+                  </label>
+                  <label class="check-field">
+                    <input
+                      type="radio"
+                      name="profile-mode"
+                      checked={profileMode() === 'some'}
+                      onChange={() => setProfileMode('some')}
+                    />
+                    <span>指定档位</span>
+                  </label>
+                </div>
+
+                <Show when={profileMode() === 'some'}>
+                  <div class="field-grid">
+                    <For each={SENDABLE_EFFORTS}>
+                      {(name) => (
+                        <label class="check-field">
+                          <input
+                            type="checkbox"
+                            checked={profileEfforts().includes(name)}
+                            onChange={() => toggleEffort(name)}
+                          />
+                          <span>{EFFORT_LABELS[name] ?? name}</span>
+                          <span class="faint mono">{name}</span>
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+              <div class="field">
+                <div class="section-label">上下文窗口（token）</div>
+                <input
+                  class="text-input mono"
+                  type="number"
+                  min="1"
+                  placeholder="留空表示未知"
+                  value={profileWindow()}
+                  onInput={(event) => setProfileWindow(event.currentTarget.value)}
+                />
+                <div class="field-hint">
+                  {profile()?.contextTiers?.length
+                    ? `按窗口派生的上下文预算档位：${profile()!.contextTiers.join(' / ')}`
+                    : '窗口未知时对话页不显示上下文控件。'}
+                </div>
+              </div>
+            </div>
+          </Modal>
+        )}
       </Show>
     </SettingsPane>
   );

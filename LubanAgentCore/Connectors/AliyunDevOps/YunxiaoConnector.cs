@@ -39,6 +39,7 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
 
     private CodeupClient? _codeupClient;
     private FlowClient? _flowClient;
+    private ProjexClient? _projexClient;
 
     /// <summary>
     /// 创建云效连接器
@@ -127,6 +128,16 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
         => GetFlowClient().GetHostGroupAsync(hostGroupId, organizationId, cancellationToken);
 
     /// <summary>
+    /// 获取研发项目域（Projex）客户端
+    /// </summary>
+    public ProjexClient GetProjexClient()
+    {
+        ThrowIfDisposed();
+
+        return _projexClient ??= new ProjexClient(_options, _credentialProvider, _guard, Name);
+    }
+
+    /// <summary>
     /// 获取凭据提供者
     /// </summary>
     public IYunxiaoCredentialProvider GetCredentialProvider() => _credentialProvider;
@@ -140,6 +151,7 @@ public class YunxiaoConnector : ConnectorBase, IDisposable
     {
         _codeupClient?.Dispose();
         _flowClient?.Dispose();
+        _projexClient?.Dispose();
         return ValueTask.CompletedTask;
     }
 }

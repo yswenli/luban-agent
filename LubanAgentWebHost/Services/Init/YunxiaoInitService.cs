@@ -112,19 +112,40 @@ public sealed record PreflightRequest(
     IReadOnlyList<InitEndConfig>? Ends = null);
 
 /// <summary>预检出参（壳层映射见 <see cref="YunxiaoInitService.PreflightAsync"/>）。</summary>
-/// <param name="Plan">三段命名派生（默认值，可逐段改写后传执行）。</param>
+/// <param name="Plan">三段命名派生（默认值，可逐段改写后传执行；复用库 <see cref="NamingPlan.Dirs"/> 为空——无改名动作）。</param>
 /// <param name="GitCommands">git 命令序列（与执行同源，脱敏裸 URL；复用库不生成 git 步骤）。</param>
 /// <param name="Conflicts">冲突清单（空 = 可执行；「库已存在」不在此列——转复用标记）。</param>
 /// <param name="SessionReady">会话通路可用性（false → 存在需新建的库时执行入口禁用）。</param>
 /// <param name="Warnings">非阻断提示（如复用库「结构待校验」）。</param>
 /// <param name="ReusedLibs">将复用的既有库名清单（命中 <c>FindRepoByNameAsync</c>，零 git 步骤）。</param>
+/// <param name="StructureChecks">复用库结构校验（S2e §14 修复四：子目录存在性结果 / 待校验；新建库为空）。</param>
 public sealed record PreflightResult(
     NamingPlan Plan,
     IReadOnlyList<GitStep> GitCommands,
     IReadOnlyList<string> Conflicts,
     bool SessionReady,
     IReadOnlyList<string>? Warnings = null,
-    IReadOnlyList<string>? ReusedLibs = null);
+    IReadOnlyList<string>? ReusedLibs = null,
+    IReadOnlyList<string>? StructureChecks = null);
+
+/// <summary>流水线派生入参（S2e §14 修复一：轻量命名派生接口）。</summary>
+/// <param name="TemplateRepoName">模板名（首个 <c>-</c> 前段为模板代号）。</param>
+/// <param name="NewCode">新项目代号。</param>
+/// <param name="Ends">三端配置（缺省 = 三端全开；仅 <c>On</c> 的端出派生项；backend 的 <c>Port</c> 参与派生）。</param>
+public sealed record DeriveRequest(
+    string TemplateRepoName,
+    string NewCode,
+    IReadOnlyList<InitEndConfig>? Ends = null);
+
+/// <summary>单端派生结果（S2e §14）。</summary>
+/// <param name="End">端名（mobile / admin / backend）。</param>
+/// <param name="From">真实模板流水线名（<c>ListPipelinesAsync</c> 按母版后缀段反查）；反查不到为 <c>null</c>。</param>
+/// <param name="To">派生名（带真实前缀；From 为 null 时为 <c>DEV_Deploy_{代号}-{端}</c>，<b>无前导下划线</b>）。</param>
+public sealed record PipelineDeriveItem(string End, string? From, string To);
+
+/// <summary>流水线派生出参。</summary>
+/// <param name="Items">逐端派生项。</param>
+public sealed record PipelineDeriveResult(IReadOnlyList<PipelineDeriveItem> Items);
 
 /// <summary>
 /// 云效项目初始化服务（Part1：清单 + 预检；执行编排批次 C 追加）。
@@ -154,6 +175,7 @@ public sealed class YunxiaoInitService
     private readonly InitTaskStore _taskStore;
     private readonly IYunxiaoSettingsService _settings;
     private readonly IWorkspaceDirectoryProvider _workspaces;
+    private readonly ProjectInitStore? _projectInitStore;
 
     /// <summary>创建云效项目初始化服务。</summary>
     /// <param name="codeup">Codeup 客户端（接口注入，单测可替换）。</param>
@@ -162,13 +184,15 @@ public sealed class YunxiaoInitService
     /// <param name="taskStore">任务态落盘（执行/重跑用，批次 C 接线）。</param>
     /// <param name="settings">云效连接配置（组织 ID 读取）。</param>
     /// <param name="workspaces">工作区目录提供者。</param>
+    /// <param name="projectInitStore">项目初始化完成登记（可空：单测不接线时登记接口返回 500）。</param>
     public YunxiaoInitService(
         ICodeupClient codeup,
         IFlowClient flow,
         ISessionGateway gateway,
         InitTaskStore taskStore,
         IYunxiaoSettingsService settings,
-        IWorkspaceDirectoryProvider workspaces)
+        IWorkspaceDirectoryProvider workspaces,
+        ProjectInitStore? projectInitStore = null)
     {
         _codeup = codeup ?? throw new ArgumentNullException(nameof(codeup));
         _flow = flow ?? throw new ArgumentNullException(nameof(flow));
@@ -176,6 +200,103 @@ public sealed class YunxiaoInitService
         _taskStore = taskStore ?? throw new ArgumentNullException(nameof(taskStore));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _workspaces = workspaces ?? throw new ArgumentNullException(nameof(workspaces));
+        _projectInitStore = projectInitStore;
+    }
+
+    /// <summary>
+    /// 项目初始化完成登记：代码库任务收口 + 三端流水线就绪后落盘，
+    /// 供项目列表判定「已初始化」。
+    /// </summary>
+    /// <param name="request">登记入参（项目 ID / 标识至少一个）。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>成功载荷恒为 <c>true</c>（400 缺键）。</returns>
+    public async Task<YunxiaoWorkbenchResult<bool>> SaveProjectInitAsync(ProjectInitRequest request, CancellationToken ct)
+    {
+        if (request is null
+            || (string.IsNullOrWhiteSpace(request.ProjectId) && string.IsNullOrWhiteSpace(request.Identifier)))
+        {
+            return YunxiaoWorkbenchResult<bool>.Failure(400, "项目 ID / 项目标识至少提供一个");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Codename))
+        {
+            return YunxiaoWorkbenchResult<bool>.Failure(400, "项目代号不能为空");
+        }
+
+        if (_projectInitStore is null)
+        {
+            return YunxiaoWorkbenchResult<bool>.Failure(500, "初始化登记存储未接线");
+        }
+
+        await _projectInitStore.UpsertAsync(new ProjectInitRecord
+        {
+            ProjectId = request.ProjectId?.Trim() ?? string.Empty,
+            Identifier = string.IsNullOrWhiteSpace(request.Identifier) ? null : request.Identifier!.Trim(),
+            Codename = request.Codename.Trim(),
+            TemplateCode = string.IsNullOrWhiteSpace(request.TemplateCode) ? null : request.TemplateCode!.Trim(),
+            SelectedRepos = (request.SelectedRepos ?? Array.Empty<string>())
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!.Trim())
+                .ToList(),
+            GroupName = string.IsNullOrWhiteSpace(request.GroupName) ? null : request.GroupName!.Trim(),
+            Branch = string.IsNullOrWhiteSpace(request.Branch) ? null : request.Branch!.Trim(),
+            RepoName = string.IsNullOrWhiteSpace(request.RepoName) ? null : request.RepoName!.Trim(),
+            CompletedAt = DateTime.Now,
+            Pipelines = (request.Ends ?? Array.Empty<ProjectInitEnd>())
+                .Where(e => e is not null && !string.IsNullOrWhiteSpace(e.End))
+                .Select(e => new ProjectInitPipeline
+                {
+                    End = e.End.Trim(),
+                    Enabled = e.Enabled,
+                    Name = e.Name,
+                    TemplateName = e.TemplateName,
+                    Port = e.Port,
+                    PipelineId = e.PipelineId,
+                })
+                .ToList(),
+        }).ConfigureAwait(false);
+
+        return YunxiaoWorkbenchResult<bool>.Success(true);
+    }
+
+    /// <summary>
+    /// 反查项目初始化完成登记（已初始化项目再次进入初始化页时反显配置）。
+    /// </summary>
+    /// <param name="projectId">云效项目 ID。</param>
+    /// <param name="identifier">项目标识。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>登记（未登记时 <c>Data</c> 为 null）。</returns>
+    public async Task<YunxiaoWorkbenchResult<ProjectInitRecordDto?>> GetProjectInitAsync(
+        string? projectId, string? identifier, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(projectId) && string.IsNullOrWhiteSpace(identifier))
+        {
+            return YunxiaoWorkbenchResult<ProjectInitRecordDto?>.Failure(400, "项目 ID / 项目标识至少提供一个");
+        }
+
+        if (_projectInitStore is null)
+        {
+            return YunxiaoWorkbenchResult<ProjectInitRecordDto?>.Failure(500, "初始化登记存储未接线");
+        }
+
+        var record = await _projectInitStore.FindAsync(projectId, identifier).ConfigureAwait(false);
+        if (record is null)
+        {
+            return YunxiaoWorkbenchResult<ProjectInitRecordDto?>.Success(null);
+        }
+
+        return YunxiaoWorkbenchResult<ProjectInitRecordDto?>.Success(new ProjectInitRecordDto(
+            record.ProjectId,
+            record.Identifier,
+            record.Codename,
+            record.TemplateCode,
+            record.SelectedRepos,
+            record.GroupName,
+            record.Branch,
+            record.RepoName,
+            record.CompletedAt,
+            record.Pipelines.Select(p => new ProjectInitEnd(
+                p.End, p.Name, p.PipelineId, p.Enabled, p.Port, p.TemplateName)).ToList()));
     }
 
     /// <summary>
@@ -294,14 +415,54 @@ public sealed class YunxiaoInitService
 
         // 综合模板（-Mixed 后缀）才派生三子目录改名候选；库名走代号前缀替换口径
         var isMixedTemplate = templateName.EndsWith(TemplateRepoSuffix, StringComparison.Ordinal);
+
+        // 后端端口（S2c §12.3）：后端流水线派生名增 (端口) 后缀；端口盒值参与派生
+        var backendPortForName = request.Ends?
+            .FirstOrDefault(e => string.Equals(e.End, "backend", StringComparison.OrdinalIgnoreCase) && e.On)
+            ?.Port;
+
+        var orgId = _settings.GetOrganizationId();
+
+        // S2d §13.3 服务端权威：母版流水线名缺省（或未覆盖某启用端）时，从 ListPipelinesAsync
+        // 反查母版真实名（按后缀段 _DEV_Deploy_{TemplateCode}-{EndSuffix} 比对、前缀容忍）再派生
+        // → Plan.Pipelines 带真实前缀，预检回执即正确名（前端据此回填 F6）。
+        // 前缀不写死：分组前缀取自反查到的真实名本身，缺省名场景下用空串派生会丢前缀（§13.3 根因）。
+        var templatePipelineNames = (request.TemplatePipelineNames ?? [])
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!.Trim())
+            .ToList();
+        var scanEnds = request.Ends is null
+            ? new[] { new InitEndConfig("mobile", true), new InitEndConfig("admin", true), new InitEndConfig("backend", true) }
+            : request.Ends.Where(e => e is not null && e.On);
+        List<YunxiaoPipeline>? pipelineCatalog = null;
+        foreach (var end in scanEnds)
+        {
+            var endSuffix = "-" + EndSuffix(end.End);
+            var covered = templatePipelineNames.Any(n =>
+                NamingDeriver.StripPortSuffix(n).EndsWith(endSuffix, StringComparison.OrdinalIgnoreCase));
+            if (covered)
+            {
+                continue;
+            }
+
+            pipelineCatalog ??= await _flow
+                .ListPipelinesAsync(organizationId: orgId, cancellationToken: ct).ConfigureAwait(false);
+            var realName = FindRealTemplatePipelineName(pipelineCatalog, templateCode, end.End);
+            if (realName is not null)
+            {
+                templatePipelineNames.Add(realName);
+            }
+        }
+
         NamingPlan plan;
         try
         {
             plan = NamingDeriver.Derive(
                 templateCode,
                 newCode,
-                request.TemplatePipelineNames ?? [],
-                includeDirs: isMixedTemplate);
+                templatePipelineNames,
+                includeDirs: isMixedTemplate,
+                backendPort: backendPortForName);
             plan = plan with
             {
                 RepoName = NamingDeriver.RenameByCode(templateName, templateCode, newCode),
@@ -312,7 +473,6 @@ public sealed class YunxiaoInitService
             return YunxiaoWorkbenchResult<PreflightResult>.Failure(400, ex.Message);
         }
 
-        var orgId = _settings.GetOrganizationId();
         var conflicts = new List<string>();
         var warnings = new List<string>();
         var reusedLibs = new List<string>();
@@ -325,14 +485,33 @@ public sealed class YunxiaoInitService
             reusedLibs.Add(plan.RepoName);
         }
 
+        // 检出目标 {workspaceRoot}/{新库名}（S2c §12.1.2 幂等判据：已有源码 → 零 git 步骤；
+        // S2e §14 修复三：LocalSourceLayout 三形态判定——根即检出 / 根含 .git 也算已有源码）
+        var targetDir = Path.Combine(workspace.RootPath, plan.RepoName);
+        var localProbe = LocalSourceLayout.Detect(workspace.RootPath, plan.RepoName);
+        var hasLocalSource = localProbe.HasSource;
+
         IReadOnlyList<GitStep> gitCommands;
-        if (reused)
+        if (hasLocalSource)
         {
-            // 复用库无 git 步骤（不建库、不 clone、不改名、不 push）
+            // 目录已有源码 → 零 git 步骤（幂等，S2c §12.1.2）
             gitCommands = [];
+        }
+        else if (reused)
+        {
+            // 复用库 + 本地无源码 → 本地检出计划（S2c §12.1.2）：clone 复用库真 URL → 切 develop
+            var reuseUrl = !string.IsNullOrWhiteSpace(existing!.HttpUrlToRepo)
+                ? existing!.HttpUrlToRepo!
+                : BuildFallbackHttpsUrl(existing!.Path ?? plan.RepoName);
+            gitCommands = GitCommandPlanner.PlanLocalCheckout(
+                workspace.RootPath,
+                reuseUrl,
+                plan.RepoName,
+                request.Branch.Trim());
         }
         else
         {
+            // 新建库 + 本地无源码 → 原 clone-rename-push 序列 + 尾部「切 develop」步（S2c §12.2）
             // 母版库信息：取 HttpUrlToRepo 当克隆地址（按名查找走搜索翻页 + 精确匹配）
             var template = await FindRepoByNameAsync(templateName, orgId, ct).ConfigureAwait(false);
             var templateRepoUrl = !string.IsNullOrWhiteSpace(template?.HttpUrlToRepo)
@@ -346,44 +525,61 @@ public sealed class YunxiaoInitService
             var newRepoUrl = BuildFallbackHttpsUrl(newRepoPath);
 
             // 序列与执行同源（GitCommandPlanner 单一入口，防展示≠执行）
-            gitCommands = GitCommandPlanner.PlanCloneRenamePush(
+            var steps = GitCommandPlanner.PlanCloneRenamePush(
                 workspace.RootPath,
                 templateRepoUrl,
                 newRepoUrl,
                 templateCode,
                 newCode,
                 plan.Dirs.Select(d => d.To).ToList(),
-                request.Branch.Trim());
+                request.Branch.Trim()).ToList();
+            steps.Add(GitCommandPlanner.PlanSwitchDevelopLocal(targetDir));
+            gitCommands = steps;
         }
 
+        var structureChecks = new List<string>();
         if (reused)
         {
-            // 结构校验（综合模板复用库）：本地未克隆 / 缺三子目录 → 「结构待校验」，不阻断
+            // 结构校验（S2e §14 修复四）：复用库无改名动作 → 不输出「将改名目录」对照（Plan.Dirs 清空），
+            // 改输出「结构校验」子目录存在性结果 / 待校验；本地未克隆 / 缺子目录仍出
+            // 「结构待校验」Warnings（不阻断）。源码目录随 LocalSourceLayout 三形态探测（修复三）。
             if (isMixedTemplate)
             {
-                var localDir = Path.Combine(workspace.RootPath, plan.RepoName);
-                if (!Directory.Exists(localDir))
+                if (localProbe.HasSource && localProbe.SourceDir is not null)
                 {
-                    warnings.Add($"结构待校验：本地未克隆 {plan.RepoName}");
-                }
-                else
-                {
+                    foreach (var dir in plan.Dirs)
+                    {
+                        var exists = Directory.Exists(Path.Combine(localProbe.SourceDir, dir.To));
+                        structureChecks.Add($"{dir.To}：{(exists ? "存在" : "缺失")}");
+                    }
+
                     var missing = plan.Dirs
                         .Select(d => d.To)
-                        .Where(name => !Directory.Exists(Path.Combine(localDir, name)))
+                        .Where(name => !Directory.Exists(Path.Combine(localProbe.SourceDir, name)))
                         .ToList();
                     if (missing.Count > 0)
                     {
                         warnings.Add($"结构待校验：缺少子目录 {string.Join("、", missing)}");
                     }
                 }
+                else
+                {
+                    structureChecks.Add($"本地未克隆 {plan.RepoName}：子目录待校验");
+                    warnings.Add($"结构待校验：本地未克隆 {plan.RepoName}");
+                }
             }
+            else
+            {
+                structureChecks.Add("单端库：无子目录结构段");
+            }
+
+            plan = plan with { Dirs = [] };
         }
         else
         {
-            // 冲突①：工作区目录被占用（{RootPath}/{新库名}；仅新建库需要 clone 落位）
-            var targetDir = Path.Combine(workspace.RootPath, plan.RepoName);
-            if (Directory.Exists(targetDir))
+            // 冲突①：工作区目录被占用（{RootPath}/{新库名}；仅新建库需要 clone 落位）。
+            // S2c §12.1.2 幂等：目录已有源码 → 零 git 步骤（不视为冲突）；仅「目录存在但无源码」才冲突。
+            if (!hasLocalSource && Directory.Exists(targetDir))
             {
                 conflicts.Add($"工作区目录已存在：{plan.RepoName}");
             }
@@ -401,7 +597,79 @@ public sealed class YunxiaoInitService
         var sessionReady = await ProbeSessionAsync(ct).ConfigureAwait(false);
 
         return YunxiaoWorkbenchResult<PreflightResult>.Success(
-            new PreflightResult(plan, gitCommands, conflicts, sessionReady, warnings, reusedLibs));
+            new PreflightResult(plan, gitCommands, conflicts, sessionReady, warnings, reusedLibs, structureChecks));
+    }
+
+    /// <summary>
+    /// 流水线命名派生（S2e §14 修复一，轻量只读）：逐端反查母版真实流水线名 → 派生新名。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>零副作用</b>：只调 <c>ListPipelinesAsync</c> 反查（S2d §13.3 同口径，复用
+    /// <see cref="FindRealTemplatePipelineName"/>——前缀不写死，从真实名自身解析）。
+    /// From = 反查到的真实模板流水线名，反查不到为 <c>null</c>；
+    /// To = <see cref="NamingDeriver.DerivePipelineName"/>（From 非空且带非空前缀 → 带真实前缀只换代号段；
+    /// 否则 <c>DEV_Deploy_{代号}-{端}</c>——<b>无前导下划线</b>，根因修复：空前缀拼 <c>_DEV_Deploy_</c>
+    /// 产生前导下划线）；后端端按 Ends 的 Port 增 <c>(端口)</c> 后缀（S2c §12.3 同口径）。
+    /// </para>
+    /// <para>
+    /// 壳层映射（GET /yunxiao/pipelinederive）：400 = 母版库名 / 新代号非法；
+    /// 仅 <c>On</c> 的端出派生项，<c>Ends</c> 缺省 = 三端全开。
+    /// </para>
+    /// </remarks>
+    /// <param name="request">派生入参。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>逐端派生结果（含 Code/Message 的结果壳）。</returns>
+    public async Task<YunxiaoWorkbenchResult<PipelineDeriveResult>> DerivePipelinesAsync(
+        DeriveRequest? request,
+        CancellationToken ct)
+    {
+        if (request is null
+            || string.IsNullOrWhiteSpace(request.TemplateRepoName)
+            || string.IsNullOrWhiteSpace(request.NewCode))
+        {
+            return YunxiaoWorkbenchResult<PipelineDeriveResult>.Failure(400, "母版库名 / 新代号不能为空");
+        }
+
+        var templateName = request.TemplateRepoName.Trim();
+        var newCode = request.NewCode.Trim();
+
+        var templateCode = NamingDeriver.ParseTemplateCode(templateName);
+        if (templateCode is null)
+        {
+            return YunxiaoWorkbenchResult<PipelineDeriveResult>.Failure(400, "模板名必须含代号段（首个 - 之前为模板代号）");
+        }
+
+        try
+        {
+            NamingDeriver.Derive(templateCode, newCode, []);
+        }
+        catch (ArgumentException ex)
+        {
+            return YunxiaoWorkbenchResult<PipelineDeriveResult>.Failure(400, ex.Message);
+        }
+
+        var ends = (IReadOnlyList<InitEndConfig>)(request.Ends is null
+            ? [new InitEndConfig("mobile", true), new InitEndConfig("admin", true), new InitEndConfig("backend", true)]
+            : request.Ends.Where(e => e is not null && e.On).ToList());
+
+        var orgId = _settings.GetOrganizationId();
+        List<YunxiaoPipeline>? catalog = null;
+        var items = new List<PipelineDeriveItem>();
+        foreach (var end in ends)
+        {
+            catalog ??= await _flow
+                .ListPipelinesAsync(organizationId: orgId, cancellationToken: ct).ConfigureAwait(false);
+
+            var from = FindRealTemplatePipelineName(catalog, templateCode, end.End);
+            var port = string.Equals(end.End, "backend", StringComparison.OrdinalIgnoreCase)
+                ? end.Port
+                : null;
+            var to = NamingDeriver.DerivePipelineName(from, newCode, "-" + EndSuffix(end.End), port);
+            items.Add(new PipelineDeriveItem(end.End, from, to));
+        }
+
+        return YunxiaoWorkbenchResult<PipelineDeriveResult>.Success(new PipelineDeriveResult(items));
     }
 
     /// <summary>
@@ -523,6 +791,33 @@ public sealed class YunxiaoInitService
     private static string BuildFallbackHttpsUrl(string path)
         => $"https://{FallbackGitHost}/{path}.git";
 
+    /// <summary>
+    /// 本地是否已有源码检出（S2c §12.1.2 幂等判据；S2e §14 修复三改走
+    /// <see cref="LocalSourceLayout.Detect"/> 三形态判定：子目录 / 根即检出 / 根含 .git）。
+    /// </summary>
+    /// <remarks>
+    /// 「不存在或为空」→ 需 git 检出（复用库 <c>PlanLocalCheckout</c> / 新建库 clone-rename-push + 切 develop）；
+    /// 「已有源码」→ 零 git 步骤（幂等，重跑不再 clone）。空目录按「无源码」处理（可安全 clone 落位）。
+    /// </remarks>
+    /// <param name="workspaceRoot">工作区根目录。</param>
+    /// <param name="repoName">目标库名。</param>
+    /// <returns>命中任一检出形态时为 <c>true</c>。</returns>
+    private static bool HasLocalSource(string workspaceRoot, string repoName)
+        => LocalSourceLayout.HasSource(workspaceRoot, repoName);
+
+    /// <summary>
+    /// 流水线名「前缀容忍」匹配（S2c §12.3 + S2d §13.3）：剥离尾部 <c>(端口)</c> 后按
+    /// <c>_DEV_Deploy_</c> 后缀段比对（<see cref="NamingDeriver.MatchesPipelineName"/>）。
+    /// </summary>
+    /// <remarks>
+    /// <c>(7001)</c> 与 <c>(9000)</c> 互认命中（端口仅展示，不参与命中判据）；
+    /// 表单空前缀 <c>_DEV_Deploy_{代号}-{端}</c> 与真名 <c>ACME_DEV_Deploy_{代号}-{端}</c> 互认
+    /// （后缀段从两侧名字各自解析，前缀不写死）。任一为空即不命中。
+    /// 用于 Exists 标注与 create 前 TOCTOU 复查。
+    /// </remarks>
+    private static bool SamePipelineName(string? a, string? b)
+        => NamingDeriver.MatchesPipelineName(a, b);
+
     /// <summary>端口是否被占用（活动 TCP 监听）。</summary>
     private static bool IsPortBusy(int port)
         => IPGlobalProperties.GetIPGlobalProperties()
@@ -627,28 +922,22 @@ public sealed class YunxiaoInitService
             return YunxiaoWorkbenchResult<string>.Failure(400, ex.Message);
         }
 
-        if (_workspaces.List().FirstOrDefault(w =>
-                string.Equals(w.Id, request.WorkspaceId.Trim(), StringComparison.Ordinal)) is null)
+        var workspace = _workspaces.List().FirstOrDefault(w =>
+            string.Equals(w.Id, request.WorkspaceId.Trim(), StringComparison.Ordinal));
+        if (workspace is null)
         {
             return YunxiaoWorkbenchResult<string>.Failure(400, "工作区不存在");
         }
 
         // ② 会话通路（503 语义；壳层映射 WebApi.FailJson(503, …)）
-        // S2b §11.2：仅当存在需新建的库才要求会话（全复用 → 纯补流水线链路不需要 git 会话）
+        // S2c §12.2 门禁口径（收紧 S2b §11.2）：仅当「全部库已有本地源码检出」才免会话；
+        // 只要有一个库要 clone/checkout（本地无源码）就要求 sessionReady——
+        // 全复用但无本地源码时同样需要会话（复用库发 PlanLocalCheckout）。
         if (!await ProbeSessionAsync(ct).ConfigureAwait(false))
         {
-            var orgId = _settings.GetOrganizationId();
-            var anyNew = false;
-            foreach (var p in plans)
-            {
-                if (await FindRepoByNameAsync(p.NewRepoName, orgId, ct).ConfigureAwait(false) is null)
-                {
-                    anyNew = true;
-                    break;
-                }
-            }
-
-            if (anyNew)
+            var anyGitWork = plans.Any(p =>
+                !HasLocalSource(workspace.RootPath, p.NewRepoName));
+            if (anyGitWork)
             {
                 return YunxiaoWorkbenchResult<string>.Failure(503, "工作区会话通路不可用，无法执行 git 动作");
             }
@@ -801,6 +1090,9 @@ public sealed class YunxiaoInitService
             }
 
             var orgId = _settings.GetOrganizationId();
+            var workspaceRoot = _workspaces.List()
+                .FirstOrDefault(w => string.Equals(w.Id, ctx.WorkspaceId, StringComparison.Ordinal))
+                ?.RootPath ?? string.Empty;
             var targets = task.Libs
                 .Where(l => onlyRepos is null || onlyRepos.Contains(l.Repo, StringComparer.Ordinal))
                 .ToList();
@@ -823,62 +1115,97 @@ public sealed class YunxiaoInitService
 
                 try
                 {
-                    // ① 二次查重（TOCTOU）：首跑命中 → 整库转复用（S2b §11.2，不再 failed）；
-                    //    重跑命中 → 复用库对象继续推 git（幂等不重复建）
+                    // ① 二次查重（TOCTOU）+ 本地源码幂等判据（S2c §12.1.2）
                     var existing = await FindRepoByNameAsync(lib.Repo, orgId, CancellationToken.None)
                         .ConfigureAwait(false);
-                    if (existing is not null && !reuseExisting)
+                    var targetDir = Path.Combine(workspaceRoot, lib.Repo);
+                    var hasLocal = HasLocalSource(workspaceRoot, lib.Repo);
+                    // 目录已有源码 → 零 git 步骤（幂等，重跑不再 clone）
+                    if (hasLocal)
                     {
-                        lib.RepoId = existing.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        lib.RepoId = existing?.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
                         lib.Status = LibStatus.Done;
-                        lib.Detail = "复用已有库";
+                        lib.Detail = existing is not null ? "复用已有库" : "已有本地源码";
                         await _taskStore.UpsertAsync(task).ConfigureAwait(false);
                         continue;
                     }
 
-                    var newRepoUrl = existing?.HttpUrlToRepo;
-                    var repoIdSource = existing;
-                    if (existing is null)
+                    IReadOnlyList<GitStep> steps;
+                    var isReuseCheckout = existing is not null && !reuseExisting;
+                    if (isReuseCheckout)
                     {
-                        // ②③ 建组（懒解析）+ 建库（挂组）
-                        if (!namespaceResolved)
+                        // ② 真复用（远端已有）+ 无本地源码 → 本地检出计划（S2c §12.1.2）：clone 复用库真 URL → 切 develop
+                        lib.RepoId = existing!.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        var reuseUrl = !string.IsNullOrWhiteSpace(existing.HttpUrlToRepo)
+                            ? existing.HttpUrlToRepo!
+                            : BuildFallbackHttpsUrl(existing.Path ?? lib.Repo);
+                        steps = GitCommandPlanner.PlanLocalCheckout(workspaceRoot, reuseUrl, lib.Repo, ctx.Branch);
+                    }
+                    else
+                    {
+                        // ③ 新建库 或 重跑已建库 → 建库（如需）+ clone-rename-push + 尾部切 develop（S2c §12.2）
+                        var newRepoUrl = existing?.HttpUrlToRepo;
+                        var repoIdSource = existing;
+                        if (existing is null)
                         {
-                            namespaceResolved = true;
-                            if (!string.IsNullOrWhiteSpace(ctx.GroupNewName))
+                            // ②③ 建组（懒解析）+ 建库（挂组）
+                            if (!namespaceResolved)
                             {
-                                var namespaces = await ListAllNamespacesAsync(orgId, CancellationToken.None).ConfigureAwait(false);
-                                var hit = namespaces.FirstOrDefault(n =>
-                                    string.Equals(n.Name, ctx.GroupNewName, StringComparison.Ordinal));
-                                namespaceId = hit is not null
-                                    ? hit.Id
-                                    : (await _codeup
-                                        .CreateNamespaceAsync(new YunxiaoCreateNamespaceRequest { Name = ctx.GroupNewName }, orgId, CancellationToken.None)
-                                        .ConfigureAwait(false))?.Id;
+                                namespaceResolved = true;
+                                if (!string.IsNullOrWhiteSpace(ctx.GroupNewName))
+                                {
+                                    var namespaces = await ListAllNamespacesAsync(orgId, CancellationToken.None).ConfigureAwait(false);
+                                    var hit = namespaces.FirstOrDefault(n =>
+                                        string.Equals(n.Name, ctx.GroupNewName, StringComparison.Ordinal));
+                                    namespaceId = hit is not null
+                                        ? hit.Id
+                                        : (await _codeup
+                                            .CreateNamespaceAsync(new YunxiaoCreateNamespaceRequest { Name = ctx.GroupNewName }, orgId, CancellationToken.None)
+                                            .ConfigureAwait(false))?.Id;
+                                }
                             }
+
+                            var created = await _codeup.CreateRepositoryAsync(new YunxiaoCreateRepositoryRequest
+                            {
+                                Name = lib.Repo,
+                                Visibility = ctx.Visibility,
+                                NamespaceId = namespaceId,
+                                Description = ctx.Description,
+                            }, orgId, CancellationToken.None).ConfigureAwait(false);
+                            newRepoUrl = created?.HttpUrlToRepo;
+                            repoIdSource = created;
                         }
 
-                        var created = await _codeup.CreateRepositoryAsync(new YunxiaoCreateRepositoryRequest
-                        {
-                            Name = lib.Repo,
-                            Visibility = ctx.Visibility,
-                            NamespaceId = namespaceId,
-                            Description = ctx.Description,
-                        }, orgId, CancellationToken.None).ConfigureAwait(false);
-                        newRepoUrl = created?.HttpUrlToRepo;
-                        repoIdSource = created;
+                        // 回填新库 id（供流水线区 newRepoId 取用）
+                        lib.RepoId = repoIdSource?.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                        // 克隆地址：母版 HttpUrlToRepo 优先，缺失按兜底形态拼装（待实测）
+                        var template = await FindRepoByNameAsync(plan.TemplateRepoName, orgId, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        var templateRepoUrl = !string.IsNullOrWhiteSpace(template?.HttpUrlToRepo)
+                            ? template!.HttpUrlToRepo!
+                            : BuildFallbackHttpsUrl(template?.Path ?? plan.TemplateRepoName);
+                        newRepoUrl ??= BuildFallbackHttpsUrl(
+                            string.IsNullOrWhiteSpace(ctx.GroupNewName) ? lib.Repo : $"{ctx.GroupNewName}/{lib.Repo}");
+
+                        var cloneSteps = GitCommandPlanner.PlanCloneRenamePush(
+                            workspaceRoot,
+                            templateRepoUrl,
+                            newRepoUrl,
+                            plan.TemplateCode,
+                            ctx.NewCode,
+                            NamingDeriver.Derive(
+                                plan.TemplateCode,
+                                ctx.NewCode,
+                                [],
+                                includeDirs: plan.TemplateRepoName.EndsWith(TemplateRepoSuffix, StringComparison.Ordinal))
+                                .Dirs.Select(d => d.To).ToList(),
+                            ctx.Branch).ToList();
+                        // 新库远端无 develop → 推完 master 后本地切 develop（S2c §12.2）
+                        // 与 PlanCloneRenamePush 同用正斜杠 repoDir（展示与执行同源，避免路径分隔符不一致）
+                        cloneSteps.Add(GitCommandPlanner.PlanSwitchDevelopLocal($"{workspaceRoot}/{lib.Repo}"));
+                        steps = cloneSteps;
                     }
-
-                    // 回填新库 id（供流水线区 newRepoId 取用）
-                    lib.RepoId = repoIdSource?.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-                    // 克隆地址：母版 HttpUrlToRepo 优先，缺失按兜底形态拼装（待实测）
-                    var template = await FindRepoByNameAsync(plan.TemplateRepoName, orgId, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    var templateRepoUrl = !string.IsNullOrWhiteSpace(template?.HttpUrlToRepo)
-                        ? template!.HttpUrlToRepo!
-                        : BuildFallbackHttpsUrl(template?.Path ?? plan.TemplateRepoName);
-                    newRepoUrl ??= BuildFallbackHttpsUrl(
-                        string.IsNullOrWhiteSpace(ctx.GroupNewName) ? lib.Repo : $"{ctx.GroupNewName}/{lib.Repo}");
 
                     // ④ 会话 git：展示与执行同源（GitCommandPlanner 单一入口），凭据不进序列
                     sessionId ??= await _gateway
@@ -886,21 +1213,6 @@ public sealed class YunxiaoInitService
                         .ConfigureAwait(false);
                     task.SessionId = sessionId;
 
-                    var steps = GitCommandPlanner.PlanCloneRenamePush(
-                        workspaceRoot: _workspaces.List()
-                            .FirstOrDefault(w => string.Equals(w.Id, ctx.WorkspaceId, StringComparison.Ordinal))
-                            ?.RootPath ?? string.Empty,
-                        templateRepoUrl,
-                        newRepoUrl,
-                        plan.TemplateCode,
-                        ctx.NewCode,
-                        NamingDeriver.Derive(
-                            plan.TemplateCode,
-                            ctx.NewCode,
-                            [],
-                            includeDirs: plan.TemplateRepoName.EndsWith(TemplateRepoSuffix, StringComparison.Ordinal))
-                            .Dirs.Select(d => d.To).ToList(),
-                        ctx.Branch);
                     var commands = steps.Select(s => s.Command).ToList();
 
                     // ⑤ 状态机：pending → cloning → renaming → pushing → done / failed（每步 Upsert）
@@ -908,7 +1220,7 @@ public sealed class YunxiaoInitService
                     await _taskStore.UpsertAsync(task).ConfigureAwait(false);
 
                     await _gateway
-                        .SendAsync(sessionId, BuildInstruction(lib.Repo, steps), commands, CancellationToken.None)
+                        .SendAsync(sessionId, BuildInstruction(lib.Repo, steps, isReuseCheckout ? "本地检出" : "复制初始化"), commands, CancellationToken.None)
                         .ConfigureAwait(false);
                     var receipt = await _gateway.WaitReceiptAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
                     if (!receipt.Ok)
@@ -925,7 +1237,7 @@ public sealed class YunxiaoInitService
                     lib.Status = LibStatus.Pushing;
                     await _taskStore.UpsertAsync(task).ConfigureAwait(false);
                     lib.Status = LibStatus.Done;
-                    lib.Detail = null;
+                    lib.Detail = isReuseCheckout ? "复用已有库" : null;
                     await _taskStore.UpsertAsync(task).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -986,16 +1298,15 @@ public sealed class YunxiaoInitService
     /// <returns>逐端 diff。</returns>
     public async Task<YunxiaoWorkbenchResult<PipelinePreviewResult>> PreviewPipelinesAsync(PipelinePreviewRequest request, CancellationToken ct)
     {
-        // ① 参数校验（400 语义）
+        // ① 参数校验（400 语义）：S2c §12.3.5 全复用 F6 不等 FR-2 —— NewRepoId 可空，按 NewRepoName 回查
         if (request is null
-            || string.IsNullOrWhiteSpace(request.NewRepoId)
             || string.IsNullOrWhiteSpace(request.NewRepoName)
             || string.IsNullOrWhiteSpace(request.TemplateCode)
             || string.IsNullOrWhiteSpace(request.NewCode)
             || request.Ends is null
             || request.Ends.Count == 0)
         {
-            return YunxiaoWorkbenchResult<PipelinePreviewResult>.Failure(400, "新库 id / 新库名 / 母版代号 / 新代号 / 三端配置均不能为空");
+            return YunxiaoWorkbenchResult<PipelinePreviewResult>.Failure(400, "新库名 / 母版代号 / 新代号 / 三端配置均不能为空");
         }
 
         var templateCode = request.TemplateCode.Trim();
@@ -1009,16 +1320,46 @@ public sealed class YunxiaoInitService
             return YunxiaoWorkbenchResult<PipelinePreviewResult>.Failure(400, ex.Message);
         }
 
+        // S2c §12.3.5：NewRepoId 未给（全复用未跑 FR-2）→ 按库名回查真实 id（FindRepoByNameAsync）
+        var newRepoId = request.NewRepoId?.Trim();
+        if (string.IsNullOrWhiteSpace(newRepoId))
+        {
+            var found = await FindRepoByNameAsync(request.NewRepoName.Trim(), _settings.GetOrganizationId(), ct)
+                .ConfigureAwait(false);
+            newRepoId = found?.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(newRepoId))
+            {
+                return YunxiaoWorkbenchResult<PipelinePreviewResult>.Failure(404, $"按库名未查到新库：{request.NewRepoName}");
+            }
+        }
+
         var orgId = _settings.GetOrganizationId();
-        var list = await _flow.ListPipelinesAsync(null, 1, PerPage, null, orgId, ct).ConfigureAwait(false) ?? [];
+        var list = await _flow.ListPipelinesAsync(organizationId: orgId, cancellationToken: ct).ConfigureAwait(false);
 
         var items = new List<PipelinePreviewItem>();
         foreach (var end in request.Ends.Where(e => e is not null && e.Enabled))
         {
+            // 候选流水线：① TemplatePipelineName 非空 → 手选母版（按名精确查）
+            //  ② 否则 PipelineName 非空 → 先按它查 catalog（用户已填目标名，若流水线已存在可直接命中）
+            //  ③ 若按 PipelineName 也没命中（新项目流水线尚未创建）→ fallback 到 marker 反查母版
             var marker = $"_DEV_Deploy_{templateCode}-{EndSuffix(end.End)}";
-            var candidates = !string.IsNullOrWhiteSpace(end.TemplatePipelineName)
-                ? list.Where(p => string.Equals(p.DisplayName, end.TemplatePipelineName!.Trim(), StringComparison.Ordinal)).ToList()
-                : list.Where(p => p.DisplayName?.Contains(marker, StringComparison.Ordinal) == true).ToList();
+            List<YunxiaoPipeline> candidates;
+            if (!string.IsNullOrWhiteSpace(end.TemplatePipelineName))
+            {
+                candidates = list.Where(p => string.Equals(p.DisplayName, end.TemplatePipelineName!.Trim(), StringComparison.Ordinal)).ToList();
+            }
+            else if (!string.IsNullOrWhiteSpace(end.PipelineName))
+            {
+                // 先按 PipelineName 查 catalog：用户已填真实流水线名，若已存在则直接命中
+                candidates = list.Where(p => SamePipelineName(p.DisplayName, end.PipelineName!.Trim())).ToList();
+                // 若没命中（新项目流水线尚未创建）→ fallback marker 反查母版
+                if (candidates.Count == 0)
+                    candidates = list.Where(p => p.DisplayName?.Contains(marker, StringComparison.Ordinal) == true).ToList();
+            }
+            else
+            {
+                candidates = list.Where(p => p.DisplayName?.Contains(marker, StringComparison.Ordinal) == true).ToList();
+            }
 
             YunxiaoPipeline? source = null;
             foreach (var candidate in candidates)
@@ -1026,7 +1367,8 @@ public sealed class YunxiaoInitService
                 var detail = candidate.DisplayId is null
                     ? null
                     : await _flow.GetPipelineAsync(candidate.DisplayId, orgId, ct).ConfigureAwait(false);
-                if (detail is not null && IsPipelineAsCode(detail))
+                // 不再区分 tb（表单流水线）还是 PIPELINEASCODE——YamlSubstitutor 做纯文本替换，tb 形态同样能处理
+                if (detail?.PipelineConfig?.Flow is string flow && flow.Length > 0)
                 {
                     source = detail;
                     break;
@@ -1039,22 +1381,31 @@ public sealed class YunxiaoInitService
                     ? NamingDeriver.Derive(templateCode, newCode, [sourceName]).Pipelines.FirstOrDefault()?.To ?? sourceName
                     : string.Empty);
 
-            // S2b §11.2 FR-3：派生名精确命中（OrdinalIgnoreCase）→ Exists（提交时默认跳过）
-            var exists = !string.IsNullOrWhiteSpace(name)
-                && list.Any(p => string.Equals(p.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+            // S2c §12.3：派生名前缀容忍命中（去 (端口) 后 OrdinalIgnoreCase）→ Exists（提交时默认跳过）
+            var matched = list.FirstOrDefault(p => SamePipelineName(p.DisplayName, name));
+            var exists = matched is not null && !string.IsNullOrWhiteSpace(name);
+            PipelineInfo? pipelineInfo = null;
+            if (exists)
+            {
+                var actualName = matched!.DisplayName ?? name;
+                pipelineInfo = new PipelineInfo(
+                    matched.DisplayId ?? string.Empty,
+                    actualName,
+                    NamingDeriver.ParsePortSuffix(actualName));
+            }
 
             if (source is null)
             {
                 items.Add(new PipelinePreviewItem(
                     end.End, name, string.Empty, null,
-                    "未反查到 PIPELINEASCODE 母版流水线，可手选 TemplatePipelineName 兜底",
-                    exists));
+                    "未反查到母版流水线（catalog 中无对应名称 / 详情无 flow 字段），可手选 TemplatePipelineName 兜底",
+                    exists, pipelineInfo));
                 continue;
             }
 
             var yaml = source.PipelineConfig?.Flow ?? string.Empty;
             var vars = new PipelineVars(
-                request.NewRepoId.Trim(),
+                newRepoId!,
                 request.NewRepoName.Trim(),
                 end.BuildDir?.Trim(),
                 "master",
@@ -1062,7 +1413,7 @@ public sealed class YunxiaoInitService
             var modified = YamlSubstitutor.Substitute(
                 yaml, YamlSubstitutor.BuildPairs(vars, templateCode, newCode));
             items.Add(new PipelinePreviewItem(
-                end.End, name, YamlSubstitutor.Diff(yaml, modified), modified, null, exists));
+                end.End, name, YamlSubstitutor.Diff(yaml, modified), modified, null, exists, pipelineInfo));
         }
 
         return YunxiaoWorkbenchResult<PipelinePreviewResult>.Success(new PipelinePreviewResult(items));
@@ -1099,10 +1450,8 @@ public sealed class YunxiaoInitService
                 return YunxiaoWorkbenchResult<PipelineCommitResult>.Failure(400, "端名 / 流水线名 / 内容均不能为空");
             }
 
-            if (!HasTopLevelStages(item.Content))
-            {
-                return YunxiaoWorkbenchResult<PipelineCommitResult>.Failure(400, "流水线 YAML 必须包含顶层 stages:（防 tb 形态误喂）");
-            }
+            // 不再校验顶层 stages：tb 形态（表单流水线 schema: tb → pipeline → stages）同样允许提交
+            // （YamlSubstitutor 做纯文本替换，不依赖 YAML 结构；云效 API 也不要求 PIPELINEASCODE）
 
             var mode = item.Mode?.Trim().ToLowerInvariant();
             if (mode is not ("create" or "update"))
@@ -1138,12 +1487,19 @@ public sealed class YunxiaoInitService
                     if (item.SkipIfExisting)
                     {
                         existingPipelines ??= await _flow
-                            .ListPipelinesAsync(null, 1, PerPage, null, orgId, ct)
-                            .ConfigureAwait(false) ?? [];
-                        if (existingPipelines.Any(p =>
-                                string.Equals(p.DisplayName, item.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                            .ListPipelinesAsync(organizationId: orgId, cancellationToken: ct)
+                            .ConfigureAwait(false);
+                        var hit = existingPipelines.FirstOrDefault(p =>
+                            SamePipelineName(p.DisplayName, item.Name.Trim()));
+                        if (hit is not null)
                         {
-                            results.Add(new PipelineCommitItemResult(item.End, true, null, "已存在跳过"));
+                            // S2c §12.3：已存在端零操作，回执「已存在·已同步信息」（含 Id/ActualName，可追溯）
+                            var actualName = hit.DisplayName ?? item.Name.Trim();
+                            results.Add(new PipelineCommitItemResult(
+                                item.End,
+                                true,
+                                hit.DisplayId,
+                                $"已存在·已同步信息（{actualName}）"));
                             continue;
                         }
                     }
@@ -1176,6 +1532,28 @@ public sealed class YunxiaoInitService
         return YunxiaoWorkbenchResult<PipelineCommitResult>.Success(new PipelineCommitResult(results));
     }
 
+    /// <summary>
+    /// 按母版后缀段反查真实模板流水线名（S2d §13.3 / S2e §14 修复一共用）：
+    /// <see cref="NamingDeriver.PipelineSuffixSegment"/> 与 <c>_DEV_Deploy_{templateCode}-{端后缀}</c>
+    /// 精确等值（OrdinalIgnoreCase）；分组前缀从真实名自身解析，<b>不写死</b>；反查不到返回 <c>null</c>。
+    /// </summary>
+    /// <param name="catalog"><c>ListPipelinesAsync</c> 流水线清单。</param>
+    /// <param name="templateCode">模板代号。</param>
+    /// <param name="end">端名（mobile / admin / backend）。</param>
+    /// <returns>真实模板流水线名；无命中为 <c>null</c>。</returns>
+    private static string? FindRealTemplatePipelineName(
+        IReadOnlyList<YunxiaoPipeline> catalog, string templateCode, string end)
+    {
+        var expectedSegment = $"_DEV_Deploy_{templateCode}-{EndSuffix(end)}";
+        return catalog
+            .Select(p => p.DisplayName)
+            .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)
+                && string.Equals(
+                    NamingDeriver.PipelineSuffixSegment(n!),
+                    expectedSegment,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>端名 → 流水线名端后缀（mobile/admin/backend → Mobile/Admin/Service）。</summary>
     private static string EndSuffix(string end)
         => end.Trim().ToLowerInvariant() switch
@@ -1204,8 +1582,11 @@ public sealed class YunxiaoInitService
     /// 指令文案：明示将执行的命令序列（与 GitCommands 同源——GitCommandPlanner 产物）；
     /// 预批清单由 <see cref="ISessionGateway.SendAsync"/> 逐条 allow、偏离 deny。
     /// </summary>
-    private static string BuildInstruction(string repoName, IReadOnlyList<GitStep> steps)
-        => $"请在当前会话中严格依次执行以下 git 命令，完成 {repoName} 的复制初始化（仅放行下列命令）："
+    /// <param name="repoName">目标库名。</param>
+    /// <param name="steps">命令序列。</param>
+    /// <param name="action">动作语（复制初始化 / 本地检出，S2c §12.1.2 区分复用检出与整库复制）。</param>
+    private static string BuildInstruction(string repoName, IReadOnlyList<GitStep> steps, string action = "复制初始化")
+        => $"请在当前会话中严格依次执行以下 git 命令，完成 {repoName} 的{action}（仅放行下列命令）："
             + string.Concat(steps.Select(s => $"\n- {s.Label}：{s.Command}"));
 
     /// <summary>
@@ -1263,13 +1644,13 @@ public sealed record EndConfig(
     string? TemplatePipelineName = null);
 
 /// <summary>流水线预览入参。</summary>
-/// <param name="NewRepoId">新库 id（<c>{{REPO_ID}}</c>）。</param>
+/// <param name="NewRepoId">新库 id（<c>{{REPO_ID}}</c>）；S2c §12.3.5 全复用 F6 可空，按 NewRepoName 回查真实 id。</param>
 /// <param name="NewRepoName">新库名（<c>{{REPO_NAME}}</c>）。</param>
 /// <param name="TemplateCode">母版代号。</param>
 /// <param name="NewCode">新代号。</param>
 /// <param name="Ends">三端配置。</param>
 public sealed record PipelinePreviewRequest(
-    string NewRepoId,
+    string? NewRepoId,
     string NewRepoName,
     string TemplateCode,
     string NewCode,
@@ -1281,8 +1662,24 @@ public sealed record PipelinePreviewRequest(
 /// <param name="Diff">逐条 unified diff。</param>
 /// <param name="Content">替换后全文（提交用）。</param>
 /// <param name="Warning">警告（如反查不到母版流水线）；null = 正常。</param>
-/// <param name="Exists">派生名已存在（<c>ListPipelinesAsync</c> 精确命中，OrdinalIgnoreCase）：提交默认跳过。</param>
-public sealed record PipelinePreviewItem(string End, string Name, string Diff, string? Content = null, string? Warning = null, bool Exists = false);
+/// <param name="Exists">派生名已存在（<c>ListPipelinesAsync</c> 前缀容忍命中，OrdinalIgnoreCase）：提交默认跳过。</param>
+/// <param name="Pipeline">已存在端的真实流水线信息（S2c §12.3 回显+反向回填）；缺失端为 <c>null</c>。</param>
+public sealed record PipelinePreviewItem(
+    string End,
+    string Name,
+    string Diff,
+    string? Content = null,
+    string? Warning = null,
+    bool Exists = false,
+    PipelineInfo? Pipeline = null);
+
+/// <summary>
+/// 已存在流水线的真实信息（S2c §12.3）：回显真实名/ID + 反向回填解析端口。
+/// </summary>
+/// <param name="Id">真实流水线 id（<see cref="YunxiaoPipeline.DisplayId"/>）。</param>
+/// <param name="ActualName">真实流水线名（<see cref="YunxiaoPipeline.DisplayName"/>，含 <c>(端口)</c> 后缀）。</param>
+/// <param name="Port">从 <paramref name="ActualName"/> 尾部 <c>(数字)</c> 解析的端口；解析不出为 <c>null</c>。</param>
+public sealed record PipelineInfo(string Id, string ActualName, int? Port = null);
 
 /// <summary>流水线预览出参（设计 §3 <c>{ diffs:[{end,name,diff}] }</c>）。</summary>
 /// <param name="Items">逐端结果。</param>
@@ -1319,3 +1716,66 @@ public sealed record PipelineCommitItemResult(string End, bool Ok, string? Pipel
 /// <summary>流水线提交出参（设计 §3 <c>{ results:[{end,ok,pipelineId?,message?}] }</c>）。</summary>
 /// <param name="Results">逐端结果（一端失败不影响他端）。</param>
 public sealed record PipelineCommitResult(IReadOnlyList<PipelineCommitItemResult> Results);
+
+/// <summary>项目初始化完成登记入参。</summary>
+/// <param name="ProjectId">云效项目 ID（优先匹配键；未知可空）。</param>
+/// <param name="Identifier">项目标识（云效 customCode；ProjectId 为空时按它匹配）。</param>
+/// <param name="Codename">新项目代号。</param>
+/// <param name="RepoName">绑定的代码库名。</param>
+/// <param name="Ends">三端流水线登记。</param>
+/// <param name="TemplateCode">母版库代号（再次进入初始化页反显用）。</param>
+/// <param name="GroupName">代码组名。</param>
+/// <param name="Branch">初始化分支。</param>
+/// <param name="SelectedRepos">选中的母版库原库名。</param>
+public sealed record ProjectInitRequest(
+    string? ProjectId,
+    string? Identifier,
+    string Codename,
+    string? RepoName = null,
+    IReadOnlyList<ProjectInitEnd>? Ends = null,
+    string? TemplateCode = null,
+    string? GroupName = null,
+    string? Branch = null,
+    IReadOnlyList<string>? SelectedRepos = null);
+
+/// <summary>登记的单端流水线。</summary>
+/// <param name="End">端名。</param>
+/// <param name="Name">流水线名。</param>
+/// <param name="PipelineId">云效流水线 id。</param>
+/// <param name="Enabled">该端是否启用。</param>
+/// <param name="Port">后端监听端口。</param>
+/// <param name="TemplateName">母版流水线名（反显用）。</param>
+public sealed record ProjectInitEnd(
+    string End,
+    string? Name = null,
+    string? PipelineId = null,
+    bool Enabled = true,
+    int? Port = null,
+    string? TemplateName = null);
+
+/// <summary>完成登记反查入参。</summary>
+/// <param name="ProjectId">云效项目 ID。</param>
+/// <param name="Identifier">项目标识。</param>
+public sealed record ProjectInitGetRequest(string? ProjectId, string? Identifier);
+
+/// <summary>完成登记反查出参（再次进入初始化页反显）。</summary>/// <param name="ProjectId">云效项目 ID。</param>
+/// <param name="Identifier">项目标识。</param>
+/// <param name="Codename">新项目代号。</param>
+/// <param name="TemplateCode">母版库代号。</param>
+/// <param name="SelectedRepos">选中的母版库原库名。</param>
+/// <param name="GroupName">代码组名。</param>
+/// <param name="Branch">初始化分支。</param>
+/// <param name="RepoName">绑定的代码库名。</param>
+/// <param name="CompletedAt">完成时间。</param>
+/// <param name="Ends">三端登记。</param>
+public sealed record ProjectInitRecordDto(
+    string ProjectId,
+    string? Identifier,
+    string Codename,
+    string? TemplateCode,
+    IReadOnlyList<string> SelectedRepos,
+    string? GroupName,
+    string? Branch,
+    string? RepoName,
+    DateTime CompletedAt,
+    IReadOnlyList<ProjectInitEnd> Ends);

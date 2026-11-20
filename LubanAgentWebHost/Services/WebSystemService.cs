@@ -56,6 +56,9 @@ public static class WebSystemService
         }
 
         var (providerId, modelId) = providerService.GetSelection();
+        var profile = providerId is null || modelId is null
+            ? null
+            : await providerService.GetModelProfileAsync(providerId, modelId).ConfigureAwait(false);
 
         var attachments = scope.GetRequiredService<AttachmentService>();
 
@@ -71,7 +74,9 @@ public static class WebSystemService
                     PermissionModeRules.ToKey(mode),
                     PermissionModeRules.ToDisplayName(mode)))
                 .ToList(),
-            Enum.GetNames<ReasoningEffort>(),
+            BuildReasoningEfforts(profile?.Reasoning),
+            ContextTiers.FromWindow(profile?.ContextWindow),
+            profile?.ContextWindow,
             new AttachmentPolicyDto(
                 attachments.SupportedExtensions.ToList(),
                 AttachmentService.MaxAttachmentsPerMessage,
@@ -85,6 +90,20 @@ public static class WebSystemService
                     // 与框架 LuBanAgentOptions.Confirmation.TimeoutSeconds 的默认值一致
                     ?? 60)));
     });
+
+    /// <summary>
+    /// 浏览器端可选思考档位：未知只给「跟随模型」，明确不支持给空集合（不出控件），
+    /// 其余在「跟随模型」之后追加模型可选项。
+    /// </summary>
+    internal static IReadOnlyList<string> BuildReasoningEfforts(IReadOnlyList<string>? reasoning)
+    {
+        if (reasoning is null) return [string.Empty];
+        if (reasoning.Count == 0) return [];
+
+        var options = new List<string> { string.Empty };
+        options.AddRange(reasoning);
+        return options;
+    }
 
     /// <summary>
     /// 浏览器端斜杠命令清单（过滤掉 CLI 专属命令与「退出程序」）。

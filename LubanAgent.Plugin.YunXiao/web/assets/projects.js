@@ -7,8 +7,8 @@
   2. 列表项 name / identifier / updateTime：单行省略 + title 悬停全文；
   3. 右栏两态：未选中 → 组织统计卡（total + organizationId）；选中 → 项目详情卡
      （description 超长 3 行截断 + title）；
-  4. 首屏进入自动拉一次列表；「重新加载」刷新；详情卡入口（S2 起）：「项目初始化」
-     可点 → #/init，PRD 拆分 / 看板保持灰态「待接线」；
+  4. 首屏进入自动拉一次列表；「重新加载」刷新；详情卡入口：「项目初始化」→ #/init、
+     「PRD 拆分」→ #/prd（均携带项目上下文），「看板」保持灰态「待接线」；
   5. 云效数据属外部输入：渲染一律 escapeHtml，禁止裸 innerHTML 拼接。
 */
 (function (global) {
@@ -64,10 +64,14 @@
       const identifier = project.identifier || '—';
       const time = formatTime(project.updateTime);
       const rawTime = project.updateTime || '';
+      const initBadge = project.initialized
+        ? '<span class="proj-item-init ok" title="代码库与三端流水线已绑定">已初始化</span>'
+        : '<span class="proj-item-init" title="尚未完成项目初始化">待初始化</span>';
       return '<button type="button" class="proj-item' + (id === selectedId ? ' on' : '') + '" data-id="' + escapeHtml(id) + '">'
         + '<span class="proj-item-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>'
         + '<span class="proj-item-meta">'
         + '<span class="proj-item-id" title="' + escapeHtml(identifier) + '">' + escapeHtml(identifier) + '</span>'
+        + initBadge
         + '<span class="proj-item-time" title="' + escapeHtml(rawTime) + '">' + escapeHtml(time) + '</span>'
         + '</span>'
         + '</button>';
@@ -103,11 +107,11 @@
       + '<div class="detail-entries">'
       + '<button type="button" class="entry" data-entry="init">'
       + '<span class="entry-main"><span class="entry-title">项目初始化</span>'
-      + '<span class="entry-sub">复制母版库与流水线，生成新项目骨架</span></span>'
+      + '<span class="entry-sub">' + (project.initialized ? '已完成初始化，可进入查看' : '复制母版库与流水线，生成新项目骨架') + '</span></span>'
       + '<span class="entry-arrow">›</span></button>'
-      + '<button type="button" class="entry" disabled>'
+      + '<button type="button" class="entry" data-entry="prd">'
       + '<span class="entry-main"><span class="entry-title">PRD 拆分</span>'
-      + '<span class="entry-sub">待接线</span></span>'
+      + '<span class="entry-sub">同步需求并拆成迭代 / 任务 / 用例落库</span></span>'
       + '<span class="entry-arrow">›</span></button>'
       + '<button type="button" class="entry" disabled>'
       + '<span class="entry-main"><span class="entry-title">看板</span>'
@@ -167,9 +171,19 @@
     els.reload.addEventListener('click', reload);
     els.main.addEventListener('click', function (e) {
       const target = e.target;
-      const entry = target && target.closest ? target.closest('.entry[data-entry="init"]') : null;
+      const entry = target && target.closest ? target.closest('.entry[data-entry]') : null;
       if (!entry) return;
-      global.location.hash = '#/init';
+      const project = findSelected();
+      if (!project) {
+        app.showError('请先在左侧选择项目');
+        return;
+      }
+      // 携带项目上下文进目标页：#/init 登记回写「已初始化」，#/prd 用作同步与落库的项目标识
+      const query = ['projectId=' + encodeURIComponent(idOf(project))];
+      if (project.identifier) query.push('identifier=' + encodeURIComponent(project.identifier));
+      if (project.name) query.push('name=' + encodeURIComponent(project.name));
+      const hash = entry.getAttribute('data-entry') === 'prd' ? '#/prd?' : '#/init?';
+      global.location.hash = hash + query.join('&');
     });
     els.list.addEventListener('click', function (e) {
       const target = e.target;

@@ -214,10 +214,16 @@ public class YunxiaoInitServiceUnitTest
         /// <summary>改线返回值（可抛异常模拟单端失败）。</summary>
         public Func<string, bool>? UpdateHandler { get; set; }
 
-        public Task<List<YunxiaoPipeline>?> ListPipelinesAsync(
-            string? pipelineName = null, int page = 1, int perPage = 20, string? statusList = null,
+        /// <summary>ListPipelinesAsync 调用留痕（页号；反查频次断言用）。</summary>
+        public List<int> ListPipelineCalls { get; } = new();
+
+        public Task<List<YunxiaoPipeline>> ListPipelinesAsync(
+            string? pipelineName = null, int maxResults = 100, string? statusList = null,
             string? organizationId = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<List<YunxiaoPipeline>?>(Pipelines.Count == 0 ? null : Pipelines.ToList());
+        {
+            ListPipelineCalls.Add(maxResults);
+            return Task.FromResult(Pipelines.ToList());
+        }
 
         public Task<YunxiaoPipeline?> GetPipelineAsync(
             string pipelineId, string? organizationId = null, CancellationToken cancellationToken = default)
@@ -329,6 +335,75 @@ public class YunxiaoInitServiceUnitTest
         public List<WorkspaceDir> Items { get; } = new();
 
         public IReadOnlyList<WorkspaceDir> List() => Items;
+    }
+
+    // ---------------- S2 收口 · 项目初始化完成登记 ----------------
+
+    /// <summary>缺 项目 ID/标识 或代号 → 400，且不落盘。</summary>
+    [TestMethod]
+    public async Task SaveProjectInit_缺键400()
+    {
+        var h = Create(Path.GetTempPath());
+
+        var noKey = await h.Service.SaveProjectInitAsync(
+            new ProjectInitRequest(null, null, "BBKY"), CancellationToken.None);
+        Assert.IsFalse(noKey.Ok);
+        Assert.AreEqual(400, noKey.Code);
+
+        var noCode = await h.Service.SaveProjectInitAsync(
+            new ProjectInitRequest("pid-1", "BBKY", " "), CancellationToken.None);
+        Assert.IsFalse(noCode.Ok);
+        Assert.AreEqual(400, noCode.Code);
+    }
+
+    /// <summary>合法入参落盘：项目 ID / 标识 / 库名 / 三端流水线可反查。</summary>
+    [TestMethod]
+    public async Task SaveProjectInit_合法入参落盘可反查()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-init-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var store = new ProjectInitStore(Path.Combine(root, "init.json"));
+            var service = new YunxiaoInitService(
+                new FakeCodeupClient(), new FakeFlowClient(), new FakeSessionGateway(),
+                new InitTaskStore(Path.Combine(root, "tasks.json")),
+                new FakeSettingsService(), new FakeWorkspaceDirectoryProvider(), store);
+
+            var result = await service.SaveProjectInitAsync(new ProjectInitRequest(
+                "pid-1", "BBKY", "BBKY", "BBKY-Mixed",
+                new[] { new ProjectInitEnd("mobile", "CME_DEV_Deploy_BBKY-Mobile", "123") }),
+                CancellationToken.None);
+
+            Assert.IsTrue(result.Ok);
+            var all = await store.GetAllAsync();
+            Assert.AreEqual(1, all.Count);
+            Assert.AreEqual("pid-1", all[0].ProjectId);
+            Assert.AreEqual("BBKY-Mixed", all[0].RepoName);
+            Assert.AreEqual(1, all[0].Pipelines.Count);
+            Assert.AreEqual("123", all[0].Pipelines[0].PipelineId);
+
+            // 反查：按标识命中，DTO 回带反显所需字段
+            var got = await service.GetProjectInitAsync(null, "BBKY", CancellationToken.None);
+            Assert.IsTrue(got.Ok);
+            Assert.IsNotNull(got.Data);
+            Assert.AreEqual("BBKY", got.Data!.Codename);
+            Assert.AreEqual("BBKY-Mixed", got.Data.RepoName);
+            Assert.AreEqual(1, got.Data.Ends.Count);
+            Assert.AreEqual("CME_DEV_Deploy_BBKY-Mobile", got.Data.Ends[0].Name);
+
+            // 按未知项目反查 → null（不误报已初始化）
+            var missing = await service.GetProjectInitAsync("pid-unknown", null, CancellationToken.None);
+            Assert.IsTrue(missing.Ok);
+            Assert.IsNull(missing.Data);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     private sealed record Harness(
@@ -494,11 +569,12 @@ public class YunxiaoInitServiceUnitTest
         Assert.AreEqual("ACME_DEV_Deploy_TPLX-Mobile", data.Plan.Pipelines[0].From);
         Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", data.Plan.Pipelines[0].To);
 
-        // 命令序列与 GitCommandPlanner 同源：clone → mv×3 → commit → remote → push
-        Assert.IsTrue(data.GitCommands.Count >= 7);
+        // 命令序列与 GitCommandPlanner 同源：clone → mv×3 → commit → remote → push → 切 develop（S2c §12.2 尾部 develop 步）
+        Assert.IsTrue(data.GitCommands.Count >= 8);
         StringAssert.Contains(data.GitCommands[0].Command, "git clone --branch master");
         StringAssert.Contains(data.GitCommands[0].Command, TemplateCloneUrl);
-        StringAssert.Contains(data.GitCommands[^1].Command, "push origin master");
+        StringAssert.Contains(data.GitCommands[^2].Command, "push origin master");
+        StringAssert.Contains(data.GitCommands[^1].Command, "checkout -b develop");
         Assert.AreEqual(0, data.Conflicts.Count);
         Assert.IsTrue(data.SessionReady);
 
@@ -511,23 +587,46 @@ public class YunxiaoInitServiceUnitTest
     }
 
     [TestMethod]
-    public async Task Preflight_库名已存在_标记复用_不列冲突_零git步骤()
+    public async Task Preflight_库名已存在_复用_缺源码_出检出步骤()
     {
         var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed", "https://codeup.example.com/org-demo/newx-mixed.git"));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        // S2c §12.1.2：复用库 + 本地无源码 → 出本地检出步骤（clone 复用库真 URL → 切 develop），不列冲突
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        Assert.AreEqual(0, data.Conflicts.Count);
+        CollectionAssert.AreEqual(new[] { "NEWX-Mixed" }, data.ReusedLibs!.ToList());
+        Assert.AreEqual(3, data.GitCommands.Count);
+        StringAssert.Contains(data.GitCommands[0].Command, "git clone");
+        StringAssert.Contains(data.GitCommands[0].Command, "https://codeup.example.com/org-demo/newx-mixed.git");
+        StringAssert.Contains(data.GitCommands[^1].Command, "checkout -b develop");
+        Assert.IsTrue(data.Warnings!.Any(w => w.Contains("结构待校验")));
+        Assert.IsTrue(data.SessionReady);
+    }
+
+    [TestMethod]
+    public async Task Preflight_库名已存在_复用_已有源码_零git步骤()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));
         var h = Create(root);
         h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
         h.Codeup.Repos.Add(Repo("NEWX-Mixed"));
 
         var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
 
-        // S2b §11.2：库已存在 → 复用标记（ReusedLibs + 提示），不再列冲突、不生成 git 步骤
+        // S2c §12.1.2 幂等：目录已有源码 → 零 git 步骤（不重复 clone）
         Assert.IsTrue(result.Ok);
         var data = result.Data!;
         Assert.AreEqual(0, data.Conflicts.Count);
         CollectionAssert.AreEqual(new[] { "NEWX-Mixed" }, data.ReusedLibs!.ToList());
         Assert.AreEqual(0, data.GitCommands.Count);
-        Assert.IsTrue(data.Warnings!.Any(w => w.Contains("结构待校验")));
         Assert.IsTrue(data.SessionReady);
     }
 
@@ -805,13 +904,13 @@ public class YunxiaoInitServiceUnitTest
     }
 
     [TestMethod]
-    public async Task Exec_二次查重转复用_零建库零会话_他库继续()
+    public async Task Exec_二次查重转复用_零建库_发本地检出_他库继续()
     {
         var root = NewRoot();
         var h = Create(root);
         h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
         h.Codeup.Repos.Add(Repo("TPL2-Mixed", "https://codeup.example.com/org-demo/tpl2-mixed.git"));
-        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));   // 预检后被抢先创建 → 转复用（S2b §11.2）
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed", "https://codeup.example.com/org-demo/newx-mixed.git"));   // 预检后被抢先创建 → 转复用
 
         var exec = await h.Service.ExecAsync(Exec(libs:
         [
@@ -822,18 +921,25 @@ public class YunxiaoInitServiceUnitTest
         Assert.IsTrue(exec.Ok);
         var task = await WaitTerminalAsync(h.Service, exec.Data!);
 
-        // 被抢先创建的库：复用语义 done（Detail=复用已有库），零建库、零会话指令
+        // 被抢先创建的库（复用）：零建库，但缺本地源码 → 发「本地检出」计划（S2c §12.1.2/§12.2）
         var lib1 = task.Libs.Single(l => l.Repo == "NEWX-Mixed");
         Assert.AreEqual(LibStatus.Done, lib1.Status);
         Assert.AreEqual("复用已有库", lib1.Detail);
         Assert.IsFalse(h.Codeup.CreateRepoRequests.Any(r => r.Name == "NEWX-Mixed"));
+        var reuseSend = h.Gateway.Sends.FirstOrDefault(s => s.Instruction.Contains("完成 NEWX-Mixed 的本地检出"));
+        Assert.IsNotNull(reuseSend, "复用库应发本地检出指令");
         Assert.IsFalse(h.Gateway.Sends.Any(s => s.Instruction.Contains("完成 NEWX-Mixed 的复制初始化")));
+        // approvedCommands 同源 = PlanLocalCheckout（clone + 两步 develop）
+        var expectedCheckout = GitCommandPlanner.PlanLocalCheckout(
+            root, "https://codeup.example.com/org-demo/newx-mixed.git", "NEWX-Mixed", "master");
+        CollectionAssert.AreEqual(expectedCheckout.Select(s => s.Command).ToList(), reuseSend!.Approved!.ToList());
 
-        // 他库继续：建库 + 会话推进 done
+        // 他库继续：建库 + 复制初始化会话推进 done
         var lib2 = task.Libs.Single(l => l.Repo == "NEWX2-Mixed");
         Assert.AreEqual(LibStatus.Done, lib2.Status);
         Assert.IsTrue(h.Codeup.CreateRepoRequests.Any(r => r.Name == "NEWX2-Mixed"));
-        Assert.AreEqual(1, h.Gateway.Sends.Count);
+        Assert.IsTrue(h.Gateway.Sends.Any(s => s.Instruction.Contains("完成 NEWX2-Mixed 的复制初始化")));
+        Assert.AreEqual(2, h.Gateway.Sends.Count);
 
         // 复用不算失败 → 全 done 收口
         Assert.AreEqual(InitTaskStatus.Done, task.Status);
@@ -841,9 +947,29 @@ public class YunxiaoInitServiceUnitTest
     }
 
     [TestMethod]
+    public async Task Exec_复用已有源码_幂等_零git零Send()
+    {
+        var root = NewRoot();
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));
+
+        var exec = await h.Service.ExecAsync(Exec(), CancellationToken.None);
+
+        Assert.IsTrue(exec.Ok);
+        var task = await WaitTerminalAsync(h.Service, exec.Data!);
+        var lib = task.Libs.Single();
+        Assert.AreEqual(LibStatus.Done, lib.Status);
+        Assert.AreEqual("复用已有库", lib.Detail);
+        Assert.AreEqual(0, h.Gateway.Sends.Count);   // 已有源码 → 幂等零 git
+    }
+
+    [TestMethod]
     public async Task Exec_全复用_Session不可用_不阻断_零建库零Send()
     {
         var root = NewRoot();
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));   // 已有本地源码（幂等）
         var h = Create(root);
         h.Gateway.ProbeResult = false;   // 会话通路不可用
         h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
@@ -851,7 +977,7 @@ public class YunxiaoInitServiceUnitTest
 
         var exec = await h.Service.ExecAsync(Exec(), CancellationToken.None);
 
-        // S2b §11.2：全复用 → 不要求会话（503 不触发）
+        // S2c §12.2 门禁：全部库已有本地源码检出 → 免会话（503 不触发），幂等零 git
         Assert.IsTrue(exec.Ok);
         var task = await WaitTerminalAsync(h.Service, exec.Data!);
 
@@ -863,6 +989,24 @@ public class YunxiaoInitServiceUnitTest
         Assert.AreEqual(0, h.Codeup.WriteCalls.Count);           // 零建组
         Assert.AreEqual(0, h.Gateway.Sends.Count);               // 零 SendAsync
         Assert.IsFalse(h.Gateway.WriteCalls.Any(c => c.StartsWith("CreateInitSession", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task Exec_全复用_缺源码_Session不可用_仍要会话503()
+    {
+        var root = NewRoot();
+        var h = Create(root);
+        h.Gateway.ProbeResult = false;   // 会话通路不可用
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));   // 全复用但本地缺源码
+
+        var exec = await h.Service.ExecAsync(Exec(), CancellationToken.None);
+
+        // S2c §12.2：全复用但需 clone（缺本地源码）→ 仍要求会话 → 503 阻断
+        Assert.IsFalse(exec.Ok);
+        Assert.AreEqual(503, exec.Code);
+        Assert.AreEqual(0, h.Codeup.WriteCalls.Count);
+        Assert.AreEqual(0, h.Gateway.WriteCalls.Count);
     }
 
     [TestMethod]
@@ -923,7 +1067,7 @@ public class YunxiaoInitServiceUnitTest
         Assert.AreEqual(11L, created.NamespaceId);
         Assert.IsFalse(h.Codeup.WriteCalls.Any(c => c.StartsWith("CreateNamespace:", StringComparison.Ordinal)));
 
-        // SendAsync 收到的 approvedCommands = GitCommandPlanner 同源序列
+        // SendAsync 收到的 approvedCommands = GitCommandPlanner 同源序列（含 S2c §12.2 尾部切 develop 步）
         Assert.AreEqual(1, h.Gateway.Sends.Count);
         var (sessionId, instruction, approved) = h.Gateway.Sends[0];
         Assert.AreEqual("sess-fake", sessionId);
@@ -934,8 +1078,10 @@ public class YunxiaoInitServiceUnitTest
             "TPLX",
             "NEWX",
             new[] { "NEWX-Admin", "NEWX-Mobile", "NEWX-Service" },
-            "master");
+            "master").ToList();
+        expected.Add(GitCommandPlanner.PlanSwitchDevelopLocal($"{root}/NEWX-Mixed"));
         CollectionAssert.AreEqual(expected.Select(s => s.Command).ToList(), approved!.ToList());
+        StringAssert.Contains(approved[^1], "checkout -b develop");
 
         // instruction 明示将执行的命令序列（与 GitCommands 同源）且无凭据形态
         foreach (var step in expected)
@@ -1192,11 +1338,14 @@ public class YunxiaoInitServiceUnitTest
         }
     }
 
+    /// <summary>tb 形态（表单流水线，无顶层 stages:）不再被跳过——YamlSubstitutor 做纯文本替换，同样能生成 diff。</summary>
     [TestMethod]
-    public async Task Preview_非PIPELINEASCODE跳过_该端带警告()
+    public async Task Preview_非PIPELINEASCODE_照样替换与diff()
     {
         var h = Create(Path.GetTempPath());
-        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Mobile", 101, TbFormFlow));
+        // tb 形态 fixture，含代号段 "TPLX"，Substitute 应该替换成 NEWX
+        const string TbFlowWithCode = "name: build_TPLX\nsteps:\n  - name: TPLX-Admin\n    type: console\n";
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Mobile", 101, TbFlowWithCode));
         h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
 
         var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
@@ -1206,8 +1355,9 @@ public class YunxiaoInitServiceUnitTest
 
         Assert.IsTrue(result.Ok);
         var item = result.Data!.Items.Single();
-        Assert.IsNotNull(item.Warning);
-        Assert.AreEqual("", item.Diff);
+        Assert.IsNull(item.Warning, "tb 形态不再被标记跳过——无警告");
+        Assert.IsTrue(item.Content!.Contains("NEWX"), "替换后的 content 应含新代号 NEWX");
+        Assert.IsTrue(item.Diff.Length > 0, "tb 形态 YamlSubstitutor 做了替换 → 应有 diff");
     }
 
     [TestMethod]
@@ -1288,6 +1438,103 @@ public class YunxiaoInitServiceUnitTest
     }
 
     [TestMethod]
+    public async Task Preview_前缀容忍端口差异_互认Exists()
+    {
+        var h = Create(Path.GetTempPath());
+        // 远端已有名带 (7001)，派生名带 (9000) → 剥离 (端口) 后前缀一致 → 互认 Exists（S2c §12.3）
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Service(7001)", 201, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            "rid-1", "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "ACME_DEV_Deploy_NEWX-Service(9000)", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var item = result.Data!.Items.Single();
+        Assert.IsTrue(item.Exists, "(7001) vs (9000) 前缀容忍应互认 Exists");
+    }
+
+    [TestMethod]
+    public async Task Preview_PipelineInfo_回显真实名Id与解析端口()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Service(7001)", 201, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            "rid-1", "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "ACME_DEV_Deploy_NEWX-Service(9000)", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var info = result.Data!.Items.Single().Pipeline;
+        Assert.IsNotNull(info, "已存在端应回填 PipelineInfo");
+        Assert.AreEqual("201", info!.Id);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service(7001)", info.ActualName);
+        Assert.AreEqual(7001, info.Port);   // 从 ActualName 的 (数字) 解析
+    }
+
+    [TestMethod]
+    public async Task Preview_PipelineInfo_解析不出端口为null()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Service", 201, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            "rid-1", "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "ACME_DEV_Deploy_NEWX-Service", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var info = result.Data!.Items.Single().Pipeline;
+        Assert.IsNotNull(info);
+        Assert.IsNull(info!.Port);   // 无 (端口) 后缀 → 解析不出为 null
+    }
+
+    [TestMethod]
+    public async Task Preview_全复用NewRepoId可空_按库名回查真实id()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Codeup.Repos.Add(new YunxiaoRepository
+        {
+            Id = 555L,
+            Name = "NEWX-Mixed",
+            Path = "newx-mixed",
+            HttpUrlToRepo = "https://codeup.example.com/org-demo/newx-mixed.git",
+        });
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Service", 103, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        // S2c §12.3.5：全复用 F6 不等 FR-2 任务 → NewRepoId 留空，按 NewRepoName 回查
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            null, "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "ACME_DEV_Deploy_NEWX-Service", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        // {{REPO_ID}} 用回查的真实 id（555）
+        StringAssert.Contains(result.Data!.Items.Single().Diff, "+repoId: 555");
+    }
+
+    [TestMethod]
+    public async Task Preview_全复用NewRepoId可空_按库名查不到_404()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Service", 103, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            null, "NOT-THERE-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "ACME_DEV_Deploy_NEWX-Service", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Ok);
+        Assert.AreEqual(404, result.Code);
+    }
+
+    [TestMethod]
     public async Task Commit_create_调用参数正确_返回pipelineId()
     {
         var h = Create(Path.GetTempPath());
@@ -1311,7 +1558,7 @@ public class YunxiaoInitServiceUnitTest
     }
 
     [TestMethod]
-    public async Task Commit_SkipIfExisting_已存在跳过_零写调用()
+    public async Task Commit_SkipIfExisting_已存在端零写调用_回执带Id()
     {
         var h = Create(Path.GetTempPath());
         h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Mobile", 201, TemplateYaml));
@@ -1320,13 +1567,14 @@ public class YunxiaoInitServiceUnitTest
             [new CommitItem("mobile", "create", "ACME_DEV_Deploy_NEWX-Mobile", "stages:\n  - a\n")]),
             CancellationToken.None);
 
-        // S2b §11.2 补全语义：create 前同名 TOCTOU 复查命中 → 已存在跳过（零写调用）
+        // S2c §12.3.4：已存在端零操作，回执「已存在·已同步信息」（含 Id/ActualName，可追溯）
         Assert.IsTrue(result.Ok);
         var item = result.Data!.Results.Single();
         Assert.AreEqual("mobile", item.End);
         Assert.IsTrue(item.Ok);
-        Assert.AreEqual("已存在跳过", item.Message);
-        Assert.IsNull(item.PipelineId);
+        StringAssert.Contains(item.Message!, "已存在·已同步信息");
+        StringAssert.Contains(item.Message!, "ACME_DEV_Deploy_NEWX-Mobile");
+        Assert.AreEqual("201", item.PipelineId);   // 回执带 Id
         Assert.AreEqual(0, h.Flow.WriteCalls.Count);
         Assert.AreEqual(0, h.Flow.CreateCalls.Count);
     }
@@ -1362,7 +1610,8 @@ public class YunxiaoInitServiceUnitTest
 
         Assert.IsTrue(result.Ok);
         var results = result.Data!.Results;
-        Assert.AreEqual("已存在跳过", results[0].Message);
+        StringAssert.Contains(results[0].Message!, "已存在·已同步信息");
+        Assert.AreEqual("201", results[0].PipelineId);   // 已存在端回执带 Id
         Assert.IsTrue(results[1].Ok);
         Assert.AreEqual("id-ACME_DEV_Deploy_NEWX-Admin", results[1].PipelineId);
         Assert.AreEqual(1, h.Flow.CreateCalls.Count);   // 只建缺失端
@@ -1385,18 +1634,20 @@ public class YunxiaoInitServiceUnitTest
         Assert.AreEqual(0, h.Flow.UpdateCalls.Count);
     }
 
+    /// <summary>tb 形态（无顶层 stages:）不再被 400 拒绝——后端不再校验 stages，tb 形态也能提交。</summary>
     [TestMethod]
-    public async Task Commit_content无stages_400且零调用()
+    public async Task Commit_content无stages_照样create成功()
     {
         var h = Create(Path.GetTempPath());
+        h.Flow.CreateHandler = req => "id-tb-pipeline";
 
         var result = await h.Service.CommitPipelinesAsync(new PipelineCommitRequest(
             [new CommitItem("mobile", "create", "N", TbFormFlow)]),
             CancellationToken.None);
 
-        Assert.IsFalse(result.Ok);
-        Assert.AreEqual(400, result.Code);
-        Assert.AreEqual(0, h.Flow.WriteCalls.Count);
+        // 新口径：tb 形态不再 400，后端会直接调 create
+        Assert.IsTrue(result.Ok, "tb 形态不再被拒绝 → create 成功");
+        Assert.AreEqual(1, h.Flow.WriteCalls.Count, "应有 1 次 create 调用");
     }
 
     [TestMethod]
@@ -1468,5 +1719,382 @@ public class YunxiaoInitServiceUnitTest
         Assert.IsFalse(results[0].Ok);
         Assert.IsNotNull(results[0].Message);
         Assert.IsTrue(results[1].Ok);
+    }
+
+    // ── S2d §13.3：后缀段匹配兜底 + 预检缺省名反查（前缀不写死，夹具合成 ACME_） ──
+
+    [TestMethod]
+    public async Task Preview_空前缀表单名_后缀段命中ACME真名_互认Exists()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Mobile", 102, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        // 表单名空前缀（_DEV_Deploy_{代号}-{端}）与真名 ACME_DEV_Deploy_* 互认（§13.3 匹配兜底）
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            "rid-1", "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("mobile", true, "/w/mob", "_DEV_Deploy_NEWX-Mobile")]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var item = result.Data!.Items.Single();
+        Assert.IsTrue(item.Exists, "空前缀表单名应与 ACME_DEV_Deploy_* 真名后缀段互认");
+        Assert.IsNotNull(item.Pipeline);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", item.Pipeline!.ActualName);
+    }
+
+    [TestMethod]
+    public async Task Preview_空前缀容忍端口差异组合_互认Exists()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Service(7001)", 201, TemplateYaml));
+        h.Flow.GetPipelineHandler = id => h.Flow.Pipelines.FirstOrDefault(p => p.DisplayId == id);
+
+        // 空前缀 + (9000) vs ACME 前缀 + (7001)：前缀容忍与端口容忍组合互认
+        var result = await h.Service.PreviewPipelinesAsync(new PipelinePreviewRequest(
+            "rid-1", "NEWX-Mixed", "TPLX", "NEWX",
+            [new EndConfig("backend", true, "/w/svc", "_DEV_Deploy_NEWX-Service(9000)", 9000)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        Assert.IsTrue(result.Data!.Items.Single().Exists, "(9000) 空前缀 vs (7001) ACME 前缀组合应互认");
+    }
+
+    [TestMethod]
+    public async Task Commit_SkipIfExisting_空前缀_后缀段命中TOCTOU_跳过零写调用()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_NEWX-Mobile", 201, TemplateYaml));
+
+        var result = await h.Service.CommitPipelinesAsync(new PipelineCommitRequest(
+            [new CommitItem("mobile", "create", "_DEV_Deploy_NEWX-Mobile", "stages:\n  - a\n")]),
+            CancellationToken.None);
+
+        // TOCTOU 复查后缀段命中 → 已存在端零操作，回执「已存在·已同步信息」（含 Id/真实名）
+        Assert.IsTrue(result.Ok);
+        var item = result.Data!.Results.Single();
+        Assert.IsTrue(item.Ok);
+        StringAssert.Contains(item.Message!, "已存在·已同步信息");
+        StringAssert.Contains(item.Message!, "ACME_DEV_Deploy_NEWX-Mobile");
+        Assert.AreEqual("201", item.PipelineId);
+        Assert.AreEqual(0, h.Flow.WriteCalls.Count);
+        Assert.AreEqual(0, h.Flow.CreateCalls.Count);
+    }
+
+    [TestMethod]
+    public async Task Preflight_母版流水线名缺省_反查真实名带前缀再派生()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.AddRange(
+        [
+            Pipeline("ACME_DEV_Deploy_TPLX-Mobile", 101, TemplateYaml),
+            Pipeline("ACME_DEV_Deploy_TPLX-Service(7001)", 103, TemplateYaml),
+        ]);
+
+        // 母版流水线名缺省（[]）→ 反查 ListPipelinesAsync 母版后缀段真实名（带 ACME_ 前缀）再派生
+        var result = await h.Service.PreflightAsync(new PreflightRequest(
+            TemplateRepoName, NewCode, "ws-1", "master",
+            [],
+            Ends:
+            [
+                new InitEndConfig("mobile", true),
+                new InitEndConfig("backend", true, Port: 9000),
+            ]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var pipes = result.Data!.Plan.Pipelines;
+        Assert.AreEqual(2, pipes.Count);
+        Assert.AreEqual("ACME_DEV_Deploy_TPLX-Mobile", pipes[0].From);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", pipes[0].To);
+        Assert.AreEqual("ACME_DEV_Deploy_TPLX-Service(7001)", pipes[1].From);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service(9000)", pipes[1].To);
+    }
+
+    [TestMethod]
+    public async Task Preflight_母版流水线名已给齐_不反查ListPipelines()
+    {
+        var h = Create(Path.GetTempPath());
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        // 既有口径：三名已覆盖三端 → 零 ListPipelines 反查（不为命名额外打扰流水线接口）
+        Assert.IsTrue(result.Ok);
+        Assert.AreEqual(3, result.Data!.Plan.Pipelines.Count);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", result.Data!.Plan.Pipelines[0].To);
+        Assert.AreEqual(0, h.Flow.ListPipelineCalls.Count);
+    }
+
+    // ── S2e §14 修复一：DerivePipelinesAsync（反查真名 → 逐端派生，永不前导下划线）──
+
+    [TestMethod]
+    public async Task DerivePipelines_反查到真名_FromTo带真实前缀()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Mobile", 101, TemplateYaml));
+
+        var result = await h.Service.DerivePipelinesAsync(new DeriveRequest(
+            TemplateRepoName, NewCode,
+            [new InitEndConfig("mobile", true)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var item = result.Data!.Items.Single();
+        Assert.AreEqual("mobile", item.End);
+        Assert.AreEqual("ACME_DEV_Deploy_TPLX-Mobile", item.From);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Mobile", item.To);
+        Assert.IsFalse(item.To.StartsWith("_", StringComparison.Ordinal), item.To);
+        Assert.AreEqual(1, h.Flow.ListPipelineCalls.Count);
+    }
+
+    [TestMethod]
+    public async Task DerivePipelines_反查不到_To无前导下划线兜底()
+    {
+        var h = Create(Path.GetTempPath());   // Flow.Pipelines 为空 → ListPipelinesAsync 返回 null
+
+        var result = await h.Service.DerivePipelinesAsync(new DeriveRequest(
+            TemplateRepoName, NewCode,
+            [new InitEndConfig("mobile", true), new InitEndConfig("admin", true)]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        Assert.AreEqual(2, result.Data!.Items.Count);
+        foreach (var item in result.Data.Items)
+        {
+            Assert.IsNull(item.From, $"{item.End} 反查不到应为 null");
+            Assert.AreEqual($"DEV_Deploy_NEWX-{(item.End == "mobile" ? "Mobile" : "Admin")}", item.To);
+            Assert.IsFalse(item.To.StartsWith("_", StringComparison.Ordinal), item.To);
+        }
+    }
+
+    [TestMethod]
+    public async Task DerivePipelines_后端端口后缀含port_仅On端出项()
+    {
+        var h = Create(Path.GetTempPath());
+        h.Flow.Pipelines.Add(Pipeline("ACME_DEV_Deploy_TPLX-Service(7001)", 103, TemplateYaml));
+
+        var result = await h.Service.DerivePipelinesAsync(new DeriveRequest(
+            TemplateRepoName, NewCode,
+            [
+                new InitEndConfig("mobile", false),                              // 未勾选 → 不出项
+                new InitEndConfig("backend", true, Port: 9000),
+            ]),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var item = result.Data!.Items.Single();
+        Assert.AreEqual("backend", item.End);
+        Assert.AreEqual("ACME_DEV_Deploy_TPLX-Service(7001)", item.From);
+        Assert.AreEqual("ACME_DEV_Deploy_NEWX-Service(9000)", item.To);   // 端口后缀含 (port)
+    }
+
+    [TestMethod]
+    public async Task DerivePipelines_Ends缺省_三端全开_反查不到兜底无前导下划线()
+    {
+        var h = Create(Path.GetTempPath());
+
+        var result = await h.Service.DerivePipelinesAsync(
+            new DeriveRequest(TemplateRepoName, NewCode),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        Assert.AreEqual(3, result.Data!.Items.Count);
+        CollectionAssert.AreEquivalent(
+            new[] { "mobile", "admin", "backend" },
+            result.Data.Items.Select(i => i.End).ToList());
+        Assert.IsTrue(result.Data.Items.All(i => i.To.StartsWith("DEV_Deploy_NEWX-", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Data.Items.All(i => !i.To.StartsWith("_", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task DerivePipelines_非法参数_400语义()
+    {
+        var h = Create(Path.GetTempPath());
+
+        var blank = await h.Service.DerivePipelinesAsync(new DeriveRequest("", NewCode), CancellationToken.None);
+        Assert.IsFalse(blank.Ok);
+        Assert.AreEqual(400, blank.Code);
+
+        var noDash = await h.Service.DerivePipelinesAsync(new DeriveRequest("NOTMIXED", NewCode), CancellationToken.None);
+        Assert.IsFalse(noDash.Ok);
+        Assert.AreEqual(400, noDash.Code);
+
+        var badCode = await h.Service.DerivePipelinesAsync(new DeriveRequest(TemplateRepoName, "NEW-X"), CancellationToken.None);
+        Assert.IsFalse(badCode.Ok);
+        Assert.AreEqual(400, badCode.Code);
+
+        var nullReq = await h.Service.DerivePipelinesAsync(null, CancellationToken.None);
+        Assert.IsFalse(nullReq.Ok);
+        Assert.AreEqual(400, nullReq.Code);
+        Assert.AreEqual(0, h.Flow.ListPipelineCalls.Count);   // 非法参数零反查
+    }
+
+    // ── S2e §14 修复三：本地检出判定补形态（根即检出 / 根含 .git）────────────
+
+    [TestMethod]
+    public async Task Preflight_工作区根即检出_零git步骤_无未克隆警告()
+    {
+        // 形态 A：工作区根本身即检出（根目录名与库名规范化相等）——用户报障③核心场景
+        // 叶子名恰为库名（父目录带 guid 防串扰）
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"), "NEWX-Mixed");
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Admin"));   // 根非空（检出内容）
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        Assert.AreEqual(0, data.GitCommands.Count);                       // 零 git 步骤
+        Assert.IsFalse((data.Warnings ?? []).Any(w => w.Contains("本地未克隆")));   // 不再误报
+        Assert.IsFalse((data.Warnings ?? []).Any(w => w.Contains("结构待校验")));
+        Assert.AreEqual(0, data.Conflicts.Count);
+    }
+
+    [TestMethod]
+    public async Task Preflight_根含git与综合子目录_零git步骤()
+    {
+        // 形态 B：根含 .git + 综合库特征子目录 ≥2 → 已有源码
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, ".git"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Admin"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mobile"));
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        Assert.AreEqual(0, result.Data!.GitCommands.Count);
+        Assert.AreEqual(0, result.Data.Conflicts.Count);
+    }
+
+    [TestMethod]
+    public async Task Preflight_子目录形态保持_已有源码_零git步骤()
+    {
+        // 原形态回归：{root}/{repoName} 子目录已有源码 → 零 git（与修复三前行为一致）
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        Assert.AreEqual(0, result.Data!.GitCommands.Count);
+    }
+
+    [TestMethod]
+    public async Task Preflight_均不命中_出检出序列_原行为()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        // 都不命中 → 新建库出 clone-rename-push 序列（原行为保持）
+        Assert.IsTrue(result.Ok);
+        Assert.IsTrue(result.Data!.GitCommands.Count > 0);
+        StringAssert.Contains(result.Data.GitCommands[0].Command, "git clone");
+    }
+
+    [TestMethod]
+    public async Task Exec_根即检出_免会话_零Send()
+    {
+        // 修复三同口径：Exec/RunInit 复用 LocalSourceLayout（根即检出 → 免会话、零 git 零 Send）
+        var root = Path.Combine(Path.GetTempPath(), "luban-ex-" + Guid.NewGuid().ToString("N"), "NEWX-Mixed");
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Admin"));
+        var h = Create(root);
+        h.Gateway.ProbeResult = false;   // 会话不可用：已有源码 → 不阻断
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var exec = await h.Service.ExecAsync(Exec(), CancellationToken.None);
+
+        Assert.IsTrue(exec.Ok);
+        var task = await WaitTerminalAsync(h.Service, exec.Data!);
+        Assert.AreEqual(InitTaskStatus.Done, task.Status);
+        Assert.AreEqual(0, h.Gateway.Sends.Count);
+        Assert.AreEqual(0, h.Codeup.WriteCalls.Count);
+    }
+
+    // ── S2e §14 修复四：复用库预检输出结构校验（不输出改名对照）──────────────
+
+    [TestMethod]
+    public async Task Preflight_复用库_不出改名对照_出结构校验字段()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));   // 缺 Mobile/Service
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        CollectionAssert.AreEqual(new[] { "NEWX-Mixed" }, data.ReusedLibs!.ToList());
+        Assert.AreEqual(0, data.Plan.Dirs.Count);   // 复用库无改名动作 → 不输出「将改名目录」对照
+        Assert.IsNotNull(data.StructureChecks);
+        Assert.IsTrue(data.StructureChecks!.Any(c => c.Contains("NEWX-Admin") && c.Contains("存在")));
+        Assert.IsTrue(data.StructureChecks!.Any(c => c.Contains("NEWX-Mobile") && c.Contains("缺失")));
+        Assert.IsTrue(data.Warnings!.Any(w => w.Contains("结构待校验")));   // 缺子目录仍出待校验
+    }
+
+    [TestMethod]
+    public async Task Preflight_复用库_本地未克隆_结构校验待校验()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        Assert.AreEqual(0, data.Plan.Dirs.Count);
+        Assert.IsTrue(data.StructureChecks!.Any(c => c.Contains("待校验")));
+        Assert.IsTrue(data.Warnings!.Any(w => w.Contains("结构待校验")));
+    }
+
+    [TestMethod]
+    public async Task Preflight_复用库_结构齐全_结构校验全存在_无警告()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Admin"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Mobile"));
+        Directory.CreateDirectory(Path.Combine(root, "NEWX-Mixed", "NEWX-Service"));
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+        h.Codeup.Repos.Add(Repo("NEWX-Mixed"));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        Assert.AreEqual(0, data.Warnings!.Count);
+        Assert.AreEqual(3, data.StructureChecks!.Count);
+        Assert.IsTrue(data.StructureChecks!.All(c => c.Contains("存在")));
+    }
+
+    [TestMethod]
+    public async Task Preflight_新建库_结构校验为空_改名对照保持()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "luban-pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var h = Create(root);
+        h.Codeup.Repos.Add(Repo(TemplateRepoName, TemplateCloneUrl));
+
+        var result = await h.Service.PreflightAsync(Request(), CancellationToken.None);
+
+        // 新建库：Plan.Dirs 改名对照照旧（3 对），StructureChecks 为空
+        Assert.IsTrue(result.Ok);
+        var data = result.Data!;
+        Assert.AreEqual(3, data.Plan.Dirs.Count);
+        Assert.AreEqual(0, (data.StructureChecks ?? []).Count);
+        Assert.AreEqual(0, data.ReusedLibs!.Count);
     }
 }

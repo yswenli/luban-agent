@@ -103,6 +103,32 @@ public static class YunxiaoResponseParser
     }
 
     /// <summary>
+    /// 反序列化 Flow 侧 <b>Token 翻页容器</b>响应（<c>/flow/.../pipelines</c> 返回对象
+    /// <c>{"pipelines":[...], "nextToken":"xxx", "totalCount":50}</c>，不是裸数组）。
+    /// </summary>
+    /// <typeparam name="T">流水线元素类型。</typeparam>
+    /// <param name="json">JSON 文本。</param>
+    /// <returns>翻页容器；空体或根节点不是对象时为 <c>null</c>。</returns>
+    /// <exception cref="YunxiaoApiException">JSON 无法解析。</exception>
+    public static FlowPipelinePage<T>? DeserializeFlowPage<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                ? JsonSerializer.Deserialize<FlowPipelinePage<T>>(json, JsonOpts)
+                : null;
+        }
+        catch (JsonException ex)
+        {
+            throw new YunxiaoApiException(0, $"云效 Flow 分页响应解析失败：{ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
     /// 解析<b>裸标量 id</b> 响应（云效「创建」接口成功时返回裸整数 id）。
     /// </summary>
     /// <param name="json">JSON 文本。</param>

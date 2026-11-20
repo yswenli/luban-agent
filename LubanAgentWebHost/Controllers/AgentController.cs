@@ -47,6 +47,19 @@ public sealed class AgentController : Controller
     [HttpPost]
     public Task<ActionResult> Confirm(string payload) => WebAgentService.ConfirmAsync(payload);
 
+    /// <summary>读取会话当前生效的思考档位与上下文预算档位。</summary>
+    /// <param name="sessionId">会话标识；缺省返回全局默认与全局模型的档位。</param>
+    /// <returns>生效值、可选档位与模型窗口。</returns>
+    [HttpGet]
+    public Task<ActionResult> SessionSettings(string? sessionId) => WebAgentService.SessionSettingsAsync(sessionId);
+
+    /// <summary>写入思考档位与上下文预算档位：给定会话写会话覆盖，缺省会话写全局默认。</summary>
+    /// <param name="payload">包装后的 <see cref="SessionGenerationSettingsRequest"/> JSON。</param>
+    /// <returns>保存结果。</returns>
+    [HttpPost]
+    public Task<ActionResult> SaveSessionSettings(string payload)
+        => WebAgentService.SaveSessionSettingsAsync(payload);
+
     /// <summary>取消指定会话正在进行的回合。</summary>
     /// <param name="payload">包装后的 <see cref="AgentCancelRequest"/> JSON。</param>
     /// <returns>是否确有回合被取消。</returns>

@@ -69,6 +69,18 @@ public class DbSession : EntityBase
     /// </summary>
     [SugarColumn(ColumnDescription = "工作区ID", Length = 64, IsNullable = true)]
     public string? WorkspaceId { get; set; }
+
+    /// <summary>
+    /// 会话单独选择的思考强度（ReasoningEffort 枚举名）；空表示跟随全局默认。
+    /// </summary>
+    [SugarColumn(ColumnDescription = "思考强度", Length = 32, IsNullable = true)]
+    public string? ReasoningEffort { get; set; }
+
+    /// <summary>
+    /// 会话单独选择的上下文预算档位（token）；空表示跟随全局默认。
+    /// </summary>
+    [SugarColumn(ColumnDescription = "上下文档位", IsNullable = true)]
+    public int? ContextTier { get; set; }
 }
 
 /// <summary>

@@ -130,6 +130,10 @@ public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
                     _config = config;
                     canPersist = true;
 
+                    // 手改配置可能把节点显式写成 null：补齐新节点，避免后续读写空引用
+                    _config.ModelProfiles ??= new Dictionary<string, ModelProfile>();
+                    _config.Defaults ??= new GenerationDefaults();
+
                     foreach (var p in _config.Providers)
                     {
                         if (!string.IsNullOrEmpty(p.Name))
@@ -267,6 +271,83 @@ public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
             Logger.Error("ConfigManager 保存模型能力记录失败", ex, modelId);
         }
     }
+
+    /// <summary>
+    /// 取模型能力档案：用户登记优先，其次内置表（按模型 id 匹配，与供应商无关），都没有即未知（返回 <c>null</c>）。
+    /// </summary>
+    /// <param name="modelKey"><c>provider:model</c>（大小写不敏感）。</param>
+    /// <returns>档案副本；未知时返回 <c>null</c>。</returns>
+    public ModelProfile? GetModelProfile(string? modelKey)
+    {
+        var key = NormalizeModelKey(modelKey);
+        if (key.Length == 0) return null;
+
+        var userKey = _config.ModelProfiles.Keys.FirstOrDefault(k =>
+            string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+        if (userKey is not null && _config.ModelProfiles[userKey] is { } userProfile)
+        {
+            return userProfile.Clone();
+        }
+
+        return ModelProfileDefaults.Get(key);
+    }
+
+    /// <summary>
+    /// 用户是否手工登记过该模型的档案（决定「恢复内置默认」是否可用）。
+    /// </summary>
+    /// <param name="modelKey"><c>provider:model</c>（大小写不敏感）。</param>
+    public bool HasModelProfileOverride(string? modelKey)
+    {
+        var key = NormalizeModelKey(modelKey);
+        return key.Length != 0
+            && _config.ModelProfiles.Keys.Any(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// 写入模型能力档案并落盘；<paramref name="profile"/> 为 <c>null</c> 时删除用户登记（恢复内置默认）。
+    /// </summary>
+    /// <param name="modelKey"><c>provider:model</c>（写入时统一小写）。</param>
+    /// <param name="profile">档案；<c>null</c> 表示删除。</param>
+    public void SetModelProfile(string? modelKey, ModelProfile? profile)
+    {
+        var key = NormalizeModelKey(modelKey);
+        if (key.Length == 0) throw new ArgumentException("模型标识不能为空", nameof(modelKey));
+
+        var existingKey = _config.ModelProfiles.Keys.FirstOrDefault(k =>
+            string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+
+        if (profile is null)
+        {
+            if (existingKey is null) return;
+
+            _config.ModelProfiles.Remove(existingKey);
+            Save();
+            return;
+        }
+
+        if (existingKey is not null && !string.Equals(existingKey, key, StringComparison.Ordinal))
+        {
+            _config.ModelProfiles.Remove(existingKey);
+        }
+
+        _config.ModelProfiles[key] = profile.Clone();
+        Save();
+    }
+
+    /// <summary>全局默认生成参数副本。</summary>
+    public GenerationDefaults GetDefaults() => _config.Defaults.Clone();
+
+    /// <summary>写入全局默认生成参数并落盘。</summary>
+    /// <param name="defaults">默认值；null 等同全部跟随模型。</param>
+    public void SetDefaults(GenerationDefaults? defaults)
+    {
+        _config.Defaults = defaults?.Clone() ?? new GenerationDefaults();
+        Save();
+    }
+
+    /// <summary>把 <c>provider:model</c> 归一化为小写键。</summary>
+    private static string NormalizeModelKey(string? modelKey)
+        => string.IsNullOrWhiteSpace(modelKey) ? string.Empty : modelKey.Trim().ToLowerInvariant();
 
     /// <summary>
     /// 将当前配置序列化并保存到磁盘，目录不存在时自动创建

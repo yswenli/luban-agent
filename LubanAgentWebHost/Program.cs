@@ -115,9 +115,18 @@ public static class Program
                 // 云效 S2 项目初始化（YunxiaoController → WebYunxiaoService → 本服务）：
                 // 单例口径——YunxiaoInitService 持执行上下文、InitTaskStore 持任务态文件，均不可按请求重建
                 services.AddSingleton<LubanAgentWebHost.Services.Init.InitTaskStore>();
+                // 初始化完成登记（项目列表「已初始化」判定依据；与 InitTaskStore 同目录落盘）
+                services.AddSingleton<LubanAgentWebHost.Services.Init.ProjectInitStore>();
                 services.AddSingleton<LubanAgentWebHost.Services.Init.ISessionGateway, LubanAgentWebHost.Services.Init.SessionGateway>();
                 services.AddSingleton<LubanAgentWebHost.Services.Init.IWorkspaceDirectoryProvider, LubanAgentWebHost.Services.Init.WorkspaceDirectoryProvider>();
                 services.AddSingleton<LubanAgentWebHost.Services.Init.YunxiaoInitService>();
+
+                // 云效 S3 PRD 同步 / 拆分：账本按项目落盘（单例），其余按请求作用域隔离
+                // （拆分预览需从作用域解析模型选择与供应商路由）
+                services.AddSingleton<LubanAgentWebHost.Services.Prd.PrdReceiptStore>();
+                services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSyncService>();
+                services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSubmitService>();
+                services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSplitService>();
 
                 // 编排进度出口：框架默认注册 no-op，这里换成可订阅实现并按请求作用域隔离，
                 // 供 /agent/chat 把子代理进度转成 orchestration.progress 帧

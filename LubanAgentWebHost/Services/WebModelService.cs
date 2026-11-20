@@ -106,6 +106,88 @@ public static class WebModelService
                 && string.Equals(selectedModel, input.NewModelId.Trim(), StringComparison.Ordinal)));
     });
 
+    /// <summary>读取模型能力档案。</summary>
+    /// <param name="providerId">供应商标识。</param>
+    /// <param name="modelId">模型标识。</param>
+    /// <returns>档案、派生档位与是否已有用户登记。</returns>
+    public static Task<ActionResult> GetProfileAsync(string? providerId, string? modelId) =>
+        WebApi.RunGuardedAsync(async () =>
+        {
+            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId))
+            {
+                return WebApi.FailJson(400, "providerId / modelId 不能为空");
+            }
+
+            var provider = providerId.Trim();
+            var model = modelId.Trim();
+
+            await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+            var profile = await requestScope.GetRequiredService<IProviderModelManagementService>()
+                .GetModelProfileAsync(provider, model)
+                .ConfigureAwait(false);
+            var hasOverride = requestScope.GetRequiredService<ConfigManager>()
+                .HasModelProfileOverride($"{provider}:{model}");
+
+            return WebApi.OkJson(new ModelProfileDto(
+                provider,
+                model,
+                profile?.Reasoning,
+                profile?.ContextWindow,
+                ContextTiers.FromWindow(profile?.ContextWindow),
+                hasOverride));
+        });
+
+    /// <summary>写入模型能力档案。</summary>
+    /// <param name="payload">包装后的 <see cref="ModelProfileSaveRequest"/> JSON。</param>
+    /// <returns>写入后的档案。</returns>
+    public static Task<ActionResult> SaveProfileAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<ModelProfileSaveRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.ProviderId) || string.IsNullOrWhiteSpace(input.ModelId))
+        {
+            return WebApi.FailJson(400, "providerId / modelId 不能为空");
+        }
+
+        if (input.ContextWindow is { } window && window <= 0)
+        {
+            return WebApi.FailJson(400, "上下文窗口必须为正整数");
+        }
+
+        var provider = input.ProviderId.Trim();
+        var model = input.ModelId.Trim();
+
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = requestScope.GetRequiredService<IProviderModelManagementService>();
+
+        await service.SetModelProfileAsync(
+                provider,
+                model,
+                input.Reset
+                    ? null
+                    : new ModelProfile
+                    {
+                        Reasoning = input.ReasoningEfforts?.ToList(),
+                        ContextWindow = input.ContextWindow
+                    })
+            .ConfigureAwait(false);
+
+        var profile = await service.GetModelProfileAsync(provider, model).ConfigureAwait(false);
+        var hasOverride = requestScope.GetRequiredService<ConfigManager>()
+            .HasModelProfileOverride($"{provider}:{model}");
+
+        return WebApi.OkJson(new ModelProfileDto(
+            provider,
+            model,
+            profile?.Reasoning,
+            profile?.ContextWindow,
+            ContextTiers.FromWindow(profile?.ContextWindow),
+            hasOverride));
+    });
+
     /// <summary>删除自定义模型。</summary>
     /// <param name="payload">包装后的 <see cref="ModelTargetRequest"/> JSON。</param>
     /// <returns>空结果。</returns>

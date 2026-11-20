@@ -8,6 +8,7 @@ import type {
   GlobalSessionStats,
   McpFile,
   ModelItem,
+  ModelProfile,
   ProviderListItem,
   ProviderModels,
   ProviderPreset,
@@ -97,6 +98,17 @@ export const settingsApi = {
     post<ModelItem>('/model/rename', { providerId, oldModelId, newModelId }),
   deleteModel: (providerId: string, modelId: string): Promise<void> =>
     post<void>('/model/delete', { providerId, modelId }),
+  /** 读取模型能力档案（档位与上下文窗口）。 */
+  getModelProfile: (providerId: string, modelId: string): Promise<ModelProfile> =>
+    get<ModelProfile>('/model/profile', { providerId, modelId }),
+  /** 写入模型能力档案；`reset` 为 true 时删除用户登记、恢复内置默认。 */
+  saveModelProfile: (body: {
+    providerId: string;
+    modelId: string;
+    reasoningEfforts?: string[] | null;
+    contextWindow?: number | null;
+    reset?: boolean;
+  }): Promise<ModelProfile> => post<ModelProfile>('/model/saveProfile', body),
   selectModel: (providerId: string, modelId: string): Promise<void> =>
     post<void>('/provider/select', { providerId, modelId }),
 

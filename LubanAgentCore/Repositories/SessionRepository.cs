@@ -170,6 +170,52 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
+    /// 取会话单独选定的生成参数（限所属用户）。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户。</param>
+    /// <returns>思考强度与上下文档位；会话不存在或未单独选择时为 null。</returns>
+    public async Task<(string? ReasoningEffort, int? ContextTier)> GetGenerationSettingsAsync(
+        string sessionId,
+        string userId)
+    {
+        if (string.IsNullOrEmpty(sessionId)) return (null, null);
+
+        var session = await GetFirstAsync(s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+        if (session is null) return (null, null);
+
+        // 落库用空串 / 0 表示「未覆盖」，读到即还原成 null，调用方无需区分两种「空」
+        return (
+            string.IsNullOrWhiteSpace(session.ReasoningEffort) ? null : session.ReasoningEffort,
+            session.ContextTier is > 0 ? session.ContextTier : null);
+    }
+
+    /// <summary>
+    /// 写入会话单独选定的生成参数（限所属用户）；传 null 即清除该覆盖。
+    /// </summary>
+    /// <param name="sessionId">会话标识。</param>
+    /// <param name="userId">归属用户。</param>
+    /// <param name="reasoningEffort">思考强度枚举名；null 表示跟随全局默认。</param>
+    /// <param name="contextTier">上下文预算档位（token）；null 表示跟随全局默认。</param>
+    /// <returns>是否命中并更新了该会话。</returns>
+    public async Task<bool> UpdateGenerationSettingsAsync(
+        string sessionId,
+        string userId,
+        string? reasoningEffort,
+        int? contextTier)
+    {
+        // 空值不写 NULL 而写空串 / 0：显式 SET NULL 依赖 ORM 对 null 列的处理，
+        // 用非空哨兵值才能保证「清除覆盖」这一步真的落库。
+        return await UpdateAsync(
+            s => new DbSession
+            {
+                ReasoningEffort = reasoningEffort ?? string.Empty,
+                ContextTier = contextTier ?? 0
+            },
+            s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
+    }
+
+    /// <summary>
     /// 软删除会话（限所属用户）
     /// </summary>
     public async Task SoftDeleteAsync(string sessionId, string userId)

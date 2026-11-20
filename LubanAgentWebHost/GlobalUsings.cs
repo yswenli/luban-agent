@@ -43,6 +43,7 @@ global using LubanAgentWebHost.Hosting;
 global using LubanAgentWebHost.Models;
 global using LubanAgentWebHost.Services;
 global using LubanAgentWebHost.Services.Init;
+global using LubanAgentWebHost.Services.Prd;
 
 global using Microsoft.Extensions.AI;
 global using Microsoft.Extensions.Configuration;

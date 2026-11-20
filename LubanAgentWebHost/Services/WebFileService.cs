@@ -109,6 +109,94 @@ public static class WebFileService
     });
 
     /// <summary>
+    /// 列举工作区内某个目录的直接子项（不递归）。
+    /// </summary>
+    /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
+    /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
+    /// <returns>子目录与文件清单（相对路径、类型、大小、修改时间）。</returns>
+    public static Task<ActionResult> ListAsync(string? workspaceId, string? path) => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var manager = scope.GetRequiredService<IWorkspaceManager>();
+        var workspace = string.IsNullOrWhiteSpace(workspaceId)
+            ? manager.CurrentWorkspace
+            : await manager.GetWorkspaceAsync(workspaceId.Trim()).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(workspace?.RootPath))
+        {
+            return WebApi.FailJson(404, "未找到工作区");
+        }
+
+        var requested = path?.Trim() ?? string.Empty;
+        if (!WebFilePath.TryResolveDirectory(workspace.RootPath, requested, out var directory))
+        {
+            return WebApi.FailJson(404, string.IsNullOrEmpty(requested) ? "工作区根目录不存在" : "目录不存在或不在工作区内");
+        }
+
+        try
+        {
+            var items = new DirectoryInfo(directory)
+                .EnumerateFileSystemInfos()
+                .Where(info => !EscapesWorkspace(directory, info))
+                .OrderByDescending(info => info is DirectoryInfo)
+                .ThenBy(info => info.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(info =>
+                {
+                    var isDirectory = info is DirectoryInfo;
+                    var size = info is FileInfo file ? file.Length : (long?)null;
+                    return new
+                    {
+                        name = info.Name,
+                        path = ToRelative(workspace.RootPath, info.FullName),
+                        type = isDirectory ? "dir" : "file",
+                        size,
+                        modified = info.LastWriteTimeUtc
+                    };
+                })
+                .ToList();
+
+            return WebApi.OkJson(new
+            {
+                workspaceId = workspace.WorkspaceId,
+                path = ToRelative(workspace.RootPath, directory),
+                entries = items
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            AgentWebRuntime.Log($"工作区目录列举失败：{directory}：{ex}");
+            return WebApi.FailJson(500, $"目录读取失败：{ex.Message}");
+        }
+    });
+
+    /// <summary>
+    /// 子项是否通过 junction/符号链接越出被列举目录（越界的直接跳过，不交给浏览器）。
+    /// </summary>
+    /// <param name="directory">被列举目录的真实路径。</param>
+    /// <param name="info">子项。</param>
+    /// <returns>越界返回 true。</returns>
+    private static bool EscapesWorkspace(string directory, FileSystemInfo info)
+    {
+        try
+        {
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            return target is not null && !WebFilePath.IsWithin(directory, target.FullName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 无法判定链接落点时按越界处理
+            return true;
+        }
+    }
+
+    /// <summary>绝对路径转工作区相对路径（分隔符统一为 <c>/</c>）。</summary>
+    /// <param name="rootPath">工作区根目录。</param>
+    /// <param name="fullPath">绝对路径。</param>
+    /// <returns>相对路径；与根相同时为 <c>.</c>。</returns>
+    private static string ToRelative(string rootPath, string fullPath)
+        => Path.GetRelativePath(rootPath, fullPath).Replace('\\', '/');
+
+    /// <summary>
     /// 读取文本正文：按 BOM 识别编码，识别后仍含 NUL 的按二进制处理。
     /// </summary>
     /// <remarks>

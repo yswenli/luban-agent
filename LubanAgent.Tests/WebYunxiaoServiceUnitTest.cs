@@ -15,6 +15,7 @@ namespace LubanAgent.Tests;
 
 using LubanAgentWebHost.Models;
 using LubanAgentWebHost.Services;
+using LubanAgentWebHost.Services.Init;
 
 /// <summary>
 /// <see cref="YunxiaoWorkbenchService"/> 行为单测：探活分类、保存时序、校验语义（400/409）、分页透传与脱敏。
@@ -69,6 +70,61 @@ public class WebYunxiaoServiceUnitTest
             string organizationId, string projectId,
             CancellationToken cancellationToken = default)
             => Task.FromResult<YunxiaoProject?>(null);
+
+        // S3 新增能力不在本类测试范围内：一律显式抛出，避免误用为空实现
+        public Task<YunxiaoPagedResult<YunxiaoWorkitem>?> SearchWorkitemsAsync(
+            string organizationId, YunxiaoWorkitemSearchCriteria criteria,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<YunxiaoWorkitem?> GetWorkitemAsync(
+            string organizationId, string workitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateWorkitemAsync(
+            string organizationId, YunxiaoCreateWorkitemRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<List<YunxiaoWorkitemType>> ListWorkitemTypesAsync(
+            string organizationId, string projectId, string category,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<List<YunxiaoWorkitemAttachment>> ListWorkitemAttachmentsAsync(
+            string organizationId, string workitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateSprintAsync(
+            string organizationId, string projectId, string name, IReadOnlyList<string> owners,
+            string? startDate, string? endDate, string? description, int? capacityHours,
+            string? operatorId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<YunxiaoCurrentUser?> GetCurrentUserAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateWorkitemRelationAsync(
+            string organizationId, string workitemId, string relationType, string targetWorkitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<List<YunxiaoTestRepo>> ListTestReposAsync(
+            string organizationId, int page, int perPage, string? name,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateTestcaseAsync(
+            string organizationId, YunxiaoCreateTestcaseRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateTestPlanAsync(
+            string organizationId, YunxiaoCreateTestPlanRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     /// <summary>假设置服务：记录 SaveAsync 调用次数与参数（调用计数用于断言「探活失败零落盘」）。</summary>
@@ -119,6 +175,84 @@ public class WebYunxiaoServiceUnitTest
         var projects = new FakeProjexClient();
         var credentials = new FakeCredentialProvider();
         return (settings, projects, credentials, new YunxiaoWorkbenchService(settings, projects, credentials));
+    }
+
+    // ---------------- 初始化完成登记 → 项目列表「已初始化」 ----------------
+
+    /// <summary>登记存储：同项目二次登记覆盖而非追加，且缺键时保留既有 ID/标识。</summary>
+    [TestMethod]
+    public async Task 初始化登记_同项目覆盖且保留键()
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "luban-init-store-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var store = new ProjectInitStore(temp);
+            await store.UpsertAsync(new ProjectInitRecord { ProjectId = "pid-1", Identifier = "BBKY", Codename = "BBKY" });
+            await store.UpsertAsync(new ProjectInitRecord { ProjectId = "pid-1", Codename = "BBKY2" });
+
+            var all = await store.GetAllAsync();
+
+            Assert.AreEqual(1, all.Count, "同项目未覆盖时不会新增第二条");
+            Assert.AreEqual("BBKY2", all[0].Codename);
+            Assert.AreEqual("BBKY", all[0].Identifier, "新登记缺标识时保留既有标识");
+            Assert.AreEqual("pid-1", all[0].ProjectId);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
+    }
+
+    /// <summary>项目列表按登记标注：项目 ID 命中、标识命中均为已初始化，未命中为待初始化。</summary>
+    [TestMethod]
+    public async Task 项目列表_按初始化登记标注已初始化()
+    {
+        var (settings, projects, credentials, _) = Create();
+        var temp = Path.Combine(Path.GetTempPath(), "luban-init-store-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var store = new ProjectInitStore(temp);
+            await store.UpsertAsync(new ProjectInitRecord
+            {
+                ProjectId = "pid-1",
+                Identifier = "BBKY",
+                Codename = "BBKY",
+                RepoName = "BBKY-Mixed",
+                CompletedAt = DateTime.Now,
+            });
+
+            var service = new YunxiaoWorkbenchService(settings, projects, credentials, store);
+            projects.Result = new YunxiaoPagedResult<YunxiaoProject>
+            {
+                Items = new List<YunxiaoProject>
+                {
+                    new() { Id = "pid-1", Name = "按 ID 命中", CustomCode = "OTHER" },
+                    new() { Id = "pid-2", Name = "按标识命中", CustomCode = "BBKY" },
+                    new() { Id = "pid-3", Name = "未登记", CustomCode = "ZZZ" },
+                },
+                Total = 3,
+                Page = 1,
+                PerPage = 20,
+            };
+
+            var result = await service.ListProjectsAsync(1, 20, null);
+
+            Assert.IsTrue(result.Ok);
+            var items = result.Data!.Items;
+            Assert.IsTrue(items[0].Initialized, "项目 ID 命中登记 → 已初始化");
+            Assert.IsTrue(items[1].Initialized, "标识命中登记 → 已初始化");
+            Assert.IsFalse(items[2].Initialized, "未登记 → 待初始化");
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
     }
 
     // ---------------- 探活失败分类（TestConnection） ----------------

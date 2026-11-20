@@ -16,19 +16,48 @@ public class YunxiaoToolDefinitionsUnitTest
 {
     private static readonly string[] ExpectedNames =
     [
+        // Codeup 7 + 1(update_repository) = 8
         "codeup_search_repos",
         "codeup_list_template_repos",
         "codeup_get_repo",
         "codeup_create_repo",
+        "codeup_update_repository",
         "codeup_list_groups",
         "codeup_list_branches",
         "codeup_create_group",
+        // Flow 6 + 1(get_pipeline) = 7
         "flow_list_pipelines",
+        "flow_get_pipeline",
         "flow_list_host_groups",
         "flow_get_host_group",
         "flow_create_pipeline",
         "flow_update_pipeline",
-        "flow_run_pipeline"
+        "flow_run_pipeline",
+        // Projex 2
+        "projex_list_projects",
+        "projex_get_project",
+        // Projex 迭代 3
+        "projex_list_sprints",
+        "projex_get_sprint",
+        "projex_create_sprint",
+        // Projex 工作项 13
+        "workitem_list_types",
+        "workitem_list_statuses",
+        "workitem_list_workflow",
+        "workitem_list_requirements",
+        "workitem_create_requirement",
+        "workitem_list_tasks",
+        "workitem_create_task",
+        "workitem_update_task",
+        "board_list_workitems_by_sprint",
+        "workitem_list_comments",
+        "workitem_get",
+        "workitem_list_attachments",
+        "workitem_get_file",
+        "workitem_create_relation",
+        "testrepo_list",
+        "testcase_create",
+        "testplan_create",
     ];
 
     [TestMethod]
@@ -36,7 +65,7 @@ public class YunxiaoToolDefinitionsUnitTest
     {
         var tools = YunxiaoToolDefinitions.GetAllTools().ToList();
 
-        Assert.AreEqual(13, tools.Count, "工具总数应为 13（助手驱动：删 codeup_clone / codeup_push，补 3 个只读工具）");
+        Assert.AreEqual(37, tools.Count, "工具总数应为 37（Codeup 8 + Flow 7 + Projex 19 + Testhub 3）");
         CollectionAssert.AreEquivalent(ExpectedNames, tools.Select(t => t.Name).ToList());
     }
 

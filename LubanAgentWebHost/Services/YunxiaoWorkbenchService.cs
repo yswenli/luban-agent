@@ -8,6 +8,7 @@
 *****************************************************************************/
 
 using LubanAgentCore.Connectors.AliyunDevOps;
+using LubanAgentWebHost.Services.Init;
 using System.Globalization;
 
 namespace LubanAgentWebHost.Services;
@@ -83,6 +84,7 @@ public sealed class YunxiaoWorkbenchService
     private readonly IYunxiaoSettingsService _settings;
     private readonly IProjexClient _projects;
     private readonly IYunxiaoCredentialProvider _credentials;
+    private readonly ProjectInitStore? _initStore;
 
     /// <summary>
     /// 创建云效工作台业务服务。
@@ -90,14 +92,17 @@ public sealed class YunxiaoWorkbenchService
     /// <param name="settings">云效连接配置读写门面。</param>
     /// <param name="projects">Projex 客户端（接口注入，单测可替换）。</param>
     /// <param name="credentials">云效凭据提供者（探活 pat 缺省时取已存 PAT）。</param>
+    /// <param name="initStore">初始化完成登记（可空：单测不接线时项目列表恒为「待初始化」）。</param>
     public YunxiaoWorkbenchService(
         IYunxiaoSettingsService settings,
         IProjexClient projects,
-        IYunxiaoCredentialProvider credentials)
+        IYunxiaoCredentialProvider credentials,
+        ProjectInitStore? initStore = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _projects = projects ?? throw new ArgumentNullException(nameof(projects));
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+        _initStore = initStore;
     }
 
     /// <summary>
@@ -238,8 +243,13 @@ public sealed class YunxiaoWorkbenchService
             keyword,
             cancellationToken).ConfigureAwait(false);
 
+        // 初始化完成登记（项目 ID / 标识反查）：列表项标注「已初始化」
+        var initRecords = _initStore is null
+            ? (IReadOnlyList<ProjectInitRecord>)Array.Empty<ProjectInitRecord>()
+            : await _initStore.GetAllAsync().ConfigureAwait(false);
+
         var items = (result?.Items ?? (IReadOnlyList<YunxiaoProject>)Array.Empty<YunxiaoProject>())
-            .Select(ToProjectItem)
+            .Select(p => ToProjectItem(p, IsInitialized(p, initRecords)))
             .ToList();
 
         var data = new YunxiaoProjectListDto(
@@ -252,12 +262,36 @@ public sealed class YunxiaoWorkbenchService
     }
 
     /// <summary>
+    /// 是否已完成初始化：登记按 项目 ID 优先匹配，ID 缺失时按项目标识匹配。
+    /// </summary>
+    /// <param name="project">Projex 项目。</param>
+    /// <param name="records">初始化完成登记。</param>
+    /// <returns>命中任一登记为 <c>true</c>。</returns>
+    private static bool IsInitialized(YunxiaoProject project, IReadOnlyList<ProjectInitRecord> records)
+    {
+        if (records.Count == 0)
+        {
+            return false;
+        }
+
+        var id = project.Id;
+        var identifier = project.DisplayIdentifier;
+
+        return records.Any(r =>
+            (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(r.ProjectId)
+                && string.Equals(r.ProjectId, id, StringComparison.Ordinal))
+            || (!string.IsNullOrWhiteSpace(identifier) && !string.IsNullOrWhiteSpace(r.Identifier)
+                && string.Equals(r.Identifier, identifier, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
     /// Projex 项目 → 页面扁平投影：标识取 <c>customCode</c>，
     /// 更新时间取 <c>gmtModified</c>（为空退 <c>gmtCreate</c>）并格式化为 <c>yyyy-MM-dd HH:mm:ss</c>。
     /// </summary>
     /// <param name="project">Projex 项目（真机字段形态）。</param>
+    /// <param name="initialized">是否已完成初始化。</param>
     /// <returns>页面投影。</returns>
-    private static YunxiaoProjectItemDto ToProjectItem(YunxiaoProject project)
+    private static YunxiaoProjectItemDto ToProjectItem(YunxiaoProject project, bool initialized)
     {
         var ms = project.DisplayUpdateTime;
         var updateTime = ms is null
@@ -271,7 +305,8 @@ public sealed class YunxiaoWorkbenchService
             project.Name,
             project.DisplayIdentifier,
             project.Description,
-            updateTime);
+            updateTime,
+            initialized);
     }
 
     // ---------------- 内部：探活 ----------------

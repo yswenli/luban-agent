@@ -78,6 +78,16 @@ public class AppConfig
     public Dictionary<string, bool> ModelCapabilities { get; set; } = new();
 
     /// <summary>
+    /// 按 "provider:model"（小写）登记的模型能力档案；未登记的键回落到内置表，仍无记录即未知。
+    /// </summary>
+    public Dictionary<string, ModelProfile> ModelProfiles { get; set; } = new();
+
+    /// <summary>
+    /// 全局默认生成参数；会话未单独覆盖时生效。
+    /// </summary>
+    public GenerationDefaults Defaults { get; set; } = new();
+
+    /// <summary>
     /// 外部集成配置与凭据（键为归一化键，如 <c>connector:yunxiao:token</c>、
     /// <c>connector:yunxiao:organizationid</c>；历史拼写由产品侧别名表回退读取）。
     /// </summary>

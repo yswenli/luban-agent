@@ -207,7 +207,7 @@ public static class WebPluginPaths
     {
         "plugin", "session", "agent", "attachment", "mcp", "model", "llmwiki",
         "a2a", "agentsmd", "system", "provider", "skill", "rule", "workspace",
-        "yunxiao"
+        "file", "yunxiao"
     };
 
     /// <summary>

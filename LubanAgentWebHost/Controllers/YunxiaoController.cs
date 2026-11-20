@@ -52,6 +52,11 @@ public sealed class YunxiaoController : Controller
     [HttpPost]
     public Task<ActionResult> Preflight(string payload) => WebYunxiaoService.PreflightAsync(payload);
 
+    /// <summary>流水线命名派生（S2e §14 修复一：反查母版真名 → 逐端派生，零副作用轻量接口）。</summary>
+    /// <returns><c>{ items: [{ end, from, to }] }</c>；参数取查询串 <c>templateRepoName</c>/<c>newCode</c>/<c>ends</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> PipelineDerive() => WebYunxiaoService.PipelineDeriveAsync();
+
     /// <summary>执行初始化（秒回 taskId，后台逐库推进）。</summary>
     /// <param name="payload">包装后的 <see cref="ExecRequest"/> JSON。</param>
     /// <returns><c>{ taskId }</c>（400 参数 / 409 同代号互斥 / 503 会话不可用）。</returns>
@@ -81,4 +86,41 @@ public sealed class YunxiaoController : Controller
     /// <returns><c>{ results: [{ end, ok, pipelineId?, message? }] }</c>；409 覆盖未确认。</returns>
     [HttpPost]
     public Task<ActionResult> PipelineCommit(string payload) => WebYunxiaoService.PipelineCommitAsync(payload);
+
+    /// <summary>项目初始化完成登记（代码库 done + 三端流水线就绪后落盘，供项目列表标注「已初始化」）。</summary>
+    /// <param name="payload">包装后的 <see cref="ProjectInitRequest"/> JSON。</param>
+    /// <returns><c>{ ok:true, data:true }</c>；缺项目 ID/标识 400。</returns>
+    [HttpPost]
+    public Task<ActionResult> ProjectInit(string payload) => WebYunxiaoService.ProjectInitAsync(payload);
+
+    /// <summary>反查项目初始化完成登记（已初始化项目再次进入初始化页时反显配置）。</summary>
+    /// <param name="payload">包装后的 <see cref="ProjectInitGetRequest"/> JSON。</param>
+    /// <returns><c>{ ok:true, data:{...}|null }</c>；缺项目 ID/标识 400。</returns>
+    [HttpPost]
+    public Task<ActionResult> ProjectInitGet(string payload) => WebYunxiaoService.ProjectInitGetAsync(payload);
+
+    // ── S3：PRD 同步 + 拆分落库 ────────────────────────────────────────────
+
+    /// <summary>PRD 来源信息（项目名 / 可用用例库）。</summary>
+    /// <returns><c>{ projectId, projectName, testRepos, hasTestRepo, message? }</c>；参数取查询串 <c>projectId</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> PrdSource() => WebYunxiaoService.PrdSourceAsync();
+
+    /// <summary>同步云效需求（描述 / 验收标准 / 附件元数据）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSyncRequest"/> JSON。</param>
+    /// <returns><c>{ projectId, status, requirements, attachments, warnings }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> PrdSync(string payload) => WebYunxiaoService.PrdSyncAsync(payload);
+
+    /// <summary>拆分预览（同步来源 + 补充文档 → 一次性模型调用 → 结构化计划）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSplitRequest"/> JSON。</param>
+    /// <returns><c>{ plan, syncStatus, requirementCount, documentNames, warnings }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> PrdSplitPreview(string payload) => WebYunxiaoService.PrdSplitPreviewAsync(payload);
+
+    /// <summary>拆分提交（迭代 / 需求 / 任务 / 关系 / 用例 / 计划逐项落库，幂等重跑失败项）。</summary>
+    /// <param name="payload">包装后的 <see cref="PrdSubmitRequest"/> JSON。</param>
+    /// <returns><c>{ sprintId, receipts, okCount, failedCount, warnings }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> PrdSplitSubmit(string payload) => WebYunxiaoService.PrdSplitSubmitAsync(payload);
 }

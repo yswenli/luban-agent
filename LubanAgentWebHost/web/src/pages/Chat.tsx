@@ -21,19 +21,40 @@ import {
   loadCommands,
   permissionModeKey,
   permissionModeLabel,
-  reasoningEffort,
+  loadSessionGeneration,
   refreshProviderModels,
   refreshSessions,
   renameSession,
+  saveSessionGeneration,
   selectSessionModel,
+  sessionGeneration,
   sessionModel,
   sessionModelLabel,
   sessions,
-  setReasoningEffort,
   showToast,
   wikiWorkspaceIds,
   workspaceName,
 } from '../stores/app';
+
+/** 思考档位显示名；未知枚举名原样显示，避免新档位被吞掉。 */
+function effortLabel(value: string): string {
+  switch (value) {
+    case '':
+      return '跟随模型';
+    case 'None':
+      return '不思考';
+    case 'Low':
+      return '低';
+    case 'Medium':
+      return '中';
+    case 'High':
+      return '高';
+    case 'ExtraHigh':
+      return '极高';
+    default:
+      return value;
+  }
+}
 
 export function ChatPage(props: { sessionId: string }) {
   const chat = getChat(props.sessionId);
@@ -60,6 +81,13 @@ export function ChatPage(props: { sessionId: string }) {
   const session = createMemo(() => sessions().find((item) => item.sessionId === props.sessionId) ?? null);
   const title = () => session()?.title || '未命名会话';
   const totalTokens = () => session()?.totalTokens ?? 0;
+
+  /** 本会话生效的生成参数；尚未拉取时为 null，按「跟随模型」处理。 */
+  const generation = createMemo(() => sessionGeneration(props.sessionId));
+  /** 当前思考档位（枚举名）；空串即跟随模型。 */
+  const currentEffort = () => generation()?.reasoningEffort ?? '';
+  /** 思考档位选项：会话模型档案优先，未拉到时退回首屏数据。 */
+  const effortOptions = () => generation()?.reasoningEfforts ?? bootstrap()?.reasoningEfforts ?? [];
 
   const commandQuery = createMemo(() => {
     const value = input();
@@ -96,6 +124,11 @@ export function ChatPage(props: { sessionId: string }) {
     });
   });
 
+  // 会话切换 / 首次进入时拉取该会话生效的档位；读不到只影响控件展示
+  createEffect(() => {
+    void loadSessionGeneration(props.sessionId);
+  });
+
   createEffect(() => {
     const list = matchedCommands();
     if (commandIndex() >= list.length) setCommandIndex(0);
@@ -105,6 +138,18 @@ export function ChatPage(props: { sessionId: string }) {
     if (!textareaEl) return;
     textareaEl.style.height = 'auto';
     textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, 220)}px`;
+  }
+
+  async function switchSessionModel(providerId: string, modelId: string): Promise<void> {
+    const before = currentEffort();
+    await selectSessionModel(props.sessionId, providerId, modelId);
+    const after = currentEffort();
+    // 换模型可能把原有档位判为不支持；服务端已回落为「跟随模型」，这里明确告知而不是静默
+    if (before && before !== after) {
+      // 落库值对新模型无效：顺手清掉，避免换回老模型时又静默复活
+      await saveSessionGeneration(props.sessionId, '', null);
+      showToast('当前模型不支持该思考档位，已改为跟随模型', 'info');
+    }
   }
 
   async function submit() {
@@ -128,7 +173,7 @@ export function ChatPage(props: { sessionId: string }) {
 
     setInput('');
     queueMicrotask(resizeTextarea);
-    await chat.send(text, permissionModeKey(), reasoningEffort());
+    await chat.send(text, permissionModeKey(), currentEffort());
   }
 
   function runCommand(command: WebCommand) {
@@ -240,7 +285,6 @@ export function ChatPage(props: { sessionId: string }) {
   const plusMenuHeight = 140;
   /** 抓屏依赖安全上下文：内网 http 下浏览器不提供 getDisplayMedia，菜单项直接置灰 */
   const captureSupported = isCaptureSupported();
-  const effortOptions = ['', 'None', 'Low', 'Medium', 'High'] as const;
 
   /** 后退：知识库会话回知识库页，其余回会话列表。 */
   const goBack = () => {
@@ -469,18 +513,20 @@ export function ChatPage(props: { sessionId: string }) {
                 {permissionModeLabel()}
               </button>
 
-              <button
-                class="pill-btn value"
-                title="推理强度"
-                disabled={optimizing()}
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setEffortMenu(menuAt(rect, { width: 170, height: 190, gap: 6, align: 'start' }));
-                }}
-              >
-                <Icon name="brain" size={14} />
-                {reasoningEffort() || '跟随模型'}
-              </button>
+              <Show when={effortOptions().length > 1}>
+                <button
+                  class="pill-btn value"
+                  title="思考强度（本会话）"
+                  disabled={optimizing()}
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setEffortMenu(menuAt(rect, { width: 170, height: 190, gap: 6, align: 'start' }));
+                  }}
+                >
+                  <Icon name="brain" size={14} />
+                  {effortLabel(currentEffort())}
+                </button>
+              </Show>
 
               <div class="spacer" />
 
@@ -599,19 +645,20 @@ export function ChatPage(props: { sessionId: string }) {
       <Show when={effortMenu()}>
         {(menu) => (
           <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, 'min-width': '170px' }} onClose={() => setEffortMenu(null)}>
-            <For each={effortOptions}>
+            <For each={effortOptions()}>
               {(option) => (
                 <button
                   class="menu-item"
-                  classList={{ active: reasoningEffort() === option }}
+                  classList={{ active: currentEffort() === option }}
                   onClick={() => {
                     setEffortMenu(null);
-                    setReasoningEffort(option);
+                    // 上下文档位暂无控件：显式清除覆盖，避免把当前默认值钉成会话覆盖
+                    void saveSessionGeneration(props.sessionId, option, null);
                   }}
                 >
-                  {option || '跟随模型'}
+                  {effortLabel(option)}
                   <div class="spacer" />
-                  <Show when={reasoningEffort() === option}>
+                  <Show when={currentEffort() === option}>
                     <Icon name="check" size={15} />
                   </Show>
                 </button>
@@ -639,7 +686,7 @@ export function ChatPage(props: { sessionId: string }) {
                         }}
                         onClick={() => {
                           setModelMenu(null);
-                          void selectSessionModel(props.sessionId, provider.id, model);
+                          void switchSessionModel(provider.id, model);
                         }}
                       >
                         <span class="mono">{model}</span>

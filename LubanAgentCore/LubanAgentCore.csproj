@@ -10,7 +10,8 @@
 		     这四个包必须同版本（避免「新 AIAgent + 旧 Common」混装），
 		     且与 LubanAgent.Plugin.NewProject 引用的 LuBan.AIAgent 版本一致，
 		     否则插件与宿主编译出两套工具定义。 -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.11.16.1" />
+		<!-- TEMP-LOCAL-VERIFY：临时直连 framework 源码，改 LuBan.AIAgent 即时生效；人工发包后改回 PackageReference -->
+		<ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
 		<PackageReference Include="LuBan.Common" Version="2026.11.16.1" />
 		<PackageReference Include="LuBan.Logging" Version="2026.11.16.1" />
 		<PackageReference Include="LuBan.Orm" Version="2026.11.16.1" />

@@ -75,4 +75,133 @@ public interface IProjexClient
         string? keyword,
         string pat,
         CancellationToken cancellationToken = default);
+
+    /// <summary>搜索工作项（服务端条件过滤）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="criteria">搜索条件。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>分页结果；空体时为 <c>null</c>。</returns>
+    Task<YunxiaoPagedResult<YunxiaoWorkitem>?> SearchWorkitemsAsync(
+        string organizationId,
+        YunxiaoWorkitemSearchCriteria criteria,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>获取工作项详情（含描述与自定义字段值）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">工作项 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工作项详情；空体时为 <c>null</c>。</returns>
+    Task<YunxiaoWorkitem?> GetWorkitemAsync(
+        string organizationId,
+        string workitemId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建工作项。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="request">创建请求。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建工作项 ID；响应缺 id 时为 <c>null</c>。</returns>
+    Task<string?> CreateWorkitemAsync(
+        string organizationId,
+        YunxiaoCreateWorkitemRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>获取项目下的工作项类型。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="projectId">项目 ID。</param>
+    /// <param name="category">分类：<c>Req</c> / <c>Bug</c> / <c>Task</c>。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>工作项类型列表；空体时为空列表。</returns>
+    Task<List<YunxiaoWorkitemType>> ListWorkitemTypesAsync(
+        string organizationId,
+        string projectId,
+        string category,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>获取工作项附件列表。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">工作项 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>附件列表；空体时为空列表。</returns>
+    Task<List<YunxiaoWorkitemAttachment>> ListWorkitemAttachmentsAsync(
+        string organizationId,
+        string workitemId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建迭代。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="projectId">项目 ID。</param>
+    /// <param name="name">迭代名称。</param>
+    /// <param name="owners">负责人 userId 列表（至少一项）。</param>
+    /// <param name="startDate">开始日期。</param>
+    /// <param name="endDate">结束日期。</param>
+    /// <param name="description">描述。</param>
+    /// <param name="capacityHours">工时容量。</param>
+    /// <param name="operatorId">操作者 userId。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建迭代 ID；响应缺 id 时为 <c>null</c>。</returns>
+    Task<string?> CreateSprintAsync(
+        string organizationId,
+        string projectId,
+        string name,
+        IReadOnlyList<string> owners,
+        string? startDate,
+        string? endDate,
+        string? description,
+        int? capacityHours,
+        string? operatorId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建当前用户（取 <c>assignedTo</c> 用）。</summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>当前用户；空体时为 <c>null</c>。</returns>
+    Task<YunxiaoCurrentUser?> GetCurrentUserAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>创建工作项关系。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">源工作项 ID。</param>
+    /// <param name="relationType">关系类型。</param>
+    /// <param name="targetWorkitemId">目标工作项 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建关系 ID；响应缺 id 时为 <c>null</c>。</returns>
+    Task<string?> CreateWorkitemRelationAsync(
+        string organizationId,
+        string workitemId,
+        string relationType,
+        string targetWorkitemId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>查询测试用例库列表。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="page">页码。</param>
+    /// <param name="perPage">每页条数（上限 100）。</param>
+    /// <param name="name">名称过滤。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>用例库列表。</returns>
+    Task<List<YunxiaoTestRepo>> ListTestReposAsync(
+        string organizationId,
+        int page,
+        int perPage,
+        string? name,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建测试用例。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="request">用例请求。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建用例 ID。</returns>
+    Task<string?> CreateTestcaseAsync(
+        string organizationId,
+        YunxiaoCreateTestcaseRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建测试计划（未真机验证）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="request">计划请求。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建计划标识。</returns>
+    Task<string?> CreateTestPlanAsync(
+        string organizationId,
+        YunxiaoCreateTestPlanRequest request,
+        CancellationToken cancellationToken = default);
 }

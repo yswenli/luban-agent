@@ -228,7 +228,10 @@ public static class WebAgentService
                     SystemPrompt = string.IsNullOrWhiteSpace(input.System) ? null : input.System,
                     Attachments = NormalizeAttachments(input.Attachments),
                     EnableTools = input.EnableTools,
-                    ReasoningEffort = ParseEffort(input.ReasoningEffort),
+                    ReasoningEffort = ParseEffort(input.ReasoningEffort)
+                        ?? ParseEffort(await handle.Host.Services.GetRequiredService<ISessionGenerationSettings>()
+                            .ResolveReasoningEffortAsync(resolution.SessionId, ct)
+                            .ConfigureAwait(false)),
                     PermissionMode = ParsePermissionMode(input.PermissionMode),
                     OnPlannedAction = (toolName, arguments) => sideFrames.Enqueue(
                         AgentSseFrame.Create(AgentSseEventNames.PlanItem, new { toolName, arguments })),
@@ -699,6 +702,111 @@ public static class WebAgentService
             ? WebApi.FailJson(502, "主题生成失败，请稍后重试")
             : WebApi.OkJson(new AgentAutoSessionNameResponse(title));
     });
+
+    /// <summary>
+    /// 会话当前生效的生成参数（思考档位 / 上下文预算档位）。
+    /// </summary>
+    /// <param name="sessionId">会话标识；缺省返回全局默认与全局模型的档位。</param>
+    /// <returns>生效值、可选档位与模型窗口。</returns>
+    public static Task<ActionResult> SessionSettingsAsync(string? sessionId) => WebApi.RunGuardedAsync(async () =>
+    {
+        var id = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        if (id is not null && await WebSessionService.CheckOwnerAsync(scope, id).ConfigureAwait(false) is { } failure)
+        {
+            return failure;
+        }
+
+        var modelKey = await ResolveModelKeyAsync(scope, id).ConfigureAwait(false);
+        var profile = await LoadProfileAsync(scope, modelKey).ConfigureAwait(false);
+        var settings = scope.GetRequiredService<ISessionGenerationSettings>();
+
+        return WebApi.OkJson(new SessionGenerationSettingsDto(
+            await settings.ResolveReasoningEffortAsync(id, WebApi.Runtime.ShutdownToken).ConfigureAwait(false),
+            await settings.ResolveContextBudgetAsync(id, WebApi.Runtime.ShutdownToken).ConfigureAwait(false),
+            WebSystemService.BuildReasoningEfforts(profile?.Reasoning),
+            settings.GetTiers(modelKey),
+            profile?.ContextWindow));
+    });
+
+    /// <summary>
+    /// 写入生成参数：给定会话写会话覆盖，缺省会话写全局默认。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="SessionGenerationSettingsRequest"/> JSON。</param>
+    /// <returns>保存结果。</returns>
+    /// <remarks>两个字段按整体替换处理：缺省即清除该覆盖，前端每次提交都应带上当前全部选择。</remarks>
+    public static Task<ActionResult> SaveSessionSettingsAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<SessionGenerationSettingsRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        ReasoningEffort? effort = null;
+        if (!string.IsNullOrWhiteSpace(input.ReasoningEffort))
+        {
+            if (!Enum.TryParse<ReasoningEffort>(input.ReasoningEffort.Trim(), true, out var parsed)
+                || parsed is not (ReasoningEffort.None or ReasoningEffort.Low or ReasoningEffort.Medium
+                    or ReasoningEffort.High or ReasoningEffort.ExtraHigh))
+            {
+                return WebApi.FailJson(400, "不支持的思考档位");
+            }
+
+            effort = parsed;
+        }
+
+        if (input.ContextTier is { } tier && tier <= 0)
+        {
+            return WebApi.FailJson(400, "上下文档位必须为正整数");
+        }
+
+        var id = string.IsNullOrWhiteSpace(input.SessionId) ? null : input.SessionId.Trim();
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+
+        if (id is null)
+        {
+            scope.GetRequiredService<ConfigManager>().SetDefaults(new GenerationDefaults
+            {
+                ReasoningEffort = effort?.ToString(),
+                ContextTier = input.ContextTier
+            });
+            return WebApi.OkJson(new { saved = true });
+        }
+
+        if (await WebSessionService.CheckOwnerAsync(scope, id).ConfigureAwait(false) is { } failure)
+        {
+            return failure;
+        }
+
+        var updated = await scope.GetRequiredService<SessionRepository>()
+            .UpdateGenerationSettingsAsync(id, WebApi.Runtime.UserId, effort?.ToString(), input.ContextTier)
+            .ConfigureAwait(false);
+        if (!updated)
+        {
+            return WebApi.FailJson(404, WebSessionResolver.SessionNotFound);
+        }
+
+        return WebApi.OkJson(new { saved = true });
+    });
+
+    /// <summary>解析会话实际使用的模型键（<c>provider:model</c>）；未选模型时为空串。</summary>
+    private static async ValueTask<string> ResolveModelKeyAsync(DiContainer scope, string? sessionId)
+        => (await scope.GetRequiredService<IAgentModelSelection>()
+            .ResolveQualifiedModelNameAsync(sessionId, WebApi.Runtime.ShutdownToken)
+            .ConfigureAwait(false) ?? string.Empty).Trim();
+
+    /// <summary>按 <c>provider:model</c> 取模型能力档案；键不完整时返回 <c>null</c>。</summary>
+    private static async ValueTask<ModelProfile?> LoadProfileAsync(DiContainer scope, string modelKey)
+    {
+        var separator = modelKey.IndexOf(':');
+        if (separator <= 0 || separator >= modelKey.Length - 1) return null;
+
+        return await scope.GetRequiredService<IProviderModelManagementService>()
+            .GetModelProfileAsync(modelKey[..separator], modelKey[(separator + 1)..])
+            .ConfigureAwait(false);
+    }
 
     private static List<string> NormalizeAttachments(IReadOnlyList<string>? sources)
         => (sources ?? [])

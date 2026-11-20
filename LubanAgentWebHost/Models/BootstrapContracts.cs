@@ -17,7 +17,9 @@ namespace LubanAgentWebHost.Models;
 /// <param name="Providers">供应商与模型（不含密钥）。</param>
 /// <param name="Selection">当前全局模型选择。</param>
 /// <param name="PermissionModes">权限模式清单。</param>
-/// <param name="ReasoningEfforts">推理强度清单。</param>
+/// <param name="ReasoningEfforts">当前模型可选的思考档位（空串表示跟随模型；空数组表示不显示控件）。</param>
+/// <param name="ContextTiers">当前模型可选的上下文预算档位（token；空表示不显示控件）。</param>
+/// <param name="ContextWindow">当前模型上下文窗口（用于固定窗口只读展示）。</param>
 /// <param name="Attachments">附件策略。</param>
 /// <param name="Confirmation">工具确认策略。</param>
 public sealed record BootstrapDto(
@@ -29,6 +31,8 @@ public sealed record BootstrapDto(
     ModelSelectionDto? Selection,
     IReadOnlyList<PermissionModeDto> PermissionModes,
     IReadOnlyList<string> ReasoningEfforts,
+    IReadOnlyList<int> ContextTiers,
+    int? ContextWindow,
     AttachmentPolicyDto Attachments,
     ConfirmationPolicyDto Confirmation);
 
