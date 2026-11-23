@@ -49,7 +49,7 @@ public static class PrdSplitPlanner
         只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块、不要前后缀。JSON 结构如下：
         {
           "iteration": { "name": "迭代名称", "startDate": "yyyy-MM-dd", "endDate": "yyyy-MM-dd", "description": "迭代目标" },
-          "requirements": [ { "key": "R1", "title": "需求标题", "description": "需求描述", "acceptance": "验收标准", "priority": "P0|P1|P2", "source": "sync|supplement|local", "sourceTitle": "来源标题" } ],
+          "requirements": [ { "key": "R1", "title": "需求标题", "description": "需求描述", "acceptance": "验收标准", "priority": "P0|P1|P2", "source": "sync|supplement|local", "sourceTitle": "来源标题", "sourceParagraph": "原文中被拆出的句子（≤100字）" } ],
           "tasks": [ { "key": "T1", "requirementKey": "R1", "title": "任务标题", "description": "任务说明", "priority": "P1", "dueDate": "yyyy-MM-dd" } ],
           "testcases": [ { "key": "C1", "requirementKey": "R1", "title": "用例标题", "preCondition": "前置条件", "steps": "1. 步骤\n2. 期望结果" } ],
           "testplan": { "name": "测试计划名称", "environment": "测试环境", "executor": "" }
@@ -61,6 +61,7 @@ public static class PrdSplitPlanner
         3. 标题不超过 200 字；不要编造需求与文档中没有的事实，信息不足时在描述中写明待确认。
         4. 未提供迭代日期时 startDate / endDate 用空字符串；未提供优先级时用 P2。
         5. key 在同一数组内唯一，格式 R1/R2、T1/T2、C1/C2。
+        6. sourceParagraph 必须逐字摘录来源原文（云效需求的描述/验收标准，或补充文档原句），不得改写、不得编造；找不到原句时留空。
         """;
 
     /// <summary>
@@ -200,6 +201,31 @@ public static class PrdSplitPlanner
         NormalizeTasks(plan, requirementKeys);
         NormalizeTestcases(plan, requirementKeys);
         NormalizeTestPlan(plan);
+
+        // 任务/用例未单独给出来源段落时，继承父需求的原文片段
+        var paragraphByKey = plan.Requirements
+            .Where(r => r.Key is not null && !string.IsNullOrWhiteSpace(r.SourceParagraph))
+            .ToDictionary(r => r.Key!, r => r.SourceParagraph!, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var task in plan.Tasks)
+        {
+            if (string.IsNullOrWhiteSpace(task.SourceParagraph)
+                && task.RequirementKey is not null
+                && paragraphByKey.TryGetValue(task.RequirementKey, out var paragraph))
+            {
+                task.SourceParagraph = paragraph;
+            }
+        }
+
+        foreach (var testcase in plan.Testcases)
+        {
+            if (string.IsNullOrWhiteSpace(testcase.SourceParagraph)
+                && testcase.RequirementKey is not null
+                && paragraphByKey.TryGetValue(testcase.RequirementKey, out var paragraph))
+            {
+                testcase.SourceParagraph = paragraph;
+            }
+        }
     }
 
     private static void NormalizeRequirements(PrdSplitPlan plan)
@@ -219,6 +245,9 @@ public static class PrdSplitPlanner
             item.Key = MakeUniqueKey(item.Key, $"R{normalized.Count + 1}", used);
             item.Description = item.Description?.Trim();
             item.Acceptance = item.Acceptance?.Trim();
+            item.SourceParagraph = string.IsNullOrWhiteSpace(item.SourceParagraph)
+                ? null
+                : Truncate(item.SourceParagraph.Trim(), 200);
             item.Priority = NormalizePriority(item.Priority);
             normalized.Add(item);
         }

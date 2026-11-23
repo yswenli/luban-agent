@@ -32,6 +32,9 @@ public sealed class ProjectInitPipeline
     /// <summary>母版流水线名（再次进入初始化页反显用）。</summary>
     public string? TemplateName { get; set; }
 
+    /// <summary>该端在代码库内的目录。</summary>
+    public string? Dir { get; set; }
+
     /// <summary>后端监听端口（非后端端为 null）。</summary>
     public int? Port { get; set; }
 
@@ -50,6 +53,9 @@ public sealed class ProjectInitRecord
 
     /// <summary>新项目代号（初始化时的 newCode）。</summary>
     public string Codename { get; set; } = "";
+
+    /// <summary>初始化使用的宿主工作区 ID。</summary>
+    public string? WorkspaceId { get; set; }
 
     /// <summary>母版库代号（如 TJCES，再次进入初始化页反显用）。</summary>
     public string? TemplateCode { get; set; }

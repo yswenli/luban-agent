@@ -20,7 +20,6 @@
     <AssemblyName>LubanAgent.Plugin.YunXiao</AssemblyName>
     <RootNamespace>LubanAgent.Plugin.YunXiao</RootNamespace>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
 
     <!-- 插件包标识（= 目录名 = plugin.json 的 id）；默认铺到 Web 插件根，可用 -p:PluginPackageDir=… 覆盖 -->
     <PluginPackageId>com.tjces.yunxiao</PluginPackageId>
@@ -29,7 +28,7 @@
 
   <ItemGroup>
     <!-- 框架契约包：运行期由宿主共享框架集提供，插件包 lib/ 不得包含（见文件头打包约束 1）。 -->
-    <PackageReference Include="LuBan.AIAgent" Version="2026.11.16.1" />
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.23.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -468,6 +468,52 @@ public class ProjexClient : IProjexClient, IDisposable
     }
 
     /// <summary>
+    /// 创建工作项评论（<c>POST .../workitems/{id}/comments</c>，Markdown 正文）。
+    /// </summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">工作项 ID。</param>
+    /// <param name="content">评论正文。</param>
+    /// <param name="parentId">父评论 ID（可选）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建评论 ID；响应缺 id 时为 <c>null</c>。</returns>
+    public async Task<string?> CreateWorkitemCommentAsync(
+        string? organizationId,
+        string workitemId,
+        string content,
+        string? parentId,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = RequireOrg(organizationId);
+        var (path, body) = BuildCreateCommentRequest(orgId, workitemId, content, parentId);
+        var created = await SendRequestAsync<YunxiaoIdResult>(HttpMethod.Post, path, body, cancellationToken);
+        return created?.Id;
+    }
+
+    /// <summary>装配创建评论请求（纯函数，供单测锁协议）。</summary>
+    internal static (string Url, Dictionary<string, object?> Body) BuildCreateCommentRequest(
+        string organizationId,
+        string workitemId,
+        string content,
+        string? parentId)
+    {
+        RequirePath(organizationId, "组织 ID");
+        RequirePath(workitemId, "工作项 ID");
+        RequirePath(content, "评论正文");
+
+        var body = new Dictionary<string, object?>
+        {
+            ["content"] = content.Trim(),
+            ["formatType"] = "MARKDOWN"
+        };
+        if (!string.IsNullOrWhiteSpace(parentId))
+            body["parentId"] = parentId.Trim();
+
+        var url = $"/oapi/v1/projex/organizations/{Uri.EscapeDataString(organizationId)}"
+                  + $"/workitems/{Uri.EscapeDataString(workitemId)}/comments";
+        return (url, body);
+    }
+
+    /// <summary>
     /// 获取工作项附件列表（<c>GET .../workitems/{id}/attachments</c>）。
     /// </summary>
     /// <param name="organizationId">组织 ID。</param>
@@ -574,6 +620,34 @@ public class ProjexClient : IProjexClient, IDisposable
 
         var response = await SendRawAsync(HttpMethod.Get, path, null, cancellationToken);
         return YunxiaoResponseParser.DeserializeList<YunxiaoTestRepo>(response.Body) ?? [];
+    }
+
+    /// <summary>列出用例库目录（裸数组；根目录 <c>parentId</c> 为 null，且通常有一条名为「全部用例」）。</summary>
+    public async Task<List<YunxiaoTestRepoDirectory>> ListTestRepoDirectoriesAsync(
+        string? organizationId,
+        string? testRepoId,
+        int page = 1,
+        int perPage = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = RequireOrg(organizationId);
+        var repoId = testRepoId?.Trim();
+        if (string.IsNullOrWhiteSpace(repoId))
+            throw new ArgumentException("testRepoId 不能为空", nameof(testRepoId));
+
+        var path = BuildListTestRepoDirectoriesPath(orgId, repoId, page, perPage);
+        var response = await SendRawAsync(HttpMethod.Get, path, null, cancellationToken);
+        return YunxiaoResponseParser.DeserializeList<YunxiaoTestRepoDirectory>(response.Body) ?? [];
+    }
+
+    /// <summary>
+    /// 构建目录列表路径（纯函数，供单测锁口径）。
+    /// <c>perPage</c> 超出 1–100 范围时被 clamp。
+    /// </summary>
+    internal static string BuildListTestRepoDirectoriesPath(string org, string testRepoId, int page, int perPage)
+    {
+        var safePerPage = Math.Clamp(perPage, 1, 100);
+        return $"/oapi/v1/testhub/organizations/{org}/testRepos/{testRepoId}/directories?page={Math.Max(1, page)}&perPage={safePerPage}";
     }
 
     /// <summary>
@@ -708,7 +782,7 @@ public class ProjexClient : IProjexClient, IDisposable
             ["name"] = request.Name.Trim()
         };
         if (!string.IsNullOrWhiteSpace(request.ProjectId))
-            body["spaceIdentifier"] = request.ProjectId.Trim();
+            body["projectIdentifier"] = request.ProjectId.Trim();
         if (!string.IsNullOrWhiteSpace(request.SprintId))
             body["sprintIdentifier"] = request.SprintId.Trim();
         if (!string.IsNullOrWhiteSpace(request.StartDate))
@@ -716,7 +790,7 @@ public class ProjexClient : IProjexClient, IDisposable
         if (!string.IsNullOrWhiteSpace(request.EndDate))
             body["endDate"] = request.EndDate.Trim();
         if (request.Managers is { Count: > 0 })
-            body["managers"] = request.Managers;
+            body["managerIdentifiers"] = request.Managers;
         if (request.CaseIds is { Count: > 0 })
             body["testcases"] = request.CaseIds;
 

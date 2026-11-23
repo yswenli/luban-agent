@@ -96,6 +96,30 @@ public interface IProjexClient
         string workitemId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>获取工作项评论列表。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">工作项 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>评论列表；空体时为空列表。</returns>
+    Task<List<YunxiaoWorkitemComment>> ListWorkitemCommentsAsync(
+        string organizationId,
+        string workitemId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>创建工作项评论（Markdown 正文）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="workitemId">工作项 ID。</param>
+    /// <param name="content">评论正文。</param>
+    /// <param name="parentId">父评论 ID（可选）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>新建评论 ID；响应缺 id 时为 <c>null</c>。</returns>
+    Task<string?> CreateWorkitemCommentAsync(
+        string organizationId,
+        string workitemId,
+        string content,
+        string? parentId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>创建工作项。</summary>
     /// <param name="organizationId">组织 ID。</param>
     /// <param name="request">创建请求。</param>
@@ -152,6 +176,34 @@ public interface IProjexClient
         string? operatorId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>获取迭代列表（<c>/projects/{id}/sprints</c>，裸数组）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="projectId">项目 ID。</param>
+    /// <param name="status">状态过滤（<c>TODO,DOING,ARCHIVED</c>，逗号分隔，可空）。</param>
+    /// <param name="page">页码（从 1 开始）。</param>
+    /// <param name="perPage">每页条数（1–200）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>迭代列表；空体时为空列表。</returns>
+    Task<List<YunxiaoSprint>> ListSprintsAsync(
+        string? organizationId,
+        string projectId,
+        string? status,
+        int page,
+        int perPage,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>获取迭代详情（<c>/projects/{projectId}/sprints/{id}</c>）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="projectId">项目 ID。</param>
+    /// <param name="sprintId">迭代 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>迭代详情；空体时为 <c>null</c>。</returns>
+    Task<YunxiaoSprint?> GetSprintAsync(
+        string? organizationId,
+        string projectId,
+        string sprintId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>创建当前用户（取 <c>assignedTo</c> 用）。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>当前用户；空体时为 <c>null</c>。</returns>
@@ -183,6 +235,20 @@ public interface IProjexClient
         int page,
         int perPage,
         string? name,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>列出用例库目录（裸数组；根目录 <c>parentId</c> 为 null）。</summary>
+    /// <param name="organizationId">组织 ID。</param>
+    /// <param name="testRepoId">用例库标识。</param>
+    /// <param name="page">页码（从 1 起）。</param>
+    /// <param name="perPage">每页数量（≤ 100）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>目录列表。</returns>
+    Task<List<YunxiaoTestRepoDirectory>> ListTestRepoDirectoriesAsync(
+        string organizationId,
+        string testRepoId,
+        int page = 1,
+        int perPage = 100,
         CancellationToken cancellationToken = default);
 
     /// <summary>创建测试用例。</summary>

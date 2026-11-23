@@ -151,15 +151,17 @@ public sealed class PrdSubmitService
 
         // ── 需求 ───────────────────────────────────────────────────────────
         var requirementIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var requirementSources = new Dictionary<string, (string? Type, string? Paragraph)>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in plan.Requirements)
         {
             var title = item.Title ?? "(无标题)";
             var key = MakeKey("requirement", item.Key ?? title, title);
+            requirementSources[item.Key ?? title] = (item.Source, item.SourceParagraph);
 
             if (TryReuse(ledger, key, out var reusedId))
             {
                 requirementIds[item.Key ?? title] = reusedId!;
-                receipts.Add(ReusedReceipt("requirement", key, title, reusedId!));
+                receipts.Add(ReusedReceipt("requirement", key, title, reusedId!, item.Source, item.SourceParagraph));
                 continue;
             }
 
@@ -181,16 +183,16 @@ public sealed class PrdSubmitService
 
                 if (string.IsNullOrWhiteSpace(id))
                 {
-                    receipts.Add(FailedReceipt("requirement", key, title, "创建工作项失败（响应缺 id）"));
+                    receipts.Add(FailedReceipt("requirement", key, title, "创建工作项失败（响应缺 id）", item.Source, item.SourceParagraph));
                     continue;
                 }
 
                 requirementIds[item.Key ?? title] = id!;
-                receipts.Add(OkReceipt("requirement", key, title, id));
+                receipts.Add(OkReceipt("requirement", key, title, id, item.Source, item.SourceParagraph));
             }
             catch (Exception ex)
             {
-                receipts.Add(FailedReceipt("requirement", key, title, ex.Message));
+                receipts.Add(FailedReceipt("requirement", key, title, ex.Message, item.Source, item.SourceParagraph));
             }
         }
 
@@ -199,11 +201,12 @@ public sealed class PrdSubmitService
         {
             var title = item.Title ?? "(无标题)";
             var requirementKey = item.RequirementKey ?? string.Empty;
+            var (taskSource, taskParagraph) = InheritSource(requirementSources, requirementKey, null, item.SourceParagraph);
 
             if (!requirementIds.TryGetValue(requirementKey, out var parentId))
             {
                 receipts.Add(FailedReceipt("task", MakeKey("task", item.Key ?? title, title), title,
-                    $"关联需求（{requirementKey}）未创建，任务跳过"));
+                    $"关联需求（{requirementKey}）未创建，任务跳过", taskSource, taskParagraph));
                 continue;
             }
 
@@ -213,7 +216,7 @@ public sealed class PrdSubmitService
             if (TryReuse(ledger, key, out var reusedId))
             {
                 taskId = reusedId;
-                receipts.Add(ReusedReceipt("task", key, title, reusedId!));
+                receipts.Add(ReusedReceipt("task", key, title, reusedId!, taskSource, taskParagraph));
             }
             else
             {
@@ -236,37 +239,20 @@ public sealed class PrdSubmitService
 
                     if (string.IsNullOrWhiteSpace(taskId))
                     {
-                        receipts.Add(FailedReceipt("task", key, title, "创建任务失败（响应缺 id）"));
+                        receipts.Add(FailedReceipt("task", key, title, "创建任务失败（响应缺 id）", taskSource, taskParagraph));
                         continue;
                     }
 
-                    receipts.Add(OkReceipt("task", key, title, taskId));
+                    receipts.Add(OkReceipt("task", key, title, taskId, taskSource, taskParagraph));
                 }
                 catch (Exception ex)
                 {
-                    receipts.Add(FailedReceipt("task", key, title, ex.Message));
+                    receipts.Add(FailedReceipt("task", key, title, ex.Message, taskSource, taskParagraph));
                     continue;
                 }
             }
 
-            // 关系为尽力而为：父需求 SUB 任务。成功也记回执，重跑时据此跳过，避免重复关系
-            if (!string.IsNullOrWhiteSpace(taskId))
-            {
-                var relationKey = $"relation:{key}";
-                if (!TryReuse(ledger, relationKey, out _))
-                {
-                    try
-                    {
-                        var relationId = await _projex.CreateWorkitemRelationAsync(orgId, parentId, "SUB", taskId!, cancellationToken)
-                            .ConfigureAwait(false);
-                        receipts.Add(OkReceipt("relation", relationKey, $"{title} ← {requirementKey}", relationId ?? "(unknown)"));
-                    }
-                    catch (Exception ex)
-                    {
-                        receipts.Add(FailedReceipt("relation", relationKey, $"{title} ← {requirementKey}", ex.Message));
-                    }
-                }
-            }
+            // 云效在 CreateWorkitemAsync 时传 ParentId 即自动建立父子关联，无需额外调关系接口
         }
 
         // ── 测试用例 ────────────────────────────────────────────────────────
@@ -274,6 +260,7 @@ public sealed class PrdSubmitService
         if (plan.Testcases.Count > 0)
         {
             string? testRepoId = null;
+            string? directoryId = null;
             string? repoError = null;
             try
             {
@@ -281,27 +268,36 @@ public sealed class PrdSubmitService
                 testRepoId = repos.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.TestRepoIdentifier))?.TestRepoIdentifier;
                 if (string.IsNullOrWhiteSpace(testRepoId))
                     repoError = "云效没有可用的测试用例库";
+                else
+                {
+                    // 创建用例必填 directoryId，取根目录（parentId=null，通常名为「全部用例」）
+                    var dirs = await _projex.ListTestRepoDirectoriesAsync(orgId, testRepoId, 1, 100, cancellationToken).ConfigureAwait(false);
+                    directoryId = dirs.FirstOrDefault(d => string.IsNullOrWhiteSpace(d.ParentId))?.Id;
+                    if (string.IsNullOrWhiteSpace(directoryId))
+                        repoError = "测试用例库没有可用的根目录";
+                }
             }
             catch (Exception ex)
             {
-                repoError = $"读取测试用例库失败：{ex.Message}";
+                repoError = $"读取测试用例库/目录失败：{ex.Message}";
             }
 
             foreach (var item in plan.Testcases)
             {
                 var title = item.Title ?? "(无标题)";
                 var key = MakeKey("testcase", item.Key ?? title, title);
+                var caseSource = InheritSource(requirementSources, item.RequirementKey, null, item.SourceParagraph);
 
                 if (TryReuse(ledger, key, out var reusedId))
                 {
                     testcaseIds.Add(reusedId!);
-                    receipts.Add(ReusedReceipt("testcase", key, title, reusedId!));
+                    receipts.Add(ReusedReceipt("testcase", key, title, reusedId!, caseSource.Type, caseSource.Paragraph));
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(testRepoId))
+                if (string.IsNullOrWhiteSpace(testRepoId) || string.IsNullOrWhiteSpace(directoryId))
                 {
-                    receipts.Add(FailedReceipt("testcase", key, title, repoError ?? "缺少测试用例库"));
+                    receipts.Add(FailedReceipt("testcase", key, title, repoError ?? "缺少测试用例库", caseSource.Type, caseSource.Paragraph));
                     continue;
                 }
 
@@ -312,6 +308,7 @@ public sealed class PrdSubmitService
                         new YunxiaoCreateTestcaseRequest
                         {
                             TestRepoId = testRepoId!,
+                            DirectoryId = directoryId!,
                             Subject = title,
                             AssignedTo = assignedTo,
                             PreCondition = NullIfBlank(item.PreCondition)
@@ -320,16 +317,16 @@ public sealed class PrdSubmitService
 
                     if (string.IsNullOrWhiteSpace(id))
                     {
-                        receipts.Add(FailedReceipt("testcase", key, title, "创建用例失败（响应缺 id）"));
+                        receipts.Add(FailedReceipt("testcase", key, title, "创建用例失败（响应缺 id）", caseSource.Type, caseSource.Paragraph));
                         continue;
                     }
 
                     testcaseIds.Add(id!);
-                    receipts.Add(OkReceipt("testcase", key, title, id));
+                    receipts.Add(OkReceipt("testcase", key, title, id, caseSource.Type, caseSource.Paragraph));
                 }
                 catch (Exception ex)
                 {
-                    receipts.Add(FailedReceipt("testcase", key, title, ex.Message));
+                    receipts.Add(FailedReceipt("testcase", key, title, ex.Message, caseSource.Type, caseSource.Paragraph));
                 }
             }
         }
@@ -484,32 +481,56 @@ public sealed class PrdSubmitService
         return remoteId is not null;
     }
 
-    private static PrdSubmitReceipt OkReceipt(string kind, string key, string title, string? remoteId) => new()
-    {
-        Kind = kind,
-        Key = key,
-        Title = title,
-        Ok = true,
-        RemoteId = remoteId
-    };
-
-    private static PrdSubmitReceipt ReusedReceipt(string kind, string key, string title, string remoteId) => new()
+    private static PrdSubmitReceipt OkReceipt(
+        string kind,
+        string key,
+        string title,
+        string? remoteId,
+        string? sourceType = null,
+        string? sourceParagraph = null) => new()
     {
         Kind = kind,
         Key = key,
         Title = title,
         Ok = true,
         RemoteId = remoteId,
-        Reused = true
+        SourceType = sourceType,
+        SourceParagraph = sourceParagraph
     };
 
-    private static PrdSubmitReceipt FailedReceipt(string kind, string key, string title, string message) => new()
+    private static PrdSubmitReceipt ReusedReceipt(
+        string kind,
+        string key,
+        string title,
+        string remoteId,
+        string? sourceType = null,
+        string? sourceParagraph = null) => new()
+    {
+        Kind = kind,
+        Key = key,
+        Title = title,
+        Ok = true,
+        RemoteId = remoteId,
+        Reused = true,
+        SourceType = sourceType,
+        SourceParagraph = sourceParagraph
+    };
+
+    private static PrdSubmitReceipt FailedReceipt(
+        string kind,
+        string key,
+        string title,
+        string message,
+        string? sourceType = null,
+        string? sourceParagraph = null) => new()
     {
         Kind = kind,
         Key = key,
         Title = title,
         Ok = false,
-        Message = message
+        Message = message,
+        SourceType = sourceType,
+        SourceParagraph = sourceParagraph
     };
 
     /// <summary>
@@ -528,4 +549,17 @@ public sealed class PrdSubmitService
 
     private static string? NullIfBlank(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>按需求键继承来源（任务 / 用例未单列时取父需求的来源类型与原文段落）。</summary>
+    private static (string? Type, string? Paragraph) InheritSource(
+        IReadOnlyDictionary<string, (string? Type, string? Paragraph)> parents,
+        string? requirementKey,
+        string? ownType,
+        string? ownParagraph)
+    {
+        parents.TryGetValue(requirementKey ?? string.Empty, out var parent);
+        return (
+            string.IsNullOrWhiteSpace(ownType) ? parent.Type : ownType,
+            string.IsNullOrWhiteSpace(ownParagraph) ? parent.Paragraph : ownParagraph);
+    }
 }

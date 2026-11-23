@@ -1162,6 +1162,7 @@
       state.groupDirty = true;
     }
     if (record.branch) state.branch = record.branch;
+    if (record.workspaceId) state.workspaceId = record.workspaceId;
     if (Array.isArray(record.selectedRepos) && record.selectedRepos.length) {
       state.selectedRepos = record.selectedRepos.slice();
       state.repoNewNames = {};
@@ -1177,6 +1178,8 @@
           nameDirty: !!hit.name,
           tplName: hit.templateName || '',
           derivedFrom: hit.templateName || '',
+          dir: hit.dir || '',
+          dirDirty: !!hit.dir,
           port: hit.port === null || hit.port === undefined ? endRec.port : hit.port
         });
       });
@@ -1217,6 +1220,7 @@
         projectId: project.id || '',
         identifier: identifier || '',
         codename: state.newCode,
+        workspaceId: state.workspaceId || '',
         repoName: primaryRepoName() || '',
         templateCode: state.templateCode || '',
         groupName: state.groupChoice && state.groupChoice !== '__new__' ? state.groupChoice : (state.groupNewName || ''),
@@ -1228,6 +1232,7 @@
           return {
             end: e.end,
             enabled: !!e.enabled,
+            dir: e.dir || '',
             name: (info && info.actualName) || pv.name || e.name || '',
             templateName: e.tplName || e.derivedFrom || '',
             port: e.port === '' || e.port === undefined || e.port === null ? null : Number(e.port),

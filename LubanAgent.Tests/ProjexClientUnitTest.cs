@@ -152,6 +152,35 @@ public class ProjexClientUnitTest
         Assert.AreEqual(1762000000000, paged.Items[1].DisplayUpdateTime);
     }
 
+    // ── BuildCreateCommentRequest：评论创建协议 ────────────────────────────
+
+    [TestMethod]
+    public void BuildCreateCommentRequest_使用同一路径Post与Markdown正文()
+    {
+        var (url, body) = ProjexClient.BuildCreateCommentRequest(
+            "org demo", "work/item", "  首行\n第二行  ", "parent-1");
+
+        Assert.AreEqual("/oapi/v1/projex/organizations/org%20demo/workitems/work%2Fitem/comments", url);
+        Assert.AreEqual("首行\n第二行", ReadBodyString(body, "content"));
+        Assert.AreEqual("MARKDOWN", ReadBodyString(body, "formatType"));
+        Assert.AreEqual("parent-1", ReadBodyString(body, "parentId"));
+    }
+
+    [TestMethod]
+    public void BuildCreateCommentRequest_无父评论时省略parentId()
+    {
+        var (_, body) = ProjexClient.BuildCreateCommentRequest("org", "work-1", "评论", null);
+
+        Assert.IsFalse(BodyHasProperty(body, "parentId"));
+    }
+
+    [TestMethod]
+    public void BuildCreateCommentRequest_空白正文抛异常()
+    {
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            ProjexClient.BuildCreateCommentRequest("org", "work-1", "  ", null));
+    }
+
     // ── 错误形态：走 YunxiaoResponseParser.ParseBusinessError 同口径 ────────
 
     [TestMethod]

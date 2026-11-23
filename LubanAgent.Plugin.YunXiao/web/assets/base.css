@@ -31,6 +31,10 @@
   --toast-bg: #17191d;
   --toast-ok-bg: #067647;
   --toast-err-bg: #b42318;
+  --busy-mask: rgba(255, 255, 255, .55);
+  --busy-pill-bg: #3d5afe;
+  --busy-pill-text: #ffffff;
+  --busy-pill-shadow: 0 4px 16px rgba(0, 0, 0, .2);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -100,12 +104,12 @@ body {
   position: relative;
 }
 
-/* 全局遮罩：预览/提交进行中禁止操作 */
+/* 全局遮罩：预览/提交进行中禁止操作（配色走主题令牌，浅/深各一套） */
 .content.blocking::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--busy-mask);
   z-index: 1000;
   cursor: progress;
 }
@@ -116,12 +120,13 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 1001;
-  background: var(--brand);
-  color: #fff;
+  background: var(--busy-pill-bg);
+  color: var(--busy-pill-text);
   padding: 10px 24px;
   border-radius: 4px;
   font-size: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  box-shadow: var(--busy-pill-shadow);
 }
 
 .banner {
@@ -314,6 +319,11 @@ html[data-theme='dark'] {
   --toast-bg: #0f1115;
   --toast-ok-bg: #1f6b45;
   --toast-err-bg: #7a2a24;
+  /* 遮罩：深色下不能用白雾（会把整页洗成灰白），药丸改浅色强调底 + 深字 */
+  --busy-mask: rgba(9, 11, 15, .62);
+  --busy-pill-bg: #7c93ff;
+  --busy-pill-text: #10131a;
+  --busy-pill-shadow: 0 6px 20px rgba(0, 0, 0, .55);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
 }
@@ -1610,3 +1620,733 @@ html[data-theme='light'] {
 .prd-receipt-title {
   word-break: break-all;
 }
+
+/* PRD 工作台 Tab（PRD 拆分 / 迭代测试） */
+.prd-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.prd-tab {
+  padding: 7px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-sub);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.prd-tab:hover {
+  color: var(--text);
+}
+
+.prd-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* 回执来源：来源类型 + 原文片段，单行省略 */
+.prd-receipt-src {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-weak);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 迭代测试：来源多选 */
+.it-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.it-check input {
+  margin: 0;
+}
+
+/* 迭代测试：用例行整行可点勾选 */
+.it-case {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.it-case input {
+  flex: none;
+  margin: 0;
+}
+
+/* =========================================================
+   屏 5：迭代任务看板（F1）
+   列横向滚动、列内纵向滚动；任务卡标题两行截断、悬停看全文。
+   ========================================================= */
+
+#screen-board {
+  gap: 12px;
+  min-width: 0;
+}
+
+.board-bar {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.board-proj {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.board-proj-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.board-sprint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.board-sprint .field-input {
+  width: 220px;
+}
+
+.board-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--text-sub);
+  font-size: 12.5px;
+}
+
+.board-due {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-weak);
+}
+
+.board-due.is-warn {
+  color: var(--warn);
+}
+
+.board-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.board-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 160px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sub);
+  color: var(--text-sub);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.board-cols {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  height: 100%;
+  min-width: min-content;
+}
+
+.board-col {
+  flex: none;
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sub);
+  overflow: hidden;
+}
+
+.board-col-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.board-col-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-col-count {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-sub-2);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.board-col-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-col-empty {
+  padding: 14px 4px;
+  color: var(--text-weak);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.board-card:hover,
+.board-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.board-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.board-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.board-card-serial {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-card-due {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-sub-2);
+  color: var(--text-sub);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.board-card-due.is-overdue {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.board-card-due.is-empty {
+  background: var(--surface-sub);
+  color: var(--text-weak);
+}
+
+.board-card-assignee {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
+.board-summary {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-sub);
+  font-size: 12.5px;
+}
+
+/* =========================================================
+   F2：任务详情与薄会话。两列各自滚动，不在 iframe 内重造完整聊天客户端。
+   ========================================================= */
+
+.task-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.task-detail-pane,
+.task-session-pane {
+  min-height: 0;
+}
+
+.task-head {
+  gap: 7px;
+  padding: 14px 16px;
+  background: var(--surface-sub);
+}
+
+.task-head-meta,
+.task-byline,
+.task-section-head,
+.task-conversation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-head-meta .chip,
+.task-section-head .chip {
+  flex: none;
+  margin-top: 0;
+}
+
+.task-serial,
+.task-overline {
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.task-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.task-byline {
+  justify-content: flex-start;
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.task-byline span + span::before {
+  content: '·';
+  margin-right: 8px;
+}
+
+.task-detail-body {
+  gap: 18px;
+  padding: 16px;
+}
+
+.task-section {
+  flex: none;
+  min-width: 0;
+}
+
+.task-section h2 {
+  margin: 0 0 7px;
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-text,
+.task-comment-content,
+.task-message-content,
+.task-thinking div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-text {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.task-relations {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.task-relations > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.task-relations span,
+.task-relations strong {
+  display: block;
+}
+
+.task-relations span {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.task-relations strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.task-code-context {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.task-code-repo {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.task-code-repo span {
+  color: var(--accent);
+}
+
+.task-code-end {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 1px 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.task-code-end + .task-code-end {
+  border-top: 1px solid var(--border);
+}
+
+.task-code-end strong {
+  grid-row: span 2;
+  color: var(--text-sub);
+}
+
+.task-code-end span {
+  overflow-wrap: anywhere;
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+}
+
+.task-code-end small {
+  color: var(--text-weak);
+}
+
+.task-comments-section {
+  padding-top: 2px;
+}
+
+.task-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.task-comment {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.task-comment.is-latest {
+  border-left: 3px solid var(--accent);
+}
+
+.task-comment header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.task-comment time {
+  margin-left: auto;
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.task-latest {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--accent-ring);
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.task-comment-content {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.task-comment-input,
+.task-followup textarea {
+  width: 100%;
+  min-height: 76px;
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.task-comment-input {
+  margin: 5px 0 8px;
+}
+
+.task-session-body {
+  overflow: hidden;
+  padding: 12px;
+  gap: 12px;
+}
+
+.task-workspace-card {
+  flex: none;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.task-workspace {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-workspace-card p {
+  margin: 7px 0 4px;
+  color: var(--text-sub);
+  font-size: 12px;
+}
+
+.task-workspace-card small {
+  display: block;
+  color: var(--text-weak);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.task-conversation {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.task-conversation-head {
+  flex: none;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-conversation-head strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.task-messages {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+}
+
+.task-message {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.task-message + .task-message {
+  margin-top: 8px;
+}
+
+.task-message.is-user {
+  border-color: var(--accent-ring);
+  background: var(--accent-ring);
+}
+
+.task-message.is-live {
+  border-color: var(--accent);
+}
+
+.task-message-role {
+  margin-bottom: 4px;
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.task-thinking {
+  margin: 5px 0;
+  color: var(--text-sub);
+  font-size: 11px;
+}
+
+.task-thinking div {
+  margin-top: 5px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.task-tool {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: var(--surface-sub-2);
+  color: var(--text-sub);
+  font-size: 11px;
+}
+
+.task-tool span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-tool.is-failed,
+.task-live-error {
+  color: var(--danger);
+}
+
+.task-live-notice,
+.task-live-error {
+  margin-top: 7px;
+  font-size: 11px;
+}
+
+.task-followup {
+  flex: none;
+}
+
+.task-followup textarea {
+  min-height: 58px;
+  max-height: 120px;
+  margin: 4px 0 7px;
+}
+
+.task-empty {
+  padding: 12px 4px;
+  color: var(--text-weak);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 680px) {
+  .task-layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .task-detail-pane,
+  .task-session-pane {
+    min-height: 540px;
+  }
+}
+

@@ -29,7 +29,7 @@
   </script>
   <link rel="stylesheet" href="assets/base.css" />
 </head>
-<body>
+<body data-frame="F0" data-feature="全局" data-prd-section="§2.6 / §2.9 / §3.4 / §4.6">
   <div class="frame">
     <header class="crumb">
       <span class="crumb-root">云效 DevOps 工作台</span>
@@ -41,7 +41,7 @@
 
     <main class="content" id="content">
       <!-- 屏 1：连接设置 -->
-      <section class="screen" id="screen-connect">
+      <section class="screen" id="screen-connect" data-frame="F4" data-feature="功能 1" data-prd-section="FR-1 / §3.6 / §3.8 / §4.9">
         <div class="panel">
           <h1 class="panel-title">连接云效</h1>
           <p class="panel-sub">凭据只写入宿主凭据存储，页面不回显令牌明文。</p>
@@ -69,7 +69,7 @@
       </section>
 
       <!-- 屏 2：项目列表 -->
-      <section class="screen" id="screen-projects" hidden>
+      <section class="screen" id="screen-projects" hidden data-frame="F3" data-feature="功能 4 / 5 / 6 / 7" data-prd-section="FR-4 / FR-6 / FR-7 / §2.9">
         <div class="split">
           <aside class="pane pane-left">
             <div class="pane-h">
@@ -86,7 +86,7 @@
       </section>
 
       <!-- 屏 3：项目初始化（F5 代码库区 / F6 流水线区） -->
-      <section class="screen" id="screen-init" hidden>
+      <section class="screen" id="screen-init" hidden data-frame="F5 F6" data-feature="功能 2 / 3" data-prd-section="FR-2 / FR-3">
         <div class="split split-init">
           <aside class="pane">
             <div class="pane-h">
@@ -220,9 +220,14 @@
           </section>
         </div>
       </section>
-      <!-- 屏 4：PRD 拆分（同步 → 预览 → 落库） -->
+      <!-- 屏 4：PRD 工作台（拆分子页 + 迭代测试子页） -->
       <section class="screen" id="screen-prd" hidden>
-        <div class="split split-init">
+        <div class="prd-tabs" role="tablist">
+          <button class="prd-tab is-active" id="tab-prd-split" type="button" role="tab" data-prd-tab="split">PRD 拆分</button>
+          <button class="prd-tab" id="tab-prd-test" type="button" role="tab" data-prd-tab="test">迭代测试</button>
+        </div>
+
+        <div class="split split-init" id="prd-tab-split" data-frame="F8" data-feature="功能 5 / 6" data-prd-section="FR-5 / FR-6">
           <aside class="pane">
             <div class="pane-h">
               <div class="pane-title">第一步 · 选择 PRD 来源</div>
@@ -267,6 +272,7 @@
                   <span class="kv-k">状态</span><span class="kv-v" id="prd-status">—</span>
                   <span class="kv-k">需求条数</span><span class="kv-v" id="prd-req-count">—</span>
                   <span class="kv-k">附件份数</span><span class="kv-v" id="prd-att-count">—</span>
+                  <span class="kv-k">可用状态</span><span class="kv-v clamp3" id="prd-status-options">—</span>
                   <span class="kv-k">告警</span><span class="kv-v clamp3" id="prd-warnings">—</span>
                 </div>
               </div>
@@ -302,6 +308,202 @@
             </div>
           </section>
         </div>
+
+        <div class="split split-init" id="prd-tab-test" hidden data-frame="F9" data-feature="功能 6" data-prd-section="FR-6 / §2.9">
+          <aside class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第一步 · 选择用例来源</div>
+              <span class="chip" id="it-project-tag">—</span>
+            </div>
+            <div class="pane-body">
+              <div class="blk">
+                <div class="blk-label">来源（可多选）</div>
+                <label class="it-check"><input type="checkbox" id="it-src-needs" checked /> 云效需求</label>
+                <label class="it-check"><input type="checkbox" id="it-src-prd" /> PRD 正文</label>
+                <label class="it-check"><input type="checkbox" id="it-src-tasks" /> 迭代任务</label>
+                <label class="it-check"><input type="checkbox" id="it-src-manual" /> 手工输入</label>
+                <p class="field-help">多来源合并生成；重复用例自动合并并保留全部来源。</p>
+              </div>
+
+              <div class="blk">
+                <label class="blk-label" for="it-sprint">迭代过滤（可选）</label>
+                <input class="field-input" id="it-sprint" type="text" spellcheck="false"
+                       placeholder="迭代 ID；留空取项目全部需求" />
+              </div>
+
+              <div class="blk" id="it-manual-blk" hidden>
+                <div class="blk-label">手工输入正文</div>
+                <textarea class="field-input prd-textarea" id="it-manual" spellcheck="false"
+                          placeholder="粘贴需求 / 验收标准 / 变更说明"></textarea>
+              </div>
+
+              <div class="blk">
+                <div class="row-btn">
+                  <button class="btn btn-primary" id="btn-it-generate" type="button">生成用例</button>
+                </div>
+                <div class="result" id="it-result" hidden></div>
+              </div>
+
+              <div class="blk" id="it-status-panel" hidden>
+                <div class="blk-label">可用状态（取自项目现有工作项）</div>
+                <div class="kv" id="it-status-list"></div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="pane">
+            <div class="pane-h">
+              <div class="pane-title">第二步 · 用例与测试计划</div>
+              <span class="chip" id="it-case-tag">未生成</span>
+            </div>
+            <div class="pane-body">
+              <div class="result" id="it-empty">勾选来源后点「生成用例」，结果会显示在这里。</div>
+
+              <div class="blk" id="it-case-panel" hidden>
+                <div class="blk-label">用例清单（已选 <span id="it-case-picked">0</span> / 共 <span id="it-case-count">0</span> 条）</div>
+                <div class="prd-tree" id="it-case-tree"></div>
+              </div>
+
+              <div class="blk" id="it-plan-panel" hidden>
+                <div class="blk-label">测试计划</div>
+                <div class="kv">
+                  <label class="kv-k" for="it-plan-name">名称</label>
+                  <input class="field-input" id="it-plan-name" type="text" />
+                  <label class="kv-k" for="it-plan-env">环境</label>
+                  <input class="field-input" id="it-plan-env" type="text" placeholder="如：测试环境" />
+                  <label class="kv-k" for="it-plan-exec">执行人</label>
+                  <input class="field-input" id="it-plan-exec" type="text" placeholder="云效 userId；留空取当前用户" />
+                  <label class="kv-k" for="it-plan-start">开始</label>
+                  <input class="field-input" id="it-plan-start" type="date" />
+                  <label class="kv-k" for="it-plan-end">结束</label>
+                  <input class="field-input" id="it-plan-end" type="date" />
+                </div>
+                <div class="row-btn">
+                  <button class="btn btn-primary" id="btn-it-save" type="button">保存到云效</button>
+                </div>
+                <p class="field-help">用例与测试计划逐项落库；失败项重试自动跳过已成功项。</p>
+              </div>
+
+              <div class="blk" id="it-receipt-panel" hidden>
+                <div class="blk-label">保存回执</div>
+                <div class="kv">
+                  <span class="kv-k">成功</span><span class="kv-v" id="it-ok-count">—</span>
+                  <span class="kv-k">失败</span><span class="kv-v" id="it-fail-count">—</span>
+                  <span class="kv-k">测试计划</span><span class="kv-v" id="it-plan-out">—</span>
+                </div>
+                <div class="prd-receipts" id="it-receipts"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- 屏 5：迭代任务看板（F1；列名/列序来自云效实例反查，不硬编码） -->
+      <section class="screen" id="screen-board" hidden data-frame="F1" data-feature="功能 7" data-prd-section="FR-7 / §4.6.1">
+        <div class="board-bar">
+          <div class="board-proj">
+            <span class="kv-k">项目</span>
+            <span class="board-proj-name" id="board-project">—</span>
+          </div>
+          <label class="board-sprint">
+            <span class="kv-k">迭代</span>
+            <select class="field-input" id="board-sprint"></select>
+          </label>
+        </div>
+        <div class="board-meta">
+          <span id="board-sprint-range">—</span>
+          <span class="board-due" id="board-due-field" hidden></span>
+        </div>
+        <div class="board-wrap" id="board-wrap">
+          <div class="board-empty" id="board-empty">加载中…</div>
+          <div class="board-cols" id="board-cols" hidden></div>
+        </div>
+        <div class="board-summary">
+          <span class="kv-k">迭代概览</span>
+          <span id="board-summary-text">—</span>
+        </div>
+      </section>
+
+      <!-- F2：任务详情与宿主工作区薄会话 -->
+      <section class="screen" id="screen-task" hidden data-frame="F2" data-feature="功能 7" data-prd-section="FR-7 / §2.7 / §4.10">
+        <div class="task-layout">
+          <aside class="pane task-detail-pane">
+            <div class="pane-h task-head">
+              <div class="task-head-meta">
+                <span class="task-serial" id="task-serial">—</span>
+                <span class="chip" id="task-status">—</span>
+              </div>
+              <h1 class="task-title" id="task-title">加载中…</h1>
+              <div class="task-byline">
+                <span id="task-assignee">—</span>
+                <span id="task-due">—</span>
+              </div>
+            </div>
+            <div class="pane-body task-detail-body">
+              <section class="task-section">
+                <h2>任务描述</h2>
+                <div class="task-text" id="task-description">—</div>
+              </section>
+              <section class="task-section">
+                <h2>验收标准</h2>
+                <div class="task-text" id="task-acceptance">—</div>
+              </section>
+              <section class="task-section task-relations">
+                <div><span>父需求</span><strong id="task-parent">—</strong></div>
+                <div><span>迭代</span><strong id="task-sprint-name">—</strong></div>
+              </section>
+              <section class="task-section">
+                <h2>工程登记</h2>
+                <div class="task-code-context" id="task-code-context">—</div>
+              </section>
+              <div class="result result-err" id="task-warnings" hidden></div>
+              <section class="task-section task-comments-section">
+                <div class="task-section-head">
+                  <h2>评论</h2>
+                  <span class="chip"><span id="task-comment-count">0</span> 条</span>
+                </div>
+                <div class="result result-err" id="task-comment-error" hidden></div>
+                <div class="task-comments" id="task-comments"></div>
+                <label class="field-label" for="task-comment-input">补充评论（Markdown）</label>
+                <textarea class="field-input task-comment-input" id="task-comment-input" spellcheck="false" placeholder="记录上下文、结论或待确认问题"></textarea>
+                <div class="row-btn">
+                  <button class="btn" id="btn-task-comment" type="button" disabled>发布评论</button>
+                </div>
+              </section>
+            </div>
+          </aside>
+
+          <section class="pane task-session-pane">
+            <div class="pane-h">
+              <div class="task-section-head">
+                <div class="pane-title">工作区会话</div>
+                <span class="chip" id="task-session-status">未开始</span>
+              </div>
+            </div>
+            <div class="pane-body task-session-body">
+              <section class="task-workspace-card">
+                <span class="task-overline">目标工作区</span>
+                <div class="task-workspace" id="task-workspace">—</div>
+                <p id="task-seed-summary">—</p>
+                <small>首轮先加载 brainstorming，并以 plan 模式启动；方案确认只留在会话内。</small>
+              </section>
+              <section class="task-conversation">
+                <div class="task-conversation-head">
+                  <span class="task-overline">宿主会话</span>
+                  <strong id="task-session-title">尚未创建会话</strong>
+                </div>
+                <div class="task-messages" id="task-messages" aria-live="polite"></div>
+                <div class="task-followup">
+                  <label class="field-label" for="task-followup-input">继续会话</label>
+                  <textarea class="field-input" id="task-followup-input" spellcheck="false" placeholder="补充说明或回应 Agent" disabled></textarea>
+                  <div class="row-btn">
+                    <button class="btn btn-primary" id="btn-task-followup" type="button" disabled>发送</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
       </section>
     </main>
 
@@ -323,6 +525,16 @@
         <a class="btn-link" href="#/projects">返回项目列表</a>
         <button class="btn" id="btn-prd-reset" type="button">清空结果</button>
       </div>
+      <div class="actions" id="actions-board" hidden>
+        <a class="btn-link" href="#/projects">返回项目列表</a>
+        <button class="btn" id="btn-board-reload" type="button">刷新</button>
+      </div>
+      <div class="actions" id="actions-task" hidden>
+        <a class="btn-link" id="task-back-board" href="#/board">返回任务看板</a>
+        <button class="btn" id="btn-task-restart" type="button" hidden>重新开始</button>
+        <button class="btn" id="btn-task-cancel" type="button" disabled>取消当前回合</button>
+        <button class="btn btn-primary" id="btn-task-start" type="button" disabled>在工作区开始任务</button>
+      </div>
     </footer>
   </div>
 
@@ -333,5 +545,8 @@
   <script src="assets/projects.js"></script>
   <script src="assets/init.js"></script>
   <script src="assets/prd.js"></script>
+  <script src="assets/iterationtest.js"></script>
+  <script src="assets/board.js"></script>
+  <script src="assets/task.js"></script>
 </body>
 </html>

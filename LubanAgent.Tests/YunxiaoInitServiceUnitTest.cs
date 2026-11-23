@@ -372,7 +372,8 @@ public class YunxiaoInitServiceUnitTest
 
             var result = await service.SaveProjectInitAsync(new ProjectInitRequest(
                 "pid-1", "BBKY", "BBKY", "BBKY-Mixed",
-                new[] { new ProjectInitEnd("mobile", "CME_DEV_Deploy_BBKY-Mobile", "123") }),
+                new[] { new ProjectInitEnd("mobile", "CME_DEV_Deploy_BBKY-Mobile", "123", Dir: "BBKY-Mobile") },
+                WorkspaceId: "ws-1"),
                 CancellationToken.None);
 
             Assert.IsTrue(result.Ok);
@@ -382,6 +383,8 @@ public class YunxiaoInitServiceUnitTest
             Assert.AreEqual("BBKY-Mixed", all[0].RepoName);
             Assert.AreEqual(1, all[0].Pipelines.Count);
             Assert.AreEqual("123", all[0].Pipelines[0].PipelineId);
+            Assert.AreEqual("ws-1", all[0].WorkspaceId);
+            Assert.AreEqual("BBKY-Mobile", all[0].Pipelines[0].Dir);
 
             // 反查：按标识命中，DTO 回带反显所需字段
             var got = await service.GetProjectInitAsync(null, "BBKY", CancellationToken.None);
@@ -391,6 +394,8 @@ public class YunxiaoInitServiceUnitTest
             Assert.AreEqual("BBKY-Mixed", got.Data.RepoName);
             Assert.AreEqual(1, got.Data.Ends.Count);
             Assert.AreEqual("CME_DEV_Deploy_BBKY-Mobile", got.Data.Ends[0].Name);
+            Assert.AreEqual("BBKY-Mobile", got.Data.Ends[0].Dir);
+            Assert.AreEqual("ws-1", got.Data.WorkspaceId);
 
             // 按未知项目反查 → null（不误报已初始化）
             var missing = await service.GetProjectInitAsync("pid-unknown", null, CancellationToken.None);

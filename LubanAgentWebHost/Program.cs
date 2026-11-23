@@ -127,6 +127,13 @@ public static class Program
                 services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSyncService>();
                 services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSubmitService>();
                 services.AddScoped<LubanAgentWebHost.Services.Prd.PrdSplitService>();
+                services.AddScoped<LubanAgentWebHost.Services.Prd.IterationTestService>();
+
+                // 云效 S4 迭代任务看板（只读；状态反查复用 PrdSyncService）
+                services.AddScoped<LubanAgentWebHost.Services.Board.BoardService>();
+                services.AddScoped<LubanAgentWebHost.Services.TaskDetail.TaskDetailService>();
+                services.AddSingleton<LubanAgentWebHost.Services.TaskDetail.TaskSessionStore>();
+                services.AddScoped<LubanAgentWebHost.Services.TaskDetail.TaskSessionService>();
 
                 // 编排进度出口：框架默认注册 no-op，这里换成可订阅实现并按请求作用域隔离，
                 // 供 /agent/chat 把子代理进度转成 orchestration.progress 帧

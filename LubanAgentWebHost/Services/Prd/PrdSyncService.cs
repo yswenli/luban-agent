@@ -98,7 +98,75 @@ public sealed class PrdSyncService
                 : $"{info.Message}；读取测试用例库失败：{ex.Message}";
         }
 
+        try
+        {
+            info.Statuses = await ListStatusOptionsAsync(orgId, info.ProjectId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            info.Message = string.IsNullOrWhiteSpace(info.Message)
+                ? $"读取状态候选失败：{ex.Message}"
+                : $"{info.Message}；读取状态候选失败：{ex.Message}";
+        }
+
         return YunxiaoWorkbenchResult<PrdSourceInfo>.Success(info);
+    }
+
+    /// <summary>
+    /// 从项目现有工作项反查可用状态并去重。
+    /// 云效未暴露独立状态枚举接口：<c>projects/{id}/workitemTypes/{typeId}/workflows</c> 实测返回
+    /// <c>400 get statusFlowList failed</c>，故以实例数据反查替代；未被任何工作项使用的状态取不到。
+    /// </summary>
+    /// <param name="orgId">组织 ID。</param>
+    /// <param name="projectId">项目 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>状态候选（按分类区分，同分类同 ID 去重）。</returns>
+    internal async Task<List<PrdStatusOption>> ListStatusOptionsAsync(
+        string orgId,
+        string projectId,
+        CancellationToken cancellationToken)
+    {
+        var options = new List<PrdStatusOption>();
+
+        foreach (var category in new[] { "Req", "Task" })
+        {
+            try
+            {
+                var page = await _projex.SearchWorkitemsAsync(
+                    orgId,
+                    new YunxiaoWorkitemSearchCriteria
+                    {
+                        ProjectId = projectId,
+                        Category = category,
+                        Page = 1,
+                        PerPage = 100
+                    },
+                    cancellationToken).ConfigureAwait(false);
+
+                foreach (var item in page?.Items ?? [])
+                {
+                    var status = item.Status;
+                    if (string.IsNullOrWhiteSpace(status?.Id) || string.IsNullOrWhiteSpace(status.Name))
+                        continue;
+                    if (options.Any(o => o.Category == category && o.Id == status.Id))
+                        continue;
+
+                    options.Add(new PrdStatusOption
+                    {
+                        Id = status.Id,
+                        Name = status.Name,
+                        Category = category,
+                        NameEn = status.NameEn
+                    });
+                }
+            }
+            catch
+            {
+                // 状态候选只是辅助展示，单个分类失败不影响来源信息
+            }
+        }
+
+        return options;
     }
 
     /// <summary>

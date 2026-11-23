@@ -1,13 +1,13 @@
 /*
-  云效 DevOps 工作台 · 应用壳（S1 + S2 屏 3）：
+  云效 DevOps 工作台 · 应用壳（S1 + S2 + S3 + S4）：
   1. hash 路由：#/connect（屏 1 连接设置）/ #/projects（屏 2 项目列表）/ #/init（屏 3 项目初始化）
-     / #/prd（屏 4 PRD 拆分）；
-  2. 门禁：GET /yunxiao/settings 后 hasPat=false 强制 #/connect（手动进 #/projects / #/init / #/prd 弹回），
+     / #/prd（屏 4 PRD 拆分）/ #/board（屏 5 迭代任务看板）；
+  2. 门禁：GET /yunxiao/settings 后 hasPat=false 强制 #/connect（手动进 #/projects / #/init / #/prd / #/board 弹回），
      hasPat=true 默认 #/projects；
-  3. 四屏容器 show/hide 切换（hidden 属性）；
+  3. 五屏容器 show/hide 切换（hidden 属性）；
   4. 全局提示条：显示 message，自动消失。
 
-  经典脚本按序加载：api.js → app.js → connect.js → projects.js → init.js → prd.js。
+  经典脚本按序加载：api.js → app.js → connect.js → projects.js → init.js → prd.js → iterationtest.js → board.js。
 */
 (function (global) {
   'use strict';
@@ -45,6 +45,8 @@
   function targetFromHash() {
     const hash = global.location.hash || '';
     const path = hash.split('?')[0];
+    if (path === '#/task') return 'task';
+    if (path === '#/board') return 'board';
     if (path === '#/prd') return 'prd';
     if (path === '#/init') return 'init';
     if (path === '#/projects') return 'projects';
@@ -64,26 +66,40 @@
       ? '项目列表'
       : target === 'init'
         ? '项目初始化'
-        : target === 'prd' ? 'PRD 拆分' : '连接设置';
+        : target === 'prd'
+          ? 'PRD 拆分'
+          : target === 'board'
+            ? '迭代任务'
+            : target === 'task' ? '任务详情' : '连接设置';
     $('screen-connect').hidden = target !== 'connect';
     $('screen-projects').hidden = target !== 'projects';
     $('screen-init').hidden = target !== 'init';
     $('screen-prd').hidden = target !== 'prd';
+    $('screen-board').hidden = target !== 'board';
+    $('screen-task').hidden = target !== 'task';
     $('actions-connect').hidden = target !== 'connect';
     $('actions-projects').hidden = target !== 'projects';
     $('actions-init').hidden = target !== 'init';
     $('actions-prd').hidden = target !== 'prd';
+    $('actions-board').hidden = target !== 'board';
+    $('actions-task').hidden = target !== 'task';
     $('action-hint').textContent = target === 'projects'
       ? '选中项目查看详情，「重新加载」刷新列表。'
       : target === 'init'
         ? '先预检再执行；流水线复制在右列，代码库任务完成后解锁。'
         : target === 'prd'
           ? '同步云效需求或补充本地 PRD，生成预览确认后再提交落库。'
-          : '测试连接通过后才能保存；令牌只写入宿主凭据存储。';
+          : target === 'board'
+            ? '切换迭代查看任务分栏；点击任务卡进入详情。'
+            : target === 'task'
+              ? '评论直接写回云效；工作区会话只展示最近消息与必要操作。'
+              : '测试连接通过后才能保存；令牌只写入宿主凭据存储。';
 
     if (target === 'projects') global.YunxiaoProjects.enter();
     if (target === 'init') global.YunxiaoInit.enter();
     if (target === 'prd') global.YunxiaoPrd.enter();
+    if (target === 'board') global.YunxiaoBoard.enter();
+    if (target === 'task') global.YunxiaoTask.enter();
   }
 
   /** 路由解析（含门禁弹回）。 */
@@ -91,20 +107,24 @@
     let target = targetFromHash();
     const hash = global.location.hash || '';
     const path = hash.split('?')[0];
-    if ((target === 'projects' || target === 'init' || target === 'prd') && !state.hasPat) {
+    if ((target === 'projects' || target === 'init' || target === 'prd' || target === 'board' || target === 'task') && !state.hasPat) {
       target = 'connect';
-      if (path === '#/projects' || path === '#/init' || path === '#/prd') {
+      if (path === '#/projects' || path === '#/init' || path === '#/prd' || path === '#/board' || path === '#/task') {
         showToast('请先完成连接设置', 'err');
       }
     }
-    // #/init 与 #/prd 允许携带项目上下文（?projectId=&identifier=&name=），命中时保留原 hash
+    // #/init / #/prd / #/board 允许携带项目上下文（?projectId=&identifier=&name=），命中时保留原 hash
     const desired = target === 'projects'
       ? '#/projects'
       : target === 'init'
         ? (path === '#/init' ? hash : '#/init')
         : target === 'prd'
           ? (path === '#/prd' ? hash : '#/prd')
-          : '#/connect';
+          : target === 'board'
+            ? (path === '#/board' ? hash : '#/board')
+            : target === 'task'
+              ? (path === '#/task' ? hash : '#/task')
+              : '#/connect';
     if (global.location.hash !== desired) {
       global.location.hash = desired;
     }
@@ -135,6 +155,9 @@
     global.YunxiaoProjects.init();
     global.YunxiaoInit.init();
     global.YunxiaoPrd.init();
+    global.YunxiaoIterationTest.init();
+    global.YunxiaoBoard.init();
+    global.YunxiaoTask.init();
 
     applyRoute();
   }

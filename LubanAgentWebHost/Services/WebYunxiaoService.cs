@@ -7,6 +7,8 @@
 *
 *****************************************************************************/
 
+using LubanAgentWebHost.Services.TaskDetail;
+
 namespace LubanAgentWebHost.Services;
 
 /// <summary>
@@ -339,6 +341,116 @@ public static class WebYunxiaoService
         var service = scope.GetRequiredService<PrdSubmitService>();
 
         var result = await service.SubmitAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // S3：迭代测试 F9（按来源生成用例 + 用例/测试计划落库）
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>用例生成（POST /yunxiao/iterationtestpreview；一次性调用模型）。</summary>
+    /// <param name="payload">包装后的 <see cref="IterationTestRequest"/> JSON。</param>
+    /// <returns><c>{ cases, mergedCount, sourceRequirementCount, warnings }</c>。</returns>
+    public static Task<ActionResult> IterationTestPreviewAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<IterationTestRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<IterationTestService>();
+
+        var result = await service.GenerateAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>用例与测试计划落库（POST /yunxiao/iterationtestsave；幂等重跑）。</summary>
+    /// <param name="payload">包装后的 <see cref="IterationTestSaveRequest"/> JSON。</param>
+    /// <returns><c>{ receipts, okCount, failedCount, testPlanId, warnings }</c>。</returns>
+    public static Task<ActionResult> IterationTestSaveAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<IterationTestSaveRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<IterationTestService>();
+
+        var result = await service.SaveAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // S4：迭代任务看板（F1，只读）
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>迭代任务看板（GET /yunxiao/board?projectId=&amp;sprintId=）。</summary>
+    /// <returns><c>{ projectName, sprints, columns, totalTasks, doneCount, overdueCount, … }</c>。</returns>
+    public static Task<ActionResult> BoardAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<BoardService>();
+
+        var query = new BoardQuery
+        {
+            ProjectId = WebApi.Query("projectId"),
+            SprintId = WebApi.Query("sprintId")
+        };
+
+        var result = await service.GetBoardAsync(query, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>任务详情（GET /yunxiao/taskdetail?projectId=&amp;workitemId=）。</summary>
+    public static Task<ActionResult> TaskDetailAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<TaskDetailService>();
+        var query = new TaskDetailQuery
+        {
+            ProjectId = WebApi.Query("projectId"),
+            WorkitemId = WebApi.Query("workitemId")
+        };
+        var result = await service.GetDetailAsync(query, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>创建任务评论（POST /yunxiao/taskcomment）。</summary>
+    public static Task<ActionResult> TaskCommentAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<TaskCommentRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<TaskDetailService>();
+        var result = await service.CreateCommentAsync(input, CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>读取任务会话绑定（GET /yunxiao/tasksession?workitemId=）。</summary>
+    public static Task<ActionResult> TaskSessionAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<TaskSessionService>();
+        var result = await service.GetAsync(WebApi.Query("workitemId"), CancellationToken.None).ConfigureAwait(false);
+        return ToResult(result);
+    });
+
+    /// <summary>保存任务会话绑定（POST /yunxiao/tasksessionsave）。</summary>
+    public static Task<ActionResult> TaskSessionSaveAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<TaskSession>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var service = scope.GetRequiredService<TaskSessionService>();
+        var result = await service.SaveAsync(input, CancellationToken.None).ConfigureAwait(false);
         return ToResult(result);
     });
 

@@ -103,9 +103,13 @@
     return value || null;
   }
 
-  /** 渲染同步摘要。 */
+  /** 渲染同步摘要（标签改用后端返回的项目名，便于核对是否串项目）。 */
   function renderSync(data) {
     els.syncPanel.hidden = false;
+    if (data.projectName) {
+      els.projectTag.textContent = data.projectName;
+      els.projectTag.title = data.projectId || projectId;
+    }
     els.status.textContent = statusText(data.status);
     els.reqCount.textContent = String((data.requirements || []).length);
     els.attCount.textContent = String((data.attachments || []).length);
@@ -251,7 +255,7 @@
     }
   }
 
-  /** 回执表：成功 / 失败分色，失败带原因。 */
+  /** 回执表：成功 / 失败分色，失败带原因，并标出来源类型与来源段落。 */
   function renderReceipts(data) {
     els.receiptPanel.hidden = false;
     els.okCount.textContent = String(data.okCount || 0);
@@ -263,9 +267,11 @@
       const state = item.ok ? 'ok' : 'fail';
       const suffix = item.reused ? ' · 已复用' : '';
       const message = !item.ok && item.message ? '：' + item.message : '';
+      const source = receiptSource(item);
       return '<div class="prd-receipt ' + state + '">'
         + '<span class="prd-receipt-kind">' + escapeHtml(item.kind || '') + '</span>'
         + '<span class="prd-receipt-title">' + escapeHtml(item.title || '') + suffix + message + '</span>'
+        + (source ? '<span class="prd-receipt-src">' + escapeHtml(source) + '</span>' : '')
         + '</div>';
     }).join('');
 
@@ -275,14 +281,29 @@
     }
   }
 
-  /** 清空预览与回执。 */
+  /** 回执来源描述：类型（云效同步 / 补充文档 / 本地上传）+ 原文片段。 */
+  function receiptSource(item) {
+    const typeMap = { sync: '云效同步', supplement: '补充文档', local: '本地上传', iteration: '迭代测试' };
+    const parts = [];
+    if (item.sourceType) parts.push(typeMap[item.sourceType] || item.sourceType);
+    if (item.sourceParagraph) parts.push('「' + item.sourceParagraph + '」');
+    return parts.join(' ');
+  }
+
+  /** 清空预览与回执。切换项目时必须连同步摘要一起清，否则会残留上一个项目的条数。 */
   function reset() {
     plan = null;
     els.planPanel.hidden = true;
     els.receiptPanel.hidden = true;
+    els.syncPanel.hidden = true;
     els.planTree.innerHTML = '';
     els.receipts.innerHTML = '';
     els.planTag.textContent = '未生成';
+    els.status.textContent = '—';
+    els.reqCount.textContent = '—';
+    els.attCount.textContent = '—';
+    els.statusOptions.textContent = '—';
+    els.warnings.textContent = '—';
     els.empty.hidden = false;
     hideResult(els.syncResult);
   }
@@ -304,6 +325,7 @@
       status: $('prd-status'),
       reqCount: $('prd-req-count'),
       attCount: $('prd-att-count'),
+      statusOptions: $('prd-status-options'),
       warnings: $('prd-warnings'),
       empty: $('prd-empty'),
       planPanel: $('prd-plan-panel'),
@@ -349,10 +371,16 @@
       if (info && info.hasTestRepo === false) {
         showResult(els.syncResult, '未发现可用的测试用例库：测试用例与测试计划会失败，其余资产可正常落库', false);
       }
+      // 状态候选取自项目现有工作项（云效无独立状态枚举接口，详见后端注释）
+      const statuses = (info && info.statuses) || [];
+      els.statusOptions.textContent = statuses.length
+        ? statuses.map(function (s) { return s.name + '（' + s.category + '）'; }).join('、')
+        : (info && info.message ? info.message : '未取到');
+      els.statusOptions.title = els.statusOptions.textContent;
     } catch (e) {
       // 来源信息只是辅助展示，失败不阻断拆分
     }
   }
 
-  global.YunxiaoPrd = { init: init, enter: enter };
+  global.YunxiaoPrd = { init: init, enter: enter, reset: reset };
 })(window);

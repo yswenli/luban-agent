@@ -8,7 +8,7 @@
   3. 右栏两态：未选中 → 组织统计卡（total + organizationId）；选中 → 项目详情卡
      （description 超长 3 行截断 + title）；
   4. 首屏进入自动拉一次列表；「重新加载」刷新；详情卡入口：「项目初始化」→ #/init、
-     「PRD 拆分」→ #/prd（均携带项目上下文），「看板」保持灰态「待接线」；
+     「PRD 拆分」→ #/prd、「迭代任务」→ #/board（均携带项目上下文）；
   5. 云效数据属外部输入：渲染一律 escapeHtml，禁止裸 innerHTML 拼接。
 */
 (function (global) {
@@ -113,9 +113,9 @@
       + '<span class="entry-main"><span class="entry-title">PRD 拆分</span>'
       + '<span class="entry-sub">同步需求并拆成迭代 / 任务 / 用例落库</span></span>'
       + '<span class="entry-arrow">›</span></button>'
-      + '<button type="button" class="entry" disabled>'
-      + '<span class="entry-main"><span class="entry-title">看板</span>'
-      + '<span class="entry-sub">待接线</span></span>'
+      + '<button type="button" class="entry" data-entry="board">'
+      + '<span class="entry-main"><span class="entry-title">迭代任务</span>'
+      + '<span class="entry-sub">按状态分栏查看迭代任务与逾期</span></span>'
       + '<span class="entry-arrow">›</span></button>'
       + '</div>';
   }
@@ -178,11 +178,13 @@
         app.showError('请先在左侧选择项目');
         return;
       }
-      // 携带项目上下文进目标页：#/init 登记回写「已初始化」，#/prd 用作同步与落库的项目标识
+      // 携带项目上下文进目标页：#/init 登记回写「已初始化」，#/prd 用作同步与落库的项目标识，
+      // #/board 用作看板读取的项目标识
       const query = ['projectId=' + encodeURIComponent(idOf(project))];
       if (project.identifier) query.push('identifier=' + encodeURIComponent(project.identifier));
       if (project.name) query.push('name=' + encodeURIComponent(project.name));
-      const hash = entry.getAttribute('data-entry') === 'prd' ? '#/prd?' : '#/init?';
+      const entryName = entry.getAttribute('data-entry');
+      const hash = entryName === 'prd' ? '#/prd?' : entryName === 'board' ? '#/board?' : '#/init?';
       global.location.hash = hash + query.join('&');
     });
     els.list.addEventListener('click', function (e) {

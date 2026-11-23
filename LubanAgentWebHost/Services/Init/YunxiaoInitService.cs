@@ -233,6 +233,7 @@ public sealed class YunxiaoInitService
             ProjectId = request.ProjectId?.Trim() ?? string.Empty,
             Identifier = string.IsNullOrWhiteSpace(request.Identifier) ? null : request.Identifier!.Trim(),
             Codename = request.Codename.Trim(),
+            WorkspaceId = string.IsNullOrWhiteSpace(request.WorkspaceId) ? null : request.WorkspaceId.Trim(),
             TemplateCode = string.IsNullOrWhiteSpace(request.TemplateCode) ? null : request.TemplateCode!.Trim(),
             SelectedRepos = (request.SelectedRepos ?? Array.Empty<string>())
                 .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -250,6 +251,7 @@ public sealed class YunxiaoInitService
                     Enabled = e.Enabled,
                     Name = e.Name,
                     TemplateName = e.TemplateName,
+                    Dir = string.IsNullOrWhiteSpace(e.Dir) ? null : e.Dir.Trim(),
                     Port = e.Port,
                     PipelineId = e.PipelineId,
                 })
@@ -296,7 +298,8 @@ public sealed class YunxiaoInitService
             record.RepoName,
             record.CompletedAt,
             record.Pipelines.Select(p => new ProjectInitEnd(
-                p.End, p.Name, p.PipelineId, p.Enabled, p.Port, p.TemplateName)).ToList()));
+                p.End, p.Name, p.PipelineId, p.Enabled, p.Port, p.TemplateName, p.Dir)).ToList(),
+            record.WorkspaceId));
     }
 
     /// <summary>
@@ -1736,7 +1739,8 @@ public sealed record ProjectInitRequest(
     string? TemplateCode = null,
     string? GroupName = null,
     string? Branch = null,
-    IReadOnlyList<string>? SelectedRepos = null);
+    IReadOnlyList<string>? SelectedRepos = null,
+    string? WorkspaceId = null);
 
 /// <summary>登记的单端流水线。</summary>
 /// <param name="End">端名。</param>
@@ -1751,7 +1755,8 @@ public sealed record ProjectInitEnd(
     string? PipelineId = null,
     bool Enabled = true,
     int? Port = null,
-    string? TemplateName = null);
+    string? TemplateName = null,
+    string? Dir = null);
 
 /// <summary>完成登记反查入参。</summary>
 /// <param name="ProjectId">云效项目 ID。</param>
@@ -1778,4 +1783,5 @@ public sealed record ProjectInitRecordDto(
     string? Branch,
     string? RepoName,
     DateTime CompletedAt,
-    IReadOnlyList<ProjectInitEnd> Ends);
+    IReadOnlyList<ProjectInitEnd> Ends,
+    string? WorkspaceId = null);

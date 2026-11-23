@@ -123,4 +123,44 @@ public sealed class YunxiaoController : Controller
     /// <returns><c>{ sprintId, receipts, okCount, failedCount, warnings }</c>。</returns>
     [HttpPost]
     public Task<ActionResult> PrdSplitSubmit(string payload) => WebYunxiaoService.PrdSplitSubmitAsync(payload);
+
+    // ── S3：迭代测试 F9（按来源生成用例 + 用例/测试计划落库） ────────────────
+
+    /// <summary>按来源生成测试用例（一次性模型调用，不落库）。</summary>
+    /// <param name="payload">包装后的 <see cref="IterationTestRequest"/> JSON。</param>
+    /// <returns><c>{ cases, mergedCount, sourceRequirementCount, warnings }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> IterationTestPreview(string payload) => WebYunxiaoService.IterationTestPreviewAsync(payload);
+
+    /// <summary>用例与测试计划落库（幂等重跑）。</summary>
+    /// <param name="payload">包装后的 <see cref="IterationTestSaveRequest"/> JSON。</param>
+    /// <returns><c>{ receipts, okCount, failedCount, testPlanId, warnings }</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> IterationTestSave(string payload) => WebYunxiaoService.IterationTestSaveAsync(payload);
+
+    // ── S4：迭代任务看板 F1（只读） ──────────────────────────────────────────
+
+    /// <summary>迭代任务看板（迭代列表 + 迭代内任务 + 动态状态列）。</summary>
+    /// <returns><c>{ projectName, sprints, columns, totalTasks, doneCount, overdueCount }</c>；参数取查询串。</returns>
+    [HttpGet]
+    public Task<ActionResult> Board() => WebYunxiaoService.BoardAsync();
+
+    /// <summary>任务详情、工程上下文与首轮输入。</summary>
+    /// <returns>任务聚合详情；参数取查询串 <c>projectId</c>/<c>workitemId</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> TaskDetail() => WebYunxiaoService.TaskDetailAsync();
+
+    /// <summary>创建 Markdown 任务评论。</summary>
+    /// <param name="payload">任务标识与评论正文 JSON。</param>
+    /// <returns>新评论 ID。</returns>
+    [HttpPost]
+    public Task<ActionResult> TaskComment(string payload) => WebYunxiaoService.TaskCommentAsync(payload);
+
+    /// <summary>读取任务当前有效的宿主会话绑定。</summary>
+    [HttpGet]
+    public Task<ActionResult> TaskSession() => WebYunxiaoService.TaskSessionAsync();
+
+    /// <summary>保存或替换任务当前有效的宿主会话绑定。</summary>
+    [HttpPost]
+    public Task<ActionResult> TaskSessionSave(string payload) => WebYunxiaoService.TaskSessionSaveAsync(payload);
 }

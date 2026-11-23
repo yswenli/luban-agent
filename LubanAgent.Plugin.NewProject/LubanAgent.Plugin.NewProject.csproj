@@ -19,7 +19,6 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <!-- 插件面板为纯代码 UI（无 XAML），关掉 Avalonia 默认 XAML 项 -->
     <EnableDefaultAvaloniaItems>false</EnableDefaultAvaloniaItems>
-    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
 
     <!-- 插件包标识（= 目录名 = plugin.json 的 id）与铺包目标目录 -->
     <PluginPackageId>com.tjces.newproject</PluginPackageId>
@@ -28,13 +27,13 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 框架包走 nexus3 私有源；仅编译期需要，运行期宿主程序集由默认 ALC 提供，插件包 lib/ 不得包含（见文件头打包约束）。
-         版本与宿主 LubanAgentCore 保持一致（2026.11.16.1），避免插件与宿主编译出两套工具定义。 -->
-    <!-- TEMP-LOCAL-VERIFY：临时直连 framework 源码（与宿主 LubanAgentCore 一致）；人工发包后改回 PackageReference 2026.11.16.1 -->
-    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
+         版本与宿主 LubanAgentCore 保持一致（2026.11.23.1），避免插件与宿主编译出两套工具定义。 -->
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.23.1" />
     <!-- 宿主程序集：仅编译期引用；运行期由默认 ALC 提供（见文件头打包约束）。
          云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），随宿主程序集一并由默认 ALC 提供。 -->
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />

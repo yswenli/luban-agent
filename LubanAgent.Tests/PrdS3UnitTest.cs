@@ -97,11 +97,11 @@ public class PrdS3UnitTest
 
         Assert.AreEqual("/oapi/v1/testhub/organizations/org-1/testPlans", url);
         Assert.AreEqual("迭代 1 测试计划", body["name"]);
-        Assert.AreEqual("proj-1", body["spaceIdentifier"]);
+        Assert.AreEqual("proj-1", body["projectIdentifier"]);
         Assert.AreEqual("sprint-1", body["sprintIdentifier"]);
         Assert.AreEqual("2026-11-20", body["startDate"]);
         Assert.AreEqual("2026-11-30", body["endDate"]);
-        Assert.IsTrue(body.ContainsKey("managers"));
+        Assert.IsTrue(body.ContainsKey("managerIdentifiers"));
         Assert.IsTrue(body.ContainsKey("testcases"));
     }
 
@@ -346,6 +346,110 @@ public class PrdS3UnitTest
         Assert.AreEqual(root, Path.GetDirectoryName(path));
     }
 
+    // ── 迭代测试 F9：生成 / 去重 / 解析 ────────────────────────────────────
+
+    [TestMethod]
+    public void NormalizeTitle_IgnoresWhitespacePunctuationAndCase()
+    {
+        var a = IterationTestService.NormalizeTitle("登录成功（短信验证）");
+        var b = IterationTestService.NormalizeTitle(" 登录成功 短信验证 ");
+
+        Assert.AreEqual(a, b);
+    }
+
+    [TestMethod]
+    public void MergeDuplicates_KeepsSingleCase_AndUnionsSources()
+    {
+        var cases = new List<IterationTestCaseItem>
+        {
+            new() { Title = "登录成功（短信验证）", RequirementKey = "MGQH-1" },
+            new() { Title = "登录成功 短信验证", Sources = ["prd"] },
+            new() { Title = "退出登录", RequirementKey = "MGQH-2" }
+        };
+
+        var (merged, mergedCount) = IterationTestService.MergeDuplicates(cases);
+
+        Assert.AreEqual(2, merged.Count);
+        Assert.AreEqual(1, mergedCount);
+        CollectionAssert.AreEqual(new[] { "MGQH-1", "prd" }, merged[0].Sources, "重复用例合并后保留全部来源");
+        Assert.AreEqual("登录成功（短信验证）", merged[0].Title, "保留首次出现的标题原始写法");
+    }
+
+    [TestMethod]
+    public void MergeDuplicates_DropsBlankTitles()
+    {
+        var cases = new List<IterationTestCaseItem>
+        {
+            new() { Title = "  " },
+            new() { Title = "有效用例" }
+        };
+
+        var (merged, mergedCount) = IterationTestService.MergeDuplicates(cases);
+
+        Assert.AreEqual(1, merged.Count);
+        Assert.AreEqual(0, mergedCount);
+    }
+
+    [TestMethod]
+    public void ParseCases_ToleratesMarkdownFence_AndTrimsFields()
+    {
+        const string text = """
+            ```json
+            { "testcases": [ { "title": "  登录成功  ", "steps": " 1. 输入账号 ", "sourceParagraph": "  原文  " } ] }
+            ```
+            """;
+
+        var (cases, error) = IterationTestService.ParseCases(text);
+
+        Assert.IsNull(error);
+        Assert.AreEqual(1, cases!.Count);
+        Assert.AreEqual("登录成功", cases[0].Title);
+        Assert.AreEqual("1. 输入账号", cases[0].Steps);
+        Assert.AreEqual("原文", cases[0].SourceParagraph);
+    }
+
+    [TestMethod]
+    public void ParseCases_RejectsMalformedJson()
+    {
+        var (cases, error) = IterationTestService.ParseCases("{ testcases: ");
+
+        Assert.IsNull(cases);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(error));
+    }
+
+    [TestMethod]
+    public void BuildPrompt_OnlyIncludesRequestedSources()
+    {
+        var sync = new PrdSyncResult
+        {
+            Requirements =
+            [
+                new PrdRequirementItem
+                {
+                    SerialNumber = "MGQH-1",
+                    Title = "短信提醒",
+                    Description = "注册成功后发送短信",
+                    Acceptance = "只发一条"
+                }
+            ]
+        };
+
+        var prompt = IterationTestService.BuildPrompt(["needs"], sync, "手工内容");
+
+        StringAssert.Contains(prompt, "【来源：云效需求");
+        StringAssert.Contains(prompt, "注册成功后发送短信");
+        Assert.IsFalse(prompt.Contains("【来源：手工输入】"), "未勾选的手工来源不得进入提示词");
+    }
+
+    [TestMethod]
+    public void BuildPrompt_ManualOnly_UsesManualContent()
+    {
+        var prompt = IterationTestService.BuildPrompt(["manual"], null, "  手工验收标准  ");
+
+        StringAssert.Contains(prompt, "【来源：手工输入】");
+        StringAssert.Contains(prompt, "手工验收标准");
+    }
+
     // ── Submit 编排（假 IProjexClient） ────────────────────────────────────
 
     [TestMethod]
@@ -363,7 +467,7 @@ public class PrdS3UnitTest
         var plan = new PrdSplitPlan
         {
             Iteration = new PrdIterationPlan { Name = "迭代 A", StartDate = "2026-11-20", EndDate = "2026-11-30" },
-            Requirements = [new PrdRequirementPlan { Key = "R1", Title = "登录" }],
+            Requirements = [new PrdRequirementPlan { Key = "R1", Title = "登录", Source = "sync", SourceParagraph = "原文：登录需短信验证" }],
             Tasks = [new PrdTaskPlan { Key = "T1", RequirementKey = "R1", Title = "接口开发" }],
             Testcases = [new PrdTestcasePlan { Key = "C1", RequirementKey = "R1", Title = "登录成功" }],
             TestPlan = new PrdTestplanPlan { Name = "测试计划" }
@@ -373,22 +477,28 @@ public class PrdS3UnitTest
 
         Assert.IsTrue(result.Ok);
         var receipts = result.Data!.Receipts.ToList();
-        Assert.AreEqual(6, receipts.Count, "迭代 + 1 需求 + 1 任务 + 关系 + 1 用例 + 1 测试计划");
+        Assert.AreEqual(5, receipts.Count, "迭代 + 1 需求 + 1 任务 + 1 用例 + 1 测试计划");
         Assert.IsTrue(receipts.All(r => r.Ok));
         Assert.AreEqual("iteration", receipts[0].Kind);
         Assert.AreEqual("requirement", receipts[1].Kind);
         Assert.AreEqual("task", receipts[2].Kind);
-        Assert.AreEqual("relation", receipts[3].Kind);
-        Assert.AreEqual("testcase", receipts[4].Kind);
-        Assert.AreEqual("testplan", receipts[5].Kind);
+        Assert.AreEqual("testcase", receipts[3].Kind);
+        Assert.AreEqual("testplan", receipts[4].Kind);
 
-        var relationCall = projex.Calls.OfType<SubmitFakeProjexClient.CreateRelationCall>().Single();
-        Assert.AreEqual("wi-R1", relationCall.WorkitemId, "需求作为父节点发起关系");
-        Assert.AreEqual("SUB", relationCall.RelationType);
-        Assert.AreEqual("wi-T2", relationCall.TargetId, "第二个工作项是任务（全局计数器=2）");
+        // 回执要带来源类型与来源段落：需求自身来源，任务/用例继承父需求来源
+        Assert.AreEqual("sync", receipts[1].SourceType);
+        Assert.AreEqual("原文：登录需短信验证", receipts[1].SourceParagraph);
+        Assert.AreEqual("sync", receipts[2].SourceType, "任务继承父需求的来源类型");
+        Assert.AreEqual("原文：登录需短信验证", receipts[2].SourceParagraph, "任务未单列来源时继承父需求段落");
+        Assert.AreEqual("sync", receipts[3].SourceType, "用例继承父需求的来源类型");
+
+        // 任务已带 ParentId=需求，云效自动建父子关联，不再调关系接口
+        Assert.IsFalse(projex.Calls.Any(c => c is SubmitFakeProjexClient.CreateRelationCall));
+        // 但一定会拿目录列表（testcase 需要 directoryId）
+        Assert.IsTrue(projex.Calls.OfType<ValueTuple<string,string>>().Any(c => c.Item1 == "ListTestRepoDirectories"));
 
         var saved = await store.LoadAsync("proj-1");
-        Assert.AreEqual(6, saved.Receipts.Count);
+        Assert.AreEqual(5, saved.Receipts.Count);
     }
 
     [TestMethod]
@@ -535,6 +645,19 @@ public class PrdS3UnitTest
             });
         }
 
+        public Task<List<YunxiaoTestRepoDirectory>> ListTestRepoDirectoriesAsync(
+            string organizationId, string testRepoId, int page = 1, int perPage = 100,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("ListTestRepoDirectories", testRepoId));
+            // 一个根目录（parentId=null）就是我们要的
+            return Task.FromResult(new List<YunxiaoTestRepoDirectory>
+            {
+                new() { Id = "dir-root", Name = "全部用例", ParentId = null },
+                new() { Id = "dir-sub", Name = "A-备案", ParentId = "dir-root" }
+            });
+        }
+
         public Task<string?> CreateTestcaseAsync(
             string organizationId, YunxiaoCreateTestcaseRequest request,
             CancellationToken cancellationToken = default)
@@ -574,8 +697,24 @@ public class PrdS3UnitTest
             string organizationId, string workitemId,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<List<YunxiaoWorkitemComment>> ListWorkitemCommentsAsync(
+            string organizationId, string workitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<string?> CreateWorkitemCommentAsync(
+            string organizationId, string workitemId, string content, string? parentId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public Task<List<YunxiaoWorkitemAttachment>> ListWorkitemAttachmentsAsync(
             string organizationId, string workitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<List<YunxiaoSprint>> ListSprintsAsync(
+            string? organizationId, string projectId, string? status, int page, int perPage,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<YunxiaoSprint?> GetSprintAsync(
+            string? organizationId, string projectId, string sprintId,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }

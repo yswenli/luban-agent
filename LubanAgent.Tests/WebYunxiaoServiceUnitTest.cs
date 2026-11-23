@@ -82,6 +82,16 @@ public class WebYunxiaoServiceUnitTest
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<List<YunxiaoWorkitemComment>> ListWorkitemCommentsAsync(
+            string organizationId, string workitemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<string?> CreateWorkitemCommentAsync(
+            string organizationId, string workitemId, string content, string? parentId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<string?> CreateWorkitemAsync(
             string organizationId, YunxiaoCreateWorkitemRequest request,
             CancellationToken cancellationToken = default)
@@ -123,6 +133,21 @@ public class WebYunxiaoServiceUnitTest
 
         public Task<string?> CreateTestPlanAsync(
             string organizationId, YunxiaoCreateTestPlanRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<List<YunxiaoTestRepoDirectory>> ListTestRepoDirectoriesAsync(
+            string organizationId, string testRepoId, int page = 1, int perPage = 100,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<List<YunxiaoSprint>> ListSprintsAsync(
+            string? organizationId, string projectId, string? status, int page, int perPage,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<YunxiaoSprint?> GetSprintAsync(
+            string? organizationId, string projectId, string sprintId,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }

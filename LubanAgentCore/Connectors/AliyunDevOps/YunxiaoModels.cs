@@ -1025,12 +1025,14 @@ public class YunxiaoSprint
     [JsonPropertyName("status")]
     public string? Status { get; set; }
 
-    /// <summary>开始日期。</summary>
+    /// <summary>开始日期（响应可能是 <c>yyyy-MM-dd</c> 或 epoch 毫秒，统一解析为 <c>yyyy-MM-dd</c>）。</summary>
     [JsonPropertyName("startDate")]
+    [JsonConverter(typeof(YunxiaoDateTextConverter))]
     public string? StartDate { get; set; }
 
-    /// <summary>结束日期。</summary>
+    /// <summary>结束日期（响应可能是 <c>yyyy-MM-dd</c> 或 epoch 毫秒，统一解析为 <c>yyyy-MM-dd</c>）。</summary>
     [JsonPropertyName("endDate")]
+    [JsonConverter(typeof(YunxiaoDateTextConverter))]
     public string? EndDate { get; set; }
 
     /// <summary>工时容量（小时）。</summary>
@@ -1601,6 +1603,24 @@ public class YunxiaoTestcase
 }
 
 /// <summary>
+/// 测试用例库目录（树形结构；根目录 <c>parentId</c> 为 <c>null</c>，通常名为「全部用例」）。
+/// </summary>
+public class YunxiaoTestRepoDirectory
+{
+    /// <summary>目录 ID（创建用例时必填的 <c>directoryId</c>）。</summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>目录名称。</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    /// <summary>父目录 ID；<c>null</c> 表示根目录。</summary>
+    [JsonPropertyName("parentId")]
+    public string? ParentId { get; set; }
+}
+
+/// <summary>
 /// 创建测试计划请求。
 /// </summary>
 /// <remarks>
@@ -1648,6 +1668,65 @@ public class YunxiaoTestPlan
     /// <summary>计划名称。</summary>
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+}
+
+#endregion
+
+#region 转换器
+
+/// <summary>
+/// 云效日期字段转换器：同时接受 <c>yyyy-MM-dd</c>（或带时间）字符串与 epoch 毫秒数字，
+/// 统一输出 <c>yyyy-MM-dd</c>。
+/// </summary>
+/// <remarks>
+/// 同一字段在不同接口 / 不同租户下的形态不一致（例：迭代列表的 <c>startDate</c> 实测为 epoch 毫秒），
+/// 若属性声明为 <c>string?</c> 而不做兼容，反序列化会直接抛 <c>JsonException</c> 导致整页 500。
+/// </remarks>
+public sealed class YunxiaoDateTextConverter : JsonConverter<string?>
+{
+    /// <inheritdoc />
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+
+            case JsonTokenType.String:
+                return Normalize(reader.GetString());
+
+            case JsonTokenType.Number:
+                if (!reader.TryGetInt64(out var value) || value <= 0)
+                    return null;
+                // 秒级 / 毫秒级自适应：小于 1e12 视为秒
+                var ms = value < 1_000_000_000_000 ? value * 1000 : value;
+                return DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+            default:
+                reader.Skip();
+                return null;
+        }
+    }
+
+    /// <inheritdoc />
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+            writer.WriteNullValue();
+        else
+            writer.WriteStringValue(value);
+    }
+
+    private static string? Normalize(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var text = raw.Trim();
+        return text.Length >= 10 && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : text;
+    }
 }
 
 #endregion
