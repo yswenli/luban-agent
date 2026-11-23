@@ -71,7 +71,7 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="m21 15-4.5-4.5L6 20" />
     </>
   ),
-  stop: () => <rect x="6.5" y="6.5" width="11" height="11" rx="2" />,
+  stop: () => <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />,
   'chevron-down': () => <path d="m6 9 6 6 6-6" />,
   'chevron-right': () => <path d="m9 6 6 6-6 6" />,
   'panel-left': () => (

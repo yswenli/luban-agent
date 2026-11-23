@@ -423,28 +423,33 @@ export function ChatPage(props: { sessionId: string }) {
 
   async function submit() {
     if (optimizing()) return;
-    if (chat.streaming()) {
-      await chat.stop();
-      return;
-    }
 
-    const text = input();
-    if (!text.trim()) return;
-
+    // 斜杠命令是本地动作；本轮运行期间不执行，避免清空/切换类命令打断正在写库的轮次
     if (commandQuery() !== null) {
       const list = matchedCommands();
       const command = list[commandIndex()] ?? list[0];
       if (command) {
+        if (chat.streaming()) {
+          showToast('本轮进行中，命令暂不可用', 'info');
+          return;
+        }
         runCommand(command);
         return;
       }
     }
 
+    const text = input();
+    if (!text.trim()) {
+      // 空内容时同一个按钮就是「取消」
+      if (chat.streaming()) await chat.stop();
+      return;
+    }
+
     setInput('');
     closeMention();
     queueMicrotask(resizeTextarea);
-    // 自己发的消息必须可见：重新上锁并贴底
-    stickToBottom();
+    // 立即发出的消息必须可见：重新上锁并贴底；排队消息不打断当前阅读位置
+    if (!chat.streaming()) stickToBottom();
     await chat.send(text, permissionModeKey(), currentEffort());
   }
 
@@ -684,6 +689,34 @@ export function ChatPage(props: { sessionId: string }) {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
           >
+            <Show when={chat.queue().length > 0}>
+              <div class="composer-queue">
+                <div class="queue-head">
+                  <Icon name="message" size={13} />
+                  <span>排队中 {chat.queue().length}</span>
+                  <span class="queue-hint">本轮结束后自动发送</span>
+                </div>
+                <For each={chat.queue()}>
+                  {(item) => (
+                    <div class="queue-item">
+                      <span class="queue-text" title={item.text}>
+                        {item.text}
+                      </span>
+                      <Show when={item.attachments.length > 0}>
+                        <span class="queue-files" title={`${item.attachments.length} 个附件`}>
+                          <Icon name="file" size={12} />
+                          {item.attachments.length}
+                        </span>
+                      </Show>
+                      <button class="queue-remove" title="取消排队" onClick={() => chat.removeQueued(item.id)}>
+                        <Icon name="close" size={12} />
+                      </button>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
             <Show when={chat.pending().length > 0}>
               <div class="composer-pending">
                 <For each={chat.pending()}>
@@ -868,12 +901,16 @@ export function ChatPage(props: { sessionId: string }) {
 
               <button
                 class="send-btn"
-                classList={{ stop: chat.streaming() }}
-                title={chat.streaming() ? '停止本轮' : '发送'}
-                disabled={optimizing() || (!chat.streaming() && (!input().trim() || chat.pending().some((item) => item.status === 'uploading')))}
+                classList={{ stop: chat.streaming() && !input().trim() }}
+                title={chat.streaming() ? (input().trim() ? '加入发送队列' : '停止本轮') : '发送'}
+                disabled={
+                  optimizing() ||
+                  (!input().trim() && !chat.streaming()) ||
+                  (!!input().trim() && chat.pending().some((item) => item.status === 'uploading'))
+                }
                 onClick={() => void submit()}
               >
-                <Icon name={chat.streaming() ? 'stop' : 'arrow-up'} size={17} />
+                <Icon name={chat.streaming() && !input().trim() ? 'stop' : 'arrow-up'} size={17} />
               </button>
             </div>
 

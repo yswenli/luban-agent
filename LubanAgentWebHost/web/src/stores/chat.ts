@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 
-import { get, post } from '../lib/api';
+import { ApiError, get, post } from '../lib/api';
 import { extensionOf, formatBytes } from '../lib/format';
 import { streamPost } from '../lib/sse';
 import type {
@@ -48,6 +48,15 @@ export interface ToolConfirmRequest {
 export interface PlanEntry {
   toolName: string;
   arguments: unknown;
+}
+
+/** 排队中的待发消息：入队时快照文本、附件与当时的会话参数，之后切换模型不影响已排队内容。 */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments: { path: string; fileName: string; mediaType: string; size: number }[];
+  permissionMode: string;
+  effort: string;
 }
 
 let seed = 0;
@@ -158,10 +167,15 @@ export function createChat(sessionId: string) {
   const [runId, setRunId] = createSignal<string | null>(null);
   const [confirmation, setConfirmation] = createSignal<ToolConfirmRequest | null>(null);
   const [pending, setPending] = createSignal<PendingAttachment[]>([]);
+  const [queue, setQueue] = createSignal<QueuedMessage[]>([]);
   const [plans, setPlans] = createSignal<PlanEntry[]>([]);
   const [progress, setProgress] = createSignal<string[]>([]);
 
   let controller: AbortController | null = null;
+  /** 队列正在逐条发送：防止 finishStream 与本轮收尾重复起跑。 */
+  let draining = false;
+  /** 断线续流进行中：此时不能起下一条队列消息，否则会把后台仍在跑的轮次挤成 409。 */
+  let recovering = false;
   /** 会话实例是否已销毁（关标签）：销毁后不再挂新的订阅。 */
   let disposed = false;
   /** 本轮已实时渲染的提示条数；快照回放时跳过这段前缀，避免同页重连重复显示。 */
@@ -428,6 +442,8 @@ export function createChat(sessionId: string) {
     setConfirmation(null);
     controller = null;
     if (done) void refreshSessions();
+    // 队列里还有消息：本轮收尾（跑完 / 被取消 / 出错）后按入队顺序继续发下一条
+    if (!disposed) void drainQueue();
   }
 
   /**
@@ -544,35 +560,110 @@ export function createChat(sessionId: string) {
    * 3 次都失败才提示错误并交回原有收尾逻辑（不再重复提示一次）。
    */
   async function recoverAfterDrop(assistantId: string, error: unknown): Promise<void> {
-    // 先释放本地流状态：resume() 会被「streaming 且 controller 非空」直接短路
-    finishStream(assistantId, false);
+    // 续流期间禁止队列抢跑：服务端旧轮次还在跑，起新消息只会 409
+    recovering = true;
+    try {
+      // 先释放本地流状态：resume() 会被「streaming 且 controller 非空」直接短路
+      finishStream(assistantId, false);
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
-      // 等待期间关掉了标签：不再续流，也不提示
-      if (disposed) return;
-      // 探活/attach 任一步得到结论即结束：本轮还在跑就接着收帧，已跑完就补历史
-      if (await resume(assistantId)) return;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        // 等待期间关掉了标签：不再续流，也不提示
+        if (disposed) return;
+        // 探活/attach 任一步得到结论即结束：本轮还在跑就接着收帧，已跑完就补历史
+        if (await resume(assistantId)) return;
+      }
+
+      pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
+      finishStream(assistantId, false);
+    } finally {
+      recovering = false;
+      // 续流收尾后（接上或失败）再决定队列去向
+      void drainQueue();
     }
-
-    pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
-    finishStream(assistantId, false);
   }
 
+  /**
+   * 发送一条消息；本轮还在跑时改为入队。
+   *
+   * 入队不打断当前轮：消息快照（文本 / 已就绪附件 / 当时的权限模式与思考档位）显示在输入框上方，
+   * 本轮收尾后由 drainQueue 按入队顺序自动发出。
+   */
   async function send(text: string, permissionMode: string, effort: string): Promise<void> {
     const prompt = text.trim();
     if (!prompt) return;
-    if (streaming()) {
-      showToast('本轮还在进行中，请先停止', 'info');
-      return;
-    }
 
     const attachments = pending();
     if (attachments.some((item) => item.status === 'uploading')) {
       showToast('附件还在上传，请稍候', 'info');
       return;
     }
-    const ready = attachments.filter((item) => item.status === 'ready' && item.path);
+
+    const message: QueuedMessage = {
+      id: nextId(),
+      text: prompt,
+      attachments: attachments
+        .filter((item) => item.status === 'ready' && item.path)
+        .map((item) => ({
+          path: item.path ?? '',
+          fileName: item.fileName,
+          mediaType: item.mediaType,
+          size: item.size,
+        })),
+      permissionMode,
+      effort,
+    };
+
+    // 附件随消息一起走，输入区的待发送列表清空并释放预览 URL
+    for (const item of attachments) {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    }
+    setPending([]);
+
+    if (streaming()) {
+      setQueue((list) => [...list, message]);
+      return;
+    }
+    // 直接发送被服务端拒（上一轮还没真正收尾）时同样放回队列，避免消息丢失
+    if (!(await runMessage(message))) {
+      setQueue((list) => [message, ...list]);
+    }
+  }
+
+  /** 依次发出队列中的消息：同一时刻只跑一条，本轮收尾后自动接上。 */
+  async function drainQueue(): Promise<void> {
+    if (draining || disposed || recovering) return;
+    draining = true;
+    try {
+      while (!disposed && !streaming() && queue().length > 0) {
+        const next = queue()[0];
+        setQueue((list) => list.slice(1));
+        const sent = await runMessage(next);
+        if (!sent) {
+          // 服务端上一轮还没真正收尾：放回队首，等下一次收尾再发，绝不把用户消息丢掉
+          setQueue((list) => [next, ...list]);
+          break;
+        }
+      }
+    } finally {
+      draining = false;
+    }
+  }
+
+  /** 从队列里移除一条（用户点 ×）。 */
+  function removeQueued(id: string): void {
+    setQueue((list) => list.filter((item) => item.id !== id));
+  }
+
+  /** 409：服务端仍登记着上一轮（done 帧先到、轮次表后清）。 */
+  function isRunConflict(error: unknown): boolean {
+    return error instanceof ApiError && error.code === 409;
+  }
+
+  /** 真正起一轮：把一条消息写进消息流并消费 `/agent/chat` 的 SSE。返回 false 表示服务端拒绝（409 重试耗尽）。 */
+  async function runMessage(message: QueuedMessage): Promise<boolean> {
+    const prompt = message.text.trim();
+    if (!prompt) return true;
 
     const assistantId = nextId();
     // 新一轮开始：重置提示计数，快照回放按「已实时渲染条数」跳过前缀
@@ -583,11 +674,11 @@ export function createChat(sessionId: string) {
       kind: 'user',
       id: nextId(),
       text: prompt,
-      attachments: ready.map((item) => ({
+      attachments: message.attachments.map((item) => ({
         FileName: item.fileName,
         MediaType: item.mediaType,
         FileSize: item.size,
-        SourcePath: item.path ?? '',
+        SourcePath: item.path,
         Kind: item.mediaType.startsWith('image/') ? 'image' : 'file',
       })),
       time: now,
@@ -607,48 +698,67 @@ export function createChat(sessionId: string) {
     setItems((list) => [...list, userItem, assistantItem]);
     setPlans([]);
     setProgress([]);
-    setPending([]);
     setStreaming(true);
     setRunId(null);
     controller = new AbortController();
 
     let done = false;
 
-    await streamPost(
-      '/agent/chat',
-      {
-        prompt,
-        sessionId,
-        attachments: ready.map((item) => item.path),
-        enableTools: true,
-        permissionMode,
-        reasoningEffort: effort || null,
-      },
-      {
-        onFrame: ({ event, data }) => {
-          if (applyFrame(assistantId, event, data)) done = true;
+    for (let attempt = 0; ; attempt += 1) {
+      let conflict = false;
+      await streamPost(
+        '/agent/chat',
+        {
+          prompt,
+          sessionId,
+          attachments: message.attachments.map((item) => item.path),
+          enableTools: true,
+          permissionMode: message.permissionMode,
+          reasoningEffort: message.effort || null,
         },
-        onError: (error) => {
-          // 用户主动停止时不续流，直接收尾
-          if (controller?.signal.aborted) {
-            finishStream(assistantId, false);
-            return;
-          }
-          // 断线：按 1s / 2s / 4s 退避重试续流，最多 3 次；耗尽后才提示
-          // 错误分支不会触发 onClose（sse.ts 在错误路径只调 onError），收尾由续流逻辑负责
-          void recoverAfterDrop(assistantId, error);
+        {
+          onFrame: ({ event, data }) => {
+            if (applyFrame(assistantId, event, data)) done = true;
+          },
+          onError: (error) => {
+            // 用户主动停止时不续流，直接收尾
+            if (controller?.signal.aborted) {
+              finishStream(assistantId, false);
+              return;
+            }
+            // 409：上一轮刚收尾、登记表还没清。短退避后重发同一条，不把排队消息丢掉
+            if (!done && isRunConflict(error)) {
+              conflict = true;
+              return;
+            }
+            // 断线：按 1s / 2s / 4s 退避重试续流，最多 3 次；耗尽后才提示
+            // 错误分支不会触发 onClose（sse.ts 在错误路径只调 onError），收尾由续流逻辑负责
+            void recoverAfterDrop(assistantId, error);
+          },
+          onClose: () => {
+            // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者），
+            // 但本页已收不到后续帧，明确告知用户而不是让气泡静默停住
+            if (!done && !controller?.signal.aborted) {
+              pushNotice('连接已中断，本轮仍在后台运行；重新进入该会话可继续接收', 'warn');
+            }
+            finishStream(assistantId, done);
+          },
         },
-        onClose: () => {
-          // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者），
-          // 但本页已收不到后续帧，明确告知用户而不是让气泡静默停住
-          if (!done && !controller?.signal.aborted) {
-            pushNotice('连接已中断，本轮仍在后台运行；重新进入该会话可继续接收', 'warn');
-          }
-          finishStream(assistantId, done);
-        },
-      },
-      controller.signal,
-    );
+        controller.signal,
+      );
+
+      if (!conflict) break;
+      if (attempt >= 3) {
+        // 撤回刚追加的占位气泡：消息本身放回队首，等上一轮真正收尾后再发
+        finishStream(assistantId, false);
+        setItems((list) => list.filter((item) => item.id !== userItem.id && item.id !== assistantId));
+        pushNotice('上一轮尚未结束，这条消息已放回队列', 'warn');
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+
+    return true;
   }
 
   async function stop(): Promise<void> {
@@ -793,6 +903,7 @@ export function createChat(sessionId: string) {
     runId,
     confirmation,
     pending,
+    queue,
     plans,
     progress,
     loadHistory,
@@ -803,6 +914,7 @@ export function createChat(sessionId: string) {
     confirmTimeout,
     addFiles,
     removePending,
+    removeQueued,
     dispose,
   };
 }

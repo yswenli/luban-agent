@@ -1534,6 +1534,68 @@ a {
   border-style: dashed;
 }
 
+/* 排队中的消息：本轮还在跑时再发的内容先在这里排队，收尾后按序自动发出 */
+.composer-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 0;
+}
+
+.queue-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.queue-hint {
+  color: var(--text-faint);
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 3px 4px 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-files {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.queue-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: var(--text-faint);
+}
+
+.queue-remove:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
 .composer-pending {
   display: flex;
   flex-wrap: wrap;
