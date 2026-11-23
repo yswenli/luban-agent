@@ -54,7 +54,7 @@ export interface PlanEntry {
 export interface QueuedMessage {
   id: string;
   text: string;
-  attachments: { path: string; fileName: string; mediaType: string; size: number }[];
+  attachments: { path: string; fileName: string; mediaType: string; size: number; webPath?: string }[];
   permissionMode: string;
   effort: string;
 }
@@ -609,6 +609,7 @@ export function createChat(sessionId: string) {
           fileName: item.fileName,
           mediaType: item.mediaType,
           size: item.size,
+          webPath: item.webPath,
         })),
       permissionMode,
       effort,
@@ -680,6 +681,7 @@ export function createChat(sessionId: string) {
         FileSize: item.size,
         SourcePath: item.path,
         Kind: item.mediaType.startsWith('image/') ? 'image' : 'file',
+        WebPath: item.webPath,
       })),
       time: now,
     };
@@ -858,7 +860,7 @@ export function createChat(sessionId: string) {
         if (uploaded) {
           setPending((list) =>
             list.map((entry) =>
-              entry.id === id ? { ...entry, status: 'ready', path: uploaded.path, size: uploaded.size } : entry,
+              entry.id === id ? { ...entry, status: 'ready', path: uploaded.path, webPath: uploaded.webPath, size: uploaded.size } : entry,
             ),
           );
         } else {

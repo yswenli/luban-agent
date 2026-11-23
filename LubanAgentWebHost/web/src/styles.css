@@ -1041,6 +1041,25 @@ a {
   color: var(--text-dim);
 }
 
+/* 图片附件可点：用 button 承载，需抹平浏览器默认样式并给出可点的反馈 */
+button.attachment-chip {
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+button.attachment-chip:hover {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
+button.attachment-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .attachment-chip .name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1472,39 +1491,46 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* 生成中指示 */
+/* 生成中指示：一道光在胶囊里匀速扫过，单向位移暗示「正在推进」而不是原地等待 */
 .typing {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-}
-
-.typing i {
-  width: 5px;
-  height: 5px;
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 6px;
+  /* 上下各留 7px，占位高度与原来的三点跳动一致（20px），不改变消息间距 */
+  margin: 7px 0;
   border-radius: 999px;
-  background: var(--text-faint);
-  animation: bounce 1.1s infinite ease-in-out;
+  background: var(--surface-3);
+  overflow: hidden;
 }
 
-.typing i:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.typing i:nth-child(3) {
-  animation-delay: 0.3s;
+.typing::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--text-faint) 45%, transparent);
+  animation: typing-sweep 0.9s linear infinite;
 }
 
-@keyframes bounce {
-  0%,
-  70%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
+@keyframes typing-sweep {
+  from {
+    transform: translateX(-110%);
   }
-  35% {
-    transform: translateY(-3px);
-    opacity: 1;
+  to {
+    transform: translateX(320%);
+  }
+}
+
+/* 降低动效偏好下退化为静态实心条，仍能表达「进行中」 */
+@media (prefers-reduced-motion: reduce) {
+  .typing::after {
+    animation: none;
+    width: 100%;
+    background: var(--text-faint);
+    opacity: 0.45;
   }
 }
 
@@ -1632,6 +1658,17 @@ a {
   border-radius: 5px;
   object-fit: cover;
   background: var(--surface-3);
+  cursor: zoom-in;
+}
+
+/* 输入区缩略图放大：弹层内按容器宽度自适应，不撑破页面 */
+.zoomed-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
 }
 
 .pending-item .fileicon {

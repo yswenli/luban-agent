@@ -7,6 +7,9 @@
 *
 *****************************************************************************/
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 namespace LubanAgentWebHost.Services;
 
 /// <summary>
@@ -254,10 +257,11 @@ public static class WebSessionService
         }
 
         int? take = int.TryParse(limit, out var parsed) && parsed > 0 ? parsed : null;
-        var messages = await scope.GetRequiredService<ISessionManager>()
+        var messages = (await scope.GetRequiredService<ISessionManager>()
             .GetMessagesAsync(sessionId.Trim(), take)
-            .ConfigureAwait(false);
-        return WebApi.OkJson(messages.ToList());
+            .ConfigureAwait(false)).ToList();
+        AttachWebPaths(messages, await ResolveSessionRootPathAsync(scope, sessionId).ConfigureAwait(false));
+        return WebApi.OkJson(messages);
     });
 
     /// <summary>会话最近 N 条消息。</summary>
@@ -278,10 +282,11 @@ public static class WebSessionService
         }
 
         var take = int.TryParse(count, out var parsed) && parsed > 0 ? parsed : 20;
-        var messages = await scope.GetRequiredService<ISessionManager>()
+        var messages = (await scope.GetRequiredService<ISessionManager>()
             .GetLatestMessagesAsync(sessionId.Trim(), take)
-            .ConfigureAwait(false);
-        return WebApi.OkJson(messages.ToList());
+            .ConfigureAwait(false)).ToList();
+        AttachWebPaths(messages, await ResolveSessionRootPathAsync(scope, sessionId).ConfigureAwait(false));
+        return WebApi.OkJson(messages);
     });
 
     /// <summary>会话活跃消息（未压缩）。</summary>
@@ -300,10 +305,11 @@ public static class WebSessionService
             return failure;
         }
 
-        var messages = await scope.GetRequiredService<ISessionManager>()
+        var messages = (await scope.GetRequiredService<ISessionManager>()
             .GetActiveMessagesAsync(sessionId.Trim())
-            .ConfigureAwait(false);
-        return WebApi.OkJson(messages.ToList());
+            .ConfigureAwait(false)).ToList();
+        AttachWebPaths(messages, await ResolveSessionRootPathAsync(scope, sessionId).ConfigureAwait(false));
+        return WebApi.OkJson(messages);
     });
 
     /// <summary>追加一条消息。</summary>
@@ -543,7 +549,106 @@ public static class WebSessionService
         TotalTokens = session.TotalTokens
     };
 
-    /// <summary>校验会话归属；通过返回 null。</summary>
+    /// <summary>
+    /// 取会话所属工作区的根目录；只有「没有会话上下文」时才回落宿主当前工作区。
+    /// </summary>
+    /// <remarks>
+    /// 会话绑定工作区后一旦解析不到（工作区被删除、会话被解绑），必须返回 null 而不是回落当前工作区：
+    /// 两者根目录不同（甚至可能是父子目录）时，用错误的根换算附件绝对路径会得到指向别处的相对路径，
+    /// 点击后 404 或打开错文件。返回 null 时附件按「不可点」降级。
+    /// </remarks>
+    /// <param name="scope">请求作用域。</param>
+    /// <param name="sessionId">会话标识。</param>
+    /// <returns>工作区根目录；无法确定时返回 null。</returns>
+    private static async Task<string?> ResolveSessionRootPathAsync(DiContainer scope, string? sessionId)
+    {
+        var manager = scope.GetRequiredService<IWorkspaceManager>();
+
+        // 无会话上下文：附件按宿主当前工作区落盘，读取也用同一根换算
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return manager.CurrentWorkspace?.RootPath;
+        }
+
+        var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
+            .GetSessionWorkspaceIdAsync(sessionId.Trim(), WebApi.Runtime.UserId)
+            .ConfigureAwait(false);
+
+        // 会话不存在或未绑定工作区：没有可信的落盘根（带 sessionId 上传时该情形会被拒绝）
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return null;
+        }
+
+        // 绑定的工作区可能已被删除：同样不回落当前工作区
+        var workspace = await manager.GetWorkspaceAsync(workspaceId).ConfigureAwait(false);
+        return workspace?.RootPath;
+    }
+
+    /// <summary>
+    /// 给消息里的附件补上可交给 <c>/file/read</c> 的相对路径（<c>WebPath</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 历史消息的 <see cref="SessionMessage.Attachments"/> 是序列化后的附件数组，其中源路径是绝对路径，
+    /// 而 <c>/file/read</c> 只接受工作区内的相对路径。这里逐条换算并追加 <c>WebPath</c>；
+    /// 换算不出来（越界、文件已删、JSON 脏数据）就不写该字段，前端据此判定该附件不可点。
+    /// </remarks>
+    /// <param name="messages">待回给浏览器的消息（原地修改）。</param>
+    /// <param name="rootPath">工作区根目录。</param>
+    private static void AttachWebPaths(List<SessionMessage> messages, string? rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath)) return;
+
+        foreach (var message in messages)
+        {
+            if (string.IsNullOrWhiteSpace(message.Attachments)) continue;
+
+            JsonNode? node;
+            try
+            {
+                node = JsonNode.Parse(message.Attachments);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (node is not JsonArray array) continue;
+
+            var changed = false;
+            foreach (var item in array)
+            {
+                if (item is not JsonObject entry) continue;
+                // 已有非空 WebPath 才跳过：上传响应写入的是空串（换算失败），空串必须允许重算
+                if (entry["WebPath"] is JsonValue existing
+                    && existing.TryGetValue<string>(out var existingPath)
+                    && !string.IsNullOrWhiteSpace(existingPath))
+                {
+                    continue;
+                }
+                if (entry["SourcePath"] is not { } sourceNode) continue;
+
+                string sourcePath;
+                try
+                {
+                    sourcePath = sourceNode.GetValue<string>();
+                }
+                catch (InvalidOperationException)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourcePath)) continue;
+                if (!WebFilePath.TryGetRelative(rootPath, sourcePath, out var webPath)) continue;
+
+                entry["WebPath"] = webPath;
+                changed = true;
+            }
+
+            if (changed) message.Attachments = array.ToJsonString();
+        }
+    }
+
     internal static async Task<ActionResult?> CheckOwnerAsync(DiContainer scope, string sessionId)
     {
         var owner = await scope.GetRequiredService<SessionRepository>()

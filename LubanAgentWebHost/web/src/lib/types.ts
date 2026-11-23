@@ -123,6 +123,8 @@ export interface AcceptedAttachment {
   fileName: string;
   mediaType: string;
   size: number;
+  /** 相对工作区根的路径，供 `/file/read` 预览；落在工作区外时为空串。 */
+  webPath: string;
 }
 
 export interface RejectedAttachment {
@@ -142,6 +144,8 @@ export interface StoredAttachment {
   FileSize?: number;
   SourcePath?: string;
   Kind?: string;
+  /** 宿主补上的相对工作区根路径；缺省表示不可在页内预览。 */
+  WebPath?: string;
   TextPayload?: string | null;
   ProcessedPath?: string | null;
   IsLargeText?: boolean;
@@ -162,6 +166,8 @@ export interface PendingAttachment {
   size: number;
   /** 服务端落盘后的绝对路径；上传完成前为空。 */
   path?: string;
+  /** 服务端给出的相对工作区根路径；上传完成前为空。 */
+  webPath?: string;
   status: 'uploading' | 'ready' | 'error';
   error?: string;
   previewUrl?: string;

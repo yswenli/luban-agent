@@ -41,7 +41,8 @@ public sealed record AttachmentUploadResult(
 /// <param name="FileName">落盘文件名。</param>
 /// <param name="MediaType">媒体类型。</param>
 /// <param name="Size">字节数。</param>
-public sealed record AcceptedAttachmentDto(string Path, string FileName, string MediaType, long Size);
+/// <param name="WebPath">相对工作区根的路径，供前端 <c>/file/read</c> 预览；落在工作区外时为空串。</param>
+public sealed record AcceptedAttachmentDto(string Path, string FileName, string MediaType, long Size, string WebPath);
 
 /// <summary>被拒附件。</summary>
 /// <param name="FileName">原始文件名。</param>

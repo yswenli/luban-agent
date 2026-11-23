@@ -163,6 +163,46 @@ public class WebFilePathUnitTest
     }
 
     [TestMethod]
+    public void TryGetRelative_FileUnderRoot_ReturnsForwardSlashedRelativePath()
+    {
+        var full = Path.Combine(_root, "wiki", "entities", "有 空格.md");
+
+        Assert.IsTrue(WebFilePath.TryGetRelative(_root, full, out var relative));
+        Assert.AreEqual("wiki/entities/有 空格.md", relative);
+    }
+
+    [TestMethod]
+    public void TryGetRelative_OutsideRoot_ReturnsFalse()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), $"luban-outside-{Guid.NewGuid():N}.png");
+
+        Assert.IsFalse(WebFilePath.TryGetRelative(_root, outside, out var relative));
+        Assert.AreEqual(string.Empty, relative);
+    }
+
+    [TestMethod]
+    public void TryGetRelative_RelativeInput_IsResolvedAgainstCurrentDirectory()
+    {
+        // 相对路径会被 GetFullPath 按进程当前目录展开；展开后不在工作区内，必须拒绝
+        Assert.IsFalse(WebFilePath.TryGetRelative(_root, "README.md", out _));
+    }
+
+    [TestMethod]
+    public void TryGetRelative_AlternateDataStream_ReturnsFalse()
+    {
+        var file = Path.Combine(_root, "README.md");
+        const string stream = "secret";
+        if (!TryWriteAlternateDataStream($"{file}:{stream}", "ads-secret"))
+        {
+            Assert.Inconclusive("当前文件系统不支持 NTFS 数据流，跳过该用例");
+            return;
+        }
+
+        // 反方向同样要拦：WebPath 一旦带冒号，前端拼出的 /file/read 就能读到数据流
+        Assert.IsFalse(WebFilePath.TryGetRelative(_root, $"{file}:{stream}", out _));
+    }
+
+    [TestMethod]
     public void TryResolve_AlternateDataStream_ReturnsFalse()
     {
         var file = Path.Combine(_root, "README.md");

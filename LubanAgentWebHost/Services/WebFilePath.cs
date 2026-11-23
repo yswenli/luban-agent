@@ -95,6 +95,48 @@ public static class WebFilePath
     }
 
     /// <summary>
+    /// 把工作区内的绝对路径换算为可交给 <c>/file/read</c> 的相对路径。
+    /// </summary>
+    /// <remarks>
+    /// 只做换算，不检查文件是否存在：附件刚落盘时可能还没写完，真正的安全闸门在
+    /// <see cref="TryResolve"/>（读取时会再解析符号链接判一次越界）。越界或含盘符 / 数据流成分时返回 false。
+    /// </remarks>
+    /// <param name="rootPath">工作区根目录。</param>
+    /// <param name="fullPath">待换算的绝对路径。</param>
+    /// <param name="relative">换算出的相对路径（分隔符统一为 <c>/</c>）；失败为空串。</param>
+    /// <returns>落在工作区内且可安全拼接时返回 true。</returns>
+    public static bool TryGetRelative(string? rootPath, string? fullPath, out string relative)
+    {
+        relative = string.Empty;
+        var root = NormalizeRoot(rootPath);
+        if (root is null || string.IsNullOrWhiteSpace(fullPath)) return false;
+
+        string absolute;
+        try
+        {
+            absolute = Path.GetFullPath(fullPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        if (!IsWithin(root, absolute)) return false;
+
+        var value = Path.GetRelativePath(root, absolute).Replace('\\', '/').Trim();
+        if (value.Length == 0 || value == "." || value.StartsWith("../", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // 与 TryResolve 同口径：盘符相对路径与备用数据流一律拒绝
+        if (!IsSafeRelative(value)) return false;
+
+        relative = value;
+        return true;
+    }
+
+    /// <summary>
     /// 把相对路径解析为工作区内已存在的目录（相对路径为空时解析为工作区根）。
     /// </summary>
     /// <param name="rootPath">工作区根目录。</param>

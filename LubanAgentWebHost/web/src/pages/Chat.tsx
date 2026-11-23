@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from 'solid-js';
 
-import { ConfirmActionDialog, TextPromptDialog } from '../components/Dialog';
+import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
 import { Markdown } from '../components/Markdown';
 import { PopMenu, menuAt } from '../components/PopMenu';
@@ -14,6 +14,7 @@ import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types'
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import type { ChatItem, ToolCard } from '../stores/chat';
 import { dropChat, getChat } from '../stores/chats';
+import { openFilePreview } from '../stores/filePreview';
 import {
   bootstrap,
   commands,
@@ -81,6 +82,8 @@ export function ChatPage(props: { sessionId: string }) {
   const [screenshotOpen, setScreenshotOpen] = createSignal(false);
   /** 改写请求在途：期间锁住输入与发送，避免改写到一半又被编辑 */
   const [optimizing, setOptimizing] = createSignal(false);
+  /** 输入区待发送缩略图的页内放大：值为本地 blob 地址与文件名。 */
+  const [thumbZoom, setThumbZoom] = createSignal<{ url: string; name: string } | null>(null);
 
   let scrollEl!: HTMLDivElement;
   let threadEl!: HTMLDivElement;
@@ -654,11 +657,7 @@ export function ChatPage(props: { sessionId: string }) {
               </Show>
 
               <Show when={chat.streaming()}>
-                <div class="typing">
-                  <i />
-                  <i />
-                  <i />
-                </div>
+                <div class="typing" role="status" aria-label="生成中" />
               </Show>
             </Show>
           </div>
@@ -730,7 +729,13 @@ export function ChatPage(props: { sessionId: string }) {
                           </span>
                         }
                       >
-                        <img class="thumb" src={item.previewUrl} alt={item.fileName} />
+                        <img
+                          class="thumb"
+                          src={item.previewUrl}
+                          alt={item.fileName}
+                          title="点击查看大图"
+                          onClick={() => setThumbZoom({ url: item.previewUrl!, name: item.fileName })}
+                        />
                       </Show>
                       <span class="meta">
                         <span class="name" title={item.fileName}>
@@ -1151,6 +1156,14 @@ export function ChatPage(props: { sessionId: string }) {
         <HelpDialog onClose={() => setHelpOpen(false)} />
       </Show>
 
+      <Show when={thumbZoom()}>
+        {(target) => (
+          <Modal title={target().name} onClose={() => setThumbZoom(null)} wide>
+            <img class="zoomed-image" src={target().url} alt={target().name} />
+          </Modal>
+        )}
+      </Show>
+
       <Show when={dialog() === 'rename'}>
         <TextPromptDialog
           title="重命名会话"
@@ -1223,7 +1236,9 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
             <Show when={item().attachments.length > 0}>
               <div class="attachments">
                 <Index each={item().attachments}>
-                  {(attachment) => <AttachmentChip attachment={attachment()} />}
+                  {(attachment) => (
+                    <AttachmentChip attachment={attachment()} workspaceId={props.workspaceId} />
+                  )}
                 </Index>
               </div>
             </Show>
@@ -1271,17 +1286,47 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
   );
 }
 
-function AttachmentChip(props: { attachment: StoredAttachment }) {
+function AttachmentChip(props: { attachment: StoredAttachment; workspaceId?: string }) {
   const name = () => props.attachment.FileName || '附件';
   const size = () => formatBytes(props.attachment.FileSize ?? 0);
-  return (
-    <div class="attachment-chip" title={props.attachment.SourcePath || name()}>
+
+  // 只有图片且宿主给出了工作区内相对路径才可点：非图片走 /file/read 会得到「不支持预览」提示页
+  const previewPath = () => {
+    const value = props.attachment.WebPath?.trim();
+    if (!value || !isImageMediaType(props.attachment.MediaType)) return null;
+    return value;
+  };
+
+  const content = () => (
+    <>
       <Show when={isImageMediaType(props.attachment.MediaType)} fallback={<Icon name="file" size={15} />}>
         <Icon name="image" size={15} />
       </Show>
       <span class="name">{name()}</span>
       <span class="faint">{size()}</span>
-    </div>
+    </>
+  );
+
+  return (
+    <Show
+      when={previewPath()}
+      fallback={
+        <div class="attachment-chip" title={props.attachment.SourcePath || name()}>
+          {content()}
+        </div>
+      }
+    >
+      {(path) => (
+        <button
+          type="button"
+          class="attachment-chip clickable"
+          title={props.attachment.SourcePath ? `查看 ${name()}（${props.attachment.SourcePath}）` : `查看 ${name()}`}
+          onClick={() => openFilePreview(path(), props.workspaceId)}
+        >
+          {content()}
+        </button>
+      )}
+    </Show>
   );
 }
 

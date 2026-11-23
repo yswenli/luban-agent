@@ -136,11 +136,15 @@ public static class WebAttachmentService
             var path = Path.Combine(directory, storedName);
             await System.IO.File.WriteAllBytesAsync(path, bytes).ConfigureAwait(false);
 
+            // 相对路径供前端 /file/read 预览；落盘目录固定在工作区的 temp 子目录下，正常必命中
+            WebFilePath.TryGetRelative(workspace.RootPath, path, out var webPath);
+
             accepted.Add(new AcceptedAttachmentDto(
                 path,
                 storedName,
                 MediaTypeUtil.ResolveMediaType(safeName),
-                bytes.LongLength));
+                bytes.LongLength,
+                webPath));
         }
 
         return WebApi.OkJson(new AttachmentUploadResult(accepted, rejected));
