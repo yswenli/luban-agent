@@ -154,7 +154,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
     /// <summary>
     /// 添加消息到会话
     /// </summary>
-    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null, string? attachments = null, string? toolCalls = null)
+    public async Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null, string? thinking = null, string? attachments = null, string? toolCalls = null, string? segments = null)
     {
         // 越权防护：拒绝向非本用户会话写入。计数更新虽已按 userId 过滤，但消息行本身无用户列，
         // 若不前置拦截会向他人会话落库孤儿消息。命中时返回未持久化的消息（Id=0），不抛异常以保持框架运行链路稳定。
@@ -169,6 +169,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
                 Thinking = thinking,
                 Attachments = attachments,
                 ToolCalls = toolCalls,
+                Segments = segments,
                 Tokens = tokens,
                 CreatedAt = DateTime.Now
             };
@@ -183,6 +184,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
             Tokens = tokens,
             Attachments = attachments,
             ToolCalls = toolCalls,
+            Segments = segments,
             CreateTime = DateTime.Now,
             IsDelete = false
         };
@@ -396,6 +398,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
             Tokens = message.Tokens,
             Attachments = message.Attachments,
             ToolCalls = message.ToolCalls,
+            Segments = message.Segments,
             CreatedAt = message.CreateTime
         };
     }

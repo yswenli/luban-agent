@@ -52,6 +52,7 @@ public static class DatabaseInitializer
 
         EnsureIsCompactedColumn();
         EnsureThinkingColumn();
+        EnsureSegmentsColumn();
         EnsureWorkspaceIdColumns();
         EnsureSessionModelColumns();
         EnsureSessionGenerationColumns();
@@ -213,6 +214,22 @@ public static class DatabaseInitializer
         {
             new SessionMessageRepository().Context.Ado
                 .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Thinking TEXT");
+        }
+        catch
+        {
+            // 列已存在，忽略
+        }
+    }
+
+    /// <summary>
+    /// 兜底迁移：ai_session_message 新增 Segments 列（有序段落 JSON）
+    /// </summary>
+    private static void EnsureSegmentsColumn()
+    {
+        try
+        {
+            new SessionMessageRepository().Context.Ado
+                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Segments TEXT");
         }
         catch
         {

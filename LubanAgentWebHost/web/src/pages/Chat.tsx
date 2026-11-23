@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
@@ -1203,6 +1203,13 @@ export function ChatPage(props: { sessionId: string }) {
   );
 }
 
+/** 助手气泡的渲染组：思考 / 正文各自一块，相邻工具调用合成一组。 */
+interface AssistantGroup {
+  kind: 'thinking' | 'text' | 'tools';
+  text: string;
+  tools: ToolCard[];
+}
+
 function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
   const notice = () => {
     const value = props.item();
@@ -1216,6 +1223,21 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
     const value = props.item();
     return value.kind === 'assistant' ? value : null;
   };
+
+  /** 相邻连续的工具调用合成一组，其余段落各自成块：保持发生顺序。 */
+  const assistantGroups = createMemo<AssistantGroup[]>(() => {
+    const groups: AssistantGroup[] = [];
+    for (const block of assistant()?.blocks ?? []) {
+      if (block.kind === 'tool') {
+        const last = groups[groups.length - 1];
+        if (last && last.kind === 'tools') last.tools.push(block.tool);
+        else groups.push({ kind: 'tools', text: '', tools: [block.tool] });
+        continue;
+      }
+      groups.push({ kind: block.kind, text: block.text, tools: [] });
+    }
+    return groups;
+  });
 
   return (
     <>
@@ -1253,25 +1275,36 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
       <Show when={assistant()}>
         {(item) => (
           <div class="msg msg-assistant">
-            <Show when={item().thinking.trim().length > 0}>
-              <details class="thinking" classList={{ 'is-live': item().streaming && !item().text }}>
-                <summary>
-                  <Icon name="lightbulb" size={14} />
-                  思考过程
-                </summary>
-                <div class="thinking-body">{item().thinking}</div>
-              </details>
-            </Show>
+            <Index each={assistantGroups()}>
+              {(group, index) => (
+                <Switch>
+                  <Match when={group().kind === 'thinking'}>
+                    <details
+                      class="thinking"
+                      classList={{
+                        'is-live': item().streaming && index === assistantGroups().length - 1,
+                      }}
+                    >
+                      <summary>
+                        <Icon name="lightbulb" size={14} />
+                        思考过程
+                      </summary>
+                      <div class="thinking-body">{group().text}</div>
+                    </details>
+                  </Match>
 
-            <Show when={item().tools.length > 0}>
-              <ToolGroupView tools={() => item().tools} />
-            </Show>
+                  <Match when={group().kind === 'text'}>
+                    <div class="assistant-text">
+                      <Markdown text={group().text} workspaceId={props.workspaceId} />
+                    </div>
+                  </Match>
 
-            <Show when={item().text}>
-              <div class="assistant-text">
-                <Markdown text={item().text} workspaceId={props.workspaceId} />
-              </div>
-            </Show>
+                  <Match when={group().kind === 'tools'}>
+                    <ToolGroupView tools={() => group().tools} />
+                  </Match>
+                </Switch>
+              )}
+            </Index>
 
             <div class="msg-meta">
               <Show when={item().history}>

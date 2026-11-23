@@ -23,7 +23,7 @@ namespace LubanAgentWebHost.Hosting;
 /// 替换失败会直接抛出启动异常，避免门禁静默失效。
 /// </para>
 /// </remarks>
-public sealed class GatedHttpContext : SAEA.MVC.HttpContext
+public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
 {
     /// <summary>无令牌提示页（浏览器直接访问时返回，纯 HTML 不依赖前端脚本）。</summary>
     private static readonly string UnauthorizedHtml = BuildUnauthorizedHtml(expired: false);

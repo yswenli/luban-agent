@@ -39,6 +39,9 @@ public sealed record AgentRunSnapshot
     /// <summary>工具卡片。</summary>
     public List<AgentRunToolSnapshot> Tools { get; init; } = [];
 
+    /// <summary>按发生顺序排列的段落（思考 / 正文 / 工具调用），供前端原样重建气泡。</summary>
+    public List<AgentRunSegmentSnapshot> Segments { get; init; } = [];
+
     /// <summary>计划项。</summary>
     public List<AgentRunPlanSnapshot> Plans { get; init; } = [];
 
@@ -99,6 +102,28 @@ public sealed record AgentRunNoticeSnapshot
 
     /// <summary>载荷 JSON 原文。</summary>
     public string Data { get; init; } = "";
+}
+
+/// <summary>有序段落快照：一段思考 / 正文累积文本，或一张工具卡。</summary>
+public sealed record AgentRunSegmentSnapshot
+{
+    /// <summary>思考段落类型。</summary>
+    public const string ThinkingKind = "thinking";
+
+    /// <summary>正文段落类型。</summary>
+    public const string TextKind = "text";
+
+    /// <summary>工具调用段落类型。</summary>
+    public const string ToolKind = "tool";
+
+    /// <summary>段落类型，取值见 <see cref="ThinkingKind"/> / <see cref="TextKind"/> / <see cref="ToolKind"/>。</summary>
+    public string Kind { get; init; } = "";
+
+    /// <summary>思考或正文的累积内容；tool 段落为空。</summary>
+    public string Text { get; init; } = "";
+
+    /// <summary>工具卡；仅 tool 段落有值。</summary>
+    public AgentRunToolSnapshot? Tool { get; init; }
 }
 
 /// <summary>等待中的工具确认快照。</summary>

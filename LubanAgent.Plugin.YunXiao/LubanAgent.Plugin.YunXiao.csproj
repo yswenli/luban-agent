@@ -28,7 +28,7 @@
 
   <ItemGroup>
     <!-- 框架契约包：运行期由宿主共享框架集提供，插件包 lib/ 不得包含（见文件头打包约束 1）。 -->
-    <PackageReference Include="LuBan.AIAgent" Version="2026.11.23.1" />
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.24.1" />
   </ItemGroup>
 
   <ItemGroup>

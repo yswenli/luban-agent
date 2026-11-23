@@ -8,6 +8,7 @@ import type {
   PendingAttachment,
   SessionMessage,
   StoredAttachment,
+  StoredSegment,
   StoredToolCall,
 } from '../lib/types';
 
@@ -24,14 +25,18 @@ export interface ToolCard {
   error?: string;
 }
 
+/** 助手气泡里的有序段落：思考、正文、工具调用按发生顺序排列。 */
+export type AssistantBlock =
+  | { kind: 'thinking'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; tool: ToolCard };
+
 export type ChatItem =
   | { kind: 'user'; id: string; text: string; attachments: StoredAttachment[]; time: string }
   | {
       kind: 'assistant';
       id: string;
-      text: string;
-      thinking: string;
-      tools: ToolCard[];
+      blocks: AssistantBlock[];
       streaming: boolean;
       history: boolean;
       time: string;
@@ -109,6 +114,90 @@ function pretty(value: unknown): string {
   }
 }
 
+/** 追加文本段落：与末段同类型时并入，否则新开一段，保持时间线顺序。 */
+function appendTextBlock(blocks: AssistantBlock[], kind: 'thinking' | 'text', delta: string): void {
+  if (!delta) return;
+  const last = blocks[blocks.length - 1];
+  if (last && last.kind !== 'tool' && last.kind === kind) {
+    last.text += delta;
+    return;
+  }
+  blocks.push({ kind, text: delta });
+}
+
+/** 历史消息里的有序段落（`Segments` JSON）；缺失或损坏时返回 null，由调用方退回旧口径。 */
+function parseSegments(raw: string | null | undefined): AssistantBlock[] | null {
+  if (!raw) return null;
+  try {
+    const list = JSON.parse(raw) as StoredSegment[];
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const blocks: AssistantBlock[] = [];
+    for (const segment of list) {
+      if (segment.kind === 'tool') {
+        blocks.push({
+          kind: 'tool',
+          tool: {
+            callId: segment.callId ?? nextId(),
+            name: segment.name ?? 'unknown',
+            argumentsText: pretty(segment.arguments),
+            // 落库不含工具结果，历史回放只能标注「历史记录」
+            status: 'history',
+          },
+        });
+        continue;
+      }
+      const text = String(segment.text ?? '');
+      if (text) appendTextBlock(blocks, segment.kind === 'thinking' ? 'thinking' : 'text', text);
+    }
+    return blocks.length > 0 ? blocks : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 助手历史气泡的段落：优先用落库顺序，旧数据退回「思考 → 工具 → 正文」。 */
+function historyBlocks(message: SessionMessage): AssistantBlock[] {
+  const parsed = parseSegments(message.segments);
+  if (parsed) return parsed;
+
+  const blocks: AssistantBlock[] = [];
+  const thinking = message.thinking ?? '';
+  if (thinking.trim()) blocks.push({ kind: 'thinking', text: thinking });
+  for (const tool of parseToolCalls(message.toolCalls)) blocks.push({ kind: 'tool', tool });
+  if (message.content) blocks.push({ kind: 'text', text: message.content });
+  return blocks;
+}
+
+/** 快照里的工具卡（`AgentRunToolSnapshot`）。 */
+function snapshotTool(raw: Record<string, unknown>): ToolCard {
+  return {
+    callId: String(raw.callId ?? nextId()),
+    name: String(raw.name ?? 'tool'),
+    argumentsText: pretty(raw.arguments),
+    status: (raw.status as ToolStatus) ?? 'running',
+    resultSummary:
+      raw.resultSummary === undefined || raw.resultSummary === null ? undefined : String(raw.resultSummary),
+    error: raw.error === undefined || raw.error === null ? undefined : String(raw.error),
+  };
+}
+
+/** 快照给出的有序段落（`AgentRunSegmentSnapshot[]`）；老服务端没有该字段时返回 null。 */
+function snapshotBlocks(raw: unknown): AssistantBlock[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const blocks: AssistantBlock[] = [];
+  for (const entry of raw as Record<string, unknown>[]) {
+    const kind = String(entry.kind ?? '');
+    if (kind === 'tool') {
+      const tool = entry.tool as Record<string, unknown> | null | undefined;
+      if (tool) blocks.push({ kind: 'tool', tool: snapshotTool(tool) });
+      continue;
+    }
+    const text = String(entry.text ?? '');
+    if (text) appendTextBlock(blocks, kind === 'thinking' ? 'thinking' : 'text', text);
+  }
+  return blocks.length > 0 ? blocks : null;
+}
+
 function toHistoryItems(messages: SessionMessage[]): ChatItem[] {
   return messages.map<ChatItem>((message) => {
     const time = message.createdAt;
@@ -126,9 +215,7 @@ function toHistoryItems(messages: SessionMessage[]): ChatItem[] {
       return {
         kind: 'assistant',
         id: `msg-${message.id}`,
-        text: message.content,
-        thinking: message.thinking ?? '',
-        tools: parseToolCalls(message.toolCalls),
+        blocks: historyBlocks(message),
         streaming: false,
         history: true,
         time,
@@ -206,7 +293,12 @@ export function createChat(sessionId: string) {
     setItems((list) =>
       list.map((item) => {
         if (item.kind !== 'assistant' || item.id !== id) return item;
-        const copy = { ...item, tools: item.tools.map((tool) => ({ ...tool })) };
+        const copy = {
+          ...item,
+          blocks: item.blocks.map((block) =>
+            block.kind === 'tool' ? { kind: 'tool' as const, tool: { ...block.tool } } : { ...block },
+          ),
+        };
         mutate(copy);
         return copy;
       }),
@@ -215,8 +307,11 @@ export function createChat(sessionId: string) {
 
   function updateTool(id: string, callId: string, mutate: (tool: ToolCard) => void): void {
     updateAssistant(id, (item) => {
-      const tool = item.tools.find((entry) => entry.callId === callId);
-      if (tool) mutate(tool);
+      const block = item.blocks.find(
+        (entry): entry is Extract<AssistantBlock, { kind: 'tool' }> =>
+          entry.kind === 'tool' && entry.tool.callId === callId,
+      );
+      if (block) mutate(block.tool);
     });
   }
 
@@ -263,23 +358,30 @@ export function createChat(sessionId: string) {
 
       case 'think.delta':
         updateAssistant(assistantId, (item) => {
-          item.thinking += String(payload.delta ?? '');
+          appendTextBlock(item.blocks, 'thinking', String(payload.delta ?? ''));
         });
         return false;
 
       case 'text.delta':
         updateAssistant(assistantId, (item) => {
-          item.text += String(payload.delta ?? '');
+          appendTextBlock(item.blocks, 'text', String(payload.delta ?? ''));
         });
         return false;
 
       case 'tool.started':
         updateAssistant(assistantId, (item) => {
-          item.tools.push({
-            callId: String(payload.callId ?? nextId()),
-            name: String(payload.name ?? 'tool'),
-            argumentsText: pretty(payload.arguments),
-            status: 'running',
+          const callId = String(payload.callId ?? nextId());
+          // 同一调用重试：先摘掉旧卡片，保证时间线上只有最新一次
+          const index = item.blocks.findIndex((block) => block.kind === 'tool' && block.tool.callId === callId);
+          if (index >= 0) item.blocks.splice(index, 1);
+          item.blocks.push({
+            kind: 'tool',
+            tool: {
+              callId,
+              name: String(payload.name ?? 'tool'),
+              argumentsText: pretty(payload.arguments),
+              status: 'running',
+            },
           });
         });
         return false;
@@ -349,24 +451,21 @@ export function createChat(sessionId: string) {
   /** 用 run.snapshot 重建整条 assistant 气泡（仅页面刷新、内存为空时）。 */
   function restoreFromSnapshot(assistantId: string, payload: Record<string, unknown>): void {
     const tools = Array.isArray(payload.tools)
-      ? (payload.tools as Record<string, unknown>[]).map((tool) => ({
-          callId: String(tool.callId ?? nextId()),
-          name: String(tool.name ?? 'tool'),
-          argumentsText: pretty(tool.arguments),
-          status: (tool.status as ToolStatus) ?? 'running',
-          resultSummary: tool.resultSummary === undefined || tool.resultSummary === null
-            ? undefined
-            : String(tool.resultSummary),
-          error: tool.error === undefined || tool.error === null ? undefined : String(tool.error),
-        }))
+      ? (payload.tools as Record<string, unknown>[]).map(snapshotTool)
       : [];
+
+    // 快照优先给有序段落；老服务端只给 text/thinking/tools，退回固定序
+    const legacy: AssistantBlock[] = [];
+    const thinking = String(payload.thinking ?? '');
+    if (thinking) legacy.push({ kind: 'thinking', text: thinking });
+    for (const tool of tools) legacy.push({ kind: 'tool', tool });
+    const legacyText = String(payload.text ?? '');
+    if (legacyText) legacy.push({ kind: 'text', text: legacyText });
 
     const bubble: ChatItem = {
       kind: 'assistant',
       id: assistantId,
-      text: String(payload.text ?? ''),
-      thinking: String(payload.thinking ?? ''),
-      tools,
+      blocks: snapshotBlocks(payload.segments) ?? legacy,
       streaming: true,
       history: false,
       time: String(payload.startedAt ?? new Date().toISOString()),
@@ -505,9 +604,7 @@ export function createChat(sessionId: string) {
                 {
                   kind: 'assistant',
                   id: targetId,
-                  text: '',
-                  thinking: '',
-                  tools: [],
+                  blocks: [],
                   streaming: true,
                   history: false,
                   time: new Date().toISOString(),
@@ -689,9 +786,7 @@ export function createChat(sessionId: string) {
     const assistantItem: ChatItem = {
       kind: 'assistant',
       id: assistantId,
-      text: '',
-      thinking: '',
-      tools: [],
+      blocks: [],
       streaming: true,
       history: false,
       time: new Date().toISOString(),

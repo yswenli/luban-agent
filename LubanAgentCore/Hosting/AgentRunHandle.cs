@@ -93,7 +93,7 @@ public sealed class AgentRunHandle
     private readonly Queue<(int Seq, AgentSseFrame Frame)> _backlog = new();
     private readonly List<(AgentRunSubscription Subscription, ChannelWriter<AgentSseFrame> Writer)> _subscribers = [];
 
-    private readonly List<AgentRunToolSnapshot> _tools = [];
+    private readonly List<AgentRunSegmentSnapshot> _segments = [];
     private readonly List<AgentRunPlanSnapshot> _plans = [];
     private readonly List<string> _progress = [];
     private readonly List<AgentRunNoticeSnapshot> _notices = [];
@@ -365,7 +365,8 @@ public sealed class AgentRunHandle
             Seq = _seq,
             Text = _text,
             Thinking = _thinking,
-            Tools = [.. _tools],
+            Tools = [.. _segments.Where(x => x.Tool != null).Select(x => x.Tool!)],
+            Segments = [.. _segments],
             Plans = [.. _plans],
             Progress = [.. _progress],
             AttachmentsAdded = _attachmentsAdded,
@@ -387,23 +388,36 @@ public sealed class AgentRunHandle
             switch (frame.Name)
             {
                 case AgentSseEventNames.TextDelta:
-                    _text += ReadString(frame.Data, "delta") ?? "";
+                {
+                    var delta = ReadString(frame.Data, "delta") ?? "";
+                    _text += delta;
+                    AppendTextSegment(AgentRunSegmentSnapshot.TextKind, delta);
                     break;
+                }
 
                 case AgentSseEventNames.ThinkDelta:
-                    _thinking += ReadString(frame.Data, "delta") ?? "";
+                {
+                    var delta = ReadString(frame.Data, "delta") ?? "";
+                    _thinking += delta;
+                    AppendTextSegment(AgentRunSegmentSnapshot.ThinkingKind, delta);
                     break;
+                }
 
                 case AgentSseEventNames.ToolStarted:
                 {
                     var callId = ReadString(frame.Data, "callId") ?? "";
-                    _tools.RemoveAll(x => x.CallId == callId);
-                    _tools.Add(new AgentRunToolSnapshot
+                    // 同一调用重试：移除旧段落，保持画面里只有最新一次
+                    _segments.RemoveAll(x => x.Tool?.CallId == callId);
+                    _segments.Add(new AgentRunSegmentSnapshot
                     {
-                        CallId = callId,
-                        Name = ReadString(frame.Data, "name") ?? "",
-                        Arguments = ReadRaw(frame.Data, "arguments"),
-                        Status = "running"
+                        Kind = AgentRunSegmentSnapshot.ToolKind,
+                        Tool = new AgentRunToolSnapshot
+                        {
+                            CallId = callId,
+                            Name = ReadString(frame.Data, "name") ?? "",
+                            Arguments = ReadRaw(frame.Data, "arguments"),
+                            Status = "running"
+                        }
                     });
                     _pendingConfirmation = null;
                     break;
@@ -412,34 +426,26 @@ public sealed class AgentRunHandle
                 case AgentSseEventNames.ToolCompleted:
                 {
                     var callId = ReadString(frame.Data, "callId") ?? "";
-                    var index = _tools.FindIndex(x => x.CallId == callId);
-                    if (index >= 0)
+                    var resultSummary = ReadString(frame.Data, "resultSummary");
+                    UpdateToolSegment(callId, tool => tool with
                     {
-                        _tools[index] = _tools[index] with
-                        {
-                            Status = "done",
-                            ResultSummary = ReadString(frame.Data, "resultSummary"),
-                            Error = null
-                        };
-                    }
-
+                        Status = "done",
+                        ResultSummary = resultSummary,
+                        Error = null
+                    });
                     break;
                 }
 
                 case AgentSseEventNames.ToolFailed:
                 {
                     var callId = ReadString(frame.Data, "callId") ?? "";
-                    var index = _tools.FindIndex(x => x.CallId == callId);
-                    if (index >= 0)
+                    var error = ReadString(frame.Data, "error");
+                    UpdateToolSegment(callId, tool => tool with
                     {
-                        _tools[index] = _tools[index] with
-                        {
-                            Status = "failed",
-                            ResultSummary = null,
-                            Error = ReadString(frame.Data, "error")
-                        };
-                    }
-
+                        Status = "failed",
+                        ResultSummary = null,
+                        Error = error
+                    });
                     break;
                 }
 
@@ -503,6 +509,37 @@ public sealed class AgentRunHandle
         catch (Exception ex)
         {
             _log($"快照累积失败：run={RunId} seq={seq} frame={frame.Name} {ex.Message}");
+        }
+    }
+
+    /// <summary>追加文本段落：与末段同类型时并入，否则新开一段，保证时间线顺序。</summary>
+    private void AppendTextSegment(string kind, string delta)
+    {
+        if (string.IsNullOrEmpty(delta))
+        {
+            return;
+        }
+
+        if (_segments.Count > 0 && _segments[^1].Kind == kind && _segments[^1].Tool is null)
+        {
+            var last = _segments[^1];
+            _segments[^1] = last with { Text = last.Text + delta };
+            return;
+        }
+
+        _segments.Add(new AgentRunSegmentSnapshot { Kind = kind, Text = delta });
+    }
+
+    /// <summary>就地更新工具段落的状态；调用已不在时间线上时忽略。</summary>
+    private void UpdateToolSegment(string callId, Func<AgentRunToolSnapshot, AgentRunToolSnapshot> mutate)
+    {
+        for (var i = 0; i < _segments.Count; i++)
+        {
+            if (_segments[i].Tool is { } tool && tool.CallId == callId)
+            {
+                _segments[i] = _segments[i] with { Tool = mutate(tool) };
+                return;
+            }
         }
     }
 

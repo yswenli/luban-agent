@@ -55,8 +55,8 @@
 	<ItemGroup>
 		<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
 		<PackageReference Include="System.Management" Version="11.0.0" />
-		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
-		<PackageReference Include="Terminal.Gui" Version="2.6.0-develop.61" />
+		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="11.0.0" />
+		<PackageReference Include="Terminal.Gui" Version="2.6.0" />
 		<PackageReference Include="Terminal.Gui.Editor" Version="2.5.8-develop.5" />
 		<!-- Microsoft.Extensions.Configuration.Json / EnvironmentVariables / DependencyInjection / AI.OpenAI
 		     不再显式声明：由 LuBan.Common / LuBan.AIAgent 传递提供（10.0.13 / 10.11.0）。

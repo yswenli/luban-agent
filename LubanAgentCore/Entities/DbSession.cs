@@ -114,6 +114,12 @@ public class DbSessionMessage : EntityBase
     public string? Thinking { get; set; }
 
     /// <summary>
+    /// 有序段落 JSON（思考/正文/工具调用按发生顺序，仅 assistant 消息可能有）
+    /// </summary>
+    [SugarColumn(ColumnDescription = "有序段落", ColumnDataType = "text", IsNullable = true)]
+    public string? Segments { get; set; }
+
+    /// <summary>
     /// Token 数量
     /// </summary>
     [SugarColumn(ColumnDescription = "Token数量", IsNullable = true)]

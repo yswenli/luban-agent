@@ -116,7 +116,8 @@ public sealed class HttpSessionManager(AgentServerClient client) : ISessionManag
         int? tokens = null,
         string? thinking = null,
         string? attachments = null,
-        string? toolCalls = null)
+        string? toolCalls = null,
+        string? segments = null)
         => await client.PostAsync<SessionMessage>(
             AgentApiRoutes.Session.AddMessage,
             new SessionAddMessageRequest
@@ -127,7 +128,8 @@ public sealed class HttpSessionManager(AgentServerClient client) : ISessionManag
                 Tokens = tokens,
                 Thinking = thinking,
                 Attachments = attachments,
-                ToolCalls = toolCalls
+                ToolCalls = toolCalls,
+                Segments = segments
             })
             .ConfigureAwait(false);
 

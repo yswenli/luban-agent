@@ -52,7 +52,10 @@ global using Microsoft.Extensions.Configuration;
 global using SAEA.Http;
 global using SAEA.Http.Base;
 global using SAEA.Http.Model;
-global using SAEA.MVC;
+global using SAEA.MVC.Attributes;
+global using SAEA.MVC.Controllers;
+global using SAEA.MVC.Hosting;
+global using SAEA.MVC.Results;
 global using SAEA.Sockets.Pipeline;
 
 global using System.Collections.Concurrent;

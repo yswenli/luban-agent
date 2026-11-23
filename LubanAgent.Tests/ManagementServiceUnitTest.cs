@@ -575,7 +575,7 @@ public class ManagementServiceUnitTest
         }
 
         public Task<SessionMessage> AddMessageAsync(string sessionId, string role, string content, int? tokens = null,
-            string? thinking = null, string? attachments = null, string? toolCalls = null)
+            string? thinking = null, string? attachments = null, string? toolCalls = null, string? segments = null)
             => Task.FromResult(new SessionMessage { SessionId = sessionId, Role = role, Content = content });
 
         public Task<IEnumerable<SessionMessage>> GetMessagesAsync(string sessionId, int? limit = null)

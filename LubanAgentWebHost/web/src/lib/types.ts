@@ -105,6 +105,8 @@ export interface SessionMessage {
   attachments?: string | null;
   /** 序列化的 `[{ name, callId, arguments }]`，`arguments` 是 JSON 字符串。 */
   toolCalls?: string | null;
+  /** 序列化的 `[{ kind, text, name, callId, arguments }]`（camelCase），按发生顺序排列。 */
+  segments?: string | null;
   tokens?: number | null;
   createdAt: string;
 }
@@ -156,6 +158,15 @@ export interface StoredToolCall {
   name: string;
   callId: string;
   arguments: string;
+}
+
+/** 会话消息里的一段有序内容（`SessionMessage.segments` 的元素）。 */
+export interface StoredSegment {
+  kind?: string;
+  text?: string | null;
+  name?: string | null;
+  callId?: string | null;
+  arguments?: string | null;
 }
 
 /** 待发送附件（本地队列项）。 */

@@ -59,6 +59,9 @@ public sealed record SessionAddMessageRequest
 
     /// <summary>工具调用信息 JSON。</summary>
     public string? ToolCalls { get; init; }
+
+    /// <summary>有序段落 JSON。</summary>
+    public string? Segments { get; init; }
 }
 
 /// <summary>标记消息为已压缩。</summary>

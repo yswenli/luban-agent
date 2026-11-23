@@ -187,6 +187,18 @@ public class AgentRunHubUnitTest
             Assert.AreEqual("failed", failed.Status);
             Assert.AreEqual("退出码 1", failed.Error);
             Assert.IsNull(failed.ResultSummary);
+
+            // 有序段落：正文 → 思考 → 工具 c1 → 工具 c2，顺序与发布一致
+            Assert.AreEqual(4, snapshot.Segments.Count);
+            CollectionAssert.AreEqual(
+                new[] { "text", "thinking", "tool", "tool" },
+                snapshot.Segments.Select(x => x.Kind).ToArray());
+            Assert.AreEqual("abcd", snapshot.Segments[0].Text);
+            Assert.AreEqual("想", snapshot.Segments[1].Text);
+            Assert.AreEqual("c1", snapshot.Segments[2].Tool?.CallId);
+            Assert.AreEqual("done", snapshot.Segments[2].Tool?.Status);
+            Assert.AreEqual("c2", snapshot.Segments[3].Tool?.CallId);
+            Assert.AreEqual("failed", snapshot.Segments[3].Tool?.Status);
         }
         finally
         {
