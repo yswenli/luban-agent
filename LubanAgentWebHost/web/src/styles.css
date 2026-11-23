@@ -1350,6 +1350,19 @@ a {
   color: var(--text-dim);
 }
 
+/*
+ * 提示图标：占满首行行高并在其中垂直居中。
+ * 只靠 flex-start 对齐时，15px 图标会比 13px 文本的字形中心高出约 3px（正文 line-height 1.6），
+ * 所以给图标一个与行高同高的盒子，多行提示仍贴首行。
+ */
+.notice-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 1.6em;
+  height: 1lh;
+}
+
 .notice.warn {
   border-color: var(--warn-border);
   background: var(--warn-soft);

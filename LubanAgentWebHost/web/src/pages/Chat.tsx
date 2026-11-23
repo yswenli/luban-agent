@@ -1015,7 +1015,9 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
       <Show when={notice()}>
         {(item) => (
           <div class={`notice ${item().tone}`}>
-            <Icon name={item().tone === 'error' || item().tone === 'warn' ? 'alert' : 'help'} size={15} />
+            <span class="notice-icon">
+              <Icon name={item().tone === 'error' || item().tone === 'warn' ? 'alert' : 'help'} size={15} />
+            </span>
             <span>{item().text}</span>
           </div>
         )}
