@@ -168,6 +168,7 @@ public static class AgentHostBuilder
         // ── 管理服务：CLI 与 Codex 共用的唯一业务入口（Task 13 建契约，14–19 填业务）──
         services.AddScoped<IProviderModelManagementService, ProviderModelManagementService>();
         services.AddScoped<ISkillManagementService, SkillManagementService>();
+        services.AddScoped<ISkillCatalogService, SkillCatalogService>();
         services.AddScoped<IRuleManagementService, RuleManagementService>();
         services.AddScoped<IMcpManagementService, McpManagementService>();
         services.AddScoped<IConnectorManagementService, ConnectorManagementService>();

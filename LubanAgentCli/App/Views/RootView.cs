@@ -239,9 +239,17 @@ internal sealed class RootView : Runnable
         completionPopup.Y = Pos.Func(_ => _inputBar.Frame.Y - completionPopup.VisibleRows);
         Add(completionPopup);
 
+        var skillPopup = _inputBar.SkillPopup;
+        skillPopup.Width = 55;
+        skillPopup.Height = 20;
+        skillPopup.X = 2;
+        skillPopup.Y = Pos.Func(_ => _inputBar.Frame.Y - skillPopup.VisibleRows);
+        Add(skillPopup);
+
         _inputBar.CompletionStateChanged += () =>
         {
             completionPopup.SetNeedsDraw();
+            skillPopup.SetNeedsDraw();
             SetNeedsDraw();
         };
     }

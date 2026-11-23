@@ -38,6 +38,22 @@ public static class WebSkillService
         return WebApi.OkJson(new { items });
     });
 
+    /// <summary>列出输入 <c>@</c> 时可选的技能（当前会话可用技能）。</summary>
+    /// <param name="sessionId">会话标识；缺省按当前工作区。</param>
+    /// <returns>已启用技能数组（含内置、自定义与工作区文件技能）。</returns>
+    public static Task<ActionResult> LoadedAsync(string? sessionId) => WebApi.RunGuardedAsync(async () =>
+    {
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var skills = await requestScope.GetRequiredService<ISkillCatalogService>()
+            .ListAvailableAsync(sessionId, default)
+            .ConfigureAwait(false);
+
+        var items = skills
+            .Select(s => new AvailableSkillDto(s.Id, s.Name, s.Description, s.Category, s.IsBuiltin))
+            .ToList();
+        return WebApi.OkJson(new { items });
+    });
+
     /// <summary>读取技能内容。</summary>
     /// <param name="scope"><c>global</c> 或工作区标识。</param>
     /// <param name="key">技能名（目录名）。</param>

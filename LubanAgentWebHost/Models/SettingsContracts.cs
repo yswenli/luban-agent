@@ -45,6 +45,14 @@ public sealed record SkillFileDto(string Id, string Name, string Description, st
 /// <param name="Category">分类。</param>
 public sealed record SkillFileSummaryDto(string Id, string Name, string Category);
 
+/// <summary>输入 <c>@</c> 时可选的技能（当前会话可用技能，只含启用项）。</summary>
+/// <param name="Id">技能标识（插入输入框的文本）。</param>
+/// <param name="Name">展示名。</param>
+/// <param name="Description">描述。</param>
+/// <param name="Category">分类。</param>
+/// <param name="IsBuiltin">是否内置技能。</param>
+public sealed record AvailableSkillDto(string Id, string Name, string Description, string Category, bool IsBuiltin);
+
 /// <summary>导入技能 ZIP 包。</summary>
 public sealed record SkillImportRequest
 {

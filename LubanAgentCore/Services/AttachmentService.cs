@@ -148,12 +148,23 @@ public sealed class AttachmentService
     /// <summary>返回文本中无法解析为受支持文件的 @引用片段（供提交前校验提示）。</summary>
     /// <param name="input">原始输入文本。</param>
     /// <param name="service">用于解析路径的服务实例。</param>
-    public static IReadOnlyList<string> FindUnresolvedReferences(string input, AttachmentService service)
+    /// <param name="ignoredTokens">
+    /// 需要跳过的 <c>@</c> 片段（不含 <c>@</c> 前缀，比较时忽略大小写）。
+    /// 输入框的 <c>@</c> 技能补全会把 <c>@技能标识</c> 插入正文，这些片段并不是文件引用，
+    /// 若参与校验会被判为「文件不存在」而阻断发送。
+    /// </param>
+    public static IReadOnlyList<string> FindUnresolvedReferences(
+        string input,
+        AttachmentService service,
+        IReadOnlyCollection<string>? ignoredTokens = null)
     {
         var invalid = new List<string>();
         foreach (Match m in FileRefPattern.Matches(input))
         {
             var raw = NormalizeToken(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
+            if (ignoredTokens is not null && ignoredTokens.Contains(raw, StringComparer.OrdinalIgnoreCase))
+                continue;
+
             var resolved = service.ResolvePath(raw);
             if (resolved == null || !File.Exists(resolved) || !service._processor.IsSupported(resolved))
                 invalid.Add(raw);

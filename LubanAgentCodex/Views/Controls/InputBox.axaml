@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:LubanAgentCore.Models;assembly=LubanAgentCore"
+             xmlns:mgmt="clr-namespace:LubanAgentCore.Services.Management.Models;assembly=LubanAgentCore"
              xmlns:commands="clr-namespace:LuBan.AIAgent.Hosting.Commands;assembly=LuBan.AIAgent"
              xmlns:conv="using:LubanAgentCodex.Converters"
              x:Class="LubanAgentCodex.Views.Controls.InputBox">
@@ -141,6 +142,54 @@
                                                    Foreground="{DynamicResource PrimaryBrush}"
                                                    VerticalAlignment="Center"
                                                    Margin="10,0" />
+                                        <TextBlock Grid.Column="1"
+                                                   Classes="desc"
+                                                   Text="{Binding Description}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
+
+                <!-- `@` 技能候选弹层：浮在 TextBox 上方，输入 @ 时显示当前会话可用技能 -->
+                <Popup Name="SkillPopup"
+                       Grid.Column="0"
+                       PlacementTarget="{Binding #InputBorder}"
+                       Placement="Top"
+                       IsOpen="False"
+                       IsLightDismissEnabled="True"
+                       MaxWidth="520">
+                    <Border Background="{DynamicResource SidebarBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4"
+                            BoxShadow="0 4 12 0 #40000000">
+                        <ListBox Name="SkillList"
+                                 Classes="completion-list"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 MinWidth="380"
+                                 MaxHeight="240"
+                                 SelectionMode="Single">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="mgmt:AvailableSkillItem">
+                                    <Grid ColumnDefinitions="140,*" Height="26">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Id, StringFormat='@{0}'}"
+                                                   FontFamily="Consolas,Menlo,monospace"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PrimaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0"
+                                                   TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Column="1"
                                                    Classes="desc"
                                                    Text="{Binding Description}"

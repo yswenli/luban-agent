@@ -1804,6 +1804,17 @@ a {
   font-size: 12.5px;
 }
 
+/* `@` 技能候选行尾标记（内置 / 分类）：不参与压缩，超长省略 */
+.command-tag {
+  flex: none;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 /* ── 弹窗 ─────────────────────────────────────────────────────────────── */
 
 .overlay {

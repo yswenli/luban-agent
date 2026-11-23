@@ -176,6 +176,16 @@ export interface SkillSummary {
   category: string;
 }
 
+/** 输入 `@` 时可选的技能（当前会话可用技能，只含启用项）。 */
+export interface AvailableSkill {
+  /** 技能标识：选中后插入输入框的文本。 */
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  isBuiltin: boolean;
+}
+
 export interface SkillFile {
   /** 目录名；新建时为占位空串。 */
   id: string;

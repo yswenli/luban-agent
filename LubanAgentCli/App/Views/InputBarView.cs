@@ -222,6 +222,95 @@ internal sealed class CommandCompletionPopup : View
 }
 
 /// <summary>
+/// 技能候选菜单：浮在 Editor 上方的两列弹出视图（输入 <c>@</c> 时显示当前可用技能）。
+/// 左列 <c>@id</c>（20 列宽），右列描述填充。交互与 <see cref="CommandCompletionPopup"/> 一致。
+/// </summary>
+internal sealed class SkillCompletionPopup : View
+{
+    private IReadOnlyList<AvailableSkillItem> _items = Array.Empty<AvailableSkillItem>();
+    private int _selected;
+    private int _visibleRows;
+
+    /// <summary>当前选中的技能；未选中或不可见返回 null。</summary>
+    public AvailableSkillItem? SelectedItem =>
+        IsVisible && _selected >= 0 && _selected < _items.Count ? _items[_selected] : null;
+
+    /// <summary>候选菜单是否处于显示状态。</summary>
+    public bool IsVisible { get; private set; }
+
+    /// <summary>当前可见行数（用于定位计算）。</summary>
+    public int VisibleRows => _visibleRows;
+
+    /// <summary>显示候选菜单并设置匹配项。</summary>
+    public void Show(IReadOnlyList<AvailableSkillItem> items, int maxRows)
+    {
+        _items = items;
+        _selected = 0;
+        _visibleRows = Math.Min(items.Count, Math.Max(1, maxRows));
+        IsVisible = items.Count > 0;
+        Height = _visibleRows;
+        Visible = IsVisible;
+        if (IsVisible)
+        {
+            SetNeedsDraw();
+        }
+    }
+
+    /// <summary>隐藏候选菜单。</summary>
+    public void Hide()
+    {
+        IsVisible = false;
+        Visible = false;
+        _items = Array.Empty<AvailableSkillItem>();
+        SetNeedsDraw();
+    }
+
+    /// <summary>移动选中项（循环）。</summary>
+    public void MoveSelection(int delta)
+    {
+        if (!IsVisible || _items.Count == 0) return;
+        _selected = (_selected + delta + _items.Count) % _items.Count;
+        SetNeedsDraw();
+    }
+
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        if (!IsVisible || _items.Count == 0) return true;
+
+        var width = Viewport.Width;
+        if (width <= 0) return true;
+
+        var nameCol = Math.Min(20, width / 2);
+
+        for (var i = 0; i < _visibleRows && i < _items.Count; i++)
+        {
+            var skill = _items[i];
+            var name = "@" + skill.Id;
+            var desc = skill.Description ?? string.Empty;
+
+            var namePadded = name.Length >= nameCol
+                ? name[..nameCol]
+                : name.PadRight(nameCol);
+            var descMax = Math.Max(0, width - nameCol);
+            var descText = desc.Length > descMax ? desc[..descMax] : desc.PadRight(descMax);
+            var line = namePadded + descText;
+
+            var isSelected = i == _selected;
+            var bg = isSelected ? TuiTheme.Accent : new Color(0x80, 0x80, 0x80);
+            var fg = isSelected ? TuiTheme.Background : TuiTheme.AssistantText;
+            SetAttribute(new Attribute(fg, bg));
+
+            for (var c = 0; c < width; c++)
+            {
+                AddRune(c, i, (Rune)' ');
+            }
+            AddStr(0, i, line);
+        }
+        return true;
+    }
+}
+
+/// <summary>
 /// 输入区视图。使用 Editor 作为高性能文本输入控件，
 /// Enter 提交，Shift+Enter 换行。
 /// </summary>
@@ -231,7 +320,9 @@ internal sealed class InputBarView : View
     private readonly List<AttachmentDraft> _drafts = new();
     private readonly List<string> _draftPaths = new();
     private readonly CommandCompletionPopup _completionPopup;
+    private readonly SkillCompletionPopup _skillPopup;
     private readonly List<string> _history = new();
+    private readonly List<AvailableSkillItem> _skillCache = new();
     private int _historyIndex = -1;
     private const int HistoryMaxSize = 50;
     private string _lastTextForCompletion = string.Empty;
@@ -239,6 +330,13 @@ internal sealed class InputBarView : View
     private DiContainer? _services;
     private ITuiUiService? _ui;
     private ICommandCatalog? _catalog;
+    private ISkillCatalogService? _skillCatalog;
+    private IWorkspaceManager? _workspaces;
+    private bool _skillsLoading;
+    private bool _skillsLoaded;
+    private bool _suppressCompletionRefresh;
+    private int _skillTokenStart;
+    private int _skillTokenEnd;
 
     /// <summary>
     /// 用户提交输入时触发（Enter）。
@@ -263,17 +361,56 @@ internal sealed class InputBarView : View
         {
             // 容错：catalog 缺失时不影响输入框基础功能
         }
+
+        try
+        {
+            _skillCatalog = services.GetService<ISkillCatalogService>();
+            _workspaces = services.GetService<IWorkspaceManager>();
+            if (_workspaces is not null)
+            {
+                _workspaces.CurrentWorkspaceChanged += _ => InvalidateSkillCache();
+            }
+        }
+        catch
+        {
+            // 容错：技能查询缺失时 @ 候选不弹，其余输入能力不受影响
+        }
+    }
+
+    /// <summary>工作区切换后失效技能缓存，下次输入 <c>@</c> 重新按新工作区加载。</summary>
+    private void InvalidateSkillCache()
+    {
+        void Apply()
+        {
+            _skillsLoaded = false;
+            _skillCache.Clear();
+            _skillPopup.Hide();
+            CompletionStateChanged?.Invoke();
+        }
+
+        // CurrentWorkspaceChanged 可能来自后台线程，统一切回 UI 线程改动视图
+        if (GetApp() is { } app)
+        {
+            app.Invoke(Apply);
+        }
+        else
+        {
+            Apply();
+        }
     }
 
     /// <summary>注入 TUI 模态交互服务（由 RootView 在构造后调用，非 DI 注册项）。</summary>
     /// <param name="ui">TUI 交互服务实例。</param>
     public void SetUiService(ITuiUiService ui) => _ui = ui;
 
-    /// <summary>补全菜单是否可见。</summary>
-    public bool IsCompletionVisible => _completionPopup.IsVisible;
+    /// <summary>补全菜单是否可见（斜杠命令或 <c>@</c> 技能任一）。</summary>
+    public bool IsCompletionVisible => _completionPopup.IsVisible || _skillPopup.IsVisible;
 
     /// <summary>命令补全弹层视图（由 RootView 添加到顶层，实现向上展开）。</summary>
     public CommandCompletionPopup CompletionPopup => _completionPopup;
+
+    /// <summary><c>@</c> 技能候选弹层视图（由 RootView 添加到顶层，实现向上展开）。</summary>
+    public SkillCompletionPopup SkillPopup => _skillPopup;
 
     /// <summary>补全菜单状态变化时触发（用于通知 RootView 重绘）。</summary>
     public event Action? CompletionStateChanged;
@@ -282,10 +419,25 @@ internal sealed class InputBarView : View
     public bool HasAttachments => _drafts.Count > 0;
 
     /// <summary>
-    /// 刷新补全菜单：根据当前文本过滤 catalog。首字符非 / 或无匹配时隐藏。
+    /// 刷新补全菜单：<c>/</c> 前缀走斜杠命令，光标前 <c>@token</c> 走技能候选。
+    /// 多行输入时两种候选都不弹。
     /// </summary>
     internal void RefreshCompletion(string text)
     {
+        if (_suppressCompletionRefresh) return;
+
+        if (text.Contains('\n'))
+        {
+            HideCompletion();
+            return;
+        }
+
+        // @ 技能候选：命中 @ 场景后不再进入斜杠命令分支
+        if (TryRefreshSkillCompletion())
+        {
+            return;
+        }
+
         if (_catalog is null)
         {
             HideCompletion();
@@ -299,13 +451,6 @@ internal sealed class InputBarView : View
             return;
         }
 
-        // 仅在首行触发（多行编辑时不弹）
-        if (text.Contains('\n'))
-        {
-            HideCompletion();
-            return;
-        }
-
         var matches = _catalog.MatchByPrefix(trimmed, SlashCommandClient.Cli);
         if (matches.Count == 0)
         {
@@ -313,8 +458,122 @@ internal sealed class InputBarView : View
             return;
         }
 
+        _skillPopup.Hide();
         _completionPopup.Show(matches, Math.Min(10, matches.Count));
         CompletionStateChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 识别光标前的 <c>@token</c> 并刷新技能候选。
+    /// 返回 true 表示当前处于 <c>@</c> 场景（无论是否有匹配），调用方不应再处理斜杠命令。
+    /// </summary>
+    private bool TryRefreshSkillCompletion()
+    {
+        var text = _editor.Text ?? string.Empty;
+        var caret = Math.Clamp(_editor.CaretOffset, 0, text.Length);
+        var before = text[..caret];
+
+        var at = before.LastIndexOf('@');
+        if (at < 0) return false;
+        // @ 必须是行首或空白之后，避免 a@b、邮箱、@"..." 误触
+        if (at > 0 && !char.IsWhiteSpace(text[at - 1])) return false;
+
+        var token = before[(at + 1)..];
+        if (token.Any(char.IsWhiteSpace)) return false;
+        // 路径特征交给附件引用（@D:\a.cs、@./src、@~/a）
+        if (token.IndexOfAny(['\\', '/', ':', '~']) >= 0) return false;
+
+        _skillTokenStart = at;
+        _skillTokenEnd = caret;
+
+        if (_skillCatalog is null)
+        {
+            _skillPopup.Hide();
+            return true;
+        }
+
+        EnsureSkillsLoaded();
+
+        var matches = _skillCache
+            .Where(skill =>
+                skill.Id.StartsWith(token, StringComparison.OrdinalIgnoreCase)
+                || skill.Name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+            .Take(10)
+            .ToList();
+
+        if (matches.Count == 0)
+        {
+            if (_skillPopup.IsVisible)
+            {
+                _skillPopup.Hide();
+                CompletionStateChanged?.Invoke();
+            }
+            return true;
+        }
+
+        _completionPopup.Hide();
+        _skillPopup.Show(matches, matches.Count);
+        CompletionStateChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>首次出现 <c>@</c> 时异步加载当前工作区可用技能（失败静默，不影响输入）。</summary>
+    private void EnsureSkillsLoaded()
+    {
+        if (_skillsLoaded || _skillsLoading || _skillCatalog is null) return;
+
+        _skillsLoading = true;
+        _ = Task.Run(async () =>
+        {
+            IReadOnlyList<AvailableSkillItem> items;
+            try
+            {
+                items = await _skillCatalog.ListAvailableAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"加载技能候选失败: {ex.Message}");
+                items = Array.Empty<AvailableSkillItem>();
+            }
+
+            var app = GetApp();
+            if (app is null)
+            {
+                // 视图未挂到应用（如启动阶段）：放弃本次结果，允许下次重新加载
+                _skillsLoading = false;
+                return;
+            }
+
+            app.Invoke(() =>
+            {
+                _skillCache.Clear();
+                _skillCache.AddRange(items);
+                _skillsLoaded = true;
+                _skillsLoading = false;
+                RefreshCompletion(_editor.Text ?? string.Empty);
+            });
+        });
+    }
+
+    /// <summary>
+    /// 回车提交前的同步兜底：技能清单尚未加载时补一次，
+    /// 避免用户打完 <c>@技能标识</c> 立刻回车时被误判成「文件不存在」而阻止发送。
+    /// </summary>
+    private void EnsureSkillsLoadedBlocking()
+    {
+        if (_skillsLoaded || _skillCatalog is null) return;
+
+        try
+        {
+            var items = _skillCatalog.ListAvailableAsync().GetAwaiter().GetResult();
+            _skillCache.Clear();
+            _skillCache.AddRange(items);
+            _skillsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"同步加载技能候选失败: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -322,6 +581,35 @@ internal sealed class InputBarView : View
     /// </summary>
     internal bool HandleCompletionKey(Key key)
     {
+        if (_skillPopup.IsVisible)
+        {
+            if (key == Key.CursorUp)
+            {
+                _skillPopup.MoveSelection(-1);
+                SetNeedsDraw();
+                return true;
+            }
+            if (key == Key.CursorDown)
+            {
+                _skillPopup.MoveSelection(1);
+                SetNeedsDraw();
+                return true;
+            }
+            if (key == Key.Esc)
+            {
+                HideCompletion();
+                return true;
+            }
+            if (key == Key.Enter || key == Key.Tab)
+            {
+                var selectedSkill = _skillPopup.SelectedItem;
+                if (selectedSkill is null) return false;
+                ApplySkillCompletion(selectedSkill);
+                return true;
+            }
+            return false;
+        }
+
         if (!_completionPopup.IsVisible) return false;
 
         if (key == Key.CursorUp)
@@ -355,12 +643,44 @@ internal sealed class InputBarView : View
         return false;
     }
 
-    /// <summary>隐藏补全菜单。</summary>
+    /// <summary>把选中的技能按 <c>@token</c> 区间原地替换为 <c>@id </c>，光标置于末尾。</summary>
+    private void ApplySkillCompletion(AvailableSkillItem skill)
+    {
+        var text = _editor.Text ?? string.Empty;
+        var start = Math.Clamp(_skillTokenStart, 0, text.Length);
+        var end = Math.Clamp(_skillTokenEnd, start, text.Length);
+        var insert = "@" + skill.Id + " ";
+
+        _suppressCompletionRefresh = true;
+        try
+        {
+            _editor.Text = text[..start] + insert + text[end..];
+            _editor.CaretOffset = start + insert.Length;
+        }
+        finally
+        {
+            _suppressCompletionRefresh = false;
+        }
+
+        HideCompletion();
+    }
+
+    /// <summary>隐藏补全菜单（斜杠命令与 <c>@</c> 技能两个弹层）。</summary>
     internal void HideCompletion()
     {
+        var changed = false;
+        if (_skillPopup.IsVisible)
+        {
+            _skillPopup.Hide();
+            changed = true;
+        }
         if (_completionPopup.IsVisible)
         {
             _completionPopup.Hide();
+            changed = true;
+        }
+        if (changed)
+        {
             CompletionStateChanged?.Invoke();
         }
     }
@@ -435,8 +755,14 @@ internal sealed class InputBarView : View
         // 解析 @引用：先校验无效引用（有则整条不发送、保留编辑器与草稿），再移除有效引用并加入附件
         if (_services?.GetService(typeof(AttachmentService)) is AttachmentService svc)
         {
+            if (text.Contains('@'))
+                EnsureSkillsLoadedBlocking();
+
             var refs = svc.ParseFileReferences(text, out body);
-            var invalid = AttachmentService.FindUnresolvedReferences(text, svc);
+            var invalid = AttachmentService.FindUnresolvedReferences(
+                text,
+                svc,
+                _skillCache.Select(s => s.Id).ToArray());
             if (invalid.Count > 0)
             {
                 _ui?.Notify("附件错误", $"文件不存在或类型不支持: {string.Join(", ", invalid)}");
@@ -477,6 +803,7 @@ internal sealed class InputBarView : View
         var drafts = _drafts.ToList();
         ClearAttachments();
         _editor.Text = string.Empty;
+        HideCompletion();
 
         if (!string.IsNullOrWhiteSpace(body))
         {
@@ -726,6 +1053,12 @@ internal sealed class InputBarView : View
         _editor.KeyBindings.Remove(Key.Tab.WithShift);
 
         _completionPopup = new CommandCompletionPopup
+        {
+            Visible = false,
+            CanFocus = false
+        };
+
+        _skillPopup = new SkillCompletionPopup
         {
             Visible = false,
             CanFocus = false

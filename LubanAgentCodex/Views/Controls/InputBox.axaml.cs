@@ -38,6 +38,19 @@ public partial class InputBox : UserControl
     private Popup? _completionPopup;
     private ListBox? _completionList;
     private ICommandCatalog? _commandCatalog;
+
+    private Popup? _skillPopup;
+    private ListBox? _skillList;
+    private ISkillCatalogService? _skillCatalog;
+    /// <summary>`@` 技能候选快照（首次弹出时按当前工作区加载一次）。</summary>
+    private IReadOnlyList<AvailableSkillItem> _skillItems = Array.Empty<AvailableSkillItem>();
+    /// <summary>已匹配的 `@` 技能候选。</summary>
+    private IReadOnlyList<AvailableSkillItem> _skillMatches = Array.Empty<AvailableSkillItem>();
+    private bool _skillsLoaded;
+    private bool _skillsLoading;
+    /// <summary>`@token` 在被替换文本中的区间 `[start, end)`。</summary>
+    private int _skillTokenStart;
+    private int _skillTokenEnd;
     /// <summary>当前补全候选列表（只读快照，避免遍历 ListBox.Items 反复装箱）。</summary>
     private IReadOnlyList<SlashCommandDefinition> _completionItems = Array.Empty<SlashCommandDefinition>();
     /// <summary>应用选中项到输入框时短暂屏蔽 TextChanged 触发的补全刷新，避免抖动。</summary>
@@ -66,6 +79,8 @@ public partial class InputBox : UserControl
         _attachmentBar = this.FindControl<ItemsControl>("AttachmentBar");
         _completionPopup = this.FindControl<Popup>("CompletionPopup");
         _completionList = this.FindControl<ListBox>("CompletionList");
+        _skillPopup = this.FindControl<Popup>("SkillPopup");
+        _skillList = this.FindControl<ListBox>("SkillList");
 
         if (_inputTextBox != null)
         {
@@ -93,6 +108,12 @@ public partial class InputBox : UserControl
 
         if (_completionPopup != null)
             _completionPopup.Closed += OnCompletionPopupClosed;
+
+        if (_skillList != null)
+            _skillList.AddHandler(PointerPressedEvent, OnSkillItemPointerPressed, RoutingStrategies.Tunnel);
+
+        if (_skillPopup != null)
+            _skillPopup.Closed += OnSkillPopupClosed;
     }
 
     /// <summary>
@@ -103,6 +124,19 @@ public partial class InputBox : UserControl
         _configManager = services.GetRequiredService<ConfigManager>();
         _providers = services.GetRequiredService<IProviderModelManagementService>();
         _commandCatalog = services.GetService<ICommandCatalog>();
+        _skillCatalog = services.GetService<ISkillCatalogService>();
+
+        // 工作区切换后让 @ 技能候选失效，下次输入 @ 时按新工作区重新加载
+        if (services.GetService<IWorkspaceManager>() is { } workspaces)
+        {
+            workspaces.CurrentWorkspaceChanged += _ =>
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _skillsLoaded = false;
+                    _skillItems = Array.Empty<AvailableSkillItem>();
+                    HideCompletion();
+                });
+        }
         _ = LoadModelsAsync();
         RefreshModels();
     }
@@ -220,6 +254,31 @@ public partial class InputBox : UserControl
     /// </summary>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // `@` 技能候选可见时优先拦截导航键（与斜杠菜单互斥）
+        if (_skillPopup is { IsOpen: true } && _skillList != null)
+        {
+            switch (e.Key)
+            {
+                case Key.Up:
+                    MoveSkillSelection(-1);
+                    e.Handled = true;
+                    return;
+                case Key.Down:
+                    MoveSkillSelection(1);
+                    e.Handled = true;
+                    return;
+                case Key.Tab:
+                case Key.Enter:
+                    ApplySelectedSkill();
+                    e.Handled = true;
+                    return;
+                case Key.Escape:
+                    HideSkillCompletion();
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         // 命令补全菜单可见时优先拦截导航键
         if (_completionPopup is { IsOpen: true } && _completionList != null)
         {
@@ -283,23 +342,27 @@ public partial class InputBox : UserControl
     }
 
     /// <summary>
-    /// 根据当前文本过滤 catalog：首字符非 / 或无匹配则隐藏；
-    /// 多行编辑不触发；否则填充 ListBox 并显示 Popup，选中第一项。
+    /// 根据当前文本刷新候选：光标前是 <c>@token</c> 时走技能候选，否则按首字符 <c>/</c> 走斜杠命令。
+    /// 多行编辑不触发任何候选。
     /// </summary>
     private void RefreshCompletion(string text)
     {
-        if (_commandCatalog == null || _completionPopup == null || _completionList == null)
-            return;
-
-        var trimmed = text.TrimStart();
-        if (trimmed.Length == 0 || trimmed[0] != '/')
+        // 多行编辑时不弹候选
+        if (text.Contains('\n'))
         {
             HideCompletion();
             return;
         }
 
-        // 仅在单行首行触发（多行编辑时不弹）
-        if (text.Contains('\n'))
+        // `@` 技能候选优先：命中后不再进入斜杠命令分支
+        if (TryRefreshSkillCompletion())
+            return;
+
+        if (_commandCatalog == null || _completionPopup == null || _completionList == null)
+            return;
+
+        var trimmed = text.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '/')
         {
             HideCompletion();
             return;
@@ -325,6 +388,8 @@ public partial class InputBox : UserControl
         {
             _syncingSelection = false;
         }
+
+        HideSkillCompletion();
         _completionPopup.IsOpen = true;
     }
 
@@ -370,11 +435,187 @@ public partial class InputBox : UserControl
         HideCompletion();
     }
 
-    /// <summary>隐藏补全菜单。</summary>
+    /// <summary>隐藏补全菜单（斜杠命令与 `@` 技能两个弹层）。</summary>
     private void HideCompletion()
     {
         if (_completionPopup != null)
             _completionPopup.IsOpen = false;
+        HideSkillCompletion();
+    }
+
+    // ==================== `@` 技能候选 ====================
+
+    /// <summary>
+    /// 识别光标前的 <c>@token</c> 并刷新技能候选。
+    /// 返回 true 表示当前处于 <c>@</c> 场景（无论是否有匹配），调用方不应再处理斜杠命令。
+    /// </summary>
+    private bool TryRefreshSkillCompletion()
+    {
+        if (_inputTextBox == null || _skillPopup == null || _skillList == null)
+            return false;
+
+        var text = _inputTextBox.Text ?? string.Empty;
+        var caret = Math.Clamp(_inputTextBox.CaretIndex, 0, text.Length);
+        if (caret == 0) return false;
+
+        var before = text[..caret];
+        var at = before.LastIndexOf('@');
+        if (at < 0) return false;
+        // @ 必须在行首或空白之后，避免邮箱、a@b 误触
+        if (at > 0 && !char.IsWhiteSpace(text[at - 1])) return false;
+
+        var token = before[(at + 1)..];
+        if (token.Any(char.IsWhiteSpace)) return false;
+        // 路径特征交给附件引用（@D:\a.cs、@./src、@~/a）
+        if (token.IndexOfAny(['\\', '/', ':', '~']) >= 0) return false;
+
+        _skillTokenStart = at;
+        _skillTokenEnd = caret;
+
+        if (_skillCatalog == null)
+        {
+            HideSkillCompletion();
+            return true;
+        }
+
+        EnsureSkillsLoaded();
+
+        var matches = _skillItems
+            .Where(skill =>
+                skill.Id.StartsWith(token, StringComparison.OrdinalIgnoreCase)
+                || skill.Name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+            .Take(10)
+            .ToList();
+
+        if (matches.Count == 0)
+        {
+            HideSkillCompletion();
+            return true;
+        }
+
+        _skillMatches = matches;
+        _skillList.ItemsSource = matches;
+        _skillList.SelectedIndex = 0;
+
+        if (_completionPopup != null)
+            _completionPopup.IsOpen = false;
+        _skillPopup.IsOpen = true;
+        return true;
+    }
+
+    /// <summary>首次输入 <c>@</c> 时异步加载当前工作区可用技能（失败静默，不影响输入）。</summary>
+    private void EnsureSkillsLoaded()
+    {
+        if (_skillsLoaded || _skillsLoading || _skillCatalog == null) return;
+
+        _skillsLoading = true;
+        _ = Task.Run(async () =>
+        {
+            IReadOnlyList<AvailableSkillItem> items;
+            try
+            {
+                items = await _skillCatalog.ListAvailableAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"加载技能候选失败: {ex.Message}");
+                items = Array.Empty<AvailableSkillItem>();
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _skillItems = items;
+                _skillsLoaded = true;
+                _skillsLoading = false;
+                if (!_suppressCompletionRefresh)
+                    RefreshCompletion(_inputTextBox?.Text ?? string.Empty);
+            });
+        });
+    }
+
+    /// <summary>循环移动技能列表选中项，并滚动到可见。</summary>
+    private void MoveSkillSelection(int delta)
+    {
+        if (_skillList == null || _skillMatches.Count == 0) return;
+        var current = _skillList.SelectedIndex < 0 ? 0 : _skillList.SelectedIndex;
+        var next = (current + delta + _skillMatches.Count) % _skillMatches.Count;
+        _skillList.SelectedIndex = next;
+        _skillList.ContainerFromIndex(next)?.BringIntoView();
+    }
+
+    /// <summary>把选中的技能按 <c>@token</c> 区间原地替换为 <c>@id </c>，光标置于末尾。</summary>
+    private void ApplySelectedSkill()
+    {
+        if (_skillList == null
+            || _skillList.SelectedIndex < 0
+            || _skillList.SelectedIndex >= _skillMatches.Count)
+        {
+            HideSkillCompletion();
+            return;
+        }
+
+        ApplySkill(_skillMatches[_skillList.SelectedIndex]);
+    }
+
+    /// <summary>把技能按当前 <c>@token</c> 区间原地替换为 <c>@id </c>。</summary>
+    private void ApplySkill(AvailableSkillItem skill)
+    {
+        if (_inputTextBox == null)
+        {
+            HideSkillCompletion();
+            return;
+        }
+
+        var text = _inputTextBox.Text ?? string.Empty;
+        var start = Math.Clamp(_skillTokenStart, 0, text.Length);
+        var end = Math.Clamp(_skillTokenEnd, start, text.Length);
+        var insert = "@" + skill.Id + " ";
+
+        _suppressCompletionRefresh = true;
+        try
+        {
+            _inputTextBox.Text = text[..start] + insert + text[end..];
+            _inputTextBox.CaretIndex = start + insert.Length;
+            _inputTextBox.Focus();
+        }
+        finally
+        {
+            _suppressCompletionRefresh = false;
+        }
+
+        HideSkillCompletion();
+    }
+
+    /// <summary>隐藏 `@` 技能候选。</summary>
+    private void HideSkillCompletion()
+    {
+        if (_skillPopup != null)
+            _skillPopup.IsOpen = false;
+    }
+
+    /// <summary>
+    /// 鼠标点选技能项时立即插入（不发送）。
+    /// 直接按命中的列表项处理，不依赖 SelectedIndex，避免键盘导航与点选互相干扰。
+    /// </summary>
+    private void OnSkillItemPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed == false) return;
+        if (e.Source is Control control && control.DataContext is AvailableSkillItem skill)
+        {
+            e.Handled = true;
+            ApplySkill(skill);
+        }
+    }
+
+    /// <summary>技能弹层关闭后清空列表数据，避免下次打开时残留旧选中态。</summary>
+    private void OnSkillPopupClosed(object? sender, EventArgs e)
+    {
+        if (_skillList != null)
+        {
+            _skillList.ItemsSource = null;
+            _skillList.SelectedIndex = -1;
+        }
+        _skillMatches = Array.Empty<AvailableSkillItem>();
     }
 
     /// <summary>用户鼠标点选列表项时立即应用选中（不发送）。</summary>

@@ -9,7 +9,8 @@ import { isCaptureSupported } from '../components/screenshot/capture';
 import { post } from '../lib/api';
 import { formatBytes, formatTime, isImageMediaType, truncate } from '../lib/format';
 import { openSettings, openSessions, openWiki } from '../lib/router';
-import type { StoredAttachment, WebCommand } from '../lib/types';
+import { settingsApi } from '../lib/settings';
+import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import type { ChatItem, ToolCard } from '../stores/chat';
 import { dropChat, getChat } from '../stores/chats';
@@ -68,6 +69,13 @@ export function ChatPage(props: { sessionId: string }) {
   const [dragging, setDragging] = createSignal(false);
   const [focused, setFocused] = createSignal(false);
   const [commandIndex, setCommandIndex] = createSignal(0);
+  /** `@` 技能候选：候选集（当前会话可用技能）与是否正在展示。 */
+  const [mentionSkills, setMentionSkills] = createSignal<AvailableSkill[]>([]);
+  const [mentionOpen, setMentionOpen] = createSignal(false);
+  const [mentionQuery, setMentionQuery] = createSignal('');
+  const [mentionIndex, setMentionIndex] = createSignal(0);
+  /** `@` token 在输入框中的区间 `[start, end)`，用于选中后原地替换。 */
+  const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | null>(null);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [dialog, setDialog] = createSignal<'rename' | 'delete' | null>(null);
   const [screenshotOpen, setScreenshotOpen] = createSignal(false);
@@ -104,6 +112,38 @@ export function ChatPage(props: { sessionId: string }) {
     });
   });
 
+  /**
+   * `@` 技能候选：只在单行、且光标前是「行首或空白 + @token」时命中。
+   * 含路径分隔符的 token（`@D:\a.cs`、`@./src`）不当作技能，留给附件路径引用。
+   */
+  const matchedSkills = createMemo<AvailableSkill[]>(() => {
+    if (!mentionOpen()) return [];
+    const query = mentionQuery().toLowerCase();
+    return mentionSkills()
+      .filter(
+        (skill) =>
+          skill.id.toLowerCase().startsWith(query) || skill.name.toLowerCase().startsWith(query),
+      )
+      .slice(0, 10);
+  });
+
+  let skillsLoading = false;
+  let skillsLoaded = false;
+  let skillsFailed = false;
+  /** 技能请求代次：会话切换时自增，用于丢弃上一个会话的迟到响应。 */
+  let skillsEpoch = 0;
+
+  // 会话切换：可用技能按会话绑定的工作区解析，需重新拉取（否则会展示上一个工作区的技能）
+  createEffect(() => {
+    void props.sessionId;
+    skillsEpoch++;
+    skillsLoading = false;
+    skillsLoaded = false;
+    skillsFailed = false;
+    setMentionSkills([]);
+    closeMention();
+  });
+
   onMount(() => {
     void loadCommands();
     void (async () => {
@@ -134,10 +174,99 @@ export function ChatPage(props: { sessionId: string }) {
     if (commandIndex() >= list.length) setCommandIndex(0);
   });
 
+  createEffect(() => {
+    const list = matchedSkills();
+    if (mentionIndex() >= list.length) setMentionIndex(0);
+  });
+
   function resizeTextarea() {
     if (!textareaEl) return;
     textareaEl.style.height = 'auto';
     textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, 220)}px`;
+  }
+
+  /* ── `@` 技能候选 ─────────────────────────────────────────────────── */
+
+  /** 拉取当前会话可用技能（每次会话切换后一次；失败只提示一次，不打断输入）。 */
+  async function ensureSkills(): Promise<void> {
+    if (skillsLoading || skillsLoaded || skillsFailed) return;
+    skillsLoading = true;
+    const epoch = skillsEpoch;
+    try {
+      const items = await settingsApi.listAvailableSkills(props.sessionId);
+      // 会话已切换：丢弃上一个会话的迟到响应，避免弹层里混入别的工作区的技能
+      if (epoch !== skillsEpoch) return;
+      setMentionSkills(items);
+      skillsLoaded = true;
+    } catch (error) {
+      if (epoch !== skillsEpoch) return;
+      skillsFailed = true;
+      showToast(error instanceof Error ? error.message : '技能列表加载失败', 'error');
+    } finally {
+      if (epoch === skillsEpoch) skillsLoading = false;
+    }
+  }
+
+  /** 关闭 `@` 候选（不清空输入，也不影响斜杠菜单）。 */
+  function closeMention(): void {
+    setMentionOpen(false);
+    setMentionQuery('');
+    setMentionRange(null);
+    setMentionIndex(0);
+  }
+
+  /** 根据光标位置重算 `@` token；不满足条件即关闭候选。 */
+  function updateMention(): void {
+    const element = textareaEl;
+    if (!element) {
+      closeMention();
+      return;
+    }
+
+    const value = element.value ?? '';
+    const caret = element.selectionStart ?? 0;
+    if (value.includes('\n')) {
+      closeMention();
+      return;
+    }
+
+    // 行首或空白后的 @token（除空白/路径特征外的字符都算 token，含中文技能名）
+    const match = /(^|\s)@([^\s@\\/:~]*)$/.exec(value.slice(0, caret));
+    if (!match) {
+      closeMention();
+      return;
+    }
+
+    const token = match[2];
+
+    setMentionRange({ start: caret - token.length - 1, end: caret });
+    setMentionQuery(token);
+    setMentionIndex(0);
+    setMentionOpen(true);
+    void ensureSkills();
+  }
+
+  /** 把选中的技能按 token 区间原地替换为 `@id `，并把光标放到末尾。 */
+  function applyMention(skill: AvailableSkill): void {
+    const range = mentionRange();
+    if (!range) {
+      closeMention();
+      return;
+    }
+
+    const value = textareaEl?.value ?? input();
+    const insert = `@${skill.id} `;
+    const next = value.slice(0, range.start) + insert + value.slice(range.end);
+    closeMention();
+    setInput(next);
+
+    queueMicrotask(() => {
+      if (!textareaEl) return;
+      const caret = range.start + insert.length;
+      textareaEl.focus();
+      textareaEl.setSelectionRange(caret, caret);
+      resizeTextarea();
+    });
   }
 
   async function switchSessionModel(providerId: string, modelId: string): Promise<void> {
@@ -172,12 +301,14 @@ export function ChatPage(props: { sessionId: string }) {
     }
 
     setInput('');
+    closeMention();
     queueMicrotask(resizeTextarea);
     await chat.send(text, permissionModeKey(), currentEffort());
   }
 
   function runCommand(command: WebCommand) {
     setInput('');
+    closeMention();
     queueMicrotask(resizeTextarea);
 
     const action = command.action;
@@ -273,6 +404,7 @@ export function ChatPage(props: { sessionId: string }) {
       });
       if (result.text) {
         setInput(result.text);
+        closeMention();
         queueMicrotask(resizeTextarea);
       }
     } catch (error) {
@@ -444,12 +576,50 @@ export function ChatPage(props: { sessionId: string }) {
                 setInput(event.currentTarget.value);
                 setCommandIndex(0);
                 resizeTextarea();
+                updateMention();
               }}
               onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
+              onBlur={() => {
+                setFocused(false);
+                closeMention();
+              }}
+              onClick={() => updateMention()}
+              onKeyUp={(event) => {
+                // 光标移动可能离开 / 进入 `@token`；上下键由候选弹层消费，这里不碰
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+                  updateMention();
+                }
+              }}
               onPaste={onPaste}
               onKeyDown={(event) => {
                 if (event.isComposing) return;
+
+                // `@` 技能候选优先于斜杠菜单：两者不会同时展示（`@` 不满足斜杠的整串前缀条件）
+                const skills = matchedSkills();
+                if (mentionOpen()) {
+                  if (skills.length > 0) {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      setMentionIndex((index) => (index + 1) % skills.length);
+                      return;
+                    }
+                    if (event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      setMentionIndex((index) => (index - 1 + skills.length) % skills.length);
+                      return;
+                    }
+                    if (event.key === 'Enter' || event.key === 'Tab') {
+                      event.preventDefault();
+                      applyMention(skills[mentionIndex()] ?? skills[0]);
+                      return;
+                    }
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeMention();
+                    return;
+                  }
+                }
 
                 const list = matchedCommands();
                 if (list.length > 0) {
@@ -550,6 +720,26 @@ export function ChatPage(props: { sessionId: string }) {
               </button>
             </div>
 
+            <Show when={mentionOpen() && matchedSkills().length > 0}>
+              <div class="command-menu">
+                <For each={matchedSkills()}>
+                  {(skill, index) => (
+                    <button
+                      class="command-row"
+                      classList={{ active: index() === mentionIndex() }}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setMentionIndex(index())}
+                      onClick={() => applyMention(skill)}
+                    >
+                      <span class="command-name">@{skill.id}</span>
+                      <span class="command-desc">{skill.description || skill.name}</span>
+                      <span class="command-tag">{skill.isBuiltin ? '内置' : skill.category}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+
             <Show when={matchedCommands().length > 0}>
               <div class="command-menu">
                 <For each={matchedCommands()}>
@@ -627,6 +817,7 @@ export function ChatPage(props: { sessionId: string }) {
               onClick={() => {
                 setPlusMenu(null);
                 setInput('/');
+                closeMention();
                 queueMicrotask(() => {
                   textareaEl?.focus();
                   resizeTextarea();

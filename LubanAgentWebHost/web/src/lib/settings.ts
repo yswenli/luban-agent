@@ -5,6 +5,7 @@ import type {
   A2AServer,
   AgentsMdInfo,
   AgentsMdResult,
+  AvailableSkill,
   GlobalSessionStats,
   McpFile,
   ModelItem,
@@ -45,6 +46,12 @@ export const settingsApi = {
   /* ── 技能 ── */
   listSkills: async (scope: ScopeValue): Promise<SkillSummary[]> =>
     (await get<ListResponse<SkillSummary>>('/skill/list', { scope }))?.items ?? [],
+  /**
+   * 列出输入 `@` 时可选的技能：服务端按会话绑定的工作区取合并视图，
+   * 只含已启用项（含内置、自定义与用户级 / 工作区文件技能）。
+   */
+  listAvailableSkills: async (sessionId?: string): Promise<AvailableSkill[]> =>
+    (await get<ListResponse<AvailableSkill>>('/skill/loaded', { sessionId }))?.items ?? [],
   readSkill: (scope: ScopeValue, key: string): Promise<SkillFile> =>
     get<SkillFile>('/skill/read', { scope, key }),
   saveSkill: (body: Record<string, unknown>): Promise<{ key: string }> =>

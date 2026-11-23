@@ -31,6 +31,12 @@ public sealed class SkillController : Controller
     [HttpGet]
     public Task<ActionResult> Read(string? scope, string? key) => WebSkillService.ReadAsync(scope, key);
 
+    /// <summary>列出输入 <c>@</c> 时可选的技能（当前会话可用技能）。</summary>
+    /// <param name="sessionId">会话标识；缺省按当前工作区。</param>
+    /// <returns>已启用技能数组（含内置、自定义与工作区文件技能）。</returns>
+    [HttpGet]
+    public Task<ActionResult> Loaded(string? sessionId) => WebSkillService.LoadedAsync(sessionId);
+
     /// <summary>保存技能。</summary>
     /// <param name="payload">包装后的 <see cref="SkillSaveRequest"/> JSON。</param>
     /// <returns>保存后的条目键（目录名）。</returns>
