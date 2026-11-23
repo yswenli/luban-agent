@@ -63,6 +63,13 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
         var cookieToken = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var cookie) ? cookie.Value : null;
         var authorization = Request.Headers.TryGetValue("Authorization", out var header) ? header : null;
 
+        // 写进 Cookie 的 Secure 跟「请求实际协议」而不是宿主配置：反向代理终结 TLS 时
+        // 宿主自身讲的是明文，只有 X-Forwarded-Proto 才能说明浏览器那边是 https
+        var secureCookie = string.Equals(
+            WebRequestScheme.Resolve(Request, runtime.Settings.UseHttps),
+            WebRequestScheme.Https,
+            StringComparison.Ordinal);
+
         var decision = WebHostAccess.Decide(
             Request.Url,
             entryToken,
@@ -78,7 +85,7 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
             if (!string.IsNullOrEmpty(issueToken)
                 && !string.Equals(issueToken, cookieToken, StringComparison.Ordinal))
             {
-                Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken);
+                Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken, secureCookie);
             }
 
             return base.GetActionResult();
@@ -87,7 +94,7 @@ public sealed class GatedHttpContext : SAEA.MVC.HttpContext
         if (decision == WebEntryDecision.Redirect && !string.IsNullOrEmpty(issueToken))
         {
             // 令牌已换成 Cookie：地址栏回到干净路径，避免令牌留在历史记录与分享链接里
-            Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken);
+            Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken, secureCookie);
             if (!IsReadRequest())
             {
                 // 302 会把非 GET/HEAD 改成 GET 并丢掉请求体；这类请求直接按令牌已校验放行

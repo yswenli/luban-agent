@@ -143,6 +143,30 @@ public class ModelProfileUnitTest
     }
 
     [TestMethod]
+    public void BuiltinProfiles_DeepSeekV41Flash_MatchesAllIdSpellings()
+    {
+        // 方舟 Chat API：low/high/max + none，默认 high；medium 与 xhigh 归一为 high
+        var ids = new[]
+        {
+            "deepseek-v4.1-flash",
+            "deepseek-v4.1-flash-1017",
+            "deepseek-v4-1-flash-261017",
+            "deepseek-v4-1-flash-260910",
+            "deepseek-v4-1-flash-economy-261017",
+            "doubao:deepseek-v4.1-flash",
+            "DOUBAO:DeepSeek-V4.1-Flash"
+        };
+
+        foreach (var id in ids)
+        {
+            var profile = _config.GetModelProfile(id);
+            Assert.IsNotNull(profile, $"{id} 应命中内置档案");
+            Assert.AreEqual(1_048_576, profile!.ContextWindow, $"{id} 的窗口应为 1024K");
+            CollectionAssert.AreEqual(new[] { "Low", "High" }, profile.Reasoning!.ToArray(), $"{id} 的档位应为 Low/High");
+        }
+    }
+
+    [TestMethod]
     public void GetModelProfile_UnknownModelReturnsNull_ButExplicitUnsupportedKeepsEmpty()
     {
         Assert.IsNull(_config.GetModelProfile("openai:no-such-model"), "未知模型应返回 null 而不是空档案");

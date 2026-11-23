@@ -14,8 +14,14 @@ namespace LubanAgentCore.Client;
 /// </summary>
 public sealed record WebHostDescriptor
 {
-    /// <summary>监听地址，形如 <c>http://127.0.0.1:18080</c>。</summary>
+    /// <summary>监听地址，形如 <c>https://127.0.0.1:18080</c>。</summary>
     public string BaseAddress { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 宿主自签证书的 SHA-256 指纹（大写十六进制）；为空表示该实例未启用 TLS。
+    /// </summary>
+    /// <remarks>客户端凭它放行自签证书，见 <see cref="WebHostTlsTrust"/>。</remarks>
+    public string? CertificateSha256 { get; init; }
 
     /// <summary>宿主本次运行的访问令牌；旧版本宿主未启用令牌时为 null。</summary>
     public string? Token { get; init; }

@@ -73,6 +73,13 @@ public static class ModelProfileDefaults
                 // DeepSeek：官方 low/high/max，max 不可发；关思考走 thinking.type
                 ["deepseek-flash"] = Profile(Window1M, ["Low", "High"]),
                 ["deepseek-v4-pro"] = Profile(Window1M, ["Low", "High"]),
+                // 方舟 DeepSeek-V4.1-Flash（Chat API）：官方 low/high/max + none，默认 high；
+                // medium 与 xhigh 均被归一为 high，故不收 Medium / ExtraHigh，max 不可发
+                ["deepseek-v4.1-flash"] = Profile(Window1M, ["Low", "High"]),
+                ["deepseek-v4.1-flash-1017"] = Profile(Window1M, ["Low", "High"]),
+                ["deepseek-v4-1-flash-261017"] = Profile(Window1M, ["Low", "High"]),
+                ["deepseek-v4-1-flash-260910"] = Profile(Window1M, ["Low", "High"]),
+                ["deepseek-v4-1-flash-economy-261017"] = Profile(Window1M, ["Low", "High"]),
 
                 // Kimi：K3 / K3.1 / K2.8 系列 low/high/max（max 不可发），思考不可关；
                 //       k2.6 / k2.7-code 不支持 reasoning_effort

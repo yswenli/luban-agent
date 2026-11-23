@@ -163,7 +163,10 @@ public static class WebSystemService
         {
             var runtime = WebApi.Runtime;
             var settings = runtime.Settings;
-            var entryUrl = WebHostAccess.BuildLanEntryUrl(settings.Port, runtime.Sessions.TakeEntryToken());
+            var entryUrl = WebHostAccess.BuildLanEntryUrl(
+                settings.Port,
+                runtime.Sessions.TakeEntryToken(),
+                settings.UseHttps);
 
             var stream = CodeUtil.Write(entryUrl, EnumCodeType.QRCode, EntryQrSize, EntryQrSize);
             return Task.FromResult<ActionResult>(new FileResult(stream, "image/png", HttpStatusCode.OK));
@@ -207,8 +210,8 @@ public static class WebSystemService
         var settings = runtime.Settings;
         var token = runtime.Sessions.TakeEntryToken();
         return Task.FromResult(WebApi.OkJson(new WebEntryUrlDto(
-            WebHostAccess.BuildLanEntryUrl(settings.Port, token),
-            WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", token),
+            WebHostAccess.BuildLanEntryUrl(settings.Port, token, settings.UseHttps),
+            WebHostAccess.BuildLocalEntryUrl(settings.Port, token, settings.UseHttps),
             runtime.Sessions.ExpiresAt)));
     });
 

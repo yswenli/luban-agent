@@ -189,7 +189,10 @@ public static class WebAgentService
         {
             // 文件链接工具的基地址只能取自用户此刻的请求头：轮次在后台跑，起跑后请求上下文已释放，
             // 故在这里（仍在请求线程上）先解析出来，再由轮次体内挂到调用链上
-            var baseAddress = WebRequestAddress.Resolve(WebApi.Request, WebApi.Runtime.Settings.Port);
+            var baseAddress = WebRequestAddress.Resolve(
+                WebApi.Request,
+                WebApi.Runtime.Settings.Port,
+                WebApi.Runtime.Settings.UseHttps);
             run = await WebApi.Runtime.Runs.StartAsync(userId, resolution.SessionId, async (handle, ct) =>
             {
                 using var linkScope = WebFileLinkScope.Begin(baseAddress);

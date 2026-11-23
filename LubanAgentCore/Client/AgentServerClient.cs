@@ -33,17 +33,26 @@ public sealed class AgentServerClient : IDisposable
     /// <param name="baseAddress">服务地址。</param>
     /// <param name="token">访问令牌；宿主总是要求令牌，直连时必须提供（自动接管时由发现文件给出）。</param>
     /// <param name="httpClient">外部提供的 HttpClient（为 null 时自建并负责释放）。</param>
-    public AgentServerClient(Uri baseAddress, string? token = null, HttpClient? httpClient = null)
+    /// <param name="certificateSha256">
+    /// 宿主自签证书的 SHA-256 指纹；HTTPS 访问时必须给出，否则握手会因证书不受信任而失败。
+    /// </param>
+    public AgentServerClient(Uri baseAddress, string? token = null, HttpClient? httpClient = null, string? certificateSha256 = null)
     {
         ArgumentNullException.ThrowIfNull(baseAddress);
 
         BaseAddress = baseAddress;
         _token = string.IsNullOrWhiteSpace(token) ? null : token.Trim();
         _ownsHttp = httpClient is null;
+
+        var sslCallback = WebHostTlsTrust.CreateCallback(certificateSha256);
         _http = httpClient ?? new HttpClient(new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
-            ConnectTimeout = TimeSpan.FromSeconds(10)
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            // 自签证书：只放行发现文件里登记的那一张（旧版宿主为 HTTP，回调不会被调用）
+            SslOptions = sslCallback is null
+                ? new SslClientAuthenticationOptions()
+                : new SslClientAuthenticationOptions { RemoteCertificateValidationCallback = sslCallback }
         })
         {
             // 流式回合可能持续很久，超时一律由调用方的 CancellationToken 控制

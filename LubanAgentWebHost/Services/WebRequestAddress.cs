@@ -10,7 +10,7 @@
 namespace LubanAgentWebHost.Services;
 
 /// <summary>
-/// 请求头 → 宿主基地址（<c>http://host:port</c>）。
+/// 请求头 → 宿主基地址（<c>scheme://host:port</c>）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,6 +20,7 @@ namespace LubanAgentWebHost.Services;
 /// <para>
 /// 反向代理下 <c>X-Forwarded-Host</c> / <c>X-Forwarded-Proto</c> 才是用户实际看到的地址，
 /// 有则优先；两者都没有时（非浏览器客户端、HTTP/1.0）回落到宿主自报的局域网地址。
+/// 协议一律由 <see cref="WebRequestScheme"/> 判定，不在这里另设默认值。
 /// </para>
 /// </remarks>
 public static class WebRequestAddress
@@ -28,8 +29,9 @@ public static class WebRequestAddress
     /// 从请求头解析基地址。
     /// </summary>
     /// <param name="request">当前请求。</param>
-    /// <returns>形如 <c>http://192.168.3.215:18080</c>；无法判定时返回 null。</returns>
-    public static string? FromHeaders(HttpRequest? request)
+    /// <param name="hostUsesHttps">宿主是否以 HTTPS 提供服务（无转发头时据此判定协议）。</param>
+    /// <returns>形如 <c>https://192.168.3.215:18080</c>；无法判定时返回 null。</returns>
+    public static string? FromHeaders(HttpRequest? request, bool hostUsesHttps)
     {
         if (request is null)
         {
@@ -37,7 +39,7 @@ public static class WebRequestAddress
         }
 
         var authority = HeaderValue(request, "X-Forwarded-Host") ?? HeaderValue(request, "Host");
-        var scheme = HeaderValue(request, "X-Forwarded-Proto");
+        var scheme = WebRequestScheme.Resolve(request, hostUsesHttps);
         return Normalize(scheme, authority);
     }
 
@@ -50,14 +52,20 @@ public static class WebRequestAddress
     /// </remarks>
     /// <param name="request">当前请求。</param>
     /// <param name="port">宿主监听端口。</param>
-    /// <returns>形如 <c>http://192.168.3.215:18080</c>。</returns>
-    public static string Resolve(HttpRequest? request, int port)
-        => FromHeaders(request) ?? $"http://{WebHostAccess.GetPreferredLanHost()}:{port}";
+    /// <param name="hostUsesHttps">宿主是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://192.168.3.215:18080</c>。</returns>
+    public static string Resolve(HttpRequest? request, int port, bool hostUsesHttps)
+        => FromHeaders(request, hostUsesHttps)
+            ?? WebHostAccess.BuildBaseAddress(WebHostAccess.GetPreferredLanHost(), port, hostUsesHttps);
 
     /// <summary>
     /// 校验并归一化 <c>scheme://authority</c>：只接受 http/https 且 authority 不含路径与空白。
     /// </summary>
-    /// <param name="scheme">协议头值（可为 null）。</param>
+    /// <remarks>
+    /// 协议由调用方按 <see cref="WebRequestScheme"/> 的判定结果传入；这里只做格式校验与归一，
+    /// 不再自行决定默认协议，避免与链接、Cookie 的判定分叉。
+    /// </remarks>
+    /// <param name="scheme">协议（<c>http</c> / <c>https</c>，可为 null）。</param>
     /// <param name="authority"><c>Host</c> 头值，形如 <c>192.168.3.215:18080</c>。</param>
     /// <returns>归一化后的基地址；非法返回 null。</returns>
     internal static string? Normalize(string? scheme, string? authority)
@@ -86,18 +94,21 @@ public static class WebRequestAddress
     }
 
     /// <summary>
-    /// 按名取头值。
+    /// 按名取头值（字典优先，回落到原始报文）。
     /// </summary>
     /// <remarks>
     /// SAEA 把头解析进 <see cref="HttpRequest.Headers"/> 时会清空 <c>Host</c> 的值
     /// （实测 <c>Host=</c>），原始报文仍完整保留在 <see cref="HttpRequest.HeaderStr"/>；
     /// 因此字典没取到时回落到原始头文本，否则「取用户实际访问地址」就永远只能走兜底。
+    /// 协议判定（<see cref="WebRequestScheme"/>）也走这里，避免两套头解析。
     /// </remarks>
-    /// <param name="request">当前请求。</param>
+    /// <param name="request">当前请求；为 null 时返回 null。</param>
     /// <param name="name">头名。</param>
     /// <returns>头值；缺失或为空返回 null。</returns>
-    private static string? HeaderValue(HttpRequest request, string name)
-        => DictionaryHeaderValue(request, name) ?? RawHeaderValue(request.HeaderStr, name);
+    internal static string? HeaderValue(HttpRequest? request, string name)
+        => request is null
+            ? null
+            : DictionaryHeaderValue(request, name) ?? RawHeaderValue(request.HeaderStr, name);
 
     /// <summary>从头字典取头值（SAEA 的键大小写不定，这里忽略大小写）。</summary>
     /// <param name="request">当前请求。</param>

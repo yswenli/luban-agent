@@ -91,9 +91,9 @@ public static class WebHostAccess
     /// <summary>
     /// 拼出浏览器可直接打开的入口地址。
     /// </summary>
-    /// <param name="baseAddress">监听地址，形如 <c>http://192.168.3.215:18080</c>。</param>
+    /// <param name="baseAddress">监听地址，形如 <c>https://192.168.3.215:18080</c>。</param>
     /// <param name="token">浏览器会话令牌。</param>
-    /// <returns>形如 <c>http://192.168.3.215:18080/?t=xxx</c>。</returns>
+    /// <returns>形如 <c>https://192.168.3.215:18080/?t=xxx</c>。</returns>
     public static string BuildEntryUrl(string baseAddress, string token)
         => $"{baseAddress.TrimEnd('/')}/?{TokenQueryName}={Uri.EscapeDataString(token)}";
 
@@ -105,9 +105,34 @@ public static class WebHostAccess
     /// </remarks>
     /// <param name="port">本实例监听端口。</param>
     /// <param name="token">浏览器会话令牌。</param>
-    /// <returns>形如 <c>http://192.168.3.215:18080/?t=xxx</c>。</returns>
-    public static string BuildLanEntryUrl(int port, string token)
-        => BuildEntryUrl($"http://{GetPreferredLanHost()}:{port}", token);
+    /// <param name="https">是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://192.168.3.215:18080/?t=xxx</c>。</returns>
+    public static string BuildLanEntryUrl(int port, string token, bool https = true)
+        => BuildEntryUrl(BuildBaseAddress(GetPreferredLanHost(), port, https), token);
+
+    /// <summary>
+    /// 拼出本机可直接打开的入口地址。
+    /// </summary>
+    /// <remarks>
+    /// 主机固定取 <c>127.0.0.1</c>，与自述文件里的 <c>baseAddress</c> 保持同一个 origin：
+    /// 终端打印的地址、<c>--token</c> 取回的地址与客户端探活的目标由此一致，浏览器也只需记住同一个站点。
+    /// </remarks>
+    /// <param name="port">本实例监听端口。</param>
+    /// <param name="token">浏览器会话令牌。</param>
+    /// <param name="https">是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://127.0.0.1:18080/?t=xxx</c>。</returns>
+    public static string BuildLocalEntryUrl(int port, string token, bool https)
+        => BuildEntryUrl(BuildBaseAddress("127.0.0.1", port, https), token);
+
+    /// <summary>
+    /// 拼出 <c>scheme://host:port</c> 形式的基地址。
+    /// </summary>
+    /// <param name="host">主机名或 IP。</param>
+    /// <param name="port">端口。</param>
+    /// <param name="https">是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://127.0.0.1:18080</c>。</returns>
+    public static string BuildBaseAddress(string host, int port, bool https)
+        => $"{(https ? "https" : "http")}://{host}:{port}";
 
     /// <summary>
     /// 取一个适合在局域网内打开的 IPv4 地址。
@@ -330,11 +355,13 @@ public static class WebHostAccess
     /// <remarks>
     /// 走原始头而不是 SAEA 的 <c>HttpCookie</c>：后者会把 <c>Host</c>（含端口）塞进 <c>Domain</c>，
     /// 浏览器可能整条拒收；不带 Domain 即按主机名生效，IP 访问同样可用。
+    /// HTTPS 下带 <c>Secure</c>，避免凭据在明文连接上传输。
     /// </remarks>
     /// <param name="token">浏览器会话令牌（轮换后的当前值）。</param>
+    /// <param name="secure">是否为 HTTPS（HTTPS 时必须带 <c>Secure</c>）。</param>
     /// <returns>形如 <c>luban_auth=xxx; Path=/; HttpOnly; SameSite=Lax</c>。</returns>
-    public static string BuildAuthCookie(string token)
-        => $"{AuthCookieName}={token}; Path=/; HttpOnly; SameSite=Lax";
+    public static string BuildAuthCookie(string token, bool secure = false)
+        => $"{AuthCookieName}={token}; Path=/; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : string.Empty);
 
     /// <summary>去掉请求目标里的令牌参数，得到可写进 <c>Location</c> 的干净地址。</summary>
     /// <param name="relativeUrl">原始请求目标（可含查询串）。</param>

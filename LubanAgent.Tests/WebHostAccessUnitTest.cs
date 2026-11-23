@@ -280,10 +280,23 @@ public class WebHostAccessUnitTest
         var url = WebHostAccess.BuildLanEntryUrl(18080, "tok");
 
         Assert.IsTrue(Uri.TryCreate(url, UriKind.Absolute, out var uri), $"入口地址必须是绝对 URL：{url}");
-        Assert.AreEqual("http", uri!.Scheme);
+        Assert.AreEqual("https", uri!.Scheme, "宿主默认启用 HTTPS，局域网入口必须印成 https");
         Assert.AreEqual(18080, uri.Port);
         Assert.AreEqual(WebHostAccess.GetPreferredLanHost(), uri.Host, "入口主机必须与局域网地址一致");
         Assert.AreEqual("tok", uri.Query.TrimStart('?').Split('=')[1]);
+    }
+
+    [TestMethod]
+    public void 入口协议跟随宿主的HTTPS开关()
+    {
+        Assert.AreEqual(
+            "http",
+            new Uri(WebHostAccess.BuildLanEntryUrl(18080, "tok", https: false)).Scheme,
+            "--http 启动时局域网入口不能印成 https，否则手机打开就是连接失败");
+        Assert.AreEqual("https", new Uri(WebHostAccess.BuildLanEntryUrl(18080, "tok", https: true)).Scheme);
+
+        Assert.AreEqual("http://127.0.0.1:18080/?t=tok", WebHostAccess.BuildLocalEntryUrl(18080, "tok", https: false));
+        Assert.AreEqual("https://127.0.0.1:18080/?t=tok", WebHostAccess.BuildLocalEntryUrl(18080, "tok", https: true));
     }
 
     [TestMethod]
@@ -343,6 +356,12 @@ public class WebHostAccessUnitTest
         StringAssert.Contains(cookie, "Path=/");
         StringAssert.Contains(cookie, "HttpOnly");
         Assert.IsFalse(cookie.Contains("Domain", StringComparison.OrdinalIgnoreCase), "带 Domain 会让 IP 访问的浏览器拒收");
+        Assert.IsFalse(cookie.Contains("Secure"), "HTTP 下不能带 Secure，否则浏览器根本不会回传这个 Cookie");
+
+        StringAssert.Contains(
+            WebHostAccess.BuildAuthCookie("tok", secure: true),
+            "; Secure",
+            "HTTPS 下必须带 Secure，避免凭据被明文连接带走");
     }
 
     /// <summary>可手动推进的时间源：会话令牌的轮换与绝对上限都依赖时钟，不能靠真实等待。</summary>

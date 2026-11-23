@@ -5,6 +5,11 @@ import solid from 'vite-plugin-solid';
 // 端口由 WebHost 的 --port / LubanAgentWeb:Port 决定，这里用环境变量覆盖，默认与宿主默认端口一致。
 const hostPort = process.env.VITE_HOST_PORT ?? '18080';
 
+// 宿主默认以 HTTPS 提供服务（自签证书），代理必须按同一协议连上游，否则握手直接失败；
+// 用 --http 起宿主时把 VITE_HOST_PROTOCOL 设为 http。
+// 自签证书不被 Node 信任，https 上游必须关掉 secure（仅本次开发代理生效，与浏览器侧的证书信任无关）。
+const hostProtocol = process.env.VITE_HOST_PROTOCOL ?? 'https';
+
 // 开发模式下浏览器直连 Vite、拿不到宿主换发的 Cookie，故把「宿主令牌」填进 VITE_HOST_TOKEN，
 // 由代理在转发时补 Authorization 头；生产模式不读这个变量。
 // 注意：浏览器入口里的 ?t= 是会话令牌，只能换 Cookie，不能当 Bearer 用；
@@ -33,7 +38,12 @@ const apiPrefixes = [
 const proxy = Object.fromEntries(
   apiPrefixes.map((prefix) => [
     prefix,
-    { target: `http://127.0.0.1:${hostPort}`, changeOrigin: true, headers: hostAuthHeaders },
+    {
+      target: `${hostProtocol}://127.0.0.1:${hostPort}`,
+      changeOrigin: true,
+      secure: false,
+      headers: hostAuthHeaders,
+    },
   ]),
 );
 

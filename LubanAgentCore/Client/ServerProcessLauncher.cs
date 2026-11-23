@@ -52,6 +52,9 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
     /// <summary>宿主本次运行的访问令牌；旧版本宿主未启用令牌时为 null。</summary>
     public string? Token { get; private set; }
 
+    /// <summary>宿主自签证书的 SHA-256 指纹；接管或拉起成功后可用。</summary>
+    public string? CertificateSha256 { get; private set; }
+
     /// <summary>本次拉起的子进程号；接管已有宿主时为 null。</summary>
     public int? LaunchedProcessId => _process?.Id;
 
@@ -273,7 +276,7 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
             return null;
         }
 
-        using var probe = new AgentServerClient(address, descriptor.Token);
+        using var probe = new AgentServerClient(address, descriptor.Token, certificateSha256: descriptor.CertificateSha256);
         try
         {
             await probe.GetHealthAsync(ct).ConfigureAwait(false);
@@ -294,6 +297,7 @@ public sealed class ServerProcessLauncher : IAsyncDisposable
 
         BaseAddress = address;
         Token = descriptor.Token;
+        CertificateSha256 = descriptor.CertificateSha256;
         Logger.Info($"已接管运行中的 LubanAgentWebHost（{address}，pid={descriptor.ProcessId}）。");
         return address;
     }

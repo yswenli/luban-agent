@@ -40,11 +40,15 @@ public static class AgentClientHostBuilder
         ServerProcessLauncher? launcher = null;
         Uri address;
         string? token;
+        string? certificateSha256;
 
         if (options.BaseAddress is not null)
         {
             address = options.BaseAddress;
             token = string.IsNullOrWhiteSpace(options.Token) ? null : options.Token.Trim();
+            certificateSha256 = string.IsNullOrWhiteSpace(options.CertificateSha256)
+                ? null
+                : options.CertificateSha256!.Trim();
         }
         else if (options.AutoLaunch)
         {
@@ -60,6 +64,7 @@ public static class AgentClientHostBuilder
             }
 
             token = launcher.Token;
+            certificateSha256 = launcher.CertificateSha256;
         }
         else
         {
@@ -70,7 +75,7 @@ public static class AgentClientHostBuilder
         AgentServerClient? client = null;
         try
         {
-            client = new AgentServerClient(address, token);
+            client = new AgentServerClient(address, token, certificateSha256: certificateSha256);
             await client.GetHealthAsync(ct).ConfigureAwait(false);
 
             var sessions = new HttpSessionManager(client);

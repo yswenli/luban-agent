@@ -159,8 +159,9 @@ public class WebFileLinkUnitTest
     }
 
     [TestMethod]
-    public void Normalize_HostHeader_KeepsPortAndDefaultsToHttp()
+    public void Normalize_SchemeMissing_FallsBackToHttp()
     {
+        // 请求级协议策略在 WebRequestScheme；这里只验证无协议时的格式归一
         Assert.AreEqual(BaseAddress, WebRequestAddress.Normalize(null, "192.168.3.215:18080"));
     }
 

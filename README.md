@@ -233,13 +233,17 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 
 ```bash
 # 手工启动（端口取自 appsettings.json 的 LubanAgentWeb:Port，默认 18080）
-# 启动完成后终端会打印浏览器入口：http://<局域网 IP>:18080/?t=<本次会话令牌>
+# 默认以 HTTPS 提供服务：自签证书（CN=LuBanAgent Local）落盘 %LOCALAPPDATA%\luban-agent\webhost-cert.pfx，
+# 启动时自动装入当前用户受信任根；不想要 TLS 就加 --http，入口与健康检查随之变成 http://
+# 证书维护：--trust-cert 单独补装进当前用户受信任根，--no-trust-cert 启动时不装，--cert-path 换 pfx 位置
+# 启动完成后终端会打印浏览器入口：https://<局域网 IP>:18080/?t=<本次会话令牌>
 # 入口下方还会打印同一地址的二维码，手机（同一局域网）直接扫码打开；宿主由客户端拉起、输出被重定向时不打印
+# 手机首次访问会提示证书不受信任（受信任根只装在本机用户下），需手动信任或绕过警告
 # 浏览器令牌默认每 15 分钟自动换新（页面开着会自动续期），会话默认不设绝对上限
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj
 
-# 健康检查（唯一免令牌的接口）
-curl http://127.0.0.1:18080/system/health
+# 健康检查（唯一免令牌的接口；证书没装进受信任根时 curl 加 -k）
+curl https://127.0.0.1:18080/system/health
 
 # 重新打印浏览器入口（凭宿主令牌向运行中实例取当前入口；宿主未运行会报错）
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --token
@@ -248,7 +252,7 @@ dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --token
 dotnet run --project LubanAgentWebHost/LubanAgentWebHost.csproj -- --stop
 ```
 
-直接打开 `http://<局域网 IP>:18080/` 会被拒绝（401）：入口必须带当前会话令牌，换到 Cookie 后地址栏会自动回到干净 URL；宿主重启（或配置了会话上限后到点）旧地址同样 401。
+直接打开 `https://<局域网 IP>:18080/` 会被拒绝（401）：入口必须带当前会话令牌，换到 Cookie 后地址栏会自动回到干净 URL；宿主重启（或配置了会话上限后到点）旧地址同样 401。
 
 WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内的客户端 SDK（`Client/`）在未指定服务地址时先按发现文件接管已在运行的实例，确实没有才拉起子进程；端口、超时与用户身份取宿主的 `LubanAgentWeb` 配置，宿主令牌由宿主每次启动生成并写入发现文件，客户端只读不自造。
 
@@ -518,7 +522,7 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 - **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
 - **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）、`#/wiki`（知识库）、`#/plugins`（插件管理）、`#/plugin/<pluginId>/<entryId>`（插件自带页面）。SAEA 没有 SPA 回退，所以不能用 history 路由。
 - **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，只写入用户与端口；两类令牌都不落这个文件（浏览器侧只经地址栏换成 HttpOnly Cookie，宿主令牌只在发现文件里）。该文件不提交（见 `.gitignore`）。
-- **开发模式**：先启动 WebHost（`--port` 指定端口），把**宿主令牌**填进 `VITE_HOST_TOKEN` —— 取 `%LOCALAPPDATA%\luban-agent\webhost.json` 的 `token`，或启动时用 `--host-token` 指定（浏览器入口里的 `?t=` 是会话令牌，只能换 Cookie，不能当 Bearer 用）；再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki`、`/plugin`、`/plugin-web` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
+- **开发模式**：先启动 WebHost（`--port` 指定端口），把**宿主令牌**填进 `VITE_HOST_TOKEN` —— 取 `%LOCALAPPDATA%\luban-agent\webhost.json` 的 `token`，或启动时用 `--host-token` 指定（浏览器入口里的 `?t=` 是会话令牌，只能换 Cookie，不能当 Bearer 用）；再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`VITE_HOST_PROTOCOL` 指定上游协议（默认 `https`，与宿主默认一致；宿主用 `--http` 起时设为 `http`；https 上游由代理接受自签证书），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki`、`/plugin`、`/plugin-web` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
 - **顶栏与 SSE 全局**：会话状态常驻前端会话池，顶栏标签与路由解耦——切到首页或设置时回合继续跑，标签上以活动点提示；只有关闭标签、删除会话时才销毁实例并中止在途流。
 - **设置是浮层**：`#/settings/<tab>` 覆盖在当前视图之上，× / Esc / 点遮罩关闭即回到打开前的页面；没有独立的设置整页，也没有「返回应用」。
 - **范围**：网页版覆盖全局顶栏（首页入口 + 会话标签）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、`@` 技能候选、斜杠命令、工具确认框、标签左侧返回按钮）、知识库页（建库/重命名/索引/重建/检索，底部「对话」直接进入该库的会话）、插件管理浮层（安装 / 升级 / 启停 / 卸载 Web 插件，只作用于 Web 插件根）与插件自带页面（同源 iframe，启用且有页面时出现在左侧栏底部）、设置浮层八个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A / 工作区 / 数据与用量）；附件单轮最多 5 个，文本类单文件上限 10MB。连接器、`@` 文件路径上下文与 Shell 命令入口不在网页版范围内。
@@ -540,7 +544,7 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 
 | 场景 | 做法 |
 |------|------|
-| 首次进入（浏览器） | 打开终端打印的 `http://<局域网 IP>:<端口>/?t=<会话令牌>`，宿主换发 Cookie 后 302 到去掉 `t` 的干净地址 |
+| 首次进入（浏览器） | 打开终端打印的 `https://<局域网 IP>:<端口>/?t=<会话令牌>`（宿主以 `--http` 启动时为 `http://`），宿主换发 Cookie 后 302 到去掉 `t` 的干净地址 |
 | 页面一直开着 | 前端每 60 秒请求一次 `/system/session`；令牌到期后的第一次请求由宿主换新并回写 Cookie，不必手动刷新 |
 | 终端翻不到了 | 在宿主机执行 `LubanAgentWebHost --token`，凭宿主令牌向运行实例取当前入口地址与二维码重新打印 |
 | 多台设备 | 同一入口地址进入即可；各设备的 Cookie 各自保存，但共用同一个会话令牌族——任一台的心跳都会推动轮换，旧值在宽限期内仍可用 |
@@ -567,11 +571,11 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 
 ### 风险边界（务必了解）
 
-- **不加密传输**：默认没有 TLS，令牌与全部对话内容在局域网内明文传输。令牌每次重启更换、运行期轮换只能收窄窗口，不能替代加密。
+- **传输加密是自签 TLS，不等于可信身份**：默认已开 HTTPS，用的是本机自签证书（`CN=LuBanAgent Local`，启动时装进当前用户受信任根），能挡住局域网被动嗅探；但私钥就落在 `%LOCALAPPDATA%` 下、只靠文件 ACL 保护，同一用户的进程可直接读取解密，证书本身也不证明对端身份。需要更强边界时仍应前置反向代理。`--http` 可显式关掉 TLS（此时令牌与对话内容明文传输，只建议本机调试）。
 - **轮换不等于收回权限**：轮换只缩短「泄漏但没被使用」的窗口；一个被持续使用的令牌会一路续期，默认一直有效到宿主重启。需要终点就配 `LubanAgentWeb:SessionMaxHours`（正数小时），到点后必须重新取地址——这是唯一能强制失效的开关。
 - **发现文件是明文**：`%LOCALAPPDATA%\luban-agent\webhost.json` 记录端口与宿主令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
 - **拿到地址即有完整权限**：令牌有效期内，持有入口地址者可读写工作区、执行命令。不要把这条地址发到群聊、工单或截图中。
-- **对公网暴露需自行加固**：前置反向代理加 TLS 与额外鉴权，并限制来源网段；本项目不提供公网部署方案。
+- **对公网暴露需自行加固**：前置反向代理加 TLS 与额外鉴权，并限制来源网段；反代需转达 `X-Forwarded-Proto` 与 `X-Forwarded-Host`，否则页面里的文件链接与 Cookie 的 `Secure` 会按宿主自身的协议判定。本项目不提供公网部署方案。
 
 ---
 

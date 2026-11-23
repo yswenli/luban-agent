@@ -19,7 +19,9 @@ public static class Program
     /// </summary>
     /// <param name="args">
     /// 命令行参数：<c>--token</c>（打印在运行实例的浏览器入口）、<c>--stop</c>（停止在运行实例）、
-    /// <c>--port</c> / <c>--host-token</c> / <c>--user</c> / <c>--timeout</c> / <c>--debug</c>。
+    /// <c>--trust-cert</c>（把证书装入当前用户受信任根）、
+    /// <c>--port</c> / <c>--host-token</c> / <c>--user</c> / <c>--timeout</c> / <c>--cert-path</c>
+    /// / <c>--http</c> / <c>--no-trust-cert</c> / <c>--debug</c>。
     /// </param>
     /// <returns>退出码：0 正常，非 0 表示启动失败或命令失败。</returns>
     public static async Task<int> Main(string[] args)
@@ -36,6 +38,12 @@ public static class Program
         if (args.Any(static arg => string.Equals(arg, "--token", StringComparison.OrdinalIgnoreCase)))
         {
             return await PrintEntryUrlsAsync().ConfigureAwait(false);
+        }
+
+        // 信任安装命令：把证书装进当前用户受信任根（启动时也会自动补装，此处供手动重装）
+        if (args.Any(static arg => string.Equals(arg, "--trust-cert", StringComparison.OrdinalIgnoreCase)))
+        {
+            return InstallCertificateTrust(args);
         }
 
         using var shutdown = new CancellationTokenSource();
@@ -167,6 +175,19 @@ public static class Program
             // 访问门禁：把 MVC 的请求上下文换成带令牌判定的版本（覆盖接口、SSE、附件与静态资源）
             WebHostGate.Install(application);
 
+            // TLS：自签证书落盘复用，指纹随自述文件下发给客户端做指纹绑定
+            WebHostTlsCertificate? tls = null;
+            if (settings.UseHttps)
+            {
+                tls = WebHostTls.Enable(application, settings);
+
+                // 浏览器只认系统信任链：把证书补装进当前用户受信任根，红标才会消失
+                if (settings.TrustCertificate)
+                {
+                    EnsureCertificateTrusted(tls);
+                }
+            }
+
             try
             {
                 application.Start();
@@ -180,20 +201,24 @@ public static class Program
             // 自述文件：客户端与浏览器据此找到本实例（端口与令牌以本进程配置为准）
             WebHostDiscovery.Write(new WebHostDescriptor
             {
-                BaseAddress = $"http://127.0.0.1:{settings.Port}",
+                BaseAddress = WebHostAccess.BuildBaseAddress("127.0.0.1", settings.Port, settings.UseHttps),
                 Token = settings.Token,
+                CertificateSha256 = tls?.Sha256,
                 ProcessId = Environment.ProcessId,
                 Version = typeof(Program).Assembly.GetName().Version?.ToString(),
                 ServerPath = Environment.ProcessPath,
                 StartedAt = DateTimeOffset.Now
             });
 
-            var lanEntryUrl = WebHostAccess.BuildLanEntryUrl(settings.Port, runtime.Sessions.Current);
+            var lanEntryUrl = WebHostAccess.BuildLanEntryUrl(
+                settings.Port,
+                runtime.Sessions.Current,
+                settings.UseHttps);
 
             Console.WriteLine($"listening on 0.0.0.0:{settings.Port} (user={runtime.UserId})");
             Report("⑥ 就绪（监听全部网卡，已启用访问令牌）");
             Report($"   浏览器入口：{lanEntryUrl}");
-            Report($"   本机入口：  {WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{settings.Port}", runtime.Sessions.Current)}");
+            Report($"   本机入口：  {WebHostAccess.BuildLocalEntryUrl(settings.Port, runtime.Sessions.Current, settings.UseHttps)}");
             Report($"   浏览器令牌每 {settings.SessionTokenMinutes:0.##} 分钟自动换新（活动页面自动续期），"
                 + (settings.SessionMaxHours > 0
                     ? $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后用 LubanAgentWebHost --token 重新取地址。"
@@ -285,6 +310,65 @@ public static class Program
     }
 
     /// <summary>
+    /// 把宿主证书装入当前用户「受信任的根证书颁发机构」。
+    /// </summary>
+    /// <remarks>
+    /// 只写当前用户（CurrentUser）的根存储，不需要管理员权限。
+    /// 证书缺失时按 <c>--cert-path</c>/配置先签发一张，与启动流程共用同一份 pfx。
+    /// </remarks>
+    /// <returns>退出码：0 已安装或本来已受信任；1 安装失败。</returns>
+    private static int InstallCertificateTrust(string[] args)
+    {
+        try
+        {
+            var configuration = AgentHostBuilder.BuildConfiguration(args);
+            var settings = WebHostSettings.Create(configuration, args);
+            var tls = WebHostTls.EnsureCertificate(settings);
+            var result = WebHostCertificateTrust.EnsureTrusted(tls.Certificate);
+
+            Console.WriteLine($"[webhost] 证书：{tls.Certificate.Subject}");
+            Console.WriteLine($"[webhost] SHA-256：{tls.Sha256}");
+            Console.WriteLine(result.Installed
+                ? "[webhost] 已装入当前用户「受信任的根证书颁发机构」"
+                : "[webhost] 原本已受信任，无需重复安装");
+            if (result.RemovedStale > 0)
+            {
+                Console.WriteLine($"[webhost] 顺带清理同主题旧证书 {result.RemovedStale} 张");
+            }
+
+            Console.WriteLine("[webhost] 只影响当前用户；证书重签换指纹后需重新执行本命令。");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[webhost] 安装信任失败：{ex.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// 启动时确保证书已受信任。
+    /// </summary>
+    /// <remarks>失败只提示，不阻断启动：HTTPS 本身不依赖系统信任链，客户端走指纹绑定。</remarks>
+    /// <param name="tls">已启用的宿主证书。</param>
+    private static void EnsureCertificateTrusted(WebHostTlsCertificate tls)
+    {
+        try
+        {
+            var result = WebHostCertificateTrust.EnsureTrusted(tls.Certificate);
+            Report(result.Installed
+                ? $"   证书已装入当前用户受信任根：{tls.Sha256}"
+                : "   证书已在当前用户受信任根中");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(
+                "[webhost] 证书信任安装失败（HTTPS 仍可用，浏览器会提示证书警告；"
+                + $"可稍后执行 LubanAgentWebHost --trust-cert 重试）：{ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// 打印在运行实例的浏览器入口。
     /// </summary>
     /// <remarks>
@@ -312,15 +396,20 @@ public static class Program
             return 0;
         }
 
-        var lookup = await RequestEntryUrlAsync(descriptor.BaseAddress, descriptor.Token).ConfigureAwait(false);
+        var lookup = await RequestEntryUrlAsync(
+            descriptor.BaseAddress,
+            descriptor.Token,
+            descriptor.CertificateSha256).ConfigureAwait(false);
         WebEntryUrlDto? entry = lookup.Entry;
         if (entry is null && lookup.Unsupported)
         {
             // 旧版宿主没有会话令牌：地址栏里放固定令牌仍然放行
             Console.Error.WriteLine("[webhost] 运行中的实例版本较旧（没有 /system/entryUrl），改用自述文件里的固定令牌");
+            // 旧版宿主多半也没启用 TLS，协议以自述文件的监听地址为准
+            var https = address?.Scheme == Uri.UriSchemeHttps;
             entry = new WebEntryUrlDto(
-                WebHostAccess.BuildLanEntryUrl(port, descriptor.Token),
-                WebHostAccess.BuildEntryUrl($"http://127.0.0.1:{port}", descriptor.Token),
+                WebHostAccess.BuildLanEntryUrl(port, descriptor.Token, https),
+                WebHostAccess.BuildLocalEntryUrl(port, descriptor.Token, https),
                 DateTimeOffset.MaxValue);
         }
 
@@ -345,16 +434,30 @@ public static class Program
     /// <summary>
     /// 用固定令牌向运行中的宿主取当前入口地址。
     /// </summary>
+    /// <remarks>
+    /// 宿主用自签证书，系统信任库不认；这里按自述文件登记的证书指纹放行，
+    /// 指纹为空（未启用 TLS 的旧版宿主）时交回系统默认校验。
+    /// </remarks>
     /// <param name="baseAddress">宿主监听地址。</param>
     /// <param name="token">自述文件里的固定令牌。</param>
+    /// <param name="certificateSha256">自述文件登记的证书 SHA-256 指纹；为空表示不做指纹绑定。</param>
     /// <returns>入口地址；<c>Unsupported</c> 表示宿主没有该接口（旧版本），<c>Error</c> 为失败原因。</returns>
     private static async Task<(WebEntryUrlDto? Entry, bool Unsupported, string? Error)> RequestEntryUrlAsync(
         string baseAddress,
-        string token)
+        string token,
+        string? certificateSha256)
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            // 只信任登记过的那一张证书：null 表示未启用 TLS，交回系统默认校验
+            using var handler = new SocketsHttpHandler
+            {
+                SslOptions =
+                {
+                    RemoteCertificateValidationCallback = WebHostTlsTrust.CreateCallback(certificateSha256)
+                }
+            };
+            using var http = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(10) };
             using var request = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"{baseAddress.TrimEnd('/')}/system/entryUrl");
