@@ -167,13 +167,12 @@ public static class Program
                 Root = "wwwroot",
                 // 长回合 SSE 由动作内部流式写出，动作本身要阻塞到流结束，必须远大于默认 180s
                 Timeout = settings.TimeoutSeconds,
-                IsDebug = settings.Debug
+                IsDebug = settings.Debug,
+                // 访问门禁：把 MVC 的请求上下文换成带令牌判定的版本（覆盖接口、SSE、附件与静态资源）
+                ContextType = typeof(GatedHttpContext)
             };
 
             application = new SAEAMvcApplication(mvcConfig);
-
-            // 访问门禁：把 MVC 的请求上下文换成带令牌判定的版本（覆盖接口、SSE、附件与静态资源）
-            WebHostGate.Install(application);
 
             // TLS：自签证书落盘复用，指纹随自述文件下发给客户端做指纹绑定
             WebHostTlsCertificate? tls = null;

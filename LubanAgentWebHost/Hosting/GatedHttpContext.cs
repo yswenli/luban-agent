@@ -3,7 +3,7 @@
 *CLR版本： .net10.0
 *命名空间：LubanAgentWebHost.Hosting
 *文件名： GatedHttpContext
-*描述：全站访问门禁：在 MVC 出结果的唯一入口判定令牌
+*描述：全站访问门禁：在 MVC 路由与静态文件解析之前判定令牌
 *
 *****************************************************************************/
 
@@ -14,13 +14,13 @@ namespace LubanAgentWebHost.Hosting;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SAEA.MVC 的每个 GET/POST/PUT/DELETE 请求最终都会落到 <see cref="GetActionResult"/>：
+/// SAEA.MVC 在请求解析完成后、路由之前调用 <see cref="OnRequestExecutingAsync"/>：
 /// 命中路由则交给控制器动作，未命中则按静态文件返回。因此在这里判定令牌，
 /// 就能一次覆盖接口、SSE、附件与静态资源，不必在每个控制器里重复校验。
 /// </para>
 /// <para>
-/// 该类型由 <see cref="WebHostGate"/> 在启动时替换进 <c>SAEAMvcApplication</c> 的内部 <c>WebHost</c>，
-/// 替换失败会直接抛出启动异常，避免门禁静默失效。
+/// 该类型由 <c>SAEAMvcApplicationConfig.ContextType</c> 在启动前指定，等价于把门禁放在路由与静态文件之前的中间件，
+/// 不需要反射改写 SAEA 的内部字段。
 /// </para>
 /// </remarks>
 public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
@@ -44,19 +44,24 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     /// <summary>
     /// 记录连接通道后交回 MVC 的默认处理。
     /// </summary>
+    /// <remarks>
+    /// 同步入口 <c>HttpHandle</c> 内部也转到本方法，因此两条路径都能记录到连接；
+    /// 上下文按连接复用，每条请求都会重写该值。
+    /// </remarks>
     /// <param name="channel">本次请求的连接通道。</param>
     /// <param name="httpMessage">已解析的请求报文。</param>
-    public override void HttpHandle(IChannel channel, HttpMessage httpMessage)
+    /// <returns>响应写出完成后的任务。</returns>
+    public override Task HttpHandleAsync(IChannel channel, HttpMessage httpMessage)
     {
         Connection = channel;
-        base.HttpHandle(channel, httpMessage);
+        return base.HttpHandleAsync(channel, httpMessage);
     }
 
     /// <summary>
-    /// 先做令牌判定，再交回 MVC 的默认处理。
+    /// 路由前做令牌判定：未命中令牌时返回接管结果，放行时返回 null 交给 MVC 正常路由。
     /// </summary>
-    /// <returns>响应结果。</returns>
-    public override IHttpResult GetActionResult()
+    /// <returns>接管结果；放行时为 null。</returns>
+    public override Task<IHttpResult> OnRequestExecutingAsync()
     {
         var runtime = AgentWebRuntime.Current;
         var entryToken = Request.Query.TryGetValue(WebHostAccess.TokenQueryName, out var query) ? query : null;
@@ -88,7 +93,7 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
                 Response.Headers["Set-Cookie"] = WebHostAccess.BuildAuthCookie(issueToken, secureCookie);
             }
 
-            return base.GetActionResult();
+            return ContinueRouting();
         }
 
         if (decision == WebEntryDecision.Redirect && !string.IsNullOrEmpty(issueToken))
@@ -98,19 +103,28 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
             if (!IsReadRequest())
             {
                 // 302 会把非 GET/HEAD 改成 GET 并丢掉请求体；这类请求直接按令牌已校验放行
-                return base.GetActionResult();
+                return ContinueRouting();
             }
 
             Response.Headers["Location"] = WebHostAccess.StripTokenQuery(Request.RelativeUrl);
-            return new ContentResult(string.Empty, HttpStatusCode.Found);
+            return Task.FromResult<IHttpResult>(new ContentResult(string.Empty, HttpStatusCode.Found));
         }
 
         var expired = decision == WebEntryDecision.Expired;
-        return WantsHtml()
+        return Task.FromResult<IHttpResult>(WantsHtml()
             ? new ContentResult(expired ? ExpiredHtml : UnauthorizedHtml, HttpStatusCode.Unauthorized)
             : WebApi.FailJson(401, expired
                 ? "未授权：浏览器会话已过期，请重新获取入口地址"
-                : "未授权：缺少或错误的访问令牌");
+                : "未授权：缺少或错误的访问令牌"));
+    }
+
+    /// <summary>
+    /// 放行本次请求：返回 null 让 MVC 继续合并参数并正常路由。
+    /// </summary>
+    /// <returns>值为 null 的结果任务。</returns>
+    private static Task<IHttpResult> ContinueRouting()
+    {
+        return Task.FromResult<IHttpResult>(null!);
     }
 
     /// <summary>
