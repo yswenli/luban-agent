@@ -12,16 +12,70 @@ export function isToday(value: string | null | undefined): boolean {
   return localDayKey(value) === localDayKey(new Date().toISOString());
 }
 
-/** 会话列表分组：今天 / 昨天 / 更早。 */
-export type DayBucket = 'today' | 'yesterday' | 'earlier';
+/** 会话列表分组：今天 / 更早。 */
+export type DayBucket = 'today' | 'earlier';
 
 export function dayBucket(value: string | null | undefined): DayBucket {
   const key = localDayKey(value);
   if (!key) return 'earlier';
-  if (key === localDayKey(new Date().toISOString())) return 'today';
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  return key === localDayKey(yesterday.toISOString()) ? 'yesterday' : 'earlier';
+  return key === localDayKey(new Date().toISOString()) ? 'today' : 'earlier';
+}
+
+/** 整日差，按本机日历日计算，避免「23 小时」与「昨天」互相矛盾。 */
+function calendarDaysBetween(from: Date, to: Date): number {
+  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
+/** 整月差，日不足当月则少算一个月。 */
+function calendarMonthsBetween(from: Date, to: Date): number {
+  let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  if (to.getDate() < from.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+/**
+ * 会话行的时间标签。
+ *
+ * 今天组按时长递进（秒 / 分 / 小时），更早组按日历阶梯递进（昨天 → 天 → 周 → 月 → 年）。
+ * `now` 由调用方传入，便于列表定时刷新同一批标签。
+ */
+export function formatSessionTime(
+  value: string | null | undefined,
+  bucket: DayBucket,
+  now: number = Date.now(),
+): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  if (bucket === 'today') {
+    const diff = Math.max(0, now - date.getTime());
+    if (diff < 60_000) return `${Math.max(1, Math.floor(diff / 1000))}秒前`;
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`;
+    return `${Math.floor(diff / 3_600_000)}小时前`;
+  }
+
+  const current = new Date(now);
+  const days = calendarDaysBetween(date, current);
+  if (days <= 1) return '昨天';
+  if (days === 2) return '前天';
+  if (days < 7) return `${days}天前`;
+  if (days < 30) return `${Math.floor(days / 7)}周前`;
+
+  const months = calendarMonthsBetween(date, current);
+  if (months < 6) return `${Math.max(1, months)}个月前`;
+  if (months < 12) return months === 6 ? '半年前' : `${months}个月前`;
+  return `${Math.floor(months / 12)}年前`;
+}
+
+/** 会话行 time 悬浮提示用的绝对时间。 */
+export function formatAbsoluteTime(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.toLocaleDateString('zh-CN')} ${formatTime(value)}`;
 }
 
 export function formatTime(value: string | null | undefined): string {

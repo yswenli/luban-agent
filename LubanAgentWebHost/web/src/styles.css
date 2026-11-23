@@ -841,14 +841,38 @@ a {
   font-weight: 500;
 }
 
+/* 时间标签 + 工作区名成组靠右；此处必须是 flex，否则内部 .session-ws 退回行内元素，
+   max-width / overflow / text-overflow 全部失效，长名字会撑破行。 */
+.session-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .session-ws {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 12.5px;
   color: var(--text-faint);
-  max-width: 180px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 时间标签：紧贴工作区名左侧，胶囊形状以区分正文文本 */
+.session-time {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .session-actions {
@@ -911,10 +935,55 @@ a {
   letter-spacing: -0.01em;
 }
 
+/* 滚动区与悬浮按钮的共同定位上下文：按钮不能放进 .chat-scroll 内部，否则会跟着内容滚走 */
+.chat-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
+/* 不做 scroll-behavior: smooth：跟随写入用的是瞬时定位，平滑只留给悬浮按钮跳转 */
 .chat-scroll {
   flex: 1;
+  height: 100%;
   overflow-y: auto;
-  scroll-behavior: smooth;
+}
+
+/* 跟随/跳转按钮：单按钮按当前位置切换方向（不在底部→向下、在底部→向上） */
+.chat-fab {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  box-shadow: var(--shadow-soft);
+  opacity: 0.55;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-fab:hover {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* 未跟随时有新内容到达的提示点（不计数：流式每帧都会追加，计数没有语义） */
+.chat-fab-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .thread {
@@ -2373,7 +2442,7 @@ a {
   }
 
   .session-ws {
-    max-width: 96px;
+    max-width: 80px;
   }
 
   .home-side {

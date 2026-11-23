@@ -83,8 +83,26 @@ export function ChatPage(props: { sessionId: string }) {
   const [optimizing, setOptimizing] = createSignal(false);
 
   let scrollEl!: HTMLDivElement;
+  let threadEl!: HTMLDivElement;
   let textareaEl!: HTMLTextAreaElement;
   let fileInputEl!: HTMLInputElement;
+
+  /** 距底部容差：滚轮惯性与小数像素下，这个距离内仍按「贴底」处理。 */
+  const FOLLOW_THRESHOLD = 32;
+  /**
+   * 跟随状态：用户主动上滚即解锁，回到底部或主动发送时重新上锁。
+   * 用普通变量而非 signal——它只被事件与渲染读取，进响应式图会让滚动反过来触发 effect。
+   */
+  let pinned = true;
+  /** 用户主动上滚的锁存：即使还在容差带内也不重新上锁，避免触控板小步上滚被反复拉回。 */
+  let userHeld = false;
+  /** 跟随写入的 rAF 句柄：同一帧内多次 items 变更只写一次 scrollTop。 */
+  let followRaf = 0;
+
+  const [canScroll, setCanScroll] = createSignal(false);
+  const [atBottom, setAtBottom] = createSignal(true);
+  const [atTop, setAtTop] = createSignal(true);
+  const [hasNew, setHasNew] = createSignal(false);
 
   const session = createMemo(() => sessions().find((item) => item.sessionId === props.sessionId) ?? null);
   const title = () => session()?.title || '未命名会话';
@@ -150,18 +168,86 @@ export function ChatPage(props: { sessionId: string }) {
       // 整表覆盖必须先在快照重建之前完成
       await chat.loadHistory();
       await chat.resume();
+      // 历史就位后一次性贴底（瞬时，不做动画）
+      stickToBottom();
     })();
     if (sessions().length === 0) void refreshSessions();
     // 不在这里 abort：会话实例常驻，切换页面时流式回合继续在后台跑
+
+    const element = scrollEl;
+    const onScroll = () => {
+      const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+      // 真正到底（含跳转落点）才重新上锁；容差带内被 userHeld 锁住时不回锁
+      if (distance <= 1) {
+        userHeld = false;
+        pinned = true;
+        setHasNew(false);
+      } else if (distance > FOLLOW_THRESHOLD) {
+        pinned = false;
+      }
+      syncScrollState();
+    };
+    const onWheel = (event: WheelEvent) => {
+      // 上滚第一时间解锁：等 scroll 事件可能已被下一帧的跟随写回
+      if (event.deltaY < 0) {
+        userHeld = true;
+        pinned = false;
+        return;
+      }
+      if (event.deltaY > 0 && isNearBottom()) {
+        userHeld = false;
+        pinned = true;
+        setHasNew(false);
+      }
+    };
+    // 视口变化会改变可视高度，按钮状态需要重算
+    const onResize = () => {
+      if (pinned) follow();
+      else syncScrollState();
+    };
+
+    element.addEventListener('scroll', onScroll, { passive: true });
+    element.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('resize', onResize);
+
+    // `<details>` 展开、图片加载等会改变内容高度：贴底时继续跟随，否则只刷新按钮状态
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && threadEl) {
+      observer = new ResizeObserver(() => {
+        if (pinned) follow();
+        else syncScrollState();
+      });
+      observer.observe(threadEl);
+    }
+
+    queueMicrotask(syncScrollState);
+
+    onCleanup(() => {
+      element.removeEventListener('scroll', onScroll);
+      element.removeEventListener('wheel', onWheel);
+      window.removeEventListener('resize', onResize);
+      observer?.disconnect();
+      if (followRaf) cancelAnimationFrame(followRaf);
+    });
   });
 
-  // 流式期间每条帧都会替换 items 数组，跟随到最新
+  // 流式期间每条帧都会替换 items 数组：上锁时跟随到最新，解锁时只提示有新内容
   createEffect(() => {
     chat.items();
     if (!scrollEl) return;
-    queueMicrotask(() => {
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-    });
+    if (!pinned) {
+      setHasNew(true);
+      return;
+    }
+    follow();
+  });
+
+  // 会话切换：重置跟随状态；历史就位后由 onMount / 上面这个 effect 兜底贴底
+  createEffect(() => {
+    void props.sessionId;
+    pinned = true;
+    userHeld = false;
+    setHasNew(false);
   });
 
   // 会话切换 / 首次进入时拉取该会话生效的档位；读不到只影响控件展示
@@ -178,6 +264,60 @@ export function ChatPage(props: { sessionId: string }) {
     const list = matchedSkills();
     if (mentionIndex() >= list.length) setMentionIndex(0);
   });
+
+  /* ── 滚动跟随与悬浮跳转 ───────────────────────────────────────────── */
+
+  /** 距底部容差内即视为贴底；内容不足一屏时天然算贴底。 */
+  function isNearBottom(): boolean {
+    if (!scrollEl) return true;
+    return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <= FOLLOW_THRESHOLD;
+  }
+
+  /** 把真实滚动位置回写为界面状态（是否可滚、按钮方向）。 */
+  function syncScrollState(): void {
+    if (!scrollEl) return;
+    const scrollable = scrollEl.scrollHeight > scrollEl.clientHeight + 1;
+    setCanScroll(scrollable);
+    setAtTop(scrollEl.scrollTop <= 1);
+    setAtBottom(!scrollable || isNearBottom());
+    if (isNearBottom()) setHasNew(false);
+  }
+
+  /** 跟随到最新：仅在上锁状态生效，rAF 合并，回调内复检避免抢用户滚动。 */
+  function follow(): void {
+    if (!pinned || !scrollEl || followRaf) return;
+    followRaf = requestAnimationFrame(() => {
+      followRaf = 0;
+      if (!pinned || !scrollEl) return;
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      syncScrollState();
+    });
+  }
+
+  /** 强制贴底：发送消息、历史加载完成、会话切换时使用。 */
+  function stickToBottom(): void {
+    pinned = true;
+    userHeld = false;
+    setHasNew(false);
+    if (!scrollEl) return;
+    if (followRaf) {
+      cancelAnimationFrame(followRaf);
+      followRaf = 0;
+    }
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    syncScrollState();
+  }
+
+  /** 悬浮按钮跳转：单按钮按当前位置决定方向，只有这里用平滑滚动。 */
+  function jumpTo(direction: 'top' | 'bottom'): void {
+    if (!scrollEl) return;
+    setHasNew(false);
+    // 目标位置在动画开始时确定；方向/贴底状态由随后的 scroll 事件回写（到精确底部时自动重新上锁）
+    scrollEl.scrollTo({
+      top: direction === 'bottom' ? scrollEl.scrollHeight : 0,
+      behavior: 'smooth',
+    });
+  }
 
   function resizeTextarea() {
     if (!textareaEl) return;
@@ -303,6 +443,8 @@ export function ChatPage(props: { sessionId: string }) {
     setInput('');
     closeMention();
     queueMicrotask(resizeTextarea);
+    // 自己发的消息必须可见：重新上锁并贴底
+    stickToBottom();
     await chat.send(text, permissionModeKey(), currentEffort());
   }
 
@@ -463,8 +605,9 @@ export function ChatPage(props: { sessionId: string }) {
         </button>
       </div>
 
+      <div class="chat-body">
         <div class="chat-scroll" ref={(element) => (scrollEl = element)}>
-          <div class="thread">
+          <div class="thread" ref={(element) => (threadEl = element)}>
             <Show when={!chat.loadingHistory()} fallback={<div class="loading-line">加载消息…</div>}>
               <Show when={chat.historyError()}>
                 <div class="notice error">
@@ -516,7 +659,21 @@ export function ChatPage(props: { sessionId: string }) {
           </div>
         </div>
 
-        <div class="composer-wrap">
+        <Show when={canScroll() && (!atBottom() || !atTop())}>
+          <button
+            class="chat-fab"
+            title={atBottom() ? '回到顶部' : '回到底部'}
+            onClick={() => jumpTo(atBottom() ? 'top' : 'bottom')}
+          >
+            <Icon name={atBottom() ? 'arrow-up' : 'arrow-down'} size={18} />
+            <Show when={hasNew() && !atBottom()}>
+              <span class="chat-fab-dot" />
+            </Show>
+          </button>
+        </Show>
+      </div>
+
+      <div class="composer-wrap">
           <div
             class="composer"
             classList={{ focused: focused(), dragging: dragging() }}
@@ -666,7 +823,7 @@ export function ChatPage(props: { sessionId: string }) {
                 disabled={optimizing()}
                 onClick={openModelMenu}
               >
-                <Icon name="spark" size={14} />
+                <Icon name="brain" size={14} />
                 <span class="model-name">{sessionModelLabel(props.sessionId)}</span>
                 <Icon name="chevron-down" size={13} />
               </button>
@@ -693,7 +850,7 @@ export function ChatPage(props: { sessionId: string }) {
                     setEffortMenu(menuAt(rect, { width: 170, height: 190, gap: 6, align: 'start' }));
                   }}
                 >
-                  <Icon name="brain" size={14} />
+                  <Icon name="lightbulb" size={14} />
                   {effortLabel(currentEffort())}
                 </button>
               </Show>
@@ -1047,7 +1204,7 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
             <Show when={item().thinking.trim().length > 0}>
               <details class="thinking" classList={{ 'is-live': item().streaming && !item().text }}>
                 <summary>
-                  <Icon name="brain" size={14} />
+                  <Icon name="lightbulb" size={14} />
                   思考过程
                 </summary>
                 <div class="thinking-body">{item().thinking}</div>

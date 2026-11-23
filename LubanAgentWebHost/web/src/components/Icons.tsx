@@ -1,4 +1,4 @@
-import type { JSX } from 'solid-js';
+import { createMemo, type JSX } from 'solid-js';
 
 /**
  * 轻量线性图标（16px 视口，`currentColor` 描边），避免引入图标库。
@@ -30,6 +30,7 @@ const paths: Record<string, () => JSX.Element> = {
   plus: () => <path d="M12 5v14M5 12h14" />,
   'arrow-left': () => <path d="M19 12H5m0 0 6-6m-6 6 6 6" />,
   'arrow-up': () => <path d="M12 19V5m0 0-6 6m6-6 6 6" />,
+  'arrow-down': () => <path d="M12 5v14m0 0 6-6m-6 6-6-6" />,
   settings: () => (
     <>
       <circle cx="12" cy="12" r="3.2" />
@@ -147,6 +148,13 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M14.5 4.5A3 3 0 0 1 17.4 8a3 3 0 0 1 1.6 5.4 3 3 0 0 1-2.5 5.6 3 3 0 0 1-5-2.2" />
     </>
   ),
+  lightbulb: () => (
+    <>
+      <path d="M9.2 16.6a5.4 5.4 0 1 1 5.6 0" />
+      <path d="M9.7 16.6h4.6" />
+      <path d="M10.3 19.6h3.4" />
+    </>
+  ),
   'new-project': () => (
     <>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -188,6 +196,10 @@ export type IconName = keyof typeof paths | string;
 
 export function Icon(props: { name: IconName; size?: number; class?: string }) {
   const size = () => props.size ?? 18;
+  // 图标形状按 name 取值必须放进 memo：直接写成 `{(paths[props.name] ?? paths.file)()}`
+  // 时，编译器是把工厂函数本身当访问器交给 insert，name 的查找落在外面、读不到变化，
+  // 图形会永远停在挂载时那一个。
+  const shape = createMemo(() => (paths[props.name] ?? paths.file)());
   return (
     <svg
       width={size()}
@@ -201,7 +213,7 @@ export function Icon(props: { name: IconName; size?: number; class?: string }) {
       class={props.class}
       aria-hidden="true"
     >
-      {(paths[props.name] ?? paths.file)()}
+      {shape()}
     </svg>
   );
 }

@@ -5,7 +5,8 @@ import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dial
 import { Icon } from '../components/Icons';
 import { AboutDialog, HelpDialog } from '../components/InfoDialogs';
 import { PopMenu, menuAt } from '../components/PopMenu';
-import { dayBucket, formatRelative, truncate } from '../lib/format';
+import type { DayBucket } from '../lib/format';
+import { dayBucket, formatAbsoluteTime, formatSessionTime, localDayKey, truncate } from '../lib/format';
 import { openPlugin, openPlugins, openSession, openSettings, openWiki } from '../lib/router';
 import type { Workspace } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
@@ -105,9 +106,20 @@ export function SessionListPage(props: { main?: JSX.Element }) {
 
   let searchEl!: HTMLInputElement;
 
+  // 时间标签含「秒前」，需要定时推进；分组用的日期键只在跨日时推进，避免每 10 秒白重排一次列表。
+  const [now, setNow] = createSignal(Date.now());
+  const [todayKey, setTodayKey] = createSignal(localDayKey(new Date().toISOString()));
+
   onMount(() => {
     void refreshSessions();
     void ensurePluginsLoaded();
+    const timer = window.setInterval(() => {
+      const value = Date.now();
+      setNow(value);
+      const key = localDayKey(new Date(value).toISOString());
+      if (key !== todayKey()) setTodayKey(key);
+    }, 10_000);
+    onCleanup(() => window.clearInterval(timer));
   });
 
   // 顶栏点搜索：回到首页后把焦点交给搜索框（首次加载 token 为 0，不抢焦点）
@@ -146,11 +158,11 @@ export function SessionListPage(props: { main?: JSX.Element }) {
   });
 
   const groups = createMemo(() => {
+    void todayKey(); // 跨过午夜要重新分组，否则「今天」标题下会挂着标签写着「昨天」的行
     const items = filtered();
     return [
-      { key: 'today', title: '今天', items: items.filter((s) => dayBucket(sessionTime(s)) === 'today') },
-      { key: 'yesterday', title: '昨天', items: items.filter((s) => dayBucket(sessionTime(s)) === 'yesterday') },
-      { key: 'earlier', title: '更早', items: items.filter((s) => dayBucket(sessionTime(s)) === 'earlier') },
+      { key: 'today' as const, title: '今天', items: items.filter((s) => dayBucket(sessionTime(s)) === 'today') },
+      { key: 'earlier' as const, title: '更早', items: items.filter((s) => dayBucket(sessionTime(s)) === 'earlier') },
     ].filter((group) => group.items.length > 0);
   });
 
@@ -397,6 +409,8 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                           session.title,
                           session.workspaceId,
                           sessionTime(session),
+                          group.key,
+                          now,
                           openRowMenu,
                         )
                       }
@@ -639,9 +653,12 @@ function sessionRow(
   title: string | null | undefined,
   workspaceId: string | null | undefined,
   time: string | null | undefined,
+  bucket: DayBucket,
+  now: () => number,
   onMenu: (event: MouseEvent, sessionId: string) => void,
 ) {
   const name = workspaceName(workspaceId);
+  const timeLabel = () => formatSessionTime(time, bucket, now());
   return (
     <div class="session-row" role="button" tabIndex={0} onClick={() => openSession(sessionId)} onKeyDown={(event) => {
       if (event.key === 'Enter' || event.key === ' ') openSession(sessionId);
@@ -655,7 +672,10 @@ function sessionRow(
         {workspaceInitial(name)}
       </span>
       <span class="session-title">{truncate(title || '未命名会话', 60)}</span>
-      <span class="session-ws" title={formatRelative(time)}>{name}</span>
+      <span class="session-meta">
+        <span class="session-time" title={formatAbsoluteTime(time)}>{timeLabel()}</span>
+        <span class="session-ws" title={name}>{name}</span>
+      </span>
       <span class="session-actions">
         <button
           class="icon-btn"
