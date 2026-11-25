@@ -62,6 +62,9 @@ public sealed record SessionAddMessageRequest
 
     /// <summary>有序段落 JSON。</summary>
     public string? Segments { get; init; }
+
+    /// <summary>本轮回复耗时（毫秒）。</summary>
+    public int? DurationMs { get; init; }
 }
 
 /// <summary>标记消息为已压缩。</summary>

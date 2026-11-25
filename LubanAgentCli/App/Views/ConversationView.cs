@@ -420,6 +420,14 @@ internal sealed class ConversationView : View
                     return true;
                 }
 
+                if (action?.Type == HitActionType.SelectOption && block is QuestionBlock question)
+                {
+                    question.SelectOption((int)(action.Data ?? 0));
+                    _dirty = true;
+                    SetNeedsDraw();
+                    return true;
+                }
+
                 // 子代理节点行：整屏切进节点详情（仿 opencode 的 subagent 展开）
                 if (action?.Type == HitActionType.OpenNodeDetail && block is OrchestrationNodeBlock nodeBlock)
                 {
@@ -526,6 +534,15 @@ internal sealed class ConversationView : View
         // 将按键转发给挂起的确认块：优先使用 VM 的 PendingChoice（权威），
         // 否则取最后一个未确认的 InlineChoiceBlock。确认块挂起时焦点已切到会话区，
         // 由这里把按键送达 ConfirmTool 的 ManualResetEventSlim，避免其一直等待用户选择。
+        // 提问块优先（与确认块共用交互槽位，二者不会同时挂起）
+        var pendingQuestion = _vm.PendingQuestion;
+        if (pendingQuestion is not null && !pendingQuestion.IsResolved && pendingQuestion.HandleKey(key))
+        {
+            _dirty = true;
+            SetNeedsDraw();
+            return true;
+        }
+
         InlineChoiceBlock? pending = _vm.PendingChoice;
         if (pending is null)
         {

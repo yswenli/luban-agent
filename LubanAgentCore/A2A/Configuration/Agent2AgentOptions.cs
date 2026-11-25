@@ -32,9 +32,6 @@ public sealed class Agent2AgentOptions
     /// <summary>客户端（远端连接）角色列表。 </summary>
     public List<A2AClientOptions> Clients { get; set; } = new();
 
-    /// <summary>内部子代理是否全放行（A3 语义）。</summary>
-    public bool SubAgentAllowAll { get; set; }
-
     /// <summary>是否启用 server 角色。</summary>
     public bool HasServerRole => Server is not null;
 }
@@ -156,7 +153,6 @@ public static class Agent2AgentConfigResolver
         var result = new Agent2AgentOptions
         {
             Enabled = baseline.Enabled,
-            SubAgentAllowAll = baseline.SubAgentAllowAll,
         };
 
         if (!baseline.Enabled)

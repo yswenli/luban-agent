@@ -85,6 +85,44 @@ export function formatTime(value: string | null | undefined): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * 把毫秒耗时格式化为紧凑中文：`<1 秒`、`43 秒`、`4 分 43 秒`、`1 小时 2 分`。
+ * 缺失或非正数返回空串，便于调用方直接条件渲染。
+ */
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '';
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 1) return '<1 秒';
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) return seconds > 0 ? `${totalMinutes} 分 ${seconds} 秒` : `${totalMinutes} 分`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
+}
+
+/**
+ * 紧凑单位耗时：`50s`、`20m 30s`、`1h 45m 30s`、`1d 18h 30m 10s`。
+ * 缺失或非正数返回空串，便于调用方条件渲染；不足 1 秒按 1 秒计。
+ */
+export function formatCompactDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return '';
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const totalSeconds = Math.max(1, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
 export function formatRelative(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);

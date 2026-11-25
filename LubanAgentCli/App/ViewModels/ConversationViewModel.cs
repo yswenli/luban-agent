@@ -180,6 +180,26 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
     /// <summary>确认块挂起状态变化事件（RootView 订阅以切换键盘焦点）。</summary>
     public event Action? PendingChoiceChanged;
 
+    private QuestionBlock? _pendingQuestion;
+
+    /// <summary>
+    /// 当前挂起的提问块（<c>AskUserQuestion</c> 工具）。与 <see cref="PendingChoice"/> 共用同一交互槽位：
+    /// 框架侧已串行化，二者不会同时挂起。设置时触发 <see cref="PendingQuestionChanged"/>。
+    /// </summary>
+    public QuestionBlock? PendingQuestion
+    {
+        get => _pendingQuestion;
+        internal set
+        {
+            if (ReferenceEquals(_pendingQuestion, value)) return;
+            _pendingQuestion = value;
+            PendingQuestionChanged?.Invoke();
+        }
+    }
+
+    /// <summary>提问块挂起状态变化事件（RootView 订阅以切换键盘焦点）。</summary>
+    public event Action? PendingQuestionChanged;
+
     /// <summary>历史回放的消息条数限制（与 GUI 统一，见 <see cref="UiConstants.HistoryLoadLimit"/>）。</summary>
     private const int HistoryLoadLimit = UiConstants.HistoryLoadLimit;
 
@@ -407,6 +427,13 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
                     block.MarkComplete();
                     _doc.AppendBlock(block);
                 }
+                else if (msg.Role == "summary")
+                {
+                    // 压缩摘要只留标记：摘要正文由服务端在后续轮次注入模型，不再铺进对话流
+                    _doc.AppendBlock(new SystemBlock(
+                        $"📦 上下文已压缩（历史摘要，约 {msg.Content.Length} 字）",
+                        foreground: BlockColors.System));
+                }
             }
         });
     }
@@ -590,6 +617,10 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
 
             CompleteSpinner();
 
+            // 提问块与确认块共用交互槽位：取消时一并作废，避免残留块继续吞按键
+            _pendingQuestion?.Cancel();
+            PendingQuestion = null;
+
             foreach (var pending in _runningToolBlocks)
             {
                 if (_deniedByUser)
@@ -623,6 +654,10 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         using var done = new ManualResetEventSlim(false);
         var result = ConfirmResult.Deny;
 
+        // 来源必须在确认回调的调用链内先取出：后续 _dispatcher.Invoke 可能切线程，
+        // 隐式 AsyncLocal 上下文未必随之流转；取出后作为普通值传给块工厂。
+        var origin = ToolConfirmationContext.CurrentOrigin;
+
         var ct = _currentCts?.Token ?? default;
         CancellationTokenRegistration ctr = default;
         if (ct.CanBeCanceled)
@@ -644,7 +679,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
                 result = cr;
                 PendingChoice = null;
                 done.Set();
-            });
+            }, origin);
             _doc.AppendBlock(confirmBlock);
             PendingChoice = confirmBlock;
         });
@@ -655,6 +690,48 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
         PendingChoice = null;
 
         if (TuiDiag.Enabled) Logger.Warn($"[TuiDiag] confirm exit: {toolName} -> {result}");
+        return result;
+    }
+
+    /// <summary>
+    /// 用户交互提问回调（<c>AskUserQuestion</c> 工具）：弹出内联提问块并阻塞宿主回合线程，
+    /// 等用户逐题作答；取消/回合作废时按「已取消」返回，不抛异常、不失败本轮。
+    /// </summary>
+    /// <param name="questions">问题列表。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>作答或取消结果。</returns>
+    private UserQuestionResult AskQuestions(IReadOnlyList<UserQuestion> questions, CancellationToken ct)
+    {
+        using var done = new ManualResetEventSlim(false);
+        var result = UserQuestionResult.Cancelled();
+
+        // 来源必须在回调调用链内先取出：后续 _dispatcher.Invoke 可能切线程
+        var origin = ToolConfirmationContext.CurrentOrigin;
+
+        CancellationTokenRegistration ctr = default;
+        if (ct.CanBeCanceled) ctr = ct.Register(() => done.Set());
+
+        _dispatcher.Invoke(() =>
+        {
+            if (_currentRunSeq != Volatile.Read(ref _activeRunSeq))
+            {
+                done.Set();
+                return;
+            }
+
+            var block = new QuestionBlock(questions, r =>
+            {
+                result = r;
+                PendingQuestion = null;
+                done.Set();
+            }, origin);
+            _doc.AppendBlock(block);
+            PendingQuestion = block;
+        });
+
+        done.Wait();
+        ctr.Dispose();
+        PendingQuestion = null;
         return result;
     }
 
@@ -736,6 +813,7 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
                 SessionId = _sessionId,
                 PermissionMode = PermissionMode,
                 ConfirmHandler = ConfirmTool,
+                AskUserHandlerAsync = (questions, token) => Task.FromResult(AskQuestions(questions, token)),
                 OnPlannedAction = OnPlannedAction,
                 OnUserDenied = OnUserDenied
             }, ct))
@@ -900,6 +978,12 @@ internal sealed class ConversationViewModel : IDisposable, IAgentReloadTrigger
                 Logger.Warn($"[TuiDiag] ErrorEvent: {e.Message}");
                 _dispatcher.Invoke(() => _doc.AppendBlock(
                     new SystemBlock($"错误: {e.Message}", foreground: BlockColors.Failure)));
+                break;
+
+            // ─── 上下文压缩（起跑前预检 / 超长兜底）───
+            case ContextCompactedEvent c:
+                _dispatcher.Invoke(() => _doc.AppendBlock(
+                    new SystemBlock(c.Describe(), foreground: BlockColors.System)));
                 break;
 
             // ─── 编排进度（本会话流内事件，天然按会话隔离）───

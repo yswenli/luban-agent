@@ -22,6 +22,32 @@ public sealed record AgentConfirmRequest
     public string Result { get; init; } = "";
 }
 
+/// <summary>回传单个问题的答案。</summary>
+public sealed record AgentQuestionAnswer
+{
+    /// <summary>对应的问题正文（取自 <c>tool.question</c> 帧）。</summary>
+    public string Question { get; init; } = "";
+
+    /// <summary>选中的选项文案；「其它」自由输入为原样文本。</summary>
+    public IReadOnlyList<string> Labels { get; init; } = [];
+}
+
+/// <summary>回传用户对提问的回答。</summary>
+public sealed record AgentAnswerRequest
+{
+    /// <summary>所属会话。</summary>
+    public string SessionId { get; init; } = "";
+
+    /// <summary>提问标识（取自 <c>tool.question</c> 帧）。</summary>
+    public string QuestionId { get; init; } = "";
+
+    /// <summary>用户取消作答；为 true 时忽略 <see cref="Answers"/>。</summary>
+    public bool Cancelled { get; init; }
+
+    /// <summary>逐题回答。</summary>
+    public IReadOnlyList<AgentQuestionAnswer> Answers { get; init; } = [];
+}
+
 /// <summary>取消指定会话正在进行的回合。</summary>
 public sealed record AgentCancelRequest
 {

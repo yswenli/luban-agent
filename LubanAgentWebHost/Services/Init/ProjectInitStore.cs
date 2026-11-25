@@ -83,7 +83,7 @@ public sealed class ProjectInitRecord
 /// 初始化完成登记的 JSON 文件存储（单宿主进程、原子写）。
 /// </summary>
 /// <remarks>
-/// 默认文件：<c>%LocalAppData%/LuBan/AIAgent/webhost/yunxiao-project-init.json</c>
+/// 默认文件：<c>~/.luban-agent/webhost/yunxiao-project-init.json</c>
 /// （与 <see cref="InitTaskStore"/> 同目录）；测试必须传临时路径。
 /// </remarks>
 public sealed class ProjectInitStore
@@ -104,19 +104,14 @@ public sealed class ProjectInitStore
     };
 
     /// <summary>创建登记存储。</summary>
-    /// <param name="filePath">状态文件路径；null 用默认（<c>%LocalAppData%/LuBan/AIAgent/webhost/yunxiao-project-init.json</c>）。测试必须传临时路径。</param>
+    /// <param name="filePath">状态文件路径；null 用默认（<c>~/.luban-agent/webhost/yunxiao-project-init.json</c>）。测试必须传临时路径。</param>
     public ProjectInitStore(string? filePath = null)
     {
         _filePath = string.IsNullOrWhiteSpace(filePath) ? DefaultFilePath() : filePath!;
     }
 
-    /// <summary>默认状态文件路径。</summary>
-    public static string DefaultFilePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan",
-        "AIAgent",
-        "webhost",
-        DefaultFileName);
+    /// <summary>默认状态文件路径：<c>~/.luban-agent/webhost/yunxiao-project-init.json</c>。</summary>
+    public static string DefaultFilePath() => Path.Combine(AgentHome.WebHostDirectory, DefaultFileName);
 
     /// <summary>读全部登记（损坏 JSON 当空）。</summary>
     /// <returns>登记列表。</returns>

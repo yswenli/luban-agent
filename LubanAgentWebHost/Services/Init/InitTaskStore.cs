@@ -104,7 +104,7 @@ public sealed class InitTask
 /// </summary>
 /// <remarks>
 /// <para>
-/// 默认文件：<c>%LocalAppData%/LuBan/AIAgent/webhost/yunxiao-init-tasks.json</c>
+/// 默认文件：<c>~/.luban-agent/webhost/yunxiao-init-tasks.json</c>
 /// （与 <c>WebPluginPaths.DefaultStateFilePath</c> 同目录先例）；
 /// <b>测试必须传临时路径</b>（红线：单测禁止写真实 LocalApplicationData）。
 /// </para>
@@ -131,19 +131,14 @@ public sealed class InitTaskStore
     };
 
     /// <summary>创建任务态存储。</summary>
-    /// <param name="filePath">状态文件路径；null 用默认（<c>%LocalAppData%/LuBan/AIAgent/webhost/yunxiao-init-tasks.json</c>）。测试必须传临时路径。</param>
+    /// <param name="filePath">状态文件路径；null 用默认（<c>~/.luban-agent/webhost/yunxiao-init-tasks.json</c>）。测试必须传临时路径。</param>
     public InitTaskStore(string? filePath = null)
     {
         _filePath = string.IsNullOrWhiteSpace(filePath) ? DefaultFilePath() : filePath!;
     }
 
-    /// <summary>默认状态文件路径。</summary>
-    public static string DefaultFilePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan",
-        "AIAgent",
-        "webhost",
-        DefaultFileName);
+    /// <summary>默认状态文件路径：<c>~/.luban-agent/webhost/yunxiao-init-tasks.json</c>。</summary>
+    public static string DefaultFilePath() => Path.Combine(AgentHome.WebHostDirectory, DefaultFileName);
 
     /// <summary>按任务标识取任务。</summary>
     /// <param name="id">任务标识。</param>

@@ -466,6 +466,9 @@ Step 4 / Step 5 的动作（连库探活、逐端编译）都在**项目工作�
 - **放行**：只读工具（`ReadFileAsync` / `ListDirectoryAsync` / `GetWorkspaceOverviewAsync` / `UseSkillAsync` 等）、`RunPythonAsync`、
   命令在白名单内的 `RunShellAsync`、**工作区内**的写类工具（`WriteFileAsync` / `CopyFileAsync` 按 `destPath` / `MoveFileAsync` 按 `destPath`）。
 - **拒绝**：`RunLuaAsync`、`DeleteFileAsync` / `DeletePageAsync` / 技能与 MCP 写删类、越出工作区的写入、未知工具、工作区根未知时的任何写入。
+- **记忆工具整组放行**：`MemorySave` / `MemorySearch` / `MemoryList` / `MemoryDelete`（模型可见名）不属于 Step 4/5 的动作，
+  也不带工作区路径，且与普通对话共用同一份用户级长期记忆，故按用户定案**含删除**整体放行；
+  框架层 `MemoryDelete` 仍走「删除类必确认」，本插件的确认回调按本表放行，因此不会被驳回。
 - **`DeleteDirectoryAsync` 工作区内放行**：从「无条件拒绝」改为「**工作区内按路径放行**」（与 `WorkspaceWriteTools` 同判法，
   单列 `WorkspaceDeleteTools`）；越界 / 无 `path` 仍拒。⚠️ 框架 `DeleteDirectoryAsync` 是裸 `Directory.Delete`、**不处理 Windows 只读位**，
   故「清空后重克隆」实际由助手 `RunPythonAsync` 的 `shutil.rmtree(onerror=清只读)` 执行，放行只是**契约兜底 + 面板文案一致**。
@@ -621,7 +624,7 @@ luban-agent/LubanAgentCodex/bin/<Configuration>/net10.0/plugins/com.tjces.newpro
 ```
 
 > 首次运行的 codex 可能**尚未启用**本插件：默认状态为禁用，需在「插件管理」窗口启用。
-> 启用状态记录在 `%LocalAppData%/LuBan/AIAgent/plugins/plugin-states.json`。
+> 启用状态记录在 `~/.luban-agent/plugins/plugin-states.json`。
 
 ## 验证（自动化 + 手工冒烟）
 

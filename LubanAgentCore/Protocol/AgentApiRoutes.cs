@@ -27,6 +27,9 @@ public static class AgentApiRoutes
         /// <summary>回传工具确认结果。</summary>
         public const string Confirm = "/agent/confirm";
 
+        /// <summary>回传用户对提问的回答（或取消）。</summary>
+        public const string Answer = "/agent/answer";
+
         /// <summary>取消指定会话正在进行的回合。</summary>
         public const string Cancel = "/agent/cancel";
 

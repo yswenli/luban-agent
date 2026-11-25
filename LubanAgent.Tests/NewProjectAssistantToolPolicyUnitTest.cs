@@ -35,6 +35,17 @@ public class NewProjectAssistantToolPolicyUnitTest
     }
 
     [TestMethod]
+    public void Decide_记忆工具_整组放行()
+    {
+        // 含删除：记忆是与普通对话共用的用户级资产，不由向导范围决定放行与否
+        foreach (var tool in new[] { "MemorySave", "MemorySearch", "MemoryList", "MemoryDelete" })
+        {
+            Assert.AreEqual(ConfirmResult.Allow, AssistantToolPolicy.Decide(tool, null, WorkspaceRoot, out var reason), tool);
+            StringAssert.Contains(reason, "记忆");
+        }
+    }
+
+    [TestMethod]
     public void Decide_runpython_放行()
     {
         Assert.AreEqual(

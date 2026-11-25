@@ -80,11 +80,14 @@ public static class WebSystemService
             new AttachmentPolicyDto(
                 attachments.SupportedExtensions.ToList(),
                 AttachmentService.MaxAttachmentsPerMessage,
-                MediaTypeUtil.HeicLikeExtensions.ToList(),
+                WebAttachmentLimits.UndecodableExtensions,
+                WebAttachmentLimits.ImageExtensions,
                 // 与框架 DefaultAttachmentProcessor 的阈值保持一致：文本 10MB 上限、图片 5MB / 2000px 触发缩放
-                10L * 1024 * 1024,
+                WebAttachmentLimits.MaxTextBytes,
                 5L * 1024 * 1024,
-                2000),
+                2000,
+                WebAttachmentLimits.MaxImageBytes,
+                WebAttachmentLimits.MaxImagePixels),
             new ConfirmationPolicyDto(
                 scope.GetService<IToolConfirmationBroker>()?.TimeoutSeconds
                     // 与框架 LuBanAgentOptions.Confirmation.TimeoutSeconds 的默认值一致

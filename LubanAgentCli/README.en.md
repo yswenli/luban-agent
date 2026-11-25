@@ -38,7 +38,7 @@ This isn't science fiction—this is **LuBan Agent**.
 - **Unified `provider:model` Format**: Switch models with one command, no code changes needed
 - **Dynamic Routing**: LuBanChatClient automatically dispatches to the corresponding provider based on prefix
 
-### 🛠️ 12 Built-in Tool Groups
+### 🛠️ 13 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (powered by Playwright) |
@@ -53,6 +53,7 @@ This isn't science fiction—this is **LuBan Agent**.
 | 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents to run in parallel/serial |
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 | 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
+| 📨 **User Interaction Tools** | Ask the user 1–4 multiple-choice questions (2–4 options each, optional multi-select plus an "Other" free-text field) and submit all answers at once; `Esc` skips the group and returns "cancelled" |
 
 > **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups (`Orchestration.DefaultToolGroups=["filesystem", "log"]`); specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
@@ -174,8 +175,8 @@ luban-agent-cli
 #### Configuration Files
 
 - **Application config** (`appsettings.json`): Always loaded first from the tool installation directory; an `appsettings.json` in the current working directory can override it
-- **User config** (Providers, Skills, rules, etc.): Automatically saved to `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json`, where `<userId>` comes from the `LUBAN_USER_ID` environment variable (default `yswenli`); the legacy single-user config `%LocalAppData%\LuBan\AIAgent\config.json` is migrated automatically on first access
-- **Session data**: Saved to `luban-ai-agent.db` under the program base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json` is resolved against the base directory); the legacy `ai_sessions.db` is renamed to it on first start
+- **User config** (Providers, Skills, rules, etc.): Automatically saved to `~/.luban-agent/users/<userId>/config.json`, where `<userId>` comes from the `LUBAN_USER_ID` environment variable (default `yswenli`); the legacy single-user config `~/.luban-agent/config.json` is migrated automatically on first access (config left by older builds under `%LocalAppData%\LuBan\AIAgent` is **not** moved automatically — merge it into `~/.luban-agent` manually)
+- **Session data**: Saved to `luban-ai-agent.db` in the user-level directory (`~/.luban-agent/luban-ai-agent.db`; the relative `Data Source=./luban-ai-agent.db` in `appsettings.json` is rebased onto that directory); the legacy `ai_sessions.db` and any same-named database in the program base directory are migrated there the first time the host starts
 
 #### Update & Uninstall
 
@@ -290,7 +291,7 @@ This program does not execute the agent itself: conversations, file access and t
 
 - **Auto launch**: when no host is available locally, the client starts a `LubanAgentWebHost` child process, passing `--plugins-dir`, `--debug`, and `--web-plugins-dir` when `AgentClientOptions.WebPluginsDirectory` is set; port, token and timeouts all come from the host's own configuration (`LubanAgentWeb:Port`, default 18080). If an instance is already running, the client reads the descriptor file, probes `/system/health` and adopts it instead of starting a second one. The host executable is resolved in this order: `AgentClientOptions.ServerPath` → environment variable `LUBAN_AGENT_WEBHOST` → the client output directory → walking up for `LubanAgentWebHost/bin/**`; if none is found the client reports "LubanAgentWebHost not found".
 - **The host stays resident**: a launched host keeps running after this program exits; stop it with `LubanAgentWebHost --stop`. Only one instance can own a port — the one started later fails on the port conflict.
-- **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `%LOCALAPPDATA%\luban-agent\webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
+- **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `~/.luban-agent/webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
 - **Browser UI**: the host also serves a web UI at the entry address printed in the terminal (`http://<LAN IP>:<port>/?t=<token>`). The token is exchanged for an HttpOnly cookie and the URL is 302-redirected to the clean address; it expires when the host restarts.
 - **Getting a 401 or failing to connect**:
   - run `LubanAgentWebHost --token` on the host machine to print the current entry address again;
@@ -808,9 +809,9 @@ All dialogs inherit from `BaseDialog`, ensuring unified style and behavior:
 
 The above is an excerpt; see `LubanAgentCli/appsettings.json` for the complete set of options.
 
-### User Configuration (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
+### User Configuration (~/.luban-agent/users/<userId>/config.json)
 
-User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally and loaded on restart. `<userId>` comes from the `LUBAN_USER_ID` environment variable (default `yswenli`); the legacy single-user config `%LocalAppData%\LuBan\AIAgent\config.json` is migrated into the user directory on first access.
+User configurations (Providers, custom Skills, rules, connector declarations, etc.) are automatically saved locally and loaded on restart. `<userId>` comes from the `LUBAN_USER_ID` environment variable (default `yswenli`); the legacy single-user config `~/.luban-agent/config.json` is migrated into the user directory on first access. Config left by older builds under `%LocalAppData%\LuBan\AIAgent` is **not** moved automatically — merge it into `~/.luban-agent` manually.
 
 > Connectors (e.g. the Aliyun DevOps `yunxiao` connector) declare availability in the `connectors` section of `config.json`, and whether one is enabled in a workspace is decided by `.luban-agent/connectors/<name>.json`; credential keys are generalized to `connector:<instanceName>:token` (with legacy-key `yunxiao_pat` compatibility).
 
@@ -846,6 +847,26 @@ You: Write a file to C:\temp\test.txt
 
 Read-only and normal edit operations inside the workspace need no confirmation; in Plan mode only in-workspace read-only tools are allowed directly.
 
+### Interactive Questions
+
+When the model needs more information (e.g. "which implementation approach?"), it inserts a question block into the conversation stream instead of executing a tool first:
+
+```
+❓ Agent question
+[1/2] Which implementation approach?
+  ▶ ( ) 1. Approach A — smallest change
+    ( ) 2. Approach B — better extensibility
+  ⌨ Other: press Tab to type a custom answer
+↑↓ move · Space select · Enter confirm · Tab type other · Esc skip
+```
+
+- Multi-select questions use `Space` to toggle (`[x]`), then `Enter` to submit that question
+- Number keys pick an option directly; on single-select questions picking one advances to the next question
+- `Tab` enters the "Other" line for a custom answer and `Enter` submits it; the custom text is returned together with any selected options
+- With several questions, answer them one by one; all answers are submitted together at the end
+- `Esc` skips the whole group — returned as "cancelled" (not a tool denial, so the node does not fail)
+- When an orchestration sub-agent asks, the title is followed by a separate "来源：编排节点 …" line; main-agent questions have no such line
+
 ### Session Management
 
 ```bash
@@ -867,7 +888,7 @@ Read-only and normal edit operations inside the workspace need no confirmation; 
 
 **Session Auto-save**:
 - In `/agi` conversations, chat history is automatically saved to SQLite database
-- Database location: `luban-ai-agent.db` under the program base directory (the legacy `ai_sessions.db` is renamed automatically on first start)
+- Database location: `luban-ai-agent.db` in the user-level directory (`~/.luban-agent/luban-ai-agent.db`; the legacy `ai_sessions.db` and any same-named database in the program base directory are migrated there the first time the host starts)
 - Both user messages and AI responses are automatically saved
 - Token counts are automatically tracked
 
@@ -989,7 +1010,7 @@ Available tools for github:
 - 📜 **Scroll Follow**: Streaming output auto-follows; manual scroll-up disconnects, shows "↓ N lines of new content" prompt
 - 💬 Model routing uses `provider:model` format, supporting 20+ AI providers; add new providers via `/provider -add`
 - 🌐 **Multiple Endpoints**: Some providers (like Kimi, MiniMax) offer multiple API endpoints, selectable during setup
-- 🛠️ **12 Built-in Tool Groups** cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, the LLM Wiki knowledge base (opt-in), and large log analysis
+- 🛠️ **13 Built-in Tool Groups** cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, user interaction questions, the LLM Wiki knowledge base (opt-in), and large log analysis
 - ⚠️ **ToolConfirmationService** requires confirmation for out-of-workspace path access and sensitive operations (write, delete, execute), with this-time/turn/session grant tiers (inline InlineChoiceBlock, Y/N/A/S)
 - 🔒 **FileSystemToolOptions.AllowedRoots** together with workspace roots forms the trusted scope; operations inside it need no confirmation
 - 🧩 **Multi-Agent Orchestration**: AI auto-decomposes complex tasks into DAG with serial/parallel SubAgent execution

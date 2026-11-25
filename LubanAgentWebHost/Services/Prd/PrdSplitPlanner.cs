@@ -97,13 +97,7 @@ public static class PrdSplitPlanner
         if (sync.Requirements.Count > MaxRequirements)
             builder.AppendLine($"（需求共 {sync.Requirements.Count} 条，这里只列出前 {MaxRequirements} 条，请只拆分列出的需求）");
 
-        if (sync.Attachments.Count > 0)
-        {
-            builder.AppendLine();
-            builder.AppendLine("【需求附件（仅文件名，正文未解析）】");
-            foreach (var file in sync.Attachments.Take(50))
-                builder.AppendLine($"- {file.WorkitemTitle} / {file.FileName}");
-        }
+        // 附件文件名不进提示词：避免模型在回复中回显用户上传的附件名称；正文未解析，附件元数据仅作页面展示
 
         var documentBudget = Math.Max(MaxPromptChars - builder.Length, 2000);
         if (documents is { Count: > 0 })

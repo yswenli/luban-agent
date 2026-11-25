@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/8
-*描述：本机编排子代理执行器，经进程内 A2A 传输执行，A3 唯一开启点
+*描述：本机编排子代理执行器，经进程内 A2A 传输执行，恒全放行唯一开启点
 *
 *****************************************************************************/
 
@@ -21,8 +21,8 @@ namespace LubanAgentCore.A2A.Executor;
 /// 本机编排子代理执行器。把 <see cref="SubAgentSpec"/> 编为 A2A 消息，经
 /// <see cref="IA2ATransport"/> 进程内直连执行，再把 A2A 事件流反译为
 /// <see cref="SubAgentExecutionEvent"/> 流。
-/// <para>A3 唯一开启点：以 <c>EnterSubAgentScope(allowAll: true)</c> 包裹执行，
-/// 使内部子代理「全放行但守硬约束」（删除类/工作区外仍硬拒）。</para>
+/// <para>子代理「全放行但守硬约束」的唯一开启点：恒以 <c>EnterSubAgentScope(allowAll: true)</c> 包裹执行
+/// （无配置开关；删除类/工作区外仍硬拒）。</para>
 /// <para>目标 Agent 名由提供者在每次执行时求值，以便工作区确定后再定名。</para>
 /// </summary>
 public sealed class InProcessSubAgentExecutor : ISubAgentExecutor
@@ -49,10 +49,13 @@ public sealed class InProcessSubAgentExecutor : ISubAgentExecutor
 
         var message = SubAgentA2ABridge.BuildMessage(spec);
 
-        // 子代理「全放行但守硬约束」作用域：EnterSubAgentScope 以 AsyncLocal 承载（见框架
-        // ToolConfirmationContext.SubAgentScopeDepth/SubAgentAllowAllInScope），仅作用于本次异步流，
-        // 不同会话各自独立、并行不串扰，故此处无需按会话实例化。
-        using (ToolConfirmationContext.EnterSubAgentScope(allowAll: true))
+        // 子代理「全放行但守硬约束」作用域：进程内执行器没有人工确认通道，恒以 allowAll:true 进入
+        // （不弹窗、按已允许集合代确认；删除类/工作区外仍硬拒）。EnterSubAgentScope 以 AsyncLocal 承载，
+        // 仅作用于本次异步流，不同会话各自独立、并行不串扰，故此处无需按会话实例化。
+        // 来源（节点/角色/描述）一并写入，便于宿主诊断与埋点；该路径不会产生确认弹窗。
+        using (ToolConfirmationContext.EnterSubAgentScope(
+            allowAll: true,
+            new ToolConfirmationOrigin(spec.NodeId, spec.Role, spec.Description)))
         {
             await foreach (var evt in SubAgentA2ABridge
                 .DecodeAsync(_transport.SendStreamingAsync(_agentNameProvider(), message, ct), spec.SessionId, ct)

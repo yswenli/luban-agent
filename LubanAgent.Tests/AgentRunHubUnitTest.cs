@@ -82,6 +82,34 @@ public class AgentRunHubUnitTest
     private static Task HangAsync(AgentRunHandle _, CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
 
     [TestMethod]
+    public async Task 续帧自带序号_可直接作为fromSeq()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(Frame("t1"));
+            handle.Publish(Frame("t2"));
+
+            var replay = handle.Subscribe(1);
+            Assert.IsNotNull(replay);
+            Assert.AreEqual(1, replay.Pending.Count);
+            Assert.AreEqual(2, replay.Pending[0].Seq);
+            // id 行随帧下发：前端记录到的就是重连时要回传的 fromSeq
+            StringAssert.StartsWith(replay.Pending[0].ToText(), "id: 2\n");
+
+            // 快照帧也带同一序号，刷新后可直接用它续传
+            var snapshot = handle.Subscribe(null);
+            Assert.IsNotNull(snapshot);
+            Assert.AreEqual(2, snapshot.Pending[0].Seq);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
     public async Task 帧按序分配seq并进入缓冲()
     {
         var hub = NewHub();
@@ -207,6 +235,85 @@ public class AgentRunHubUnitTest
     }
 
     [TestMethod]
+    public async Task 快照按帧时间戳记录思考段与工具耗时()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            const long t0 = 1_750_000_000_000L;
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ThinkDelta, new { delta = "想", llmRound = 1, at = t0 }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ThinkDelta, new { delta = "再想", llmRound = 1, at = t0 + 4_000 }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolStarted, new
+            {
+                callId = "c1",
+                name = "shell",
+                arguments = "{}",
+                llmRound = 1,
+                at = t0 + 10_000
+            }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolCompleted, new
+            {
+                callId = "c1",
+                resultSummary = "ok",
+                llmRound = 1,
+                at = t0 + 12_500
+            }));
+
+            var attach = handle.Subscribe(null);
+            Assert.IsNotNull(attach);
+            var snapshot = ReadSnapshot(attach);
+
+            // 思考段耗时 = 首帧到末帧；工具耗时 = started → completed
+            Assert.AreEqual(2, snapshot.Segments.Count);
+            Assert.AreEqual(4_000, snapshot.Segments[0].DurationMs);
+            Assert.AreEqual(t0, snapshot.Segments[0].StartedAtMs);
+            Assert.AreEqual(2_500, snapshot.Segments[1].Tool?.DurationMs);
+            Assert.AreEqual(t0 + 10_000, snapshot.Segments[1].Tool?.StartedAtMs);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 快照保留未落定的思考与工具起点()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            const long t0 = 1_750_000_000_000L;
+
+            // 思考还在进行：重连后前端要能接着算，所以起点必须随快照下发
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ThinkDelta, new { delta = "想", llmRound = 1, at = t0 }));
+            var runningSnapshot = ReadSnapshot(handle.Subscribe(null)!);
+            Assert.IsNull(runningSnapshot.Segments[0].DurationMs);
+            Assert.AreEqual(t0, runningSnapshot.Segments[0].StartedAtMs);
+
+            // 工具开始、尚未结束：思考区间到此落定（口径为首帧到末帧），工具只给起点不给耗时
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ThinkDelta, new { delta = "再想", llmRound = 1, at = t0 + 2_000 }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolStarted, new
+            {
+                callId = "c1",
+                name = "shell",
+                arguments = "{}",
+                llmRound = 1,
+                at = t0 + 5_000
+            }));
+            var toolRunning = ReadSnapshot(handle.Subscribe(null)!);
+            Assert.AreEqual(2_000, toolRunning.Segments[0].DurationMs);
+            Assert.IsNull(toolRunning.Segments[1].Tool?.DurationMs);
+            Assert.AreEqual(t0 + 5_000, toolRunning.Segments[1].Tool?.StartedAtMs);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
     public async Task 快照累积notice与确认()
     {
         var hub = NewHub();
@@ -253,6 +360,191 @@ public class AgentRunHubUnitTest
                 snapshot.Notices.Select(x => x.Event).ToArray());
             Assert.AreEqual(1, snapshot.AttachmentsAdded);
             Assert.IsNull(snapshot.PendingConfirmation);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 快照累积待回答提问()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 120,
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个数据库？",
+                        header = "数据库",
+                        multiSelect = false,
+                        options = new object[]
+                        {
+                            new { label = "PostgreSQL", description = "关系型" },
+                            new { label = "SQLite" }
+                        }
+                    }
+                }
+            }));
+
+            var attach = handle.Subscribe(null);
+            Assert.IsNotNull(attach);
+            var pending = ReadSnapshot(attach).PendingQuestion;
+            Assert.IsNotNull(pending);
+            Assert.AreEqual("q-1", pending.QuestionId);
+            Assert.AreEqual(120, pending.TimeoutSeconds);
+            StringAssert.Contains(pending.QuestionsJson, "选哪个数据库？");
+            Assert.IsNull(pending.Origin, "主代理提问不带来源");
+            // 过期时刻由服务端算好下发，前端按剩余时间倒数
+            Assert.IsTrue(pending.ExpiresAt > DateTimeOffset.UtcNow.AddSeconds(100));
+
+            // 工具被拒/取消：待回答提问随时间线作废，重连后不应再弹
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolDenied, new
+            {
+                toolName = "AskUserQuestion",
+                arguments = "{}"
+            }));
+
+            var after = handle.Subscribe(null);
+            Assert.IsNotNull(after);
+            Assert.IsNull(ReadSnapshot(after).PendingQuestion);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 提问工具完成后快照不再带回旧提问()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolStarted, new
+            {
+                callId = "call-q",
+                name = "AskUserQuestion",
+                arguments = "{}"
+            }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 120,
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个？",
+                        options = new object[] { new { label = "A" }, new { label = "B" } }
+                    }
+                }
+            }));
+
+            var pendingAttach = handle.Subscribe(null);
+            Assert.IsNotNull(pendingAttach);
+            Assert.IsNotNull(ReadSnapshot(pendingAttach).PendingQuestion);
+
+            // 用户已作答：提问工具随即完成，刷新后不应再弹已答过的旧问题
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolCompleted, new
+            {
+                callId = "call-q",
+                resultSummary = "answered"
+            }));
+
+            var after = handle.Subscribe(null);
+            Assert.IsNotNull(after);
+            Assert.IsNull(ReadSnapshot(after).PendingQuestion);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 其它工具完成不清除待回答提问()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolStarted, new
+            {
+                callId = "call-q",
+                name = "AskUserQuestion",
+                arguments = "{}"
+            }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 120,
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个？",
+                        options = new object[] { new { label = "A" }, new { label = "B" } }
+                    }
+                }
+            }));
+
+            // 并行编排里另一个节点的工具收尾：不能误当作提问已结束
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolStarted, new
+            {
+                callId = "call-other",
+                name = "RunShellAsync",
+                arguments = "{}"
+            }));
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolCompleted, new
+            {
+                callId = "call-other",
+                resultSummary = "ok"
+            }));
+
+            var after = handle.Subscribe(null);
+            Assert.IsNotNull(after);
+            Assert.IsNotNull(ReadSnapshot(after).PendingQuestion, "提问仍在等用户作答，其它工具收尾不应清掉它");
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 压缩提示进入快照通知()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ContextCompacted, new
+            {
+                phase = ContextCompactionPhases.Done,
+                trigger = ContextCompactTriggers.Preflight,
+                archivedCount = 3,
+                keptCount = 2,
+                estimatedTokens = 1200,
+                budget = 8000,
+                message = "📦 上下文已压缩"
+            }));
+
+            // 重连/刷新后压缩标记必须由快照回放，不能只活在实时流里
+            var attach = handle.Subscribe(null);
+            Assert.IsNotNull(attach);
+            var snapshot = ReadSnapshot(attach);
+            Assert.AreEqual(1, snapshot.Notices.Count);
+            Assert.AreEqual(AgentSseEventNames.ContextCompacted, snapshot.Notices[0].Event);
+            StringAssert.Contains(snapshot.Notices[0].Data, "上下文已压缩");
         }
         finally
         {

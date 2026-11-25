@@ -89,10 +89,19 @@ public static class AgentEventTranslator
                     ReadString(root, "confirmationId") ?? "",
                     ReadString(root, "toolName") ?? "",
                     ReadArguments(root, "arguments"),
-                    ReadInt32(root, "timeoutSeconds"))
+                    ReadInt32(root, "timeoutSeconds"),
+                    ReadOrigin(root, "origin"))
                 {
                     LlmRound = ReadInt32(root, "llmRound")
                 };
+                return true;
+
+            case AgentSseEventNames.ToolQuestion:
+                evt = new UserQuestionRequestedEvent(
+                    ReadString(root, "questionId") ?? "",
+                    ReadQuestions(root, "questions"),
+                    ReadInt32(root, "timeoutSeconds"),
+                    ReadOrigin(root, "origin"));
                 return true;
 
             case AgentSseEventNames.AttachmentAdded:
@@ -120,6 +129,16 @@ public static class AgentEventTranslator
                 {
                     LlmRound = ReadInt32(root, "llmRound")
                 };
+                return true;
+
+            case AgentSseEventNames.ContextCompacted:
+                evt = new ContextCompactedEvent(
+                    ReadString(root, "phase") ?? ContextCompactionPhases.Done,
+                    ReadString(root, "trigger") ?? "",
+                    ReadInt32(root, "archivedCount"),
+                    ReadInt32(root, "keptCount"),
+                    ReadInt32(root, "estimatedTokens"),
+                    ReadNullableInt32(root, "budget"));
                 return true;
 
             default:
@@ -213,6 +232,65 @@ public static class AgentEventTranslator
             ? value.GetString()
             : null;
 
+    /// <summary>读取问题数组（<c>[{ question, header, multiSelect, options:[{ label, description }] }]</c>）。</summary>
+    /// <remarks>只做防御式解析：类型不符的项直接跳过，坏载荷不应让提问帧整体失效。</remarks>
+    private static IReadOnlyList<UserQuestion> ReadQuestions(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty(propertyName, out var questions)
+            || questions.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var result = new List<UserQuestion>();
+        foreach (var item in questions.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var text = ReadString(item, "question");
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            var options = new List<UserQuestionOption>();
+            if (item.TryGetProperty("options", out var optionArray)
+                && optionArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var option in optionArray.EnumerateArray())
+                {
+                    var label = ReadString(option, "label");
+                    if (string.IsNullOrWhiteSpace(label))
+                        continue;
+                    options.Add(new UserQuestionOption(label, ReadString(option, "description")));
+                }
+            }
+
+            var multiSelect = item.TryGetProperty("multiSelect", out var multi)
+                && multi.ValueKind == JsonValueKind.True;
+
+            result.Add(new UserQuestion(text, options, ReadString(item, "header"), multiSelect));
+        }
+
+        return result;
+    }
+
+    /// <summary>读取确认来源对象（<c>{ nodeId, role, description }</c>）；缺失或类型不符返回 <c>null</c>。</summary>
+    private static ToolConfirmationOrigin? ReadOrigin(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty(propertyName, out var origin)
+            || origin.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new ToolConfirmationOrigin(
+            ReadString(origin, "nodeId"),
+            ReadString(origin, "role"),
+            ReadString(origin, "description"));
+    }
+
     private static int ReadInt32(JsonElement root, string propertyName)
         => root.ValueKind == JsonValueKind.Object
            && root.TryGetProperty(propertyName, out var value)
@@ -220,6 +298,15 @@ public static class AgentEventTranslator
            && value.TryGetInt32(out var result)
             ? result
             : 0;
+
+    /// <summary>读取可空整数；缺省或类型不符返回 <c>null</c>（如上下文预算未知）。</summary>
+    private static int? ReadNullableInt32(JsonElement root, string propertyName)
+        => root.ValueKind == JsonValueKind.Object
+           && root.TryGetProperty(propertyName, out var value)
+           && value.ValueKind == JsonValueKind.Number
+           && value.TryGetInt32(out var result)
+            ? result
+            : null;
 
     private static long ReadInt64(JsonElement root, string propertyName)
         => root.ValueKind == JsonValueKind.Object

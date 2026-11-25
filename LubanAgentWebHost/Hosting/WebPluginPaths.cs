@@ -15,7 +15,7 @@ namespace LubanAgentWebHost.Hosting;
 /// <remarks>
 /// <para>
 /// 插件根与状态文件都必须与桌面端分开：桌面端的插件根经 <c>--plugins-dir</c> 下发，
-/// 本类给出的是 Web 自己的根（<c>--web-plugins-dir</c> 或 <c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>）。
+/// 本类给出的是 Web 自己的根（<c>--web-plugins-dir</c> 或 <c>~/.luban-agent/webhost/plugins</c>）。
 /// </para>
 /// <para>
 /// 页面镜像必须落在静态根（<c>AppContext.BaseDirectory/wwwroot</c>）之下，
@@ -37,24 +37,14 @@ public static class WebPluginPaths
     public const string MirrorUrlPrefix = "/" + MirrorFolderName;
 
     /// <summary>
-    /// Web 插件根默认值：<c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>。
+    /// Web 插件根默认值：<c>~/.luban-agent/webhost/plugins</c>。
     /// </summary>
-    public static string DefaultWebPluginsRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan",
-        "AIAgent",
-        "webhost",
-        "plugins");
+    public static string DefaultWebPluginsRoot => AgentHome.WebPluginsDirectory;
 
     /// <summary>
-    /// 插件状态文件默认值：<c>%LocalAppData%/LuBan/AIAgent/webhost/plugin-states.json</c>。
+    /// 插件状态文件默认值：<c>~/.luban-agent/webhost/plugin-states.json</c>。
     /// </summary>
-    public static string DefaultStateFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan",
-        "AIAgent",
-        "webhost",
-        "plugin-states.json");
+    public static string DefaultStateFilePath => AgentHome.WebPluginStateFile;
 
     /// <summary>
     /// 桌面端插件根默认值：宿主程序目录下的 <c>plugins</c>（框架的默认根）。

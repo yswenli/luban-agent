@@ -34,6 +34,9 @@ public sealed class InlineChoiceBlock : Block
     /// <summary>确认块标题（如 "⚠ WriteFileAsync"）。</summary>
     public string Title { get; }
 
+    /// <summary>副标题（如「来源：编排节点 build（角色 coder）」）；空串表示不显示。</summary>
+    public string Subtitle { get; }
+
     /// <summary>确认块描述/上下文说明。</summary>
     public string Description { get; }
 
@@ -71,13 +74,16 @@ public sealed class InlineChoiceBlock : Block
     /// <param name="description">描述行。</param>
     /// <param name="options">选项列表。</param>
     /// <param name="onResolve">选中回调（可选）。</param>
+    /// <param name="subtitle">副标题（可选，单独一行显示，如确认来源）。</param>
     public InlineChoiceBlock(
         string title,
         string description,
         IEnumerable<ChoiceOption> options,
-        Action<ChoiceOption>? onResolve = null)
+        Action<ChoiceOption>? onResolve = null,
+        string? subtitle = null)
     {
         Title = title ?? throw new ArgumentNullException(nameof(title));
+        Subtitle = subtitle ?? string.Empty;
         Description = description ?? string.Empty;
         _options = options?.ToList() ?? throw new ArgumentNullException(nameof(options));
         _onResolve = onResolve;
@@ -92,10 +98,12 @@ public sealed class InlineChoiceBlock : Block
     public override void Layout(int width)
     {
         base.Layout(width);
-        // 标题行 + 描述行（可能多行）+ N 个选项行
+        // 标题行 + 副标题行（可选）+ 描述行（可能多行）+ N 个选项行
         var descLines = string.IsNullOrEmpty(Description) ? 0
             : Math.Max(1, (Description.Length + Math.Max(1, width) - 1) / Math.Max(1, width));
-        LineCount = 1 + descLines + _options.Count;
+        var subtitleLines = string.IsNullOrEmpty(Subtitle) ? 0
+            : Math.Max(1, (Subtitle.Length + Math.Max(1, width) - 1) / Math.Max(1, width));
+        LineCount = 1 + subtitleLines + descLines + _options.Count;
     }
 
     /// <inheritdoc/>
@@ -108,6 +116,18 @@ public sealed class InlineChoiceBlock : Block
             resolved ? Title + " ✓" : Title,
             BlockColors.ConfirmTitle,
             TextStyle.Bold));
+
+        // 副标题行（来源标注等），单独一行，弱化配色
+        if (!string.IsNullOrEmpty(Subtitle))
+        {
+            var subtitle = Subtitle.AsSpan();
+            while (subtitle.Length > 0)
+            {
+                var take = Math.Min(Math.Max(1, width), subtitle.Length);
+                lines.Add(RenderLine.Single(subtitle[..take].ToString(), BlockColors.System));
+                subtitle = subtitle[take..];
+            }
+        }
 
         // 描述行
         if (!string.IsNullOrEmpty(Description))
@@ -174,7 +194,7 @@ public sealed class InlineChoiceBlock : Block
             return null;
         }
 
-        // 复用 Layout 已计算的 LineCount：LineCount = 1 + descLines + N
+        // 复用 Layout 已计算的 LineCount：LineCount = 1 + subtitleLines + descLines + N
         // 选项起始行 = LineCount - _options.Count
         var optionStartLine = LineCount - _options.Count;
         var optionIndex = localLine - optionStartLine;

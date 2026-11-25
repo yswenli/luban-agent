@@ -45,7 +45,7 @@ public sealed record WebHostDescriptor
 /// <remarks>
 /// <para>
 /// 宿主是独立服务：端口与令牌以宿主自身的配置为准，客户端不再用随机端口和一次性令牌覆盖。
-/// 宿主启动成功后把实际监听地址写到 <c>%LOCALAPPDATA%\luban-agent\webhost.json</c>，
+/// 宿主启动成功后把实际监听地址写到 <c>~/.luban-agent/webhost.json</c>，
 /// 正常退出时删除；客户端读取后先用 <c>/system/health</c> 探活，通过则直接接管。
 /// </para>
 /// <para>
@@ -54,16 +54,13 @@ public sealed record WebHostDescriptor
 /// </remarks>
 public static class WebHostDiscovery
 {
-    private const string DirectoryName = "luban-agent";
-    private const string FileName = "webhost.json";
-
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
-    /// 发现文件路径；默认位于当前用户的应用数据目录。
+    /// 发现文件路径：<c>~/.luban-agent/webhost.json</c>。
     /// </summary>
     /// <remarks>测试通过 <see cref="FilePathOverride"/> 指向临时目录，避免污染真实用户目录。</remarks>
-    public static string FilePath => FilePathOverride ?? Path.Combine(ResolveDirectory(), FileName);
+    public static string FilePath => FilePathOverride ?? AgentHome.WebHostInfoFile;
 
     /// <summary>测试用的路径覆盖；为 null 时按默认规则解析。</summary>
     internal static string? FilePathOverride { get; set; }
@@ -193,16 +190,5 @@ public static class WebHostDiscovery
             Logger.Warn($"无法确认宿主进程存活（pid={processId}）：{ex.Message}");
             return false;
         }
-    }
-
-    private static string ResolveDirectory()
-    {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            root = Path.GetTempPath();
-        }
-
-        return Path.Combine(root, DirectoryName);
     }
 }

@@ -36,9 +36,7 @@ public class ModelManager
     /// <summary>
     /// 模型目录
     /// </summary>
-    public string ModelDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan", "AIAgent", "models", _spec.ModelId);
+    public string ModelDirectory => Path.Combine(AgentHome.ModelsDirectory, _spec.ModelId);
 
     /// <summary>
     /// 本地 zip 路径（运行目录下 EmbeddingModels/{modelId}.zip）

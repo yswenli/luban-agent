@@ -17,7 +17,7 @@
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
-/// 项目档案持久化：默认落 <c>%LocalAppData%/LuBan/AIAgent/plugins/state/com.tjces.newproject.json</c>。
+/// 项目档案持久化：默认落 <c>~/.luban-agent/plugins/state/com.tjces.newproject.json</c>。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -51,14 +51,9 @@ public sealed class NewProjectStateStore
         => _stateDirectory = stateDirectory ?? DefaultStateDirectory;
 
     /// <summary>
-    /// 宿主默认状态目录：<c>%LocalAppData%/LuBan/AIAgent/plugins/state</c>。
+    /// 宿主默认状态目录：<c>~/.luban-agent/plugins/state</c>。
     /// </summary>
-    public static string DefaultStateDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan",
-        "AIAgent",
-        "plugins",
-        "state");
+    public static string DefaultStateDirectory => AgentHome.PluginsStateDirectory;
 
     /// <summary>
     /// 状态文件路径。

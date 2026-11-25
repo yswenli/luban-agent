@@ -59,6 +59,9 @@ public sealed record AgentRunSnapshot
 
     /// <summary>当前等待中的工具确认；无则为 null。</summary>
     public AgentRunConfirmationSnapshot? PendingConfirmation { get; init; }
+
+    /// <summary>当前等待用户作答的问题；无则为 null。</summary>
+    public AgentRunQuestionSnapshot? PendingQuestion { get; init; }
 }
 
 /// <summary>工具卡快照。</summary>
@@ -82,6 +85,12 @@ public sealed record AgentRunToolSnapshot
 
     /// <summary>错误信息；仅失败时有值。</summary>
     public string? Error { get; init; }
+
+    /// <summary>本次调用耗时（毫秒）；运行中或未采集到为空。</summary>
+    public int? DurationMs { get; init; }
+
+    /// <summary>调用开始时刻（Unix 毫秒）；重连后据此继续计时，落定后仍保留。</summary>
+    public long? StartedAtMs { get; init; }
 }
 
 /// <summary>计划项快照。</summary>
@@ -124,6 +133,12 @@ public sealed record AgentRunSegmentSnapshot
 
     /// <summary>工具卡；仅 tool 段落有值。</summary>
     public AgentRunToolSnapshot? Tool { get; init; }
+
+    /// <summary>该段落的耗时（毫秒）：思考段为思考区间时长；运行中或未采集到为空。</summary>
+    public int? DurationMs { get; init; }
+
+    /// <summary>思考区间开始时刻（Unix 毫秒）；重连后据此继续计时，落定后仍保留。</summary>
+    public long? StartedAtMs { get; init; }
 }
 
 /// <summary>等待中的工具确认快照。</summary>
@@ -141,6 +156,32 @@ public sealed record AgentRunConfirmationSnapshot
 
     /// <summary>原始超时秒数。</summary>
     public int TimeoutSeconds { get; init; }
+
+    /// <summary>确认来源（编排子代理节点）；主代理发起的确认为 <c>null</c>。</summary>
+    public ToolConfirmationOrigin? Origin { get; init; }
+
+    /// <summary>过期时刻；前端据剩余时间倒数。</summary>
+    public DateTimeOffset ExpiresAt { get; init; }
+}
+
+/// <summary>等待用户作答的问题快照。</summary>
+/// <remarks>
+/// <c>QuestionsJson</c> 保留原始数组 JSON 文本（与工具卡 <c>Arguments</c> 同口径），
+/// 前端按同一套解析逻辑还原问题与选项，避免两端各写一份模型。
+/// </remarks>
+public sealed record AgentRunQuestionSnapshot
+{
+    /// <summary>提问标识。</summary>
+    public string QuestionId { get; init; } = "";
+
+    /// <summary>问题数组的原始 JSON 文本。</summary>
+    public string QuestionsJson { get; init; } = "";
+
+    /// <summary>原始超时秒数。</summary>
+    public int TimeoutSeconds { get; init; }
+
+    /// <summary>提问来源（编排子代理节点）；主代理发起的提问为 <c>null</c>。</summary>
+    public ToolConfirmationOrigin? Origin { get; init; }
 
     /// <summary>过期时刻；前端据剩余时间倒数。</summary>
     public DateTimeOffset ExpiresAt { get; init; }

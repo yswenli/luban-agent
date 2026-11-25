@@ -1438,6 +1438,14 @@ public partial class MainWindowViewModel : ObservableObject
                         IsComplete = true
                     });
                     break;
+
+                case "summary":
+                    // 压缩摘要只留标记：摘要正文由服务端在后续轮次注入模型，不再铺进对话流
+                    session.Messages.Add(new SystemMessageItem
+                    {
+                        Content = $"📦 上下文已压缩（历史摘要，约 {msg.Content.Length} 字）"
+                    });
+                    break;
             }
         }
 

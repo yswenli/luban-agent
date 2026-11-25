@@ -1008,6 +1008,12 @@ a {
   color: var(--text-faint);
 }
 
+/* 消息元信息里的用量/耗时标签：等宽数字，避免刷新时宽度跳动 */
+.msg-meta .metric {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .msg-user .bubble {
   align-self: flex-end;
   max-width: 78%;
@@ -1244,6 +1250,28 @@ button.attachment-chip:focus-visible {
 
 .thinking summary::-webkit-details-marker {
   display: none;
+}
+
+/* 分组标题右侧的用时（思考 / 工具调用）：等宽数字，避免刷新时宽度跳动 */
+.thinking summary .summary-time,
+.tool-group > summary .summary-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.thinking summary .summary-time {
+  margin-left: auto;
+}
+
+.tool-group > summary .summary-time {
+  margin-left: auto;
+}
+
+/* 有时用时，它是标题右侧最后一个左推元素，状态徽标紧随其后 */
+.tool-group > summary .summary-time + .status {
+  margin-left: 0;
 }
 
 .thinking-body {

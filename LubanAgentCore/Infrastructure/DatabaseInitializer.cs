@@ -42,7 +42,8 @@ public static class DatabaseInitializer
         var messages = new List<string>();
 
         if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0) return messages;
-        FixRelativeConnectionString();
+        AgentHome.EnsureRoot();
+        ResolveDatabasePath();
         MigrateLegacyDatabase(messages);
 
         TrySkipInitIfDbExistsAndLarge(messages);
@@ -50,17 +51,9 @@ public static class DatabaseInitializer
 
         EnsureSqlitePragmas();
 
-        EnsureIsCompactedColumn();
-        EnsureThinkingColumn();
-        EnsureSegmentsColumn();
-        EnsureWorkspaceIdColumns();
-        EnsureSessionModelColumns();
-        EnsureSessionGenerationColumns();
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
-        EnsureAttachmentsColumn();
         EnsureA2ATaskTable();
         EnsureWorktreeSessionTable();
-        var dbPath = GetDatabasePath();
 
         return messages;
     }
@@ -131,42 +124,20 @@ public static class DatabaseInitializer
     }
 
     /// <summary>
-    /// 将 SQLite 连接字符串中的相对路径修正为基于程序所在目录的绝对路径，
-    /// 确保从其他目录启动时数据库文件仍然位于程序目录下。
+    /// 将 SQLite 连接字符串中的相对路径修正为用户级数据目录下的绝对路径
+    /// （<c>~/.luban-agent/&lt;文件名&gt;</c>），确保从任何目录启动都使用同一份库。
     /// </summary>
-    private static void FixRelativeConnectionString()
+    private static void ResolveDatabasePath()
     {
         var options = LuBanOrm.DbConnectionOptions;
         if (options?.ConnectionConfigs == null) return;
-        var baseDir = AppContext.BaseDirectory;
         foreach (var config in options.ConnectionConfigs)
         {
             if (config.DbType != SqlSugar.DbType.Sqlite) continue;
-            var connStr = config.ConnectionString;
-            if (string.IsNullOrEmpty(connStr)) continue;
-
-            // 解析 Data Source 值
-            var parts = connStr.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
+            if (AgentHome.TryResolveSqliteDataSource(config.ConnectionString, out var resolved))
             {
-                var kv = parts[i].Split(['='], 2);
-                if (kv.Length != 2) continue;
-                var key = kv[0].Trim();
-                var val = kv[1].Trim();
-                if (!key.Equals("Data Source", StringComparison.OrdinalIgnoreCase) &&
-                    !key.Equals("DataSource", StringComparison.OrdinalIgnoreCase)) continue;
-
-                // 仅修正相对路径（以 ./ 或 .. 开头，或不含目录分隔符的纯文件名）
-                if (val.StartsWith("./") || val.StartsWith(".\\") ||
-                    val.StartsWith("../") || val.StartsWith("..\\") ||
-                    (!Path.IsPathRooted(val) && !val.Contains(':')))
-                {
-                    var fileName = Path.GetFileName(val);
-                    var absPath = Path.Combine(baseDir, fileName);
-                    parts[i] = $"{key}={absPath}";
-                }
+                config.ConnectionString = resolved!;
             }
-            config.ConnectionString = string.Join(";", parts);
         }
     }
 
@@ -187,125 +158,6 @@ public static class DatabaseInitializer
         {
             Logger.Error("设置 SQLite PRAGMA（WAL/busy_timeout）失败", ex);
         }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session_message 新增 IsCompacted 列
-    /// </summary>
-    private static void EnsureIsCompactedColumn()
-    {
-        try
-        {
-            new SessionMessageRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN IsCompacted INTEGER NOT NULL DEFAULT 0");
-        }
-        catch
-        {
-            // 列已存在（CodeFirst 已迁移或重复执行），忽略
-        }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session_message 新增 Thinking 列（AI 思考内容持久化）
-    /// </summary>
-    private static void EnsureThinkingColumn()
-    {
-        try
-        {
-            new SessionMessageRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Thinking TEXT");
-        }
-        catch
-        {
-            // 列已存在，忽略
-        }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session_message 新增 Segments 列（有序段落 JSON）
-    /// </summary>
-    private static void EnsureSegmentsColumn()
-    {
-        try
-        {
-            new SessionMessageRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Segments TEXT");
-        }
-        catch
-        {
-            // 列已存在，忽略
-        }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session_message 新增 Attachments 列（附件元数据 JSON）
-    /// </summary>
-    private static void EnsureAttachmentsColumn()
-    {
-        try
-        {
-            new SessionMessageRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session_message ADD COLUMN Attachments TEXT");
-        }
-        catch
-        {
-            // 列已存在，忽略
-        }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session 新增 WorkspaceId 列
-    /// </summary>
-    private static void EnsureWorkspaceIdColumns()
-    {
-        try
-        {
-            new SessionRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN WorkspaceId TEXT");
-        }
-        catch { /* 列已存在，忽略 */ }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session 新增 ModelName / Provider 列（会话单独选定的模型）
-    /// </summary>
-    private static void EnsureSessionModelColumns()
-    {
-        try
-        {
-            new SessionRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN ModelName TEXT");
-        }
-        catch { /* 列已存在，忽略 */ }
-
-        try
-        {
-            new SessionRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN Provider TEXT");
-        }
-        catch { /* 列已存在，忽略 */ }
-    }
-
-    /// <summary>
-    /// 兜底迁移：ai_session 新增 ReasoningEffort / ContextTier 列（会话单独选定的生成参数）
-    /// </summary>
-    private static void EnsureSessionGenerationColumns()
-    {
-        // 列名必须是 ORM 实际落库名：DbSettings.EnableUnderLine=true，DbSession.ReasoningEffort
-        // 落库为 reasoning_effort。用 PascalCase 会建出一条 ORM 永远不会读的重复列。
-        try
-        {
-            new SessionRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN reasoning_effort TEXT");
-        }
-        catch { /* 列已存在，忽略 */ }
-
-        try
-        {
-            new SessionRepository().Context.Ado
-                .ExecuteCommand("ALTER TABLE ai_session ADD COLUMN context_tier INTEGER");
-        }
-        catch { /* 列已存在，忽略 */ }
     }
 
     /// <summary>
@@ -389,33 +241,66 @@ public static class DatabaseInitializer
     }
 
     /// <summary>
-    /// 获取数据库路径
+    /// 获取数据库路径：<c>~/.luban-agent/luban-ai-agent.db</c>。
     /// </summary>
     public static string GetDatabasePath()
     {
-        var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "luban-ai-agent.db");
-        return Path.GetFullPath(dbPath);
+        return Path.GetFullPath(AgentHome.DatabasePath);
     }
 
     /// <summary>
-    /// 将旧版数据库文件 ai_sessions.db 重命名为 luban-ai-agent.db（仅当旧文件存在且新文件不存在时）
+    /// 把旧版数据库搬入用户级数据目录（仅在目标库不存在时执行，幂等）：
+    /// ① 旧文件名 <c>ai_sessions.db</c> 更名为 <c>luban-ai-agent.db</c>；
+    /// ② 历史版本落在程序目录的 <c>luban-ai-agent.db</c>（连同 <c>-wal</c>/<c>-shm</c>）迁移过去。
     /// </summary>
     private static void MigrateLegacyDatabase(List<string> messages)
     {
-        var legacy = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ai_sessions.db");
         var current = GetDatabasePath();
-        if (File.Exists(legacy) && !File.Exists(current))
+        if (File.Exists(current)) return;
+
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        foreach (var (fileName, description) in new[]
+                 {
+                     ("ai_sessions.db", "数据库已从 {0} 更名为 {1}"),
+                     ("luban-ai-agent.db", "数据库已迁移到用户级目录 {0}"),
+                 })
         {
+            var legacy = Path.GetFullPath(Path.Combine(baseDir, fileName));
+            if (string.Equals(legacy, current, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!File.Exists(legacy)) continue;
+
             try
             {
+                AgentHome.EnsureRoot();
                 File.Move(legacy, current);
-                messages.Add($"数据库已从 {Path.GetFileName(legacy)} 更名为 {Path.GetFileName(current)}");
+                MoveSqliteSidecar(legacy + "-wal", current + "-wal");
+                MoveSqliteSidecar(legacy + "-shm", current + "-shm");
+                messages.Add(fileName == "ai_sessions.db"
+                    ? string.Format(description, fileName, Path.GetFileName(current))
+                    : string.Format(description, current));
+                return;
             }
             catch (Exception ex)
             {
-                Logger.Error("数据库初始化异常", ex);
-                messages.Add($"数据库更名失败: {ex.Message}");
+                Logger.Error("数据库迁移异常", ex);
+                messages.Add($"数据库迁移失败（{fileName}）：{ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// 随主库一起搬迁 SQLite 的 <c>-wal</c>/<c>-shm</c> 边车文件（存在时）。
+    /// </summary>
+    private static void MoveSqliteSidecar(string source, string target)
+    {
+        if (!File.Exists(source)) return;
+        try
+        {
+            File.Move(source, target, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"SQLite 边车文件迁移失败：{source} → {target}：{ex.Message}");
         }
     }
 }

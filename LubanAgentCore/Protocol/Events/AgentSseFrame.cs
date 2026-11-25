@@ -13,13 +13,16 @@ namespace LubanAgentCore.Protocol.Events;
 /// 一个 SSE 帧：事件名 + 单行 JSON 载荷。
 /// </summary>
 /// <remarks>
-/// 线格式固定为 <c>event: {name}\ndata: {json}\n\n</c>；心跳为注释行 <c>: ping\n\n</c>，
+/// 线格式固定为 <c>event: {name}\ndata: {json}\n\n</c>；轮次内帧还会先写一行 <c>id: {seq}</c>，
+/// 客户端据此记录已收到的最大序号，重连时作为 <c>fromSeq</c> 续传。心跳为注释行 <c>: ping\n\n</c>，
 /// 客户端读到注释行直接丢弃，用于保活并探测连接是否仍然可写。
 /// </remarks>
 /// <param name="Name">事件名，见 <see cref="AgentSseEventNames"/>。</param>
 /// <param name="Data">载荷 JSON 文本。</param>
 public sealed record AgentSseFrame(string Name, string Data)
 {
+    /// <summary>轮次内序号；<c>0</c> 表示未分配（直接构造的帧、错误帧等非轮次帧不写 <c>id:</c> 行）。</summary>
+    public int Seq { get; init; }
     /// <summary>心跳注释行（不含结尾空行）。</summary>
     public const string HeartbeatComment = ": ping";
 
@@ -54,8 +57,11 @@ public sealed record AgentSseFrame(string Name, string Data)
         => Create(AgentSseEventNames.Error, new { message });
 
     /// <summary>转成可写入响应流的文本（含结尾空行）。</summary>
-    /// <returns>SSE 文本。</returns>
-    public string ToText() => $"event: {Name}\ndata: {Data}\n\n";
+    /// <returns>SSE 文本；已分配序号时带 <c>id:</c> 行。</returns>
+    public string ToText()
+        => Seq > 0
+            ? $"id: {Seq}\nevent: {Name}\ndata: {Data}\n\n"
+            : $"event: {Name}\ndata: {Data}\n\n";
 
     /// <summary>把 <see cref="Data"/> 反序列化为强类型载荷。</summary>
     /// <typeparam name="T">目标类型。</typeparam>
@@ -94,6 +100,7 @@ public sealed record AgentSseFrame(string Name, string Data)
 
         string? name = null;
         var dataLines = new List<string>();
+        var seq = 0;
         foreach (var rawLine in block.Split('\n'))
         {
             var line = rawLine.TrimEnd('\r');
@@ -110,6 +117,15 @@ public sealed record AgentSseFrame(string Name, string Data)
             {
                 dataLines.Add(line[5..].TrimStart());
             }
+            else if (line.StartsWith("id:", StringComparison.Ordinal))
+            {
+                // 非数字序号按「未分配」处理，不因一行坏数据丢整帧；
+                // 解析失败时保留已解析到的序号，避免后面的坏行把前面的好值清零
+                if (int.TryParse(line[3..].Trim(), out var parsed))
+                {
+                    seq = parsed;
+                }
+            }
         }
 
         if (string.IsNullOrWhiteSpace(name))
@@ -117,7 +133,7 @@ public sealed record AgentSseFrame(string Name, string Data)
             return false;
         }
 
-        frame = new AgentSseFrame(name, string.Join("\n", dataLines));
+        frame = new AgentSseFrame(name, string.Join("\n", dataLines)) { Seq = seq };
         return true;
     }
 }

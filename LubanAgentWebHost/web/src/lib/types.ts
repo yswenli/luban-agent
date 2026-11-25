@@ -32,9 +32,15 @@ export interface AttachmentPolicy {
   extensions: string[];
   maxCount: number;
   undecodableExtensions: string[];
+  /** 按图片处理的扩展名（与后端判定同源，MIME 缺失时也能正确分流）。 */
+  imageExtensions: string[];
   maxTextBytes: number;
   maxImageBytes: number;
   maxImageEdge: number;
+  /** 图片上传硬上限：超过直接拒绝，不进入解码流程。 */
+  maxImageUploadBytes: number;
+  /** 图片像素总数上限：超过直接拒绝，浏览器端据此避免整幅解码。 */
+  maxImagePixels: number;
 }
 
 export interface Bootstrap {
@@ -108,6 +114,8 @@ export interface SessionMessage {
   /** 序列化的 `[{ kind, text, name, callId, arguments }]`（camelCase），按发生顺序排列。 */
   segments?: string | null;
   tokens?: number | null;
+  /** 本轮助手回复耗时（毫秒）。 */
+  durationMs?: number | null;
   createdAt: string;
 }
 
@@ -167,6 +175,8 @@ export interface StoredSegment {
   name?: string | null;
   callId?: string | null;
   arguments?: string | null;
+  /** 段落耗时（毫秒）：思考段为区间时长，tool 段为一次调用时长；旧数据为空。 */
+  durationMs?: number | null;
 }
 
 /** 待发送附件（本地队列项）。 */

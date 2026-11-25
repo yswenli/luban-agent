@@ -56,16 +56,22 @@ public sealed record PermissionModeDto(string Key, string DisplayName);
 /// <param name="Extensions">允许的扩展名（含点）。</param>
 /// <param name="MaxCount">每轮最多附件数。</param>
 /// <param name="UndecodableExtensions">需要提示转换格式的扩展名。</param>
+/// <param name="ImageExtensions">按图片处理的扩展名（与后端的判定同源）。</param>
 /// <param name="MaxTextBytes">文本单文件上限。</param>
 /// <param name="MaxImageBytes">图片缩放阈值（超过即重编码）。</param>
 /// <param name="MaxImageEdge">图片最长边阈值（超过即缩放）。</param>
+/// <param name="MaxImageUploadBytes">图片上传硬上限（超过直接拒绝，不再解码）。</param>
+/// <param name="MaxImagePixels">图片像素总数上限（超过直接拒绝，浏览器端也据此避免整幅解码）。</param>
 public sealed record AttachmentPolicyDto(
     IReadOnlyList<string> Extensions,
     int MaxCount,
     IReadOnlyList<string> UndecodableExtensions,
+    IReadOnlyList<string> ImageExtensions,
     long MaxTextBytes,
     long MaxImageBytes,
-    int MaxImageEdge);
+    int MaxImageEdge,
+    long MaxImageUploadBytes,
+    long MaxImagePixels);
 
 /// <summary>工具确认策略。</summary>
 /// <param name="TimeoutSeconds">等待上限（秒），超时按拒绝处理。</param>

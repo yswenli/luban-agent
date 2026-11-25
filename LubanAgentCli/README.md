@@ -38,7 +38,7 @@
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
 
-### 🛠️ 12 大内置工具组
+### 🛠️ 13 大内置工具组
 | 工具组 | 能力 |
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
@@ -53,6 +53,7 @@
 | 🧩 **编排工具** | 复合任务拆解为 DAG，调度 SubAgent 并行/串行执行 |
 | 📚 **Wiki 知识库工具** | 读写/删除 wiki 页面、向量搜索、健康检查（opt-in，需显式启用） |
 | 📜 **大日志分析工具** | 大日志文件聚合概览、正则检索、按行切片，恒定内存（默认启用） |
+| 📨 **用户交互工具** | 向用户提出 1～4 个选择题（每题 2～4 个选项，支持多选与「其它」自由输入），答完一次性回传；`Esc` 跳过按「已取消」返回 |
 
 > **编排说明**：Git 工具默认不进入编排子代理的工具组（`Orchestration.DefaultToolGroups=["filesystem", "log"]`），如需让子代理执行 Git 操作，请在 DAG 节点中显式指定 `toolGroups`。
 
@@ -174,8 +175,8 @@ luban-agent-cli
 #### 配置文件说明
 
 - **应用配置**（`appsettings.json`）：始终优先从工具安装目录加载；当前工作目录下的 `appsettings.json` 可作为覆盖项
-- **用户配置**（Provider、Skill、规则等）：自动保存在 `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json`，`userId` 取环境变量 `LUBAN_USER_ID`（缺省 `yswenli`）；旧版单用户配置 `%LocalAppData%\LuBan\AIAgent\config.json` 会在首次访问时自动迁移
-- **会话数据**：保存在程序基目录下的 `luban-ai-agent.db`（`appsettings.json` 中 `Data Source=./luban-ai-agent.db` 的相对路径按程序基目录解析）；旧版 `ai_sessions.db` 在首次启动时自动更名为该文件
+- **用户配置**（Provider、Skill、规则等）：自动保存在 `~/.luban-agent/users/<userId>/config.json`，`userId` 取环境变量 `LUBAN_USER_ID`（缺省 `yswenli`）；旧版单用户配置 `~/.luban-agent/config.json` 会在首次访问时自动迁移；更早版本写在 `%LocalAppData%\LuBan\AIAgent` 下的配置不会被自动搬运，需手工并入 `~/.luban-agent`
+- **会话数据**：用户级目录下的 `luban-ai-agent.db`（`~/.luban-agent/luban-ai-agent.db`；`appsettings.json` 中 `Data Source=./luban-ai-agent.db` 的相对路径会被改写到该目录）；旧版 `ai_sessions.db` 与程序基目录下的同名库在宿主首次启动时自动迁移过去
 
 #### 更新与卸载
 
@@ -290,7 +291,7 @@ OpenAI 可用模型（回车确认，未选则默认第一个）:
 
 - **自动拉起**：本机没有可用宿主时，客户端拉起 `LubanAgentWebHost` 子进程（下发 `--plugins-dir`、`--debug`，并在 `AgentClientOptions.WebPluginsDirectory` 有值时追加 `--web-plugins-dir`；端口、令牌、超时都由宿主自己的配置决定，`LubanAgentWeb:Port` 默认 18080）；已有实例在运行时客户端读发现文件并用 `/system/health` 探活，通过即直接接管，不会重复启动。宿主可执行文件按「`AgentClientOptions.ServerPath` → 环境变量 `LUBAN_AGENT_WEBHOST` → 客户端输出目录 → 向上逐级查找 `LubanAgentWebHost/bin/**`」的顺序定位，都找不到时报「未找到 LubanAgentWebHost」。
 - **宿主常驻**：拉起后的宿主不随本程序退出，需要用 `LubanAgentWebHost --stop` 停止；同一个端口只能有一个实例，后启动的那个会因端口占用启动失败。
-- **访问令牌**：宿主监听全部网卡，所以每次启动都会生成一次性令牌，并写入 `%LOCALAPPDATA%\luban-agent\webhost.json`；客户端从该文件读取后自动带 `Authorization: Bearer`，不需要手工填写。
+- **访问令牌**：宿主监听全部网卡，所以每次启动都会生成一次性令牌，并写入 `~/.luban-agent/webhost.json`；客户端从该文件读取后自动带 `Authorization: Bearer`，不需要手工填写。
 - **浏览器端**：宿主同时托管网页界面，入口是终端打印的 `http://<局域网 IP>:<端口>/?t=<令牌>`；打开后令牌换成 HttpOnly Cookie 并 302 回去掉 `t` 的干净地址，宿主重启即失效。
 - **遇到 401 或连不上**：
   - 在宿主机执行 `LubanAgentWebHost --token`，重新打印当前实例的入口地址；
@@ -808,9 +809,9 @@ LubanAgentCli/
 
 以上为节选，完整配置项见 `LubanAgentCli/appsettings.json`。
 
-### 用户配置 (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
+### 用户配置 (~/.luban-agent/users/<userId>/config.json)
 
-用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，重启后自动加载。`<userId>` 取环境变量 `LUBAN_USER_ID`，缺省为 `yswenli`；旧版单用户配置 `%LocalAppData%\LuBan\AIAgent\config.json` 会在首次访问时自动迁移到用户目录。
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，重启后自动加载。`<userId>` 取环境变量 `LUBAN_USER_ID`，缺省为 `yswenli`；旧版单用户配置 `~/.luban-agent/config.json` 会在首次访问时自动迁移到用户目录；更早版本写在 `%LocalAppData%\LuBan\AIAgent` 下的配置不会被自动搬运，需手工并入 `~/.luban-agent`。
 
 > 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明可用性，是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定；凭据键泛化为 `connector:<实例名>:token`（兼容旧键 `yunxiao_pat`）。
 
@@ -846,6 +847,26 @@ LubanAgentCli/
 
 工作区内的只读与常规编辑免确认；Plan 模式下仅工作区内的只读工具直接放行。
 
+### 交互提问
+
+模型需要你补充信息时（例如「用哪种方式实现？」），会在当前对话流中插入提问块，而不是先执行工具：
+
+```
+❓ Agent 提问
+[1/2] 用哪种方式实现？
+  ▶ ( ) 1. 方案 A — 改动最小
+    ( ) 2. 方案 B — 扩展性更好
+  ⌨ 其它：按 Tab 输入自定义答案
+↑↓ 移动 · 空格选择 · Enter 确认 · Tab 输入其它 · Esc 跳过
+```
+
+- 多选题用 `空格` 勾选（标记 `[x]`），再 `Enter` 提交本题
+- 数字键直接选中对应选项；单选题选中即进入下一题
+- `Tab` 进入「其它」行输入自定义答案，`Enter` 提交本题；「其它」文本与已勾选项一并回传
+- 多题时逐题作答，全部答完才一次性回传
+- `Esc` 跳过整组提问 — 按「已取消」回传（不是拒绝工具，节点不会因此失败）
+- 编排子代理发起提问时，标题下单独一行显示「来源：编排节点 …」；主代理提问没有该行
+
 ### 会话管理
 
 ```bash
@@ -867,7 +888,7 @@ LubanAgentCli/
 
 **会话自动保存**：
 - 在 `/agi` 对话中，对话历史自动保存到 SQLite 数据库
-- 数据库位置：程序基目录下的 `luban-ai-agent.db`（旧版 `ai_sessions.db` 首次启动自动更名）
+- 数据库位置：用户级目录下的 `luban-ai-agent.db`（`~/.luban-agent/luban-ai-agent.db`；旧版 `ai_sessions.db` 与程序基目录下的同名库在宿主首次启动时自动迁移过去）
 - 用户消息和 AI 回复都会自动保存
 - Token 数量自动统计
 
@@ -989,7 +1010,7 @@ github 可用的工具：
 - 📜 **滚动跟随**：流式输出自动贴底；手动上滚断开跟随，底部显示"↓ N 行新内容"提示
 - 💬 模型路由使用 `provider:model` 格式，支持 20+ 种 AI Provider，可通过 `/provider -add` 新增
 - 🌐 **多地址支持**：部分 Provider（如 Kimi、MiniMax）提供多个 API 地址，添加时可选择
-- 🛠️ **12 大内置工具组**覆盖浏览器自动化、文件操作（含编辑）、Git 版本控制、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP 外部工具、多 Agent 编排、LLM Wiki 知识库（opt-in）与大日志分析
+- 🛠️ **13 大内置工具组**覆盖浏览器自动化、文件操作（含编辑）、Git 版本控制、脚本执行、Web 请求、语义检索、上下文压缩、本地记忆、MCP 外部工具、多 Agent 编排、用户交互提问、LLM Wiki 知识库（opt-in）与大日志分析
 - ⚠️ **ToolConfirmationService** 对工作区外路径访问及写入、删除、执行等敏感操作要求用户确认，支持本次/本轮/本会话三档授权（InlineChoiceBlock 内联确认，Y/N/A/S）
 - 🔒 **FileSystemToolOptions.AllowedRoots** 与工作区根共同构成可信范围，范围内操作免确认
 - 🧩 **多 Agent 编排**：`/agi` 对话中 AI 自动识别复合任务，拆解为 DAG 并由 SubAgent 串行/并行混合执行

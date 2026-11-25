@@ -29,13 +29,13 @@ public sealed record WebHostSettings
     /// <summary>浏览器会话的绝对上限（小时）；<c>0</c> 表示不设上限，会话随宿主进程存活。</summary>
     public double SessionMaxHours { get; init; } = 0;
 
-    /// <summary>SAEA 的同步等待上限（秒）；必须远大于最长回合（SSE 与同步索引都可能跑很久）。</summary>
+    /// <summary>SAEA 的 socket 同步等待与会话空闲回收上限（秒）；SSE 连接在写出响应头前已摘出空闲回收。</summary>
     public double TimeoutSeconds { get; init; } = 86400;
 
     /// <summary>是否以 HTTPS 提供服务（自签证书）；默认开启。</summary>
     public bool UseHttps { get; init; } = true;
 
-    /// <summary>自签证书的 pfx 路径；为空时取当前用户本地应用数据目录下的 <c>webhost-cert.pfx</c>。</summary>
+    /// <summary>自签证书的 pfx 路径；为空时取 <c>~/.luban-agent/webhost-cert.pfx</c>。</summary>
     public string? CertificatePath { get; init; }
 
     /// <summary>
@@ -62,7 +62,7 @@ public sealed record WebHostSettings
     public string? PluginsDir { get; init; }
 
     /// <summary>
-    /// Web 插件根目录；为空时取 <c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>。
+    /// Web 插件根目录；为空时取 <c>~/.luban-agent/webhost/plugins</c>。
     /// </summary>
     /// <remarks>
     /// 与 <see cref="PluginsDir"/> 分开：Web 端自己安装、自己启停的插件落在这里，

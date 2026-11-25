@@ -343,7 +343,8 @@ public static class WebSessionService
                 input.Thinking,
                 input.Attachments,
                 input.ToolCalls,
-                input.Segments)
+                input.Segments,
+                input.DurationMs)
             .ConfigureAwait(false);
         return WebApi.OkJson(message);
     });

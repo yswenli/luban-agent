@@ -23,12 +23,14 @@
 
     <!-- 插件包标识（= 目录名 = plugin.json 的 id）；默认铺到 Web 插件根，可用 -p:PluginPackageDir=… 覆盖 -->
     <PluginPackageId>com.tjces.yunxiao</PluginPackageId>
-    <PluginPackageDir Condition="'$(PluginPackageDir)' == ''">$(LOCALAPPDATA)\LuBan\AIAgent\webhost\plugins\$(PluginPackageId)\</PluginPackageDir>
+    <!-- 用户主目录：Windows 取 USERPROFILE，Linux/macOS 取 HOME（均为 MSBuild 内建环境属性） -->
+    <PluginPackageDir Condition="'$(PluginPackageDir)' == '' AND '$(USERPROFILE)' != ''">$(USERPROFILE)\.luban-agent\webhost\plugins\$(PluginPackageId)\</PluginPackageDir>
+    <PluginPackageDir Condition="'$(PluginPackageDir)' == '' AND '$(HOME)' != ''">$(HOME)/.luban-agent/webhost/plugins/$(PluginPackageId)/</PluginPackageDir>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- 框架契约包：运行期由宿主共享框架集提供，插件包 lib/ 不得包含（见文件头打包约束 1）。 -->
-    <PackageReference Include="LuBan.AIAgent" Version="2026.11.24.1" />
+    <PackageReference Include="LuBan.AIAgent" Version="2026.11.25.1" />
   </ItemGroup>
 
   <ItemGroup>

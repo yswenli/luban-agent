@@ -24,9 +24,6 @@ namespace LubanAgentWebHost.Services;
 /// </remarks>
 public static class WebAttachmentService
 {
-    /// <summary>文本类附件单文件上限（与框架附件处理器的阈值一致）。</summary>
-    private const long MaxTextBytes = 10L * 1024 * 1024;
-
     /// <summary>
     /// 上传附件。
     /// </summary>
@@ -43,6 +40,13 @@ public static class WebAttachmentService
         if (files.Count == 0)
         {
             return WebApi.FailJson(400, "files 不能为空");
+        }
+
+        // 整包总量先判：载荷在进这个方法之前就已全部解析成字符串，逐个解码前先挡住整包超限
+        var totalBytes = files.Sum(file => WebAttachmentLimits.EstimateDecodedBytes(file.ContentBase64));
+        if (totalBytes > WebAttachmentLimits.MaxRequestUploadBytes)
+        {
+            return WebApi.FailJson(400, WebAttachmentLimits.OverRequestLimitReason());
         }
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
@@ -109,6 +113,16 @@ public static class WebAttachmentService
                 continue;
             }
 
+            var isImage = MediaTypeUtil.IsImage(safeName);
+            var maxBytes = WebAttachmentLimits.MaxBytesOf(isImage);
+
+            // 先按 Base64 长度估算，避免为超限载荷先分配解码缓冲
+            if (WebAttachmentLimits.EstimateDecodedBytes(file.ContentBase64) > maxBytes)
+            {
+                rejected.Add(new RejectedAttachmentDto(originalName, WebAttachmentLimits.OverLimitReason(isImage)));
+                continue;
+            }
+
             byte[] bytes;
             try
             {
@@ -126,9 +140,16 @@ public static class WebAttachmentService
                 continue;
             }
 
-            if (!MediaTypeUtil.IsImage(safeName) && bytes.LongLength > MaxTextBytes)
+            if (bytes.LongLength > maxBytes)
             {
-                rejected.Add(new RejectedAttachmentDto(originalName, "文本类附件超过 10MB"));
+                rejected.Add(new RejectedAttachmentDto(originalName, WebAttachmentLimits.OverLimitReason(isImage)));
+                continue;
+            }
+
+            // 图片只读头判像素总数：整幅解码要占 宽×高×4 字节，拦在落盘之前
+            if (isImage && WebAttachmentLimits.ValidateImage(bytes) is { } reason)
+            {
+                rejected.Add(new RejectedAttachmentDto(originalName, reason));
                 continue;
             }
 

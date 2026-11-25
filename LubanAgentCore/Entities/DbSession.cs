@@ -126,6 +126,12 @@ public class DbSessionMessage : EntityBase
     public int? Tokens { get; set; }
 
     /// <summary>
+    /// 本轮回复耗时（毫秒，仅 assistant 消息可能有）
+    /// </summary>
+    [SugarColumn(ColumnDescription = "耗时毫秒", IsNullable = true)]
+    public int? DurationMs { get; set; }
+
+    /// <summary>
     /// 工具调用信息（JSON）
     /// </summary>
     [SugarColumn(ColumnDescription = "工具调用", ColumnDataType = "text", IsNullable = true)]

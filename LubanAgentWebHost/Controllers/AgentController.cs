@@ -47,6 +47,12 @@ public sealed class AgentController : Controller
     [HttpPost]
     public Task<ActionResult> Confirm(string payload) => WebAgentService.ConfirmAsync(payload);
 
+    /// <summary>回传用户对提问的回答（或取消）。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentAnswerRequest"/> JSON。</param>
+    /// <returns>是否写入成功。</returns>
+    [HttpPost]
+    public Task<ActionResult> Answer(string payload) => WebAgentService.AnswerAsync(payload);
+
     /// <summary>读取会话当前生效的思考档位与上下文预算档位。</summary>
     /// <param name="sessionId">会话标识；缺省返回全局默认与全局模型的档位。</param>
     /// <returns>生效值、可选档位与模型窗口。</returns>

@@ -43,7 +43,7 @@ This is not science fiction, this is **LuBan Agent Codex**.
 - **Unified `provider:model` format**: One-click model switching, no code changes required
 - **Dynamic routing**: LuBanChatClient automatically distributes to the corresponding Provider based on prefix
 
-### 🛠️ 12 Built-in Tool Groups
+### 🛠️ 13 Built-in Tool Groups
 | Tool Group | Capabilities |
 |------------|--------------|
 | 🌐 **Browser Tools** | Navigate, click, type, screenshot, get content (based on Playwright) |
@@ -58,6 +58,7 @@ This is not science fiction, this is **LuBan Agent Codex**.
 | 🧩 **Orchestration Tools** | Decompose composite tasks into a DAG and dispatch SubAgents in parallel/serial |
 | 📚 **Wiki Knowledge Base Tools** | Read/write/delete wiki pages, vector search, health check (opt-in) |
 | 📜 **Log Analysis Tools** | Aggregate overview, regex search, and line slicing for large log files with constant memory (enabled by default) |
+| 📨 **User Interaction Tools** | Ask 1–4 multiple-choice questions (2–4 options each, optional multi-select plus an "Other" free-text field) and wait for answers; enabled by default, usable by sub-agents/orchestration nodes too, and a skip returns "cancelled" |
 
 > **Orchestration note**: Git tools are not included in the orchestration sub-agent default tool groups; specify `toolGroups` explicitly on a DAG node to let a sub-agent run Git operations.
 
@@ -206,7 +207,7 @@ This program does not execute the agent itself: conversations, file access and t
 
 - **Auto launch**: when no host is available locally, the client starts a `LubanAgentWebHost` child process, passing `--plugins-dir`, `--debug`, and `--web-plugins-dir` when `AgentClientOptions.WebPluginsDirectory` is set; port, token and timeouts all come from the host's own configuration (`LubanAgentWeb:Port`, default 18080). If an instance is already running, the client reads the descriptor file, probes `/system/health` and adopts it instead of starting a second one. The host executable is resolved in this order: `AgentClientOptions.ServerPath` → environment variable `LUBAN_AGENT_WEBHOST` → the client output directory → walking up for `LubanAgentWebHost/bin/**`; if none is found the client reports "LubanAgentWebHost not found".
 - **The host stays resident**: a launched host keeps running after this program exits; stop it with `LubanAgentWebHost --stop`. Only one instance can own a port — the one started later fails on the port conflict.
-- **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `%LOCALAPPDATA%\luban-agent\webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
+- **Access token**: the host listens on all interfaces, so every start generates a one-off token and records it in `~/.luban-agent/webhost.json`; the client reads it from there and sends `Authorization: Bearer` automatically — no manual input needed.
 - **Browser UI**: the host also serves a web UI at the entry address printed in the terminal (`http://<LAN IP>:<port>/?t=<token>`). The token is exchanged for an HttpOnly cookie and the URL is 302-redirected to the clean address; it expires when the host restarts.
 - **Getting a 401 or failing to connect**:
   - run `LubanAgentWebHost --token` on the host machine to print the current entry address again;
@@ -443,6 +444,8 @@ Message stream: Allowed Read File
 | `Allow all this session` | same-type tools for the whole session | remembered per path root (file → parent dir, dir → itself) |
 
 > If the grant root lands on a drive root (e.g. `D:\`) it is not remembered, preventing one grant from opening an entire disk. The main window is non-interactive until you choose; Esc or ending the session equals "Deny".
+>
+> When an orchestration sub-agent asks for confirmation, a dedicated line under the tool name shows "来源：编排节点 <node id>（角色 <role>）：<description>" so you can tell which node is requesting permission; main-agent requests have no such line. The origin is display-only and does not change grant scope or memory rules.
 
 ### Scenario 9: Plan Mode — Read First, Produce a Plan, Change Nothing
 
@@ -626,7 +629,7 @@ LubanAgentCodex/
 }
 ```
 
-### User Configuration (%LocalAppData%\LuBan\AIAgent\config.json)
+### User Configuration (~/.luban-agent/users/<userId>/config.json)
 
 User configuration (Provider, custom Skills, rules, connector declarations, etc.) automatically saved locally, automatically loaded on restart.
 
@@ -666,6 +669,26 @@ The dialog is an application-modal window: the main window is not interactive un
 
 Read-only and normal edit operations inside the workspace need no confirmation; in Plan mode only in-workspace read-only tools are allowed directly.
 
+### Interactive Questions
+
+When the model needs more information (e.g. "which implementation approach?"), it shows a question dialog instead of executing a tool first:
+
+```
+┌─ Agent question ─────────────────────────────────────┐
+│ Which implementation approach?                        │
+│   (•) Approach A — smallest change                    │
+│   ( ) Approach B — better extensibility               │
+│   Other: type your answer (optional)                  │
+│                              [Skip]        [Submit]   │
+└───────────────────────────────────────────────────────┘
+```
+
+- Ask 1–4 questions at once, listed one by one in a scroll area; single-select questions use radio buttons, multi-select questions use check boxes
+- Every question has an "Other" input box; "Submit" requires each question to have at least one option or some text, and a custom answer can coexist with selected options
+- "Skip" or `Esc`/closing the dialog returns "cancelled" (not a tool denial, so the node does not fail)
+- When a question arrives for a non-current session, that session's tab shows a waiting badge; switching to it brings up the dialog
+- When an orchestration sub-agent asks, a separate "来源：编排节点 …" line appears under the tool name; main-agent questions have no such line
+
 ### Session Management
 
 ```
@@ -687,7 +710,7 @@ Read-only and normal edit operations inside the workspace need no confirmation; 
 
 **Automatic session saving**:
 - Conversation history automatically saved to SQLite database
-- Database location: `luban-ai-agent.db` under the program base directory (`Data Source=./luban-ai-agent.db` in `appsettings.json`; the legacy `ai_sessions.db` is renamed automatically on first start)
+- Database location: `luban-ai-agent.db` in the user-level directory (`~/.luban-agent/luban-ai-agent.db`; the relative `Data Source=./luban-ai-agent.db` in `appsettings.json` is rebased onto that directory; the legacy `ai_sessions.db` and any same-named database in the program base directory are migrated there the first time the host starts)
 - User messages and AI replies automatically saved
 - Token count automatically tracked
 
@@ -698,7 +721,7 @@ LuBan Agent supports file-based Skills, create `SKILL.md` files in project-level
 ```
 Storage locations (by priority):
   Project-level: <workspace>/.luban-agent/skills/<skill-id>/SKILL.md
-  User-level: %LocalAppData%/LuBan/AIAgent/skills/<skill-id>/SKILL.md
+  User-level: ~/.luban-agent/skills/<skill-id>/SKILL.md
 ```
 
 **SKILL.md Format**:
@@ -775,7 +798,7 @@ After "Save", click "Apply Configuration" to hot-reload (`McpManagementService` 
 - 🎨 **Collapse/Expand**: Thinking process and tool calls collapsed by default, click to expand and view details
 - 📜 **Smart Scrolling**: Streaming output auto-follows; manual scroll up breaks follow
 - 🌐 **Multi-Provider Support**: Supports 20+ AI Providers, unified `provider:model` format
-- 🛠️ **12 Built-in Tool Groups**: Cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, the LLM Wiki knowledge base (opt-in), and large log analysis
+- 🛠️ **13 Built-in Tool Groups**: Cover browser automation, file operations (including editing), Git version control, script execution, web requests, semantic retrieval, context compaction, local memory, MCP external tools, multi-agent orchestration, user interaction questions, the LLM Wiki knowledge base (opt-in), and large log analysis
 - ⚠️ **Dangerous Operation Confirmation**: Requires user confirmation for out-of-workspace path access and sensitive operations (write, delete, execute), with this-time/turn/session grant tiers
 - 🔒 **Path Authorization**: In-workspace paths need no confirmation; out-of-workspace paths are allowed after confirmation, with grants remembered per path root
 - 🧩 **Multi-Agent Orchestration**: AI automatically identifies complex tasks, decomposes into DAG and executes with SubAgent in serial/parallel mix

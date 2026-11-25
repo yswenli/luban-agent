@@ -211,17 +211,25 @@ internal sealed class HostAssistantBridge
                 Input = prompt,
                 SessionId = sessionId,
                 PermissionMode = ToolPermissionMode.Default,
-                ConfirmHandler = (toolName, arguments) =>
-                {
-                    var decision = AssistantToolPolicy.Decide(toolName, arguments, workspaceRoot, out var reason);
-                    if (decision == ConfirmResult.Allow)
-                        approvals.Add($"{toolName}｜{reason}");
-                    else
-                        denials.Add($"{toolName}｜{reason}");
-
-                    return decision;
-                }
+                // 策略硬闸门：先于「免人工确认」名单生效，避免 MemorySave / plan_task 这类内置免确认项
+                // 绕过 Step 4/5 的白名单（本链路没有人工确认通道，免确认与免策略必须分开）。
+                PolicyGuard = (toolName, arguments) => Decide(toolName, arguments),
+                // 兜底：PolicyGuard 对每个工具都给结论，本链路实际不会走到确认回调；
+                // 显式给出可避免框架回落到确认 broker（该链路无人应答会挂起）。
+                ConfirmHandler = Decide
             };
+
+            // 同一条判定既做策略闸门又做确认兜底：命中即记录依据，供四环判据与报告使用。
+            ConfirmResult Decide(string toolName, IReadOnlyDictionary<string, object?> arguments)
+            {
+                var decision = AssistantToolPolicy.Decide(toolName, arguments, workspaceRoot, out var reason);
+                if (decision == ConfirmResult.Allow)
+                    approvals.Add($"{toolName}｜{reason}");
+                else
+                    denials.Add($"{toolName}｜{reason}");
+
+                return decision;
+            }
 
             await foreach (var evt in runner.RunStreamingAsync(request, cancellationToken).ConfigureAwait(false))
             {

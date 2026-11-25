@@ -338,6 +338,7 @@ public partial class SessionViewModel : ObservableObject
                 SessionId = SessionId,
                 PermissionMode = _permissionModeProvider(),
                 ConfirmHandler = ConfirmCallback,
+                AskUserHandlerAsync = (questions, token) => Task.FromResult(AskQuestionsCallback(questions, token)),
                 OnPlannedAction = (tool, args) =>
                 {
                     if (runSeq != _activeRunSeq) return; // 运行序号失效（取消/新对话）则丢弃
@@ -456,6 +457,11 @@ public partial class SessionViewModel : ObservableObject
 
             case ErrorEvent e:
                 Messages.Add(new SystemMessageItem { Content = e.Message, IsError = true });
+                break;
+
+            case ContextCompactedEvent c:
+                // 压缩提示是系统提示行，不打断本轮正文/思考块的累积
+                Messages.Add(new SystemMessageItem { Content = c.Describe() });
                 break;
 
             case OrchestrationProgressEvent p:
@@ -615,6 +621,10 @@ public partial class SessionViewModel : ObservableObject
     {
         var ct = _cts?.Token ?? CancellationToken.None;
 
+        // 来源必须在确认回调的调用链内先取出：随后 Dispatcher.UIThread.Post 会切线程，
+        // AsyncLocal 上下文不保证随之流转；取出后作为普通值传给对话框。
+        var origin = ToolConfirmationContext.CurrentOrigin;
+
         // 非当前选中会话：先在侧栏挂待确认徽标，并阻塞等待用户切到本会话再弹窗，
         // 避免后台会话的确认模态打断当前会话，或两个会话的确认模态互相堆叠。
         var deferred = !_isCurrentProvider(SessionId);
@@ -629,7 +639,7 @@ public partial class SessionViewModel : ObservableObject
                 Thread.Sleep(50);
             }
 
-            var confirmResult = ShowConfirmDialog(toolName, args, ct);
+            var confirmResult = ShowConfirmDialog(toolName, args, origin, ct);
             return confirmResult;
         }
         finally
@@ -644,9 +654,14 @@ public partial class SessionViewModel : ObservableObject
     /// </summary>
     /// <param name="toolName">待确认的工具名。</param>
     /// <param name="args">工具参数。</param>
+    /// <param name="origin">确认来源（编排子代理节点）；主代理为 null。</param>
     /// <param name="ct">取消令牌；取消时提前唤醒。</param>
     /// <returns>用户选择结果。</returns>
-    private ConfirmResult ShowConfirmDialog(string toolName, IReadOnlyDictionary<string, object?> args, CancellationToken ct)
+    private ConfirmResult ShowConfirmDialog(
+        string toolName,
+        IReadOnlyDictionary<string, object?> args,
+        ToolConfirmationOrigin? origin,
+        CancellationToken ct)
     {
         using var done = new ManualResetEventSlim(false);
         var result = ConfirmResult.Deny;
@@ -659,7 +674,7 @@ public partial class SessionViewModel : ObservableObject
             try
             {
                 var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-                result = await Dialogs.ShowToolConfirmAsync(owner, toolName, args, ct);
+                result = await Dialogs.ShowToolConfirmAsync(owner, toolName, args, origin, ct);
                 Messages.Add(new SystemMessageItem { Content = FormatConfirmRecord(toolName, result) });
             }
             catch (Exception ex)
@@ -674,6 +689,78 @@ public partial class SessionViewModel : ObservableObject
         });
 
         // 无限期等待用户响应；Esc/终止时经 ct 注册提前唤醒（ct 可取消时抛 OCE，由 SendAsync 收尾）
+        if (ct.CanBeCanceled)
+            done.Wait(ct);
+        else
+            done.Wait();
+
+        return result;
+    }
+
+    /// <summary>
+    /// 用户提问回调（<c>AskUserQuestion</c> 工具）：来源在调用链内先取出，随后切 UI 线程弹模态并阻塞等待。
+    /// 取消/回合作废时按「已取消」返回，不抛异常、不失败本轮。
+    /// </summary>
+    /// <param name="questions">问题列表。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>作答或取消结果。</returns>
+    private UserQuestionResult AskQuestionsCallback(IReadOnlyList<UserQuestion> questions, CancellationToken ct)
+    {
+        var origin = ToolConfirmationContext.CurrentOrigin;
+
+        // 与工具确认一致：非当前会话先挂徽标，等用户切过来再弹窗，避免后台会话打断当前会话
+        var deferred = !_isCurrentProvider(SessionId);
+        if (deferred)
+            Dispatcher.UIThread.Post(() => _pendingConfirmationReporter?.Invoke(this, true));
+
+        try
+        {
+            while (!_isCurrentProvider(SessionId))
+            {
+                ct.ThrowIfCancellationRequested();
+                Thread.Sleep(50);
+            }
+
+            return ShowQuestionsDialog(questions, origin, ct);
+        }
+        finally
+        {
+            if (deferred)
+                Dispatcher.UIThread.Post(() => _pendingConfirmationReporter?.Invoke(this, false));
+        }
+    }
+
+    /// <summary>
+    /// 在 UI 线程弹出提问模态并等待用户作答（阻塞调用线程）。
+    /// </summary>
+    private UserQuestionResult ShowQuestionsDialog(
+        IReadOnlyList<UserQuestion> questions,
+        ToolConfirmationOrigin? origin,
+        CancellationToken ct)
+    {
+        using var done = new ManualResetEventSlim(false);
+        var result = UserQuestionResult.Cancelled();
+
+        using var ctr = ct.CanBeCanceled ? ct.Register(() => done.Set()) : default;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                result = await Dialogs.ShowQuestionsAsync(owner, questions, origin, ct);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"用户提问对话框异常，按取消处理: {ex.Message}");
+                result = UserQuestionResult.Cancelled();
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+
         if (ct.CanBeCanceled)
             done.Wait(ct);
         else

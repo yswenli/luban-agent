@@ -40,7 +40,31 @@ public static class AgentHostBuilder
             .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json"), optional: true, reloadOnChange: false)
             .AddEnvironmentVariables()
             .AddCommandLine(args);
-        return builder.Build();
+        return ApplyUserDataDefaults(builder.Build());
+    }
+
+    /// <summary>
+    /// 把配置里的用户级文件落点补成 <see cref="AgentHome"/> 下的绝对路径。
+    /// </summary>
+    /// <remarks>
+    /// 连接串在 appsettings 里只能写相对路径；这里在读取配置后、任何仓储/ORM 访问之前
+    /// 把它改写为绝对路径，避免库随启动目录漂移。显式配置的绝对路径不受影响。
+    /// </remarks>
+    private static IConfiguration ApplyUserDataDefaults(IConfiguration configuration)
+    {
+        var defaults = new Dictionary<string, string?>();
+        const string connectionKey = "DbConnectionOptions:ConnectionConfigs:0:ConnectionString";
+        if (AgentHome.TryResolveSqliteDataSource(configuration[connectionKey], out var connectionString))
+        {
+            defaults[connectionKey] = connectionString;
+        }
+
+        if (defaults.Count == 0) return configuration;
+
+        return new ConfigurationBuilder()
+            .AddConfiguration(configuration)
+            .AddInMemoryCollection(defaults)
+            .Build();
     }
 
     /// <summary>
@@ -95,7 +119,12 @@ public static class AgentHostBuilder
         services.AddScoped<ISessionAutoNamer, SessionAutoNamer>();
         services.AddScoped<SessionAutoNameRunner>();
         services.AddScoped<AgentHost>();
-        services.ReplaceScoped<IAgentHost>(sp => new AutoNameAgentHost(sp.GetRequiredService<AgentHost>(), sp));
+
+        // ── 上下文守卫：起跑前按 token 预算压缩，超长失败时压缩后兜底重跑 ──
+        // 同样只挂在三端共用的回合入口；放在自动命名内层，重跑不会重复触发命名。
+        services.AddScoped<ContextCompactor>();
+        services.ReplaceScoped<IAgentHost>(sp => new AutoNameAgentHost(
+            new ContextGuardAgentHost(sp.GetRequiredService<AgentHost>(), sp), sp));
 
         // 产品侧厂商连接器（云效）：框架只保留「抽象连接器 + 连接器管理」，
         // 厂商实现由宿主显式注册（含提供方工厂与凭据键别名）。
@@ -280,8 +309,7 @@ public static class AgentHostBuilder
         var dbPath = options?.DatabasePath;
         if (string.IsNullOrWhiteSpace(dbPath))
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            dbPath = Path.Combine(appData, "LuBan", "AIAgent", "localmemory.db");
+            dbPath = AgentHome.LocalMemoryDatabasePath;
         }
         return Path.GetFullPath(dbPath);
     }

@@ -27,10 +27,32 @@ public class AgentProtocolUnitTest
     }
 
     [TestMethod]
+    public void 带序号的帧文本往返_保留id行()
+    {
+        var frame = new AgentSseFrame(AgentSseEventNames.TextDelta, "{\"delta\":\"hi\"}") { Seq = 7 };
+        var text = frame.ToText();
+
+        StringAssert.StartsWith(text, "id: 7\nevent: text.delta\n");
+
+        Assert.IsTrue(AgentSseFrame.TryParse(text, out var parsed));
+        Assert.AreEqual(7, parsed!.Seq);
+        Assert.AreEqual(frame.Data, parsed.Data);
+    }
+
+    [TestMethod]
     public void 心跳块不产生帧()
     {
         Assert.IsFalse(AgentSseFrame.TryParse(": ping\n", out var frame));
         Assert.IsNull(frame);
+    }
+
+    [TestMethod]
+    public void 坏id行不清零已解析的序号()
+    {
+        var block = "id: 9\nid: abc\nevent: text.delta\ndata: {\"delta\":\"hi\"}";
+
+        Assert.IsTrue(AgentSseFrame.TryParse(block, out var parsed));
+        Assert.AreEqual(9, parsed!.Seq);
     }
 
     [TestMethod]
@@ -65,6 +87,139 @@ public class AgentProtocolUnitTest
         Assert.AreEqual("RunShell", confirm.ToolName);
         Assert.AreEqual(60, confirm.TimeoutSeconds);
         Assert.AreEqual("dotnet build", confirm.Arguments["command"]);
+        Assert.IsNull(confirm.Origin, "旧帧没有 origin 字段时应还原为无来源");
+    }
+
+    [TestMethod]
+    public void 工具确认帧还原出来源节点()
+    {
+        var frame = AgentSseFrame.Create(
+            AgentSseEventNames.ToolConfirm,
+            new
+            {
+                confirmationId = "cf-2",
+                toolName = "WriteFileAsync",
+                arguments = new { path = "a.txt" },
+                timeoutSeconds = 60,
+                origin = new { nodeId = "build", role = "coder", description = "生成构建脚本" }
+            });
+
+        Assert.IsTrue(AgentEventTranslator.TryTranslate(frame, out var evt));
+        var confirm = evt as ToolConfirmationRequestedEvent;
+        Assert.IsNotNull(confirm);
+        Assert.IsNotNull(confirm.Origin);
+        Assert.AreEqual("build", confirm.Origin.NodeId);
+        Assert.AreEqual("coder", confirm.Origin.Role);
+        Assert.AreEqual("生成构建脚本", confirm.Origin.Description);
+        Assert.AreEqual("编排节点 build（角色 coder）：生成构建脚本", confirm.Origin.ToDisplayString());
+    }
+
+    [TestMethod]
+    public void 工具提问帧还原出问题选项与来源()
+    {
+        var frame = AgentSseFrame.Create(
+            AgentSseEventNames.ToolQuestion,
+            new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 120,
+                origin = new { nodeId = "plan", role = "planner", description = "澄清需求" },
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个数据库？",
+                        header = "数据库",
+                        multiSelect = false,
+                        options = new object[]
+                        {
+                            new { label = "PostgreSQL", description = "关系型，功能全" },
+                            new { label = "SQLite" }
+                        }
+                    },
+                    new
+                    {
+                        question = "需要哪些环境？",
+                        header = "环境",
+                        multiSelect = true,
+                        options = new object[]
+                        {
+                            new { label = "开发" },
+                            new { label = "测试" }
+                        }
+                    }
+                }
+            });
+
+        Assert.IsTrue(AgentEventTranslator.TryTranslate(frame, out var evt));
+        var question = evt as UserQuestionRequestedEvent;
+        Assert.IsNotNull(question);
+        Assert.AreEqual("q-1", question.QuestionId);
+        Assert.AreEqual(120, question.TimeoutSeconds);
+        Assert.IsNotNull(question.Origin);
+        Assert.AreEqual("plan", question.Origin.NodeId);
+
+        Assert.AreEqual(2, question.Questions.Count);
+        Assert.AreEqual("选哪个数据库？", question.Questions[0].Question);
+        Assert.AreEqual("数据库", question.Questions[0].Header);
+        Assert.IsFalse(question.Questions[0].MultiSelect);
+        Assert.AreEqual(2, question.Questions[0].Options.Count);
+        Assert.AreEqual("PostgreSQL", question.Questions[0].Options[0].Label);
+        Assert.AreEqual("关系型，功能全", question.Questions[0].Options[0].Description);
+        Assert.IsNull(question.Questions[0].Options[1].Description, "缺省说明应为 null 而不是空串");
+
+        Assert.IsTrue(question.Questions[1].MultiSelect);
+        Assert.AreEqual(2, question.Questions[1].Options.Count);
+    }
+
+    [TestMethod]
+    public void 提问帧缺少问题数组时还原为空列表且不抛异常()
+    {
+        var frame = AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new { questionId = "q-2" });
+
+        Assert.IsTrue(AgentEventTranslator.TryTranslate(frame, out var evt));
+        var question = evt as UserQuestionRequestedEvent;
+        Assert.IsNotNull(question);
+        Assert.AreEqual("q-2", question.QuestionId);
+        Assert.AreEqual(0, question.Questions.Count);
+    }
+
+    [TestMethod]
+    public void 提问回答请求支持逐题回传与取消()
+    {
+        var body = AgentApiJson.WrapPayload(new AgentAnswerRequest
+        {
+            SessionId = "s1",
+            QuestionId = "q-1",
+            Answers =
+            [
+                new AgentQuestionAnswer { Question = "选哪个数据库？", Labels = ["PostgreSQL"] }
+            ]
+        });
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        var payload = document.RootElement.GetProperty(AgentApiJson.PayloadField).GetString();
+
+        var restored = AgentApiJson.UnwrapPayload<AgentAnswerRequest>(payload);
+        Assert.IsNotNull(restored);
+        Assert.AreEqual("s1", restored.SessionId);
+        Assert.AreEqual("q-1", restored.QuestionId);
+        Assert.IsFalse(restored.Cancelled);
+        Assert.AreEqual(1, restored.Answers.Count);
+        Assert.AreEqual("PostgreSQL", restored.Answers[0].Labels[0]);
+
+        var cancelBody = AgentApiJson.WrapPayload(new AgentAnswerRequest
+        {
+            SessionId = "s1",
+            QuestionId = "q-1",
+            Cancelled = true
+        });
+        using var cancelDocument = System.Text.Json.JsonDocument.Parse(cancelBody);
+        var cancelPayload = cancelDocument.RootElement.GetProperty(AgentApiJson.PayloadField).GetString();
+
+        var cancel = AgentApiJson.UnwrapPayload<AgentAnswerRequest>(cancelPayload);
+        Assert.IsNotNull(cancel);
+        Assert.IsTrue(cancel.Cancelled);
+        Assert.AreEqual(0, cancel.Answers.Count, "取消时忽略 answers");
     }
 
     [TestMethod]

@@ -15,7 +15,7 @@ namespace LubanAgentWebHost.Services.Prd;
 /// 幂等回执账本存储。
 /// </summary>
 /// <remarks>
-/// 落盘位置与项目初始化登记同族：<c>%LocalAppData%/LuBan/AIAgent/webhost/yunxiao-prd/&lt;projectId&gt;.json</c>。
+/// 落盘位置与项目初始化登记同族：<c>~/.luban-agent/webhost/yunxiao-prd/&lt;projectId&gt;.json</c>。
 /// 账本只保存「幂等键 → 云效对象 ID」与回执明细，用于失败项重跑时跳过已成功项；
 /// 读取失败（首次提交 / 文件损坏）一律视为空账本，不阻断提交。
 /// </remarks>
@@ -32,11 +32,14 @@ public sealed class PrdReceiptStore
     /// 使用默认目录创建账本存储。
     /// </summary>
     public PrdReceiptStore()
-        : this(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LuBan", "AIAgent", "webhost", "yunxiao-prd"))
+        : this(DefaultRoot)
     {
     }
+
+    /// <summary>
+    /// 默认账本根目录：<c>~/.luban-agent/webhost/yunxiao-prd</c>。
+    /// </summary>
+    public static string DefaultRoot => AgentHome.PrdReceiptDirectory;
 
     /// <summary>
     /// 使用指定目录创建账本存储（单测注入临时目录）。

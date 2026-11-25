@@ -58,6 +58,22 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     }
 
     /// <summary>
+    /// 把本次连接从 SAEA 的会话空闲回收中摘出（SSE 长连接专用）。
+    /// </summary>
+    /// <remarks>
+    /// SAEA 只在收到数据时刷新会话活跃时间，服务端单向下发的心跳不算「活跃」；
+    /// 因此 <c>LubanAgentWeb:TimeoutSeconds</c> 一旦调小，进行中的 SSE 会在该时长后被静默切断。
+    /// 这里用 SAEA 的 <c>SetNoTimeout</c> 把长连接排除在空闲回收之外，对端是否还在交给写出泵判定。
+    /// </remarks>
+    public void DisableIdleTimeout()
+    {
+        if (_webHost is WebHost webHost && Connection is { } connection)
+        {
+            webHost.SetNoTimeout(connection.Id, true);
+        }
+    }
+
+    /// <summary>
     /// 路由前做令牌判定：未命中令牌时返回接管结果，放行时返回 null 交给 MVC 正常路由。
     /// </summary>
     /// <returns>接管结果；放行时为 null。</returns>

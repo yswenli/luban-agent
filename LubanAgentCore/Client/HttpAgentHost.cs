@@ -165,6 +165,18 @@ public sealed class HttpAgentHost(
 
                         continue;
 
+                    case AgentSseEventNames.ToolQuestion:
+                        if (AgentEventTranslator.TryTranslate(frame, out var question)
+                            && question is UserQuestionRequestedEvent pendingQuestion)
+                        {
+                            if (await ResolveQuestionAsync(pendingQuestion, sessionId, request, ct).ConfigureAwait(false))
+                            {
+                                continue;
+                            }
+                        }
+
+                        break;
+
                     case AgentSseEventNames.ToolConfirm:
                         if (AgentEventTranslator.TryTranslate(frame, out var confirmation)
                             && confirmation is ToolConfirmationRequestedEvent pending)
@@ -204,27 +216,32 @@ public sealed class HttpAgentHost(
         CancellationToken ct)
     {
         var result = ConfirmResult.Deny;
-        try
+        // 来源随帧从服务端带回：在本地回调外层恢复来源作用域，
+        // 使本地确认 UI 通过 ToolConfirmationContext.CurrentOrigin 读到与发起端一致的来源。
+        using (ToolConfirmationContext.EnterOriginScope(pending.Origin))
         {
-            if (request.ConfirmHandlerAsync is not null)
+            try
             {
-                result = await request.ConfirmHandlerAsync(pending.ToolName, pending.Arguments, ct).ConfigureAwait(false);
+                if (request.ConfirmHandlerAsync is not null)
+                {
+                    result = await request.ConfirmHandlerAsync(pending.ToolName, pending.Arguments, ct).ConfigureAwait(false);
+                }
+                else if (request.ConfirmHandler is not null)
+                {
+                    // 同步回调在 UI 线程上阻塞等待用户选择，放到独立线程避免卡住流读取
+                    result = await Task.Run(() => request.ConfirmHandler(pending.ToolName, pending.Arguments), ct)
+                        .ConfigureAwait(false);
+                }
             }
-            else if (request.ConfirmHandler is not null)
+            catch (OperationCanceledException)
             {
-                // 同步回调在 UI 线程上阻塞等待用户选择，放到独立线程避免卡住流读取
-                result = await Task.Run(() => request.ConfirmHandler(pending.ToolName, pending.Arguments), ct)
-                    .ConfigureAwait(false);
+                return true;
             }
-        }
-        catch (OperationCanceledException)
-        {
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"工具确认回调异常，按拒绝处理：{ex.Message}");
-            result = ConfirmResult.Deny;
+            catch (Exception ex)
+            {
+                Logger.Warn($"工具确认回调异常，按拒绝处理：{ex.Message}");
+                result = ConfirmResult.Deny;
+            }
         }
 
         if (ct.IsCancellationRequested)
@@ -254,6 +271,71 @@ public sealed class HttpAgentHost(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Logger.Warn($"回传工具确认失败（confirmationId={pending.ConfirmationId}）：{ex.Message}");
+        }
+
+        return true;
+    }
+
+    /// <summary>取得用户对提问的回答并回传；无本地交互界面时按「取消」回传。</summary>
+    /// <returns>是否已回传（false 表示帧无法解析，按普通事件透传）。</returns>
+    private async Task<bool> ResolveQuestionAsync(
+        UserQuestionRequestedEvent pending,
+        string? sessionId,
+        AgentRunRequest request,
+        CancellationToken ct)
+    {
+        var result = UserQuestionResult.Cancelled();
+        // 来源随帧从服务端带回：恢复本地来源作用域，使本地提问 UI 与发起端读到一致的来源标注
+        using (ToolConfirmationContext.EnterOriginScope(pending.Origin))
+        {
+            try
+            {
+                result = request.AskUserHandlerAsync is not null
+                    ? await request.AskUserHandlerAsync(pending.Questions, ct).ConfigureAwait(false)
+                    : UserQuestionResult.Unavailable("当前客户端未提供交互提问界面，请在回复中说明需要用户补充的信息。");
+            }
+            catch (OperationCanceledException)
+            {
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"用户提问回调异常，按取消处理：{ex.Message}");
+                result = UserQuestionResult.Cancelled();
+            }
+        }
+
+        if (ct.IsCancellationRequested)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            Logger.Warn($"缺少会话标识，跳过提问回传（questionId={pending.QuestionId}）");
+            return true;
+        }
+
+        try
+        {
+            await client.PostAsync(
+                AgentApiRoutes.Agent.Answer,
+                new AgentAnswerRequest
+                {
+                    SessionId = sessionId,
+                    QuestionId = pending.QuestionId,
+                    Cancelled = result.Outcome != UserQuestionOutcome.Answered,
+                    Answers = result.Answers is null
+                        ? Array.Empty<AgentQuestionAnswer>()
+                        : result.Answers
+                            .Select(a => new AgentQuestionAnswer { Question = a.Question, Labels = a.Labels })
+                            .ToList()
+                },
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.Warn($"回传用户提问答案失败（questionId={pending.QuestionId}）：{ex.Message}");
         }
 
         return true;

@@ -14,6 +14,8 @@
 *
 *****************************************************************************/
 
+using LuBan.AIAgent.Tools.LocalMemory;
+
 namespace LubanAgent.Plugin.NewProject.Services;
 
 /// <summary>
@@ -47,6 +49,13 @@ namespace LubanAgent.Plugin.NewProject.Services;
 /// <b>删除放行</b>：<c>DeleteDirectoryAsync</c> 原本无条件拒绝，现改为<b>工作区内按路径放行</b>
 /// （Step 3 \"清空后重克隆\" 由助手执行，实际用 <c>RunPythonAsync</c> 的 <c>rmtree(清只读)</c> 兜底，见 <see cref="WorkspaceDeleteTools"/>）。
 /// 其余删除 / 技能 / MCP 写删类工具维持无条件拒绝。
+/// </para>
+/// <para>
+/// <b>记忆工具完全授权</b>：本地长期记忆（<see cref="LocalMemoryToolGroup.SaveToolName"/> /
+/// <see cref="LocalMemoryToolGroup.SearchToolName"/> / <see cref="LocalMemoryToolGroup.ListToolName"/> /
+/// <see cref="LocalMemoryToolGroup.DeleteToolName"/>）不属于 Step 4/5 的动作，也不带工作区路径；
+/// 它与普通对话共用同一份用户级长期记忆，故按用户定案整体放行（含删除），既不拓宽其它工具，
+/// 也不再出现「助手想查/想记却先被白名单拒一次」。
 /// </para>
 /// <para>
 /// <b>已知残余风险（如实记录）</b>：<c>runpython</c> 被放行（Step 4 探活依赖 pymysql，框架内没有 MySQL 工具），
@@ -96,6 +105,22 @@ public static class AssistantToolPolicy
         "ReadFileAsync", "ListDirectoryAsync", "GetWorkspaceOverviewAsync",
         "SearchFilesAsync", "GrepAsync", "GetFileInfoAsync",
         "ListSkillsAsync", "UseSkillAsync"
+    };
+
+    /// <summary>
+    /// 本地长期记忆工具（<b>模型可见名</b>）：整体放行，含删除。
+    /// </summary>
+    /// <remarks>
+    /// 记忆与普通对话共用同一份用户级资产，不带工作区路径，也不属于 Step 4/5 的动作，
+    /// 故不由向导范围决定放行与否。名字必须用 <see cref="LocalMemoryToolGroup"/> 的常量：
+    /// 方法名（<c>SaveAsync</c> 等）既会被 M.E.AI 裁掉 <c>Async</c>，也与其他工具组重名。
+    /// </remarks>
+    private static readonly HashSet<string> MemoryTools = new(StringComparer.Ordinal)
+    {
+        LocalMemoryToolGroup.SaveToolName,
+        LocalMemoryToolGroup.SearchToolName,
+        LocalMemoryToolGroup.ListToolName,
+        LocalMemoryToolGroup.DeleteToolName,
     };
 
     /// <summary>写类文件工具：仅当目标路径落在本项目工作区内才放行（越界即拒）。</summary>
@@ -205,6 +230,13 @@ public static class AssistantToolPolicy
             return ConfirmResult.Deny;
         }
 
+        // ── 本地长期记忆：整组放行（含删除），与向导范围无关 ──────────────────
+        if (MemoryTools.Contains(toolName))
+        {
+            reason = "放行：本地长期记忆工具（用户级记忆，与普通对话共用，含删除）。";
+            return ConfirmResult.Allow;
+        }
+
         // ── 云效 MCP 子策略（Step 3/6/7 的云效动作全走 MCP，默认模式下必触发回调）────────
         if (toolName.StartsWith(McpToolPrefix, StringComparison.OrdinalIgnoreCase))
         {
@@ -292,7 +324,7 @@ public static class AssistantToolPolicy
             return ConfirmResult.Deny;
         }
 
-        reason = $"拒绝：{toolName} 不在 Step 4/5 白名单内（本链路只允许只读工具、白名单脚本与工作区内写入）。";
+        reason = $"拒绝：{toolName} 不在 Step 4/5 白名单内（本链路只允许只读工具、记忆工具、白名单脚本与工作区内写入）。";
         return ConfirmResult.Deny;
     }
 

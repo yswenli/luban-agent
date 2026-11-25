@@ -204,6 +204,19 @@ internal sealed class RootView : Runnable
         // agent 阻塞等待期间焦点仍在输入编辑器，确认块本身收不到键，必须由这里转发，否则会一直等待用户选择。
         _inputBar.KeyPreRouter = key =>
         {
+            // 提问块优先：二者共用交互槽位，同一时刻最多一个
+            var pq = _active.Vm.PendingQuestion;
+            if (pq is not null)
+            {
+                var consumedQuestion = pq.HandleKey(key);
+                if (Infrastructure.TuiDiag.Enabled && consumedQuestion)
+                {
+                    Logger.Warn($"[TuiDiag-Enter] KeyPreRouter consumed key={key} PendingQuestion.Index={pq.CurrentIndex}");
+                }
+
+                return consumedQuestion;
+            }
+
             var pc = _active.Vm.PendingChoice;
             var consumed = pc is not null && pc.Selected is null && pc.HandleKey(key);
             if (Infrastructure.TuiDiag.Enabled && consumed)
@@ -215,6 +228,7 @@ internal sealed class RootView : Runnable
         _inputBar.OnPreRoutedKey = () => _conversation.SetNeedsDraw();
         _active.Vm.PermissionModeChanged += OnActivePermissionModeChanged;
         _active.Vm.PendingChoiceChanged += OnActivePendingChoiceChanged;
+        _active.Vm.PendingQuestionChanged += OnActivePendingChoiceChanged;
 
         Add(_conversation, _footer, _inputBar);
 
@@ -312,6 +326,7 @@ internal sealed class RootView : Runnable
 
         commandVm.ExitRequested += _onExitRequested;
         vm.PendingChoiceChanged += () => OnSlotPendingChoiceChanged(slot);
+        vm.PendingQuestionChanged += () => OnSlotPendingChoiceChanged(slot);
 
         // 页脚视图已建成时立即绑定（运行期新建的槽位）；构造期的首个槽位由构造尾部统一绑定
         if (_footer is not null)
@@ -392,8 +407,10 @@ internal sealed class RootView : Runnable
         // 退订旧活动槽位的活动态事件，改订新活动槽位
         _active.Vm.PermissionModeChanged -= OnActivePermissionModeChanged;
         _active.Vm.PendingChoiceChanged -= OnActivePendingChoiceChanged;
+        _active.Vm.PendingQuestionChanged -= OnActivePendingChoiceChanged;
         slot.Vm.PermissionModeChanged += OnActivePermissionModeChanged;
         slot.Vm.PendingChoiceChanged += OnActivePendingChoiceChanged;
+        slot.Vm.PendingQuestionChanged += OnActivePendingChoiceChanged;
 
         _active = slot;
         TouchSlot(sessionId);
@@ -470,7 +487,7 @@ internal sealed class RootView : Runnable
     {
         _dispatcher.Invoke(() =>
         {
-            if (_active.Vm.PendingChoice is not null)
+            if (_active.Vm.PendingChoice is not null || _active.Vm.PendingQuestion is not null)
             {
                 _conversation.SetFocus();
             }
@@ -496,14 +513,14 @@ internal sealed class RootView : Runnable
 
         _dispatcher.Invoke(() =>
         {
-            if (slot.Vm.PendingChoice is not null && !slot.HintShown)
+            if ((slot.Vm.PendingChoice is not null || slot.Vm.PendingQuestion is not null) && !slot.HintShown)
             {
                 slot.HintShown = true;
                 _active.Doc.AppendBlock(new SystemBlock(
                     $"⏳ 会话「{slot.Vm.SessionTitle}」等待确认，/session -switch {slot.SessionId} 处理",
                     foreground: BlockColors.Accent));
             }
-            else if (slot.Vm.PendingChoice is null)
+            else if (slot.Vm.PendingChoice is null && slot.Vm.PendingQuestion is null)
             {
                 slot.HintShown = false;
             }

@@ -861,13 +861,11 @@ public class ConfigManager : IAppConfigReader, IConnectorConfigWriter
     /// <param name="userId">用户标识；为空时用历史路径。</param>
     public static string GetDefaultConfigPath(string? userId = null)
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var root = Path.Combine(appDataPath, "LuBan", "AIAgent");
         if (string.IsNullOrWhiteSpace(userId))
-            return Path.Combine(root, "config.json");
+            return AgentHome.ConfigFile;
 
-        var target = Path.Combine(root, "users", userId, "config.json");
-        MigrateLegacyConfig(root, target);
+        var target = Path.Combine(AgentHome.UsersDirectory, userId, "config.json");
+        MigrateLegacyConfig(AgentHome.Root, target);
         return target;
     }
 

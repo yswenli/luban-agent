@@ -73,10 +73,8 @@ public sealed class TaskSessionStore
         _filePath = string.IsNullOrWhiteSpace(filePath) ? DefaultFilePath() : filePath!;
     }
 
-    /// <summary>默认绑定文件路径。</summary>
-    public static string DefaultFilePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LuBan", "AIAgent", "webhost", DefaultFileName);
+    /// <summary>默认绑定文件路径：<c>~/.luban-agent/webhost/yunxiao-task-sessions.json</c>。</summary>
+    public static string DefaultFilePath() => Path.Combine(AgentHome.WebHostDirectory, DefaultFileName);
 
     /// <summary>读取任务当前有效绑定。</summary>
     public async Task<TaskSession?> GetAsync(string? workitemId)

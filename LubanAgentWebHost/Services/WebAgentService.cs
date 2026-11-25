@@ -198,6 +198,15 @@ public static class WebAgentService
                 using var linkScope = WebFileLinkScope.Begin(baseAddress);
                 var sideFrames = new ConcurrentQueue<AgentSseFrame>();
 
+                // 自动重试提示：回调挂在按用户共享的配置实例上，出口用作用域绑定到本回合，
+                // 并发会话各自只收到自己的重试提示
+                if (handle.Host.Services.GetService<IOptions<LuBanAgentOptions>>() is { } agentOptions)
+                {
+                    agentOptions.Value.OnApiRetry = ApiRetryScope.Publish;
+                }
+                using var retryScope = ApiRetryScope.Begin(
+                    notice => sideFrames.Enqueue(ApiRetryScope.CreateFrame(notice)));
+
                 // 编排进度：子代理在工具调用内部执行，进度不进对话流；
                 // 订阅本轮作用域内的出口，逐条转成 orchestration.progress 帧
                 var progressSink = handle.Host.Services.GetService<HostOrchestrationProgressSink>();
@@ -281,6 +290,10 @@ public static class WebAgentService
         AgentRunAttachResult? attach = null;
         try
         {
+            // 长连接不再参与 SAEA 的会话空闲回收：心跳是单向下发，不会被算作会话活跃
+            WebApi.MarkLongLived();
+            // 半开连接在应用层无法判死，另挂一条绝对寿命兜底（到点关闭，前端按序号自动续接）
+            using var lifetime = SsePump.GuardLifetime(connection);
             SsePump.Begin(response);
             attach = run.Subscribe(0, snapshotOnGap: false);
             if (attach is null)
@@ -360,7 +373,9 @@ public static class WebAgentService
         }
 
         // 先订阅：一旦写出响应头就改不了状态码，而「轮次已收尾」只可能在这里判出来
-        var attach = run.Subscribe(input.FromSeq);
+        // fromSeq 优先取请求体；旧客户端/浏览器自带重试只带 Last-Event-ID 头，也认
+        var fromSeq = input.FromSeq ?? ReadLastEventId();
+        var attach = run.Subscribe(fromSeq);
         if (attach is null)
         {
             return NoContent();
@@ -371,6 +386,10 @@ public static class WebAgentService
         var connection = WebApi.Connection;
         try
         {
+            // 长连接不再参与 SAEA 的会话空闲回收：心跳是单向下发，不会被算作会话活跃
+            WebApi.MarkLongLived();
+            // 半开连接在应用层无法判死，另挂一条绝对寿命兜底（到点关闭，前端按序号自动续接）
+            using var lifetime = SsePump.GuardLifetime(connection);
             SsePump.Begin(response);
             foreach (var pending in attach.Pending)
             {
@@ -399,6 +418,14 @@ public static class WebAgentService
     /// <summary>空体响应（204）。</summary>
     /// <returns>空体结果。</returns>
     private static ActionResult NoContent() => new EmptyResult { Status = HttpStatusCode.NoContent };
+
+    /// <summary>读取 SSE 标准的 <c>Last-Event-ID</c> 头；缺失或非数字返回 <c>null</c>。</summary>
+    /// <returns>已收到的最大帧序号。</returns>
+    private static int? ReadLastEventId()
+        => WebApi.Request.Headers.TryGetValue("Last-Event-ID", out var raw)
+           && int.TryParse(raw?.Trim(), out var seq)
+            ? seq
+            : null;
 
     /// <summary>回传工具确认结果。</summary>
     /// <param name="payload">包装后的 <see cref="AgentConfirmRequest"/> JSON。</param>
@@ -430,6 +457,54 @@ public static class WebAgentService
         return resolved
             ? WebApi.OkJson(new { resolved = true })
             : WebApi.FailJson(404, "确认请求不存在、已过期或会话不匹配");
+    });
+
+    /// <summary>回传用户对提问的回答（或取消）。</summary>
+    /// <param name="payload">包装后的 <see cref="AgentAnswerRequest"/> JSON。</param>
+    /// <returns>是否写入成功。</returns>
+    public static Task<ActionResult> AnswerAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<AgentAnswerRequest>(payload, out var input) || input is null)
+        {
+            return WebApi.FailJson(400, "请求体不是合法的 JSON");
+        }
+
+        if (string.IsNullOrWhiteSpace(input.SessionId) || string.IsNullOrWhiteSpace(input.QuestionId))
+        {
+            return WebApi.FailJson(400, "sessionId / questionId 不能为空");
+        }
+
+        if (!input.Cancelled && input.Answers.Count == 0)
+        {
+            return WebApi.FailJson(400, "answers 不能为空；取消作答请传 cancelled=true");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        if (scope.GetService(typeof(IUserQuestionBroker)) is not IUserQuestionBroker broker)
+        {
+            return WebApi.FailJson(503, "用户提问未启用");
+        }
+
+        var sessionId = input.SessionId.Trim();
+        var questionId = input.QuestionId.Trim();
+
+        var resolved = input.Cancelled
+            ? broker.TryCancel(sessionId, questionId)
+            : broker.TryResolve(
+                sessionId,
+                questionId,
+                input.Answers
+                    .Select(a => new UserQuestionAnswer(
+                        a.Question?.Trim() ?? "",
+                        (a.Labels ?? Array.Empty<string>())
+                            .Where(l => !string.IsNullOrWhiteSpace(l))
+                            .Select(l => l.Trim())
+                            .ToList()))
+                    .ToList());
+
+        return resolved
+            ? WebApi.OkJson(new { resolved = true })
+            : WebApi.FailJson(404, "提问不存在、已过期或答案与会话/问题不匹配");
     });
 
     /// <summary>取消指定会话正在进行的回合。</summary>
@@ -561,6 +636,23 @@ public static class WebAgentService
                 if (!hasNext)
                 {
                     break;
+                }
+
+                // 压缩事件是产品侧类型，框架 AgentEventProtocol.ToFrame 不认识（返回 null），
+                // 必须在这里显式转帧，否则帧被静默丢弃、三端都看不到压缩标记。
+                if (enumerator.Current is ContextCompactedEvent compacted)
+                {
+                    yield return AgentSseFrame.Create(AgentSseEventNames.ContextCompacted, new
+                    {
+                        phase = compacted.Phase,
+                        trigger = compacted.Trigger,
+                        archivedCount = compacted.ArchivedCount,
+                        keptCount = compacted.KeptCount,
+                        estimatedTokens = compacted.EstimatedTokens,
+                        budget = compacted.Budget,
+                        message = compacted.Describe()
+                    });
+                    continue;
                 }
 
                 if (AgentEventProtocol.ToFrame(enumerator.Current) is { } frame)

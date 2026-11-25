@@ -7,12 +7,12 @@ import { PopMenu, menuAt } from '../components/PopMenu';
 import { ScreenshotOverlay } from '../components/screenshot/ScreenshotOverlay';
 import { isCaptureSupported } from '../components/screenshot/capture';
 import { post } from '../lib/api';
-import { formatBytes, formatTime, isImageMediaType, truncate } from '../lib/format';
+import { formatBytes, formatCompactDuration, formatDuration, formatTime, isImageMediaType, truncate } from '../lib/format';
 import { openSettings, openSessions, openWiki } from '../lib/router';
 import { settingsApi } from '../lib/settings';
 import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
-import type { ChatItem, ToolCard } from '../stores/chat';
+import type { ChatItem, PendingQuestionRequest, ToolCard, UserQuestionAnswer } from '../stores/chat';
 import { dropChat, getChat } from '../stores/chats';
 import { openFilePreview } from '../stores/filePreview';
 import {
@@ -1152,6 +1152,17 @@ export function ChatPage(props: { sessionId: string }) {
         )}
       </Show>
 
+      <Show when={chat.pendingQuestion()}>
+        {(request) => (
+          <QuestionDialog
+            request={request()}
+            onSubmit={(answers) => void chat.resolveQuestion(answers)}
+            onCancel={() => void chat.cancelQuestion()}
+            onTimeout={() => chat.questionTimeout()}
+          />
+        )}
+      </Show>
+
       <Show when={helpOpen()}>
         <HelpDialog onClose={() => setHelpOpen(false)} />
       </Show>
@@ -1208,6 +1219,8 @@ interface AssistantGroup {
   kind: 'thinking' | 'text' | 'tools';
   text: string;
   tools: ToolCard[];
+  /** 思考段的耗时（毫秒）；进行中或历史缺数据时为空。 */
+  durationMs?: number;
 }
 
 function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
@@ -1234,7 +1247,7 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
         else groups.push({ kind: 'tools', text: '', tools: [block.tool] });
         continue;
       }
-      groups.push({ kind: block.kind, text: block.text, tools: [] });
+      groups.push({ kind: block.kind, text: block.text, tools: [], durationMs: block.kind === 'thinking' ? block.durationMs : undefined });
     }
     return groups;
   });
@@ -1288,6 +1301,11 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
                       <summary>
                         <Icon name="lightbulb" size={14} />
                         思考过程
+                        <Show when={formatCompactDuration(group().durationMs)}>
+                          <span class="summary-time" title="思考耗时">
+                            {formatCompactDuration(group().durationMs)}
+                          </span>
+                        </Show>
                       </summary>
                       <div class="thinking-body">{group().text}</div>
                     </details>
@@ -1311,6 +1329,12 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
                 <span class="status history">历史记录</span>
               </Show>
               <span>{formatTime(item().time)}</span>
+              <Show when={formatDuration(item().durationMs)}>
+                <span class="metric" title="本轮回复耗时">{formatDuration(item().durationMs)}</span>
+              </Show>
+              <Show when={item().tokens}>
+                <span class="metric" title="本轮 token 用量">{item().tokens!.toLocaleString('zh-CN')} tok</span>
+              </Show>
             </div>
           </div>
         )}
@@ -1370,6 +1394,13 @@ function AttachmentChip(props: { attachment: StoredAttachment; workspaceId?: str
 function ToolGroupView(props: { tools: () => ToolCard[] }) {
   const running = createMemo(() => props.tools().some((tool) => tool.status === 'running'));
 
+  /**
+   * 整组耗时：各次调用耗时之和；运行中的调用还没有耗时，不计入。
+   * 单次耗时是墙钟时间（工具开始到返回），含等待人工确认的时间——确认发生在工具方法内部，
+   * 因此需要确认的工具会比实际执行时间明显更长；组耗时与实时帧按 `at` 做差的口径一致。
+   */
+  const durationMs = createMemo(() => props.tools().reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0));
+
   const tone = createMemo(() => {
     const tools = props.tools();
     if (tools.some((tool) => tool.status === 'running')) return { className: 'running', label: '执行中' };
@@ -1385,6 +1416,11 @@ function ToolGroupView(props: { tools: () => ToolCard[] }) {
         <Icon name="terminal" size={14} />
         工具调用
         <span class="faint">{props.tools().length} 个</span>
+        <Show when={formatCompactDuration(durationMs())}>
+          <span class="summary-time" title="工具调用耗时">
+            {formatCompactDuration(durationMs())}
+          </span>
+        </Show>
         <span class={`status ${tone().className}`}>{tone().label}</span>
       </summary>
       <div class="tool-group-body">
@@ -1453,7 +1489,14 @@ function ToolCardView(props: { tool: () => ToolCard }) {
 }
 
 function ToolConfirmDialog(props: {
-  request: { confirmationId: string; toolName: string; arguments: unknown; timeoutSeconds: number };
+  request: {
+    confirmationId: string;
+    toolName: string;
+    arguments: unknown;
+    timeoutSeconds: number;
+    /** 确认来源（编排子代理节点）；主代理发起时为空。 */
+    origin?: { nodeId?: string | null; role?: string | null; description?: string | null } | null;
+  };
   onResolve: (result: 'allow' | 'deny' | 'allowAll' | 'allowSession') => void;
   onTimeout: () => void;
 }) {
@@ -1483,6 +1526,20 @@ function ToolConfirmDialog(props: {
     }
   });
 
+  // 来源标注：编排子代理发起时显示节点/角色/描述，主代理发起时为空（不占行）
+  const originText = createMemo(() => {
+    const origin = props.request.origin;
+    if (!origin) return null;
+    const node = origin.nodeId?.trim();
+    const role = origin.role?.trim() ?? '';
+    const desc = origin.description?.trim() ?? '';
+    // 三字段全空与框架一致：视为无来源，不占行
+    if (!node && !role && !desc) return null;
+    const roleText = role ? `（角色 ${role}）` : '';
+    const descText = desc ? `：${desc}` : '';
+    return `来源：编排节点 ${node || '未命名'}${roleText}${descText}`;
+  });
+
   return (
     <div class="overlay">
       <div class="dialog" role="dialog" aria-modal="true">
@@ -1490,6 +1547,9 @@ function ToolConfirmDialog(props: {
           <div>
             <div class="dialog-title">允许执行 {props.request.toolName}？</div>
             <div class="dialog-sub">工具调用需要你确认</div>
+            <Show when={originText()}>
+              {(text) => <div class="dialog-sub">{text()}</div>}
+            </Show>
           </div>
         </div>
         <div class="dialog-body">
@@ -1509,6 +1569,146 @@ function ToolConfirmDialog(props: {
           </button>
           <button class="btn primary" onClick={() => props.onResolve('allow')}>
             允许
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionDialog(props: {
+  request: PendingQuestionRequest;
+  onSubmit: (answers: UserQuestionAnswer[]) => void;
+  onCancel: () => void;
+  onTimeout: () => void;
+}) {
+  const questions = props.request.questions;
+  const [remaining, setRemaining] = createSignal(Math.max(1, props.request.timeoutSeconds));
+  const [selected, setSelected] = createSignal<string[][]>(questions.map(() => []));
+  const [other, setOther] = createSignal<string[]>(questions.map(() => ''));
+
+  onMount(() => {
+    const timer = window.setInterval(() => {
+      const next = remaining() - 1;
+      if (next <= 0) {
+        window.clearInterval(timer);
+        props.onTimeout();
+      } else {
+        setRemaining(next);
+      }
+    }, 1000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  // 来源标注：编排子代理发起时显示节点/角色/描述，主代理发起时为空（不占行）
+  const originText = createMemo(() => {
+    const origin = props.request.origin;
+    if (!origin) return null;
+    const node = origin.nodeId?.trim();
+    const role = origin.role?.trim() ?? '';
+    const desc = origin.description?.trim() ?? '';
+    if (!node && !role && !desc) return null;
+    const roleText = role ? `（角色 ${role}）` : '';
+    const descText = desc ? `：${desc}` : '';
+    return `来源：编排节点 ${node || '未命名'}${roleText}${descText}`;
+  });
+
+  /** 单选替换该项、多选切换该项。 */
+  function toggle(index: number, label: string, multi: boolean): void {
+    setSelected((list) =>
+      list.map((labels, i) => {
+        if (i !== index) return labels;
+        if (multi) {
+          return labels.includes(label) ? labels.filter((item) => item !== label) : [...labels, label];
+        }
+        return [label];
+      }),
+    );
+  }
+
+  function changeOther(index: number, value: string): void {
+    setOther((list) => list.map((text, i) => (i === index ? value : text)));
+  }
+
+  /** 每题至少有一个选项或一段自由输入；自由输入与选项可并存（「其它」按原样文本回传）。 */
+  const answers = createMemo<UserQuestionAnswer[] | null>(() => {
+    const picked = selected();
+    const free = other();
+    const result: UserQuestionAnswer[] = [];
+    for (let i = 0; i < questions.length; i += 1) {
+      const labels = [...picked[i]];
+      const extra = free[i].trim();
+      if (extra) labels.push(extra);
+      if (labels.length === 0) return null;
+      result.push({ question: questions[i].question, labels });
+    }
+    return result;
+  });
+
+  return (
+    <div class="overlay">
+      <div class="dialog" role="dialog" aria-modal="true">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title">{questions.length > 1 ? `Agent 有 ${questions.length} 个问题` : 'Agent 想请你确认'}</div>
+            <div class="dialog-sub">回答后 Agent 会继续执行</div>
+            <Show when={originText()}>{(text) => <div class="dialog-sub">{text()}</div>}</Show>
+          </div>
+        </div>
+        <div class="dialog-body" style={{ 'max-height': '58vh', overflow: 'auto' }}>
+          <For each={questions}>
+            {(question, index) => (
+              <div style={{ 'margin-bottom': '16px' }}>
+                <div class="dialog-title" style={{ 'font-size': '14px' }}>
+                  <Show when={question.header}>{(header) => <span class="faint">{header()} · </span>}</Show>
+                  {question.question}
+                </div>
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', 'margin-top': '8px' }}>
+                  <For each={question.options}>
+                    {(option) => {
+                      const active = () => selected()[index()].includes(option.label);
+                      return (
+                        <button
+                          type="button"
+                          class={active() ? 'btn primary' : 'btn ghost'}
+                          style={{ 'justify-content': 'flex-start', 'text-align': 'left' }}
+                          onClick={() => toggle(index(), option.label, question.multiSelect === true)}
+                        >
+                          <span>
+                            {option.label}
+                            <Show when={option.description}>
+                              <span class="faint">{` — ${option.description}`}</span>
+                            </Show>
+                          </span>
+                        </button>
+                      );
+                    }}
+                  </For>
+                  <input
+                    class="text-input"
+                    placeholder="其它：直接输入你的答案（可留空）"
+                    value={other()[index()]}
+                    onInput={(event) => changeOther(index(), event.currentTarget.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+        <div class="dialog-foot">
+          <span class="countdown">{remaining()} 秒后自动跳过</span>
+          <button class="btn ghost" onClick={() => props.onCancel()}>
+            跳过作答
+          </button>
+          <button
+            class="btn primary"
+            disabled={answers() === null}
+            onClick={() => {
+              const result = answers();
+              if (result) props.onSubmit(result);
+            }}
+          >
+            提交
           </button>
         </div>
       </div>

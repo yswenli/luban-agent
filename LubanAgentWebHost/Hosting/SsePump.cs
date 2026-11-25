@@ -21,6 +21,50 @@ public static class SsePump
 {
     private static readonly Encoding Utf8 = new UTF8Encoding(false);
 
+    /// <summary>单条 SSE 连接的最长存活时间。</summary>
+    /// <remarks>
+    /// 半开连接（对端断电、休眠、Wi-Fi 掉线）在应用层没有可靠的判死信号：
+    /// 入站方向整条流没有任何数据（SSE 是单向下发），所以「多久没收到对端数据」无法区分健康长连接；
+    /// 出站写出被内核缓冲静默吞掉，<c>IChannel.IsActive</c> 只在传输层真正收口时才翻转；
+    /// SAEA 也没在 accept 阶段开 TCP keep-alive。这里退一步用绝对寿命兜底：
+    /// 到点由服务端主动关闭，前端凭帧序号（<c>fromSeq</c>）自动续接，不丢帧。
+    /// 取值必须明显小于 <c>LubanAgentWeb:TimeoutSeconds</c>（默认 24 小时），
+    /// 否则会先撞上框架自己的连接层超时，这条兜底就失去意义。
+    /// </remarks>
+    public static readonly TimeSpan MaxLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>到点关闭该连接；连接为 null 或提前收尾时什么也不做。</summary>
+    /// <param name="connection">本次请求的连接通道。</param>
+    /// <returns>释放即取消计时（正常收尾时调用）。</returns>
+    public static IDisposable GuardLifetime(IChannel? connection)
+    {
+        if (connection is null)
+        {
+            return EmptyHandle.Instance;
+        }
+
+        var cts = new CancellationTokenSource();
+        _ = CloseOnTimeoutAsync(connection, cts.Token);
+        return new LifetimeHandle(cts);
+    }
+
+    private static async Task CloseOnTimeoutAsync(IChannel connection, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(MaxLifetime, token).ConfigureAwait(false);
+            await connection.CloseAsync("sse-max-lifetime").ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 连接已由正常路径收尾
+        }
+        catch (Exception)
+        {
+            // 对端已断开：关闭失败无需处理
+        }
+    }
+
     /// <summary>写出 SSE 响应头（无 Content-Length，保持长连接）。</summary>
     /// <param name="response">当前响应。</param>
     public static void Begin(HttpResponse response)
@@ -159,6 +203,22 @@ public static class SsePump
         {
             // 对端已断开；由调用方结束回合
             return false;
+        }
+    }
+
+    /// <summary>寿命计时句柄：释放即取消，避免连接正常收尾后还挂着一个计时器。</summary>
+    private sealed class LifetimeHandle(CancellationTokenSource cts) : IDisposable
+    {
+        public void Dispose() => cts.Cancel();
+    }
+
+    /// <summary>没有连接信息时的空句柄。</summary>
+    private sealed class EmptyHandle : IDisposable
+    {
+        public static readonly EmptyHandle Instance = new();
+
+        public void Dispose()
+        {
         }
     }
 }

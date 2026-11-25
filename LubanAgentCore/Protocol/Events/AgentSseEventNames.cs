@@ -36,6 +36,9 @@ public static class AgentSseEventNames
     /// <summary>待确认；载荷 <c>{ confirmationId, toolName, arguments, timeoutSeconds }</c>。</summary>
     public const string ToolConfirm = "tool.confirm";
 
+    /// <summary>待用户作答；载荷 <c>{ questionId, questions, timeoutSeconds, origin }</c>。</summary>
+    public const string ToolQuestion = "tool.question";
+
     /// <summary>附件已加入；载荷 <c>{ fileName, mediaType, fileSize, source }</c>。</summary>
     public const string AttachmentAdded = "attachment.added";
 
@@ -56,6 +59,12 @@ public static class AgentSseEventNames
 
     /// <summary>编排进度；载荷见 <see cref="OrchestrationProgressPayload"/>。</summary>
     public const string OrchestrationProgress = "orchestration.progress";
+
+    /// <summary>LLM 调用自动重试；载荷 <c>{ category, label, attempt, maxAttempts, delayMs }</c>。</summary>
+    public const string ApiRetry = "api.retry";
+
+    /// <summary>上下文压缩；载荷 <c>{ phase, trigger, archivedCount, keptCount, estimatedTokens, budget, message }</c>。</summary>
+    public const string ContextCompacted = "context.compacted";
 
     /// <summary>续流快照；载荷即 <see cref="Hosting.AgentRunSnapshot"/>（仅在接上已进行中的回合时下发一次）。</summary>
     public const string RunSnapshot = "run.snapshot";

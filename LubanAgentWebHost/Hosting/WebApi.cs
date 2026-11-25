@@ -39,6 +39,17 @@ public static class WebApi
     /// </summary>
     public static IChannel? Connection => (HttpContextBase.Current as GatedHttpContext)?.Connection;
 
+    /// <summary>
+    /// 把当前连接标记为长连接：不参与 SAEA 的会话空闲回收（SSE 动作在写出响应头前调用）。
+    /// </summary>
+    public static void MarkLongLived()
+    {
+        if (HttpContextBase.Current is GatedHttpContext context)
+        {
+            context.DisableIdleTimeout();
+        }
+    }
+
     /// <summary>当前进程运行时。</summary>
     public static AgentWebRuntime Runtime => AgentWebRuntime.Current;
 
@@ -126,19 +137,40 @@ public static class WebApi
     /// <remarks>
     /// 原始 <see cref="Exception.Message"/> 可能带本机绝对路径、SQL 片段或库内细节，
     /// 只写日志；回传端按异常类型给可操作提示。
+    /// LLM/API 失败已在框架侧完成分类（网络/限流/鉴权等），优先回传其面向用户的可操作文案。
     /// </remarks>
     /// <param name="ex">异常。</param>
     /// <returns>安全文案。</returns>
-    public static string SafeErrorMessage(Exception ex) => ex switch
+    public static string SafeErrorMessage(Exception ex)
     {
-        OperationCanceledException => "请求已取消",
-        TimeoutException => "操作超时",
-        FileNotFoundException => "所需文件不存在",
-        DirectoryNotFoundException => "所需目录不存在",
-        UnauthorizedAccessException => "无权访问所需资源",
-        HttpRequestException => "外部服务调用失败",
-        IOException => "本地文件读写失败",
-        _ => "服务端处理失败，请查看服务端日志"
+        if (FindApiError(ex) is { } apiError)
+        {
+            return apiError.Error.FriendlyMessage;
+        }
+
+        return ex switch
+        {
+            OperationCanceledException => "请求已取消",
+            TimeoutException => "操作超时",
+            FileNotFoundException => "所需文件不存在",
+            DirectoryNotFoundException => "所需目录不存在",
+            UnauthorizedAccessException => "无权访问所需资源",
+            HttpRequestException => "外部服务调用失败",
+            IOException => "本地文件读写失败",
+            _ => "服务端处理失败，请查看服务端日志"
+        };
+    }
+
+    /// <summary>沿内层链查找已分类的 LLM/API 异常（外层可能被 AggregateException 等包装过）。</summary>
+    /// <param name="ex">异常。</param>
+    /// <param name="depth">已向内查找的层数。</param>
+    /// <returns>找到的异常；未找到返回 <c>null</c>。</returns>
+    private static AgentApiException? FindApiError(Exception? ex, int depth = 0) => ex switch
+    {
+        null => null,
+        AgentApiException api => api,
+        _ when depth < 3 => FindApiError(ex.InnerException, depth + 1),
+        _ => null
     };
 
     /// <summary>读入参包装里的 <c>payload</c> 并反序列化。</summary>

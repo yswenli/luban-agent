@@ -95,7 +95,7 @@
 - **统一 `provider:model` 格式**：一键切换模型，无需修改代码
 - **动态路由**：LuBanChatClient 根据前缀自动分发到对应 Provider
 
-### 🛠️ 12 大内置工具组
+### 🛠️ 13 大内置工具组
 | 工具组 | 能力 |
 |--------|------|
 | 🌐 **浏览器工具** | 导航、点击、输入、截图、获取内容（基于 Playwright） |
@@ -110,8 +110,9 @@
 | 🧩 **编排工具** | 复合任务拆解为 DAG，调度 SubAgent 并行/串行执行 |
 | 📚 **Wiki 知识库工具** | 读写/删除 wiki 页面、向量搜索、健康检查（opt-in，需显式启用） |
 | 📜 **大日志分析工具** | 大日志文件聚合概览、正则检索、按行切片，恒定内存（默认启用） |
+| 📨 **用户交互工具** | 向用户提出 1～4 个选择题（每题 2～4 个选项，支持多选与「其它」自由输入）并等待作答；默认启用，子代理/编排节点同样可提问，用户跳过按「已取消」返回 |
 
-> 计数口径：上表 12 行是面向使用者的能力清单，其中「MCP 外部工具」指把外部 MCP 服务器的工具并入工具集，不是独立工具组。框架实际注册 15 个工具组，另有 4 个管理类未单列——`SkillToolGroup`（列出/加载 Skill）、`SkillManageToolGroup`（写入删除 Skill）、`McpManageToolGroup`（写入删除 MCP 配置）、`ConnectorManageToolGroup`（连接器管理），见下文「对话式 Skill/MCP 管理」与「配置说明」。
+> 计数口径：上表 13 行是面向使用者的能力清单，其中「MCP 外部工具」指把外部 MCP 服务器的工具并入工具集，不是独立工具组。框架实际注册 16 个工具组，另有 4 个管理类未单列——`SkillToolGroup`（列出/加载 Skill）、`SkillManageToolGroup`（写入删除 Skill）、`McpManageToolGroup`（写入删除 MCP 配置）、`ConnectorManageToolGroup`（连接器管理），见下文「对话式 Skill/MCP 管理」与「配置说明」。
 
 ### 🎯 Skill 系统
 - 内置十大核心技能（头脑风暴、代码审查、文档生成、代码重构、测试生成、代码解释、调试助手、Git 提交、技能发现、AGENTS.md 规约生成），即插即用
@@ -233,7 +234,7 @@ dotnet run --project LubanAgentCodex/LubanAgentCodex.csproj
 
 ```bash
 # 手工启动（端口取自 appsettings.json 的 LubanAgentWeb:Port，默认 18080）
-# 默认以 HTTPS 提供服务：自签证书（CN=LuBanAgent Local）落盘 %LOCALAPPDATA%\luban-agent\webhost-cert.pfx，
+# 默认以 HTTPS 提供服务：自签证书（CN=LuBanAgent Local）落盘 ~/.luban-agent/webhost-cert.pfx，
 # 启动时自动装入当前用户受信任根；不想要 TLS 就加 --http，入口与健康检查随之变成 http://
 # 证书维护：--trust-cert 单独补装进当前用户受信任根，--no-trust-cert 启动时不装，--cert-path 换 pfx 位置
 # 启动完成后终端会打印浏览器入口：https://<局域网 IP>:18080/?t=<本次会话令牌>
@@ -294,7 +295,7 @@ WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内�
 ...
 ```
 
-> **安全提示**：API Key 输入时会隐藏显示（密码输入模式）；用户配置自动保存在 `%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json`（`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`）
+> **安全提示**：API Key 输入时会隐藏显示（密码输入模式）；用户配置自动保存在 `~/.luban-agent/users/<userId>/config.json`（`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`）
 
 ---
 
@@ -367,7 +368,7 @@ dotnet publish LubanAgentCodex/LubanAgentCodex.csproj -c Release -r linux-arm64 
 - **NativeAOT 暂不支持**：项目依赖 Terminal.Gui / Avalonia 的大量反射机制，`PublishAot=true` 会导致运行时异常
 - **跨平台编译限制**：macOS 和 Linux 的 native 依赖（如 `libSkiaSharp`）需在对应平台上编译，建议在目标平台上直接执行 `dotnet publish`
 - **Playwright 浏览器**：首次使用浏览器工具时自动安装驱动到 `~/.luban-agent/playwright-driver/{version}`，无需手工指定版本；自动安装失败时按提示执行 `PlaywrightDriverResolver.GetInstallBrowsersHint()` 给出的命令
-- **配置文件**：发布后 `appsettings.json` 会随产物一起输出，可在运行前修改；用户配置保存在系统 LocalApplicationData 下的 `LuBan/AIAgent/`（Windows 即 `%LocalAppData%\LuBan\AIAgent\`）
+- **配置文件**：发布后 `appsettings.json` 会随产物一起输出，可在运行前修改；用户配置保存在用户主目录下的 `.luban-agent/`（Windows 即 `%USERPROFILE%\.luban-agent\`，Linux/macOS 为 `~/.luban-agent/`）
 
 ---
 
@@ -461,7 +462,7 @@ luban-agent/
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
 - **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，传输协议（`Core/Protocol/`）与客户端实现（`Core/Client/`）同属 `LubanAgentCore`，接入方式见上方「统一 Agent 服务」
 - **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
-- **统一配置**：两个客户端共享系统 LocalApplicationData 下 `LuBan\AIAgent\`（Windows：`%LocalAppData%\LuBan\AIAgent\`）中的用户配置；会话数据库 `luban-ai-agent.db` 由 WebHost 独占，落在 WebHost 程序目录（`appsettings.json` 中 `Data Source=./luban-ai-agent.db` 是相对路径，宿主会按自己的程序目录解析成绝对路径），客户端不打开数据库
+- **统一配置**：两个客户端共享用户主目录下 `.luban-agent/`（Windows：`%USERPROFILE%\.luban-agent\`，Linux/macOS：`~/.luban-agent/`）中的用户配置；会话数据库 `luban-ai-agent.db` 由 WebHost 独占，落在同一根目录（`appsettings.json` 中的 `Data Source=./luban-ai-agent.db` 是相对路径，宿主会改写到 `~/.luban-agent/luban-ai-agent.db`），客户端不打开数据库
 
 ---
 
@@ -474,6 +475,7 @@ luban-agent/
 | `POST /agent/chat` | 流式对话（SSE） |
 | `POST /agent/send` | 非流式对话（不装配工具） |
 | `POST /agent/confirm` | 回传工具确认结果 |
+| `POST /agent/answer` | 回传交互提问的答案（`cancelled:true` 表示用户取消提问） |
 | `POST /agent/cancel` | 取消该会话正在进行的回合 |
 | `POST /agent/active` | 探活：该会话是否有正在进行的回合 |
 | `POST /agent/attach` | 接上该会话正在进行的回合（SSE，先补快照）；无活跃回合返回 204 |
@@ -498,15 +500,16 @@ luban-agent/
 约束与已知限制：
 
 - **监听全部网卡，本机与外部网络都可访问**：SAEA.MVC 未暴露绑定地址参数（`HttpSocket` 不传 IP，固定绑 `0.0.0.0`）。因此接口、SSE、附件与静态资源全部经过同一道门禁：没有有效凭据（浏览器会话令牌 `?t=` / 它换发的 Cookie、客户端 `Authorization: Bearer` 宿主令牌）一律 401，只有 `/system/health` 免令牌供启动器探活。
-- **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；两类令牌都在启动时随机生成——浏览器会话令牌随访问自动轮换、默认不设绝对上限，宿主令牌进程内固定（需要固定时用 `LubanAgentWeb:Token` 或 `--host-token`），进程退出后两者都失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与宿主令牌写入 `%LOCALAPPDATA%\luban-agent\webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
+- **独立服务，端口与令牌由宿主决定**：监听端口取 `LubanAgentWeb:Port`（默认 18080）；两类令牌都在启动时随机生成——浏览器会话令牌随访问自动轮换、默认不设绝对上限，宿主令牌进程内固定（需要固定时用 `LubanAgentWeb:Token` 或 `--host-token`），进程退出后两者都失效，重启后必须重新用新地址进入。宿主启动成功后把实际地址与宿主令牌写入 `~/.luban-agent/webhost.json`，正常退出时删除；客户端读到后先请求 `/system/health`，通则接管已有实例、不重复拉起。拉起后的宿主常驻，客户端退出不结束它，用 `LubanAgentWebHost --stop` 停止；同一端口只能有一个实例，第二个进程会因端口占用直接退出。
 - **入口地址与令牌**：终端会打印带会话令牌的入口地址，浏览器打开后令牌换成 HttpOnly Cookie 并 302 回干净地址；页面开着时由前端心跳续期，宿主重启（或配置了会话上限后到点）可用 `LubanAgentWebHost --token` 重新取地址。完整用法与风险边界见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 - **断连不等于取消**：一轮对话挂在宿主进程内的轮次中心上，SSE 连接断开只移除订阅者，轮次继续跑完；浏览器重开同一会话时先 `POST /agent/active` 探活，有活跃轮次则 `POST /agent/attach` 续流（先补 `run.snapshot`，再转实时帧），无活跃轮次回 `204` 并由客户端拉历史。`attach` 可选带 `runId`（与当前轮次不符时按无活跃处理回 `204`）与 `fromSeq`（已收到的最大帧序号，缺省则下发快照）。主动停止仍走 `POST /agent/cancel`；删除进行中的会话、删除含进行中会话的工作区会被 `409` 拒绝，清空消息会先取消并等轮次收尾。
-- **数据库由 WebHost 独占**：会话数据是 WebHost 程序目录下的 `luban-ai-agent.db`（`appsettings.json` 里的相对连接串会被改写成基于宿主程序目录的绝对路径）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在客户端输出目录的同名库不会被读取，需要沿用时把它复制到 WebHost 程序目录。
+- **数据库由 WebHost 独占**：会话数据是用户级目录下的 `luban-ai-agent.db`（`~/.luban-agent/luban-ai-agent.db`；`appsettings.json` 里的相对连接串会被改写到该目录）。客户端不再打开数据库，工作目录只影响相对路径类的输入。升级前留在宿主程序目录的 `ai_sessions.db` / `luban-ai-agent.db` 会在宿主首次启动时自动移入该目录（客户端输出目录里的旧库不会被读取，需要自己搬到宿主程序目录或该用户目录），已有同名库时以现有库为准。
 - **A2A 与编排进度在宿主侧**：A2A 服务端/客户端角色、worktree 启动对账都在 WebHost 内按用户工作区完成；子代理编排进度经 `orchestration.progress` 帧下发，客户端还原后投递到本地进度出口，界面订阅方式与本地运行一致。A2A 运行时随宿主进程启停，客户端只读 `/a2a/status`，`/a2a -start|-stop` 已降级为提示。
 - **知识库后台任务降级为同步**：索引/重建/ingest 的 `Start*` 入口依赖宿主侧进度事件，客户端没有该通道，因此远程模式下一律回落到同步路径（`--wait` 语义），调用期间界面遮罩需自行展示。
-- **插件目录**：桌面端（Codex）的插件经 `--plugins-dir` 交给 WebHost 扫描；网页「插件」页安装的插件落在独立根（`LubanAgentWeb:WebPluginsDir` / `--web-plugins-dir`，缺省 `%LOCALAPPDATA%\LuBan\AIAgent\webhost\plugins`，状态文件 `plugin-states.json`）。两个根都会被扫描，但管理页只列出并操作 Web 根下的插件，桌面端的安装与启用状态不受影响。
-- **单回合同步等待上限**：`LubanAgentWeb:TimeoutSeconds`（默认 86400，即 24 小时）必须远大于最长回合，否则 SAEA 会在回合中途返回 408 并把纯文本追写在已开启的流上。
-- **工具确认**：确认等待上限取 `LuBanAgent:Confirmation:TimeoutSeconds`（默认 60），超时按拒绝处理。
+- **插件目录**：桌面端（Codex）的插件经 `--plugins-dir` 交给 WebHost 扫描；网页「插件」页安装的插件落在独立根（`LubanAgentWeb:WebPluginsDir` / `--web-plugins-dir`，缺省 `~/.luban-agent/webhost/plugins`，状态文件 `plugin-states.json`）。两个根都会被扫描，但管理页只列出并操作 Web 根下的插件，桌面端的安装与启用状态不受影响。
+- **长连接的超时口径**：SSE 动作不参与 SAEA 的动作超时（`ActionTimeout` 未启用），回合再长也不会被 `408` 截断。`LubanAgentWeb:TimeoutSeconds`（默认 86400，即 24 小时）决定 SAEA 的 socket 同步等待与会话空闲回收上限；SSE 在写出响应头前已用 `SetNoTimeout` 摘出会话空闲回收。客户端侧连续 45 秒收不到任何数据（含 15 秒一次的心跳）即按断线处理，自动探活并 `attach` 续流；页面从后台切回前台或网络恢复时也会主动重连，并按已收到的最大帧序号（SSE 帧自带 `id:`）增量续传，不重放已渲染内容。服务端每 30 分钟主动收口一次单条 SSE 连接（用于回收对端已消失却无法判死的半开连接，取值刻意远小于 `TimeoutSeconds`），客户端同样按断线续接。
+- **工具确认**：确认等待上限取 `LuBanAgent:Confirmation:TimeoutSeconds`（默认 60），超时按拒绝处理；编排子代理发起时确认框在工具名下方显示「来源：编排节点 …」，主代理发起时不显示。
+- **交互提问**：模型调用 `AskUserQuestion` 时推 `tool.question` 帧（`questionId` / `questions` / `timeoutSeconds` / `origin?`），客户端用 `POST /agent/answer` 逐题回答案（按问题正文匹配）或带 `cancelled:true` 取消；提问与工具确认共用同一个串行门，同一会话同一时刻只有一个交互在途。等待上限取 `LuBanAgent:Interaction:TimeoutSeconds`（WebHost 配 300；未配置时回退 `LuBanAgent:Confirmation:TimeoutSeconds`），超时按「用户取消」收尾（返回 `cancelled:true`，不计拒绝、不失败节点）。远程回合中提问未被答完就刷新页面时，`run.snapshot` 会带回进行中的提问，浏览器据此恢复提问弹窗；提问工具收尾（已作答/已取消）后快照不再带回旧提问。
 
 ### 🌐 浏览器端（`LubanAgentWebHost/wwwroot`）
 
@@ -522,10 +525,10 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 - **换产物必须重启进程**：`IsStaticsCached=True` 会把静态文件内容在首次请求后常驻内存，磁盘上的同名文件不会热更新。
 - **路由用 hash**：`#/`（会话列表）、`#/s/<sessionId>`（对话）、`#/settings/<tab>`（设置）、`#/wiki`（知识库）、`#/plugins`（插件管理）、`#/plugin/<pluginId>/<entryId>`（插件自带页面）。SAEA 没有 SPA 回退，所以不能用 history 路由。
 - **运行期配置**：进程启动时生成 `wwwroot/runtime-config.js`，只写入用户与端口；两类令牌都不落这个文件（浏览器侧只经地址栏换成 HttpOnly Cookie，宿主令牌只在发现文件里）。该文件不提交（见 `.gitignore`）。
-- **开发模式**：先启动 WebHost（`--port` 指定端口），把**宿主令牌**填进 `VITE_HOST_TOKEN` —— 取 `%LOCALAPPDATA%\luban-agent\webhost.json` 的 `token`，或启动时用 `--host-token` 指定（浏览器入口里的 `?t=` 是会话令牌，只能换 Cookie，不能当 Bearer 用）；再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`VITE_HOST_PROTOCOL` 指定上游协议（默认 `https`，与宿主默认一致；宿主用 `--http` 起时设为 `http`；https 上游由代理接受自签证书），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki`、`/plugin`、`/plugin-web` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
+- **开发模式**：先启动 WebHost（`--port` 指定端口），把**宿主令牌**填进 `VITE_HOST_TOKEN` —— 取 `~/.luban-agent/webhost.json` 的 `token`，或启动时用 `--host-token` 指定（浏览器入口里的 `?t=` 是会话令牌，只能换 Cookie，不能当 Bearer 用）；再在 `LubanAgentWebHost/web/` 执行 `npm run dev`；`VITE_HOST_PORT` 指定上游端口（默认 18080，与宿主默认端口一致），`VITE_HOST_PROTOCOL` 指定上游协议（默认 `https`，与宿主默认一致；宿主用 `--http` 起时设为 `http`；https 上游由代理接受自签证书），`server.proxy` 把 `/agent`、`/session`、`/workspace`、`/system`、`/attachment`、`/provider`、`/skill`、`/rule`、`/mcp`、`/model`、`/a2a`、`/llmwiki`、`/plugin`、`/plugin-web` 转发过去并补上 `Authorization`，静态资源仍由 Vite 提供。
 - **顶栏与 SSE 全局**：会话状态常驻前端会话池，顶栏标签与路由解耦——切到首页或设置时回合继续跑，标签上以活动点提示；只有关闭标签、删除会话时才销毁实例并中止在途流。
 - **设置是浮层**：`#/settings/<tab>` 覆盖在当前视图之上，× / Esc / 点遮罩关闭即回到打开前的页面；没有独立的设置整页，也没有「返回应用」。
-- **范围**：网页版覆盖全局顶栏（首页入口 + 会话标签）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、`@` 技能候选、斜杠命令、工具确认框、标签左侧返回按钮）、知识库页（建库/重命名/索引/重建/检索，底部「对话」直接进入该库的会话）、插件管理浮层（安装 / 升级 / 启停 / 卸载 Web 插件，只作用于 Web 插件根）与插件自带页面（同源 iframe，启用且有页面时出现在左侧栏底部）、设置浮层八个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A / 工作区 / 数据与用量）；附件单轮最多 5 个，文本类单文件上限 10MB。连接器、`@` 文件路径上下文与 Shell 命令入口不在网页版范围内。
+- **范围**：网页版覆盖全局顶栏（首页入口 + 会话标签）、首页两栏（左栏项目筛选 + 新建/重命名/删除项目，右栏会话列表 + 新建/重命名/删除会话）、对话（附件、`@` 技能候选、斜杠命令、工具确认框、标签左侧返回按钮）、知识库页（建库/重命名/索引/重建/检索，底部「对话」直接进入该库的会话）、插件管理浮层（安装 / 升级 / 启停 / 卸载 Web 插件，只作用于 Web 插件根）与插件自带页面（同源 iframe，启用且有页面时出现在左侧栏底部）、设置浮层八个页签（供应商 / 模型 / 技能 / 规则 / MCP / A2A / 工作区 / 数据与用量）；附件单轮最多 5 个，文本类单文件上限 10MB，图片单文件上限 20MB 且像素数不超过 5000 万（超过 2000px 或 5MB 的图片先在浏览器端缩放重编码，压缩后再上传）。连接器、`@` 文件路径上下文与 Shell 命令入口不在网页版范围内。
 
 ---
 
@@ -571,9 +574,9 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 
 ### 风险边界（务必了解）
 
-- **传输加密是自签 TLS，不等于可信身份**：默认已开 HTTPS，用的是本机自签证书（`CN=LuBanAgent Local`，启动时装进当前用户受信任根），能挡住局域网被动嗅探；但私钥就落在 `%LOCALAPPDATA%` 下、只靠文件 ACL 保护，同一用户的进程可直接读取解密，证书本身也不证明对端身份。需要更强边界时仍应前置反向代理。`--http` 可显式关掉 TLS（此时令牌与对话内容明文传输，只建议本机调试）。
+- **传输加密是自签 TLS，不等于可信身份**：默认已开 HTTPS，用的是本机自签证书（`CN=LuBanAgent Local`，启动时装进当前用户受信任根），能挡住局域网被动嗅探；但私钥就落在 `~/.luban-agent/` 下、只靠文件 ACL 保护，同一用户的进程可直接读取解密，证书本身也不证明对端身份。需要更强边界时仍应前置反向代理。`--http` 可显式关掉 TLS（此时令牌与对话内容明文传输，只建议本机调试）。
 - **轮换不等于收回权限**：轮换只缩短「泄漏但没被使用」的窗口；一个被持续使用的令牌会一路续期，默认一直有效到宿主重启。需要终点就配 `LubanAgentWeb:SessionMaxHours`（正数小时），到点后必须重新取地址——这是唯一能强制失效的开关。
-- **发现文件是明文**：`%LOCALAPPDATA%\luban-agent\webhost.json` 记录端口与宿主令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
+- **发现文件是明文**：`~/.luban-agent/webhost.json` 记录端口与宿主令牌，未额外收紧 ACL，同机上能读该用户目录的进程/用户都能拿到。它只适用于本机单用户环境。
 - **拿到地址即有完整权限**：令牌有效期内，持有入口地址者可读写工作区、执行命令。不要把这条地址发到群聊、工单或截图中。
 - **对公网暴露需自行加固**：前置反向代理加 TLS 与额外鉴权，并限制来源网段；反代需转达 `X-Forwarded-Proto` 与 `X-Forwarded-Host`，否则页面里的文件链接与 Cookie 的 `Secure` 会按宿主自身的协议判定。本项目不提供公网部署方案。
 
@@ -607,9 +610,9 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
 }
 ```
 
-### 用户配置 (%LocalAppData%\LuBan\AIAgent\users\<userId>\config.json)
+### 用户配置 (~/.luban-agent/users/<userId>/config.json)
 
-用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，两个客户端共享，重启后自动加载。`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`；旧安装的单用户 `config.json` 在首次访问时复制为初始用户配置。
+用户配置（Provider、自定义 Skill、规则、连接器声明等）自动保存在本地，两个客户端共享，重启后自动加载。`userId` 取环境变量 `LUBAN_USER_ID`，缺省 `yswenli`；根目录下的旧版单用户配置 `~/.luban-agent/config.json` 会在首次访问时复制为初始用户配置。更早版本写在 `%LOCALAPPDATA%\LuBan\AIAgent` 与 `%LOCALAPPDATA%\luban-agent` 下的配置、模型与插件状态不会被自动搬运，升级时需手工并入 `~/.luban-agent`。
 
 > 连接器（如云效 `yunxiao`）在 `config.json` 的 `connectors` 节声明**可用性**（未声明者视为未安装）；是否在某工作区启用由 `.luban-agent/connectors/<name>.json` 决定。旧安装无 `connectors` 节时首次加载自动补种默认声明。
 

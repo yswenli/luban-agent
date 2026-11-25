@@ -51,21 +51,9 @@ public static class WebHostTls
     private static readonly TimeSpan RenewBefore = TimeSpan.FromDays(30);
 
     /// <summary>
-    /// 默认证书文件路径（当前用户的本地应用数据目录）。
+    /// 默认证书文件路径：<c>~/.luban-agent/webhost-cert.pfx</c>。
     /// </summary>
-    public static string DefaultCertificatePath
-    {
-        get
-        {
-            var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                root = Path.GetTempPath();
-            }
-
-            return Path.Combine(root, "luban-agent", "webhost-cert.pfx");
-        }
-    }
+    public static string DefaultCertificatePath => AgentHome.WebHostCertificateFile;
 
     /// <summary>
     /// 取得（必要时签发）证书并让 MVC 应用以 TLS 启动。

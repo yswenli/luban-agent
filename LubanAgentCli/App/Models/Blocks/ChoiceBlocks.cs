@@ -28,11 +28,13 @@ public static class ChoiceBlocks
     /// <param name="tool">工具名称。</param>
     /// <param name="args">工具参数。</param>
     /// <param name="onResolve">用户选择后的回调。</param>
+    /// <param name="origin">确认来源（编排子代理节点）；主代理为 null，不显示副标题。</param>
     /// <returns>内联选择块实例。</returns>
     public static InlineChoiceBlock Confirm(
         string tool,
         IReadOnlyDictionary<string, object?>? args,
-        Action<ConfirmResult> onResolve)
+        Action<ConfirmResult> onResolve,
+        ToolConfirmationOrigin? origin = null)
     {
         var desc = args is not null
             ? string.Join(", ", args.Select(kv => $"{kv.Key}={Str(kv.Value)}"))
@@ -47,7 +49,8 @@ public static class ChoiceBlocks
                 new ChoiceOption('A', "本轮全部允许", ConfirmResult.AllowAll, "后续同类工具本轮免确认"),
                 new ChoiceOption('S', "本会话全部允许", ConfirmResult.AllowSession, "本会话同类工具免确认"),
             ],
-            opt => onResolve((ConfirmResult)opt.Value));
+            opt => onResolve((ConfirmResult)opt.Value),
+            origin?.ToDisplayString() is { } text ? $"来源：{text}" : null);
     }
 
     /// <summary>

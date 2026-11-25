@@ -51,7 +51,7 @@ public sealed record AgentClientOptions
 
     /// <summary>
     /// Web 端专用插件根目录；null 时不下发，由宿主回落
-    /// <c>%LocalAppData%/LuBan/AIAgent/webhost/plugins</c>。
+    /// <c>~/.luban-agent/webhost/plugins</c>。
     /// </summary>
     /// <remarks>
     /// 与 <see cref="PluginsDirectory"/> 并存：前者是客户端（桌面端）插件目录，

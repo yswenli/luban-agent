@@ -2,8 +2,10 @@ import { createSignal } from 'solid-js';
 
 import { ApiError, get, post } from '../lib/api';
 import { extensionOf, formatBytes } from '../lib/format';
-import { streamPost } from '../lib/sse';
+import { prepareImageForUpload } from '../lib/image';
+import { DEFAULT_FIRST_FRAME_MS, DEFAULT_IDLE_MS, SseTimeoutError, streamPost } from '../lib/sse';
 import type {
+  AttachmentPolicy,
   AttachmentUploadResult,
   PendingAttachment,
   SessionMessage,
@@ -23,11 +25,23 @@ export interface ToolCard {
   status: ToolStatus;
   resultSummary?: string;
   error?: string;
+  /** 本次调用耗时（毫秒）；运行中或历史缺数据时为空。 */
+  durationMs?: number;
+  /** 服务端给出的调用开始时刻（epoch 毫秒）；仅本页实时收到 `tool.started` 时有值。 */
+  startedAt?: number;
 }
 
 /** 助手气泡里的有序段落：思考、正文、工具调用按发生顺序排列。 */
 export type AssistantBlock =
-  | { kind: 'thinking'; text: string }
+  | {
+      kind: 'thinking';
+      text: string;
+      /** 思考区间耗时（毫秒）；进行中或历史缺数据时为空。 */
+      durationMs?: number;
+      /** 服务端给出的首/末帧时刻（epoch 毫秒），用于现场计时；历史回放只有 durationMs。 */
+      startedAt?: number;
+      endedAt?: number;
+    }
   | { kind: 'text'; text: string }
   | { kind: 'tool'; tool: ToolCard };
 
@@ -40,14 +54,59 @@ export type ChatItem =
       streaming: boolean;
       history: boolean;
       time: string;
+      /** 本轮真实 token 用量（后端采集，缺失时为空）。 */
+      tokens?: number;
+      /** 本轮回复耗时（毫秒，后端采集）。 */
+      durationMs?: number;
     }
   | { kind: 'notice'; id: string; text: string; tone: 'info' | 'warn' | 'error' | 'ok' };
+
+export interface ToolConfirmOrigin {
+  /** 编排节点标识；主代理为空。 */
+  nodeId?: string | null;
+  /** 节点角色名。 */
+  role?: string | null;
+  /** 节点描述。 */
+  description?: string | null;
+}
 
 export interface ToolConfirmRequest {
   confirmationId: string;
   toolName: string;
   arguments: unknown;
   timeoutSeconds: number;
+  /** 确认来源（编排子代理节点）；主代理发起时为空。 */
+  origin?: ToolConfirmOrigin | null;
+}
+
+/** 单个候选项（对齐框架 UserQuestionOption）。 */
+export interface UserQuestionOption {
+  label: string;
+  description?: string | null;
+}
+
+/** 单个问题（对齐框架 UserQuestion）。 */
+export interface UserQuestion {
+  question: string;
+  /** 短标题（≤12 字），用作标签页/角标。 */
+  header?: string | null;
+  multiSelect?: boolean;
+  options: UserQuestionOption[];
+}
+
+/** 等待用户作答的问题请求。 */
+export interface PendingQuestionRequest {
+  questionId: string;
+  questions: UserQuestion[];
+  timeoutSeconds: number;
+  /** 提问来源（编排子代理节点）；主代理发起时为空。 */
+  origin?: ToolConfirmOrigin | null;
+}
+
+/** 回传给服务端的单题答案。 */
+export interface UserQuestionAnswer {
+  question: string;
+  labels: string[];
 }
 
 export interface PlanEntry {
@@ -125,6 +184,49 @@ function appendTextBlock(blocks: AssistantBlock[], kind: 'thinking' | 'text', de
   blocks.push({ kind, text: delta });
 }
 
+/** 取帧时间戳（服务端 epoch 毫秒）；旧服务端不带该字段时退回本机时钟。 */
+function frameAt(value: unknown): number {
+  // 0 / 负数视为「未赋值」：不可由它反推区间，退回本机时钟更安全
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : Date.now();
+}
+
+/**
+ * 是否存在「只拿到起点、无从落定」的思考段。
+ *
+ * 重连续传时快照只给 `startedAtMs`（服务端起点），`endedAt` 要等后续帧补齐；
+ * 若快照之后就收尾，done 帧不带时刻，本地算不出耗时，只能回读历史取服务端落库值。
+ */
+function hasUnsettledThinking(blocksList: readonly ChatItem[]): boolean {
+  return blocksList.some((item) => {
+    if (item.kind !== 'assistant') return false;
+    const last = item.blocks[item.blocks.length - 1];
+    return (
+      last?.kind === 'thinking' &&
+      last.durationMs === undefined &&
+      last.startedAt !== undefined &&
+      last.endedAt === undefined
+    );
+  });
+}
+
+/** 落定末尾思考段的耗时：遇到正文 / 工具调用或本轮收尾时调用。 */
+function closeThinking(blocks: AssistantBlock[], endAt?: number): void {
+  const last = blocks[blocks.length - 1];
+  if (!last || last.kind !== 'thinking' || last.durationMs !== undefined) return;
+  // 重连后快照只给起点，末帧时刻由收口它的那一帧补齐
+  const endedAt = last.endedAt ?? endAt;
+  if (!last.startedAt || !endedAt) return;
+  last.durationMs = Math.max(0, endedAt - last.startedAt);
+}
+
+/** 把历史 / 快照里落定的思考耗时并入当前段落（同类型相邻段落会被合并）。 */
+function addThinkingDuration(blocks: AssistantBlock[], durationMs: number | null | undefined): void {
+  if (!durationMs || durationMs <= 0) return;
+  const last = blocks[blocks.length - 1];
+  if (!last || last.kind !== 'thinking') return;
+  last.durationMs = (last.durationMs ?? 0) + durationMs;
+}
+
 /** 历史消息里的有序段落（`Segments` JSON）；缺失或损坏时返回 null，由调用方退回旧口径。 */
 function parseSegments(raw: string | null | undefined): AssistantBlock[] | null {
   if (!raw) return null;
@@ -142,12 +244,16 @@ function parseSegments(raw: string | null | undefined): AssistantBlock[] | null 
             argumentsText: pretty(segment.arguments),
             // 落库不含工具结果，历史回放只能标注「历史记录」
             status: 'history',
+            durationMs: segment.durationMs ?? undefined,
           },
         });
         continue;
       }
       const text = String(segment.text ?? '');
-      if (text) appendTextBlock(blocks, segment.kind === 'thinking' ? 'thinking' : 'text', text);
+      if (text) {
+        appendTextBlock(blocks, segment.kind === 'thinking' ? 'thinking' : 'text', text);
+        if (segment.kind === 'thinking') addThinkingDuration(blocks, segment.durationMs);
+      }
     }
     return blocks.length > 0 ? blocks : null;
   } catch {
@@ -178,6 +284,8 @@ function snapshotTool(raw: Record<string, unknown>): ToolCard {
     resultSummary:
       raw.resultSummary === undefined || raw.resultSummary === null ? undefined : String(raw.resultSummary),
     error: raw.error === undefined || raw.error === null ? undefined : String(raw.error),
+    durationMs: typeof raw.durationMs === 'number' ? raw.durationMs : undefined,
+    startedAt: typeof raw.startedAtMs === 'number' ? raw.startedAtMs : undefined,
   };
 }
 
@@ -193,7 +301,18 @@ function snapshotBlocks(raw: unknown): AssistantBlock[] | null {
       continue;
     }
     const text = String(entry.text ?? '');
-    if (text) appendTextBlock(blocks, kind === 'thinking' ? 'thinking' : 'text', text);
+    if (text) {
+      const thinking = kind === 'thinking';
+      appendTextBlock(blocks, thinking ? 'thinking' : 'text', text);
+      if (thinking) {
+        addThinkingDuration(blocks, typeof entry.durationMs === 'number' ? entry.durationMs : null);
+        // 尚未落定的思考段：带上服务端起点，续传后与后续帧接上算完整耗时
+        const block = blocks[blocks.length - 1];
+        if (block?.kind === 'thinking' && block.startedAt === undefined && typeof entry.startedAtMs === 'number') {
+          block.startedAt = entry.startedAtMs;
+        }
+      }
+    }
   }
   return blocks.length > 0 ? blocks : null;
 }
@@ -219,6 +338,18 @@ function toHistoryItems(messages: SessionMessage[]): ChatItem[] {
         streaming: false,
         history: true,
         time,
+        tokens: message.tokens ?? undefined,
+        durationMs: message.durationMs ?? undefined,
+      };
+    }
+
+    if (message.role === 'summary') {
+      // 压缩摘要不入对话正文：只留一个压缩标记，摘要内容本身由服务端喂模型
+      return {
+        kind: 'notice',
+        id: `msg-${message.id}`,
+        text: '📦 上下文已压缩（历史摘要）',
+        tone: 'info',
       };
     }
 
@@ -244,6 +375,16 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** 按扩展名判图片：MIME 可能缺失（部分系统对 .bmp/.tif 不给 type），服务端也是按扩展名判的。 */
+function isImageAttachment(policy: AttachmentPolicy | undefined, file: File): boolean {
+  const extension = extensionOf(file.name);
+  const known = policy?.imageExtensions;
+  if (known && known.length > 0) {
+    return known.some((item) => item.toLowerCase() === extension);
+  }
+  return file.type.startsWith('image/');
+}
+
 /** 单个会话的对话状态；实例由 `stores/chats.ts` 的会话池长期持有，只有销毁会话时才中止在途流。 */
 export function createChat(sessionId: string) {
   const [items, setItems] = createSignal<ChatItem[]>([]);
@@ -253,6 +394,7 @@ export function createChat(sessionId: string) {
   const [streaming, setStreaming] = createSignal(false);
   const [runId, setRunId] = createSignal<string | null>(null);
   const [confirmation, setConfirmation] = createSignal<ToolConfirmRequest | null>(null);
+  const [pendingQuestion, setPendingQuestion] = createSignal<PendingQuestionRequest | null>(null);
   const [pending, setPending] = createSignal<PendingAttachment[]>([]);
   const [queue, setQueue] = createSignal<QueuedMessage[]>([]);
   const [plans, setPlans] = createSignal<PlanEntry[]>([]);
@@ -267,6 +409,10 @@ export function createChat(sessionId: string) {
   let disposed = false;
   /** 本轮已实时渲染的提示条数；快照回放时跳过这段前缀，避免同页重连重复显示。 */
   let renderedNotices = 0;
+  /** 本轮已收到的最大帧序号（服务端 `id:` 行）；续流时作为 `fromSeq`，缺省表示内存为空需快照。 */
+  let lastSeq: number | undefined;
+  /** 当前流式气泡的 id：可见性 / 联网恢复时用它接回同一条气泡。 */
+  let activeAssistantId: string | null = null;
 
   /**
    * 拉取历史消息。
@@ -356,20 +502,33 @@ export function createChat(sessionId: string) {
         if (typeof payload.runId === 'string') setRunId(payload.runId);
         return false;
 
-      case 'think.delta':
+      case 'think.delta': {
+        const at = frameAt(payload.at);
         updateAssistant(assistantId, (item) => {
           appendTextBlock(item.blocks, 'thinking', String(payload.delta ?? ''));
+          const block = item.blocks[item.blocks.length - 1];
+          if (block && block.kind === 'thinking') {
+            if (!block.startedAt) block.startedAt = at;
+            block.endedAt = at;
+          }
         });
         return false;
+      }
 
-      case 'text.delta':
+      case 'text.delta': {
+        const at = frameAt(payload.at);
         updateAssistant(assistantId, (item) => {
+          // 正文出现即思考区间结束，与后端「连续同类型」口径一致
+          closeThinking(item.blocks, at);
           appendTextBlock(item.blocks, 'text', String(payload.delta ?? ''));
         });
         return false;
+      }
 
       case 'tool.started':
         updateAssistant(assistantId, (item) => {
+          const startAt = frameAt(payload.at);
+          closeThinking(item.blocks, startAt);
           const callId = String(payload.callId ?? nextId());
           // 同一调用重试：先摘掉旧卡片，保证时间线上只有最新一次
           const index = item.blocks.findIndex((block) => block.kind === 'tool' && block.tool.callId === callId);
@@ -381,24 +540,31 @@ export function createChat(sessionId: string) {
               name: String(payload.name ?? 'tool'),
               argumentsText: pretty(payload.arguments),
               status: 'running',
+              startedAt: startAt,
             },
           });
         });
         return false;
 
-      case 'tool.completed':
+      case 'tool.completed': {
+        const at = frameAt(payload.at);
         updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
           tool.status = 'done';
           tool.resultSummary = String(payload.resultSummary ?? '');
+          if (tool.startedAt) tool.durationMs = Math.max(0, at - tool.startedAt);
         });
         return false;
+      }
 
-      case 'tool.failed':
+      case 'tool.failed': {
+        const at = frameAt(payload.at);
         updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
           tool.status = 'failed';
           tool.error = String(payload.error ?? '工具执行失败');
+          if (tool.startedAt) tool.durationMs = Math.max(0, at - tool.startedAt);
         });
         return false;
+      }
 
       case 'tool.denied':
         pushFrameNotice(`已拒绝工具调用：${String(payload.toolName ?? '')}`, 'warn', noticeKey);
@@ -410,8 +576,30 @@ export function createChat(sessionId: string) {
           toolName: String(payload.toolName ?? '工具调用'),
           arguments: payload.arguments,
           timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
+          origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
         });
         return false;
+
+      case 'tool.question': {
+        const raw = Array.isArray(payload.questions) ? (payload.questions as Record<string, unknown>[]) : [];
+        setPendingQuestion({
+          questionId: String(payload.questionId ?? ''),
+          questions: raw.map((item) => ({
+            question: String(item.question ?? ''),
+            header: (item.header as string | null | undefined) ?? null,
+            multiSelect: item.multiSelect === true,
+            options: Array.isArray(item.options)
+              ? (item.options as Record<string, unknown>[]).map((option) => ({
+                  label: String(option.label ?? ''),
+                  description: (option.description as string | null | undefined) ?? null,
+                }))
+              : [],
+          })),
+          timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
+          origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
+        });
+        return false;
+      }
 
       case 'attachment.added':
         pushFrameNotice(`已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`, 'info', noticeKey);
@@ -428,6 +616,23 @@ export function createChat(sessionId: string) {
       case 'orchestration.progress': {
         const text = String(payload.message ?? payload.text ?? '');
         if (text) setProgress((list) => [...list, text]);
+        return false;
+      }
+
+      case 'api.retry': {
+        // 自动重试是系统自愈过程：用可恢复的提示让用户知道「在重试」而不是卡死。
+        // 不写具体等待秒数——提示经心跳节拍送出，到达时延已不可忽略
+        const label = String(payload.label ?? payload.category ?? '请求失败');
+        const attempt = Math.max(1, Number(payload.attempt ?? 1));
+        const maxRetries = Math.max(1, Number(payload.maxAttempts ?? 2) - 1);
+        pushFrameNotice(`⟳ ${label}：正在自动重试（第 ${attempt} 次，最多 ${maxRetries} 次）`, 'warn', noticeKey);
+        return false;
+      }
+
+      case 'context.compacted': {
+        // 服务端已给出面向用户的完整文案（压缩中 / 已压缩 + 归档条数与 token 估算）
+        const message = String(payload.message ?? '📦 上下文已压缩');
+        pushFrameNotice(message, 'info', noticeKey);
         return false;
       }
 
@@ -523,26 +728,81 @@ export function createChat(sessionId: string) {
         toolName: String(pendingConfirm.toolName ?? '工具调用'),
         arguments: pendingConfirm.arguments,
         timeoutSeconds: remaining,
+        origin: (pendingConfirm.origin as ToolConfirmOrigin | null | undefined) ?? null,
       });
+    }
+
+    const pendingQuestion = payload.pendingQuestion as Record<string, unknown> | null | undefined;
+    if (pendingQuestion) {
+      const expiresAt = Date.parse(String(pendingQuestion.expiresAt ?? ''));
+      const remaining = Number.isFinite(expiresAt)
+        ? Math.max(1, Math.round((expiresAt - Date.now()) / 1000))
+        : Number(pendingQuestion.timeoutSeconds ?? 60);
+      let questions: UserQuestion[] = [];
+      try {
+        const parsed = JSON.parse(String(pendingQuestion.questionsJson ?? '[]')) as Record<string, unknown>[];
+        questions = (Array.isArray(parsed) ? parsed : []).map((item) => ({
+          question: String(item.question ?? ''),
+          header: (item.header as string | null | undefined) ?? null,
+          multiSelect: item.multiSelect === true,
+          options: Array.isArray(item.options)
+            ? (item.options as Record<string, unknown>[]).map((option) => ({
+                label: String(option.label ?? ''),
+                description: (option.description as string | null | undefined) ?? null,
+              }))
+            : [],
+        }));
+      } catch {
+        /* 坏载荷先不弹窗，实时帧会补上 */
+      }
+      if (questions.length > 0) {
+        setPendingQuestion({
+          questionId: String(pendingQuestion.questionId ?? ''),
+          questions,
+          timeoutSeconds: remaining,
+          origin: (pendingQuestion.origin as ToolConfirmOrigin | null | undefined) ?? null,
+        });
+      }
     }
 
     if (typeof payload.runId === 'string') setRunId(payload.runId);
   }
 
   /** 结束本轮本地流状态（停止 / 断线 / 正常收尾共用）。 */
-  function finishStream(assistantId: string | null, done: boolean): void {
+  function finishStream(assistantId: string | null, done: boolean, stream?: AbortController): void {
+    // 这条流已被新流接替（切前台重连 / 续流重建）：它迟到的收尾不能再动气泡与全局状态，
+    // 否则会把新流刚恢复的 streaming 标记、controller 一起清掉
+    if (stream !== undefined && controller !== stream) return;
+
     if (assistantId) {
       updateAssistant(assistantId, (item) => {
         item.streaming = false;
+        // 以思考收尾时也要落定耗时
+        closeThinking(item.blocks);
       });
     }
     setStreaming(false);
     setRunId(null);
     setConfirmation(null);
+    setPendingQuestion(null);
     controller = null;
-    if (done) void refreshSessions();
+    if (done) {
+      // 序号按轮次从 1 开始重编：本轮已收尾，留着旧序号会让下一次 attach 按错误起点切片
+      lastSeq = undefined;
+      void refreshSessions();
+    }
     // 队列里还有消息：本轮收尾（跑完 / 被取消 / 出错）后按入队顺序继续发下一条
     if (!disposed) void drainQueue();
+  }
+
+  /** 探活：true = 有活跃轮次，false = 没有，null = 请求失败（网络未恢复，状态未知）。 */
+  async function probeActive(): Promise<boolean | null> {
+    try {
+      const state = await post<{ active?: boolean }>('/agent/active', { sessionId });
+      return state?.active === true;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -551,8 +811,12 @@ export function createChat(sessionId: string) {
    * 返回值：true = 本轮已有结论（已接上并收到 done、attach 回 204 后已补历史、
    * 或探活显示已无活跃轮次且历史已补齐）；false = 没能判定/接上（探活失败、被中止、
    * 内部 attach 重试耗尽），调用方可据此重试。
+   *
+   * @param waitForActive 探活显示「没有活跃轮次」时是否再宽限重探（2s × 3）。
+   *   首帧超时后服务端可能仍在初始化、轮次尚未登记，此时立刻按「已结束」收尾会让这一轮
+   *   消息看起来凭空消失（消息在轮次体内落库，补历史拿不到）；宽限期专门覆盖这段空窗。
    */
-  async function resume(assistantId?: string): Promise<boolean> {
+  async function resume(assistantId?: string, waitForActive = false): Promise<boolean> {
     // 会话实例已销毁（关标签）：绝不再挂新的订阅，否则留下无人读取的流
     if (disposed) return false;
 
@@ -561,14 +825,17 @@ export function createChat(sessionId: string) {
     // 反之本地流确实在跑：本轮已有订阅者，重试不该再插一手。
     if (streaming() && controller !== null) return true;
 
-    let active = false;
-    try {
-      const state = await post<{ active?: boolean }>('/agent/active', { sessionId });
-      active = state?.active === true;
-    } catch {
-      // 探活本身失败（网络未恢复）：状态未知，交给调用方决定是否重试
-      return false;
+    let active = await probeActive();
+    if (active === false && waitForActive && !disposed) {
+      for (let probe = 0; probe < 3 && active === false; probe += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (disposed) return false;
+        active = await probeActive();
+      }
     }
+
+    // 探活本身失败（网络未恢复）：状态未知，交给调用方决定是否重试
+    if (active === null) return false;
 
     if (!active) {
       // 轮次已结束（跑完或被停止）：正文已入库，补历史即视为本轮收尾完成
@@ -577,9 +844,16 @@ export function createChat(sessionId: string) {
     }
 
     const targetId = assistantId ?? nextId();
+    activeAssistantId = targetId;
     controller = new AbortController();
+    // 本次续流的控制器：期间可能被更新的流接替，回调与收尾都要核对这条流本身
+    const streamController = controller;
     setStreaming(true);
     setRunId(null);
+    // 断线收尾时本地已把气泡落定为「非流式」；增量续传不会重建气泡，这里单独恢复进行中标记
+    updateAssistant(targetId, (item) => {
+      item.streaming = true;
+    });
 
     for (let attempt = 0; ; attempt += 1) {
       let done = false;
@@ -588,11 +862,20 @@ export function createChat(sessionId: string) {
       let started = false;
       await streamPost(
         '/agent/attach',
-        { sessionId },
         {
-          onFrame: ({ event, data }) => {
+          sessionId,
+          // 有本地序号就按增量续传；没有（页面刷新、内存为空）才让服务端下发快照
+          ...(lastSeq !== undefined ? { fromSeq: lastSeq } : {}),
+        },
+        {
+          onFrame: ({ event, data, id }) => {
+            if (controller !== streamController) return;
+            if (id !== undefined) lastSeq = id;
             if (event === 'run.snapshot') {
-              restoreFromSnapshot(targetId, (data ?? {}) as Record<string, unknown>);
+              const snapshot = (data ?? {}) as Record<string, unknown>;
+              // 快照自带服务端已发布的序号：其后只补更大的帧，不能让 id 行覆盖它
+              if (typeof snapshot.seq === 'number') lastSeq = snapshot.seq;
+              restoreFromSnapshot(targetId, snapshot);
               started = true;
               return;
             }
@@ -623,25 +906,32 @@ export function createChat(sessionId: string) {
             /* 同上 */
           },
         },
-        controller.signal,
+        streamController.signal,
+        { idleMs: DEFAULT_IDLE_MS, firstFrameMs: DEFAULT_FIRST_FRAME_MS },
       );
+
+      // 已被新流接替（切前台重连）：让位，避免两条流写同一条气泡
+      if (controller !== streamController) return true;
 
       if (empty) {
         // 轮次已结束：内容在库里，直接补历史；不能重试（重试只会一直 204）
         await loadHistory(true);
-        finishStream(started ? targetId : null, true);
+        finishStream(started ? targetId : null, true, streamController);
         return true;
       }
       if (done) {
-        finishStream(targetId, true);
+        // done 帧不带服务端时刻：重连续传留下的「只有起点」的思考段本地无从落定，
+        // 此时本轮已入库，回读历史可直接拿到落库耗时（否则要等下次整页刷新才显示）
+        if (hasUnsettledThinking(items())) await loadHistory(true);
+        finishStream(targetId, true, streamController);
         return true;
       }
-      if (controller === null || controller.signal.aborted) {
-        finishStream(targetId, false);
+      if (streamController.signal.aborted) {
+        finishStream(targetId, false, streamController);
         return false;
       }
       if (attempt >= 3) {
-        finishStream(targetId, false);
+        finishStream(targetId, false, streamController);
         showToast('续流失败，请重新打开该会话', 'error');
         return false;
       }
@@ -655,8 +945,15 @@ export function createChat(sessionId: string) {
    * 断连只摘订阅者，服务端轮次通常仍在跑：按 1s / 2s / 4s 退避重新 attach，
    * 最多 3 次；任一成功即把后续帧接回同一条 assistant 气泡。
    * 3 次都失败才提示错误并交回原有收尾逻辑（不再重复提示一次）。
+   *
+   * @param awaitRunRegistration 这次断在「首帧之前」时置真：服务端可能仍在初始化、
+   *   轮次尚未登记，探活会误报「没有活跃轮次」，需给 resume 留出宽限期再判定。
    */
-  async function recoverAfterDrop(assistantId: string, error: unknown): Promise<void> {
+  async function recoverAfterDrop(
+    assistantId: string,
+    error: unknown,
+    awaitRunRegistration = false,
+  ): Promise<void> {
     // 续流期间禁止队列抢跑：服务端旧轮次还在跑，起新消息只会 409
     recovering = true;
     try {
@@ -668,7 +965,7 @@ export function createChat(sessionId: string) {
         // 等待期间关掉了标签：不再续流，也不提示
         if (disposed) return;
         // 探活/attach 任一步得到结论即结束：本轮还在跑就接着收帧，已跑完就补历史
-        if (await resume(assistantId)) return;
+        if (await resume(assistantId, awaitRunRegistration)) return;
       }
 
       pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
@@ -718,7 +1015,9 @@ export function createChat(sessionId: string) {
     }
     setPending([]);
 
-    if (streaming()) {
+    // 续流期间旧轮次还在服务端跑：先入队，等续流接上或收尾后再发；
+    // 此时直接发会起新流打断续流（resume 会被「本地流还活着」短路），还会撞 409
+    if (streaming() || recovering) {
       setQueue((list) => [...list, message]);
       return;
     }
@@ -798,8 +1097,13 @@ export function createChat(sessionId: string) {
     setStreaming(true);
     setRunId(null);
     controller = new AbortController();
+    activeAssistantId = assistantId;
+    // 新轮次从 1 开始编号：上一轮留下的序号必须清掉，否则重连会按旧序号续传
+    lastSeq = undefined;
 
     let done = false;
+    // 本轮流的控制器：收尾可能把 controller 置空，回调里必须比对这条流自己的控制器
+    const streamController = controller;
 
     for (let attempt = 0; ; attempt += 1) {
       let conflict = false;
@@ -814,13 +1118,17 @@ export function createChat(sessionId: string) {
           reasoningEffort: message.effort || null,
         },
         {
-          onFrame: ({ event, data }) => {
+          onFrame: ({ event, data, id }) => {
+            if (controller !== streamController) return;
+            if (id !== undefined) lastSeq = id;
             if (applyFrame(assistantId, event, data)) done = true;
           },
           onError: (error) => {
+            // 这条流已被新流接替（切前台重连）：旧流的错误不再驱动收尾或续流
+            if (controller !== streamController) return;
             // 用户主动停止时不续流，直接收尾
-            if (controller?.signal.aborted) {
-              finishStream(assistantId, false);
+            if (streamController.signal.aborted) {
+              finishStream(assistantId, false, streamController);
               return;
             }
             // 409：上一轮刚收尾、登记表还没清。短退避后重发同一条，不把排队消息丢掉
@@ -829,25 +1137,36 @@ export function createChat(sessionId: string) {
               return;
             }
             // 断线：按 1s / 2s / 4s 退避重试续流，最多 3 次；耗尽后才提示
-            // 错误分支不会触发 onClose（sse.ts 在错误路径只调 onError），收尾由续流逻辑负责
-            void recoverAfterDrop(assistantId, error);
+            // 错误分支不会触发 onClose（sse.ts 在错误路径只调 onError），收尾由续流逻辑负责。
+            // 首帧超时另给宽限：服务端可能还在初始化，此刻探活会误报「没有活跃轮次」
+            const beforeFirstFrame = error instanceof SseTimeoutError && error.beforeFirstFrame;
+            void recoverAfterDrop(assistantId, error, beforeFirstFrame);
           },
           onClose: () => {
-            // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者），
-            // 但本页已收不到后续帧，明确告知用户而不是让气泡静默停住
-            if (!done && !controller?.signal.aborted) {
-              pushNotice('连接已中断，本轮仍在后台运行；重新进入该会话可继续接收', 'warn');
+            // 这条流已被新流接替：收尾、提示都交给新流
+            if (controller !== streamController) return;
+            // 主动中止（切前台重连 / 关闭页面）不算断线，由发起方决定后续
+            if (streamController.signal.aborted) {
+              finishStream(assistantId, done, streamController);
+              return;
             }
-            finishStream(assistantId, done);
+            if (!done) {
+              // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者）。
+              // 代理空闲回收、服务端寿命兜底都会走到这里，自动接回而不是让气泡静默停住
+              void recoverAfterDrop(assistantId, new Error('连接已中断，本轮仍在后台运行'));
+              return;
+            }
+            finishStream(assistantId, true, streamController);
           },
         },
-        controller.signal,
+        streamController.signal,
+        { idleMs: DEFAULT_IDLE_MS, firstFrameMs: DEFAULT_FIRST_FRAME_MS },
       );
 
       if (!conflict) break;
       if (attempt >= 3) {
         // 撤回刚追加的占位气泡：消息本身放回队首，等上一轮真正收尾后再发
-        finishStream(assistantId, false);
+        finishStream(assistantId, false, streamController);
         setItems((list) => list.filter((item) => item.id !== userItem.id && item.id !== assistantId));
         pushNotice('上一轮尚未结束，这条消息已放回队列', 'warn');
         return false;
@@ -890,6 +1209,62 @@ export function createChat(sessionId: string) {
     showToast('确认已超时，按拒绝处理', 'error');
   }
 
+  /** 回传问题答案；answers 必须覆盖本次提问的每一题（服务端按问题正文校验）。 */
+  async function resolveQuestion(answers: UserQuestionAnswer[]): Promise<void> {
+    const request = pendingQuestion();
+    if (!request) return;
+    setPendingQuestion(null);
+    try {
+      await post('/agent/answer', {
+        sessionId,
+        questionId: request.questionId,
+        answers,
+      });
+    } catch (error) {
+      // 404 = 服务端已无此提问（过期或已作答），重试没有意义；其余失败把弹窗放回去让用户重试
+      if (!(error instanceof ApiError && error.code === 404)) restoreQuestion(request);
+      showToast((error as Error).message, 'error');
+    }
+  }
+
+  /** 用户取消作答：按「已取消」收尾，不算拒绝、不失败本轮。 */
+  async function cancelQuestion(): Promise<void> {
+    const request = pendingQuestion();
+    if (!request) return;
+    setPendingQuestion(null);
+    try {
+      await post('/agent/answer', {
+        sessionId,
+        questionId: request.questionId,
+        cancelled: true,
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 404)) restoreQuestion(request);
+      showToast((error as Error).message, 'error');
+    }
+  }
+
+  /** 回滚失败的提交；期间已收到新提问时不用旧问题覆盖界面。 */
+  function restoreQuestion(request: PendingQuestionRequest): void {
+    if (pendingQuestion()) return;
+    setPendingQuestion(request);
+  }
+
+  /** 前端倒计时到点：按「已取消」回传，避免只清界面而服务端仍在等。 */
+  function questionTimeout(): void {
+    const request = pendingQuestion();
+    setPendingQuestion(null);
+    showToast('提问已超时，已跳过作答', 'error');
+    if (!request) return;
+    void post('/agent/answer', {
+      sessionId,
+      questionId: request.questionId,
+      cancelled: true,
+    }).catch(() => {
+      // 服务端自身也会超时收尾，这里失败无需打扰用户（界面已按超时清空）
+    });
+  }
+
   /** 把选中的文件加入待发送队列并逐个上传。 */
   async function addFiles(files: File[]): Promise<void> {
     if (files.length === 0) return;
@@ -923,16 +1298,23 @@ export function createChat(sessionId: string) {
         showToast(`${extension} 无法解码，请先转换为 PNG 或 JPEG`, 'error');
         continue;
       }
-      if (policy && !file.type.startsWith('image/') && file.size > policy.maxTextBytes) {
+      if (policy && !isImageAttachment(policy, file) && file.size > policy.maxTextBytes) {
         showToast(`文本类附件不能超过 ${formatBytes(policy.maxTextBytes)}`, 'error');
         continue;
       }
       accepted.push(file);
     }
 
+    let compressedCount = 0;
+    let originalTotal = 0;
+    let compressedTotal = 0;
+
     for (const file of accepted) {
       const id = nextId();
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      const imageLike = isImageAttachment(policy, file);
+
+      // 先建 pending 项再压缩：解码 + 多轮重编码要几秒，不能期间界面毫无反馈
+      let previewUrl = imageLike ? URL.createObjectURL(file) : undefined;
       const item: PendingAttachment = {
         id,
         fileName: file.name,
@@ -943,11 +1325,68 @@ export function createChat(sessionId: string) {
       };
       setPending((list) => [...list, item]);
 
+      /** 预处理阶段失败/超限：撤掉刚建的 pending 项并提示。 */
+      const reject = (reason: string): void => {
+        setPending((list) => list.filter((entry) => entry.id !== id));
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        showToast(`${file.name}：${reason}`, 'error');
+      };
+
+      let upload = file;
+      if (policy && imageLike) {
+        if (file.size > policy.maxImageUploadBytes) {
+          reject(`图片不能超过 ${formatBytes(policy.maxImageUploadBytes)}`);
+          continue;
+        }
+
+        // 图片先在本地缩放/重编码：别把几 MB 原图整份 Base64 上传，解码压力也留在浏览器侧
+        try {
+          const prepared = await prepareImageForUpload(
+            file,
+            policy.maxImageEdge,
+            policy.maxImageBytes,
+            policy.maxImagePixels,
+          );
+          if (prepared.rejectReason) {
+            reject(prepared.rejectReason);
+            continue;
+          }
+          upload = prepared.file;
+          if (prepared.compressed) {
+            compressedCount += 1;
+            originalTotal += file.size;
+            compressedTotal += upload.size;
+          }
+        } catch (error) {
+          reject((error as Error).message);
+          continue;
+        }
+
+        if (upload !== file) {
+          // 换成压缩后的结果：预览与体积一起更新，旧的对象 URL 立即回收
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          previewUrl = URL.createObjectURL(upload);
+          setPending((list) =>
+            list.map((entry) =>
+              entry.id === id
+                ? {
+                    ...entry,
+                    fileName: upload.name,
+                    mediaType: upload.type || entry.mediaType,
+                    size: upload.size,
+                    previewUrl,
+                  }
+                : entry,
+            ),
+          );
+        }
+      }
+
       try {
-        const contentBase64 = await fileToBase64(file);
+        const contentBase64 = await fileToBase64(upload);
         const result = await post<AttachmentUploadResult>('/attachment/upload', {
           sessionId,
-          files: [{ fileName: file.name, contentBase64 }],
+          files: [{ fileName: upload.name, contentBase64 }],
         });
 
         const uploaded = result?.accepted?.[0];
@@ -973,6 +1412,13 @@ export function createChat(sessionId: string) {
         showToast(`${file.name}：${message}`, 'error');
       }
     }
+
+    if (compressedCount > 0) {
+      showToast(
+        `已压缩 ${compressedCount} 张图片：${formatBytes(originalTotal)} → ${formatBytes(compressedTotal)}`,
+        'info',
+      );
+    }
   }
 
   function removePending(id: string): void {
@@ -983,8 +1429,31 @@ export function createChat(sessionId: string) {
     });
   }
 
+  /**
+   * 页面回到前台 / 网络恢复时主动接回后台轮次。
+   *
+   * 后台期间连接可能已被 NAT 或系统休眠断开，而本地 `controller` 仍在，`resume()` 会被
+   * 「本地流还活着」的短路挡掉；这里走断线恢复流程，先释放本地流再探活续流。
+   */
+  function reconnect(): void {
+    if (disposed || recovering || !streaming() || !activeAssistantId) return;
+    // 先掐掉本地流：被 NAT / 休眠半死的连接可能永远不会自己报错，
+    // 不收掉就会出现「旧流 + 新 attach」两条流同时写同一气泡
+    controller?.abort();
+    void recoverAfterDrop(activeAssistantId, new Error('连接已中断，正在重连'));
+  }
+
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') reconnect();
+  };
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('online', reconnect);
+
   function dispose(): void {
     disposed = true;
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('online', reconnect);
     controller?.abort();
     pending().forEach((item) => {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -999,6 +1468,7 @@ export function createChat(sessionId: string) {
     streaming,
     runId,
     confirmation,
+    pendingQuestion,
     pending,
     queue,
     plans,
@@ -1009,6 +1479,9 @@ export function createChat(sessionId: string) {
     stop,
     resolveConfirm,
     confirmTimeout,
+    resolveQuestion,
+    cancelQuestion,
+    questionTimeout,
     addFiles,
     removePending,
     removeQueued,

@@ -104,6 +104,22 @@ public sealed class AgentRunHandle
     private string _text = "";
     private string _thinking = "";
     private AgentRunConfirmationSnapshot? _pendingConfirmation;
+    private AgentRunQuestionSnapshot? _pendingQuestion;
+
+    /// <summary>发起提问的工具调用标识；该调用完成/失败即代表提问已结束，待回答提问随之作废。</summary>
+    private string? _pendingQuestionCallId;
+
+    /// <summary>提问工具的注册名（工具组以该名暴露给模型，见 InteractionToolPlugin）。</summary>
+    private const string AskUserQuestionToolName = "AskUserQuestion";
+
+    /// <summary>当前思考区间起点（Unix 毫秒）；0 表示没有进行中的思考区间。</summary>
+    private long _thinkingStartedAtMs;
+
+    /// <summary>当前思考区间最后一帧的时刻（Unix 毫秒）。</summary>
+    private long _thinkingLastAtMs;
+
+    /// <summary>工具调用起点（Unix 毫秒），按调用标识记录。</summary>
+    private readonly Dictionary<string, long> _toolStartedAtMs = new(StringComparer.Ordinal);
 
     /// <summary>当前阶段；锁内写、锁外读（<see cref="IsCompleted"/> / <see cref="Stage"/>），用 volatile 保证可见性。</summary>
     private volatile AgentRunStage _stage = AgentRunStage.Running;
@@ -207,9 +223,11 @@ public sealed class AgentRunHandle
             }
 
             var seq = ++_seq;
-            Accumulate(frame, seq);
+            // 序号同时写进帧本身：订阅者泵要按帧输出 `id:` 行，重连时前端才能拿它当 fromSeq
+            var stamped = frame with { Seq = seq };
+            Accumulate(stamped, seq);
 
-            _backlog.Enqueue((seq, frame));
+            _backlog.Enqueue((seq, stamped));
             while (_backlog.Count > _backlogCapacity)
             {
                 _backlog.Dequeue();
@@ -217,7 +235,7 @@ public sealed class AgentRunHandle
 
             foreach (var pair in _subscribers)
             {
-                if (!pair.Writer.TryWrite(frame))
+                if (!pair.Writer.TryWrite(stamped))
                 {
                     (slow ??= []).Add(pair);
                 }
@@ -305,6 +323,7 @@ public sealed class AgentRunHandle
         List<ChannelWriter<AgentSseFrame>> writers;
         lock (_gate)
         {
+            CloseThinkingSegment();
             _stage = stage;
             writers = _subscribers.Select(x => x.Writer).ToList();
             _subscribers.Clear();
@@ -372,12 +391,13 @@ public sealed class AgentRunHandle
             AttachmentsAdded = _attachmentsAdded,
             AttachmentsSkipped = _attachmentsSkipped,
             Notices = [.. _notices],
-            PendingConfirmation = _pendingConfirmation
+            PendingConfirmation = _pendingConfirmation,
+            PendingQuestion = _pendingQuestion
         };
 
         // 快照里的 Seq 就是缓冲末尾的序号，正文/工具/提示也都是同一把锁内取的最新值，
-        // 因此不需要再补发缓冲里的帧
-        return [AgentSseFrame.Create(AgentSseEventNames.RunSnapshot, snapshot)];
+        // 因此不需要再补发缓冲里的帧；帧自身也带同一序号，前端可直接续传
+        return [AgentSseFrame.Create(AgentSseEventNames.RunSnapshot, snapshot) with { Seq = _seq }];
     }
 
     /// <summary>按帧名累积快照。解析失败只记日志，不让坏帧掀翻轮次。</summary>
@@ -389,6 +409,8 @@ public sealed class AgentRunHandle
             {
                 case AgentSseEventNames.TextDelta:
                 {
+                    // 正文出现即思考区间结束：与段落「连续同类型」口径一致
+                    CloseThinkingSegment();
                     var delta = ReadString(frame.Data, "delta") ?? "";
                     _text += delta;
                     AppendTextSegment(AgentRunSegmentSnapshot.TextKind, delta);
@@ -397,17 +419,31 @@ public sealed class AgentRunHandle
 
                 case AgentSseEventNames.ThinkDelta:
                 {
+                    var at = ReadLong(frame.Data, "at") ?? NowMs();
+                    if (_thinkingStartedAtMs == 0)
+                    {
+                        _thinkingStartedAtMs = at;
+                    }
+
+                    _thinkingLastAtMs = at;
                     var delta = ReadString(frame.Data, "delta") ?? "";
                     _thinking += delta;
-                    AppendTextSegment(AgentRunSegmentSnapshot.ThinkingKind, delta);
+                    // 新开的思考段带上区间起点，重连后才能接着算完整耗时
+                    if (AppendTextSegment(AgentRunSegmentSnapshot.ThinkingKind, delta))
+                    {
+                        _segments[^1] = _segments[^1] with { StartedAtMs = at };
+                    }
                     break;
                 }
 
                 case AgentSseEventNames.ToolStarted:
                 {
+                    CloseThinkingSegment();
                     var callId = ReadString(frame.Data, "callId") ?? "";
+                    var at = ReadLong(frame.Data, "at") ?? NowMs();
                     // 同一调用重试：移除旧段落，保持画面里只有最新一次
                     _segments.RemoveAll(x => x.Tool?.CallId == callId);
+                    _toolStartedAtMs[callId] = at;
                     _segments.Add(new AgentRunSegmentSnapshot
                     {
                         Kind = AgentRunSegmentSnapshot.ToolKind,
@@ -416,7 +452,8 @@ public sealed class AgentRunHandle
                             CallId = callId,
                             Name = ReadString(frame.Data, "name") ?? "",
                             Arguments = ReadRaw(frame.Data, "arguments"),
-                            Status = "running"
+                            Status = "running",
+                            StartedAtMs = at
                         }
                     });
                     _pendingConfirmation = null;
@@ -427,12 +464,16 @@ public sealed class AgentRunHandle
                 {
                     var callId = ReadString(frame.Data, "callId") ?? "";
                     var resultSummary = ReadString(frame.Data, "resultSummary");
+                    var durationMs = TakeToolDurationMs(callId, ReadLong(frame.Data, "at"));
                     UpdateToolSegment(callId, tool => tool with
                     {
                         Status = "done",
                         ResultSummary = resultSummary,
-                        Error = null
+                        Error = null,
+                        DurationMs = durationMs
                     });
+                    // 提问工具跑完（用户已作答/已取消）即作废待回答提问，避免刷新后弹回旧问题
+                    ClearQuestionOnToolEnd(callId);
                     break;
                 }
 
@@ -440,12 +481,15 @@ public sealed class AgentRunHandle
                 {
                     var callId = ReadString(frame.Data, "callId") ?? "";
                     var error = ReadString(frame.Data, "error");
+                    var durationMs = TakeToolDurationMs(callId, ReadLong(frame.Data, "at"));
                     UpdateToolSegment(callId, tool => tool with
                     {
                         Status = "failed",
                         ResultSummary = null,
-                        Error = error
+                        Error = error,
+                        DurationMs = durationMs
                     });
+                    ClearQuestionOnToolEnd(callId);
                     break;
                 }
 
@@ -477,13 +521,35 @@ public sealed class AgentRunHandle
                         ToolName = ReadString(frame.Data, "toolName") ?? "",
                         Arguments = ReadRaw(frame.Data, "arguments"),
                         TimeoutSeconds = timeout,
+                        Origin = ReadOrigin(frame.Data),
                         ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(timeout)
                     };
                     break;
                 }
 
+                case AgentSseEventNames.ToolQuestion:
+                {
+                    var timeout = ReadInt(frame.Data, "timeoutSeconds") ?? 0;
+                    _pendingQuestion = new AgentRunQuestionSnapshot
+                    {
+                        QuestionId = ReadString(frame.Data, "questionId") ?? "",
+                        QuestionsJson = ReadRaw(frame.Data, "questions"),
+                        TimeoutSeconds = timeout,
+                        Origin = ReadOrigin(frame.Data),
+                        ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(timeout)
+                    };
+                    // 记下发起提问的调用：只在该调用收尾时作废，避免并行编排里别的工具完成误清
+                    _pendingQuestionCallId = _segments
+                        .LastOrDefault(x => x.Tool is { Status: "running" }
+                            && string.Equals(x.Tool.Name, AskUserQuestionToolName, StringComparison.Ordinal))
+                        ?.Tool?.CallId;
+                    break;
+                }
+
                 case AgentSseEventNames.ToolDenied:
                     _pendingConfirmation = null;
+                    _pendingQuestion = null;
+                    _pendingQuestionCallId = null;
                     _notices.Add(new AgentRunNoticeSnapshot { Event = frame.Name, Data = frame.Data });
                     break;
 
@@ -501,6 +567,11 @@ public sealed class AgentRunHandle
                     _notices.Add(new AgentRunNoticeSnapshot { Event = frame.Name, Data = frame.Data });
                     break;
 
+                case AgentSseEventNames.ContextCompacted:
+                    // 压缩提示是独立提示条目：重连/刷新后由快照回放，不能只留在实时流里
+                    _notices.Add(new AgentRunNoticeSnapshot { Event = frame.Name, Data = frame.Data });
+                    break;
+
                 default:
                     // done / session 等不参与快照：前端重放时由历史接口负责
                     break;
@@ -513,22 +584,63 @@ public sealed class AgentRunHandle
     }
 
     /// <summary>追加文本段落：与末段同类型时并入，否则新开一段，保证时间线顺序。</summary>
-    private void AppendTextSegment(string kind, string delta)
+    /// <returns>是否新开了一段（false 表示并入末段）。</returns>
+    private bool AppendTextSegment(string kind, string delta)
     {
         if (string.IsNullOrEmpty(delta))
         {
-            return;
+            return false;
         }
 
         if (_segments.Count > 0 && _segments[^1].Kind == kind && _segments[^1].Tool is null)
         {
             var last = _segments[^1];
             _segments[^1] = last with { Text = last.Text + delta };
-            return;
+            return false;
         }
 
         _segments.Add(new AgentRunSegmentSnapshot { Kind = kind, Text = delta });
+        return true;
     }
+
+    /// <summary>落定进行中的思考区间：把耗时写到时间线末尾的思考段上。</summary>
+    private void CloseThinkingSegment()
+    {
+        if (_thinkingStartedAtMs == 0)
+        {
+            return;
+        }
+
+        var durationMs = (int)Math.Max(0, _thinkingLastAtMs - _thinkingStartedAtMs);
+        _thinkingStartedAtMs = 0;
+        _thinkingLastAtMs = 0;
+        if (durationMs <= 0)
+        {
+            return;
+        }
+
+        if (_segments.Count > 0
+            && _segments[^1].Tool is null
+            && _segments[^1].Kind == AgentRunSegmentSnapshot.ThinkingKind)
+        {
+            _segments[^1] = _segments[^1] with { DurationMs = durationMs };
+        }
+    }
+
+    /// <summary>取工具耗时：用开始记录与结束时刻做差；没有开始记录时返回 null。</summary>
+    /// <param name="callId">调用标识。</param>
+    /// <param name="endedAtMs">结束时刻（Unix 毫秒）；缺失时取当前时刻。</param>
+    private int? TakeToolDurationMs(string callId, long? endedAtMs)
+    {
+        if (string.IsNullOrEmpty(callId) || !_toolStartedAtMs.Remove(callId, out var startedAtMs))
+        {
+            return null;
+        }
+
+        return (int)Math.Max(0, (endedAtMs ?? NowMs()) - startedAtMs);
+    }
+
+    private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     /// <summary>就地更新工具段落的状态；调用已不在时间线上时忽略。</summary>
     private void UpdateToolSegment(string callId, Func<AgentRunToolSnapshot, AgentRunToolSnapshot> mutate)
@@ -543,6 +655,18 @@ public sealed class AgentRunHandle
         }
     }
 
+    /// <summary>提问工具调用收尾：仅当该调用就是发起提问的那次时才作废待回答提问。</summary>
+    private void ClearQuestionOnToolEnd(string callId)
+    {
+        if (_pendingQuestion is null || _pendingQuestionCallId is null)
+            return;
+        if (!string.Equals(_pendingQuestionCallId, callId, StringComparison.Ordinal))
+            return;
+
+        _pendingQuestion = null;
+        _pendingQuestionCallId = null;
+    }
+
     private static string? ReadString(string data, string name)
     {
         using var doc = JsonDocument.Parse(data);
@@ -553,6 +677,30 @@ public sealed class AgentRunHandle
             : null;
     }
 
+    private static string? ReadString(JsonElement root, string name)
+        => root.ValueKind == JsonValueKind.Object
+           && root.TryGetProperty(name, out var value)
+           && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    /// <summary>读取确认来源对象（<c>{ nodeId, role, description }</c>）；缺失或类型不符返回 <c>null</c>。</summary>
+    private static ToolConfirmationOrigin? ReadOrigin(string data)
+    {
+        using var doc = JsonDocument.Parse(data);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object
+            || !doc.RootElement.TryGetProperty("origin", out var origin)
+            || origin.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new ToolConfirmationOrigin(
+            ReadString(origin, "nodeId"),
+            ReadString(origin, "role"),
+            ReadString(origin, "description"));
+    }
+
     private static int? ReadInt(string data, string name)
     {
         using var doc = JsonDocument.Parse(data);
@@ -560,6 +708,17 @@ public sealed class AgentRunHandle
             && doc.RootElement.TryGetProperty(name, out var value)
             && value.ValueKind == JsonValueKind.Number
             && value.TryGetInt32(out var number)
+            ? number
+            : null;
+    }
+
+    private static long? ReadLong(string data, string name)
+    {
+        using var doc = JsonDocument.Parse(data);
+        return doc.RootElement.ValueKind == JsonValueKind.Object
+            && doc.RootElement.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out var number)
             ? number
             : null;
     }
