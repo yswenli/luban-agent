@@ -105,9 +105,10 @@ public class ModelProfileUnitTest
     }
 
     [TestMethod]
-    public void ContextTiers_DefaultIsFirstTier_AndNormalizeDropsOutOfRange()
+    public void ContextTiers_DefaultIsLastTier_AndNormalizeDropsOutOfRange()
     {
-        Assert.AreEqual(300_000, ContextTiers.DefaultTier(1_048_576), "达到 300K 的模型默认档固定 300K");
+        Assert.AreEqual(1_048_576, ContextTiers.DefaultTier(1_048_576), "默认不提前压缩：末档即窗口本身");
+        Assert.AreEqual(400_000, ContextTiers.DefaultTier(400_000), "窗口不足整档时默认取末档");
         Assert.AreEqual(128_000, ContextTiers.DefaultTier(128_000), "窗口小于 300K 时默认档即窗口");
         Assert.IsNull(ContextTiers.DefaultTier(null));
 

@@ -85,6 +85,37 @@ export function formatTime(value: string | null | undefined): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** 本机日历日差（今天 = 0，昨天 = 1）；跨月跨年也按日历日算，不受时区偏移影响。 */
+function calendarDayOffset(date: Date): number {
+  const now = new Date();
+  const target = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - target) / 86_400_000);
+}
+
+/** 本机日期键 `YYYY-MM-DD`（消息时间只用日期部分，不带时区信息）。 */
+function localDateText(date: Date): string {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * 对话消息时间：今天只显示时分，昨天 / 前天加中文前缀，更早显示 `YYYY-MM-DD HH:mm`。
+ * 日期按本机日历日比较，避免「23 小时前」与「昨天」互相矛盾。
+ */
+export function formatMessageTime(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const time = formatTime(value);
+  const offset = calendarDayOffset(date);
+  if (offset === 0) return time;
+  if (offset === 1) return `昨天 ${time}`;
+  if (offset === 2) return `前天 ${time}`;
+  return `${localDateText(date)} ${time}`;
+}
+
 /**
  * 把毫秒耗时格式化为紧凑中文：`<1 秒`、`43 秒`、`4 分 43 秒`、`1 小时 2 分`。
  * 缺失或非正数返回空串，便于调用方直接条件渲染。
@@ -150,6 +181,17 @@ export function formatBytes(bytes: number | null | undefined): string {
     unit += 1;
   }
   return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+/**
+ * 紧凑 token 数：满 1 万按万计并保留一位小数（250571 → 25.1万），
+ * 小数位为 0 时省掉（70000 → 7万）；不足 1 万显示原值。
+ */
+export function formatTokenCompact(tokens: number): string {
+  if (!Number.isFinite(tokens) || tokens <= 0) return '0';
+  if (tokens < 10_000) return `${Math.round(tokens)}`;
+  const value = (tokens / 10_000).toFixed(1);
+  return `${value.endsWith('.0') ? value.slice(0, -2) : value}万`;
 }
 
 /** 文件扩展名（小写，含点）；无扩展名返回空串。 */

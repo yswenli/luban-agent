@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
@@ -9,7 +9,15 @@ import { SideResizer } from '../components/SideResizer';
 import { ScreenshotOverlay } from '../components/screenshot/ScreenshotOverlay';
 import { isCaptureSupported } from '../components/screenshot/capture';
 import { post } from '../lib/api';
-import { formatBytes, formatCompactDuration, formatDuration, formatTime, isImageMediaType, truncate } from '../lib/format';
+import {
+  formatBytes,
+  formatCompactDuration,
+  formatDuration,
+  formatMessageTime,
+  formatTokenCompact,
+  isImageMediaType,
+  truncate,
+} from '../lib/format';
 import { openSession, openSettings, openSessions, openWiki } from '../lib/router';
 import { settingsApi } from '../lib/settings';
 import { sidebarCollapsed, useNarrowViewport } from '../lib/sidebar';
@@ -96,14 +104,26 @@ export function ChatPage(props: { sessionId: string }) {
   /** 距底部容差：滚轮惯性与小数像素下，这个距离内仍按「贴底」处理。 */
   const FOLLOW_THRESHOLD = 32;
   /**
-   * 跟随状态：用户主动上滚即解锁，回到底部或主动发送时重新上锁。
+   * 跟随状态：滚动位置进入底部容差即上锁，用户上滚离开底部容差才解锁。
    * 用普通变量而非 signal——它只被事件与渲染读取，进响应式图会让滚动反过来触发 effect。
    */
   let pinned = true;
-  /** 用户主动上滚的锁存：即使还在容差带内也不重新上锁，避免触控板小步上滚被反复拉回。 */
-  let userHeld = false;
   /** 跟随写入的 rAF 句柄：同一帧内多次 items 变更只写一次 scrollTop。 */
   let followRaf = 0;
+  /** 上一帧跟随的投递时刻：rAF 不执行时用来判定「这帧已经等太久」。 */
+  let followAt = 0;
+  /** 上一次 scroll 的 scrollTop：用来识别滚动方向（滚动条拖动、键盘没有 wheel 事件）。 */
+  let lastScrollTop = 0;
+  /** 滚动停止后的校验定时器（`scrollend` 的跨平台等价做法）。 */
+  let scrollSettleTimer = 0;
+  /**
+   * 用户上滚手势的截止时刻：手势进行中（哪怕还在容差带内）先不跟随。
+   * 否则触控板每帧十几像素的上滚会被逐帧拉回底部，位移永远攒不到容差之外。
+   */
+  let followHoldUntil = 0;
+
+  /** 用户手势保持跟随暂停的时长（毫秒）；滚动停止校验的 160ms 之内必然到期。 */
+  const FOLLOW_HOLD_MS = 200;
 
   const [canScroll, setCanScroll] = createSignal(false);
   const [atBottom, setAtBottom] = createSignal(true);
@@ -116,10 +136,69 @@ export function ChatPage(props: { sessionId: string }) {
 
   /** 本会话生效的生成参数；尚未拉取时为 null，按「跟随模型」处理。 */
   const generation = createMemo(() => sessionGeneration(props.sessionId));
+
+  /**
+   * 圆环分母：模型上下文窗口优先；窗口未知时取上下文预算档位的最大值兜底
+   * （档位本身也由窗口派生，两者都没有时不画圆环，只保留数字）。
+   */
+  const tokenLimit = createMemo(() => {
+    const windowSize = generation()?.contextWindow;
+    if (windowSize && windowSize > 0) return windowSize;
+    const tiers = generation()?.contextTiers ?? bootstrap()?.contextTiers ?? [];
+    return tiers.length > 0 ? Math.max(...tiers) : 0;
+  });
+  /**
+   * 当前窗口内的已用量：会话累计 Token 对窗口取余（跨过一个整窗口即回卷）。
+   * 累计不足一个窗口时余数就是累计值，按实际用量展示；
+   * 余数为 0 且累计不为 0 说明刚好用满整数个窗口，按满窗口显示，避免误判成「没用」。
+   * 后端只给累计值，拿不到「最近一次请求的输入 Token」，以整窗口回卷近似当前上下文占用。
+   */
+  const tokenUsedInWindow = createMemo(() => {
+    const limit = tokenLimit();
+    const total = totalTokens();
+    if (limit <= 0) return total;
+    const rest = total % limit;
+    return rest === 0 && total > 0 ? limit : rest;
+  });
+  /** 圆环比例 = 当前窗口内已用 ÷ 窗口；窗口未知时为 0（不画环，只留数字）。 */
+  const tokenRatio = createMemo(() => {
+    const limit = tokenLimit();
+    return limit > 0 ? Math.min(1, Math.max(0, tokenUsedInWindow() / limit)) : 0;
+  });
+  /** 悬停提示：窗口内用量 / 窗口与百分比，并附会话累计值；窗口来自预算档位时标注为估算。 */
+  const tokenUsageTitle = () => {
+    const total = totalTokens().toLocaleString('zh-CN');
+    const limit = tokenLimit();
+    if (limit <= 0) return `当前会话累计已消费 ${total} token`;
+    const percent = (tokenRatio() * 100).toFixed(1);
+    const fromWindow = (generation()?.contextWindow ?? 0) > 0;
+    const used = tokenUsedInWindow().toLocaleString('zh-CN');
+    const window = limit.toLocaleString('zh-CN');
+    return `当前窗口已用 ${used} / ${window} token（${percent}%${fromWindow ? '' : '，窗口按上下文预算档位估算'}）；会话累计 ${total} token`;
+  };
+
   /** 当前思考档位（枚举名）；空串即跟随模型。 */
   const currentEffort = () => generation()?.reasoningEffort ?? '';
   /** 思考档位选项：会话模型档案优先，未拉到时退回首屏数据。 */
   const effortOptions = () => generation()?.reasoningEfforts ?? bootstrap()?.reasoningEfforts ?? [];
+
+  /** 上下文预算档位选项：会话模型优先，未拉到时退回首屏数据；空表示不显示控件。 */
+  const tierOptions = () => generation()?.contextTiers ?? bootstrap()?.contextTiers ?? [];
+  /** 菜单里展示的模型窗口：会话参数已拉到时以它为准（null 即未知），未拉到时退回首屏数据；0 表示未知。 */
+  const tierWindow = () => {
+    const current = generation();
+    return current ? (current.contextWindow ?? 0) : (bootstrap()?.contextWindow ?? 0);
+  };
+  /**
+   * 选中的档位：服务端 `contextBudget` 是用户挑的原始档位；
+   * 它缺失时按后端默认（末档，即窗口本身）勾选——`contextTier` 是留白后的触发点，不能直接比对。
+   */
+  const currentTier = () => {
+    const selected = generation()?.contextBudget;
+    if (selected != null) return selected;
+    const tiers = tierOptions();
+    return tiers.length > 0 ? Math.max(...tiers) : null;
+  };
 
   const commandQuery = createMemo(() => {
     const value = input();
@@ -199,53 +278,84 @@ export function ChatPage(props: { sessionId: string }) {
     // 不在这里 abort：会话实例常驻，切换页面时流式回合继续在后台跑
 
     const element = scrollEl;
+    lastScrollTop = element.scrollTop;
     const onScroll = () => {
-      const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
-      // 真正到底（含跳转落点）才重新上锁；容差带内被 userHeld 锁住时不回锁
-      if (distance <= 1) {
-        userHeld = false;
+      const top = element.scrollTop;
+      const distance = element.scrollHeight - top - element.clientHeight;
+      // 内容增长与跟随写入只会让 scrollTop 变大；scroll 事件又是异步派发的，迟到时读到的
+      // 已经是写入后的位置与增长后的高度。所以只有「位置确实变小且已离开底部容差」
+      // 才说明用户拖/点了滚动条或滚了滚轮——这里正是流式追加期间曾经误判停跟的地方。
+      const movedUp = top < lastScrollTop - 1;
+      lastScrollTop = top;
+      // 位置变小只可能来自用户操作（拖/点滚动条、滚轮、键盘）或内容在上方收缩；
+      // 两种情况都先暂停跟随，让位移落地，否则容差带内会被逐帧拉回底部
+      if (movedUp) followHoldUntil = performance.now() + FOLLOW_HOLD_MS;
+
+      if (distance <= FOLLOW_THRESHOLD) {
+        // 触底（含容差）即锁住：之后内容继续追加也保持跟随
         pinned = true;
         setHasNew(false);
-      } else if (distance > FOLLOW_THRESHOLD) {
+      } else if (movedUp) {
+        // 位置真正离开底部：解锁跟随，由用户自己控制阅读位置
         pinned = false;
       }
       syncScrollState();
     };
     const onWheel = (event: WheelEvent) => {
-      // 上滚第一时间解锁：等 scroll 事件可能已被下一帧的跟随写回
-      if (event.deltaY < 0) {
-        userHeld = true;
-        pinned = false;
-        return;
+      // 用户正在操作滚动：先撤销尚未落地的跟随写入，否则同一帧内会被拉回底部，
+      // 上滚的位移也就读不到了
+      if (followRaf) {
+        cancelAnimationFrame(followRaf);
+        followRaf = 0;
       }
       if (event.deltaY > 0 && isNearBottom()) {
-        userHeld = false;
         pinned = true;
         setHasNew(false);
+        return;
       }
+      // 上滚不在这里解锁：等这次滚动的 scroll 事件读到真实位移，
+      // 只有滚动条真正离开底部容差才停跟，一像素抖动不会打断跟随；
+      // 但手势期间必须暂停跟随，否则小步上滚会被逐帧拉回底部
+      if (event.deltaY < 0) followHoldUntil = performance.now() + FOLLOW_HOLD_MS;
+    };
+    // 滚动停止后再校验一次：覆盖平滑跳转落点、滚动条拖动、惯性滚动等没有 wheel 事件的场景
+    const onScrollSettled = () => {
+      window.clearTimeout(scrollSettleTimer);
+      scrollSettleTimer = window.setTimeout(() => {
+        // 手势已停止：解除暂停，容差内的停手位置就是底部，补一次贴底
+        followHoldUntil = 0;
+        relockIfNearBottom();
+        if (pinned) follow();
+        else syncScrollState();
+      }, 160);
     };
     // 视口变化会改变可视高度，按钮状态需要重算
     const onResize = () => {
+      relockIfNearBottom();
       if (pinned) follow();
       else syncScrollState();
     };
 
     element.addEventListener('scroll', onScroll, { passive: true });
+    element.addEventListener('scroll', onScrollSettled, { passive: true });
     element.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('resize', onResize);
 
     // 后台标签页不执行 rAF 回调：回到前台时补一次贴底，避免停在中途
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
+      relockIfNearBottom();
       if (pinned) stickToBottom();
       else syncScrollState();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // `<details>` 展开、图片加载等会改变内容高度：贴底时继续跟随，否则只刷新按钮状态
+    // 内容高度变化（流式追加、`<details>` 展开、图片加载）：贴底时继续跟随，否则只刷新按钮状态
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && threadEl) {
       observer = new ResizeObserver(() => {
+        // 高度突变可能凭空拉开距离但没有 scroll 事件：仍在容差内就自己纠回来
+        relockIfNearBottom();
         if (pinned) follow();
         else syncScrollState();
       });
@@ -256,10 +366,12 @@ export function ChatPage(props: { sessionId: string }) {
 
     onCleanup(() => {
       element.removeEventListener('scroll', onScroll);
+      element.removeEventListener('scroll', onScrollSettled);
       element.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       observer?.disconnect();
+      window.clearTimeout(scrollSettleTimer);
       if (followRaf) cancelAnimationFrame(followRaf);
     });
   });
@@ -269,8 +381,12 @@ export function ChatPage(props: { sessionId: string }) {
     chat.items();
     if (!scrollEl) return;
     if (!pinned) {
-      setHasNew(true);
-      return;
+      // 掉锁不一定伴随 scroll 事件（滚动锚定重选、节点替换）：仍在容差内就恢复跟随
+      relockIfNearBottom();
+      if (!pinned) {
+        setHasNew(true);
+        return;
+      }
     }
     follow();
   });
@@ -279,7 +395,7 @@ export function ChatPage(props: { sessionId: string }) {
   createEffect(() => {
     void props.sessionId;
     pinned = true;
-    userHeld = false;
+    followHoldUntil = 0;
     setHasNew(false);
   });
 
@@ -306,6 +422,17 @@ export function ChatPage(props: { sessionId: string }) {
     return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <= FOLLOW_THRESHOLD;
   }
 
+  /**
+   * 消费点回锁：掉锁不总是伴随 scroll 事件（滚动锚定重选、节点替换、高度突变），
+   * 只要位置又落回容差内，就恢复跟随。
+   */
+  function relockIfNearBottom(): void {
+    if (pinned || !scrollEl) return;
+    if (!isNearBottom()) return;
+    pinned = true;
+    setHasNew(false);
+  }
+
   /** 把真实滚动位置回写为界面状态（是否可滚、按钮方向）。 */
   function syncScrollState(): void {
     if (!scrollEl) return;
@@ -319,15 +446,30 @@ export function ChatPage(props: { sessionId: string }) {
   /** 跟随到最新：仅在上锁状态生效，rAF 合并，回调内复检避免抢用户滚动。 */
   function follow(): void {
     if (!pinned || !scrollEl) return;
+    // 用户上滚手势进行中：先让位移落地，容差带内的小步上滚不能逐帧拉回
+    if (performance.now() < followHoldUntil) return;
     // 后台标签页里 rAF 不执行：直接写滚动位置，否则内容一直涨而视图停在中途
     if (document.visibilityState === 'hidden') {
       scrollEl.scrollTop = scrollEl.scrollHeight;
       return;
     }
-    if (followRaf) return;
+    if (followRaf) {
+      // 窗口被遮挡/最小化但 visibilityState 仍是 visible 时，rAF 可能长时间不回调；
+      // 一直等下去会让 followRaf 永不清零、之后所有跟随都被这里挡掉（永久停更）。
+      // 超过 200ms 还没落地就直接同步补一次，并把这一帧作废。
+      if (performance.now() - followAt < 200) return;
+      cancelAnimationFrame(followRaf);
+      followRaf = 0;
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      syncScrollState();
+      return;
+    }
+    followAt = performance.now();
     followRaf = requestAnimationFrame(() => {
       followRaf = 0;
       if (!pinned || !scrollEl) return;
+      // 同一帧里用户刚开始上滚：这一帧让给用户
+      if (performance.now() < followHoldUntil) return;
       scrollEl.scrollTop = scrollEl.scrollHeight;
       syncScrollState();
     });
@@ -336,7 +478,7 @@ export function ChatPage(props: { sessionId: string }) {
   /** 强制贴底：发送消息、历史加载完成、会话切换时使用。 */
   function stickToBottom(): void {
     pinned = true;
-    userHeld = false;
+    followHoldUntil = 0;
     setHasNew(false);
     if (!scrollEl) return;
     if (followRaf) {
@@ -454,8 +596,8 @@ export function ChatPage(props: { sessionId: string }) {
     const after = currentEffort();
     // 换模型可能把原有档位判为不支持；服务端已回落为「跟随模型」，这里明确告知而不是静默
     if (before && before !== after) {
-      // 落库值对新模型无效：顺手清掉，避免换回老模型时又静默复活
-      await saveSessionGeneration(props.sessionId, '', null);
+      // 落库值对新模型无效：顺手清掉思考强度，档位保持不变（窗口会由后端按新模型收敛）
+      await saveSessionGeneration(props.sessionId, '', currentTier());
       showToast('当前模型不支持该思考档位，已改为跟随模型', 'info');
     }
   }
@@ -483,12 +625,17 @@ export function ChatPage(props: { sessionId: string }) {
       if (chat.streaming()) await chat.stop();
       return;
     }
+    // 附件没传完就发不出去：和发送按钮同一判定，先拦住，不能清空输入或贴底
+    if (chat.pending().some((item) => item.status === 'uploading')) {
+      showToast('附件还在上传，请稍候', 'info');
+      return;
+    }
 
     setInput('');
     closeMention();
     queueMicrotask(resizeTextarea);
-    // 立即发出的消息必须可见：重新上锁并贴底；排队消息不打断当前阅读位置
-    if (!chat.streaming()) stickToBottom();
+    // 自己发的消息必须立刻可见：无论直接发出还是排队，都重新上锁并贴底
+    stickToBottom();
     await chat.send(text, permissionModeKey(), currentEffort());
   }
 
@@ -550,7 +697,7 @@ export function ChatPage(props: { sessionId: string }) {
   /** 展开模型下拉：缓存为空时按供应商补齐一次列表（有 API Key 才会真正请求远端）。 */
   function openModelMenu(event: MouseEvent) {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    setModelMenu(menuAt(rect, { width: 300, height: 320, gap: 6, align: 'start' }));
+    setModelMenu(menuAt(rect, { width: 300, height: 420, gap: 6, align: 'start' }));
 
     const pending = (bootstrap()?.providers ?? []).filter((provider) => provider.models.length === 0);
     if (pending.length === 0) return;
@@ -659,8 +806,13 @@ export function ChatPage(props: { sessionId: string }) {
         </span>
         <div class="spacer" />
         <Show when={totalTokens() > 0}>
-          <span class="faint mono" title="当前会话 Token 用量">
-            当前会话已消费 {totalTokens()} token
+          <span class="token-usage" title={tokenUsageTitle()}>
+            <Show when={tokenLimit() > 0}>
+              <span class="token-ring" aria-hidden="true">
+                <span class="token-ring-value" style={{ '--p': tokenRatio() }} />
+              </span>
+            </Show>
+            <span class="token-usage-text">{formatTokenCompact(tokenUsedInWindow())}</span>
           </span>
         </Show>
         <button
@@ -696,7 +848,12 @@ export function ChatPage(props: { sessionId: string }) {
               </Show>
 
               {/* 会话没绑工作区时传 undefined（不改写相对链接）：让宿主回落到「当前工作区」会读到另一个项目的同名文件 */}
-              <Index each={chat.items()}>{(item) => <ChatRow item={item} workspaceId={session()?.workspaceId ?? undefined} />}</Index>
+              <Index each={chat.items()}>{(item) => <ChatRow
+                item={item}
+                workspaceId={session()?.workspaceId ?? undefined}
+                onRetry={(id) => chat.retryQueued(id)}
+                onCancel={(id) => chat.removeQueued(id)}
+              />}</Index>
 
               <Show when={chat.plans().length > 0}>
                 <div class="plan-strip">
@@ -751,34 +908,6 @@ export function ChatPage(props: { sessionId: string }) {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
           >
-            <Show when={chat.queue().length > 0}>
-              <div class="composer-queue">
-                <div class="queue-head">
-                  <Icon name="message" size={13} />
-                  <span>排队中 {chat.queue().length}</span>
-                  <span class="queue-hint">本轮结束后自动发送</span>
-                </div>
-                <For each={chat.queue()}>
-                  {(item) => (
-                    <div class="queue-item">
-                      <span class="queue-text" title={item.text}>
-                        {item.text}
-                      </span>
-                      <Show when={item.attachments.length > 0}>
-                        <span class="queue-files" title={`${item.attachments.length} 个附件`}>
-                          <Icon name="file" size={12} />
-                          {item.attachments.length}
-                        </span>
-                      </Show>
-                      <button class="queue-remove" title="取消排队" onClick={() => chat.removeQueued(item.id)}>
-                        <Icon name="close" size={12} />
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-
             <Show when={chat.pending().length > 0}>
               <div class="composer-pending">
                 <For each={chat.pending()}>
@@ -1107,8 +1236,8 @@ export function ChatPage(props: { sessionId: string }) {
                   classList={{ active: currentEffort() === option }}
                   onClick={() => {
                     setEffortMenu(null);
-                    // 上下文档位暂无控件：显式清除覆盖，避免把当前默认值钉成会话覆盖
-                    void saveSessionGeneration(props.sessionId, option, null);
+                    // 档位按整体替换提交：带上当前档位，避免切换思考强度时把它清掉
+                    void saveSessionGeneration(props.sessionId, option, currentTier());
                   }}
                 >
                   {effortLabel(option)}
@@ -1125,46 +1254,91 @@ export function ChatPage(props: { sessionId: string }) {
 
       <Show when={modelMenu()}>
         {(menu) => (
-          <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, width: '300px', 'max-height': '320px', overflow: 'auto' }} onClose={() => setModelMenu(null)}>
-            <For each={bootstrap()?.providers ?? []}>
-              {(provider) => (
-                <>
-                  <div class="menu-section">{provider.displayName}</div>
-                  <For each={provider.models}>
-                    {(model) => (
+          <PopMenu
+            style={{
+              left: `${menu().x}px`,
+              top: `${menu().y}px`,
+              width: '300px',
+              'max-height': '420px',
+              display: 'flex',
+              'flex-direction': 'column',
+              overflow: 'hidden',
+            }}
+            onClose={() => setModelMenu(null)}
+          >
+            <div class="menu-scroll">
+              <For each={bootstrap()?.providers ?? []}>
+                {(provider) => (
+                  <>
+                    <div class="menu-section">{provider.displayName}</div>
+                    <For each={provider.models}>
+                      {(model) => (
+                        <button
+                          class="menu-item"
+                          classList={{
+                            active:
+                              sessionModel(props.sessionId)?.providerId === provider.id &&
+                              sessionModel(props.sessionId)?.modelId === model,
+                          }}
+                          onClick={() => {
+                            setModelMenu(null);
+                            void switchSessionModel(provider.id, model);
+                          }}
+                        >
+                          <span class="mono">{model}</span>
+                          <div class="spacer" />
+                          <Show
+                            when={
+                              sessionModel(props.sessionId)?.providerId === provider.id &&
+                              sessionModel(props.sessionId)?.modelId === model
+                            }
+                          >
+                            <Icon name="check" size={15} />
+                          </Show>
+                        </button>
+                      )}
+                    </For>
+                  </>
+                )}
+              </For>
+              <Show when={(bootstrap()?.providers ?? []).length === 0}>
+                <div class="menu-item faint">还没有供应商</div>
+              </Show>
+              <Show when={modelsLoading()}>
+                <div class="menu-item faint">正在拉取模型列表…</div>
+              </Show>
+            </div>
+            <Show when={tierOptions().length > 0}>
+              <div class="menu-ctx">
+                <div class="menu-ctx-head">
+                  上下文预算
+                  <Show when={tierWindow() > 0}>
+                    <span class="win">
+                      窗口 <b>{formatTokenCompact(tierWindow())}</b>
+                    </span>
+                  </Show>
+                </div>
+                <For each={tierOptions()}>
+                  {(tier) => {
+                    const isDefault = tier === Math.max(...tierOptions());
+                    return (
                       <button
                         class="menu-item"
-                        classList={{
-                          active:
-                            sessionModel(props.sessionId)?.providerId === provider.id &&
-                            sessionModel(props.sessionId)?.modelId === model,
-                        }}
-                        onClick={() => {
-                          setModelMenu(null);
-                          void switchSessionModel(provider.id, model);
-                        }}
+                        classList={{ active: currentTier() === tier }}
+                        title="档位越小越早触发压缩：省 token，但更早丢弃历史"
+                        onClick={() => void saveSessionGeneration(props.sessionId, currentEffort(), tier)}
                       >
-                        <span class="mono">{model}</span>
+                        <span class="tier">{formatTokenCompact(tier)}</span>
+                        <span class="hint-role">{isDefault ? '默认' : '提前压缩'}</span>
                         <div class="spacer" />
-                        <Show
-                          when={
-                            sessionModel(props.sessionId)?.providerId === provider.id &&
-                            sessionModel(props.sessionId)?.modelId === model
-                          }
-                        >
+                        <Show when={currentTier() === tier}>
                           <Icon name="check" size={15} />
                         </Show>
                       </button>
-                    )}
-                  </For>
-                </>
-              )}
-            </For>
-            <Show when={(bootstrap()?.providers ?? []).length === 0}>
-              <div class="menu-item faint">还没有供应商</div>
-            </Show>
-            <Show when={modelsLoading()}>
-              <div class="menu-item faint">正在拉取模型列表…</div>
+                    );
+                  }}
+                </For>
+              </div>
             </Show>
           </PopMenu>
         )}
@@ -1289,7 +1463,14 @@ interface AssistantGroup {
   durationMs?: number;
 }
 
-function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
+function ChatRow(props: {
+  item: () => ChatItem;
+  workspaceId?: string;
+  /** 重试一条发送失败的消息。 */
+  onRetry: (id: string) => void;
+  /** 取消一条排队中 / 发送失败的消息。 */
+  onCancel: (id: string) => void;
+}) {
   const notice = () => {
     const value = props.item();
     return value.kind === 'notice' ? value : null;
@@ -1344,8 +1525,32 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
               </div>
             </Show>
             <div class="bubble">{item().text}</div>
+            <Show when={item().state}>
+              {(state) => (
+                <div class={`msg-state ${state()}`}>
+                  <Switch fallback={<span>排队中 · 本轮结束后自动发送</span>}>
+                    <Match when={state() === 'sending'}>
+                      <span>发送中…</span>
+                    </Match>
+                    <Match when={state() === 'failed'}>
+                      <span>未发出</span>
+                    </Match>
+                  </Switch>
+                  <Show when={state() === 'failed'}>
+                    <button class="msg-state-btn" onClick={() => props.onRetry(item().id)}>
+                      重试
+                    </button>
+                  </Show>
+                  <Show when={state() !== 'sending'}>
+                    <button class="msg-state-btn" onClick={() => props.onCancel(item().id)}>
+                      取消
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </Show>
             <div class="msg-meta" style={{ 'justify-content': 'flex-end' }}>
-              {formatTime(item().time)}
+              {formatMessageTime(item().time)}
             </div>
           </div>
         )}
@@ -1382,7 +1587,7 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
               <Show when={item().history}>
                 <span class="status history">历史记录</span>
               </Show>
-              <span>{formatTime(item().time)}</span>
+              <span>{formatMessageTime(item().time)}</span>
               <Show when={formatDuration(item().durationMs)}>
                 <span class="metric" title="本轮回复耗时">{formatDuration(item().durationMs)}</span>
               </Show>
@@ -1642,7 +1847,10 @@ function ToolConfirmDialog(props: {
           <pre class="tool-pre">{argsText()}</pre>
         </div>
         <div class="dialog-foot">
-          <span class="countdown">{remaining()} 秒后按拒绝处理</span>
+          {/* 只在最后一分钟提示：长时间等待时秒数只会占位刷屏，临期才需要提醒 */}
+          <span class="countdown">
+            <Show when={remaining() <= 60}>{remaining()} 秒后按拒绝处理</Show>
+          </span>
           <button class="btn ghost" onClick={() => props.onResolve('deny')}>
             拒绝
           </button>
@@ -1670,12 +1878,21 @@ function QuestionDialog(props: {
   onTimeout: () => void;
 }) {
   const questions = props.request.questions;
+  const total = questions.length;
+  // 题号导航用的静态下标：一次提问的题目固定，不随作答变化
+  const spots = questions.map((_, index) => index);
+  // 分步向导：一次只呈现一题，各题答案按题号留存，来回切题不丢已填内容
+  const [step, setStep] = createSignal(0);
   // 以服务端/首帧给出的截止时刻为准：失败放回后继续按原截止时间倒数，不从满值重来
   const [remaining, setRemaining] = createSignal(
     Math.max(1, Math.round((props.request.expiresAt - Date.now()) / 1000)),
   );
   const [selected, setSelected] = createSignal<string[][]>(questions.map(() => []));
   const [other, setOther] = createSignal<string[]>(questions.map(() => ''));
+  // 「其它」自由输入默认折叠成一行加号按钮，点过才展开，不占常显行高
+  const [otherOpen, setOtherOpen] = createSignal<boolean[]>(questions.map(() => false));
+
+  let bodyEl!: HTMLDivElement;
 
   onMount(() => {
     const timer = window.setInterval(() => {
@@ -1708,8 +1925,17 @@ function QuestionDialog(props: {
     return `来源：编排节点 ${node || '未命名'}${roleText}${descText}`;
   });
 
+  const current = createMemo(() => questions[step()]);
+  const isLast = createMemo(() => step() === total - 1);
+  const headerText = createMemo(() => current().header?.trim() ?? '');
+  const isMulti = createMemo(() => current().multiSelect === true);
+
   /** 单选替换该项、多选切换该项。 */
-  function toggle(index: number, label: string, multi: boolean): void {
+  function choose(index: number, label: string): void {
+    const multi = questions[index].multiSelect === true;
+    const picked = selected()[index];
+    // 重复点选已选中的单选项目前没有变化，直接返回，免得点一下就被推到下一题
+    if (!multi && picked.length === 1 && picked[0] === label) return;
     setSelected((list) =>
       list.map((labels, i) => {
         if (i !== index) return labels;
@@ -1719,91 +1945,188 @@ function QuestionDialog(props: {
         return [label];
       }),
     );
+    // 单选视为答完本题：自动进下一题；多选可能要勾几项，最后一题要留在这里复核，都交给按钮
+    if (!multi && index === step() && !isLast()) setStep(index + 1);
   }
 
   function changeOther(index: number, value: string): void {
     setOther((list) => list.map((text, i) => (i === index ? value : text)));
   }
 
+  function openOther(index: number): void {
+    setOtherOpen((list) => list.map((open, i) => (i === index ? true : open)));
+  }
+
+  /** 收起「其它」同时清空：折叠态不能留一段还在参与提交校验的隐藏文本。 */
+  function clearOther(index: number): void {
+    setOther((list) => list.map((text, i) => (i === index ? '' : text)));
+    setOtherOpen((list) => list.map((open, i) => (i === index ? false : open)));
+  }
+
+  /** 本题是否已作答：选项与自由输入任一即可。 */
+  function answered(index: number): boolean {
+    return selected()[index].length > 0 || other()[index].trim().length > 0;
+  }
+
+  /** 未作答的题号（0 基）：既用来禁用提交，也用来告诉用户到底缺哪题。 */
+  const missing = createMemo(() => spots.filter((index) => !answered(index)));
+
+  const missingText = createMemo(() => {
+    const list = missing();
+    if (list.length === 0) return '';
+    if (total === 1) return '本题未作答';
+    return `第 ${list.map((index) => index + 1).join('、')} 题未作答`;
+  });
+
   /** 每题至少有一个选项或一段自由输入；自由输入与选项可并存，自由输入走独立字段回传。 */
   const answers = createMemo<UserQuestionAnswer[] | null>(() => {
+    if (missing().length > 0) return null;
     const picked = selected();
     const free = other();
-    const result: UserQuestionAnswer[] = [];
-    for (let i = 0; i < questions.length; i += 1) {
-      const labels = [...picked[i]];
-      const freeText = free[i].trim();
-      if (labels.length === 0 && !freeText) return null;
-      result.push({ question: questions[i].question, labels, freeText: freeText || null });
-    }
-    return result;
+    return questions.map((question, i) => ({
+      question: question.question,
+      labels: [...picked[i]],
+      freeText: free[i].trim() || null,
+    }));
   });
+
+  function goPrev(): void {
+    if (step() > 0) setStep(step() - 1);
+  }
+
+  function goNext(): void {
+    if (!isLast() && answered(step())) setStep(step() + 1);
+  }
+
+  function submit(): void {
+    const result = answers();
+    if (result && !props.submitting) props.onSubmit(result);
+  }
+
+  // 换题后把正文滚回顶部：上一题滚到一半的位置会盖住新题的选项
+  createEffect(on(step, () => {
+    if (bodyEl) bodyEl.scrollTop = 0;
+  }));
 
   return (
     <div class="overlay">
       <div class="dialog" role="dialog" aria-modal="true">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title">{questions.length > 1 ? `Agent 有 ${questions.length} 个问题` : 'Agent 想请你确认'}</div>
+            <div class="dialog-title">{total > 1 ? `Agent 有 ${total} 个问题` : 'Agent 想请你确认'}</div>
             <div class="dialog-sub">回答后 Agent 会继续执行</div>
             <Show when={originText()}>{(text) => <div class="dialog-sub">{text()}</div>}</Show>
           </div>
         </div>
-        <div class="dialog-body" style={{ 'max-height': '58vh', overflow: 'auto' }}>
-          <For each={questions}>
-            {(question, index) => (
-              <div style={{ 'margin-bottom': '16px' }}>
-                <div class="dialog-title" style={{ 'font-size': '14px' }}>
-                  <Show when={question.header}>{(header) => <span class="faint">{header()} · </span>}</Show>
-                  {question.question}
-                </div>
-                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px', 'margin-top': '8px' }}>
-                  <For each={question.options}>
-                    {(option) => {
-                      const active = () => selected()[index()].includes(option.label);
-                      return (
-                        <button
-                          type="button"
-                          class={active() ? 'btn primary' : 'btn ghost'}
-                          style={{ 'justify-content': 'flex-start', 'text-align': 'left' }}
-                          onClick={() => toggle(index(), option.label, question.multiSelect === true)}
-                        >
-                          <span>
-                            {option.label}
-                            <Show when={option.description}>
-                              <span class="faint">{` — ${option.description}`}</span>
-                            </Show>
-                          </span>
-                        </button>
-                      );
-                    }}
-                  </For>
-                  <input
-                    class="text-input"
-                    placeholder="其它：直接输入你的答案（可留空）"
-                    value={other()[index()]}
-                    onInput={(event) => changeOther(index(), event.currentTarget.value)}
-                  />
-                </div>
-              </div>
-            )}
-          </For>
+        <div class="dialog-body q-body" ref={(element) => (bodyEl = element)}>
+          <Show when={total > 1 || isMulti()}>
+            <div class="q-steps">
+              <Show when={total > 1}>
+                <For each={spots}>
+                  {(index) => (
+                    <button
+                      type="button"
+                      class={`q-dot${answered(index) ? ' done' : ''}${step() === index ? ' now' : ''}`}
+                      aria-label={`第 ${index + 1} 题`}
+                      title={`第 ${index + 1} 题${answered(index) ? '（已作答）' : '（未作答）'}`}
+                      onClick={() => setStep(index)}
+                    />
+                  )}
+                </For>
+                <span class="q-counter">第 {step() + 1} / {total} 题</span>
+              </Show>
+              <Show when={isMulti()}>
+                <span class="q-flag">可多选</span>
+              </Show>
+            </div>
+          </Show>
+          <div class="q-main">
+            <Show when={headerText()}>
+              <div class="q-tag">{headerText()}</div>
+            </Show>
+            <div class="q-text">{current().question}</div>
+          </div>
+          <div class={isMulti() ? 'q-opts is-multi' : 'q-opts'} role={isMulti() ? 'group' : 'radiogroup'}>
+            <For each={current().options}>
+              {(option) => {
+                const active = () => selected()[step()].includes(option.label);
+                return (
+                  <button
+                    type="button"
+                    class={active() ? 'q-opt on' : 'q-opt'}
+                    role={isMulti() ? 'checkbox' : 'radio'}
+                    aria-checked={active()}
+                    onClick={() => choose(step(), option.label)}
+                  >
+                    <span class="q-mark" />
+                    <span class="q-opt-body">
+                      <span class="q-opt-label">{option.label}</span>
+                      <Show when={option.description}>
+                        <span class="q-opt-desc">{option.description}</span>
+                      </Show>
+                    </span>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+          <Show
+            when={otherOpen()[step()]}
+            fallback={
+              <button type="button" class="q-other-toggle" onClick={() => openOther(step())}>
+                <Icon name="plus" size={13} /> 其它答案（自定义）
+              </button>
+            }
+          >
+            <div class="q-other">
+              <input
+                class="text-input"
+                placeholder="输入自定义答案"
+                value={other()[step()]}
+                onInput={(event) => changeOther(step(), event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  if (isLast()) submit();
+                  else goNext();
+                }}
+              />
+              <button type="button" class="btn" onClick={() => clearOther(step())} title="清除自定义答案并收起">
+                清除
+              </button>
+            </div>
+          </Show>
         </div>
         <div class="dialog-foot">
-          <span class="countdown">{remaining()} 秒后自动跳过</span>
+          {/* 只在最后一分钟提示：长时间等待时秒数只会占位刷屏，临期才需要提醒 */}
+          <span class="countdown">
+            <Show when={remaining() <= 60}>{remaining()} 秒后自动跳过</Show>
+          </span>
+          <Show when={missing().length > 0}>
+            <button type="button" class="btn q-jump" disabled={props.submitting} onClick={() => setStep(missing()[0])}>
+              {missingText()}
+            </button>
+          </Show>
           <button class="btn ghost" disabled={props.submitting} onClick={() => props.onCancel()}>
             跳过作答
           </button>
-          <button
-            class="btn primary"
-            disabled={props.submitting || answers() === null}
-            onClick={() => {
-              const result = answers();
-              if (result) props.onSubmit(result);
-            }}
+          <Show when={step() > 0}>
+            <button class="btn" onClick={goPrev}>
+              上一步
+            </button>
+          </Show>
+          <Show
+            when={!isLast()}
+            fallback={
+              <button class="btn primary" disabled={props.submitting || missing().length > 0} onClick={submit}>
+                {props.submitting ? '提交中…' : '提交'}
+              </button>
+            }
           >
-            {props.submitting ? '提交中…' : '提交'}
-          </button>
+            <button class="btn primary" disabled={!answered(step())} onClick={goNext}>
+              下一题
+            </button>
+          </Show>
         </div>
       </div>
     </div>

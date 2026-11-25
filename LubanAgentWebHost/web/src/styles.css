@@ -35,6 +35,12 @@
   --accent-fill-hover: #2f4bea;
   --accent-border: #b9c4ff;
   --on-accent: #ffffff;
+  /* 会话用量圆环的五档色谱：绿→蓝→黄→橙→红，沿圆弧固定分布（0° 在正上方） */
+  --ring-1: #16a34a;
+  --ring-2: #2563eb;
+  --ring-3: #eab308;
+  --ring-4: #f97316;
+  --ring-5: #dc2626;
   --ok-fill: #067647;
   --ok-fill-hover: #05603a;
   --ok-border: #bfe6cf;
@@ -73,6 +79,12 @@ html[data-theme='dark'] {
   --accent-fill: #4a63e8;
   --accent-fill-hover: #5269e6;
   --accent-border: #3f4f8f;
+  /* 深色底上提亮同一色谱，保持绿→红的可读性 */
+  --ring-1: #4ade80;
+  --ring-2: #60a5fa;
+  --ring-3: #facc15;
+  --ring-4: #fb923c;
+  --ring-5: #f87171;
   --danger: #ff7b72;
   --danger-soft: #2d1a1a;
   --danger-border: #6b2b2b;
@@ -993,6 +1005,55 @@ a {
   letter-spacing: -0.01em;
 }
 
+/* 标题栏右侧的会话 token 用量：圆环按「当前窗口已用 ÷ 窗口」比例，色谱沿圆弧固定分布 */
+.token-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 圆环：14px 见方、3px 线宽。外层是灰色轨道并挖空中心，
+ * 内层铺满五档色谱、只按比例露出 0° → 已用比例的扇形（0° 在正上方、顺时针）。
+ * 因此用量越高，露出的弧越靠红端；未用到的部分始终是灰轨。
+ */
+.token-ring {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--border);
+  -webkit-mask: radial-gradient(circle at 50% 50%, transparent 0 4px, #000 4.6px);
+  mask: radial-gradient(circle at 50% 50%, transparent 0 4px, #000 4.6px);
+}
+
+.token-ring-value {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--ring-1) 0deg,
+    var(--ring-2) 72deg,
+    var(--ring-3) 144deg,
+    var(--ring-4) 216deg,
+    var(--ring-5) 288deg,
+    var(--ring-5) 360deg
+  );
+  -webkit-mask: conic-gradient(from 0deg, #000 calc(var(--p, 0) * 360deg), transparent 0);
+  mask: conic-gradient(from 0deg, #000 calc(var(--p, 0) * 360deg), transparent 0);
+}
+
+.token-usage-text {
+  line-height: 1;
+}
+
 /* 会话页三栏骨架：左项目栏 + 拖拽接缝 + 右主区 */
 .chat-body {
   flex: 1;
@@ -1103,6 +1164,34 @@ a {
   border: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 用户气泡的投递状态：排队 / 发送中 / 未发出，附重试与取消入口 */
+.msg-state {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.msg-state.failed {
+  color: var(--danger);
+}
+
+.msg-state-btn {
+  padding: 0 2px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.msg-state-btn:hover {
+  text-decoration: underline;
 }
 
 .msg-user .attachments {
@@ -1659,68 +1748,6 @@ button.attachment-chip:focus-visible {
   border-style: dashed;
 }
 
-/* 排队中的消息：本轮还在跑时再发的内容先在这里排队，收尾后按序自动发出 */
-.composer-queue {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px 0;
-}
-
-.queue-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-}
-
-.queue-hint {
-  color: var(--text-faint);
-}
-
-.queue-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-  padding: 3px 4px 3px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px dashed var(--border);
-  background: var(--surface-2);
-  font-size: 12.5px;
-}
-
-.queue-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.queue-files {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-faint);
-  font-size: 11.5px;
-}
-
-.queue-remove {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  color: var(--text-faint);
-}
-
-.queue-remove:hover {
-  background: var(--surface-3);
-  color: var(--text);
-}
-
 .composer-pending {
   display: flex;
   flex-wrap: wrap;
@@ -2037,6 +2064,56 @@ button.attachment-chip:focus-visible {
   text-transform: uppercase;
 }
 
+/* 模型菜单：列表独立滚动，底部的上下文预算区固定不随列表滚走 */
+.menu-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.menu-ctx {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.menu-ctx-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.menu-ctx-head .win {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.menu-ctx-head .win b {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-item .tier {
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-item .hint-role {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
 .command-menu {
   position: absolute;
   left: 0;
@@ -2242,6 +2319,213 @@ button.attachment-chip:focus-visible {
   font-size: 12.5px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 提问弹窗：分步向导 ─────────────────────────────────────────────────────
+   一次只呈现一题，高度由 .dialog 的 max-height 兜住，选项再多也在正文内滚动。 */
+
+.q-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 2px;
+  /* 选项最多 10 项：给正文一个比弹窗上限更紧的高度，底部留白，滚动区边界可见 */
+  max-height: 60vh;
+}
+
+.q-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.q-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  transition: background 0.14s ease, border-color 0.14s ease, width 0.14s ease;
+}
+
+.q-dot:hover {
+  border-color: var(--accent);
+}
+
+.q-dot.done {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+/* 当前题：写在 .done 之后，同题既已作答也仍显示为当前位置 */
+.q-dot.now {
+  width: 22px;
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+}
+
+.q-counter {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.q-flag {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.q-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.q-tag {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.q-text {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.q-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 选项整行可点，选中态靠描边与淡底，不再整块刷成实心蓝 */
+.q-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.q-opt:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.q-opt.on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.q-mark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+}
+
+.q-opts.is-multi .q-mark {
+  border-radius: 4px;
+}
+
+.q-opt.on .q-mark {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+}
+
+.q-opt.on .q-mark::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: var(--on-accent);
+}
+
+.q-opts.is-multi .q-opt.on .q-mark::after {
+  inset: 2px 4px 4px 3px;
+  border-radius: 0;
+  background: none;
+  border: solid var(--on-accent);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg);
+}
+
+.q-opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.q-opt-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 说明降一级并另起一行，避免与标签糊在同一行里换行 */
+.q-opt-desc {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.q-other-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  padding: 7px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.q-other-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--surface-2);
+}
+
+.q-other {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.q-other .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 缺题提示：点一下跳到第一道未作答的题，兼作「下一题 / 提交」禁用的理由 */
+.q-jump {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--warn);
+  border-color: var(--warn-border);
+  background: var(--warn-soft);
+}
+
+.q-jump:hover {
+  border-color: var(--warn);
 }
 
 /* 帮助弹窗：直接渲染仓库 README（含表格、代码块与预览图） */

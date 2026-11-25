@@ -32,24 +32,24 @@ public sealed class ContextCompactor
 
     private readonly ISessionManager _sessions;
     private readonly IChatClient _chatClient;
-    private readonly LuBanAgentOptions _options;
+    private readonly CompactionOptions _compaction;
 
     /// <summary>构造。</summary>
     /// <param name="sessions">会话管理器（会话作用域）。</param>
     /// <param name="chatClient">聊天客户端，用于生成摘要。</param>
-    /// <param name="options">Agent 选项，提供保留条数配置。</param>
+    /// <param name="compaction">压缩策略，提供保留 token 数与摘要输入比例。</param>
     public ContextCompactor(
         ISessionManager sessions,
         IChatClient chatClient,
-        IOptions<LuBanAgentOptions> options)
+        CompactionOptions compaction)
     {
         _sessions = sessions;
         _chatClient = chatClient;
-        _options = options.Value;
+        _compaction = compaction;
     }
 
     /// <summary>
-    /// 估算当前上下文 token：活跃消息正文/思考 + 本轮输入。
+    /// 估算当前上下文 token：活跃消息正文 + 附件占位 + 本轮输入。
     /// </summary>
     /// <param name="sessionId">会话标识。</param>
     /// <param name="incoming">本轮输入文本（可为 null）。</param>
@@ -65,7 +65,7 @@ public sealed class ContextCompactor
     /// 压缩会话上下文；没有可归档的消息时返回 <c>null</c>。
     /// </summary>
     /// <param name="sessionId">会话标识。</param>
-    /// <param name="budget">模型上下文预算；未知时为 <c>null</c>，此时仅按保留条数与摘要收敛。</param>
+    /// <param name="budget">模型上下文触发阈值；未知时为 <c>null</c>，此时仅按保留 token 与摘要收敛。</param>
     /// <param name="incoming">本轮输入文本（计入压缩前/后的 token 估算）。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>压缩结果；无消息可归档或摘要为空时返回 <c>null</c>。</returns>
@@ -81,22 +81,25 @@ public sealed class ContextCompactor
 
         var before = active.Sum(EstimateMessageTokens) + EstimateTokens(incoming);
 
-        // 保留窗口取两个上限的最小值：条数不超过配置的保留数；
-        // token 不超过预算的一半，给系统提示、工具定义与模型回复留出空间。
-        // 预算未知（模型窗口未登记）时按「压缩前的一半」收敛，保证无论窗口多大都实际减半。
-        var target = Math.Clamp(_options.Session.CompactTargetMessages, 1, Math.Max(1, messages.Count));
-        var keepTokens = budget is > 0
-            ? Math.Max(1, budget.Value / 2)
-            : Math.Max(1, before / 2);
+        // 保留窗口按 token 从尾部累加：条数与真实长度无关，长会话会被条数撑爆、短会话又留不够。
+        // 上限再压到可用预算的一半，给系统提示、工具定义与模型回复留出空间；
+        // 阈值未知（模型窗口未登记）时按「压缩前的一半」收敛，保证仍然实际减半。
+        var keepTokens = _compaction.KeepTokens;
+        keepTokens = Math.Min(keepTokens, Math.Max(1, (budget is > 0 ? budget.Value : before) / 2));
+        keepTokens = Math.Max(1, keepTokens);
 
         var keepFrom = messages.Count;
         var keptTokens = 0;
-        while (keepFrom > 0 && messages.Count - keepFrom < target)
+        while (keepFrom > 0)
         {
             var tokens = EstimateMessageTokens(messages[keepFrom - 1]);
-            if (keptTokens + tokens > keepTokens)
+            var newest = keepFrom == messages.Count;
+            var overLimit = keptTokens + tokens > keepTokens;
+
+            // 多消息时至少保留最新一条：没有接续点，下一轮只能对着一堆摘要说「继续」。
+            // 单条会话不存在接续问题，硬留等于不压缩，仍按上限判断。
+            if (overLimit && !(newest && messages.Count > 1))
             {
-                // 单条即超预算时也不保留：硬留着它下一轮照样超长，压缩就白做了
                 break;
             }
 
@@ -111,10 +114,10 @@ public sealed class ContextCompactor
             return null;
         }
 
-        // 摘要调用本身也受同一个模型窗口约束：只喂装得下的最近归档消息（更早的只归档不摘要），
+        // 摘要调用本身也受同一个模型窗口约束：喂进全部归档消息，超出上限时丢最老的，
         // 并对单条超长正文截断。否则压缩必然失败，超长兜底就永远救不回来。
         var summarizeCap = budget is > 0
-            ? Math.Max(200, budget.Value / 2)
+            ? Math.Max(200, (int)((long)budget.Value * Math.Clamp(_compaction.SummarizePercent, 10, 100) / 100))
             : Math.Min(Math.Max(200, before / 2), DefaultSummarizeCap);
         var history = new List<ChatMessage>();
         var summarizeTokens = 0;
@@ -122,7 +125,7 @@ public sealed class ContextCompactor
         {
             var message = archived[i];
             var text = TruncateForSummary(message.Content, Math.Max(200, summarizeCap / 2));
-            var tokens = EstimateTokens(text) + EstimateTokens(message.Thinking);
+            var tokens = EstimateTokens(text);
             if (history.Count > 0 && summarizeTokens + tokens > summarizeCap)
             {
                 break;
@@ -194,7 +197,11 @@ public sealed class ContextCompactor
         return cjk + (other + 3) / 4;
     }
 
-    /// <summary>估算单条消息的 token：正文 + 思考 + 附件占位开销。</summary>
+    /// <summary>估算单条消息的 token：正文 + 附件占位开销。</summary>
+    /// <remarks>
+    /// 只算真正进入模型上下文的部分：历史回放只带正文与附件，
+    /// 思考、工具调用与分段存库供展示和排查，不回放、不占上下文。
+    /// </remarks>
     /// <param name="message">会话消息。</param>
     /// <returns>估算 token 数。</returns>
     public static int EstimateMessageTokens(SessionMessage message)
@@ -204,7 +211,7 @@ public sealed class ContextCompactor
             return 0;
         }
 
-        var tokens = EstimateTokens(message.Content) + EstimateTokens(message.Thinking);
+        var tokens = EstimateTokens(message.Content);
         if (!string.IsNullOrWhiteSpace(message.Attachments))
         {
             // 附件正文不在库里，只按一条占位文本估算，避免整体估成 0

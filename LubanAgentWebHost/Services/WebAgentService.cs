@@ -825,12 +825,15 @@ public static class WebAgentService
         var profile = await LoadProfileAsync(scope, modelKey).ConfigureAwait(false);
         var settings = scope.GetRequiredService<ISessionGenerationSettings>();
 
+        var state = await settings.ResolveAsync(id, profile, WebApi.Runtime.ShutdownToken).ConfigureAwait(false);
+
         return WebApi.OkJson(new SessionGenerationSettingsDto(
-            await settings.ResolveReasoningEffortAsync(id, WebApi.Runtime.ShutdownToken).ConfigureAwait(false),
-            await settings.ResolveContextBudgetAsync(id, WebApi.Runtime.ShutdownToken).ConfigureAwait(false),
+            state.ReasoningEffort,
+            state.Budget?.Threshold,
             WebSystemService.BuildReasoningEfforts(profile?.Reasoning),
-            settings.GetTiers(modelKey),
-            profile?.ContextWindow));
+            ContextTiers.FromWindow(profile?.ContextWindow),
+            profile?.ContextWindow,
+            state.Budget?.Selected));
     });
 
     /// <summary>

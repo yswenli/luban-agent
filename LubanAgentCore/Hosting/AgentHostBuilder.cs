@@ -120,8 +120,11 @@ public static class AgentHostBuilder
         services.AddScoped<SessionAutoNameRunner>();
         services.AddScoped<AgentHost>();
 
-        // ── 上下文守卫：起跑前按 token 预算压缩，超长失败时压缩后兜底重跑 ──
+        // ── 上下文守卫：起跑前按 token 阈值压缩，超长失败时压缩后兜底重跑 ──
         // 同样只挂在三端共用的回合入口；放在自动命名内层，重跑不会重复触发命名。
+        // 压缩策略走产品侧配置（窗口留白 / 保留原文 / 摘要输入比例），缺省即内置默认。
+        services.AddSingleton(
+            configuration.GetSection("LuBanAgent:Compaction").Get<CompactionOptions>() ?? new CompactionOptions());
         services.AddScoped<ContextCompactor>();
         services.ReplaceScoped<IAgentHost>(sp => new AutoNameAgentHost(
             new ContextGuardAgentHost(sp.GetRequiredService<AgentHost>(), sp), sp));

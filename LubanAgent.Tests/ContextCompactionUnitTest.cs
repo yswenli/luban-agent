@@ -28,16 +28,17 @@ public class ContextCompactionUnitTest
     }
 
     [TestMethod]
-    public void 估算消息token_含思考与附件占位()
+    public void 估算消息token_只计正文与附件占位()
     {
         var message = new SessionMessage
         {
             Content = "一二三四",
+            // 思考存库但不回放，不能计入上下文估算，否则会提前误压
             Thinking = "一二",
             Attachments = "[]"
         };
 
-        Assert.AreEqual(4 + 2 + 32, ContextCompactor.EstimateMessageTokens(message));
+        Assert.AreEqual(4 + 32, ContextCompactor.EstimateMessageTokens(message));
     }
 
     // ---------------- 压缩行为 ----------------
@@ -87,7 +88,7 @@ public class ContextCompactionUnitTest
     }
 
     [TestMethod]
-    public async Task 压缩_摘要输入不超过预算一半()
+    public async Task 压缩_摘要输入不超过预算八成()
     {
         var sessions = new RecordingSessionManager();
         for (var i = 0; i < 20; i++)
@@ -109,8 +110,11 @@ public class ContextCompactionUnitTest
         var fed = chat.LastPrompt;
         Assert.IsNotNull(fed);
         Assert.IsTrue(
-            ContextCompactor.EstimateTokens(string.Concat(fed)) <= 2000,
-            $"摘要输入估算 {ContextCompactor.EstimateTokens(string.Concat(fed))} token，超过预算一半");
+            ContextCompactor.EstimateTokens(string.Concat(fed)) <= 3200,
+            $"摘要输入估算 {ContextCompactor.EstimateTokens(string.Concat(fed))} token，超过阈值八成");
+        Assert.IsTrue(
+            ContextCompactor.EstimateTokens(string.Concat(fed)) > 1600,
+            "预算够时摘要输入应覆盖多条归档消息，而不是只喂最近一条");
     }
 
     [TestMethod]
@@ -136,6 +140,94 @@ public class ContextCompactionUnitTest
         Assert.IsTrue(chat.LastPrompt.Count > 0, "应已调用摘要器，才有可验证的「未真正归约」场景");
         Assert.AreEqual(0, sessions.CompactedIds.Count);
         Assert.IsTrue(chat.LastPrompt.Count > 0, "应已调用摘要器，才有可验证的「未真正归约」场景");
+    }
+
+    // ---------------- 阈值与保留窗口 ----------------
+
+    [TestMethod]
+    public void 阈值_按窗口留白收敛且档位只能更早()
+    {
+        var options = new CompactionOptions();
+
+        // 默认取末档：实际触发点 = 窗口减 15% 留白，默认不提前压缩
+        Assert.AreEqual(891_290, options.ResolveThreshold(1_048_576, 1_048_576));
+        // 用户手选更小的档位就是「宁可早点压」，不被窗口抬高
+        Assert.AreEqual(300_000, options.ResolveThreshold(1_048_576, 300_000));
+        // 小窗口按比例算出的留白不足下限，用 16k 兜住
+        Assert.AreEqual(108_800, options.ResolveThreshold(128_000, 128_000));
+        // 窗口比留白下限还小时，至少留一半窗口可用
+        Assert.AreEqual(4_096, options.ResolveThreshold(8_192, 8_192));
+    }
+
+    [TestMethod]
+    public async Task 压缩_保留最近KeepTokens原文()
+    {
+        var sessions = new RecordingSessionManager();
+        for (var i = 0; i < 20; i++)
+        {
+            sessions.Active.Add(new SessionMessage
+            {
+                Id = i + 1,
+                Role = i % 2 == 0 ? "user" : "assistant",
+                Content = new string('一', 1000) // 每条约 1000 token
+            });
+        }
+
+        var chat = new RecordingChatClient("历史摘要");
+        var compactor = NewCompactor(sessions, chat);
+
+        var result = await compactor.CompactAsync("s1", budget: 100_000, incoming: null);
+
+        Assert.IsNotNull(result);
+        // 保留窗口按 token 算：默认 15k，即最近 15 条，与消息条数配置无关
+        Assert.AreEqual(5, result.ArchivedCount);
+        Assert.AreEqual(15, result.KeptCount);
+    }
+
+    [TestMethod]
+    public async Task 压缩_最新一条超过保留上限时仍保留()
+    {
+        var sessions = new RecordingSessionManager();
+        for (var i = 0; i < 3; i++)
+        {
+            sessions.Active.Add(new SessionMessage { Id = i + 1, Role = "user", Content = "一二三四五六七八九十" });
+        }
+
+        sessions.Active.Add(new SessionMessage
+        {
+            Id = 4,
+            Role = "assistant",
+            Content = new string('二', 8000) // 单条就超过保留上限
+        });
+
+        var chat = new RecordingChatClient("历史摘要");
+        var compactor = NewCompactor(sessions, chat);
+
+        var result = await compactor.CompactAsync("s1", budget: 10_000, incoming: null);
+
+        Assert.IsNotNull(result);
+        // 没有接续点，下一轮只能对着一堆摘要说「继续」
+        Assert.AreEqual(3, result.ArchivedCount);
+        Assert.AreEqual(1, result.KeptCount);
+        Assert.IsTrue(result.TokensAfter > 5000);
+    }
+
+    [TestMethod]
+    public async Task 压缩_唯一一条超长消息仍归档()
+    {
+        var sessions = new RecordingSessionManager();
+        sessions.Active.Add(new SessionMessage { Id = 1, Role = "user", Content = new string('一', 8000) });
+
+        var chat = new RecordingChatClient("历史摘要");
+        var compactor = NewCompactor(sessions, chat);
+
+        var result = await compactor.CompactAsync("s1", budget: 10_000, incoming: null);
+
+        Assert.IsNotNull(result);
+        // 只有这一条时硬留等于没压：归档后至少还能靠摘要接上
+        Assert.AreEqual(1, result.ArchivedCount);
+        Assert.AreEqual(0, result.KeptCount);
+        CollectionAssert.AreEqual(new long[] { 1 }, sessions.CompactedIds.ToArray());
     }
 
     // ---------------- 事件文案 ----------------
@@ -464,11 +556,9 @@ public class ContextCompactionUnitTest
 
     private static AgentRunRequest Request(string input) => new() { Input = input, SessionId = "s1" };
 
-    private static ContextCompactor NewCompactor(ISessionManager sessions, IChatClient chat)
-        => new(sessions, chat, Options.Create(new LuBanAgentOptions
-        {
-            Session = new SessionOptions { CompactTargetMessages = 1000, CompactThreshold = 10 }
-        }));
+    private static ContextCompactor NewCompactor(
+        ISessionManager sessions, IChatClient chat, CompactionOptions? compaction = null)
+        => new(sessions, chat, compaction ?? new CompactionOptions());
 
     private static ContextGuardAgentHost NewGuard(
         IAgentHost host, ISessionManager sessions, int? budget, IChatClient? chat = null)
@@ -670,8 +760,14 @@ public class ContextCompactionUnitTest
         public ValueTask<string?> ResolveReasoningEffortAsync(string? sessionId, CancellationToken ct = default)
             => ValueTask.FromResult<string?>(null);
 
-        public ValueTask<int?> ResolveContextBudgetAsync(string? sessionId, CancellationToken ct = default)
-            => ValueTask.FromResult(budget);
+        public ValueTask<ContextBudget?> ResolveContextBudgetAsync(string? sessionId, CancellationToken ct = default)
+            => ValueTask.FromResult(budget is { } value ? new ContextBudget(value, value) : (ContextBudget?)null);
+
+        public ValueTask<SessionGenerationState> ResolveAsync(
+            string? sessionId, ModelProfile? profile = null, CancellationToken ct = default)
+            => ValueTask.FromResult(new SessionGenerationState(
+                null,
+                budget is { } value ? new ContextBudget(value, value) : null));
 
         public IReadOnlyList<int> GetTiers(string modelKey) => [];
     }

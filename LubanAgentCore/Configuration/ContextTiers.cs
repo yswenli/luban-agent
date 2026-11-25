@@ -14,7 +14,8 @@ namespace LubanAgentCore.Configuration;
 /// </summary>
 /// <remarks>
 /// 窗口低于 300K 时只有一个档位（等于窗口本身，等效固定）；达到 300K 后按 300K 倍数分档，
-/// 末档取实际窗口；默认档固定为 300K。规则只依赖窗口一个数，改规则不需要迁移已存数据。
+/// 末档取实际窗口；默认档取末档（窗口本身），早期档位留给用户主动提前压缩。
+/// 规则只依赖窗口一个数，改规则不需要迁移已存数据。
 /// </remarks>
 public static class ContextTiers
 {
@@ -44,14 +45,18 @@ public static class ContextTiers
     }
 
     /// <summary>
-    /// 按窗口取默认档：达到 300K 时固定 300K，低于 300K 时只有一个档位即窗口本身。
+    /// 按窗口取默认档：取末档（窗口本身），窗口未知时返回 <c>null</c>。
     /// </summary>
+    /// <remarks>
+    /// 默认不提前压缩，实际触发点再由 <see cref="CompactionOptions.ResolveThreshold"/> 留出窗口余量；
+    /// 用户手选更小的档位才表示「宁可早点压」。
+    /// </remarks>
     /// <param name="contextWindow">模型上下文窗口；null 或非正数视为未知。</param>
     /// <returns>默认档 token 数；窗口未知时返回 <c>null</c>。</returns>
     public static int? DefaultTier(int? contextWindow)
     {
         var tiers = FromWindow(contextWindow);
-        return tiers.Count == 0 ? null : tiers[0];
+        return tiers.Count == 0 ? null : tiers[^1];
     }
 
     /// <summary>

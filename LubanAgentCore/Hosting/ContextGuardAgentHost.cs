@@ -203,7 +203,7 @@ public sealed class ContextGuardAgentHost(IAgentHost inner, DiContainer services
             var settings = services.GetService<ISessionGenerationSettings>();
             return settings is null
                 ? null
-                : await settings.ResolveContextBudgetAsync(sessionId, ct).ConfigureAwait(false);
+                : (await settings.ResolveContextBudgetAsync(sessionId, ct).ConfigureAwait(false))?.Threshold;
         }
         catch (OperationCanceledException)
         {

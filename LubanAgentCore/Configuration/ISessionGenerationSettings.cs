@@ -23,11 +23,23 @@ public interface ISessionGenerationSettings
     /// <returns><c>ReasoningEffort</c> 枚举名；跟随模型时为 <c>null</c>。</returns>
     ValueTask<string?> ResolveReasoningEffortAsync(string? sessionId, CancellationToken ct = default);
 
-    /// <summary>解析上下文预算（token）：会话列 → 全局默认 → 档位默认 → 未知返回 null。</summary>
+    /// <summary>解析上下文预算：选中档位 + 按模型窗口留白收敛后的实际触发阈值；窗口未知返回 null。</summary>
     /// <param name="sessionId">会话标识；空表示只按全局默认解析。</param>
     /// <param name="ct">取消令牌。</param>
-    /// <returns>预算 token 数；模型窗口未知且无覆盖时为 <c>null</c>。</returns>
-    ValueTask<int?> ResolveContextBudgetAsync(string? sessionId, CancellationToken ct = default);
+    /// <returns>选中档位与实际触发阈值；模型窗口未知且无覆盖时为 <c>null</c>。</returns>
+    ValueTask<ContextBudget?> ResolveContextBudgetAsync(string? sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 一次解析思考强度与上下文预算：共用一次模型解析与会话行读取。
+    /// </summary>
+    /// <param name="sessionId">会话标识；空表示只按全局默认解析。</param>
+    /// <param name="profile">已解析的模型档案；传 <c>null</c> 时按会话重新解析。</param>
+    /// <param name="ct">取消令牌。</param>
+    /// <returns>思考强度与上下文预算；各自不可解析时为 <c>null</c>。</returns>
+    ValueTask<SessionGenerationState> ResolveAsync(
+        string? sessionId,
+        ModelProfile? profile = null,
+        CancellationToken ct = default);
 
     /// <summary>按模型窗口生成档位清单；窗口未知返回空。</summary>
     /// <param name="modelKey"><c>provider:model</c>。</param>

@@ -45,8 +45,18 @@ export type AssistantBlock =
   | { kind: 'text'; text: string }
   | { kind: 'tool'; tool: ToolCard };
 
+/** 用户气泡的投递状态：缺省表示已发出，排队/发送中/失败时才带上标记。 */
+export type UserItemState = 'queued' | 'sending' | 'failed';
+
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string; attachments: StoredAttachment[]; time: string }
+  | {
+      kind: 'user';
+      id: string;
+      text: string;
+      attachments: StoredAttachment[];
+      time: string;
+      state?: UserItemState;
+    }
   | {
       kind: 'assistant';
       id: string;
@@ -433,7 +443,15 @@ export function createChat(sessionId: string) {
     setHistoryError(null);
     try {
       const messages = await get<SessionMessage[]>('/session/messages', { sessionId });
-      setItems(toHistoryItems(messages ?? []));
+      const history = toHistoryItems(messages ?? []);
+      // 还没落到服务端的前端气泡（排队中 / 发送失败）不能被历史覆盖掉，否则消息会凭空消失
+      setItems((list) => {
+        const unsent = list.filter(
+          (item): item is Extract<ChatItem, { kind: 'user' }> =>
+            item.kind === 'user' && (item.state === 'queued' || item.state === 'failed'),
+        );
+        return unsent.length > 0 ? [...history, ...unsent] : history;
+      });
       setHistoryLoaded(true);
     } catch (error) {
       setHistoryError((error as Error).message);
@@ -995,7 +1013,8 @@ export function createChat(sessionId: string) {
   /**
    * 发送一条消息；本轮还在跑时改为入队。
    *
-   * 入队不打断当前轮：消息快照（文本 / 已就绪附件 / 当时的权限模式与思考档位）显示在输入框上方，
+   * 消息在调用的当下就作为用户气泡进入线程（排队中也立即可见、可取消），
+   * 快照文本 / 已就绪附件 / 当时的权限模式与思考档位随队列条目保存，
    * 本轮收尾后由 drainQueue 按入队顺序自动发出。
    */
   async function send(text: string, permissionMode: string, effort: string): Promise<void> {
@@ -1024,6 +1043,28 @@ export function createChat(sessionId: string) {
       effort,
     };
 
+    const willQueue = streaming() || recovering || queue().length > 0;
+
+    // 气泡先进线程：即使这一轮发不出去（排队 / 失败），消息也不会离开视野
+    setItems((list) => [
+      ...list,
+      {
+        kind: 'user',
+        id: message.id,
+        text: prompt,
+        attachments: message.attachments.map((item) => ({
+          FileName: item.fileName,
+          MediaType: item.mediaType,
+          FileSize: item.size,
+          SourcePath: item.path,
+          Kind: item.mediaType.startsWith('image/') ? 'image' : 'file',
+          WebPath: item.webPath,
+        })),
+        time: new Date().toISOString(),
+        state: willQueue ? 'queued' : 'sending',
+      },
+    ]);
+
     // 附件随消息一起走，输入区的待发送列表清空并释放预览 URL
     for (const item of attachments) {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -1032,8 +1073,10 @@ export function createChat(sessionId: string) {
 
     // 续流期间旧轮次还在服务端跑：先入队，等续流接上或收尾后再发；
     // 此时直接发会起新流打断续流（resume 会被「本地流还活着」短路），还会撞 409
-    if (streaming() || recovering) {
+    if (willQueue) {
       setQueue((list) => [...list, message]);
+      // 队列里有更早的失败消息时也要按序补发，不能插队
+      if (!streaming() && !recovering) void drainQueue();
       return;
     }
     // 直接发送被服务端拒（上一轮还没真正收尾）时同样放回队列，避免消息丢失
@@ -1062,9 +1105,26 @@ export function createChat(sessionId: string) {
     }
   }
 
-  /** 从队列里移除一条（用户点 ×）。 */
+  /** 取消一条排队中 / 发送失败的消息（气泡上的「取消」）。 */
   function removeQueued(id: string): void {
-    setQueue((list) => list.filter((item) => item.id !== id));
+    const item = items().find((entry) => entry.id === id);
+    if (item?.kind === 'user' && item.state === 'sending') return;
+    setQueue((list) => list.filter((entry) => entry.id !== id));
+    setItems((list) => list.filter((entry) => entry.id !== id));
+  }
+
+  /** 重试一条发送失败的消息（气泡上的「重试」）。 */
+  function retryQueued(id: string): void {
+    if (!queue().some((entry) => entry.id === id)) return;
+    setUserItemState(id, 'queued');
+    void drainQueue();
+  }
+
+  /** 改写用户气泡的投递状态；`undefined` 表示已发出（回归普通气泡）。 */
+  function setUserItemState(id: string, state: UserItemState | undefined): void {
+    setItems((list) =>
+      list.map((item) => (item.kind === 'user' && item.id === id ? { ...item, state } : item)),
+    );
   }
 
   /** 409：服务端仍登记着上一轮（done 帧先到、轮次表后清）。 */
@@ -1072,7 +1132,7 @@ export function createChat(sessionId: string) {
     return error instanceof ApiError && error.code === 409;
   }
 
-  /** 真正起一轮：把一条消息写进消息流并消费 `/agent/chat` 的 SSE。返回 false 表示服务端拒绝（409 重试耗尽）。 */
+  /** 真正起一轮：消费 `/agent/chat` 的 SSE。返回 false 表示服务端拒绝（409 重试耗尽）。 */
   async function runMessage(message: QueuedMessage): Promise<boolean> {
     const prompt = message.text.trim();
     if (!prompt) return true;
@@ -1080,22 +1140,6 @@ export function createChat(sessionId: string) {
     const assistantId = nextId();
     // 新一轮开始：重置提示计数，快照回放按「已实时渲染条数」跳过前缀
     renderedNotices = 0;
-    const now = new Date().toISOString();
-
-    const userItem: ChatItem = {
-      kind: 'user',
-      id: nextId(),
-      text: prompt,
-      attachments: message.attachments.map((item) => ({
-        FileName: item.fileName,
-        MediaType: item.mediaType,
-        FileSize: item.size,
-        SourcePath: item.path,
-        Kind: item.mediaType.startsWith('image/') ? 'image' : 'file',
-        WebPath: item.webPath,
-      })),
-      time: now,
-    };
 
     const assistantItem: ChatItem = {
       kind: 'assistant',
@@ -1106,7 +1150,14 @@ export function createChat(sessionId: string) {
       time: new Date().toISOString(),
     };
 
-    setItems((list) => [...list, userItem, assistantItem]);
+    // 用户气泡已在线程里（发送时就追加），这里只改状态；
+    // 助手占位紧跟这条用户消息，后面再排队的消息气泡不会被垫到它前面
+    setUserItemState(message.id, 'sending');
+    setItems((list) => {
+      const index = list.findIndex((item) => item.kind === 'user' && item.id === message.id);
+      if (index < 0) return [...list, assistantItem];
+      return [...list.slice(0, index + 1), assistantItem, ...list.slice(index + 1)];
+    });
     setPlans([]);
     setProgress([]);
     setStreaming(true);
@@ -1115,6 +1166,9 @@ export function createChat(sessionId: string) {
     activeAssistantId = assistantId;
     // 新轮次从 1 开始编号：上一轮留下的序号必须清掉，否则重连会按旧序号续传
     lastSeq = undefined;
+
+    // 请求即将发出：气泡回归普通样式；此后断线由续流逻辑接管，不再算「未发出」
+    setUserItemState(message.id, undefined);
 
     let done = false;
     // 本轮流的控制器：收尾可能把 controller 置空，回调里必须比对这条流自己的控制器
@@ -1180,10 +1234,11 @@ export function createChat(sessionId: string) {
 
       if (!conflict) break;
       if (attempt >= 3) {
-        // 撤回刚追加的占位气泡：消息本身放回队首，等上一轮真正收尾后再发
+        // 撤回本轮的空助手占位；用户气泡留在原位并标记失败，可重试 / 取消
         finishStream(assistantId, false, streamController);
-        setItems((list) => list.filter((item) => item.id !== userItem.id && item.id !== assistantId));
-        pushNotice('上一轮尚未结束，这条消息已放回队列', 'warn');
+        setItems((list) => list.filter((item) => item.id !== assistantId));
+        setUserItemState(message.id, 'failed');
+        pushNotice('上一轮尚未结束，这条消息未能发出', 'warn');
         return false;
       }
       await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
@@ -1526,6 +1581,7 @@ export function createChat(sessionId: string) {
     addFiles,
     removePending,
     removeQueued,
+    retryQueued,
     dispose,
   };
 }

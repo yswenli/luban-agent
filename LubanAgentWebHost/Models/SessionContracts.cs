@@ -38,16 +38,18 @@ public sealed record SessionModelRequest(string? SessionId, string? ProviderId, 
 
 /// <summary>会话当前生效的生成参数（思考强度 / 上下文档位）。</summary>
 /// <param name="ReasoningEffort">生效的思考强度；null 表示跟随模型。</param>
-/// <param name="ContextTier">生效的上下文预算档位（token）；null 表示未知或未设。</param>
+/// <param name="ContextTier">生效的上下文触发阈值（token，已按窗口留白收敛）；null 表示未知或未设。</param>
 /// <param name="ReasoningEfforts">该会话模型可选的思考档位（空串=跟随模型；空集合=不显示控件）。</param>
 /// <param name="ContextTiers">该会话模型可选的上下文档位（token；空表示不显示控件）。</param>
 /// <param name="ContextWindow">该会话模型上下文窗口。</param>
+/// <param name="ContextBudget">选中的上下文预算档位（token，未过窗口留白）；null 表示未知。用于菜单勾选。</param>
 public sealed record SessionGenerationSettingsDto(
     string? ReasoningEffort,
     int? ContextTier,
     IReadOnlyList<string> ReasoningEfforts,
     IReadOnlyList<int> ContextTiers,
-    int? ContextWindow);
+    int? ContextWindow,
+    int? ContextBudget);
 
 /// <summary>写入会话生成参数（整体替换：字段缺省即清除该覆盖）。</summary>
 /// <param name="SessionId">会话标识；空表示写全局默认。</param>

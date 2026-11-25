@@ -79,8 +79,10 @@ export interface ModelProfile {
 export interface SessionGenerationSettings {
   /** 生效的思考档位（枚举名）；`null` 表示跟随模型。 */
   reasoningEffort?: string | null;
-  /** 生效的上下文预算档位（token）；`null` 表示未知或未设。 */
+  /** 生效的上下文触发阈值（token，已按窗口留白收敛）；`null` 表示未知或未设。 */
   contextTier?: number | null;
+  /** 用户选中的上下文预算档位（token，未过窗口留白）；用于菜单勾选，`null` 表示未知。 */
+  contextBudget?: number | null;
   /** 该会话模型可选的思考档位；空串表示跟随模型，空数组表示不显示控件。 */
   reasoningEfforts: string[];
   /** 该会话模型可选的上下文预算档位（token）；空数组表示不显示控件。 */
