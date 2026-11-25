@@ -979,8 +979,8 @@ a {
   align-items: center;
   gap: 9px;
   height: 52px;
-  /* 内容与 .thread 的 1120px 可读列对齐；下边框仍横贯整条，所以用内边距而不是限宽 */
-  padding-inline: max(24px, calc((100% - 1120px) / 2 + 24px));
+  /* 标题栏贴主区左边界，不跟随正文的 1120px 可读列居中（正文/输入区仍居中） */
+  padding-inline: 24px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1028,7 +1028,9 @@ a {
 /* 跟随/跳转按钮：单按钮按当前位置切换方向（不在底部→向下、在底部→向上） */
 .chat-fab {
   position: absolute;
-  right: 18px;
+  /* 与正文/输入区同一竖轴居中（两者都在主区里居中），不再贴右 */
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 14px;
   display: inline-flex;
   align-items: center;
@@ -1306,50 +1308,73 @@ button.attachment-chip:focus-visible {
   text-decoration: underline;
 }
 
-/* 思考过程 */
-.thinking {
-  border: 1px dashed var(--border-strong);
+/* 思考过程 / 工具调用：默认不画容器，悬停时才显出虚线边框与底色 */
+.thinking,
+.tool-group {
+  border: 1px dashed transparent;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: transparent;
   overflow: hidden;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.thinking summary {
+.thinking:hover,
+.tool-group:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+/* 折叠标题：整行 button，点击或回车切换 */
+.thinking > .fold-head,
+.tool-group > .fold-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 7px 12px;
   font-size: 12.5px;
   color: var(--text-dim);
-  cursor: pointer;
+  text-align: left;
   user-select: none;
-  list-style: none;
 }
 
-.thinking summary::-webkit-details-marker {
-  display: none;
+.fold-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-/* 分组标题右侧的用时（思考 / 工具调用）：等宽数字，避免刷新时宽度跳动 */
-.thinking summary .summary-time,
-.tool-group > summary .summary-time {
+/* 标题右侧的用时（思考 / 工具调用）：等宽数字，避免刷新时宽度跳动 */
+.fold-head .summary-time {
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--text-faint);
   font-size: 12px;
 }
 
-.thinking summary .summary-time {
-  margin-left: auto;
+/* 展开/收起：grid 行高 0fr → 1fr 可过渡（details 的原生开合做不了高度动画） */
+.group-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s ease;
 }
 
-.tool-group > summary .summary-time {
-  margin-left: auto;
+.thinking.open > .group-collapse,
+.tool-group.open > .group-collapse {
+  grid-template-rows: 1fr;
 }
 
-/* 有时用时，它是标题右侧最后一个左推元素，状态徽标紧随其后 */
-.tool-group > summary .summary-time + .status {
-  margin-left: 0;
+.group-collapse > .group-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+  /* 收起后隐藏，但放到过渡结束点再隐藏，高度动画才播得完 */
+  visibility: hidden;
+  transition: visibility 0.22s;
+}
+
+.thinking.open > .group-collapse > .group-collapse-inner,
+.tool-group.open > .group-collapse > .group-collapse-inner {
+  visibility: visible;
 }
 
 .thinking-body {
@@ -1362,7 +1387,9 @@ button.attachment-chip:focus-visible {
   word-break: break-word;
 }
 
-.thinking.is-live summary::after {
+/* 运行中：标题右侧脉动点（与状态文字无关） */
+.thinking.is-live > .fold-head::after,
+.tool-group.is-live > .fold-head::after {
   content: '';
   width: 6px;
   height: 6px;
@@ -1381,48 +1408,11 @@ button.attachment-chip:focus-visible {
   }
 }
 
-/* 工具调用整组（默认收起） */
-.tool-group {
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
-.tool-group > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  font-size: 12.5px;
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.tool-group > summary::-webkit-details-marker {
-  display: none;
-}
-
-.tool-group > summary .status {
-  margin-left: auto;
-}
-
 .tool-group-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 0 10px 10px;
-}
-
-.tool-group.is-live > summary::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  animation: pulse 1.2s ease-in-out infinite;
 }
 
 /* 工具卡片 */

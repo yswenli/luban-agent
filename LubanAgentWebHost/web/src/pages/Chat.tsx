@@ -234,6 +234,14 @@ export function ChatPage(props: { sessionId: string }) {
     element.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('resize', onResize);
 
+    // 后台标签页不执行 rAF 回调：回到前台时补一次贴底，避免停在中途
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (pinned) stickToBottom();
+      else syncScrollState();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     // `<details>` 展开、图片加载等会改变内容高度：贴底时继续跟随，否则只刷新按钮状态
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && threadEl) {
@@ -250,6 +258,7 @@ export function ChatPage(props: { sessionId: string }) {
       element.removeEventListener('scroll', onScroll);
       element.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       observer?.disconnect();
       if (followRaf) cancelAnimationFrame(followRaf);
     });
@@ -309,7 +318,13 @@ export function ChatPage(props: { sessionId: string }) {
 
   /** 跟随到最新：仅在上锁状态生效，rAF 合并，回调内复检避免抢用户滚动。 */
   function follow(): void {
-    if (!pinned || !scrollEl || followRaf) return;
+    if (!pinned || !scrollEl) return;
+    // 后台标签页里 rAF 不执行：直接写滚动位置，否则内容一直涨而视图停在中途
+    if (document.visibilityState === 'hidden') {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      return;
+    }
+    if (followRaf) return;
     followRaf = requestAnimationFrame(() => {
       followRaf = 0;
       if (!pinned || !scrollEl) return;
@@ -1343,23 +1358,11 @@ function ChatRow(props: { item: () => ChatItem; workspaceId?: string }) {
               {(group, index) => (
                 <Switch>
                   <Match when={group().kind === 'thinking'}>
-                    <details
-                      class="thinking"
-                      classList={{
-                        'is-live': item().streaming && index === assistantGroups().length - 1,
-                      }}
-                    >
-                      <summary>
-                        <Icon name="lightbulb" size={14} />
-                        思考过程
-                        <Show when={formatCompactDuration(group().durationMs)}>
-                          <span class="summary-time" title="思考耗时">
-                            {formatCompactDuration(group().durationMs)}
-                          </span>
-                        </Show>
-                      </summary>
-                      <div class="thinking-body">{group().text}</div>
-                    </details>
+                    <ThinkingBlockView
+                      text={group().text}
+                      durationMs={group().durationMs}
+                      live={item().streaming && index === assistantGroups().length - 1}
+                    />
                   </Match>
 
                   <Match when={group().kind === 'text'}>
@@ -1439,10 +1442,42 @@ function AttachmentChip(props: { attachment: StoredAttachment; workspaceId?: str
 }
 
 /**
- * 工具调用整组折叠：与「思考过程」同款样式，默认收起，摘要只留数量与整体状态。
- * 展开后再逐条看工具卡片，每张卡片仍可单独展开参数与结果。
+ * 思考过程折叠块：默认收起，展开/收起走 grid 行高过渡，与工具调用同款。
+ */
+function ThinkingBlockView(props: { text: string; durationMs?: number; live: boolean }) {
+  const [open, setOpen] = createSignal(false);
+
+  return (
+    <div class="thinking" classList={{ open: open(), 'is-live': props.live }}>
+      <button
+        type="button"
+        class="fold-head"
+        aria-expanded={open()}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="lightbulb" size={14} />
+        思考过程
+        <Show when={formatCompactDuration(props.durationMs)}>
+          <span class="summary-time" title="思考耗时">
+            {formatCompactDuration(props.durationMs)}
+          </span>
+        </Show>
+      </button>
+      <div class="group-collapse">
+        <div class="group-collapse-inner">
+          <div class="thinking-body">{props.text}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 工具调用整组折叠：与「思考过程」同款样式，默认收起。
+ * 状态只用标题栏右侧的脉动点表示（`is-live`），不额外加文字徽标——与思考过程一致。
  */
 function ToolGroupView(props: { tools: () => ToolCard[] }) {
+  const [open, setOpen] = createSignal(false);
   const running = createMemo(() => props.tools().some((tool) => tool.status === 'running'));
 
   /**
@@ -1452,18 +1487,14 @@ function ToolGroupView(props: { tools: () => ToolCard[] }) {
    */
   const durationMs = createMemo(() => props.tools().reduce((sum, tool) => sum + (tool.durationMs ?? 0), 0));
 
-  const tone = createMemo(() => {
-    const tools = props.tools();
-    if (tools.some((tool) => tool.status === 'running')) return { className: 'running', label: '执行中' };
-    if (tools.some((tool) => tool.status === 'failed')) return { className: 'failed', label: '有失败' };
-    if (tools.some((tool) => tool.status === 'denied')) return { className: 'denied', label: '已拒绝' };
-    if (tools.some((tool) => tool.status === 'done')) return { className: 'done', label: '完成' };
-    return { className: 'history', label: '历史记录' };
-  });
-
   return (
-    <details class="tool-group" classList={{ 'is-live': running() }}>
-      <summary>
+    <div class="tool-group" classList={{ open: open(), 'is-live': running() }}>
+      <button
+        type="button"
+        class="fold-head"
+        aria-expanded={open()}
+        onClick={() => setOpen((value) => !value)}
+      >
         <Icon name="terminal" size={14} />
         工具调用
         <span class="faint">{props.tools().length} 个</span>
@@ -1472,12 +1503,15 @@ function ToolGroupView(props: { tools: () => ToolCard[] }) {
             {formatCompactDuration(durationMs())}
           </span>
         </Show>
-        <span class={`status ${tone().className}`}>{tone().label}</span>
-      </summary>
-      <div class="tool-group-body">
-        <Index each={props.tools()}>{(tool) => <ToolCardView tool={tool} />}</Index>
+      </button>
+      <div class="group-collapse">
+        <div class="group-collapse-inner">
+          <div class="tool-group-body">
+            <Index each={props.tools()}>{(tool) => <ToolCardView tool={tool} />}</Index>
+          </div>
+        </div>
       </div>
-    </details>
+    </div>
   );
 }
 
