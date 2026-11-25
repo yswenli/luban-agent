@@ -316,9 +316,9 @@ button:disabled{cursor:not-allowed;opacity:.5}
 <div class="stage">
   <div class="stage-head">
     <h1>云效 DevOps 工作台 Web 插件 · 宿主尺寸界面预览</h1>
-    <p>按宿主真实运行环境绘制：插件是嵌在宿主 1120px 居中卡片里的同源 iframe，实际可用区域约 826 × 694 像素（含 1px 边框，文档内视口 824 × 692；按宿主真实样式实测，见「设计令牌与硬约束」屏）。下方十屏按真实用户流转顺序组织，屏与屏之间可以直接点击走通。</p>
+    <p>按宿主真实运行环境绘制：插件是嵌在宿主满宽卡片里的同源 iframe，主内容区上限 1120px；宿主改版（满宽外壳、移除页脚、可拖拽侧栏）后按 1440×900 逐项相减约 1086 × 724 像素（含 1px 边框，视口 1084 × 722，推导见「设计令牌与硬约束」屏）。下方十屏沿用更窄的 826 × 694 旧画板基准绘制（保守下限，屏内自适应滚动，宿主变宽只多出余量）。十屏按真实用户流转顺序组织，屏与屏之间可以直接点击走通。</p>
     <div class="meta">
-      <span>基准尺寸 826 × 694（实测）</span>
+      <span>画板基准 826 × 694（宿主当前约 1086 × 724，按样式相减）</span>
       <span>首页左列表右统计</span>
       <span>首次打开先做云效连接</span>
       <span>四个入口：详情 / 任务 / 测试 / PRD</span>
@@ -999,7 +999,7 @@ button:disabled{cursor:not-allowed;opacity:.5}
       <section class="screen" data-screen="9">
         <div class="nav"></div>
         <div class="content">
-          <div class="card" style="border-color:#dfe4ff;background:var(--accent-soft)"><h3>宿主尺寸推导（实测）</h3><p class="tiny" style="margin:0">宽度：1120 − 2 外壳边框 − 258 左栏 − 34 主区内边距 = 826px。高度（1440×900）：900 − 32 应用内边距 − 46 顶栏（46px 已含边框） − 5 外壳上边距 − 30 页脚 − 2 外壳边框 − 75 插件页头 − 16 页头下留白 = 694px；外框 826×694、视口 824×692。按宿主真实样式复刻 DOM 在无头浏览器 1440×900 实测所得；窗口变宽只增两侧留白。</p></div>
+          <div class="card" style="border-color:#dfe4ff;background:var(--accent-soft)"><h3>宿主尺寸推导</h3><p class="tiny" style="margin:0">宽度：min(1440 − 40 应用内边距 − 2 外壳边框 − 200 左栏, 1120 主区上限) − 34 主区内边距 = 1086px。高度（1440×900）：900 − 32 应用内边距 − 46 顶栏（46px 已含边框） − 5 外壳上边距 − 2 外壳边框 − 75 插件页头 − 16 页头下留白 = 724px（原 30px 页脚已移除）；外框 1086×724、视口 1084×722。数值按真实样式逐项相减；主区到 1120px 后窗口变宽只增两侧留白。十屏画板仍按更窄的 826×694 绘制。</p></div>
           <div class="grid2 equal">
             <div>
               <div class="card"><h3>颜色令牌（完整色值）</h3><div class="tokens">

@@ -521,6 +521,82 @@ public class AgentRunHubUnitTest
     }
 
     [TestMethod]
+    public async Task 子代理提问作答后清空快照待答提问()
+    {
+        // 编排子代理发起的提问不在父轮次工具卡里，tool.completed 永远匹配不到 callId；
+        // 作答收尾必须由宿主显式清理，否则同一轮内刷新会把已答过的问题弹回来
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 120,
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个？",
+                        options = new object[] { new { label = "A" }, new { label = "B" } }
+                    }
+                }
+            }));
+
+            var before = handle.Subscribe(null);
+            Assert.IsNotNull(before);
+            Assert.IsNotNull(ReadSnapshot(before).PendingQuestion);
+
+            // 标识不匹配：不能误清别的提问
+            Assert.IsFalse(handle.ClearPendingQuestion("q-other"));
+            var kept = handle.Subscribe(null);
+            Assert.IsNotNull(kept);
+            Assert.IsNotNull(ReadSnapshot(kept).PendingQuestion);
+
+            Assert.IsTrue(handle.ClearPendingQuestion("q-1"));
+            var after = handle.Subscribe(null);
+            Assert.IsNotNull(after);
+            Assert.IsNull(ReadSnapshot(after).PendingQuestion);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task 过期提问不再进入快照()
+    {
+        var hub = NewHub();
+        try
+        {
+            var handle = await hub.StartAsync("u", "s1", HangAsync);
+            // 截止时刻已过：即使没人作答，重连也不该再弹出来陪跑到下一轮
+            handle.Publish(AgentSseFrame.Create(AgentSseEventNames.ToolQuestion, new
+            {
+                questionId = "q-1",
+                timeoutSeconds = 0,
+                questions = new object[]
+                {
+                    new
+                    {
+                        question = "选哪个？",
+                        options = new object[] { new { label = "A" }, new { label = "B" } }
+                    }
+                }
+            }));
+
+            var attach = handle.Subscribe(null);
+            Assert.IsNotNull(attach);
+            Assert.IsNull(ReadSnapshot(attach).PendingQuestion);
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
     public async Task 压缩提示进入快照通知()
     {
         var hub = NewHub();

@@ -499,8 +499,16 @@ public static class WebAgentService
                         (a.Labels ?? Array.Empty<string>())
                             .Where(l => !string.IsNullOrWhiteSpace(l))
                             .Select(l => l.Trim())
-                            .ToList()))
+                            .ToList(),
+                        string.IsNullOrWhiteSpace(a.FreeText) ? null : a.FreeText.Trim()))
                     .ToList());
+
+        if (resolved)
+        {
+            // 提问已收尾：立即从轮次快照里摘掉。子代理提问没有父级工具卡，
+            // 只靠 tool.completed 永远清不到，同一轮内刷新仍会弹回
+            WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, sessionId)?.ClearPendingQuestion(questionId);
+        }
 
         return resolved
             ? WebApi.OkJson(new { resolved = true })

@@ -328,7 +328,12 @@ public sealed class HttpAgentHost(
                     Answers = result.Answers is null
                         ? Array.Empty<AgentQuestionAnswer>()
                         : result.Answers
-                            .Select(a => new AgentQuestionAnswer { Question = a.Question, Labels = a.Labels })
+                            .Select(a => new AgentQuestionAnswer
+                            {
+                                Question = a.Question,
+                                Labels = a.Labels,
+                                FreeText = a.FreeText
+                            })
                             .ToList()
                 },
                 ct).ConfigureAwait(false);

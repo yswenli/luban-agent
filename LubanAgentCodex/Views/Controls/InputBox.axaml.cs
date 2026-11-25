@@ -480,12 +480,7 @@ public partial class InputBox : UserControl
 
         EnsureSkillsLoaded();
 
-        var matches = _skillItems
-            .Where(skill =>
-                skill.Id.StartsWith(token, StringComparison.OrdinalIgnoreCase)
-                || skill.Name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
-            .Take(10)
-            .ToList();
+        var matches = SkillMentionMatcher.Match(_skillItems, token);
 
         if (matches.Count == 0)
         {

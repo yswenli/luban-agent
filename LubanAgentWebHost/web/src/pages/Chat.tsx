@@ -4,12 +4,15 @@ import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dial
 import { Icon } from '../components/Icons';
 import { Markdown } from '../components/Markdown';
 import { PopMenu, menuAt } from '../components/PopMenu';
+import { ProjectSidebar } from '../components/ProjectSidebar';
+import { SideResizer } from '../components/SideResizer';
 import { ScreenshotOverlay } from '../components/screenshot/ScreenshotOverlay';
 import { isCaptureSupported } from '../components/screenshot/capture';
 import { post } from '../lib/api';
 import { formatBytes, formatCompactDuration, formatDuration, formatTime, isImageMediaType, truncate } from '../lib/format';
-import { openSettings, openSessions, openWiki } from '../lib/router';
+import { openSession, openSettings, openSessions, openWiki } from '../lib/router';
 import { settingsApi } from '../lib/settings';
+import { sidebarCollapsed, useNarrowViewport } from '../lib/sidebar';
 import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import type { ChatItem, PendingQuestionRequest, ToolCard, UserQuestionAnswer } from '../stores/chat';
@@ -134,18 +137,36 @@ export function ChatPage(props: { sessionId: string }) {
   });
 
   /**
+   * `@` 技能候选匹配：id / 名称 / 描述 / 分类任一包含输入即命中，
+   * id 或名称以输入开头的排前面（同档保持原有顺序）。
+   * 与桌面端 / CLI 的 `SkillMentionMatcher` 同口径，改这里须三端同步。
+   */
+  function matchSkills(skills: AvailableSkill[], token: string): AvailableSkill[] {
+    const query = token.trim().toLowerCase();
+    const ranked: Array<{ skill: AvailableSkill; rank: number }> = [];
+    for (const skill of skills) {
+      const id = skill.id.toLowerCase();
+      const name = skill.name.toLowerCase();
+      const hit =
+        id.includes(query) ||
+        name.includes(query) ||
+        (skill.description ?? '').toLowerCase().includes(query) ||
+        (skill.category ?? '').toLowerCase().includes(query);
+      if (!hit) continue;
+      ranked.push({ skill, rank: id.startsWith(query) || name.startsWith(query) ? 0 : 1 });
+    }
+    // 同档保持入参顺序（现代引擎的 sort 为稳定排序）
+    ranked.sort((left, right) => left.rank - right.rank);
+    return ranked.slice(0, 10).map((entry) => entry.skill);
+  }
+
+  /**
    * `@` 技能候选：只在单行、且光标前是「行首或空白 + @token」时命中。
    * 含路径分隔符的 token（`@D:\a.cs`、`@./src`）不当作技能，留给附件路径引用。
    */
   const matchedSkills = createMemo<AvailableSkill[]>(() => {
     if (!mentionOpen()) return [];
-    const query = mentionQuery().toLowerCase();
-    return mentionSkills()
-      .filter(
-        (skill) =>
-          skill.id.toLowerCase().startsWith(query) || skill.name.toLowerCase().startsWith(query),
-      )
-      .slice(0, 10);
+    return matchSkills(mentionSkills(), mentionQuery());
   });
 
   let skillsLoading = false;
@@ -575,10 +596,37 @@ export function ChatPage(props: { sessionId: string }) {
     else openSessions();
   };
 
+  const narrow = useNarrowViewport();
+  // 窄屏左栏变横排 chip（见 styles.css 的 760px 断点），那时栏宽由 CSS 接管，拖拽条要隐掉
+  const draggable = () => !narrow() && !sidebarCollapsed();
+
+  /**
+   * 项目栏点项目：跳到该项目最近更新过的会话。
+   *
+   * 只刷新列表、不切换后端「当前工作区」——切了会让之后新建的会话落到别处；
+   * 该项目一个会话都没有时留在此页，让用户自己决定新建。
+   */
+  const openProjectLatestSession = async (workspaceId: string) => {
+    if (workspaceId === session()?.workspaceId) return;
+    await refreshSessions();
+    const latest = sessions()
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0];
+    if (latest) openSession(latest.sessionId);
+    else showToast('该项目还没有会话', 'info');
+  };
+
   return (
     <>
-      <div class="chat-head">
-        <button class="icon-btn" title="返回列表" onClick={goBack}>
+      <div class="chat-body">
+        <ProjectSidebar selectedWorkspaceId={session()?.workspaceId ?? null} onSelect={openProjectLatestSession} />
+        <Show when={draggable()}>
+          <SideResizer label="调整项目栏宽度" />
+        </Show>
+
+        <div class="chat-main">
+          <div class="chat-head">
+            <button class="icon-btn" title="返回列表" onClick={goBack}>
           <Icon name="arrow-left" size={18} />
         </button>
         <span
@@ -613,7 +661,7 @@ export function ChatPage(props: { sessionId: string }) {
         </button>
       </div>
 
-      <div class="chat-body">
+      <div class="chat-scroll-wrap">
         <div class="chat-scroll" ref={(element) => (scrollEl = element)}>
           <div class="thread" ref={(element) => (threadEl = element)}>
             <Show when={!chat.loadingHistory()} fallback={<div class="loading-line">加载消息…</div>}>
@@ -963,6 +1011,8 @@ export function ChatPage(props: { sessionId: string }) {
             附件最多 {bootstrap()?.attachments.maxCount ?? 5} 个 · 支持拖放与粘贴 · Enter 发送 / Shift+Enter 换行
           </div>
         </div>
+        </div>
+      </div>
 
       <input
         ref={fileInputEl}
@@ -1156,6 +1206,7 @@ export function ChatPage(props: { sessionId: string }) {
         {(request) => (
           <QuestionDialog
             request={request()}
+            submitting={chat.questionSubmitting()}
             onSubmit={(answers) => void chat.resolveQuestion(answers)}
             onCancel={() => void chat.cancelQuestion()}
             onTimeout={() => chat.questionTimeout()}
@@ -1578,12 +1629,17 @@ function ToolConfirmDialog(props: {
 
 function QuestionDialog(props: {
   request: PendingQuestionRequest;
+  /** 答案提交中：保持挂载，按钮禁用，避免失败后已填内容与倒计时被重置。 */
+  submitting: boolean;
   onSubmit: (answers: UserQuestionAnswer[]) => void;
   onCancel: () => void;
   onTimeout: () => void;
 }) {
   const questions = props.request.questions;
-  const [remaining, setRemaining] = createSignal(Math.max(1, props.request.timeoutSeconds));
+  // 以服务端/首帧给出的截止时刻为准：失败放回后继续按原截止时间倒数，不从满值重来
+  const [remaining, setRemaining] = createSignal(
+    Math.max(1, Math.round((props.request.expiresAt - Date.now()) / 1000)),
+  );
   const [selected, setSelected] = createSignal<string[][]>(questions.map(() => []));
   const [other, setOther] = createSignal<string[]>(questions.map(() => ''));
 
@@ -1591,6 +1647,11 @@ function QuestionDialog(props: {
     const timer = window.setInterval(() => {
       const next = remaining() - 1;
       if (next <= 0) {
+        // 提交在途：结果以服务端返回为准，定时器继续留在 1 秒，失败后仍能按截止时间收尾
+        if (props.submitting) {
+          setRemaining(1);
+          return;
+        }
         window.clearInterval(timer);
         props.onTimeout();
       } else {
@@ -1630,17 +1691,16 @@ function QuestionDialog(props: {
     setOther((list) => list.map((text, i) => (i === index ? value : text)));
   }
 
-  /** 每题至少有一个选项或一段自由输入；自由输入与选项可并存（「其它」按原样文本回传）。 */
+  /** 每题至少有一个选项或一段自由输入；自由输入与选项可并存，自由输入走独立字段回传。 */
   const answers = createMemo<UserQuestionAnswer[] | null>(() => {
     const picked = selected();
     const free = other();
     const result: UserQuestionAnswer[] = [];
     for (let i = 0; i < questions.length; i += 1) {
       const labels = [...picked[i]];
-      const extra = free[i].trim();
-      if (extra) labels.push(extra);
-      if (labels.length === 0) return null;
-      result.push({ question: questions[i].question, labels });
+      const freeText = free[i].trim();
+      if (labels.length === 0 && !freeText) return null;
+      result.push({ question: questions[i].question, labels, freeText: freeText || null });
     }
     return result;
   });
@@ -1697,18 +1757,18 @@ function QuestionDialog(props: {
         </div>
         <div class="dialog-foot">
           <span class="countdown">{remaining()} 秒后自动跳过</span>
-          <button class="btn ghost" onClick={() => props.onCancel()}>
+          <button class="btn ghost" disabled={props.submitting} onClick={() => props.onCancel()}>
             跳过作答
           </button>
           <button
             class="btn primary"
-            disabled={answers() === null}
+            disabled={props.submitting || answers() === null}
             onClick={() => {
               const result = answers();
               if (result) props.onSubmit(result);
             }}
           >
-            提交
+            {props.submitting ? '提交中…' : '提交'}
           </button>
         </div>
       </div>

@@ -35,7 +35,6 @@ export function SessionExpired(props: { message: string }) {
           </button>
         </div>
       </div>
-      <footer class="app-footer">Luban Agent @ yswenli</footer>
     </div>
   );
 }

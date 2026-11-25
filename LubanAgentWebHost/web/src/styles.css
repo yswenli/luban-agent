@@ -273,7 +273,6 @@ a {
 .app-topbar {
   flex: 0 0 auto;
   width: 100%;
-  max-width: 1120px;
   height: 46px;
   display: flex;
   align-items: center;
@@ -392,7 +391,6 @@ a {
 
 .shell {
   width: 100%;
-  max-width: 1120px;
   flex: 1;
   min-height: 0;
   margin-top: 5px;
@@ -425,6 +423,7 @@ a {
 }
 
 .home-side {
+  /* 宽度由 lib/sidebar.ts 写入内联 flex-basis；这里的 200px 是脚本未介入前的兜底 */
   flex: 0 0 200px;
   min-width: 0;
   /* 项目数多时只滚项目列表：标题与底部入口固定，避免「设置/知识库」被顶出可视区 */
@@ -439,6 +438,61 @@ a {
   overscroll-behavior: contain;
   /* 收起/展开时栏宽平滑变化；transition 只作用于 flex-basis 与 padding，不牵动内部布局 */
   transition: flex-basis 0.16s ease, padding 0.16s ease;
+}
+
+/* 左右分栏的拖拽接缝：视觉是 1px 细线，命中区靠伪元素加宽到 9px（不影响布局宽度） */
+.side-resizer {
+  flex: 0 0 0;
+  position: relative;
+  width: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.side-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 9px;
+}
+
+.side-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.side-resizer:hover::after,
+.side-resizer:focus-visible::after,
+.side-resizer.dragging::after {
+  background: var(--accent-border);
+}
+
+/* 键盘聚焦时给整条接缝一个可见轮廓：1px 线变色在浅色底上太弱 */
+.side-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+/* 拖拽期间关掉左栏的 flex-basis 过渡，否则宽度会滞后于指针 */
+.home-body:has(.side-resizer.dragging) .home-side,
+.chat-body:has(.side-resizer.dragging) .home-side {
+  transition: none;
+}
+
+/* 窄屏左栏是横排 chip，拖拽条由 JS 不渲染；这里再兜一次，避免断点切换瞬间闪出细线 */
+@media (max-width: 760px) {
+  .side-resizer {
+    display: none;
+  }
 }
 
 .side-head {
@@ -689,6 +743,9 @@ a {
   display: flex;
   flex-direction: column;
   padding: 0 22px 0 12px;
+  /* 外壳满宽后仍留一个可读列宽：与对话正文同宽并居中，再宽只增两侧留白（插件页共用此类） */
+  max-width: 1120px;
+  margin-inline: auto;
 }
 
 .home-search {
@@ -922,7 +979,8 @@ a {
   align-items: center;
   gap: 9px;
   height: 52px;
-  padding: 0 16px;
+  /* 内容与 .thread 的 1120px 可读列对齐；下边框仍横贯整条，所以用内边距而不是限宽 */
+  padding-inline: max(24px, calc((100% - 1120px) / 2 + 24px));
   border-bottom: 1px solid var(--border);
 }
 
@@ -935,8 +993,25 @@ a {
   letter-spacing: -0.01em;
 }
 
-/* 滚动区与悬浮按钮的共同定位上下文：按钮不能放进 .chat-scroll 内部，否则会跟着内容滚走 */
+/* 会话页三栏骨架：左项目栏 + 拖拽接缝 + 右主区 */
 .chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* 右侧主区：标题栏固定，滚动区吃掉剩余高度，输入区贴底 */
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 滚动区与悬浮按钮的共同定位上下文：按钮不能放进 .chat-scroll 内部，否则会跟着内容滚走 */
+.chat-scroll-wrap {
   flex: 1;
   min-height: 0;
   position: relative;
@@ -986,8 +1061,11 @@ a {
   background: var(--accent);
 }
 
+/* 正文与输入区保持原有的可读宽度（外壳改成满宽后不再跟着无限拉长），在右侧区域居中 */
 .thread {
   width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
   padding: 26px 24px 8px;
   display: flex;
   flex-direction: column;
@@ -1566,6 +1644,9 @@ button.attachment-chip:focus-visible {
 
 .composer-wrap {
   flex: 0 0 auto;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
   padding: 0 24px 18px;
 }
 
@@ -2262,17 +2343,6 @@ button.attachment-chip:focus-visible {
   background: var(--surface-3);
 }
 
-/* 页脚署名：所有视图底部固定一行，不参与交互 */
-.app-footer {
-  flex: 0 0 auto;
-  padding: 10px 0 2px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--text-faint);
-  letter-spacing: 0.01em;
-  user-select: none;
-}
-
 /* ── 设置浮层 ─────────────────────────────────────────────────────────── */
 
 .settings-overlay {
@@ -2442,22 +2512,12 @@ button.attachment-chip:focus-visible {
 /* ── 启动/错误态 ──────────────────────────────────────────────────────── */
 
 .boot {
-  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 32px;
-}
-
-/* 启动/错误页的署名贴底，避免把居中的卡片挤偏 */
-.boot > .app-footer {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10px;
-  padding: 0;
 }
 
 .boot-card {
@@ -2599,8 +2659,22 @@ button.attachment-chip:focus-visible {
   .side-links {
     flex-direction: row;
     align-items: center;
+    /* 窄屏放不下时换行，避免被 .shell 的 overflow: hidden 裁掉右侧入口 */
+    flex-wrap: wrap;
+    gap: 6px;
     padding-top: 8px;
     margin-top: 0;
+  }
+
+  /* 插件入口在桌面端是带分隔线的竖排组，窄屏摊平成同一行的 chip */
+  .side-plugin-links {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
   }
 
   .side-version {
@@ -2612,6 +2686,11 @@ button.attachment-chip:focus-visible {
   }
 
   .home-body {
+    flex-direction: column;
+  }
+
+  /* 会话页同理：左栏变横排 chip 后必须上下堆叠，否则 chip 行会把正文挤成一条竖带 */
+  .chat-body {
     flex-direction: column;
   }
 

@@ -93,8 +93,6 @@ export function App() {
                   <PluginsOverlay onClose={closePlugins} />
                 </Show>
                 <FilePreviewDialog />
-
-                <footer class="app-footer">Luban Agent @ yswenli</footer>
               </div>
             }
           >
@@ -117,7 +115,6 @@ function BootScreen() {
         <h1>正在连接 LuBan Agent</h1>
         <p>读取工作区、供应商与模型配置…</p>
       </div>
-      <footer class="app-footer">Luban Agent @ yswenli</footer>
     </div>
   );
 }
@@ -154,8 +151,6 @@ function ErrorScreen(props: { message: string }) {
       <Show when={dialog() === 'about'}>
         <AboutDialog onClose={() => setDialog(null)} />
       </Show>
-
-      <footer class="app-footer">Luban Agent @ yswenli</footer>
     </div>
   );
 }

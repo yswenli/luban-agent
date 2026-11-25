@@ -392,7 +392,11 @@ public sealed class AgentRunHandle
             AttachmentsSkipped = _attachmentsSkipped,
             Notices = [.. _notices],
             PendingConfirmation = _pendingConfirmation,
-            PendingQuestion = _pendingQuestion
+            // 已过期的提问不再下发：子代理提问的工具收尾帧不回到父轮次，
+            // 只靠工具收尾清理会留下残留，刷新后仍会弹回
+            PendingQuestion = _pendingQuestion is { } question && question.ExpiresAt > DateTimeOffset.UtcNow
+                ? question
+                : null
         };
 
         // 快照里的 Seq 就是缓冲末尾的序号，正文/工具/提示也都是同一把锁内取的最新值，
@@ -652,6 +656,33 @@ public sealed class AgentRunHandle
                 _segments[i] = _segments[i] with { Tool = mutate(tool) };
                 return;
             }
+        }
+    }
+
+    /// <summary>
+    /// 作废当前待回答提问。用户作答/取消成功后由宿主直接调用：
+    /// 子代理提问不在父轮次的工具卡里，无法靠工具收尾帧匹配 callId 来清理。
+    /// </summary>
+    /// <param name="questionId">提问标识；为空时不比对，清掉当前项。</param>
+    /// <returns>确有待回答提问被清掉返回 true。</returns>
+    public bool ClearPendingQuestion(string? questionId = null)
+    {
+        lock (_gate)
+        {
+            if (_pendingQuestion is null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(questionId)
+                && !string.Equals(_pendingQuestion.QuestionId, questionId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _pendingQuestion = null;
+            _pendingQuestionCallId = null;
+            return true;
         }
     }
 

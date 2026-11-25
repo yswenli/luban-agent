@@ -385,9 +385,12 @@ public static class Dialogs
             {
                 var labels = new List<string>(picks[i]);
                 var extra = others[i].Text?.Trim();
-                if (!string.IsNullOrWhiteSpace(extra)) labels.Add(extra);
-                if (labels.Count == 0) return;
-                answers.Add(new UserQuestionAnswer(questions[i].Question, labels));
+                // 「其它」走独立字段：labels 只放可回链的选项文案
+                if (labels.Count == 0 && string.IsNullOrWhiteSpace(extra)) return;
+                answers.Add(new UserQuestionAnswer(
+                    questions[i].Question,
+                    labels,
+                    string.IsNullOrWhiteSpace(extra) ? null : extra));
             }
 
             chosen = UserQuestionResult.Answered(answers);

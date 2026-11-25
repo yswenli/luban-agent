@@ -10,10 +10,10 @@
 		     这四个包必须同版本（避免「新 AIAgent + 旧 Common」混装），
 		     且与 LubanAgent.Plugin.NewProject 引用的 LuBan.AIAgent 版本一致，
 		     否则插件与宿主编译出两套工具定义。 -->
-		<PackageReference Include="LuBan.AIAgent" Version="2026.11.25.1" />
-		<PackageReference Include="LuBan.Common" Version="2026.11.25.1" />
-		<PackageReference Include="LuBan.Logging" Version="2026.11.25.1" />
-		<PackageReference Include="LuBan.Orm" Version="2026.11.25.1" />
+		<PackageReference Include="LuBan.AIAgent" Version="2026.11.25.2" />
+		<PackageReference Include="LuBan.Common" Version="2026.11.25.2" />
+		<PackageReference Include="LuBan.Logging" Version="2026.11.25.2" />
+		<PackageReference Include="LuBan.Orm" Version="2026.11.25.2" />
 		<!-- 产品侧厂商连接器（云效）已并入本程序集（Connectors/AliyunDevOps/），不再独立成程序集；
 		     宿主仍显式注册（AgentHostBuilder → AddAliyunDevOpsConnector），ALC 回落语义不变。 -->
 		<!-- Microsoft.Extensions.DependencyInjection / Options / Configuration / AI

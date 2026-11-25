@@ -193,7 +193,12 @@ public class AgentProtocolUnitTest
             QuestionId = "q-1",
             Answers =
             [
-                new AgentQuestionAnswer { Question = "选哪个数据库？", Labels = ["PostgreSQL"] }
+                new AgentQuestionAnswer
+                {
+                    Question = "选哪个数据库？",
+                    Labels = ["PostgreSQL"],
+                    FreeText = "自建 MySQL 8"
+                }
             ]
         });
         using var document = System.Text.Json.JsonDocument.Parse(body);
@@ -206,6 +211,7 @@ public class AgentProtocolUnitTest
         Assert.IsFalse(restored.Cancelled);
         Assert.AreEqual(1, restored.Answers.Count);
         Assert.AreEqual("PostgreSQL", restored.Answers[0].Labels[0]);
+        Assert.AreEqual("自建 MySQL 8", restored.Answers[0].FreeText);
 
         var cancelBody = AgentApiJson.WrapPayload(new AgentAnswerRequest
         {

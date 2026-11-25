@@ -28,8 +28,11 @@ public sealed record AgentQuestionAnswer
     /// <summary>对应的问题正文（取自 <c>tool.question</c> 帧）。</summary>
     public string Question { get; init; } = "";
 
-    /// <summary>选中的选项文案；「其它」自由输入为原样文本。</summary>
+    /// <summary>选中的选项文案，必须属于该题选项。</summary>
     public IReadOnlyList<string> Labels { get; init; } = [];
+
+    /// <summary>「其它」自由输入的原样文本；与选项可并存，未填写为 null。</summary>
+    public string? FreeText { get; init; }
 }
 
 /// <summary>回传用户对提问的回答。</summary>

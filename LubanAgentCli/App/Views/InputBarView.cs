@@ -494,12 +494,7 @@ internal sealed class InputBarView : View
 
         EnsureSkillsLoaded();
 
-        var matches = _skillCache
-            .Where(skill =>
-                skill.Id.StartsWith(token, StringComparison.OrdinalIgnoreCase)
-                || skill.Name.StartsWith(token, StringComparison.OrdinalIgnoreCase))
-            .Take(10)
-            .ToList();
+        var matches = SkillMentionMatcher.Match(_skillCache, token);
 
         if (matches.Count == 0)
         {

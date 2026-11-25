@@ -2,7 +2,9 @@ import { createSignal, For, onMount, Show } from 'solid-js';
 
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
+import { SideResizer } from '../components/SideResizer';
 import { openSession } from '../lib/router';
+import { sidebarCollapsed, sideWidth, useNarrowViewport } from '../lib/sidebar';
 import { settingsApi } from '../lib/settings';
 import type {
   IndexReport,
@@ -246,9 +248,17 @@ export function LlmWikiPage() {
 
   const findingText = (finding: LintFinding) => `${finding.path} · ${finding.detail}`;
 
+  const narrow = useNarrowViewport();
+  // 窄屏左栏变横排 chip（见 styles.css 的 760px 断点），那时栏宽由 CSS 接管，拖拽条要隐掉
+  const draggable = () => !narrow() && !sidebarCollapsed();
+
   return (
     <div class="home-body">
-      <aside class="home-side">
+      <aside
+        class="home-side"
+        classList={{ collapsed: sidebarCollapsed() && !narrow() }}
+        style={sidebarCollapsed() || narrow() ? undefined : { 'flex-basis': `${sideWidth()}px` }}
+      >
         <div class="side-head">
           <span class="section-label">知识库</span>
           <div class="side-actions">
@@ -308,6 +318,9 @@ export function LlmWikiPage() {
           </Show>
         </div>
       </aside>
+      <Show when={draggable()}>
+        <SideResizer label="调整知识库栏宽度" />
+      </Show>
 
       <div class="home-main">
         <Show

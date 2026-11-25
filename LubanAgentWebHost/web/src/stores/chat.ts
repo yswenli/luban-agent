@@ -99,6 +99,8 @@ export interface PendingQuestionRequest {
   questionId: string;
   questions: UserQuestion[];
   timeoutSeconds: number;
+  /** 截止时刻（Unix 毫秒）：提交失败放回弹窗时按原截止时间继续倒数，不回满。 */
+  expiresAt: number;
   /** 提问来源（编排子代理节点）；主代理发起时为空。 */
   origin?: ToolConfirmOrigin | null;
 }
@@ -106,7 +108,10 @@ export interface PendingQuestionRequest {
 /** 回传给服务端的单题答案。 */
 export interface UserQuestionAnswer {
   question: string;
+  /** 选中的选项文案，必须属于该题选项。 */
   labels: string[];
+  /** 「其它」自由输入；未填写为 null。 */
+  freeText?: string | null;
 }
 
 export interface PlanEntry {
@@ -395,6 +400,8 @@ export function createChat(sessionId: string) {
   const [runId, setRunId] = createSignal<string | null>(null);
   const [confirmation, setConfirmation] = createSignal<ToolConfirmRequest | null>(null);
   const [pendingQuestion, setPendingQuestion] = createSignal<PendingQuestionRequest | null>(null);
+  /** 提问答案提交中：弹窗保持挂载（已填内容与倒计时不丢），按钮禁用防重复提交。 */
+  const [questionSubmitting, setQuestionSubmitting] = createSignal(false);
   const [pending, setPending] = createSignal<PendingAttachment[]>([]);
   const [queue, setQueue] = createSignal<QueuedMessage[]>([]);
   const [plans, setPlans] = createSignal<PlanEntry[]>([]);
@@ -582,6 +589,8 @@ export function createChat(sessionId: string) {
 
       case 'tool.question': {
         const raw = Array.isArray(payload.questions) ? (payload.questions as Record<string, unknown>[]) : [];
+        const timeoutSeconds = Number(payload.timeoutSeconds ?? 60);
+        setQuestionSubmitting(false);
         setPendingQuestion({
           questionId: String(payload.questionId ?? ''),
           questions: raw.map((item) => ({
@@ -595,14 +604,16 @@ export function createChat(sessionId: string) {
                 }))
               : [],
           })),
-          timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
+          timeoutSeconds,
+          // 帧里没有 expiresAt（提问时刻即现在），按超时换算出同一口径的截止时间
+          expiresAt: Date.now() + timeoutSeconds * 1000,
           origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
         });
         return false;
       }
 
       case 'attachment.added':
-        pushFrameNotice(`已加入附件：${String(payload.fileName ?? '')}（${formatBytes(Number(payload.fileSize ?? 0))}）`, 'info', noticeKey);
+        // 附件加入成功不在对话里插提示：发送前后的附件列表已经展示文件与大小，逐条重复只会在正文下方刷屏
         return false;
 
       case 'attachment.skipped':
@@ -734,10 +745,12 @@ export function createChat(sessionId: string) {
 
     const pendingQuestion = payload.pendingQuestion as Record<string, unknown> | null | undefined;
     if (pendingQuestion) {
-      const expiresAt = Date.parse(String(pendingQuestion.expiresAt ?? ''));
-      const remaining = Number.isFinite(expiresAt)
-        ? Math.max(1, Math.round((expiresAt - Date.now()) / 1000))
-        : Number(pendingQuestion.timeoutSeconds ?? 60);
+      const parsedExpiresAt = Date.parse(String(pendingQuestion.expiresAt ?? ''));
+      const timeoutSeconds = Number(pendingQuestion.timeoutSeconds ?? 60);
+      const expiresAt = Number.isFinite(parsedExpiresAt)
+        ? parsedExpiresAt
+        : Date.now() + timeoutSeconds * 1000;
+      const remaining = Math.max(1, Math.round((expiresAt - Date.now()) / 1000));
       let questions: UserQuestion[] = [];
       try {
         const parsed = JSON.parse(String(pendingQuestion.questionsJson ?? '[]')) as Record<string, unknown>[];
@@ -756,10 +769,12 @@ export function createChat(sessionId: string) {
         /* 坏载荷先不弹窗，实时帧会补上 */
       }
       if (questions.length > 0) {
+        setQuestionSubmitting(false);
         setPendingQuestion({
           questionId: String(pendingQuestion.questionId ?? ''),
           questions,
           timeoutSeconds: remaining,
+          expiresAt,
           origin: (pendingQuestion.origin as ToolConfirmOrigin | null | undefined) ?? null,
         });
       }
@@ -784,7 +799,7 @@ export function createChat(sessionId: string) {
     setStreaming(false);
     setRunId(null);
     setConfirmation(null);
-    setPendingQuestion(null);
+    clearQuestion();
     controller = null;
     if (done) {
       // 序号按轮次从 1 开始重编：本轮已收尾，留着旧序号会让下一次 attach 按错误起点切片
@@ -1209,20 +1224,33 @@ export function createChat(sessionId: string) {
     showToast('确认已超时，按拒绝处理', 'error');
   }
 
+  /** 清空待作答提问并复位提交态。 */
+  function clearQuestion(): void {
+    setPendingQuestion(null);
+    setQuestionSubmitting(false);
+  }
+
   /** 回传问题答案；answers 必须覆盖本次提问的每一题（服务端按问题正文校验）。 */
   async function resolveQuestion(answers: UserQuestionAnswer[]): Promise<void> {
     const request = pendingQuestion();
-    if (!request) return;
-    setPendingQuestion(null);
+    if (!request || questionSubmitting()) return;
+    // 提交期间不卸载弹窗：失败时选项、自由输入与剩余时间都还在，可直接重试
+    setQuestionSubmitting(true);
     try {
       await post('/agent/answer', {
         sessionId,
         questionId: request.questionId,
         answers,
       });
+      clearQuestion();
     } catch (error) {
-      // 404 = 服务端已无此提问（过期或已作答），重试没有意义；其余失败把弹窗放回去让用户重试
-      if (!(error instanceof ApiError && error.code === 404)) restoreQuestion(request);
+      // 404 = 服务端已无此提问（过期或已作答），重试没有意义；其余失败保留弹窗让用户重试
+      if (error instanceof ApiError && error.code === 404) {
+        clearQuestion();
+      } else {
+        setQuestionSubmitting(false);
+        restoreQuestion(request);
+      }
       showToast((error as Error).message, 'error');
     }
   }
@@ -1230,30 +1258,42 @@ export function createChat(sessionId: string) {
   /** 用户取消作答：按「已取消」收尾，不算拒绝、不失败本轮。 */
   async function cancelQuestion(): Promise<void> {
     const request = pendingQuestion();
-    if (!request) return;
-    setPendingQuestion(null);
+    if (!request || questionSubmitting()) return;
+    setQuestionSubmitting(true);
     try {
       await post('/agent/answer', {
         sessionId,
         questionId: request.questionId,
         cancelled: true,
       });
+      clearQuestion();
     } catch (error) {
-      if (!(error instanceof ApiError && error.code === 404)) restoreQuestion(request);
+      if (error instanceof ApiError && error.code === 404) {
+        clearQuestion();
+      } else {
+        setQuestionSubmitting(false);
+        restoreQuestion(request);
+      }
       showToast((error as Error).message, 'error');
     }
   }
 
-  /** 回滚失败的提交；期间已收到新提问时不用旧问题覆盖界面。 */
+  /** 放回失败的提交；期间已收到新提问、或本轮已收尾时不再恢复。 */
   function restoreQuestion(request: PendingQuestionRequest): void {
+    // 无论是否放回，提交态都要复位，否则下次进出弹窗仍是禁用状态
+    setQuestionSubmitting(false);
     if (pendingQuestion()) return;
+    // 本轮已收尾（done / 断线收尾已清空提问）：再放回只会留下一个答不上的弹窗
+    if (!streaming()) return;
     setPendingQuestion(request);
   }
 
   /** 前端倒计时到点：按「已取消」回传，避免只清界面而服务端仍在等。 */
   function questionTimeout(): void {
+    // 提交在途：以服务端返回为准，不再并发一条取消
+    if (questionSubmitting()) return;
     const request = pendingQuestion();
-    setPendingQuestion(null);
+    clearQuestion();
     showToast('提问已超时，已跳过作答', 'error');
     if (!request) return;
     void post('/agent/answer', {
@@ -1469,6 +1509,7 @@ export function createChat(sessionId: string) {
     runId,
     confirmation,
     pendingQuestion,
+    questionSubmitting,
     pending,
     queue,
     plans,

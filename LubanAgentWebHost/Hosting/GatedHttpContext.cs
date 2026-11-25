@@ -197,7 +197,6 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
   details li { margin: .25rem 0; }
   a { color: #9bb0ff; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  footer { color: #7b8194; font-size: .8rem; text-align: center; }
 </style>
 </head>
 <body>
@@ -226,7 +225,6 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     </ul>
   </details>
 </main>
-<footer>Luban Agent @ yswenli</footer>
 </body>
 </html>
 """;

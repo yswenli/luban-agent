@@ -29,6 +29,8 @@ public sealed class QuestionBlock : Block
     private readonly Action<UserQuestionResult> _onResolve;
     private readonly string _subtitle;
     private readonly List<List<string>> _answers;
+    /// <summary>每题「其它」自由输入；与选项分开回传，选项文案必须可回链。</summary>
+    private readonly List<string?> _freeAnswers;
 
     private int _index;
     private int _focus;
@@ -51,6 +53,7 @@ public sealed class QuestionBlock : Block
         _onResolve = onResolve ?? throw new ArgumentNullException(nameof(onResolve));
         _subtitle = origin?.ToDisplayString() is { } text ? $"来源：{text}" : string.Empty;
         _answers = questions.Select(_ => new List<string>()).ToList();
+        _freeAnswers = questions.Select(_ => (string?)null).ToList();
     }
 
     /// <inheritdoc/>
@@ -272,13 +275,19 @@ public sealed class QuestionBlock : Block
             return;
         }
 
-        // 自由输入作为独立答案项（与选项并存时按「选项 + 其它」回传）
-        if (!_answers[_index].Contains(text)) _answers[_index].Add(text);
+        // 自由输入作为独立答案项回传（与选项并存时按「选项 + 其它」回传）
+        _freeAnswers[_index] = text;
         Advance();
     }
 
     private void Advance()
     {
+        // Tab 收起输入框后直接 Enter 的情况：未提交的文本也不能丢
+        if (!string.IsNullOrWhiteSpace(_free))
+        {
+            _freeAnswers[_index] = _free.Trim();
+        }
+
         _index++;
         _focus = 0;
         _editing = false;
@@ -287,7 +296,7 @@ public sealed class QuestionBlock : Block
         if (_index >= _questions.Count)
         {
             var answers = _questions
-                .Select((q, i) => new UserQuestionAnswer(q.Question, _answers[i]))
+                .Select((q, i) => new UserQuestionAnswer(q.Question, _answers[i], _freeAnswers[i]))
                 .ToList();
             Resolve(UserQuestionResult.Answered(answers));
         }
