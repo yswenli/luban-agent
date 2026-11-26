@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
 
+import { ComposerEditor, type ComposerEditorHandle, type MentionToken } from '../components/ComposerEditor';
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
 import { Icon } from '../components/Icons';
 import { Markdown } from '../components/Markdown';
@@ -69,6 +70,12 @@ function effortLabel(value: string): string {
   }
 }
 
+/**
+ * 会破坏数据、执行前必须二次确认的命令动作。
+ * `/clear` 经 messageRepo 物理删除当前会话全部消息（含软删标记），不可恢复。
+ */
+const DANGEROUS_COMMAND_ACTIONS = new Set(['action:clearMessages']);
+
 export function ChatPage(props: { sessionId: string }) {
   const chat = getChat(props.sessionId);
 
@@ -86,10 +93,12 @@ export function ChatPage(props: { sessionId: string }) {
   const [mentionOpen, setMentionOpen] = createSignal(false);
   const [mentionQuery, setMentionQuery] = createSignal('');
   const [mentionIndex, setMentionIndex] = createSignal(0);
-  /** `@` token 在输入框中的区间 `[start, end)`，用于选中后原地替换。 */
-  const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | null>(null);
+  /** `@` token 的 DOM 定位（不透明句柄），选中技能后据此原地替换成胶囊。 */
+  const [mentionToken, setMentionToken] = createSignal<MentionToken | null>(null);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [dialog, setDialog] = createSignal<'rename' | 'delete' | null>(null);
+  /** 等待二次确认的危险命令；非空即弹确认框，确认后才真正执行。 */
+  const [pendingCommand, setPendingCommand] = createSignal<WebCommand | null>(null);
   const [screenshotOpen, setScreenshotOpen] = createSignal(false);
   /** 改写请求在途：期间锁住输入与发送，避免改写到一半又被编辑 */
   const [optimizing, setOptimizing] = createSignal(false);
@@ -98,7 +107,7 @@ export function ChatPage(props: { sessionId: string }) {
 
   let scrollEl!: HTMLDivElement;
   let threadEl!: HTMLDivElement;
-  let textareaEl!: HTMLTextAreaElement;
+  let composerApi: ComposerEditorHandle | undefined;
   let fileInputEl!: HTMLInputElement;
 
   /** 距底部容差：滚轮惯性与小数像素下，这个距离内仍按「贴底」处理。 */
@@ -500,12 +509,6 @@ export function ChatPage(props: { sessionId: string }) {
     });
   }
 
-  function resizeTextarea() {
-    if (!textareaEl) return;
-    textareaEl.style.height = 'auto';
-    textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, 220)}px`;
-  }
-
   /* ── `@` 技能候选 ─────────────────────────────────────────────────── */
 
   /** 拉取当前会话可用技能（每次会话切换后一次；失败只提示一次，不打断输入）。 */
@@ -532,62 +535,31 @@ export function ChatPage(props: { sessionId: string }) {
   function closeMention(): void {
     setMentionOpen(false);
     setMentionQuery('');
-    setMentionRange(null);
+    setMentionToken(null);
     setMentionIndex(0);
   }
 
   /** 根据光标位置重算 `@` token；不满足条件即关闭候选。 */
   function updateMention(): void {
-    const element = textareaEl;
-    if (!element) {
+    const token = composerApi?.tokenAtCaret() ?? null;
+    if (!token) {
       closeMention();
       return;
     }
 
-    const value = element.value ?? '';
-    const caret = element.selectionStart ?? 0;
-    if (value.includes('\n')) {
-      closeMention();
-      return;
-    }
-
-    // 行首或空白后的 @token（除空白/路径特征外的字符都算 token，含中文技能名）
-    const match = /(^|\s)@([^\s@\\/:~]*)$/.exec(value.slice(0, caret));
-    if (!match) {
-      closeMention();
-      return;
-    }
-
-    const token = match[2];
-
-    setMentionRange({ start: caret - token.length - 1, end: caret });
-    setMentionQuery(token);
+    setMentionToken(token);
+    setMentionQuery(token.query);
     setMentionIndex(0);
     setMentionOpen(true);
     void ensureSkills();
   }
 
-  /** 把选中的技能按 token 区间原地替换为 `@id `，并把光标放到末尾。 */
+  /** 把选中的技能按 token 位置原地替换成胶囊（序列化仍是 `@id `）。 */
   function applyMention(skill: AvailableSkill): void {
-    const range = mentionRange();
-    if (!range) {
-      closeMention();
-      return;
-    }
-
-    const value = textareaEl?.value ?? input();
-    const insert = `@${skill.id} `;
-    const next = value.slice(0, range.start) + insert + value.slice(range.end);
+    const token = mentionToken();
     closeMention();
-    setInput(next);
-
-    queueMicrotask(() => {
-      if (!textareaEl) return;
-      const caret = range.start + insert.length;
-      textareaEl.focus();
-      textareaEl.setSelectionRange(caret, caret);
-      resizeTextarea();
-    });
+    if (!token) return;
+    composerApi?.applyToken(token, { id: skill.id, label: skill.name || skill.id });
   }
 
   async function switchSessionModel(providerId: string, modelId: string): Promise<void> {
@@ -631,18 +603,30 @@ export function ChatPage(props: { sessionId: string }) {
       return;
     }
 
-    setInput('');
+    composerApi?.clear();
     closeMention();
-    queueMicrotask(resizeTextarea);
     // 自己发的消息必须立刻可见：无论直接发出还是排队，都重新上锁并贴底
     stickToBottom();
     await chat.send(text, permissionModeKey(), currentEffort());
   }
 
+  /**
+   * 命令入口：会破坏数据的动作先弹确认，其余直接执行。
+   * 命令菜单点击与手输 `/clear` 回车都走这里，拦一处即可全覆盖。
+   */
   function runCommand(command: WebCommand) {
-    setInput('');
+    if (DANGEROUS_COMMAND_ACTIONS.has(command.action)) {
+      // 先不清输入框：取消后用户还能看见自己敲的命令
+      setPendingCommand(command);
+      return;
+    }
+    executeCommand(command);
+  }
+
+  /** 真正执行命令；命令文本只在这里丢弃。 */
+  function executeCommand(command: WebCommand) {
+    composerApi?.clear();
     closeMention();
-    queueMicrotask(resizeTextarea);
 
     const action = command.action;
     if (action.startsWith('openSettings:')) {
@@ -677,6 +661,19 @@ export function ChatPage(props: { sessionId: string }) {
       default:
         showToast(`暂不支持命令 ${command.name}`, 'info');
     }
+  }
+
+  /** 危险命令的确认文案：条数与「是否正在生成」都会影响后果，必须写清。 */
+  function commandWarning(command: WebCommand): string {
+    if (command.action === 'action:clearMessages') {
+      const count = session()?.messageCount ?? 0;
+      const head =
+        count > 0
+          ? `当前会话的 ${count} 条消息将被永久删除，无法恢复。`
+          : '当前会话的消息将被永久删除，无法恢复。';
+      return chat.streaming() ? `${head}正在生成的这一轮会先被中断。` : head;
+    }
+    return '该命令执行后无法撤销，确定继续？';
   }
 
   async function clearMessages() {
@@ -736,9 +733,9 @@ export function ChatPage(props: { sessionId: string }) {
         sessionId: props.sessionId,
       });
       if (result.text) {
-        setInput(result.text);
+        // 改写结果用纯文本整段回填：能解析到的 `@id` 会重新变成胶囊
+        composerApi?.setText(result.text);
         closeMention();
-        queueMicrotask(resizeTextarea);
       }
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -953,29 +950,23 @@ export function ChatPage(props: { sessionId: string }) {
               </div>
             </Show>
 
-            <textarea
-              ref={(element) => (textareaEl = element)}
-              value={input()}
-              rows={1}
-              disabled={optimizing()}
+            <ComposerEditor
+              api={(handle) => (composerApi = handle)}
               placeholder="给 Luban Agent 发送消息（Enter 发送，Shift+Enter 换行）"
-              onInput={(event) => {
-                setInput(event.currentTarget.value);
-                setCommandIndex(0);
-                resizeTextarea();
-                updateMention();
+              disabled={optimizing()}
+              resolveSkill={(id) => {
+                const skill = mentionSkills().find((item) => item.id === id);
+                return skill ? { id: skill.id, label: skill.name || skill.id } : null;
               }}
+              onInput={(text) => {
+                setInput(text);
+                setCommandIndex(0);
+              }}
+              onCaret={() => updateMention()}
               onFocus={() => setFocused(true)}
               onBlur={() => {
                 setFocused(false);
                 closeMention();
-              }}
-              onClick={() => updateMention()}
-              onKeyUp={(event) => {
-                // 光标移动可能离开 / 进入 `@token`；上下键由候选弹层消费，这里不碰
-                if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-                  updateMention();
-                }
               }}
               onPaste={onPaste}
               onKeyDown={(event) => {
@@ -1022,7 +1013,7 @@ export function ChatPage(props: { sessionId: string }) {
                   }
                   if (event.key === 'Escape') {
                     event.preventDefault();
-                    setInput('');
+                    composerApi?.clear();
                     return;
                   }
                 }
@@ -1209,12 +1200,9 @@ export function ChatPage(props: { sessionId: string }) {
               class="menu-item"
               onClick={() => {
                 setPlusMenu(null);
-                setInput('/');
+                composerApi?.setText('/', false);
                 closeMention();
-                queueMicrotask(() => {
-                  textareaEl?.focus();
-                  resizeTextarea();
-                });
+                composerApi?.focus();
               }}
             >
               <Icon name="terminal" size={16} />
@@ -1442,6 +1430,22 @@ export function ChatPage(props: { sessionId: string }) {
             });
           }}
         />
+      </Show>
+
+      <Show when={pendingCommand()}>
+        {(command) => (
+          <ConfirmActionDialog
+            title={`执行 ${command().name}？`}
+            message={commandWarning(command())}
+            confirmText={command().action === 'action:clearMessages' ? '清空消息' : '继续执行'}
+            onClose={() => setPendingCommand(null)}
+            onConfirm={() => {
+              const target = command();
+              setPendingCommand(null);
+              executeCommand(target);
+            }}
+          />
+        )}
       </Show>
 
       <ScreenshotOverlay
