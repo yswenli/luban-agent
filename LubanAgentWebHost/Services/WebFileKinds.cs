@@ -19,7 +19,13 @@ public enum WebFilePreviewKind
     Text,
 
     /// <summary>按图片回传。</summary>
-    Image
+    Image,
+
+    /// <summary>按视频流回传。</summary>
+    Video,
+
+    /// <summary>按音频流回传。</summary>
+    Audio
 }
 
 /// <summary>
@@ -27,7 +33,7 @@ public enum WebFilePreviewKind
 /// </summary>
 /// <remarks>
 /// <para>
-/// 只认文本与常见位图：会话里点击一个路径不等于授权宿主把任意文件交给浏览器，
+/// 只认文本、常见位图与浏览器原生音视频：会话里点击一个路径不等于授权宿主把任意文件交给浏览器，
 /// 未知格式（二进制、可执行文件、压缩包等）一律回「不支持预览」。
 /// </para>
 /// <para>
@@ -42,6 +48,13 @@ public static class WebFileKinds
 
     /// <summary>图片类单文件上限（字节）。</summary>
     public const int MaxImageBytes = 10 * 1024 * 1024;
+
+    /// <summary>音频类单文件上限（字节）。</summary>
+    public const int MaxAudioBytes = 50 * 1024 * 1024;
+
+    /// <summary>视频类单文件上限（字节）。</summary>
+    /// <remarks>音视频走流式回传，不读进内存；上限只兜住「误点一个十几 G 的录制文件」这类情况。</remarks>
+    public const int MaxVideoBytes = 200 * 1024 * 1024;
 
     /// <summary>按文本回传的内容类型。</summary>
     public const string TextContentType = "text/plain; charset=utf-8";
@@ -80,6 +93,33 @@ public static class WebFileKinds
         [".ico"] = "image/x-icon",
     };
 
+    /// <summary>视频扩展名 → 内容类型。</summary>
+    /// <remarks>
+    /// 只列浏览器原生能放的封装：<c>.mkv</c>、<c>.avi</c>、<c>.wmv</c> 各浏览器支持差异太大，
+    /// 归入「不支持预览」比回一个放不出来的流更好排查。
+    /// </remarks>
+    private static readonly Dictionary<string, string> VideoContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".mp4"] = "video/mp4",
+        [".m4v"] = "video/mp4",
+        [".webm"] = "video/webm",
+        [".ogv"] = "video/ogg",
+        [".mov"] = "video/quicktime",
+    };
+
+    /// <summary>音频扩展名 → 内容类型。</summary>
+    private static readonly Dictionary<string, string> AudioContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".mp3"] = "audio/mpeg",
+        [".wav"] = "audio/wav",
+        [".ogg"] = "audio/ogg",
+        [".oga"] = "audio/ogg",
+        [".opus"] = "audio/ogg",
+        [".m4a"] = "audio/mp4",
+        [".aac"] = "audio/aac",
+        [".flac"] = "audio/flac",
+    };
+
     /// <summary>
     /// 判定文件预览方式。
     /// </summary>
@@ -115,6 +155,18 @@ public static class WebFileKinds
             return WebFilePreviewKind.Image;
         }
 
+        if (VideoContentTypes.TryGetValue(extension, out var videoContentType))
+        {
+            contentType = videoContentType;
+            return WebFilePreviewKind.Video;
+        }
+
+        if (AudioContentTypes.TryGetValue(extension, out var audioContentType))
+        {
+            contentType = audioContentType;
+            return WebFilePreviewKind.Audio;
+        }
+
         return WebFilePreviewKind.Unsupported;
     }
 
@@ -127,6 +179,8 @@ public static class WebFileKinds
     {
         WebFilePreviewKind.Text => MaxTextBytes,
         WebFilePreviewKind.Image => MaxImageBytes,
+        WebFilePreviewKind.Audio => MaxAudioBytes,
+        WebFilePreviewKind.Video => MaxVideoBytes,
         _ => 0
     };
 }

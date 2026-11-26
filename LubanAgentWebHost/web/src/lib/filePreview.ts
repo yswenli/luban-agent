@@ -6,11 +6,13 @@ export interface FilePreviewTarget {
   workspaceId?: string;
 }
 
-/** 弹层可展示的内容：排版好的 Markdown、源码文本、图片或独立来源的 HTML。 */
+/** 弹层可展示的内容：排版好的 Markdown、源码文本、图片、音视频流或独立来源的 HTML。 */
 export type FilePreviewContent =
   | { kind: 'markdown'; text: string }
   | { kind: 'text'; text: string }
   | { kind: 'image'; url: string }
+  | { kind: 'video'; url: string }
+  | { kind: 'audio'; url: string }
   | { kind: 'html'; url: string };
 
 /** 组装宿主文件接口地址：直接打开仍可用（新标签页 / Ctrl+点击走的都是它）。 */
@@ -31,14 +33,32 @@ export function filePreviewName(path: string): string {
   }
 }
 
+/** 视频扩展名：与后端 `WebFileKinds` 的白名单保持一致。 */
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.webm', '.ogv', '.mov']);
+
+/** 音频扩展名：与后端 `WebFileKinds` 的白名单保持一致。 */
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.oga', '.opus', '.m4a', '.aac', '.flac']);
+
+/** 扩展名对应的音视频类型；不是音视频时返回 null。 */
+export function mediaKindOf(path: string): 'video' | 'audio' | null {
+  const extension = extensionOf(path);
+  if (VIDEO_EXTENSIONS.has(extension)) return 'video';
+  if (AUDIO_EXTENSIONS.has(extension)) return 'audio';
+  return null;
+}
+
 /**
  * 取文件内容到弹层。
  *
  * 类型按宿主回的 `Content-Type` 决定，不自己猜扩展名：宿主已经按白名单挡掉了二进制与超限文件，
  * 这里只负责把 `text/plain` 的正文再按扩展名分成「Markdown 渲染」与「原始文本」。
  * HTML 走 blob URL 交给沙箱 iframe，脚本与同源权限都不放行。
+ * 音视频不给 blob：直接把接口地址交给 `<video>`/`<audio>`，浏览器自己流式取，避免整个文件进内存。
  */
 export async function loadFilePreview(target: FilePreviewTarget): Promise<FilePreviewContent> {
+  const media = mediaKindOf(target.path);
+  if (media) return { kind: media, url: fileReadUrl(target) };
+
   const response = await fetch(fileReadUrl(target), {
     headers: { Accept: '*/*' },
     // 门禁认 HttpOnly Cookie，必须带同源凭据

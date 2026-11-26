@@ -552,13 +552,113 @@ public class ContextCompactionUnitTest
         Assert.AreEqual(0, events.OfType<ContextCompactedEvent>().Count());
     }
 
+    // ---------------- 摘要模型 ----------------
+
+    [TestMethod]
+    public void 摘要模型_留空时沿用会话模型()
+    {
+        var session = new RecordingChatClient("会话摘要");
+        var router = new StubProviderRouter(_ => new RecordingChatClient("独立摘要"));
+        var factory = new CompactionChatClientFactory(
+            router, session, new CompactionOptions(), new StubWindowLookup(5000));
+
+        Assert.AreSame(session, factory.Create().Client);
+        Assert.IsNull(factory.Create().ContextWindow, "沿用会话模型时不额外收窄摘要输入");
+        Assert.AreEqual(0, router.Models.Count);
+    }
+
+    [TestMethod]
+    public void 摘要模型_配置后使用独立客户端()
+    {
+        var session = new RecordingChatClient("会话摘要");
+        var summarizer = new RecordingChatClient("独立摘要");
+        var router = new StubProviderRouter(_ => summarizer);
+        var factory = new CompactionChatClientFactory(
+            router, session, new CompactionOptions { SummarizerModel = " cheap:small " },
+            new StubWindowLookup(12_000));
+
+        var client = factory.Create();
+        Assert.AreSame(summarizer, client.Client);
+        Assert.AreEqual(12_000, client.ContextWindow, "摘要输入要按摘要模型自己的窗口收敛");
+        // 配置值两侧空白在校验前去掉，否则限定名匹配不上供应商
+        CollectionAssert.AreEqual(new[] { "cheap:small" }, router.Models);
+    }
+
+    [TestMethod]
+    public void 摘要模型_不可用时回落到会话模型()
+    {
+        var session = new RecordingChatClient("会话摘要");
+        var router = new StubProviderRouter(_ => throw new InvalidOperationException("模型不存在"));
+        var factory = new CompactionChatClientFactory(
+            router, session, new CompactionOptions { SummarizerModel = "gone:missing" },
+            new StubWindowLookup(null));
+
+        // 摘要模型配错只影响成本，不影响压缩本身
+        Assert.AreSame(session, factory.Create().Client);
+    }
+
+    [TestMethod]
+    public async Task 压缩_摘要由配置模型生成()
+    {
+        var sessions = new RecordingSessionManager();
+        for (var i = 0; i < 2; i++)
+        {
+            sessions.Active.Add(new SessionMessage
+            {
+                Id = i + 1,
+                Role = i % 2 == 0 ? "user" : "assistant",
+                Content = new string('一', 1000)
+            });
+        }
+
+        var sessionClient = new RecordingChatClient("会话摘要");
+        var summarizer = new RecordingChatClient("独立摘要");
+        var compactor = new ContextCompactor(
+            sessions, new FixedChatClientFactory(summarizer), new CompactionOptions { KeepTokens = 1 });
+
+        var result = await compactor.CompactAsync("s1", budget: null, incoming: null);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual("独立摘要", sessions.Added.Single().Content);
+        Assert.IsTrue(summarizer.LastPrompt.Count > 0);
+        Assert.AreEqual(0, sessionClient.LastPrompt.Count, "会话模型不应被摘要占用");
+    }
+
+    [TestMethod]
+    public async Task 压缩_摘要模型窗口更小时按其窗口收敛输入()
+    {
+        var sessions = new RecordingSessionManager();
+        for (var i = 0; i < 20; i++)
+        {
+            sessions.Active.Add(new SessionMessage
+            {
+                Id = i + 1,
+                Role = "user",
+                Content = new string('一', 4000)
+            });
+        }
+
+        var summarizer = new RecordingChatClient("摘要");
+        var compactor = new ContextCompactor(
+            sessions,
+            new FixedChatClientFactory(summarizer, window: 2000),
+            new CompactionOptions());
+
+        await compactor.CompactAsync("s1", budget: 4000, incoming: null);
+
+        // 会话阈值八成 = 3200；摘要模型只有 2000 窗口，最后按它的八成收紧到 1600
+        var fed = ContextCompactor.EstimateTokens(string.Concat(summarizer.LastPrompt));
+        Assert.IsTrue(fed <= 1600, $"摘要输入 {fed} token，超过摘要模型窗口八成");
+        Assert.IsTrue(fed > 200, "窗口够时仍应覆盖多条归档消息");
+    }
+
     // ---------------- 组装 ----------------
 
     private static AgentRunRequest Request(string input) => new() { Input = input, SessionId = "s1" };
 
     private static ContextCompactor NewCompactor(
         ISessionManager sessions, IChatClient chat, CompactionOptions? compaction = null)
-        => new(sessions, chat, compaction ?? new CompactionOptions());
+        => new(sessions, new FixedChatClientFactory(chat), compaction ?? new CompactionOptions());
 
     private static ContextGuardAgentHost NewGuard(
         IAgentHost host, ISessionManager sessions, int? budget, IChatClient? chat = null)
@@ -700,6 +800,32 @@ public class ContextCompactionUnitTest
         public void Dispose()
         {
         }
+    }
+
+    /// <summary>摘要客户端工厂桩：固定返回给定客户端（可指定窗口）。</summary>
+    private sealed class FixedChatClientFactory(IChatClient client, int? window = null) : ICompactionChatClientFactory
+    {
+        public CompactionChatClient Create() => new(client, window);
+    }
+
+    /// <summary>模型窗口桩：所有模型返回同一个窗口。</summary>
+    private sealed class StubWindowLookup(int? window) : IModelContextWindowLookup
+    {
+        public int? GetContextWindow(string modelKey) => window;
+    }
+
+    /// <summary>供应商路由桩：记录被请求的模型名，客户端由回调决定。</summary>
+    private sealed class StubProviderRouter(Func<string?, IChatClient> create) : IProviderRouter
+    {
+        public List<string?> Models { get; } = new();
+
+        public IChatClient CreateChatClient(string? providerModel = null)
+        {
+            Models.Add(providerModel);
+            return create(providerModel);
+        }
+
+        public IReadOnlyList<ProviderInfo> GetAvailableProviders() => [];
     }
 
     /// <summary>按脚本逐次产出事件的宿主桩；脚本用尽后重复最后一段。</summary>

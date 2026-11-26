@@ -52,6 +52,29 @@ public class WebFilePathUnitTest
     }
 
     [TestMethod]
+    public void TryResolveDirectory_EmptyPath_ReturnsWorkspaceRoot()
+    {
+        // 目录列举以根为目标时，根自身必须算合法：严格「根之下」判定会把根排除掉
+        Assert.IsTrue(WebFilePath.TryResolveDirectory(_root, "", out var full));
+        Assert.AreEqual(Path.GetFullPath(_root).TrimEnd(Path.DirectorySeparatorChar), full);
+        Assert.IsTrue(WebFilePath.TryResolveDirectory(_root, "   ", out _));
+    }
+
+    [TestMethod]
+    public void TryResolveDirectory_Subdirectory_Hits()
+    {
+        Assert.IsTrue(WebFilePath.TryResolveDirectory(_root, "wiki/entities", out var full));
+        Assert.AreEqual(Path.Combine(_root, "wiki", "entities"), full);
+    }
+
+    [TestMethod]
+    public void TryResolveDirectory_MissingOrOutside_Rejected()
+    {
+        Assert.IsFalse(WebFilePath.TryResolveDirectory(_root, "missing", out _));
+        Assert.IsFalse(WebFilePath.TryResolveDirectory(_root, "../", out _));
+    }
+
+    [TestMethod]
     public void TryResolve_WikiPage_FallsBackToWikiDirectory()
     {
         Assert.IsTrue(WebFilePath.TryResolve(_root, "overview.md", out var full));

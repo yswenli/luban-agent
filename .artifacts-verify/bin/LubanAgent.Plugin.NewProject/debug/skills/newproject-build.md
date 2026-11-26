@@ -1,0 +1,133 @@
+# 编译检查（newproject-build）
+
+> 「新建项目」插件原子技能 · 对应 **Step 5** · **助手驱动口径**（本步只判定编译成败，
+> 判定口径**不变**）。组织专有值（含**本组织已知构建姿势**）不在本正文复述，
+> 读工作区 `.luban-agent/plugin-newproject/docs/org-reference.md`（索引见 `docs/README.md`）。
+
+## 何时使用
+
+- 主 skill `newproject-create` 的第 5 步；
+- 或**仅重新编译**（改代码后复验）。
+
+## 执行（由你**亲自执行**，编译方式按工程类型判断）
+
+**本技能要求项目助手在本会话内自己动手**，逐端编译并汇总。
+
+> **单仓口径**：本项目只有一个仓库，三端是**仓内模块目录**。编译 / 装依赖都必须进
+> `<仓库根>\<模块目录>`（如 `Csxmy-Service` / `Csxmy-Admin`）执行，**不要在仓库根执行**；
+> `git` 类命令仍在仓库根。
+
+1. 先看清每个模块目录里有什么（`.sln` / `.csproj` / `package.json` / `pubspec.yaml` / `pom.xml` …），
+   再自行决定编译命令——**编译方式由你按工程类型判断**，插件不预设命令。
+2. 依赖未装就先装（`dotnet restore` / `pnpm install` / `npm install`），再编译；
+   **每个端最多重试 2 次**。装依赖必须**独占一条命令并等它正常退出**：不要接管道截断输出、
+   不要与其它命令并行——中途被杀会留下「目录在、文件不全」的半装包，比没装更坑。
+3. 逐端得出「通过 / 失败」与一句话结论，写进**结论文件**；回复正文只回一行
+   `DONE` 或 `FAILED: <失败端与原因>`。
+
+常见形态（供参考，非硬性规定）：
+
+| 端 | 典型命令（在对应模块目录内执行） |
+|----|----------------------------------|
+| 后端（.NET） | `dotnet build <解决方案>.sln` |
+| 管理端（Vite / Vue） | 按 `docs/org-reference.md` 的「构建姿势」节（Node 18/20 + pnpm） |
+| 移动端 | Node 16 + npm，`npm install` → `npm run build:dev` |
+
+### 本组织已知构建姿势
+
+各端（尤其**管理端**）的分支口径、Node 版本、包管理器、包一层命令的写法、构建脚本名，
+**统一读 `docs/org-reference.md` 的「构建姿势」节**。**与本组织既有做法冲突时以该文档为准**。
+
+管理端固定 4 步（简版，详见文档）：
+
+1. `pnpm run build:dev` —— 成功即通过；
+2. 失败才查环境：`node -v` 必须是 `v18.x` / `v20.x`；`pnpm -v` 应可用（缺 pnpm 才 `npm install -g pnpm`）；
+   **不要**改用 npm / cnpm（仓里残留的 `package-lock.json` 是历史遗留，混用会装出不一致的依赖树）；
+3. `pnpm install`（锁文件过期时先核对 `package.json` 与 `pnpm-lock.yaml` 的差异，不要手工改锁文件）；
+4. 再 `pnpm run build:dev`，以这一次输出定结论。
+
+> 移动端与之相反：仍是 **Node 16 + npm**（`.node-version` = `lts-gallium`，配 `package-lock.json`），
+> 不要对它改用 pnpm。
+
+> 本仓库 `build:dev` 实测要 **2~4 分钟**。若看到 `esbuild service stopped: write EPIPE` + `exitCode=-1`
+> 而 `dist/` 已写全，那是**进程被超时杀掉**的收尾残响，不是 monaco 插件不兼容。
+
+结论文件路径与 schema 由插件固定，**原样使用、不要另存别处**：
+
+- 路径：`{项目工作区}\.luban-agent\plugin-newproject\results\step5-<时间戳>.json`
+- schema：
+
+```json
+{
+  "step": 5,
+  "ok": false,
+  "checks": [
+    { "name": "Service", "ok": true,  "detail": "编译通过",           "command": "dotnet build xxx.sln" },
+    { "name": "Admin",   "ok": false, "detail": "2 个错误：…",        "command": "<按 docs 构建姿势执行>" }
+  ],
+  "message": "<一句话总结>"
+}
+```
+
+- `checks[].name` **必须用端标识**：`Service` / `Admin` / `Mobile`（不要写中文名、不要写仓库名）。
+- `checks` **必须逐端齐全**：漏写某个端会被判为「该端未给结论」＝**本步失败**。
+- 判定口径**不变**（四环齐）：文件存在 + JSON 可解析 + `ok: true` + 本轮事件流无真错误
+  （守卫拒绝 / 用户取消**不算**错误）；`status` 是 Step 3 / 6 / 7 的阻断性字段，**本步可省略**。
+
+> **不要调用** `newproject-*` 技能，也不要调用「新建项目」插件的任何工具或服务：本步的提示词正是该插件在**同一会话**里下发的，
+> 回头调用插件服务会形成「同会话回合串行」的自等死锁。
+
+## 硬边界
+
+- **只编译、不改业务**：**允许修依赖树与环境**——装依赖、切换 Node 版本、
+  重建 `node_modules`（含删掉半装的单个包目录后重装）、跑依赖包**自带的** postinstall / 版本切换脚本补回缺失入口；
+  但**禁止改业务源码与工程配置**（业务代码、`package.json`、`vite.config`、`.csproj` / `.sln` 等一律不改；
+  锁文件不要手工编辑，包管理器装依赖时自动更新属正常副作用）。源码级编译错误如实报出，用户修完后再重跑本步。
+
+### 半装包（`Failed to resolve entry for package "X"`）的判定与修法
+
+先分两种，**别急着重装**：
+
+**a) postinstall 未跑（入口文件只是没拷出来）**
+
+- 特征：`package.json` 的 `main` 是 `lib/index.js`，该文件不存在，但包内 `lib/v3/index.js`
+  （或 `lib/v2/index.js`）在——产物是完好的，只是没拷成入口。
+- 典型：**`@vue-office/docx` / `@vue-office/excel` / `@vue-office/pdf`**。这类包靠 `postinstall`
+  按 Vue 大版本把 v3 产物拷成入口；`cnpm i` 装完不补跑，**删包重装多少遍结果都一样**。
+- 修法：在本端仓库目录跑包内自带脚本（不联网、不重装、不改包源码）：
+
+  ```
+  node node_modules/@vue-office/docx/lib/script/switch-cli.js 3
+  ```
+
+  Vue 2 仓库传 `2`。**同族包要一次查全**：docx / excel / pdf 三个常同时缺，
+  只补一个会立刻被下一个同类报错卡住——逐个确认 `lib/index.js` 都在了再构建。
+
+**b) 真半装（安装被中途打断）**
+
+- 特征：包目录存在，但 `module` / `main` / `exports` 指向的入口不存在，且包内也没有可拷的产物
+  （例：`node_modules/element-plus/es/index.mjs` 缺失）。
+- 修法：在本端仓库目录执行
+  `node -e "require('fs').rmSync('node_modules/X',{recursive:true,force:true})"`，
+  再重跑 `fnm exec --using=16 -- cnpm.cmd i`（只补这一个包，秒级）。
+
+共同要求：
+
+- **无效做法**：`npm rebuild X`（只重跑包自身生命周期脚本，预构建包不会补回缺失文件）；
+  也不要因安装几秒 exit 0 就认为修好——包管理器只核对包目录是否存在，不校验文件完整性。
+- 动过依赖后**必须重跑构建**，以最后一次构建输出定结论。
+- 编译产物（`bin` / `obj` / `dist`）与 `node_modules` 留在原处，**不要整体清理**；
+  唯一例外是修半装包时删掉出问题的那**一个**包目录。
+- 命令首词必须在白名单内：`dotnet` / `git` / `node` / `npm` / `npx` / `pnpm` / `yarn` / `fnm` / `cnpm` /
+  `python` / `py` / `python3` / `pip` / `pip3`；
+  一次一条命令，可用 `&&` 串联（**每段首词同样受白名单约束**），不要用管道与重定向。
+
+## 结果
+
+- 逐端编译结论一目了然；**失败阻断 Step 6**（不自动继续），但**保留已生成代码**，不做回滚。
+
+## 失败处理
+
+- 编译错误：给出**出错文件 / 行号 / 错误码**摘要（最多 3 条），并提示可让 Agent 就地修复后重试本步。
+- 缺 SDK / 还原失败：提示目标框架与 SDK 要求（本项目统一 `net10.0`）。
+- 严禁用「跳过编译」之类话术糊弄：编译失败就是失败，如实上报。

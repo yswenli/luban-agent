@@ -72,10 +72,42 @@ public class WebFileKindsUnitTest
     }
 
     [TestMethod]
+    [DataRow("assets/demo.mp4", "video/mp4")]
+    [DataRow("assets/demo.webm", "video/webm")]
+    [DataRow("assets/demo.mov", "video/quicktime")]
+    public void Classify_Videos_ReturnVideoWithContentType(string path, string expected)
+    {
+        Assert.AreEqual(WebFilePreviewKind.Video, WebFileKinds.Classify(path, out var contentType));
+        Assert.AreEqual(expected, contentType);
+    }
+
+    [TestMethod]
+    [DataRow("assets/voice.mp3", "audio/mpeg")]
+    [DataRow("assets/voice.wav", "audio/wav")]
+    [DataRow("assets/voice.flac", "audio/flac")]
+    public void Classify_Audio_ReturnAudioWithContentType(string path, string expected)
+    {
+        Assert.AreEqual(WebFilePreviewKind.Audio, WebFileKinds.Classify(path, out var contentType));
+        Assert.AreEqual(expected, contentType);
+    }
+
+    [TestMethod]
+    [DataRow("movie.mkv")]
+    [DataRow("movie.avi")]
+    [DataRow("movie.wmv")]
+    public void Classify_UnsupportedContainers_AreRejected(string path)
+    {
+        // 浏览器原生放不出来的封装不进白名单：回 415 比回一个放不出的流更好排查
+        Assert.AreEqual(WebFilePreviewKind.Unsupported, WebFileKinds.Classify(path, out _));
+    }
+
+    [TestMethod]
     public void LimitOf_MatchesKind()
     {
         Assert.AreEqual(WebFileKinds.MaxTextBytes, WebFileKinds.LimitOf(WebFilePreviewKind.Text));
         Assert.AreEqual(WebFileKinds.MaxImageBytes, WebFileKinds.LimitOf(WebFilePreviewKind.Image));
+        Assert.AreEqual(WebFileKinds.MaxAudioBytes, WebFileKinds.LimitOf(WebFilePreviewKind.Audio));
+        Assert.AreEqual(WebFileKinds.MaxVideoBytes, WebFileKinds.LimitOf(WebFilePreviewKind.Video));
         Assert.AreEqual(0, WebFileKinds.LimitOf(WebFilePreviewKind.Unsupported));
     }
 }

@@ -1,12 +1,13 @@
 import { createEffect, createSignal, For, Show } from 'solid-js';
 
+import { beginDragSort } from '../lib/dragSort';
 import { truncate } from '../lib/format';
 import { openSession, openSessions } from '../lib/router';
 import { setThemePreference, themePreference, type ThemePreference } from '../lib/theme';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import { createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
 import { dropChat, getChat } from '../stores/chats';
-import { forgetSession, openSessionIds } from '../stores/tabs';
+import { forgetSession, moveSession, openSessionIds } from '../stores/tabs';
 
 import { Icon } from './Icons';
 import { menuAt, PopMenu } from './PopMenu';
@@ -27,6 +28,8 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; icon: string }[] =
 export function TopBar(props: { activeSessionId: string | null }) {
   const [creating, setCreating] = createSignal(false);
   const [themeMenu, setThemeMenu] = createSignal<{ x: number; y: number } | null>(null);
+  const [draggingTab, setDraggingTab] = createSignal<string | null>(null);
+  const [dropSlot, setDropSlot] = createSignal<number | null>(null);
   let tabsEl: HTMLDivElement | undefined;
 
   // 标签多到溢出时，把当前标签滚进可视区（新开的会话在末尾，不滚就看不见）
@@ -72,6 +75,27 @@ export function TopBar(props: { activeSessionId: string | null }) {
     else openSessions();
   }
 
+  /** 标签左右拖放排序：位移超过阈值才进入拖动，单击仍然是打开会话。 */
+  function onTabPointerDown(event: PointerEvent, sessionId: string, index: number): void {
+    // 关闭按钮自己响应点击，不参与排序
+    if ((event.target as HTMLElement).closest('.session-tab-close')) return;
+    beginDragSort({
+      event,
+      item: event.currentTarget as HTMLElement,
+      container: tabsEl,
+      itemSelector: '.session-tab',
+      axis: 'x',
+      index,
+      onStart: () => setDraggingTab(sessionId),
+      onSlot: setDropSlot,
+      onDrop: (toIndex) => moveSession(sessionId, toIndex),
+      onEnd: () => {
+        setDraggingTab(null);
+        setDropSlot(null);
+      },
+    });
+  }
+
   return (
     <div class="app-topbar">
       <button class="icon-btn" title="首页" onClick={() => openSessions()}>
@@ -90,7 +114,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
 
       <div class="session-tabs" ref={(el) => (tabsEl = el)} onWheel={onTabsWheel}>
         <For each={openSessionIds()}>
-          {(sessionId) => {
+          {(sessionId, index) => {
             const chat = getChat(sessionId);
             const session = () => sessions().find((item) => item.sessionId === sessionId) ?? null;
             const workspaceId = () => session()?.workspaceId ?? null;
@@ -100,9 +124,16 @@ export function TopBar(props: { activeSessionId: string | null }) {
             return (
               <div
                 class="session-tab"
-                classList={{ active: props.activeSessionId === sessionId }}
+                classList={{
+                  active: props.activeSessionId === sessionId,
+                  dragging: draggingTab() === sessionId,
+                  'drop-before': dropSlot() === index(),
+                  'drop-after':
+                    dropSlot() === openSessionIds().length && index() === openSessionIds().length - 1,
+                }}
                 data-session-id={sessionId}
                 title={`${project()} / ${title()}`}
+                onPointerDown={(event) => onTabPointerDown(event, sessionId, index())}
               >
                 <button class="session-tab-main" onClick={() => openSession(sessionId)}>
                   <span class="ws-badge sm" style={{ background: workspaceColor(workspaceId()) }}>

@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)\system.text.json\11.0.0\buildTransitive\net10.0\System.Text.Json.targets" Condition="Exists('$(NuGetPackageRoot)\system.text.json\11.0.0\buildTransitive\net10.0\System.Text.Json.targets')" />
+    <Import Project="$(NuGetPackageRoot)\microsoft.extensions.options\11.0.0\buildTransitive\net10.0\Microsoft.Extensions.Options.targets" Condition="Exists('$(NuGetPackageRoot)\microsoft.extensions.options\11.0.0\buildTransitive\net10.0\Microsoft.Extensions.Options.targets')" />
+    <Import Project="$(NuGetPackageRoot)\microsoft.extensions.logging.abstractions\11.0.0\buildTransitive\net10.0\Microsoft.Extensions.Logging.Abstractions.targets" Condition="Exists('$(NuGetPackageRoot)\microsoft.extensions.logging.abstractions\11.0.0\buildTransitive\net10.0\Microsoft.Extensions.Logging.Abstractions.targets')" />
+    <Import Project="$(NuGetPackageRoot)\system.clientmodel\1.16.0\buildTransitive\net10.0\System.ClientModel.targets" Condition="Exists('$(NuGetPackageRoot)\system.clientmodel\1.16.0\buildTransitive\net10.0\System.ClientModel.targets')" />
+    <Import Project="$(NuGetPackageRoot)\sqlitepclraw.lib.e_sqlite3\3.53.3\buildTransitive\net9.0\SQLitePCLRaw.lib.e_sqlite3.targets" Condition="Exists('$(NuGetPackageRoot)\sqlitepclraw.lib.e_sqlite3\3.53.3\buildTransitive\net9.0\SQLitePCLRaw.lib.e_sqlite3.targets')" />
+    <Import Project="$(NuGetPackageRoot)\azure.core\1.53.0\buildTransitive\net10.0\Azure.Core.targets" Condition="Exists('$(NuGetPackageRoot)\azure.core\1.53.0\buildTransitive\net10.0\Azure.Core.targets')" />
+    <Import Project="$(NuGetPackageRoot)\openai\2.15.0\buildTransitive\netstandard2.0\OpenAI.targets" Condition="Exists('$(NuGetPackageRoot)\openai\2.15.0\buildTransitive\netstandard2.0\OpenAI.targets')" />
+    <Import Project="$(NuGetPackageRoot)\microsoft.playwright\1.65.1\buildTransitive\Microsoft.Playwright.targets" Condition="Exists('$(NuGetPackageRoot)\microsoft.playwright\1.65.1\buildTransitive\Microsoft.Playwright.targets')" />
+    <Import Project="$(NuGetPackageRoot)\microsoft.extensions.configuration.binder\11.0.0\buildTransitive\netstandard2.0\Microsoft.Extensions.Configuration.Binder.targets" Condition="Exists('$(NuGetPackageRoot)\microsoft.extensions.configuration.binder\11.0.0\buildTransitive\netstandard2.0\Microsoft.Extensions.Configuration.Binder.targets')" />
+    <Import Project="$(NuGetPackageRoot)\azure.ai.projects.agents\2.0.0\buildTransitive\net10.0\Azure.AI.Projects.Agents.targets" Condition="Exists('$(NuGetPackageRoot)\azure.ai.projects.agents\2.0.0\buildTransitive\net10.0\Azure.AI.Projects.Agents.targets')" />
+    <Import Project="$(NuGetPackageRoot)\azure.ai.projects\2.0.0\buildTransitive\net10.0\Azure.AI.Projects.targets" Condition="Exists('$(NuGetPackageRoot)\azure.ai.projects\2.0.0\buildTransitive\net10.0\Azure.AI.Projects.targets')" />
+    <Import Project="$(NuGetPackageRoot)\avalonia.buildservices\12.0.0\buildTransitive\Avalonia.BuildServices.targets" Condition="Exists('$(NuGetPackageRoot)\avalonia.buildservices\12.0.0\buildTransitive\Avalonia.BuildServices.targets')" />
+    <Import Project="$(NuGetPackageRoot)\avalonia\12.2.0\buildTransitive\Avalonia.targets" Condition="Exists('$(NuGetPackageRoot)\avalonia\12.2.0\buildTransitive\Avalonia.targets')" />
+  </ImportGroup>
+</Project>

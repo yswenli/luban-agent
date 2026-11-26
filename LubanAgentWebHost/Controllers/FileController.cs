@@ -27,7 +27,9 @@ public sealed class FileController : Controller
     /// <summary>列举工作区内某目录的直接子项（不递归，越界路径拒绝）。</summary>
     /// <param name="workspaceId">工作区标识；空白时取当前工作区。</param>
     /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
+    /// <param name="showIgnored">是否包含默认忽略的构建产物目录（<c>1</c>/<c>true</c> 为包含）。</param>
     /// <returns>子目录与文件清单。</returns>
     [HttpGet]
-    public Task<ActionResult> List(string? workspaceId, string? path) => WebFileService.ListAsync(workspaceId, path);
+    public Task<ActionResult> List(string? workspaceId, string? path, string? showIgnored)
+        => WebFileService.ListAsync(workspaceId, path, showIgnored);
 }

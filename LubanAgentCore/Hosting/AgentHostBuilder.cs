@@ -125,6 +125,8 @@ public static class AgentHostBuilder
         // 压缩策略走产品侧配置（窗口留白 / 保留原文 / 摘要输入比例），缺省即内置默认。
         services.AddSingleton(
             configuration.GetSection("LuBanAgent:Compaction").Get<CompactionOptions>() ?? new CompactionOptions());
+        services.AddScoped<IModelContextWindowLookup, ConfigModelContextWindowLookup>();
+        services.AddScoped<ICompactionChatClientFactory, CompactionChatClientFactory>();
         services.AddScoped<ContextCompactor>();
         services.ReplaceScoped<IAgentHost>(sp => new AutoNameAgentHost(
             new ContextGuardAgentHost(sp.GetRequiredService<AgentHost>(), sp), sp));

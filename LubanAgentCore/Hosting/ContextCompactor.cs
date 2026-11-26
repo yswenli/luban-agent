@@ -31,20 +31,20 @@ public sealed class ContextCompactor
     private const int DefaultSummarizeCap = 4000;
 
     private readonly ISessionManager _sessions;
-    private readonly IChatClient _chatClient;
+    private readonly ICompactionChatClientFactory _chatClients;
     private readonly CompactionOptions _compaction;
 
     /// <summary>构造。</summary>
     /// <param name="sessions">会话管理器（会话作用域）。</param>
-    /// <param name="chatClient">聊天客户端，用于生成摘要。</param>
+    /// <param name="chatClients">摘要客户端工厂；配置了独立摘要模型时与主会话模型分离。</param>
     /// <param name="compaction">压缩策略，提供保留 token 数与摘要输入比例。</param>
     public ContextCompactor(
         ISessionManager sessions,
-        IChatClient chatClient,
+        ICompactionChatClientFactory chatClients,
         CompactionOptions compaction)
     {
         _sessions = sessions;
-        _chatClient = chatClient;
+        _chatClients = chatClients;
         _compaction = compaction;
     }
 
@@ -114,11 +114,20 @@ public sealed class ContextCompactor
             return null;
         }
 
-        // 摘要调用本身也受同一个模型窗口约束：喂进全部归档消息，超出上限时丢最老的，
+        // 摘要调用本身也受模型窗口约束：喂进全部归档消息，超出上限时丢最老的，
         // 并对单条超长正文截断。否则压缩必然失败，超长兜底就永远救不回来。
+        var summarizer = _chatClients.Create();
+        var summarizePercent = Math.Clamp(_compaction.SummarizePercent, 10, 100);
         var summarizeCap = budget is > 0
-            ? Math.Max(200, (int)((long)budget.Value * Math.Clamp(_compaction.SummarizePercent, 10, 100) / 100))
+            ? Math.Max(200, (int)((long)budget.Value * summarizePercent / 100))
             : Math.Min(Math.Max(200, before / 2), DefaultSummarizeCap);
+
+        // 摘要配了更小窗口的模型时，按它自己的窗口再压一次；窗口未知时沿用会话阈值的上界
+        if (summarizer.ContextWindow is > 0 and var summarizerWindow)
+        {
+            var windowCap = Math.Max(200, (int)((long)summarizerWindow * summarizePercent / 100));
+            summarizeCap = Math.Min(summarizeCap, windowCap);
+        }
         var history = new List<ChatMessage>();
         var summarizeTokens = 0;
         for (var i = archived.Count - 1; i >= 0; i--)
@@ -138,7 +147,7 @@ public sealed class ContextCompactor
         history.Add(new ChatMessage(ChatRole.User, SummarizeSentinel));
 
 #pragma warning disable MEAI001 // SummarizingChatReducer 属实验性 API，框架自动压缩同样使用
-        var reducer = new SummarizingChatReducer(_chatClient, 1, 0);
+        var reducer = new SummarizingChatReducer(summarizer.Client, 1, 0);
         var reduced = (await reducer.ReduceAsync(history, ct).ConfigureAwait(false)).ToList();
 #pragma warning restore MEAI001
 

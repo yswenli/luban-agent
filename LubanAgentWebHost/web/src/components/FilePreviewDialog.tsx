@@ -30,11 +30,11 @@ export function FilePreviewDialog() {
   const kind = () => content()?.kind ?? null;
   const text = () => {
     const value = content();
-    return value && value.kind !== 'image' && value.kind !== 'html' ? value.text : '';
+    return value && (value.kind === 'markdown' || value.kind === 'text') ? value.text : '';
   };
   const url = () => {
     const value = content();
-    return value && (value.kind === 'image' || value.kind === 'html') ? value.url : '';
+    return value && 'url' in value ? value.url : '';
   };
 
   createEffect(() => {
@@ -110,6 +110,31 @@ export function FilePreviewDialog() {
               alt={filePreviewName(target().path)}
               title={zoomed() ? '点击恢复适应窗口' : '点击按原尺寸查看'}
               onClick={() => setZoomed(!zoomed())}
+            />
+          </Show>
+
+          <Show when={kind() === 'video'}>
+            <video
+              class="file-preview-media"
+              src={url()}
+              controls
+              autoplay={false}
+              onError={() => {
+                setContent(null);
+                setError('浏览器无法播放这个视频（容器或编码不受支持）；请在本地打开，或点下方「新标签页打开」。');
+              }}
+            />
+          </Show>
+
+          <Show when={kind() === 'audio'}>
+            <audio
+              class="file-preview-audio"
+              src={url()}
+              controls
+              onError={() => {
+                setContent(null);
+                setError('浏览器无法播放这个音频；请在本地打开，或点下方「新标签页打开」。');
+              }}
             />
           </Show>
 

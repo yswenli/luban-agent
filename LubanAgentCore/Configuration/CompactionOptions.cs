@@ -39,6 +39,15 @@ public sealed class CompactionOptions
     public int SummarizePercent { get; set; } = 80;
 
     /// <summary>
+    /// 生成摘要专用的模型（<c>provider:model</c>）。留空表示沿用会话当前模型。
+    /// </summary>
+    /// <remarks>
+    /// 摘要只需压缩事实，不追求创造力；用便宜的小模型可显著降低压缩成本。
+    /// 配置的模型不可用（供应商被删、模型名失效）时回落到会话模型，不中断压缩。
+    /// </remarks>
+    public string? SummarizerModel { get; set; }
+
+    /// <summary>
     /// 把选中档位收敛为实际触发阈值：取「档位」与「窗口减留白」的较小值。
     /// </summary>
     /// <param name="contextWindow">模型上下文窗口。</param>

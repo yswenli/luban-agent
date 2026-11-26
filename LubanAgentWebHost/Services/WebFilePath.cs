@@ -88,11 +88,29 @@ public static class WebFilePath
         var prefix = root.EndsWith(Path.DirectorySeparatorChar)
             ? root
             : root + Path.DirectorySeparatorChar;
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-        return fullPath.StartsWith(prefix, comparison);
+        return fullPath.StartsWith(prefix, PathComparison);
     }
+
+    /// <summary>
+    /// 目标是否就是根本身、或落在根之下。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IsWithin"/> 只认严格子路径；目录列举需要把根自身算作合法目标，故单列此判定。
+    /// </remarks>
+    /// <param name="rootPath">工作区根目录。</param>
+    /// <param name="fullPath">待判定的绝对路径。</param>
+    /// <returns>等于根或落在根之下返回 true。</returns>
+    private static bool IsSameOrWithin(string? rootPath, string? fullPath)
+    {
+        var root = NormalizeRoot(rootPath);
+        if (root is null || string.IsNullOrWhiteSpace(fullPath)) return false;
+        return string.Equals(root, fullPath, PathComparison) || IsWithin(root, fullPath);
+    }
+
+    /// <summary>路径比较口径：Windows 不区分大小写，其余平台区分。</summary>
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
 
     /// <summary>
     /// 把工作区内的绝对路径换算为可交给 <c>/file/read</c> 的相对路径。
@@ -171,11 +189,12 @@ public static class WebFilePath
             return false;
         }
 
-        if (!IsWithin(root, candidate)) return false;
+        // 空相对路径时 candidate 就是根目录本身，不能按「必须落在根之下」判：根目录列举是合法目标
+        if (!IsSameOrWithin(root, candidate)) return false;
 
         // 与文件读取同口径：目录本身可能是 junction/符号链接，必须按真实路径再判一次越界
         var real = ResolveRealPath(candidate);
-        if (real is null || !IsWithin(realRoot, real) || !Directory.Exists(real)) return false;
+        if (real is null || !IsSameOrWithin(realRoot, real) || !Directory.Exists(real)) return false;
 
         fullPath = real;
         return true;

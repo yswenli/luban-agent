@@ -18,7 +18,7 @@ namespace LubanAgentWebHost.Services;
 /// 站点静态根，必然 404。前端把这类链接改写到本接口，由宿主按工作区根目录（含 <c>wiki/</c> 回落）读原文。
 /// </para>
 /// <para>
-/// 只回传工作区内已存在、且经 <see cref="WebFileKinds"/> 判定为文本或图片的文件：路径越界必须在这里拦住
+/// 只回传工作区内已存在、且经 <see cref="WebFileKinds"/> 判定为文本、图片或音视频的文件：路径越界必须在这里拦住
 /// （见 <see cref="WebFilePath"/>），未知格式与超限文件一律回「不支持预览」，不把任意本机文件交给浏览器。
 /// </para>
 /// </remarks>
@@ -26,6 +26,9 @@ public static class WebFileService
 {
     /// <summary>提示页的响应类型。</summary>
     private const string HtmlContentType = "text/html; charset=utf-8";
+
+    /// <summary>单个目录一次最多回传的条目数（超出部分由前端提示改用筛选或显示忽略项）。</summary>
+    public const int MaxEntriesPerDirectory = 2000;
 
     /// <summary>
     /// 读取工作区内文件原文。
@@ -66,7 +69,7 @@ public static class WebFileService
             return MessagePage(
                 415,
                 "不支持预览",
-                $"{requestPath} 不是可预览的文本或图片格式；请在本地打开该文件。");
+                $"{requestPath} 不是可预览的文本、图片或音视频格式；请在本地打开该文件。");
         }
 
         try
@@ -86,6 +89,15 @@ public static class WebFileService
             {
                 var bytes = await File.ReadAllBytesAsync(fullPath).ConfigureAwait(false);
                 return new FileResult(new MemoryStream(bytes), contentType, HttpStatusCode.OK);
+            }
+
+            if (kind is WebFilePreviewKind.Video or WebFilePreviewKind.Audio)
+            {
+                // 音视频可能是上百 MB：交给 BigDataResult 分块写响应，不能整段读进内存。
+                // SAEA 26.11 的 FileResult/BigDataResult 都不解析 Range，进度条拖动可能不可用；
+                // 顺序播放不依赖 206，先按这个能力交付。
+                var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return new BigDataResult(stream, contentType, HttpStatusCode.OK);
             }
 
             var text = await ReadTextAsync(fullPath).ConfigureAwait(false);
@@ -113,8 +125,9 @@ public static class WebFileService
     /// </summary>
     /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
     /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
-    /// <returns>子目录与文件清单（相对路径、类型、大小、修改时间）。</returns>
-    public static Task<ActionResult> ListAsync(string? workspaceId, string? path) => WebApi.RunGuardedAsync(async () =>
+    /// <param name="showIgnored">是否包含 <see cref="WebFileIgnore"/> 默认跳过的目录；<c>1</c>/<c>true</c> 为包含。</param>
+    /// <returns>子目录与文件清单（相对路径、类型、大小、修改时间），超出单目录上限时带 <c>truncated</c>。</returns>
+    public static Task<ActionResult> ListAsync(string? workspaceId, string? path, string? showIgnored = null) => WebApi.RunGuardedAsync(async () =>
     {
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
@@ -135,11 +148,16 @@ public static class WebFileService
 
         try
         {
+            var includeIgnored = string.Equals(showIgnored, "1", StringComparison.Ordinal)
+                || string.Equals(showIgnored, "true", StringComparison.OrdinalIgnoreCase);
+
             var items = new DirectoryInfo(directory)
                 .EnumerateFileSystemInfos()
                 .Where(info => !EscapesWorkspace(directory, info))
+                .Where(info => includeIgnored || !WebFileIgnore.IsIgnored(info.Name, info is DirectoryInfo))
                 .OrderByDescending(info => info is DirectoryInfo)
                 .ThenBy(info => info.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxEntriesPerDirectory + 1)
                 .Select(info =>
                 {
                     var isDirectory = info is DirectoryInfo;
@@ -155,11 +173,15 @@ public static class WebFileService
                 })
                 .ToList();
 
+            var truncated = items.Count > MaxEntriesPerDirectory;
+            if (truncated) items.RemoveRange(MaxEntriesPerDirectory, items.Count - MaxEntriesPerDirectory);
+
             return WebApi.OkJson(new
             {
                 workspaceId = workspace.WorkspaceId,
                 path = ToRelative(workspace.RootPath, directory),
-                entries = items
+                entries = items,
+                truncated
             });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)

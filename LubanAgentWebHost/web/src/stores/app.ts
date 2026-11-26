@@ -468,9 +468,62 @@ export function workspaceName(workspaceId: string | null | undefined): string {
 /** 知识库工作区类型（`Workspace.Type`），只在知识库页展示，不进首页项目列表。 */
 export const LLM_WIKI_TYPE = 'LlmWiki';
 
-/** 首页「项目」列表：排除知识库工作区。 */
+const PROJECT_ORDER_KEY = 'luban.web.projectOrder';
+
+function readProjectOrder(): string[] {
+  try {
+    const raw = window.localStorage.getItem(PROJECT_ORDER_KEY);
+    if (!raw) return [];
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    /* 隐私模式读不到：按后端顺序展示 */
+    return [];
+  }
+}
+
+/**
+ * 用户手工拖出来的项目顺序（workspaceId 列表）。
+ *
+ * 只记录拖过的项目；没登记的新项目按后端顺序（最后活跃时间倒序）排在末尾，
+ * 所以新建、删除项目都不会把已有项目挤乱。
+ */
+const [projectOrder, setProjectOrder] = createSignal<string[]>(readProjectOrder());
+
+/** 首页「项目」列表：排除知识库工作区，并叠加手工拖动顺序。 */
 export function projectWorkspaces(): Workspace[] {
-  return (bootstrap()?.workspaces ?? []).filter((item) => item.type !== LLM_WIKI_TYPE);
+  const list = (bootstrap()?.workspaces ?? []).filter((item) => item.type !== LLM_WIKI_TYPE);
+  const order = projectOrder();
+  if (order.length === 0) return list;
+
+  const rank = new Map(order.map((workspaceId, position) => [workspaceId, position]));
+  // 未登记项目统一排在已登记之后；同秩时 sort 稳定，保留后端顺序
+  return [...list].sort(
+    (left, right) =>
+      (rank.get(left.workspaceId) ?? Number.MAX_SAFE_INTEGER) -
+      (rank.get(right.workspaceId) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+/** 拖动项目排序：把项目移到 `toIndex`（移除后的下标），并把当前可见顺序整体写入本地。 */
+export function moveProject(workspaceId: string, toIndex: number): void {
+  const ids = projectWorkspaces().map((item) => item.workspaceId);
+  const from = ids.indexOf(workspaceId);
+  if (from < 0) return;
+
+  const next = ids.filter((id) => id !== workspaceId);
+  const target = Math.max(0, Math.min(toIndex, next.length));
+  if (target === from) return;
+  next.splice(target, 0, workspaceId);
+  setProjectOrder(next);
+
+  try {
+    window.localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(next));
+  } catch {
+    /* 隐私模式或配额满：只影响刷新后恢复 */
+  }
 }
 
 /** 知识库工作区标识集合：首页会话列表据此隐藏知识库内的会话。 */

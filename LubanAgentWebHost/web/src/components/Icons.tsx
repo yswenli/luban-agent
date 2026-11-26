@@ -80,6 +80,13 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M9 4v16" />
     </>
   ),
+  // 右侧工作区：方框内一条竖线分双栏，竖线靠右强调「右侧抽屉」
+  'panel-right': () => (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+    </>
+  ),
   trash: () => (
     <>
       <path d="M4 7h16" />

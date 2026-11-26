@@ -6,9 +6,10 @@ import { Icon } from '../components/Icons';
 import { Markdown } from '../components/Markdown';
 import { PopMenu, menuAt } from '../components/PopMenu';
 import { ProjectSidebar } from '../components/ProjectSidebar';
-import { SideResizer } from '../components/SideResizer';
+import { SideResizer, type ResizeTarget } from '../components/SideResizer';
 import { ScreenshotOverlay } from '../components/screenshot/ScreenshotOverlay';
 import { isCaptureSupported } from '../components/screenshot/capture';
+import { WorkspacePanel } from '../components/WorkspacePanel';
 import { post } from '../lib/api';
 import {
   formatBytes,
@@ -24,6 +25,18 @@ import { settingsApi } from '../lib/settings';
 import { sidebarCollapsed, useNarrowViewport } from '../lib/sidebar';
 import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
+import {
+  WORKSPACE_MIN_WIDTH,
+  maxWorkspaceWidth,
+  persistWorkspaceWidth,
+  resetWorkspaceWidth,
+  setWorkspaceDragging,
+  setWorkspaceWidth,
+  toggleWorkspacePanel,
+  workspaceDragging,
+  workspaceOpen,
+  workspaceWidth,
+} from '../lib/workspacePanel';
 import type { ChatItem, PendingQuestionRequest, ToolCard, UserQuestionAnswer } from '../stores/chat';
 import { dropChat, getChat } from '../stores/chats';
 import { openFilePreview } from '../stores/filePreview';
@@ -759,6 +772,18 @@ export function ChatPage(props: { sessionId: string }) {
   // 窄屏左栏变横排 chip（见 styles.css 的 760px 断点），那时栏宽由 CSS 接管，拖拽条要隐掉
   const draggable = () => !narrow() && !sidebarCollapsed();
 
+  /** 右侧工作区面板的拖拽目标：接缝在面板左边，指针左移才是变宽（`invert`）。 */
+  const workspaceResizeTarget: ResizeTarget = {
+    width: workspaceWidth,
+    setWidth: setWorkspaceWidth,
+    minWidth: WORKSPACE_MIN_WIDTH,
+    maxWidth: maxWorkspaceWidth,
+    dragging: workspaceDragging,
+    setDragging: setWorkspaceDragging,
+    persist: persistWorkspaceWidth,
+    reset: resetWorkspaceWidth,
+  };
+
   /**
    * 项目栏点项目：跳到该项目最近更新过的会话。
    *
@@ -812,6 +837,15 @@ export function ChatPage(props: { sessionId: string }) {
             <span class="token-usage-text">{formatTokenCompact(tokenUsedInWindow())}</span>
           </span>
         </Show>
+        <button
+          class="icon-btn"
+          classList={{ active: workspaceOpen() }}
+          title="查看工作区"
+          aria-pressed={workspaceOpen()}
+          onClick={toggleWorkspacePanel}
+        >
+          <Icon name="panel-right" size={18} />
+        </button>
         <button
           class="icon-btn"
           title="更多"
@@ -1147,6 +1181,17 @@ export function ChatPage(props: { sessionId: string }) {
           </div>
         </div>
         </div>
+
+        <Show when={workspaceOpen()}>
+          <Show when={!narrow()}>
+            <SideResizer label="调整工作区宽度" target={workspaceResizeTarget} invert />
+          </Show>
+          <WorkspacePanel
+            sessionId={props.sessionId}
+            workspaceId={session()?.workspaceId ?? null}
+            width={workspaceWidth()}
+          />
+        </Show>
       </div>
 
       <input

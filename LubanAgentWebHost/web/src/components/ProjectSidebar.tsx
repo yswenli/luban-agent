@@ -4,6 +4,7 @@ import { ConfirmActionDialog, Modal, TextPromptDialog } from './Dialog';
 import { Icon } from './Icons';
 import { AboutDialog, HelpDialog } from './InfoDialogs';
 import { PopMenu, menuAt } from './PopMenu';
+import { beginDragSort } from '../lib/dragSort';
 import { truncate } from '../lib/format';
 import { openPlugin, openPlugins, openSettings, openWiki } from '../lib/router';
 import { sidebarCollapsed, sideWidth, toggleSidebarCollapsed, useNarrowViewport } from '../lib/sidebar';
@@ -14,6 +15,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   filterWorkspaceId,
+  moveProject,
   projectWorkspaces,
   renameWorkspace,
   selectProject,
@@ -48,6 +50,9 @@ export function ProjectSidebar(props: {
   const [projectDialog, setProjectDialog] = createSignal<ProjectAction | null>(null);
   const [newProject, setNewProject] = createSignal(false);
   const [info, setInfo] = createSignal<'help' | 'about' | null>(null);
+  const [draggingProject, setDraggingProject] = createSignal<string | null>(null);
+  const [dropSlot, setDropSlot] = createSignal<number | null>(null);
+  let listEl: HTMLDivElement | undefined;
 
   const narrow = useNarrowViewport();
   // 窄屏强制展开：栏位变成横排 chip，收起态在窄屏没有意义
@@ -76,6 +81,31 @@ export function ProjectSidebar(props: {
   function select(workspaceId: string) {
     if (props.onSelect) void props.onSelect(workspaceId);
     else void selectProject(workspaceId);
+  }
+
+  /**
+   * 项目拖放排序：宽屏竖排按上下算，窄屏横排 chip 按左右算。
+   *
+   * 收起态只剩图标、没有项目名可对齐，不开放排序；「更多」按钮自己响应点击。
+   */
+  function onProjectPointerDown(event: PointerEvent, workspaceId: string, index: number): void {
+    if (collapsed()) return;
+    if ((event.target as HTMLElement).closest('.session-actions')) return;
+    beginDragSort({
+      event,
+      item: event.currentTarget as HTMLElement,
+      container: listEl,
+      itemSelector: '.side-item',
+      axis: narrow() ? 'x' : 'y',
+      index,
+      onStart: () => setDraggingProject(workspaceId),
+      onSlot: setDropSlot,
+      onDrop: (toIndex) => moveProject(workspaceId, toIndex),
+      onEnd: () => {
+        setDraggingProject(null);
+        setDropSlot(null);
+      },
+    });
   }
 
   return (
@@ -116,15 +146,22 @@ export function ProjectSidebar(props: {
           </div>
         </div>
 
-        <div class="side-list">
+        <div class="side-list" ref={(el) => (listEl = el)} data-axis={narrow() ? 'x' : 'y'}>
           <For each={workspaces()}>
-            {(workspace) => (
+            {(workspace, index) => (
               <div
                 class="side-item"
-                classList={{ selected: workspace.workspaceId === selectedId() }}
+                classList={{
+                  selected: workspace.workspaceId === selectedId(),
+                  dragging: draggingProject() === workspace.workspaceId,
+                  'drop-before': dropSlot() === index(),
+                  'drop-after':
+                    dropSlot() === workspaces().length && index() === workspaces().length - 1,
+                }}
                 role="button"
                 tabIndex={0}
                 title={projectTitle(workspace, collapsed(), workspace.workspaceId === selectedId())}
+                onPointerDown={(event) => onProjectPointerDown(event, workspace.workspaceId, index())}
                 onClick={() => select(workspace.workspaceId)}
                 onKeyDown={(event) => {
                   // 行内「更多」按钮的按键不触发行点击

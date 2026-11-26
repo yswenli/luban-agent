@@ -50,6 +50,23 @@ export function rememberSession(sessionId: string): void {
   commit([...list, sessionId].slice(-MAX_TABS));
 }
 
+/**
+ * 拖动标签排序：把标签移到 `toIndex`（移除后的下标）。
+ *
+ * 顺序与标签集合同存一处，随 `commit` 一起写 localStorage。
+ */
+export function moveSession(sessionId: string, toIndex: number): void {
+  const list = current();
+  const from = list.indexOf(sessionId);
+  if (from < 0) return;
+
+  const next = list.filter((id) => id !== sessionId);
+  const target = Math.max(0, Math.min(toIndex, next.length));
+  if (target === from) return;
+  next.splice(target, 0, sessionId);
+  commit(next);
+}
+
 /** 关闭标签或删除会话时移除。 */
 export function forgetSession(sessionId: string): void {
   const list = current();
