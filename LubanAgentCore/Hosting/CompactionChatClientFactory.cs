@@ -13,7 +13,7 @@ namespace LubanAgentCore.Hosting;
 /// 摘要使用的聊天客户端及其上下文窗口。
 /// </summary>
 /// <param name="Client">聊天客户端。</param>
-/// <param name="ContextWindow">该模型的上下文窗口（token）；未知时为 <c>null</c>，由会话预算兜底。</param>
+/// <param name="ContextWindow">该模型的上下文窗口（token）；未知或沿用会话模型时为 <c>null</c>，只按会话阈值收敛。</param>
 public readonly record struct CompactionChatClient(IChatClient Client, int? ContextWindow);
 
 /// <summary>
@@ -26,26 +26,6 @@ public interface ICompactionChatClientFactory
     /// </summary>
     /// <returns>配置了独立摘要模型且可用时返回该模型，否则返回会话模型。</returns>
     CompactionChatClient Create();
-}
-
-/// <summary>
-/// 按模型限定名查上下文窗口；查不到时返回 <c>null</c>（视为未知）。
-/// </summary>
-public interface IModelContextWindowLookup
-{
-    /// <summary>查模型窗口。</summary>
-    /// <param name="modelKey"><c>provider:model</c>。</param>
-    /// <returns>窗口 token 数；模型未登记时为 <c>null</c>。</returns>
-    int? GetContextWindow(string modelKey);
-}
-
-/// <summary>
-/// 从模型能力档案读窗口：用户登记优先，其次内置表。
-/// </summary>
-public sealed class ConfigModelContextWindowLookup(ConfigManager config) : IModelContextWindowLookup
-{
-    /// <inheritdoc />
-    public int? GetContextWindow(string modelKey) => config.GetModelProfile(modelKey)?.ContextWindow;
 }
 
 /// <summary>
@@ -73,7 +53,7 @@ public sealed class CompactionChatClientFactory(
 
         try
         {
-            // 摘要输入按会话阈值收敛，配了更小窗口的模型时必须再按它自己的窗口压一次
+            // 摘要输入按会话阈值收敛后，还要按摘要模型自己的窗口再压一次
             return new CompactionChatClient(router.CreateChatClient(model), windows.GetContextWindow(model));
         }
         catch (Exception ex)
