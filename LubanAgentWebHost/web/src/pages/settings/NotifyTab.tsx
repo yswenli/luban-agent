@@ -59,7 +59,7 @@ export function NotifyTab() {
       </div>
 
       <div class="field-hint" style={{ 'margin-top': '18px' }}>
-        三种声音由浏览器现场合成，不需要联网或音频文件；浏览器标签页或系统静音时听不到属于系统设置问题。
+        浏览器标签页或系统静音时听不到属于系统设置问题。
       </div>
     </div>
   );
