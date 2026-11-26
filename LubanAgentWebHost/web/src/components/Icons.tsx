@@ -175,6 +175,16 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M12 11v5m-2.5-2.5h5" />
     </>
   ),
+  // 项目行的 Git 仓库标记：两个上游节点 + 左下节点，右侧分支向下再向左汇入
+  git: () => (
+    <>
+      <circle cx="6.5" cy="5.5" r="2.3" />
+      <circle cx="17.5" cy="5.5" r="2.3" />
+      <circle cx="6.5" cy="18.5" r="2.3" />
+      <path d="M6.5 7.8v8.4" />
+      <path d="M17.5 7.8v3.9a4.8 4.8 0 0 1-4.8 4.8H8.8" />
+    </>
+  ),
   plug: () => (
     <>
       <path d="M9 3v6M15 3v6" />

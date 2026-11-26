@@ -18,6 +18,7 @@ namespace LubanAgentCore.Protocol.Dtos;
 /// <param name="ConfigPath">配置目录相对路径。</param>
 /// <param name="LastActiveAt">最后活跃时间。</param>
 /// <param name="IsAuthorized">是否已授权访问根目录。</param>
+/// <param name="HasGit">工作区根目录下是否存在 <c>.git</c>（目录或 worktree/submodule 的文件形态）。</param>
 public sealed record WorkspaceDto(
     string WorkspaceId,
     string Name,
@@ -26,7 +27,8 @@ public sealed record WorkspaceDto(
     string? UserId,
     string? ConfigPath,
     DateTime? LastActiveAt,
-    bool IsAuthorized);
+    bool IsAuthorized,
+    bool HasGit);
 
 /// <summary>创建工作区。</summary>
 public sealed record WorkspaceCreateRequest

@@ -299,7 +299,7 @@ a {
   padding: 12px 20px 20px;
 }
 
-/* 全局顶栏：会话入口 + 已打开会话标签，始终位于卡片之上 */
+/* 全局顶栏：会话入口 + 已打开会话标签，与下栏拼成一整块卡片 */
 .app-topbar {
   flex: 0 0 auto;
   width: 100%;
@@ -310,7 +310,9 @@ a {
   padding: 0 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  /* 接缝面不画线、不留圆角：圆角与描边只在整块卡片的外轮廓上出现 */
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: var(--shadow);
 }
 
@@ -678,6 +680,20 @@ body.is-sorting .side-item {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 项目行的 Git 仓库标记：只占图标宽度、不参与名称截断；悬停/选中时随行一起提亮 */
+.side-git {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  transition: color 0.13s ease;
+}
+
+.side-item:hover .side-git,
+.side-item.selected .side-git {
+  color: var(--text-dim);
 }
 
 .side-hint {

@@ -165,6 +165,7 @@ public static class WebWorkspaceService
             dto.ConfigPath,
             dto.LastActiveAt,
             dto.IsAuthorized,
+            dto.HasGit,
             Reused = reused,
         };
     }

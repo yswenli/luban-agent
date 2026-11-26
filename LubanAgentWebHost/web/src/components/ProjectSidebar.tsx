@@ -177,6 +177,11 @@ export function ProjectSidebar(props: {
                 </span>
                 <Show when={!collapsed()}>
                   <span class="side-name">{workspace.name || workspace.rootPath}</span>
+                  <Show when={workspace.hasGit}>
+                    <span class="side-git" title="Git 仓库" role="img" aria-label="Git 仓库">
+                      <Icon name="git" size={14} />
+                    </span>
+                  </Show>
                   <span class="session-actions">
                     <button
                       class="icon-btn"

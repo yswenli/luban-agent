@@ -15,6 +15,8 @@ export interface Workspace {
   configPath?: string | null;
   lastActiveAt?: string | null;
   isAuthorized: boolean;
+  /** 工作区根目录下是否存在 `.git`（Git 仓库）；后端未返回时按无处理。 */
+  hasGit?: boolean;
 }
 
 export interface ProviderSummary {
