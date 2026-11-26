@@ -22,8 +22,8 @@ export function FilePreviewDialog() {
   let sequence = 0;
 
   const releaseObjectUrl = () => {
-    if (!objectUrl) return;
-    URL.revokeObjectURL(objectUrl);
+    // 音视频的 url 是接口地址而不是 blob：只回收自己创建的 blob
+    if (objectUrl?.startsWith('blob:')) URL.revokeObjectURL(objectUrl);
     objectUrl = null;
   };
 
@@ -55,7 +55,7 @@ export function FilePreviewDialog() {
       .then((value) => {
         // 连点多个链接时只认最后一次请求，先到的图片 blob 立即释放
         if (requestId !== sequence) {
-          if ('url' in value) URL.revokeObjectURL(value.url);
+          if ('url' in value && value.url.startsWith('blob:')) URL.revokeObjectURL(value.url);
           return;
         }
         if ('url' in value) objectUrl = value.url;

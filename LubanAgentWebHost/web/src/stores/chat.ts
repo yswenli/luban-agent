@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { ApiError, get, post } from '../lib/api';
 import { extensionOf, formatBytes } from '../lib/format';
 import { prepareImageForUpload } from '../lib/image';
+import { notify } from '../lib/notify';
 import { DEFAULT_FIRST_FRAME_MS, DEFAULT_IDLE_MS, SseTimeoutError, streamPost } from '../lib/sse';
 import type {
   AttachmentPolicy,
@@ -430,6 +431,10 @@ export function createChat(sessionId: string) {
   let lastSeq: number | undefined;
   /** 当前流式气泡的 id：可见性 / 联网恢复时用它接回同一条气泡。 */
   let activeAssistantId: string | null = null;
+  /** 用户点了停止：服务端仍可能以 done 收尾，本地据此跳过完成提示音。 */
+  let stoppedByUser = false;
+  /** 本轮出过错：收尾的 done 不再报「完成」，避免同一次失败先响错、后响完成。 */
+  let roundErrored = false;
 
   /**
    * 拉取历史消息。
@@ -603,6 +608,7 @@ export function createChat(sessionId: string) {
           timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
           origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
         });
+        notify('question');
         return false;
 
       case 'tool.question': {
@@ -627,6 +633,7 @@ export function createChat(sessionId: string) {
           expiresAt: Date.now() + timeoutSeconds * 1000,
           origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
         });
+        notify('question');
         return false;
       }
 
@@ -671,7 +678,10 @@ export function createChat(sessionId: string) {
         return false;
 
       case 'error':
+        // 快照回放（带 key）只还原历史提示，不再补响一次
+        roundErrored = true;
         pushFrameNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
+        if (noticeKey === undefined) notify('error');
         return false;
 
       case 'done':
@@ -823,7 +833,13 @@ export function createChat(sessionId: string) {
       // 序号按轮次从 1 开始重编：本轮已收尾，留着旧序号会让下一次 attach 按错误起点切片
       lastSeq = undefined;
       void refreshSessions();
+      // 有气泡才是本地看着跑完的一轮：attach 到「早已结束且无本地半成品」的轮次不补响。
+      // 用户主动停止也不响——服务端取消后仍可能补一帧 done，不区分就会把「我让它停」当完成。
+      // 本轮出过错同样不报完成：错误提示已经响过，再补一声完成会让画面上像是成功。
+      if (assistantId && !stoppedByUser && !roundErrored) notify('done');
     }
+    stoppedByUser = false;
+    roundErrored = false;
     // 队列里还有消息：本轮收尾（跑完 / 被取消 / 出错）后按入队顺序继续发下一条
     if (!disposed) void drainQueue();
   }
@@ -966,6 +982,7 @@ export function createChat(sessionId: string) {
       if (attempt >= 3) {
         finishStream(targetId, false, streamController);
         showToast('续流失败，请重新打开该会话', 'error');
+        notify('error');
         return false;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
@@ -1002,6 +1019,7 @@ export function createChat(sessionId: string) {
       }
 
       pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
+      notify('error');
       finishStream(assistantId, false);
     } finally {
       recovering = false;
@@ -1140,6 +1158,8 @@ export function createChat(sessionId: string) {
     const assistantId = nextId();
     // 新一轮开始：重置提示计数，快照回放按「已实时渲染条数」跳过前缀
     renderedNotices = 0;
+    stoppedByUser = false;
+    roundErrored = false;
 
     const assistantItem: ChatItem = {
       kind: 'assistant',
@@ -1248,10 +1268,14 @@ export function createChat(sessionId: string) {
   }
 
   async function stop(): Promise<void> {
+    // 先置位再发请求：done 帧可能比取消响应更早到达，晚设置就拦不住完成提示音
+    stoppedByUser = true;
     try {
       await post('/agent/cancel', { sessionId, runId: runId() });
       showToast('已请求停止本轮', 'info');
     } catch (error) {
+      // 取消没发出去，本轮仍会自然跑完：恢复完成提示音
+      stoppedByUser = false;
       showToast((error as Error).message, 'error');
     }
   }

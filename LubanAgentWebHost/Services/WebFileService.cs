@@ -93,9 +93,9 @@ public static class WebFileService
 
             if (kind is WebFilePreviewKind.Video or WebFilePreviewKind.Audio)
             {
-                // 音视频可能是上百 MB：交给 BigDataResult 分块写响应，不能整段读进内存。
-                // SAEA 26.11 的 FileResult/BigDataResult 都不解析 Range，进度条拖动可能不可用；
-                // 顺序播放不依赖 206，先按这个能力交付。
+                // 音视频可能是上百 MB：交给 BigDataResult 流式写出，不能整段读进内存。
+                // BigDataResult 会解析单区间 Range（206/416 + Accept-Ranges），进度条可拖动；
+                // 前提是流可定位，FileStream 满足；流由框架负责关闭（leaveOpen 默认 false）。
                 var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 return new BigDataResult(stream, contentType, HttpStatusCode.OK);
             }

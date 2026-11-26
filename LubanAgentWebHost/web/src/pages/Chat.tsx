@@ -789,6 +789,16 @@ export function ChatPage(props: { sessionId: string }) {
   // 窄屏左栏变横排 chip（见 styles.css 的 760px 断点），那时栏宽由 CSS 接管，拖拽条要隐掉
   const draggable = () => !narrow() && !sidebarCollapsed();
 
+  // 工作区面板一旦打开过就保持挂载：开合交给 CSS 收放，重开时目录树与预览仍在，不用重新拉一遍
+  const [workspacePainted, setWorkspacePainted] = createSignal(workspaceOpen());
+  createEffect(() => {
+    if (workspaceOpen()) setWorkspacePainted(true);
+  });
+  // 换会话时关着就卸掉：常驻会让关闭态也替新会话预拉一遍目录
+  createEffect(on(() => props.sessionId, () => {
+    if (!workspaceOpen()) setWorkspacePainted(false);
+  }, { defer: true }));
+
   /** 右侧工作区面板的拖拽目标：接缝在面板左边，指针左移才是变宽（`invert`）。 */
   const workspaceResizeTarget: ResizeTarget = {
     width: workspaceWidth,
@@ -1227,16 +1237,25 @@ export function ChatPage(props: { sessionId: string }) {
         </div>
         </div>
 
-        <Show when={workspaceOpen()}>
-          <Show when={!narrow()}>
-            <SideResizer label="调整工作区宽度" target={workspaceResizeTarget} invert />
-          </Show>
-          <WorkspacePanel
-            sessionId={props.sessionId}
-            workspaceId={session()?.workspaceId ?? null}
-            width={workspaceWidth()}
-          />
+        <Show when={workspaceOpen() && !narrow()}>
+          <SideResizer label="调整工作区宽度" target={workspaceResizeTarget} invert />
         </Show>
+        {/* 外层只管占位宽度，内层负责横向位移：两者同步才是「抽屉滑出」而不是「被压扁」 */}
+        <div
+          class="ws-dock"
+          classList={{ 'is-open': workspaceOpen() }}
+          style={{ '--ws-width': `${workspaceWidth()}px` }}
+          inert={!workspaceOpen()}
+          aria-hidden={!workspaceOpen()}
+        >
+          <Show when={workspacePainted()}>
+            <WorkspacePanel
+              sessionId={props.sessionId}
+              workspaceId={session()?.workspaceId ?? null}
+              width={workspaceWidth()}
+            />
+          </Show>
+        </div>
       </div>
 
       <input

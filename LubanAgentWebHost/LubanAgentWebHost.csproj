@@ -15,7 +15,7 @@
 
 	<ItemGroup>
 		<!-- SAEA.MVC 只按 /{controller}/{action} 派发，控制器必须与宿主同程序集 -->
-		<PackageReference Include="SAEA.MVC" Version="26.11.25.1" />
+		<PackageReference Include="SAEA.MVC" Version="26.11.26.1" />
 		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="11.0.0" />
 	</ItemGroup>
 

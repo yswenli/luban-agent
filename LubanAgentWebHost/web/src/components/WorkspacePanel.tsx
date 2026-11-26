@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from 'solid-js';
 
 import { ApiError } from '../lib/api';
 import { filePreviewName, fileReadUrl, loadFilePreview, type FilePreviewContent } from '../lib/filePreview';
@@ -84,7 +84,8 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
     }
   }
 
-  // 会话 / 工作区 / 「显示忽略项」/ 手动刷新 变化时：清空树，重新拉根目录与已展开目录
+  // 会话 / 工作区 / 「显示忽略项」/ 手动刷新 变化时：清空树，重新拉根目录与已展开目录。
+  // 展开集合要 untrack 读取：它随点击自增版本信号，若在此建立依赖，点一个节点就会把整棵树清空重拉
   createEffect(() => {
     const workspaceId = props.workspaceId;
     const sessionId = props.sessionId;
@@ -97,7 +98,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
     if (!workspaceId) return;
 
     void loadDir('', token);
-    for (const path of expandedDirsOf(sessionId)) void loadDir(path, token);
+    for (const path of untrack(() => expandedDirsOf(sessionId))) void loadDir(path, token);
   });
 
   // 选中文件或手动刷新时重取内容；先到的旧响应按序号丢弃，blob 立即回收
@@ -138,7 +139,11 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
       });
   });
 
-  onCleanup(releaseObjectUrl);
+  // 关闭面板时让在途预览响应作废：迟到的 blob 会走「旧响应」分支立即回收，不会留在内存里
+  onCleanup(() => {
+    previewSequence += 1;
+    releaseObjectUrl();
+  });
 
   const toggleDir = (path: string) => {
     const expanded = expandedDirsOf(props.sessionId).has(path);
@@ -220,7 +225,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
               )}
             </For>
             <Show when={dir().truncated}>
-              <div class="ws-tree-note">条目过多，仅显示前一部分；用筛选缩小范围。</div>
+              <div class="ws-tree-note">条目过多，仅显示前一部分。</div>
             </Show>
           </>
         )}
@@ -287,7 +292,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
       </div>
 
       <div class="ws-body">
-        <div class="ws-tree" role="tree" aria-label="工作区文件">
+        <div class="ws-tree" role="group" aria-label="工作区文件">
           <Show
             when={props.workspaceId}
             fallback={<div class="ws-tree-note">当前会话未绑定工作区。</div>}
@@ -363,12 +368,6 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       controls
                       onError={() => setContentError('浏览器无法播放这个音频；请点右上角「新标签页」在本地播放。')}
                     />
-                  </Show>
-
-                  <Show when={content()?.kind === 'video' || content()?.kind === 'audio'}>
-                    <p class="ws-preview-note">
-                      宿主响应层不支持分段请求，音视频只能顺序播放，拖动进度条无效；需要跳转请用右上角「新标签页」在本地播放。
-                    </p>
                   </Show>
 
                   <Show when={content()?.kind === 'html'}>

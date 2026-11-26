@@ -264,6 +264,14 @@ a {
   background: var(--surface-3);
 }
 
+/* 行内小按钮：设置项右侧的「试听」这类操作 */
+.btn.sm {
+  height: 26px;
+  padding: 0 9px;
+  gap: 4px;
+  font-size: 12px;
+}
+
 .spacer {
   flex: 1;
 }
@@ -452,12 +460,13 @@ body.is-sorting .side-item {
   width: 100%;
   flex: 1;
   min-height: 0;
-  margin-top: 5px;
   display: flex;
   flex-direction: column;
   background: var(--surface);
+  /* 与顶栏无缝相接：接缝处只保留顶栏的底边框与圆角，下栏去掉顶部边框与顶部圆角 */
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -503,6 +512,8 @@ body.is-sorting .side-item {
 .side-resizer {
   flex: 0 0 0;
   position: relative;
+  /* 工作区面板是绝对定位、在 DOM 里更靠后，不抬高层级会盖住接缝右半边的命中区 */
+  z-index: 1;
   width: 0;
   cursor: col-resize;
   touch-action: none;
@@ -3405,6 +3416,28 @@ a.nav-item {
   margin-left: 4px;
 }
 
+/* 通知页的一行：勾选框与试听同排，说明另起一行左对齐到文字 */
+.notify-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notify-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notify-row-head .check-field {
+  padding-top: 0;
+}
+
+.notify-row-hint {
+  margin-left: 26px;
+}
+
 .settings-actions {
   display: flex;
   gap: 10px;
@@ -3807,32 +3840,64 @@ a.nav-item {
 
 /* ── 右侧工作区面板（对话页） ─────────────────────────────────────────── */
 
-/* 宽度来自 --ws-width（面板组件的行内样式），窄屏在断点里改成整屏覆盖 */
-.workspace-panel {
+/*
+ * 两段式开合：外层 dock 只负责占位宽度收放，内层面板负责横向位移。
+ * 两条过渡用同一时长与缓动，视觉上才是一整块抽屉滑出；只动其一会显得被压扁或跳位。
+ */
+.ws-dock {
+  position: relative;
   flex: 0 0 auto;
+  width: 0;
+  min-width: 0;
+  /* 只裁掉滑出到 dock 右边界之外的部分（屏幕右侧看不见的地方） */
+  overflow: hidden;
+  transition: width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.ws-dock.is-open {
+  width: var(--ws-width, 420px);
+}
+
+/*
+ * 宽度来自 --ws-width（由 dock 行内样式提供），窄屏在断点里改成整屏覆盖。
+ * 必须贴住 dock 的右边界而不是跟着 flex 流排在左侧：dock 收窄时左边界右移，
+ * 面板同时右移会让「左边界右移」被算两遍，结果面板到一半就整块滑出可视区、
+ * 剩下的收窄只是空档扩张。贴右边后左边界恰好等于 dock 左边界，全程无缝。
+ */
+.workspace-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
   width: var(--ws-width, 420px);
   min-width: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--surface);
-  animation: ws-slide-in 0.18s ease;
+  /* 关闭态整体移出右边界，配合 dock 收窄与裁切，形成向右收起 */
+  transform: translateX(100%);
+  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-@keyframes ws-slide-in {
-  from {
-    transform: translateX(20px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
+.ws-dock.is-open .workspace-panel {
+  transform: none;
 }
 
 /* 拖拽期间禁止选中面板文字：pointermove 会把预览里的文字刷成选区 */
 .chat-body:has(.side-resizer.dragging) .workspace-panel {
   user-select: none;
+}
+
+/* 拖宽时宽度必须跟手：过渡会让面板明显滞后于指针 */
+.chat-body:has(.side-resizer.dragging) .ws-dock,
+.chat-body:has(.side-resizer.dragging) .workspace-panel {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-dock,
+  .workspace-panel {
+    transition: none;
+  }
 }
 
 .ws-head {
@@ -4127,14 +4192,6 @@ a.nav-item {
   margin-top: 6px;
 }
 
-/* 音视频受响应层限制只能顺序播放：把原因写清楚，避免用户以为播放器坏了 */
-.ws-preview-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-dim);
-}
-
 .ws-preview-html {
   width: 100%;
   min-height: 320px;
@@ -4156,6 +4213,12 @@ a.nav-item {
 
 /* 窄屏改成整屏抽屉：分栏两列挤不下，覆盖式更好读 */
 @media (max-width: 760px) {
+  /* 覆盖式抽屉不占布局宽度，开合只靠面板自身平移，否则会挤走对话区 */
+  .ws-dock,
+  .ws-dock.is-open {
+    width: 0;
+  }
+
   .workspace-panel {
     position: fixed;
     inset: 0;

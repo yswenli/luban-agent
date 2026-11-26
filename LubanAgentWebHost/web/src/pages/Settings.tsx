@@ -6,6 +6,7 @@ import { A2aTab } from './settings/A2aTab';
 import { DataTab } from './settings/DataTab';
 import { McpTab } from './settings/McpTab';
 import { ModelTab } from './settings/ModelTab';
+import { NotifyTab } from './settings/NotifyTab';
 import { ProviderTab } from './settings/ProviderTab';
 import { RuleTab } from './settings/RuleTab';
 import { SkillTab } from './settings/SkillTab';
@@ -33,6 +34,7 @@ const tabs: TabDef[] = [
   { id: 'mcp', label: 'MCP 服务', icon: 'terminal', scoped: true },
   { id: 'a2a', label: 'A2A 协作', icon: 'message', scoped: true, workspaceOnly: true },
   { id: 'workspace', label: '工作区', icon: 'file', scoped: false, requiresWorkspace: true },
+  { id: 'notify', label: '通知', icon: 'bell', scoped: false },
   { id: 'data', label: '数据与用量', icon: 'grid', scoped: false },
 ];
 
@@ -177,6 +179,9 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                 </Match>
                 <Match when={activeTab().id === 'data'}>
                   <DataTab />
+                </Match>
+                <Match when={activeTab().id === 'notify'}>
+                  <NotifyTab />
                 </Match>
               </Switch>
             </Show>

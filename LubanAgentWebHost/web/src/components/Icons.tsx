@@ -116,6 +116,13 @@ const paths: Record<string, () => JSX.Element> = {
     </>
   ),
   check: () => <path d="m5 12.5 4.5 4.5L19 7" />,
+  play: () => <path d="M8 5.5v13l10.5-6.5Z" />,
+  bell: () => (
+    <>
+      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5Z" />
+      <path d="M9.8 21a2.4 2.4 0 0 0 4.4 0" />
+    </>
+  ),
   terminal: () => (
     <>
       <path d="m5 8 4.5 4L5 16" />

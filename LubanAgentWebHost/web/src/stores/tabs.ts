@@ -1,5 +1,7 @@
 import { createSignal, untrack } from 'solid-js';
 
+import { forgetSessionWorkspaceState } from '../lib/workspacePanel';
+
 /**
  * 顶栏「已打开会话」标签。
  *
@@ -67,8 +69,9 @@ export function moveSession(sessionId: string, toIndex: number): void {
   commit(next);
 }
 
-/** 关闭标签或删除会话时移除。 */
+/** 关闭标签或删除会话时移除；工作区面板的展开/选中状态一并释放。 */
 export function forgetSession(sessionId: string): void {
+  forgetSessionWorkspaceState(sessionId);
   const list = current();
   if (!list.includes(sessionId)) return;
   commit(list.filter((id) => id !== sessionId));
@@ -79,5 +82,10 @@ export function pruneSessions(existing: Iterable<string>): void {
   const keep = new Set(existing);
   const list = current();
   const next = list.filter((id) => keep.has(id));
-  if (next.length !== list.length) commit(next);
+  if (next.length === list.length) return;
+
+  for (const id of list) {
+    if (!keep.has(id)) forgetSessionWorkspaceState(id);
+  }
+  commit(next);
 }
