@@ -1,9 +1,10 @@
 import { createEffect, createSignal, onCleanup, Show } from 'solid-js';
 
 import { ApiError } from '../lib/api';
-import { filePreviewName, fileReadUrl, loadFilePreview, type FilePreviewContent } from '../lib/filePreview';
+import { filePreviewName, loadFilePreview, type FilePreviewContent } from '../lib/filePreview';
 import { closeFilePreview, filePreview } from '../stores/filePreview';
 import { Modal } from './Dialog';
+import { FilePreviewActions, previewPlainText } from './FilePreviewActions';
 import { Markdown } from './Markdown';
 
 /**
@@ -17,6 +18,8 @@ export function FilePreviewDialog() {
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [zoomed, setZoomed] = createSignal(false);
+  // Markdown / HTML 的「渲染态 ↔ 源码」切换；换文件时回到渲染态
+  const [showingSource, setShowingSource] = createSignal(false);
 
   let objectUrl: string | null = null;
   let sequence = 0;
@@ -28,10 +31,7 @@ export function FilePreviewDialog() {
   };
 
   const kind = () => content()?.kind ?? null;
-  const text = () => {
-    const value = content();
-    return value && (value.kind === 'markdown' || value.kind === 'text') ? value.text : '';
-  };
+  const text = () => previewPlainText(content());
   const url = () => {
     const value = content();
     return value && 'url' in value ? value.url : '';
@@ -45,6 +45,7 @@ export function FilePreviewDialog() {
     setContent(null);
     setError(null);
     setZoomed(false);
+    setShowingSource(false);
     if (!target) {
       setLoading(false);
       return;
@@ -81,9 +82,13 @@ export function FilePreviewDialog() {
           wide
           onClose={closeFilePreview}
           footer={
-            <a class="btn ghost" href={fileReadUrl(target())} target="_blank" rel="noopener noreferrer">
-              新标签页打开
-            </a>
+            <FilePreviewActions
+              path={target().path}
+              workspaceId={target().workspaceId}
+              content={content()}
+              showingSource={showingSource()}
+              onToggleSource={() => setShowingSource((value) => !value)}
+            />
           }
         >
           <Show when={loading()}>
@@ -93,9 +98,16 @@ export function FilePreviewDialog() {
           <Show when={error()}>{(message) => <div class="file-preview-state is-error">{message()}</div>}</Show>
 
           <Show when={kind() === 'markdown'}>
-            <div class="file-preview-md">
-              <Markdown text={text()} workspaceId={target().workspaceId} />
-            </div>
+            <Show
+              when={showingSource()}
+              fallback={
+                <div class="file-preview-md">
+                  <Markdown text={text()} workspaceId={target().workspaceId} />
+                </div>
+              }
+            >
+              <pre class="file-preview-text">{text()}</pre>
+            </Show>
           </Show>
 
           <Show when={kind() === 'text'}>
@@ -121,7 +133,7 @@ export function FilePreviewDialog() {
               autoplay={false}
               onError={() => {
                 setContent(null);
-                setError('浏览器无法播放这个视频（容器或编码不受支持）；请在本地打开，或点下方「新标签页打开」。');
+                setError('浏览器无法播放这个视频（容器或编码不受支持）；请下载后在本地播放。');
               }}
             />
           </Show>
@@ -133,18 +145,25 @@ export function FilePreviewDialog() {
               controls
               onError={() => {
                 setContent(null);
-                setError('浏览器无法播放这个音频；请在本地打开，或点下方「新标签页打开」。');
+                setError('浏览器无法播放这个音频；请下载后在本地播放。');
               }}
             />
           </Show>
 
           <Show when={kind() === 'html'}>
-            <iframe
-              class="file-preview-html"
-              sandbox=""
-              src={url()}
-              title={filePreviewName(target().path)}
-            />
+            <Show
+              when={showingSource()}
+              fallback={
+                <iframe
+                  class="file-preview-html"
+                  sandbox=""
+                  src={url()}
+                  title={filePreviewName(target().path)}
+                />
+              }
+            >
+              <pre class="file-preview-text">{text()}</pre>
+            </Show>
           </Show>
         </Modal>
       )}

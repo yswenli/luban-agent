@@ -13,13 +13,21 @@ export type FilePreviewContent =
   | { kind: 'image'; url: string }
   | { kind: 'video'; url: string }
   | { kind: 'audio'; url: string }
-  | { kind: 'html'; url: string };
+  /** `text` 保留 HTML 原文：预览用沙箱 iframe，切「查看源码」时直接展示，不再二次请求。 */
+  | { kind: 'html'; url: string; text: string };
 
 /** 组装宿主文件接口地址：直接打开仍可用（新标签页 / Ctrl+点击走的都是它）。 */
 export function fileReadUrl(target: FilePreviewTarget): string {
   const query = new URLSearchParams({ path: target.path });
   if (target.workspaceId) query.set('workspaceId', target.workspaceId);
   return `/file/read?${query.toString()}`;
+}
+
+/** 组装下载地址：不受预览白名单与体积上限限制，任意工作区文件都可取回。 */
+export function fileDownloadUrl(target: FilePreviewTarget): string {
+  const query = new URLSearchParams({ path: target.path });
+  if (target.workspaceId) query.set('workspaceId', target.workspaceId);
+  return `/file/download?${query.toString()}`;
 }
 
 /** 弹层标题用的文件名（链接可能带百分号编码）。 */
@@ -85,7 +93,11 @@ export async function loadFilePreview(target: FilePreviewTarget): Promise<FilePr
   const extension = extensionOf(target.path);
   if (extension === '.md' || extension === '.markdown') return { kind: 'markdown', text };
   if (extension === '.html' || extension === '.htm') {
-    return { kind: 'html', url: URL.createObjectURL(new Blob([text], { type: 'text/html; charset=utf-8' })) };
+    return {
+      kind: 'html',
+      url: URL.createObjectURL(new Blob([text], { type: 'text/html; charset=utf-8' })),
+      text,
+    };
   }
 
   return { kind: 'text', text };

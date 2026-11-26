@@ -682,18 +682,14 @@ body.is-sorting .side-item {
   white-space: nowrap;
 }
 
-/* 项目行的 Git 仓库标记：只占图标宽度、不参与名称截断；悬停/选中时随行一起提亮 */
+/* 项目行的 Git 仓库标记：只占图标宽度、不参与名称截断；
+   颜色继承行文字（常态 --text-dim），悬停/选中随行的 color 过渡一起提亮，
+   不再单设更浅的 --text-faint——浅色下那只有 2.52:1，达不到 3:1 的可辨门槛 */
 .side-git {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  color: var(--text-faint);
-  transition: color 0.13s ease;
-}
-
-.side-item:hover .side-git,
-.side-item.selected .side-git {
-  color: var(--text-dim);
+  color: inherit;
 }
 
 .side-hint {
@@ -4159,15 +4155,18 @@ a.nav-item {
   color: var(--text-faint);
 }
 
-.ws-preview-link {
+/* 文件预览操作区：工作区面板标题栏与会话文件弹层底部共用 */
+.file-preview-actions {
   flex: 0 0 auto;
-  font-size: 11.5px;
-  color: var(--accent);
-  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.ws-preview-link:hover {
-  text-decoration: underline;
+/* 预览头与弹层底部的按钮比工具条上的更紧凑 */
+.file-preview-actions .icon-btn {
+  width: 26px;
+  height: 26px;
 }
 
 .ws-preview-body {

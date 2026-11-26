@@ -58,6 +58,20 @@ const paths: Record<string, () => JSX.Element> = {
       <path d="M5 15V5a2 2 0 0 1 2-2h10" />
     </>
   ),
+  code: () => (
+    <>
+      <path d="m8.5 8-4 4 4 4" />
+      <path d="m15.5 8 4 4-4 4" />
+      <path d="m13.5 5-3 14" />
+    </>
+  ),
+  download: () => (
+    <>
+      <path d="M12 4v11" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 19.5h14" />
+    </>
+  ),
   file: () => (
     <>
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />

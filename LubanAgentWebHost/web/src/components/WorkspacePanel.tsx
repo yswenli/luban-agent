@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from 'solid-js';
 
 import { ApiError } from '../lib/api';
-import { filePreviewName, fileReadUrl, loadFilePreview, type FilePreviewContent } from '../lib/filePreview';
+import { filePreviewName, loadFilePreview, type FilePreviewContent } from '../lib/filePreview';
 import {
   closeWorkspacePanel,
   expandedDirsOf,
@@ -16,6 +16,7 @@ import { fileGlyph, fileKindClass, listWorkspaceDir, type WorkspaceEntry } from 
 import { workspaceName } from '../stores/app';
 
 import { Icon } from './Icons';
+import { FilePreviewActions, previewPlainText } from './FilePreviewActions';
 import { Markdown } from './Markdown';
 
 /** 一层目录的加载状态；键是相对工作区根的路径（根为空串）。 */
@@ -39,6 +40,8 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
   const [contentError, setContentError] = createSignal<string | null>(null);
   const [contentLoading, setContentLoading] = createSignal(false);
   const [reloadToken, setReloadToken] = createSignal(0);
+  // Markdown / HTML 的「渲染态 ↔ 源码」切换；换文件时回到渲染态
+  const [showingSource, setShowingSource] = createSignal(false);
 
   let objectUrl: string | null = null;
   let previewSequence = 0;
@@ -111,6 +114,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
     releaseObjectUrl();
     setContent(null);
     setContentError(null);
+    setShowingSource(false);
     if (!path) {
       setContentLoading(false);
       return;
@@ -233,10 +237,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
     );
   }
 
-  const previewText = () => {
-    const value = content();
-    return value && (value.kind === 'markdown' || value.kind === 'text') ? value.text : '';
-  };
+  const previewText = () => previewPlainText(content());
 
   /** 图片 / 音视频 / HTML 的来源地址；文本类为空串。 */
   const previewUrl = () => {
@@ -313,14 +314,13 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       <span class="ws-preview-path" title={path()}>{path()}</span>
                     </Show>
                   </div>
-                  <a
-                    class="ws-preview-link"
-                    href={fileReadUrl({ path: path(), workspaceId: props.workspaceId ?? undefined })}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    新标签页
-                  </a>
+                  <FilePreviewActions
+                    path={path()}
+                    workspaceId={props.workspaceId ?? undefined}
+                    content={content()}
+                    showingSource={showingSource()}
+                    onToggleSource={() => setShowingSource((value) => !value)}
+                  />
                 </div>
 
                 <div class="ws-preview-body">
@@ -333,9 +333,16 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                   </Show>
 
                   <Show when={content()?.kind === 'markdown'}>
-                    <div class="file-preview-md">
-                      <Markdown text={previewText()} workspaceId={props.workspaceId ?? undefined} />
-                    </div>
+                    <Show
+                      when={showingSource()}
+                      fallback={
+                        <div class="file-preview-md">
+                          <Markdown text={previewText()} workspaceId={props.workspaceId ?? undefined} />
+                        </div>
+                      }
+                    >
+                      <pre class="ws-preview-text">{previewText()}</pre>
+                    </Show>
                   </Show>
 
                   <Show when={content()?.kind === 'text'}>
@@ -356,7 +363,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       src={previewUrl()}
                       controls
                       onError={() =>
-                        setContentError('浏览器无法播放这个视频（容器或编码不受支持）；请点右上角「新标签页」在本地播放。')
+                        setContentError('浏览器无法播放这个视频（容器或编码不受支持）；请下载后在本地播放。')
                       }
                     />
                   </Show>
@@ -366,17 +373,24 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       class="ws-preview-audio"
                       src={previewUrl()}
                       controls
-                      onError={() => setContentError('浏览器无法播放这个音频；请点右上角「新标签页」在本地播放。')}
+                      onError={() => setContentError('浏览器无法播放这个音频；请下载后在本地播放。')}
                     />
                   </Show>
 
                   <Show when={content()?.kind === 'html'}>
-                    <iframe
-                      class="ws-preview-html"
-                      sandbox=""
-                      src={previewUrl()}
-                      title={filePreviewName(path())}
-                    />
+                    <Show
+                      when={showingSource()}
+                      fallback={
+                        <iframe
+                          class="ws-preview-html"
+                          sandbox=""
+                          src={previewUrl()}
+                          title={filePreviewName(path())}
+                        />
+                      }
+                    >
+                      <pre class="ws-preview-text">{previewText()}</pre>
+                    </Show>
                   </Show>
                 </div>
               </>

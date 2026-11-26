@@ -27,6 +27,9 @@ public static class WebFileService
     /// <summary>提示页的响应类型。</summary>
     private const string HtmlContentType = "text/html; charset=utf-8";
 
+    /// <summary>下载响应的类型：浏览器按二进制处理，不会尝试内联渲染。</summary>
+    private const string DownloadContentType = "application/octet-stream";
+
     /// <summary>单个目录一次最多回传的条目数（超出部分由前端提示改用筛选或显示忽略项）。</summary>
     public const int MaxEntriesPerDirectory = 2000;
 
@@ -117,6 +120,57 @@ public static class WebFileService
                 500,
                 "无法读取文件",
                 $"{requestPath} 读取失败：可能被其他程序占用或权限不足，请在本地打开该文件。");
+        }
+    });
+
+    /// <summary>
+    /// 下载工作区内的文件。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="ReadAsync"/> 共用同一套路径边界校验（见 <see cref="WebFilePath"/>），但**不套预览白名单与体积上限**：
+    /// 预览只放行文本、图片、音视频，下载要能取回 <c>.jar</c>、<c>.zip</c> 这类任意文件。
+    /// 传输按流式交给 <see cref="BigDataResult"/>，不把大文件整段读进内存。
+    /// </remarks>
+    /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
+    /// <param name="path">相对工作区根的文件路径。</param>
+    /// <returns>二进制流；路径越界或文件不存在时回提示页。</returns>
+    public static Task<ActionResult> DownloadAsync(string? workspaceId, string? path) => WebApi.RunGuardedAsync(async () =>
+    {
+        var requestPath = path?.Trim();
+        if (string.IsNullOrWhiteSpace(requestPath))
+        {
+            return MessagePage(400, "缺少文件路径", "下载链接里没有可读取的文件路径。");
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        var manager = scope.GetRequiredService<IWorkspaceManager>();
+        var workspace = string.IsNullOrWhiteSpace(workspaceId)
+            ? manager.CurrentWorkspace
+            : await manager.GetWorkspaceAsync(workspaceId.Trim()).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(workspace?.RootPath))
+        {
+            return MessagePage(404, "未找到工作区", "该文件所属的工作区不存在或已被删除，无法下载。");
+        }
+
+        if (!WebFilePath.TryResolve(workspace.RootPath, requestPath, out var fullPath) || Directory.Exists(fullPath))
+        {
+            return MessagePage(
+                404,
+                "文件不存在",
+                $"工作区「{workspace.Name}」中找不到 {requestPath}；若该文件已被移动或删除，请重新确认路径。");
+        }
+
+        try
+        {
+            // FileShare.ReadWrite：工作区里的文件常被编辑器或脚本同时占用，下载不应因此失败
+            var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new BigDataResult(stream, DownloadContentType, HttpStatusCode.OK);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            AgentWebRuntime.Log($"工作区文件下载失败：{fullPath}：{ex}");
+            return MessagePage(500, "无法读取文件", $"{requestPath} 读取失败：可能被其他程序占用或权限不足。");
         }
     });
 

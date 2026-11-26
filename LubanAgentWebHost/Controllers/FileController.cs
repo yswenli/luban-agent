@@ -24,6 +24,13 @@ public sealed class FileController : Controller
     [HttpGet]
     public Task<ActionResult> Read(string? workspaceId, string? path) => WebFileService.ReadAsync(workspaceId, path);
 
+    /// <summary>下载工作区内文件（不受预览白名单与体积上限限制）。</summary>
+    /// <param name="workspaceId">工作区标识；空白时取当前工作区。</param>
+    /// <param name="path">相对工作区根的文件路径（链接原值，可带 <c>./</c>、查询串或锚点）。</param>
+    /// <returns>文件二进制流；路径越界或文件不存在时回提示页。</returns>
+    [HttpGet]
+    public Task<ActionResult> Download(string? workspaceId, string? path) => WebFileService.DownloadAsync(workspaceId, path);
+
     /// <summary>列举工作区内某目录的直接子项（不递归，越界路径拒绝）。</summary>
     /// <param name="workspaceId">工作区标识；空白时取当前工作区。</param>
     /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
