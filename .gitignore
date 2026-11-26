@@ -31,6 +31,9 @@
 /LubanAgentWebHost/web/node_modules/
 /LubanAgentWebHost/web/dist/
 
+# 本地验证构建输出（dotnet build --artifacts-path .artifacts-verify）：不进仓库
+/.artifacts-verify/
+
 # 运行时生成的静态配置（含令牌），不进仓库
 /LubanAgentWebHost/wwwroot/runtime-config.js
 /logs
