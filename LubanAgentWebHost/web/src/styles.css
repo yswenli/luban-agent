@@ -2056,6 +2056,16 @@ button.attachment-chip:focus-visible {
   background: var(--surface);
 }
 
+/* 只读档位（窗口 < 300K 等价固定）：不可点，保留 pill 外形以便与可选项对齐 */
+.pill-btn.static {
+  cursor: default;
+}
+
+.pill-btn.value.static:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
 .send-btn {
   width: 34px;
   height: 34px;
@@ -2238,6 +2248,13 @@ button.attachment-chip:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+/* 独立上下文菜单：不再是模型菜单的页脚，去掉分隔线 */
+.menu-ctx.standalone {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .menu-ctx-head {
   display: flex;
   align-items: baseline;
@@ -2262,6 +2279,13 @@ button.attachment-chip:focus-visible {
   color: var(--text-dim);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* 上下文菜单的语义说明：控件名不能写成「模型上下文长度」那类像在改模型参数的措辞 */
+.menu-ctx-note {
+  padding: 0 10px 4px;
+  font-size: 11.5px;
+  color: var(--text-faint);
 }
 
 .menu-item .tier {

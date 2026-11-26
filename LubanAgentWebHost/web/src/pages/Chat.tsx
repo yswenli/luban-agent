@@ -89,12 +89,24 @@ function effortLabel(value: string): string {
  */
 const DANGEROUS_COMMAND_ACTIONS = new Set(['action:clearMessages']);
 
+/**
+ * 档位刻度：预算档位按 K/M 展示（300K、600K、1M），与设计口径一致；
+ * 实际用量仍用「万」（`formatTokenCompact`），两者语义不同不要混用。
+ */
+function formatTier(tokens: number): string {
+  if (!Number.isFinite(tokens) || tokens <= 0) return '0';
+  if (tokens < 1_000_000) return `${Math.round(tokens / 1000)}K`;
+  const value = (tokens / 1_000_000).toFixed(1);
+  return `${value.endsWith('.0') ? value.slice(0, -2) : value}M`;
+}
+
 export function ChatPage(props: { sessionId: string }) {
   const chat = getChat(props.sessionId);
 
   const [input, setInput] = createSignal('');
   const [plusMenu, setPlusMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [effortMenu, setEffortMenu] = createSignal<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [modelMenu, setModelMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [modelsLoading, setModelsLoading] = createSignal(false);
   const [moreMenu, setMoreMenu] = createSignal<{ x: number; y: number } | null>(null);
@@ -220,6 +232,11 @@ export function ChatPage(props: { sessionId: string }) {
     if (selected != null) return selected;
     const tiers = tierOptions();
     return tiers.length > 0 ? Math.max(...tiers) : null;
+  };
+  /** 上下文 pill 的展示值：多档显示选中档位，单档（窗口 < 300K）显示窗口本身。 */
+  const contextPillValue = () => {
+    const tiers = tierOptions();
+    return tiers.length > 1 ? (currentTier() ?? Math.max(...tiers)) : (tierWindow() || tiers[0] || 0);
   };
 
   const commandQuery = createMemo(() => {
@@ -1110,6 +1127,34 @@ export function ChatPage(props: { sessionId: string }) {
                 </button>
               </Show>
 
+              {/* 上下文预算：窗口未知（无档位）不显示；单档模型（窗口 < 300K）只读展示窗口本身 */}
+              <Show when={tierOptions().length > 0}>
+                <Show
+                  when={tierOptions().length > 1}
+                  fallback={
+                    <span
+                      class="pill-btn value static"
+                      title={`上下文预算（超出后自动压缩）：窗口 ${formatTier(contextPillValue())}，固定窗口不提前压缩`}
+                    >
+                      上下文 {formatTier(contextPillValue())}
+                    </span>
+                  }
+                >
+                  <button
+                    class="pill-btn value"
+                    title="上下文预算（超出后自动压缩）：档位越小越早压缩"
+                    disabled={optimizing()}
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setCtxMenu(menuAt(rect, { width: 230, height: 64 + tierOptions().length * 34, gap: 6, align: 'start' }));
+                    }}
+                  >
+                    上下文 {formatTier(contextPillValue())}
+                    <Icon name="chevron-down" size={13} />
+                  </button>
+                </Show>
+              </Show>
+
               <div class="spacer" />
 
               <button
@@ -1285,6 +1330,48 @@ export function ChatPage(props: { sessionId: string }) {
         )}
       </Show>
 
+      <Show when={ctxMenu()}>
+        {(menu) => (
+          <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, 'min-width': '230px' }} onClose={() => setCtxMenu(null)}>
+            <div class="menu-ctx standalone">
+              <div class="menu-ctx-head">
+                上下文预算
+                <Show when={tierWindow() > 0}>
+                  <span class="win">
+                    窗口 <b>{formatTier(tierWindow())}</b>
+                  </span>
+                </Show>
+              </div>
+              <div class="menu-ctx-note">超出后自动压缩 · 档位越小越早压缩</div>
+              <For each={tierOptions()}>
+                {(tier) => {
+                  const isDefault = tier === Math.max(...tierOptions());
+                  return (
+                    <button
+                      class="menu-item"
+                      classList={{ active: currentTier() === tier }}
+                      title="档位越小越早触发压缩：省 token，但更早丢弃历史"
+                      onClick={() => {
+                        setCtxMenu(null);
+                        // 档位按整体替换提交：带上当前思考强度，避免切档位时把它清掉
+                        void saveSessionGeneration(props.sessionId, currentEffort(), tier);
+                      }}
+                    >
+                      <span class="tier">{formatTier(tier)}</span>
+                      <span class="hint-role">{isDefault ? '默认' : '提前压缩'}</span>
+                      <div class="spacer" />
+                      <Show when={currentTier() === tier}>
+                        <Icon name="check" size={15} />
+                      </Show>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
+          </PopMenu>
+        )}
+      </Show>
+
       <Show when={modelMenu()}>
         {(menu) => (
           <PopMenu
@@ -1341,38 +1428,6 @@ export function ChatPage(props: { sessionId: string }) {
                 <div class="menu-item faint">正在拉取模型列表…</div>
               </Show>
             </div>
-            <Show when={tierOptions().length > 0}>
-              <div class="menu-ctx">
-                <div class="menu-ctx-head">
-                  上下文预算
-                  <Show when={tierWindow() > 0}>
-                    <span class="win">
-                      窗口 <b>{formatTokenCompact(tierWindow())}</b>
-                    </span>
-                  </Show>
-                </div>
-                <For each={tierOptions()}>
-                  {(tier) => {
-                    const isDefault = tier === Math.max(...tierOptions());
-                    return (
-                      <button
-                        class="menu-item"
-                        classList={{ active: currentTier() === tier }}
-                        title="档位越小越早触发压缩：省 token，但更早丢弃历史"
-                        onClick={() => void saveSessionGeneration(props.sessionId, currentEffort(), tier)}
-                      >
-                        <span class="tier">{formatTokenCompact(tier)}</span>
-                        <span class="hint-role">{isDefault ? '默认' : '提前压缩'}</span>
-                        <div class="spacer" />
-                        <Show when={currentTier() === tier}>
-                          <Icon name="check" size={15} />
-                        </Show>
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-            </Show>
           </PopMenu>
         )}
       </Show>
