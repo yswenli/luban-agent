@@ -3,6 +3,14 @@ import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 
 import { Icon } from './Icons';
 
+/** 当前打开的弹窗数量：设置浮层自己监听 Esc，有弹窗时需让位，避免两者一起关闭。 */
+let openModals = 0;
+
+/** 是否有弹窗正在显示（供外层浮层判断 Esc 是否已被内层处理）。 */
+export function hasOpenModal(): boolean {
+  return openModals > 0;
+}
+
 /** 通用弹窗外壳：遮罩点击 / Esc 关闭。 */
 export function Modal(props: {
   title: string;
@@ -14,11 +22,15 @@ export function Modal(props: {
   onClose: () => void;
 }) {
   onMount(() => {
+    openModals += 1;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') props.onClose();
     };
     window.addEventListener('keydown', onKey);
-    onCleanup(() => window.removeEventListener('keydown', onKey));
+    onCleanup(() => {
+      openModals -= 1;
+      window.removeEventListener('keydown', onKey);
+    });
   });
 
   return (

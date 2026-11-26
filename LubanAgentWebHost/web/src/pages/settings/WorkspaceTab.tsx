@@ -2,7 +2,7 @@ import { createEffect, createSignal, on, Show } from 'solid-js';
 
 import { settingsApi } from '../../lib/settings';
 import type { AgentsMdInfo, AgentsMdResult } from '../../lib/types';
-import { bootstrap, currentWorkspaceId, refreshWorkspaces, showToast } from '../../stores/app';
+import { bootstrap, refreshWorkspaces, showToast } from '../../stores/app';
 import { AreaField, CheckField, FormActions, SelectField, TextField } from './Shared';
 
 interface AgentsMdForm {
@@ -31,13 +31,13 @@ const splitList = (value: string): string[] =>
     .filter((item) => item.length > 0);
 
 /**
- * 工作区页：直接作用于「当前工作区」——授权、配置目录、AGENTS.md 初始化。
+ * 工作区页：作用于设置页顶部下拉选中的工作区——授权、配置目录、AGENTS.md 初始化。
  *
  * AGENTS.md 的生成与落盘都在宿主侧完成（`/agentsmd/generate`），页面只负责收集选项、
  * 展示生成结果并允许编辑后保存；规范化与写入规则与桌面端共用同一套实现。
  */
-export function WorkspaceTab() {
-  const workspaceId = () => currentWorkspaceId() ?? '';
+export function WorkspaceTab(props: { workspaceId: string }) {
+  const workspaceId = () => props.workspaceId;
 
   const current = () => bootstrap()?.workspaces.find((item) => item.workspaceId === workspaceId()) ?? null;
 

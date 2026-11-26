@@ -1,7 +1,8 @@
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
 
+import { hasOpenModal } from '../components/Dialog';
 import { Icon, type IconName } from '../components/Icons';
-import { bootstrap, currentWorkspaceId, workspaceName } from '../stores/app';
+import { bootstrap, projectWorkspaces } from '../stores/app';
 import { A2aTab } from './settings/A2aTab';
 import { DataTab } from './settings/DataTab';
 import { McpTab } from './settings/McpTab';
@@ -16,11 +17,11 @@ interface TabDef {
   id: string;
   label: string;
   icon: IconName;
-  /** 是否显示「★ 全局 / 当前工作区」切换；供应商与模型固定全局。 */
+  /** 是否提供「★ 全局 + 工作区」作用域下拉；供应商与模型固定全局。 */
   scoped: boolean;
   /** 只支持工作区作用域（A2A）。 */
   workspaceOnly?: boolean;
-  /** 直接作用于「当前工作区」（授权、配置目录、AGENTS.md），没有全局作用域。 */
+  /** 只作用于工作区（授权、配置目录、AGENTS.md），没有全局作用域。 */
   requiresWorkspace?: boolean;
 }
 
@@ -46,11 +47,13 @@ const tabs: TabDef[] = [
  */
 export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
   const [search, setSearch] = createSignal('');
-  const [scope, setScope] = createSignal<'global' | 'workspace'>('global');
+  /** 用户在下拉里选的作用域：`global` 或工作区标识。 */
+  const [selection, setSelection] = createSignal('global');
 
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') props.onClose();
+      // 弹窗自己处理 Esc：避免确认框和设置浮层一起关掉
+      if (event.key === 'Escape' && !hasOpenModal()) props.onClose();
     };
     window.addEventListener('keydown', onKey);
     onCleanup(() => window.removeEventListener('keydown', onKey));
@@ -64,21 +67,52 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     return tabs.filter((tab) => tab.label.toLowerCase().includes(keyword) || tab.id.includes(keyword));
   });
 
-  const showScope = () => activeTab().scoped;
+  /** 用户下的项目工作区（不含知识库），顺序沿用首页拖动结果。 */
+  const projects = () => projectWorkspaces();
 
-  /** 后端作用域值：`global` 或工作区标识。 */
-  const scopeValue = () => (scope() === 'global' ? 'global' : currentWorkspaceId() ?? 'global');
+  /** 带全局作用域的页签（A2A 即使 `scoped` 也只支持工作区）。 */
+  const hasGlobal = () => activeTab().scoped && !activeTab().workspaceOnly;
 
-  /** 需要工作区但当前没有：给出提示，不渲染表单。 */
-  const needWorkspace = () =>
-    (activeTab().workspaceOnly && scope() === 'global') ||
-    (!!activeTab().requiresWorkspace && !currentWorkspaceId()) ||
-    (scope() === 'workspace' && !currentWorkspaceId());
+  // 每个页签回到自己的默认作用域：带全局的页签默认 ★ 全局，仅工作区的页签默认第一个项目
+  createEffect(
+    on(
+      () => activeTab().id,
+      () => setSelection(hasGlobal() ? 'global' : projects()[0]?.workspaceId ?? ''),
+    ),
+  );
 
-  const scopeNotice = () =>
-    activeTab().workspaceOnly
-      ? 'A2A 配置仅作用于工作区，请先在首页左侧选择一个项目。'
-      : '尚未选择项目，请先在首页左侧选择一个项目。';
+  const showScope = () => activeTab().scoped || !!activeTab().workspaceOnly || !!activeTab().requiresWorkspace;
+
+  const workspaceLabel = (workspaceId: string): string => {
+    const workspace = projects().find((item) => item.workspaceId === workspaceId);
+    return workspace?.name || workspace?.rootPath || workspaceId;
+  };
+
+  /** 后端作用域值：`global` 或工作区标识；工作区列表为空时返回空串。 */
+  const scopeValue = (): string => {
+    const chosen = selection();
+    const exists = projects().some((item) => item.workspaceId === chosen);
+    if (exists) return chosen;
+    return hasGlobal() ? 'global' : projects()[0]?.workspaceId ?? '';
+  };
+
+  const scopeOptions = () => {
+    const list = projects().map((item) => ({ value: item.workspaceId, label: item.name || item.rootPath }));
+    return hasGlobal() ? [{ value: 'global', label: '★ 全局' }, ...list] : list;
+  };
+
+  /** 需要工作区却一个都没有：给出提示，不渲染表单。 */
+  const needWorkspace = () => scopeValue() === '';
+
+  const subtitle = () => {
+    if (showScope()) {
+      if (scopeValue() === 'global') return '作用域：★ 全局';
+      return scopeValue() ? `作用域：${workspaceLabel(scopeValue())}` : '作用域：未选择工作区';
+    }
+    if (activeTab().id === 'notify') return '保存位置：本机浏览器（不随账号同步）';
+    if (activeTab().id === 'data') return '统计范围：全部工作区';
+    return '作用域：★ 全局';
+  };
 
   return (
     <div
@@ -92,16 +126,17 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
           <span class="dialog-title">设置</span>
           <div class="spacer" />
           <Show when={showScope()}>
-            <div class="scope-switch">
-              <Show when={!activeTab().workspaceOnly}>
-                <button classList={{ active: scope() === 'global' }} onClick={() => setScope('global')}>
-                  ★ 全局
-                </button>
-              </Show>
-              <button classList={{ active: scope() === 'workspace' }} onClick={() => setScope('workspace')}>
-                当前工作区
-              </button>
-            </div>
+            <label class="scope-select">
+              <span>作用域</span>
+              <select
+                class="text-input"
+                value={scopeValue()}
+                disabled={projects().length === 0}
+                onChange={(event) => setSelection(event.currentTarget.value)}
+              >
+                <For each={scopeOptions()}>{(item) => <option value={item.value}>{item.label}</option>}</For>
+              </select>
+            </label>
           </Show>
           <button class="icon-btn" title="关闭设置（Esc）" onClick={() => props.onClose()}>
             <Icon name="close" size={17} />
@@ -134,15 +169,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
             <div class="settings-head">
               <div>
                 <div class="dialog-title">{activeTab().label}</div>
-                <div class="dialog-sub">
-                  {activeTab().requiresWorkspace
-                    ? `作用域：${workspaceName(currentWorkspaceId()) || '当前工作区'}`
-                    : showScope()
-                      ? scope() === 'global'
-                        ? '作用域：★ 全局'
-                        : `作用域：${workspaceName(currentWorkspaceId()) || '当前工作区'}`
-                      : '作用域：固定全局'}
-                </div>
+                <div class="dialog-sub">{subtitle()}</div>
               </div>
             </div>
 
@@ -151,7 +178,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               fallback={
                 <div class="notice warn">
                   <Icon name="alert" size={16} />
-                  <span>{scopeNotice()}</span>
+                  <span>还没有可用的工作区：请先在首页「项目」里新建或导入一个工作区。</span>
                 </div>
               }
             >
@@ -175,7 +202,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                   <ModelTab />
                 </Match>
                 <Match when={activeTab().id === 'workspace'}>
-                  <WorkspaceTab />
+                  <WorkspaceTab workspaceId={scopeValue()} />
                 </Match>
                 <Match when={activeTab().id === 'data'}>
                   <DataTab />

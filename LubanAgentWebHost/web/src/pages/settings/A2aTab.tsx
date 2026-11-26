@@ -161,7 +161,7 @@ export function A2aTab(props: { scope: string }) {
       title="A2A 条目"
       items={items()}
       activeKey={active()}
-      emptyText="当前工作区还没有 A2A 配置。"
+      emptyText="该工作区还没有 A2A 配置。"
       createLabel="新建客户端"
       busy={busy()}
       onSelect={(key) => void open(key)}

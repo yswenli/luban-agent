@@ -4,7 +4,7 @@ import { ConfirmActionDialog } from '../../components/Dialog';
 import { Icon } from '../../components/Icons';
 import { settingsApi } from '../../lib/settings';
 import type { GlobalSessionStats } from '../../lib/types';
-import { currentWorkspaceId, refreshSessions, showToast, workspaceName } from '../../stores/app';
+import { bootstrap, refreshSessions, showToast } from '../../stores/app';
 import { SelectField } from './Shared';
 
 /** 一张用量统计卡。 */
@@ -23,15 +23,21 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 /**
  * 数据与用量页：全局会话统计 + 批量清理。
  *
- * 统计按会话创建时间限定天数；清理支持「全部会话」与「当前工作区」两种范围，
+ * 统计按会话创建时间限定天数；清理支持「全部工作区」与单独某个工作区，
  * 宿主侧遇到运行中的会话会返回 409，页面直接透出提示。
  */
 export function DataTab() {
   const [days, setDays] = createSignal('0');
   const [stats, setStats] = createSignal<GlobalSessionStats | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
-  const [target, setTarget] = createSignal<'all' | 'workspace'>('all');
+  /** 清理目标：`all` 或工作区标识。 */
+  const [target, setTarget] = createSignal('all');
   const [pending, setPending] = createSignal(false);
+
+  const workspaces = () => bootstrap()?.workspaces ?? [];
+
+  const targetWorkspace = () =>
+    target() === 'all' ? null : workspaces().find((item) => item.workspaceId === target()) ?? null;
 
   const load = async () => {
     try {
@@ -48,17 +54,16 @@ export function DataTab() {
 
   const clear = async () => {
     if (busy()) return;
+    if (target() !== 'all' && !targetWorkspace()) {
+      showToast('所选工作区已不存在，请重新选择清理范围', 'error');
+      return;
+    }
     setBusy('clear');
     try {
-      if (target() === 'workspace') {
-        const workspaceId = currentWorkspaceId();
-        if (!workspaceId) {
-          showToast('尚未选择工作区', 'error');
-          return;
-        }
-        await settingsApi.clearAllSessions(workspaceId);
+      if (target() !== 'all') {
+        await settingsApi.clearAllSessions(target());
       } else {
-        // 接口的 workspaceId 留空会退化成「当前工作区」，清空全部必须逐个工作区下发
+        // 接口的 workspaceId 留空只清后端当前工作区，清空全部必须逐个工作区下发
         const list = await settingsApi.listWorkspaces();
         const failures: string[] = [];
         for (const workspace of list) {
@@ -86,9 +91,9 @@ export function DataTab() {
   };
 
   const confirmMessage = () =>
-    target() === 'workspace'
-      ? `确定删除「${workspaceName(currentWorkspaceId()) || '当前工作区'}」下的全部会话？消息无法恢复。`
-      : '确定删除全部工作区下的会话与消息？该操作不可恢复。';
+    target() === 'all'
+      ? '确定删除全部工作区下的会话与消息？该操作不可恢复。'
+      : `确定删除工作区「${targetWorkspace()?.name || targetWorkspace()?.rootPath || target()}」下的全部会话与消息？该操作不可恢复。`;
 
   return (
     <div class="settings-form">
@@ -134,17 +139,17 @@ export function DataTab() {
           value={target()}
           options={[
             { value: 'all', label: '全部工作区' },
-            { value: 'workspace', label: '当前工作区' },
+            ...workspaces().map((item) => ({ value: item.workspaceId, label: item.name || item.rootPath })),
           ]}
-          hint="清理前请先停止正在运行的会话"
-          onChange={(value) => setTarget(value as 'all' | 'workspace')}
+          hint="清理前请先停止正在运行的会话；「全部工作区」也包含知识库"
+          onChange={setTarget}
         />
       </div>
 
       <div class="settings-actions">
         <button
           class="btn danger"
-          disabled={!!busy() || (target() === 'workspace' && !currentWorkspaceId())}
+          disabled={!!busy() || (target() !== 'all' && !targetWorkspace())}
           onClick={() => setPending(true)}
         >
           {busy() === 'clear' ? '清理中…' : '清空会话数据'}

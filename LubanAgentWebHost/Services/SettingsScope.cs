@@ -58,7 +58,7 @@ public static class SettingsScope
         if (string.IsNullOrWhiteSpace(scope)
             || string.Equals(scope.Trim(), Global, StringComparison.OrdinalIgnoreCase))
         {
-            return (null, WebApi.FailJson(400, "A2A 配置仅作用于工作区，请先在顶栏选择一个工作区"));
+            return (null, WebApi.FailJson(400, "A2A 配置仅作用于工作区，请先选择一个工作区"));
         }
 
         return await ResolveAsync(workspaces, scope).ConfigureAwait(false);
