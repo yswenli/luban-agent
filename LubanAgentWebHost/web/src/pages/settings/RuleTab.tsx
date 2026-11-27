@@ -23,20 +23,27 @@ export function RuleTab(props: { scope: string }) {
   const [active, setActive] = createSignal<string | null>(null);
   const [form, setForm] = createSignal<RuleFile>(empty());
   const [busy, setBusy] = createSignal(false);
+  /* 作用域切换或快速点选时，只让最后一次请求的结果落地。 */
+  let loadSeq = 0;
 
   const open = async (key: string) => {
+    const seq = ++loadSeq;
     try {
       const data = await settingsApi.readRule(props.scope, key);
+      if (seq !== loadSeq) return;
       setActive(key);
       setForm({ ...empty(), ...data });
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };
 
   const reload = async (keep?: string | null) => {
+    const seq = ++loadSeq;
     try {
       const list = await settingsApi.listRules(props.scope);
+      if (seq !== loadSeq) return;
       setItems(list);
       const next = keep ?? active();
       if (next && list.includes(next)) {
@@ -48,6 +55,7 @@ export function RuleTab(props: { scope: string }) {
         setForm(empty());
       }
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };

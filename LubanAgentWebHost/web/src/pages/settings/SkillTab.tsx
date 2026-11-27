@@ -59,10 +59,14 @@ export function SkillTab(props: { scope: string }) {
   const [form, setForm] = createSignal<SkillFile>(empty());
   const [busy, setBusy] = createSignal(false);
   let fileInput: HTMLInputElement | undefined;
+  /* 作用域切换或快速点选时，只让最后一次请求的结果落地。 */
+  let loadSeq = 0;
 
   const reload = async (keep?: string | null) => {
+    const seq = ++loadSeq;
     try {
       const list = await settingsApi.listSkills(props.scope);
+      if (seq !== loadSeq) return;
       setItems(list);
       const next = keep ?? active();
       if (next && list.some((item) => item.id === next)) {
@@ -74,16 +78,20 @@ export function SkillTab(props: { scope: string }) {
         setForm(empty());
       }
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };
 
   const open = async (key: string) => {
+    const seq = ++loadSeq;
     try {
       const data = await settingsApi.readSkill(props.scope, key);
+      if (seq !== loadSeq) return;
       setActive(key);
       setForm({ ...empty(), ...data, id: key });
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };

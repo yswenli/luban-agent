@@ -40,31 +40,39 @@ export function A2aTab(props: { scope: string }) {
   const [server, setServer] = createSignal<A2AServer>(emptyServer());
   const [client, setClient] = createSignal<A2AClient>(emptyClient());
   const [busy, setBusy] = createSignal(false);
+  /* 作用域切换或快速点选时，只让最后一次请求的结果落地。 */
+  let loadSeq = 0;
 
   const items = () => [SERVER_KEY, ...clientKeys()];
 
   const reload = async (keep?: string | null) => {
+    const seq = ++loadSeq;
     try {
       const [serverData, clients] = await Promise.all([
         settingsApi.getA2AServer(props.scope),
         settingsApi.listA2AClients(props.scope),
       ]);
+      if (seq !== loadSeq) return;
       setServer(serverData ?? emptyServer());
       setClientKeys(clients.map((item) => item.key));
       const next = keep ?? active();
       await open(next, clients);
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };
 
   const open = async (key: string, known?: { key: string }[]) => {
+    const seq = ++loadSeq;
     if (key === SERVER_KEY) {
       try {
         const data = await settingsApi.getA2AServer(props.scope);
+        if (seq !== loadSeq) return;
         setServer(data ?? emptyServer());
         setActive(SERVER_KEY);
       } catch (error) {
+        if (seq !== loadSeq) return;
         showToast((error as Error).message, 'error');
       }
       return;
@@ -78,9 +86,11 @@ export function A2aTab(props: { scope: string }) {
 
     try {
       const data = await settingsApi.getA2AClient(props.scope, key);
+      if (seq !== loadSeq) return;
       setClient({ ...emptyClient(), ...data });
       setActive(key);
     } catch (error) {
+      if (seq !== loadSeq) return;
       showToast((error as Error).message, 'error');
     }
   };
