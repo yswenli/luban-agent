@@ -39,7 +39,7 @@ public static class WebSystemService
     /// <returns>引导数据。</returns>
     public static Task<ActionResult> BootstrapAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         var workspaceManager = scope.GetRequiredService<IWorkspaceManager>();
         var workspaces = await workspaceManager.GetUserWorkspacesAsync().ConfigureAwait(false);
@@ -63,7 +63,7 @@ public static class WebSystemService
         var attachments = scope.GetRequiredService<AttachmentService>();
 
         return WebApi.OkJson(new BootstrapDto(
-            WebApi.Runtime.UserId,
+            WebApi.UserId,
             Version,
             workspaces.Select(WorkspaceMapping.ToDto).ToList(),
             workspaceManager.CurrentWorkspace?.WorkspaceId,
@@ -157,38 +157,52 @@ public static class WebSystemService
     /// <remarks>
     /// 手机上的 <c>127.0.0.1</c> 指向手机自己，所以只编码局域网入口地址；
     /// 图片由 <see cref="CodeUtil"/> 生成，与终端二维码取同一个地址来源。
+    /// 地址只含宿主进程内登记的短码（<c>/e/{code}</c>），打开后由宿主换回带令牌的地址，
+    /// 二维码因此只需编码 40 个字符，模块数明显少于直接编码令牌。
     /// 响应走 SAEA 的 <c>FileResult</c>，自带 <c>Cache-Control: no-cache</c>：
-    /// 地址里带着浏览器会话令牌（会定时轮换、会话到绝对上限即失效），浏览器每次打开弹窗都重新取图，不会留住旧码。
+    /// 短码与会话令牌同时到期，浏览器每次打开弹窗都重新取图，不会留住旧码。
     /// </remarks>
     /// <returns>PNG 图片流。</returns>
     public static Task<ActionResult> EntryQrAsync() => WebApi.RunGuardedAsync(
-        () =>
+        async () =>
         {
             var runtime = WebApi.Runtime;
             var settings = runtime.Settings;
-            var entryUrl = WebHostAccess.BuildLanEntryUrl(
+            var entry = await runtime.Auth.CreateEntryTokenAsync(WebApi.UserId).ConfigureAwait(false);
+            var code = runtime.EntryLinks.Register(entry.Token, entry.ExpiresAt);
+            var entryUrl = WebHostAccess.BuildLanCodeEntryUrl(
                 settings.Port,
-                runtime.Sessions.TakeEntryToken(),
+                code,
                 settings.UseHttps);
 
             var stream = CodeUtil.Write(entryUrl, EnumCodeType.QRCode, EntryQrSize, EntryQrSize);
-            return Task.FromResult<ActionResult>(new FileResult(stream, "image/png", HttpStatusCode.OK));
+            return new FileResult(stream, "image/png", HttpStatusCode.OK);
         },
         ensureUser: false);
 
     /// <summary>
-    /// 浏览器会话状态：前端定时心跳，顺带让门禁把轮换后的新令牌滑回 Cookie。
+    /// 浏览器会话状态：前端定时心跳，顺带让门禁把续期后的新令牌滑回 Cookie。
     /// </summary>
     /// <remarks>不触发用户初始化：只读会话状态，与工作区无关。</remarks>
-    /// <returns>当前令牌与整个会话的到期时刻。</returns>
+    /// <returns>令牌与整个会话的到期时刻。</returns>
     public static Task<ActionResult> SessionAsync() => WebApi.RunGuardedAsync(
         () =>
         {
-            var sessions = WebApi.Runtime.Sessions;
+            var auth = WebApi.Runtime.Auth;
+            var lifetime = auth.TokenLifetime;
+            var now = auth.Now;
+            var expires = WebApi.CurrentClaims?.ExpiresAt ?? now + lifetime;
+
+            // 门禁在令牌过半时已换新：心跳回报的新到期时刻要与之一致，否则前端会误判即将过期
+            if (expires - now <= lifetime / 2)
+            {
+                expires = now + lifetime;
+            }
+
             return Task.FromResult(WebApi.OkJson(new WebSessionDto(
-                sessions.RotateAt,
-                sessions.ExpiresAt,
-                sessions.Policy.Lifetime.TotalSeconds)));
+                expires - lifetime / 2,
+                expires,
+                lifetime.TotalSeconds)));
         },
         ensureUser: false);
 
@@ -196,26 +210,32 @@ public static class WebSystemService
     /// 取当前入口地址：只给持固定令牌的运维命令 <c>LubanAgentWebHost --token</c>。
     /// </summary>
     /// <remarks>
-    /// 浏览器会话到绝对上限后必须重开，否则终端打印出来的地址永远是过期的；
-    /// 因此这里只认 <c>Authorization: Bearer</c>，不接受浏览器 Cookie——否则拿到 Cookie 的人可以无限续期，
-    /// 绝对上限就失去意义。
+    /// 宿主身份对应账号的短期登录令牌在这里现签，终端打印的地址不会因上次的令牌已过期而失效；
+    /// 但仍只认 <c>Authorization: Bearer</c>，不接受浏览器 Cookie——否则拿到 Cookie 的人可以无限取新地址。
     /// </remarks>
-    /// <returns>入口地址与会话到期时刻。</returns>
-    public static Task<ActionResult> EntryUrlAsync() => WebApi.RunAsync(() =>
+    /// <returns>入口地址与令牌到期时刻。</returns>
+    public static Task<ActionResult> EntryUrlAsync() => WebApi.RunAsync(async () =>
     {
         var runtime = WebApi.Runtime;
         if (!WebHostAccess.IsBearerAuthorized(WebApi.Header("Authorization"), runtime.Settings.Token))
         {
-            return Task.FromResult<ActionResult>(
-                WebApi.FailJson(401, "需要宿主令牌：Authorization: Bearer <令牌>"));
+            return WebApi.FailJson(401, "需要宿主令牌：Authorization: Bearer <令牌>");
         }
 
         var settings = runtime.Settings;
-        var token = runtime.Sessions.TakeEntryToken();
-        return Task.FromResult(WebApi.OkJson(new WebEntryUrlDto(
-            WebHostAccess.BuildLanEntryUrl(settings.Port, token, settings.UseHttps),
-            WebHostAccess.BuildLocalEntryUrl(settings.Port, token, settings.UseHttps),
-            runtime.Sessions.ExpiresAt)));
+        try
+        {
+            var entry = await runtime.Auth.CreateEntryTokenAsync(runtime.UserId).ConfigureAwait(false);
+            var code = runtime.EntryLinks.Register(entry.Token, entry.ExpiresAt);
+            return WebApi.OkJson(new WebEntryUrlDto(
+                WebHostAccess.BuildLanCodeEntryUrl(settings.Port, code, settings.UseHttps),
+                WebHostAccess.BuildLocalCodeEntryUrl(settings.Port, code, settings.UseHttps),
+                entry.ExpiresAt));
+        }
+        catch (AuthException ex)
+        {
+            return WebApi.FailJson(ex.Code, ex.Message);
+        }
     });
 
     /// <summary>二维码图片边长（像素）：弹窗里按 180px 显示，留足余量给高分屏。</summary>

@@ -47,7 +47,7 @@ public static class WebFileService
             return MessagePage(400, "缺少文件路径", "链接里没有可读取的文件路径。");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var workspace = string.IsNullOrWhiteSpace(workspaceId)
             ? manager.CurrentWorkspace
@@ -142,7 +142,7 @@ public static class WebFileService
             return MessagePage(400, "缺少文件路径", "下载链接里没有可读取的文件路径。");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var workspace = string.IsNullOrWhiteSpace(workspaceId)
             ? manager.CurrentWorkspace
@@ -183,7 +183,7 @@ public static class WebFileService
     /// <returns>子目录与文件清单（相对路径、类型、大小、修改时间），超出单目录上限时带 <c>truncated</c>。</returns>
     public static Task<ActionResult> ListAsync(string? workspaceId, string? path, string? showIgnored = null) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var workspace = string.IsNullOrWhiteSpace(workspaceId)
             ? manager.CurrentWorkspace

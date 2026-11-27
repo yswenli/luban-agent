@@ -19,6 +19,7 @@ public static class Program
     /// <param name="args">
     /// 命令行参数：<c>--token</c>（打印在运行实例的浏览器入口）、<c>--stop</c>（停止在运行实例）、
     /// <c>--trust-cert</c>（把证书装入当前用户受信任根）、
+    /// <c>--reset-password &lt;用户名&gt;</c>（离线重置密码，含内置管理员；执行前先 <c>--stop</c>）、
     /// <c>--port</c> / <c>--host-token</c> / <c>--user</c> / <c>--timeout</c> / <c>--cert-path</c>
     /// / <c>--http</c> / <c>--no-trust-cert</c> / <c>--debug</c>。
     /// </param>
@@ -43,6 +44,13 @@ public static class Program
         if (args.Any(static arg => string.Equals(arg, "--trust-cert", StringComparison.OrdinalIgnoreCase)))
         {
             return InstallCertificateTrust(args);
+        }
+
+        // 离线恢复命令：重置任意用户（含内置管理员）的密码，随机密码只打印一次。
+        // 内置管理员的正常边界是「只能本人改密」，本命令是唯一的例外通道，要求先停止宿主。
+        if (TryGetOptionValue(args, "--reset-password", out var resetUserName))
+        {
+            return await ResetUserPasswordAsync(args, resetUserName).ConfigureAwait(false);
         }
 
         using var shutdown = new CancellationTokenSource();
@@ -153,6 +161,15 @@ public static class Program
             });
             runtime = AgentWebRuntime.Create(host, settings);
 
+            var authBootstrap = await runtime.Auth.EnsureBuiltInAdminAsync(settings.AdminPassword).ConfigureAwait(false);
+            if (authBootstrap.Created && authBootstrap.InitialPassword is { } initialPassword)
+            {
+                Report($"   内置管理员 {UserAuthService.BuiltInAdminUserId} 初始密码：{initialPassword}");
+                Report("   （仅本次首次启动打印，请及时保存；登录后可在「设置 → 账号」修改）");
+            }
+
+            await runtime.Auth.EnsureHostIdentityAsync(runtime.UserId).ConfigureAwait(false);
+
             Report("⑤ 启动 HTTP 服务...");
             var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
             Directory.CreateDirectory(root);
@@ -208,19 +225,21 @@ public static class Program
                 StartedAt = DateTimeOffset.Now
             });
 
-            var lanEntryUrl = WebHostAccess.BuildLanEntryUrl(
+            var entry = await runtime.Auth.CreateEntryTokenAsync(runtime.UserId).ConfigureAwait(false);
+            var entryCode = runtime.EntryLinks.Register(entry.Token, entry.ExpiresAt);
+            var lanEntryUrl = WebHostAccess.BuildLanCodeEntryUrl(
                 settings.Port,
-                runtime.Sessions.Current,
+                entryCode,
                 settings.UseHttps);
 
             Console.WriteLine($"listening on 0.0.0.0:{settings.Port} (user={runtime.UserId})");
-            Report("⑥ 就绪（监听全部网卡，已启用访问令牌）");
+            Report("⑥ 就绪（监听全部网卡，已启用登录鉴权）");
             Report($"   浏览器入口：{lanEntryUrl}");
-            Report($"   本机入口：  {WebHostAccess.BuildLocalEntryUrl(settings.Port, runtime.Sessions.Current, settings.UseHttps)}");
-            Report($"   浏览器令牌每 {settings.SessionTokenMinutes:0.##} 分钟自动换新（活动页面自动续期），"
+            Report($"   本机入口：  {WebHostAccess.BuildLocalCodeEntryUrl(settings.Port, entryCode, settings.UseHttps)}");
+            Report($"   浏览器登录令牌每 {settings.SessionTokenMinutes:0.##} 分钟自动续期，"
                 + (settings.SessionMaxHours > 0
-                    ? $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后用 LubanAgentWebHost --token 重新取地址。"
-                    : "会话不设绝对上限，宿主重启后用 LubanAgentWebHost --token 重新取地址。"));
+                    ? $"会话最长 {settings.SessionMaxHours:0.##} 小时；到期后重新登录。"
+                    : "会话不设绝对上限，宿主重启后重新登录。"));
 
             // 手机扫码要走的正是局域网地址（127.0.0.1 在手机上指向手机自己），故只印这一个
             PrintEntryQr(lanEntryUrl);
@@ -303,6 +322,91 @@ public static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[webhost] 停止失败：{ex.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// 读取命令行选项值：支持 <c>--name=value</c> 与 <c>--name value</c> 两种写法。
+    /// </summary>
+    /// <param name="args">命令行参数。</param>
+    /// <param name="option">选项名（含前导 <c>--</c>）。</param>
+    /// <param name="value">选项值；选项出现但缺值时为空。</param>
+    /// <returns>选项是否出现。</returns>
+    private static bool TryGetOptionValue(string[] args, string option, out string? value)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (arg.StartsWith(option + "=", StringComparison.OrdinalIgnoreCase))
+            {
+                value = arg[(option.Length + 1)..];
+                return true;
+            }
+
+            if (string.Equals(arg, option, StringComparison.OrdinalIgnoreCase))
+            {
+                value = i + 1 < args.Length ? args[i + 1] : null;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
+    /// <summary>
+    /// 离线重置指定用户密码（含内置管理员），随机密码只打印一次。
+    /// </summary>
+    /// <remarks>
+    /// 内置管理员忘记密码时没有网页入口（正常边界是「只能本人改密」），本命令是唯一恢复通道。
+    /// 执行前应先 <c>--stop</c> 停止宿主：SQLite 允许跨进程读写，但同时写入仍有锁竞争风险。
+    /// 不初始化嵌入模型，只建库、建表并更新用户行。
+    /// </remarks>
+    /// <param name="args">启动参数（用于定位配置与数据目录）。</param>
+    /// <param name="userName">登录名（大小写不敏感）。</param>
+    /// <returns>退出码：0 成功；2 参数或用户错误；1 其他失败。</returns>
+    private static async Task<int> ResetUserPasswordAsync(string[] args, string? userName)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            Console.Error.WriteLine("[webhost] 用法：LubanAgentWebHost --reset-password <登录名>");
+            Console.Error.WriteLine("[webhost] 请先执行 --stop 停止正在运行的宿主，再执行本命令。");
+            return 2;
+        }
+
+        var userId = userName.Trim().ToLowerInvariant();
+        try
+        {
+            var configuration = AgentHostBuilder.BuildConfiguration(args);
+            configuration.InitConfigUtil();
+            ProviderHelper.Initialize(configuration);
+            foreach (var message in DatabaseInitializer.Initialize())
+            {
+                Console.WriteLine($"[webhost] {message}");
+            }
+
+            var settings = WebHostSettings.Create(configuration, args);
+            var tokens = JwtTokenService.LoadOrCreate(
+                string.IsNullOrWhiteSpace(settings.JwtKeyPath) ? AgentHome.WebHostJwtKeyFile : settings.JwtKeyPath!);
+            var auth = new UserAuthService(
+                tokens,
+                TimeSpan.FromMinutes(settings.SessionTokenMinutes),
+                TimeSpan.FromHours(settings.SessionMaxHours));
+
+            var password = await auth.ResetPasswordAsync(userId, allowBuiltIn: true).ConfigureAwait(false);
+            Console.WriteLine($"[webhost] 用户 {userId} 的密码已重置：{password}");
+            Console.WriteLine("[webhost] 新密码仅显示这一次；旧会话已全部失效，登录后请立即修改。");
+            return 0;
+        }
+        catch (AuthException ex)
+        {
+            Console.Error.WriteLine($"[webhost] 重置失败：{ex.Message}");
+            return 2;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[webhost] 重置失败：{ex.Message}");
             return 1;
         }
     }
@@ -496,8 +600,9 @@ public static class Program
     /// <remarks>
     /// 输出被重定向时（客户端拉起的宿主子进程没有控制台）直接跳过：
     /// 二维码是给人扫的，把几十行色块塞进被捕获的日志没有意义。
+    /// 地址本身只含短码（约 40 个字符），矩阵比直接编码令牌时小得多。
     /// </remarks>
-    /// <param name="entryUrl">带令牌的局域网入口地址。</param>
+    /// <param name="entryUrl">带短码的局域网入口地址。</param>
     private static void PrintEntryQr(string entryUrl)
     {
         if (Console.IsOutputRedirected)

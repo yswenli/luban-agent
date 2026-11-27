@@ -142,13 +142,14 @@ export function ConnectionHelpDialog(props: { onClose: () => void }) {
     >
       <ul class="about-steps">
         <li>
-          宿主的浏览器入口带会话令牌（<code>?t=</code> 参数）。令牌会定时换新，页面一直开着会自动续期；
-          会话默认不设上限，但宿主重启后旧地址失效（配置了会话上限时到点同样失效）。
+          宿主的浏览器入口带登录令牌（<code>?t=</code> 参数），打开后换成 Cookie 并落在登录页。登录有效期默认 15 分钟，
+          页面一直开着会自动续期；宿主重启后入口短链失效（浏览器登录只要未过期仍然有效），配置了会话上限时到点需重新登录。
         </li>
         <li>在宿主机终端执行 <code>LubanAgentWebHost --token</code>，重新打印「浏览器入口」并整条复制打开。</li>
         <li>找不到终端或宿主已退出：重新启动 <code>LubanAgentWebHost</code>，再看启动日志里的浏览器入口。</li>
+        <li>忘记密码：请管理员在「设置 → 用户」重置（内置管理员只能本人在「设置 → 账号」修改）。</li>
         <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>；端口被占用时用 <code>--port</code> 换一个。</li>
-        <li>带令牌的地址等同于完整操作权限，不要转发给他人。</li>
+        <li>登录有效期内，持有入口地址与账号者可读写工作区、执行命令，不要转发给他人。</li>
       </ul>
     </Modal>
   );

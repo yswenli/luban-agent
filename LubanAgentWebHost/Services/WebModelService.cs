@@ -23,7 +23,7 @@ public static class WebModelService
     /// <returns>按供应商分组的模型清单。</returns>
     public static Task<ActionResult> ListAsync(string? providerId) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = requestScope.GetRequiredService<IProviderModelManagementService>();
         var (selectedProvider, selectedModel) = service.GetSelection();
 
@@ -69,7 +69,7 @@ public static class WebModelService
             return WebApi.FailJson(400, "providerId / modelId 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         await requestScope.GetRequiredService<IProviderModelManagementService>()
             .AddModelAsync(input.ProviderId.Trim(), input.ModelId.Trim())
             .ConfigureAwait(false);
@@ -93,7 +93,7 @@ public static class WebModelService
             return WebApi.FailJson(400, "providerId / oldModelId / newModelId 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = requestScope.GetRequiredService<IProviderModelManagementService>();
         await service.UpdateModelAsync(input.ProviderId.Trim(), input.OldModelId.Trim(), input.NewModelId.Trim())
             .ConfigureAwait(false);
@@ -121,7 +121,7 @@ public static class WebModelService
             var provider = providerId.Trim();
             var model = modelId.Trim();
 
-            await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+            await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
             var profile = await requestScope.GetRequiredService<IProviderModelManagementService>()
                 .GetModelProfileAsync(provider, model)
                 .ConfigureAwait(false);
@@ -160,7 +160,7 @@ public static class WebModelService
         var provider = input.ProviderId.Trim();
         var model = input.ModelId.Trim();
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = requestScope.GetRequiredService<IProviderModelManagementService>();
 
         await service.SetModelProfileAsync(
@@ -203,7 +203,7 @@ public static class WebModelService
             return WebApi.FailJson(400, "providerId / modelId 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         await requestScope.GetRequiredService<IProviderModelManagementService>()
             .DeleteModelAsync(input.ProviderId.Trim(), input.ModelId.Trim())
             .ConfigureAwait(false);

@@ -54,6 +54,7 @@ public static class DatabaseInitializer
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureA2ATaskTable();
         EnsureWorktreeSessionTable();
+        EnsureAuthTables();
 
         return messages;
     }
@@ -237,6 +238,22 @@ public static class DatabaseInitializer
         catch (Exception ex)
         {
             Logger.Error("初始化 worktree 会话表失败", ex);
+        }
+    }
+
+    /// <summary>
+    /// 确保用户与邀请码表存在。
+    /// 现有数据库超过阈值时会跳过 CodeFirst 建表，故此处显式建表（幂等）。
+    /// </summary>
+    private static void EnsureAuthTables()
+    {
+        try
+        {
+            new AgentUserRepository().Context.CodeFirst.InitTables<DbAgentUser, DbInviteCode>();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("初始化用户与邀请码表失败", ex);
         }
     }
 

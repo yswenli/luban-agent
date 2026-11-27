@@ -25,7 +25,7 @@ public static class WebSessionService
     /// <returns>会话列表。</returns>
     public static Task<ActionResult> ListAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var sessions = await scope.GetRequiredService<ISessionManager>()
             .GetUserSessionsAsync()
             .ConfigureAwait(false);
@@ -36,9 +36,9 @@ public static class WebSessionService
     /// <returns>按更新时间倒序的会话摘要。</returns>
     public static Task<ActionResult> ListDetailedAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var sessions = await scope.GetRequiredService<SessionRepository>()
-            .GetUserSessionsAsync(WebApi.Runtime.UserId)
+            .GetUserSessionsAsync(WebApi.UserId)
             .ConfigureAwait(false);
 
         return WebApi.OkJson(sessions
@@ -66,9 +66,9 @@ public static class WebSessionService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var sessions = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-            .GetByWorkspaceAsync(workspaceId.Trim(), WebApi.Runtime.UserId)
+            .GetByWorkspaceAsync(workspaceId.Trim(), WebApi.UserId)
             .ConfigureAwait(false);
         return WebApi.OkJson(sessions.Select(ToSessionInfo).ToList());
     });
@@ -89,7 +89,7 @@ public static class WebSessionService
 
         var take = int.TryParse(maxLength, out var parsed) && parsed > 0 ? parsed : 60;
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         // 批量接口按归属过滤：不属于当前用户（或不存在）的会话静默跳过，避免整批失败也避免泄露存在性
         var owned = (await scope.GetRequiredService<ISessionManager>()
@@ -119,7 +119,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var session = await scope.GetRequiredService<ISessionManager>()
             .GetSessionAsync(sessionId.Trim())
             .ConfigureAwait(false);
@@ -143,7 +143,7 @@ public static class WebSessionService
     /// </remarks>
     public static Task<ActionResult> CurrentAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         return WebApi.OkJson(scope.GetRequiredService<ISessionManager>().CurrentSession);
     });
 
@@ -157,9 +157,9 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-            .GetSessionWorkspaceIdAsync(sessionId.Trim(), WebApi.Runtime.UserId)
+            .GetSessionWorkspaceIdAsync(sessionId.Trim(), WebApi.UserId)
             .ConfigureAwait(false);
         return WebApi.OkJson(workspaceId);
     });
@@ -171,7 +171,7 @@ public static class WebSessionService
     {
         var input = WebApi.TryReadPayload<SessionCreateRequest>(payload, out var parsed) ? parsed : null;
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspaceId = string.IsNullOrWhiteSpace(input?.WorkspaceId)
             ? scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId
             : input!.WorkspaceId.Trim();
@@ -193,14 +193,14 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input!.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
         }
 
         // 判定必须早于软删：轮次跑完还会往会话里写，删了就成了幽灵写入
-        if (WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, input.SessionId.Trim()))
+        if (WebApi.Runtime.Runs.IsRunning(WebApi.UserId, input.SessionId.Trim()))
         {
             return WebApi.FailJson(409, "该会话正在进行中，请先停止再删除");
         }
@@ -227,7 +227,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "title 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -250,7 +250,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -275,7 +275,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -299,7 +299,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -328,7 +328,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "role 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -360,7 +360,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input!.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -387,7 +387,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -404,7 +404,7 @@ public static class WebSessionService
     /// <returns>全局统计。</returns>
     public static Task<ActionResult> GlobalStatsAsync(string? days) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         int? span = int.TryParse(days, out var parsed) && parsed > 0 ? parsed : null;
         var stats = await scope.GetRequiredService<ISessionManager>()
             .GetGlobalStatsAsync(span)
@@ -423,7 +423,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input!.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -432,9 +432,9 @@ public static class WebSessionService
         // 清空期间若还有轮次在跑，它会把新一轮消息写回刚清空的会话：先停再清
         var sessionId = input.SessionId.Trim();
         var stopped = await WebApi.Runtime.Runs
-            .CancelAndWaitAsync(WebApi.Runtime.UserId, sessionId)
+            .CancelAndWaitAsync(WebApi.UserId, sessionId)
             .ConfigureAwait(false);
-        if (!stopped && WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, sessionId))
+        if (!stopped && WebApi.Runtime.Runs.IsRunning(WebApi.UserId, sessionId))
         {
             return WebApi.FailJson(409, "本轮对话尚未停止，请稍后重试");
         }
@@ -452,7 +452,7 @@ public static class WebSessionService
     {
         var input = WebApi.TryReadPayload<SessionClearAllRequest>(payload, out var parsed) ? parsed : null;
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<ISessionManager>();
         var workspaces = scope.GetRequiredService<IWorkspaceManager>();
 
@@ -475,9 +475,9 @@ public static class WebSessionService
         var running = clearScope.ClearAll
             ? (await manager.GetUserSessionsAsync().ConfigureAwait(false)).Select(session => session.SessionId)
             : (await scope.GetRequiredService<ISessionWorkspaceQuery>()
-                .GetByWorkspaceAsync(clearScope.WorkspaceId!, WebApi.Runtime.UserId)
+                .GetByWorkspaceAsync(clearScope.WorkspaceId!, WebApi.UserId)
                 .ConfigureAwait(false)).Select(session => session.SessionId);
-        if (WebApi.Runtime.Runs.IsAnyRunning(WebApi.Runtime.UserId, running))
+        if (WebApi.Runtime.Runs.IsAnyRunning(WebApi.UserId, running))
         {
             return clearScope.ClearAll
                 ? WebApi.FailJson(409, "有会话正在进行中，请先停止")
@@ -520,7 +520,7 @@ public static class WebSessionService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, input!.SessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -556,14 +556,14 @@ public static class WebSessionService
         var providerId = input.ProviderId.Trim().ToLowerInvariant();
         var modelId = input.ModelId.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (await CheckOwnerAsync(scope, sessionId).ConfigureAwait(false) is { } failure)
         {
             return failure;
         }
 
         var updated = await scope.GetRequiredService<SessionRepository>()
-            .UpdateModelAsync(sessionId, WebApi.Runtime.UserId, providerId, modelId)
+            .UpdateModelAsync(sessionId, WebApi.UserId, providerId, modelId)
             .ConfigureAwait(false);
         if (!updated)
         {
@@ -607,7 +607,7 @@ public static class WebSessionService
         }
 
         var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-            .GetSessionWorkspaceIdAsync(sessionId.Trim(), WebApi.Runtime.UserId)
+            .GetSessionWorkspaceIdAsync(sessionId.Trim(), WebApi.UserId)
             .ConfigureAwait(false);
 
         // 会话不存在或未绑定工作区：没有可信的落盘根（带 sessionId 上传时该情形会被拒绝）
@@ -696,7 +696,7 @@ public static class WebSessionService
             return WebApi.FailJson(404, WebSessionResolver.SessionNotFound);
         }
 
-        return string.Equals(owner, WebApi.Runtime.UserId, StringComparison.Ordinal)
+        return string.Equals(owner, WebApi.UserId, StringComparison.Ordinal)
             ? null
             : WebApi.FailJson(403, WebSessionResolver.SessionForbidden);
     }

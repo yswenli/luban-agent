@@ -27,7 +27,7 @@ public static class WebA2AService
     /// <returns>状态快照。</returns>
     public static Task<ActionResult> StatusAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var status = await scope.GetRequiredService<IA2AStatusProvider>()
             .GetStatusAsync()
             .ConfigureAwait(false);
@@ -39,7 +39,7 @@ public static class WebA2AService
     /// <returns>服务端配置；文件不存在时返回默认值。</returns>
     public static Task<ActionResult> GetServerAsync(string? scope) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -64,7 +64,7 @@ public static class WebA2AService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);
@@ -95,7 +95,7 @@ public static class WebA2AService
     /// <returns>客户端列表项。</returns>
     public static Task<ActionResult> ListClientsAsync(string? scope) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -121,7 +121,7 @@ public static class WebA2AService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -172,7 +172,7 @@ public static class WebA2AService
             return WebApi.FailJson(400, "远端地址不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);
@@ -228,7 +228,7 @@ public static class WebA2AService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveWorkspaceOnlyAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);

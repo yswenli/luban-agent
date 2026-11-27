@@ -3,14 +3,19 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMo
 import { hasOpenModal } from '../components/Dialog';
 import { Icon, type IconName } from '../components/Icons';
 import { bootstrap, projectWorkspaces } from '../stores/app';
+import { currentUser } from '../stores/auth';
 import { A2aTab } from './settings/A2aTab';
+import { AccountTab } from './settings/AccountTab';
 import { DataTab } from './settings/DataTab';
+import { InviteTab } from './settings/InviteTab';
 import { McpTab } from './settings/McpTab';
 import { ModelTab } from './settings/ModelTab';
 import { NotifyTab } from './settings/NotifyTab';
 import { ProviderTab } from './settings/ProviderTab';
+import { RootsTab } from './settings/RootsTab';
 import { RuleTab } from './settings/RuleTab';
 import { SkillTab } from './settings/SkillTab';
+import { UsersTab } from './settings/UsersTab';
 import { WorkspaceTab } from './settings/WorkspaceTab';
 
 interface TabDef {
@@ -23,11 +28,17 @@ interface TabDef {
   workspaceOnly?: boolean;
   /** 只作用于工作区（授权、配置目录、AGENTS.md），没有全局作用域。 */
   requiresWorkspace?: boolean;
+  /** 仅管理员可见（用户与邀请码管理）；非管理员连入口都不显示。 */
+  adminOnly?: boolean;
 }
 
-// 导航顺序即用户使用频率顺序：供应商与模型在前，文件型配置（技能/规则/MCP）随后，A2A 协作垫底，
-// 新增的工作区治理与数据清理排在最后。
+// 导航顺序即用户使用频率顺序：账号在最前（登录后第一件事通常是认人/改密），
+// 管理员紧接着看邀请码，供应商与模型随后，文件型配置（技能/规则/MCP）再后，
+// A2A 协作垫底，用户治理与数据清理收尾。
 const tabs: TabDef[] = [
+  { id: 'account', label: '账号', icon: 'user', scoped: false },
+  { id: 'invites', label: '邀请码', icon: 'key', scoped: false, adminOnly: true },
+  { id: 'roots', label: '工作区根目录', icon: 'folder', scoped: false, adminOnly: true },
   { id: 'provider', label: '供应商', icon: 'folder', scoped: false },
   { id: 'model', label: '模型', icon: 'brain', scoped: false },
   { id: 'skill', label: '技能', icon: 'spark', scoped: true },
@@ -36,6 +47,7 @@ const tabs: TabDef[] = [
   { id: 'a2a', label: 'A2A 协作', icon: 'message', scoped: true, workspaceOnly: true },
   { id: 'workspace', label: '工作区', icon: 'file', scoped: false, requiresWorkspace: true },
   { id: 'notify', label: '通知', icon: 'bell', scoped: false },
+  { id: 'users', label: '用户', icon: 'shield', scoped: false, adminOnly: true },
   { id: 'data', label: '数据与用量', icon: 'grid', scoped: false },
 ];
 
@@ -59,12 +71,18 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     onCleanup(() => window.removeEventListener('keydown', onKey));
   });
 
-  const activeTab = createMemo(() => tabs.find((tab) => tab.id === props.tab) ?? tabs[0]);
+  /** 当前身份能看到的页签：用户与邀请码管理只对管理员开放。 */
+  const allowedTabs = createMemo(() => {
+    const admin = currentUser()?.isAdmin ?? false;
+    return admin ? tabs : tabs.filter((tab) => !tab.adminOnly);
+  });
+
+  const activeTab = createMemo(() => allowedTabs().find((tab) => tab.id === props.tab) ?? allowedTabs()[0]);
 
   const visibleTabs = createMemo(() => {
     const keyword = search().trim().toLowerCase();
-    if (!keyword) return tabs;
-    return tabs.filter((tab) => tab.label.toLowerCase().includes(keyword) || tab.id.includes(keyword));
+    if (!keyword) return allowedTabs();
+    return allowedTabs().filter((tab) => tab.label.toLowerCase().includes(keyword) || tab.id.includes(keyword));
   });
 
   /** 用户下的项目工作区（不含知识库），顺序沿用首页拖动结果。 */
@@ -110,6 +128,10 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
       return scopeValue() ? `作用域：${workspaceLabel(scopeValue())}` : '作用域：未选择工作区';
     }
     if (activeTab().id === 'notify') return '保存位置：本机浏览器（不随账号同步）';
+    if (activeTab().id === 'account') return '密码只保存哈希，改密后其他设备上的登录立即失效';
+    if (activeTab().id === 'users') return '仅管理员可见：重置后旧密码与该用户的登录状态立即失效';
+    if (activeTab().id === 'invites') return '仅管理员可见：邀请码一次性使用，注册成功后即失效';
+    if (activeTab().id === 'roots') return '仅管理员可见：机器级白名单，所有用户新建项目都受此限制';
     if (activeTab().id === 'data') return '统计范围：全部会话';
     return '作用域：★ 全局';
   };
@@ -209,6 +231,18 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                 </Match>
                 <Match when={activeTab().id === 'notify'}>
                   <NotifyTab />
+                </Match>
+                <Match when={activeTab().id === 'account'}>
+                  <AccountTab />
+                </Match>
+                <Match when={activeTab().id === 'users'}>
+                  <UsersTab />
+                </Match>
+                <Match when={activeTab().id === 'invites'}>
+                  <InviteTab />
+                </Match>
+                <Match when={activeTab().id === 'roots'}>
+                  <RootsTab />
                 </Match>
               </Switch>
             </Show>

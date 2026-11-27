@@ -502,6 +502,10 @@ public class ManagementServiceUnitTest
             => Task.FromResult(Workspaces.FirstOrDefault(w =>
                 string.Equals(w.RootPath, rootPath, StringComparison.OrdinalIgnoreCase)));
 
+        public Task<bool> IsRootPathUsedByAnyUserAsync(string rootPath)
+            => Task.FromResult(Workspaces.Any(w =>
+                string.Equals(w.RootPath, rootPath, StringComparison.OrdinalIgnoreCase)));
+
         public Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword)
             => Task.FromResult<IReadOnlyList<WorkspaceInfo>>(Workspaces
                 .Where(w => w.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase))

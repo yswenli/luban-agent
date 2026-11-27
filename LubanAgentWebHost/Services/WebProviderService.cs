@@ -20,7 +20,7 @@ public static class WebProviderService
     /// <returns><c>{ providerId, modelId }</c>；未设置时两者为 null。</returns>
     public static Task<ActionResult> SelectionAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (providerId, modelId) = scope.GetRequiredService<IProviderModelManagementService>().GetSelection();
         return WebApi.OkJson(new ModelSelectionDto(providerId, modelId));
     });
@@ -41,7 +41,7 @@ public static class WebProviderService
             return WebApi.FailJson(400, "providerId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var models = await scope.GetRequiredService<IProviderModelManagementService>()
             .RefreshModelsAsync(providerId.Trim())
             .ConfigureAwait(false);
@@ -63,7 +63,7 @@ public static class WebProviderService
             return WebApi.FailJson(400, "providerId / modelId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<IProviderModelManagementService>();
         await service.SetSelectionAsync(input.ProviderId.Trim(), input.ModelId.Trim()).ConfigureAwait(false);
         var (providerId, modelId) = service.GetSelection();
@@ -129,7 +129,7 @@ public static class WebProviderService
     /// <returns>供应商清单。</returns>
     public static Task<ActionResult> ListAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<IProviderModelManagementService>();
         var (selectedProvider, _) = service.GetSelection();
         var providers = await service.GetProvidersAsync().ConfigureAwait(false);
@@ -177,7 +177,7 @@ public static class WebProviderService
         var apiKey = input.ApiKey?.Trim() ?? string.Empty;
         var baseUrl = string.IsNullOrWhiteSpace(input.BaseUrl) ? null : input.BaseUrl.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var config = scope.GetRequiredService<ConfigManager>();
 
         // 标识改动即重命名：按前端带来的原标识定位现有供应商，避免被当成「新建」而误判 API Key 必填。
@@ -257,7 +257,7 @@ public static class WebProviderService
             return WebApi.FailJson(400, "Name 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         await scope.GetRequiredService<IProviderModelManagementService>()
             .DeleteProviderAsync(input.Name.Trim().ToLowerInvariant())
             .ConfigureAwait(false);

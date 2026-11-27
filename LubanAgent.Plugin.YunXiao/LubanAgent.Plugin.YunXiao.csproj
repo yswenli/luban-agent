@@ -30,7 +30,8 @@
 
   <ItemGroup>
     <!-- 框架契约包：运行期由宿主共享框架集提供，插件包 lib/ 不得包含（见文件头打包约束 1）。 -->
-    <PackageReference Include="LuBan.AIAgent" Version="2026.11.25.2" />
+    <!-- TEMP-LOCAL-VERIFY：验证框架 Shell 默认工作目录改动期间临时直连源码 -->
+    <ProjectReference Include="..\..\luban-framework\LuBan.AIAgent\LuBan.AIAgent.csproj" />
   </ItemGroup>
 
   <ItemGroup>

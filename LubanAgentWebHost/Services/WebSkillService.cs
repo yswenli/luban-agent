@@ -22,7 +22,7 @@ public static class WebSkillService
     /// <returns>技能摘要数组。</returns>
     public static Task<ActionResult> ListAsync(string? scope) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -43,7 +43,7 @@ public static class WebSkillService
     /// <returns>已启用技能数组（含内置、自定义与工作区文件技能）。</returns>
     public static Task<ActionResult> LoadedAsync(string? sessionId) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var skills = await requestScope.GetRequiredService<ISkillCatalogService>()
             .ListAvailableAsync(sessionId, default)
             .ConfigureAwait(false);
@@ -65,7 +65,7 @@ public static class WebSkillService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -92,7 +92,7 @@ public static class WebSkillService
         }
 
         // name / description 必填校验由 SkillManagementService.SaveFile 统一承担（抛 ArgumentException → 400）
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);
@@ -144,7 +144,7 @@ public static class WebSkillService
             return WebApi.FailJson(400, "ZIP 内容不是合法的 Base64");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);
@@ -187,7 +187,7 @@ public static class WebSkillService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);

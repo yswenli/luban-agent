@@ -18,7 +18,7 @@ public static class WebWorkspaceService
     /// <returns>工作区列表。</returns>
     public static Task<ActionResult> ListAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspaces = await scope.GetRequiredService<IWorkspaceManager>()
             .GetUserWorkspacesAsync()
             .ConfigureAwait(false);
@@ -29,7 +29,7 @@ public static class WebWorkspaceService
     /// <returns>工作区；未设置时 data 为 null。</returns>
     public static Task<ActionResult> CurrentAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var current = scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace;
         return WebApi.OkJson(current is null ? null : WorkspaceMapping.ToDto(current));
     });
@@ -44,11 +44,28 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "rootPath 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspace = await scope.GetRequiredService<IWorkspaceManager>()
             .GetByRootPathAsync(rootPath.Trim())
             .ConfigureAwait(false);
         return WebApi.OkJson(workspace is null ? null : WorkspaceMapping.ToDto(workspace));
+    });
+
+    /// <summary>根目录是否已被任一用户登记为工作区（跨用户判重，只回布尔值）。</summary>
+    /// <param name="rootPath">根目录路径。</param>
+    /// <returns><c>{used:true|false}</c>。</returns>
+    public static Task<ActionResult> RootUsedAsync(string? rootPath) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return WebApi.OkJson(new { used = false });
+        }
+
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
+        var used = await scope.GetRequiredService<IWorkspaceManager>()
+            .IsRootPathUsedByAnyUserAsync(rootPath.Trim())
+            .ConfigureAwait(false);
+        return WebApi.OkJson(new { used });
     });
 
     /// <summary>按名称片段模糊搜索工作区。</summary>
@@ -61,12 +78,61 @@ public static class WebWorkspaceService
             return WebApi.OkJson(new List<WorkspaceDto>());
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspaces = await scope.GetRequiredService<IWorkspaceManager>()
             .SearchByNameAsync(keyword.Trim())
             .ConfigureAwait(false);
         return WebApi.OkJson(workspaces.Select(WorkspaceMapping.ToDto).ToList());
     });
+
+    /// <summary>允许的工作区根目录（机器级；登录用户可读，用于新建时的提示）。</summary>
+    /// <returns><c>{roots:[...]}</c>。</returns>
+    public static Task<ActionResult> ListRootsAsync() => WebApi.RunGuardedAsync(() =>
+        Task.FromResult(WebApi.OkJson(new { roots = WorkspaceRootsStore.Load() })));
+
+    /// <summary>保存工作区根目录（机器级，仅管理员）。</summary>
+    /// <param name="payload">包装后的 <see cref="WorkspaceRootsRequest"/> JSON。</param>
+    /// <returns>实际写入的根目录。</returns>
+    public static Task<ActionResult> SaveRootsAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (await EnsureAdminAsync().ConfigureAwait(false) is { } denied)
+        {
+            return denied;
+        }
+
+        if (!WebApi.TryReadPayload<WorkspaceRootsRequest>(payload, out var request) || request is null)
+        {
+            return WebApi.FailJson(400, "请求体不合法");
+        }
+
+        try
+        {
+            var saved = WorkspaceRootsStore.Save(request.Roots);
+            return WebApi.OkJson(new { roots = saved });
+        }
+        catch (ArgumentException ex)
+        {
+            return WebApi.FailJson(400, ex.Message);
+        }
+    });
+
+    /// <summary>工作区根目录配置仅管理员可改；宿主固定令牌视为管理员。</summary>
+    /// <returns>拒绝响应；有权限返回 null。</returns>
+    private static async Task<ActionResult?> EnsureAdminAsync()
+    {
+        if (WebApi.IsBearerRequest)
+        {
+            return null;
+        }
+
+        if (WebApi.CurrentClaims is not { } claims
+            || await WebApi.Runtime.Auth.ValidateAsync(claims).ConfigureAwait(false) is not { IsAdmin: true })
+        {
+            return WebApi.FailJson(403, "需要管理员权限");
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// 创建工作区（S2d §13.2 起升级为 <b>ensure 幂等语义</b>：存在即复用，不重复建）。
@@ -93,16 +159,92 @@ public static class WebWorkspaceService
     /// <returns>工作区（含 <c>reused</c> 标记）。</returns>
     public static Task<ActionResult> CreateAsync(string payload) => WebApi.RunGuardedAsync(async () =>
     {
-        if (!WebApi.TryReadPayload<WorkspaceCreateRequest>(payload, out var input)
-            || string.IsNullOrWhiteSpace(input?.RootPath))
+        if (!WebApi.TryReadPayload<WorkspaceCreateRequest>(payload, out var input))
         {
-            return WebApi.FailJson(400, "rootPath 不能为空");
+            return WebApi.FailJson(400, "请求体不合法");
         }
 
-        var rootPath = input!.RootPath.Trim();
-        if (!Path.IsPathFullyQualified(rootPath))
+        var source = string.IsNullOrWhiteSpace(input!.Source) ? "directory" : input.Source!.Trim().ToLowerInvariant();
+        if (source is not ("directory" or "git"))
         {
-            return WebApi.FailJson(400, "rootPath 必须是绝对路径");
+            return WebApi.FailJson(400, "source 必须是 directory 或 git");
+        }
+
+        string rootPath;
+        var name = string.IsNullOrWhiteSpace(input.Name) ? null : input.Name!.Trim();
+        if (source == "git")
+        {
+            var gitUrl = (input.GitUrl ?? string.Empty).Trim();
+            if (gitUrl.Length == 0)
+            {
+                return WebApi.FailJson(400, "gitUrl 不能为空");
+            }
+
+            if (!IsSafeGitUrl(gitUrl))
+            {
+                return WebApi.FailJson(400, "gitUrl 只支持 http(s) / ssh / git / file 协议或 scp 形式的地址");
+            }
+
+            var folder = ToFolderName(name) is { Length: > 0 } explicitName
+                ? explicitName
+                : ToFolderName(FolderFromGitUrl(gitUrl));
+            if (folder.Length == 0)
+            {
+                return WebApi.FailJson(400, "无法从仓库地址推断项目名，请填写项目名");
+            }
+
+            var target = Path.GetFullPath(Path.Combine(AgentHome.RepositoriesDirectory, folder));
+
+            // 克隆前就校验白名单：克隆是写盘副作用，先失败可以避免克隆完再回 403 留下无主目录
+            if (RejectIfOutsideRoots(target) is { } rejected)
+            {
+                return rejected;
+            }
+
+            if (Directory.Exists(target))
+            {
+                if (!input.ReuseExisting)
+                {
+                    // 不静默复用：目录里可能是别的项目或上次未完成的克隆，交给用户确认
+                    return WebApi.FailJson(
+                        409,
+                        $"目标目录已存在：{target}。该目录可能属于其他项目或上次克隆的残留，"
+                        + "复用会直接在这个目录上工作。是否复用？",
+                        new { reason = "exists" });
+                }
+            }
+            else
+            {
+                try
+                {
+                    Directory.CreateDirectory(AgentHome.RepositoriesDirectory);
+                    var git = new GitProcess(new LuBan.AIAgent.Infrastructure.ProcessRunner());
+                    await git.RunAsync(AgentHome.Root, ["clone", "--", gitUrl, target]).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // 只清理本次新建的目录：克隆失败会留下半个仓库，留着会让下次尝试误判为「已存在」
+                    TryDeleteDirectory(target);
+                    AgentWebRuntime.Log($"克隆仓库失败：{ex}");
+                    return WebApi.FailJson(500, "克隆仓库失败，请检查仓库地址与网络");
+                }
+            }
+
+            rootPath = target;
+            name ??= folder;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(input.RootPath))
+            {
+                return WebApi.FailJson(400, "rootPath 不能为空");
+            }
+
+            rootPath = input.RootPath.Trim();
+            if (!Path.IsPathFullyQualified(rootPath))
+            {
+                return WebApi.FailJson(400, "rootPath 必须是绝对路径");
+            }
         }
 
         var type = string.IsNullOrWhiteSpace(input.Type) ? WorkspaceTypes.Normal : input.Type.Trim();
@@ -112,12 +254,18 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "type 必须是 Normal 或 LlmWiki");
         }
 
+        // 工作区只能建在机器级白名单根目录下（默认 ~/.luban-agent，含 git 克隆目录）。
+        // 只拦新建：放行列表变化后，既有工作区仍可切换与使用。
+        if (RejectIfOutsideRoots(rootPath) is { } denied)
+        {
+            return denied;
+        }
+
         var normalizedType = string.Equals(type, WorkspaceTypes.LlmWiki, StringComparison.OrdinalIgnoreCase)
             ? WorkspaceTypes.LlmWiki
             : WorkspaceTypes.Normal;
-        var name = string.IsNullOrWhiteSpace(input.Name) ? null : input.Name!.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
 
         // ① 规范化命中既有工作区 → 直接复用（ensure 幂等，S2d §13.2）
@@ -126,6 +274,18 @@ public static class WebWorkspaceService
         if (existing is not null)
         {
             return WebApi.OkJson(WithReusedFlag(existing, reused: true));
+        }
+
+        // 目录已被其他用户登记：目录本身不分用户，但登记记录按用户各持一行。
+        // 未确认共用时先回 409，避免两人在同目录并发写文件却互不知情。
+        if (!input.ShareExisting
+            && await manager.IsRootPathUsedByAnyUserAsync(rootPath).ConfigureAwait(false))
+        {
+            return WebApi.FailJson(
+                409,
+                "此工作区已被使用，是否共用？共用后两人在同一目录读写文件，"
+                + "会话与配置各自独立，但文件改动会互相可见。",
+                new { reason = "in-use" });
         }
 
         // ② 磁盘已存在目录未注册 → 注册（不重建目录）；③ 不存在 → 建目录 + 注册。
@@ -148,6 +308,28 @@ public static class WebWorkspaceService
         }
     });
 
+    /// <summary>
+    /// 新建工作区（含 git 克隆目标）必须落在机器级白名单根目录内。
+    /// </summary>
+    /// <remarks>
+    /// 只拦新建：根目录列表变化后，已登记的工作区仍可切换与使用。
+    /// </remarks>
+    /// <param name="path">待校验的绝对路径。</param>
+    /// <returns>越界时返回 403 响应；放行返回 null。</returns>
+    private static ActionResult? RejectIfOutsideRoots(string path)
+    {
+        var roots = WorkspaceRootsStore.Load();
+        if (WorkspaceRootsStore.IsAllowed(path, roots))
+        {
+            return null;
+        }
+
+        return WebApi.FailJson(
+            403,
+            $"目录不在允许的工作区根目录内：{path}。"
+            + $"允许的根目录：{string.Join("、", roots)}（需管理员在设置页调整）");
+    }
+
     /// <summary>工作区出参平铺 <c>reused</c> 标记（ensure 语义；多余字段对旧消费方透明）。</summary>
     /// <param name="workspace">工作区实体。</param>
     /// <param name="reused">是否复用既有工作区。</param>
@@ -168,6 +350,100 @@ public static class WebWorkspaceService
             dto.HasGit,
             Reused = reused,
         };
+    }
+
+    /// <summary>
+    /// git 仓库地址是否可安全交给 <c>git clone</c>。
+    /// </summary>
+    /// <remarks>
+    /// 只接受明确的协议前缀或 scp 形式，并拒绝以 <c>-</c> 开头的值：
+    /// 后者会被 git 当成选项（参数注入），换行则可能截断命令行。
+    /// </remarks>
+    /// <param name="url">仓库地址。</param>
+    /// <returns>可用返回 true。</returns>
+    internal static bool IsSafeGitUrl(string url)
+    {
+        if (url.Length == 0 || url[0] == '-' || url.Contains('\r') || url.Contains('\n'))
+        {
+            return false;
+        }
+
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("ssh://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("git://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // scp 形式：user@host:path
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            url,
+            "^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\\s]+$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>从仓库地址末段推断项目名（去掉 <c>.git</c> 后缀）。</summary>
+    /// <param name="url">仓库地址。</param>
+    /// <returns>末段文本；取不到时为空串。</returns>
+    internal static string FolderFromGitUrl(string url)
+    {
+        var text = url.Trim().TrimEnd('/', '\\');
+        var index = text.LastIndexOfAny(['/', '\\', ':']);
+        var name = index >= 0 ? text[(index + 1)..] : text;
+        return name.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+    }
+
+    /// <summary>
+    /// 把项目名收敛成合法的单层目录名（不允许分隔符与上跳）。
+    /// </summary>
+    /// <param name="name">用户输入的项目名。</param>
+    /// <returns>可用目录名；无法收敛时为空串。</returns>
+    internal static string ToFolderName(string? name)
+    {
+        var text = (name ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = text.Select(ch => invalid.Contains(ch) || ch is '/' or '\\' ? '-' : ch).ToArray();
+        var folder = new string(chars).Trim().TrimEnd('.');
+        return folder is "." or ".." ? string.Empty : folder;
+    }
+
+    /// <summary>删除本次克隆失败留下的目录；失败只记日志。</summary>
+    /// <param name="path">目标目录。</param>
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            // 克隆中途可能留下只读文件，先去掉只读属性再删
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // 单个文件去只读失败不阻断整体删除
+                }
+            }
+
+            Directory.Delete(path, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AgentWebRuntime.Log($"清理克隆残留目录失败：{path}：{ex.Message}");
+        }
     }
 
     /// <summary>
@@ -245,7 +521,7 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var target = await manager.GetWorkspaceAsync(input!.WorkspaceId.Trim()).ConfigureAwait(false);
         if (target is null)
@@ -269,13 +545,13 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         // 级联删除会连同会话一起清掉：其中若有正在跑的轮次，先拒绝
         var sessions = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-            .GetByWorkspaceAsync(input!.WorkspaceId.Trim(), WebApi.Runtime.UserId)
+            .GetByWorkspaceAsync(input!.WorkspaceId.Trim(), WebApi.UserId)
             .ConfigureAwait(false);
-        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, s.SessionId)))
+        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.UserId, s.SessionId)))
         {
             return WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
         }
@@ -304,7 +580,7 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "name 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var renamed = await scope.GetRequiredService<IWorkspaceManager>()
             .RenameWorkspaceAsync(input.WorkspaceId.Trim(), input.Name.Trim())
             .ConfigureAwait(false);
@@ -330,7 +606,7 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var workspace = await manager.GetWorkspaceAsync(input!.WorkspaceId.Trim()).ConfigureAwait(false);
         if (workspace is null)
@@ -360,7 +636,7 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<IWorkspaceManager>();
         var workspace = await manager.GetWorkspaceAsync(input!.WorkspaceId.Trim()).ConfigureAwait(false);
         if (workspace is null)

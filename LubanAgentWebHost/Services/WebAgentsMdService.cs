@@ -32,7 +32,7 @@ public static class WebAgentsMdService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspace = await scope.GetRequiredService<IWorkspaceManager>()
             .GetWorkspaceAsync(workspaceId)
             .ConfigureAwait(false);
@@ -75,7 +75,7 @@ public static class WebAgentsMdService
             return WebApi.FailJson(400, "scene 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IAgentHost)) is not IAgentHost host)
         {
             return WebApi.FailJson(503, AgentDisabled);
@@ -210,7 +210,7 @@ public static class WebAgentsMdService
             return WebApi.FailJson(400, "markdown 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspace = await scope.GetRequiredService<IWorkspaceManager>()
             .GetWorkspaceAsync(input.WorkspaceId.Trim())
             .ConfigureAwait(false);

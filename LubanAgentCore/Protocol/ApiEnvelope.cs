@@ -33,8 +33,12 @@ public sealed record ApiEnvelope(
     /// <summary>构造失败响应。</summary>
     /// <param name="code">状态码。</param>
     /// <param name="message">失败原因。</param>
+    /// <param name="data">附加数据（如冲突类型）；缺省无载荷。</param>
     /// <returns>响应壳。</returns>
-    public static ApiEnvelope Fail(int code, string message) => new(false, code, message);
+    public static ApiEnvelope Fail(int code, string message, object? data = null)
+        => new(false, code, message, data is null
+            ? null
+            : JsonSerializer.SerializeToElement(data, data.GetType(), AgentApiJson.Options));
 
     /// <summary>把 <see cref="Data"/> 还原为强类型载荷。</summary>
     /// <typeparam name="T">目标类型。</typeparam>

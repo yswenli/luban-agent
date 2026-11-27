@@ -27,10 +27,12 @@ public sealed class AgentWebRuntime : IAsyncDisposable
     {
         _host = host;
         Settings = settings;
-        Sessions = new WebSessionTokens(WebSessionPolicy.Create(
-            settings.SessionTokenMinutes,
-            settings.SessionGraceMinutes,
-            settings.SessionMaxHours));
+        Tokens = JwtTokenService.LoadOrCreate(
+            string.IsNullOrWhiteSpace(settings.JwtKeyPath) ? AgentHome.WebHostJwtKeyFile : settings.JwtKeyPath!);
+        Auth = new UserAuthService(
+            Tokens,
+            TimeSpan.FromMinutes(settings.SessionTokenMinutes),
+            TimeSpan.FromHours(settings.SessionMaxHours));
         UserId = string.IsNullOrWhiteSpace(settings.UserId)
             ? LocalUserDefaults.DefaultUserId
             : settings.UserId.Trim();
@@ -44,16 +46,20 @@ public sealed class AgentWebRuntime : IAsyncDisposable
     public WebHostSettings Settings { get; }
 
     /// <summary>
-    /// 浏览器会话令牌（地址栏 <c>?t=</c> 与 <c>luban_auth</c> Cookie 用）。
+    /// Web 浏览器登录令牌（HS256 JWT）的签发与校验。
     /// </summary>
-    /// <remarks>
-    /// 与 <see cref="WebHostSettings.Token"/>（只走 <c>Bearer</c>、进程内固定）分开，
-    /// 让浏览器侧可以短命轮换，而 CLI / Codex / 插件不受影响。
-    /// </remarks>
-    public WebSessionTokens Sessions { get; }
+    public JwtTokenService Tokens { get; }
+
+    /// <summary>
+    /// 用户注册、登录与内置管理员维护。
+    /// </summary>
+    public UserAuthService Auth { get; }
 
     /// <summary>宿主身份（单机单用户）。</summary>
     public string UserId { get; }
+
+    /// <summary>入口短码表：二维码只编码 <c>/e/{code}</c>，宿主内映射回带令牌的地址。</summary>
+    public EntryLinkService EntryLinks { get; } = new();
 
     /// <summary>进程关闭令牌。</summary>
     public CancellationToken ShutdownToken => _shutdown.Token;
@@ -123,7 +129,11 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         }
 
         var notices = new List<string>();
-        await AgentHostBuilder.InitializeWorkspaceAsync(scope, notices);
+        // 首启工作区落在 Web 自己的数据目录下，与机器级工作区根目录白名单（默认 ~/.luban-agent）保持一致
+        await AgentHostBuilder.InitializeWorkspaceAsync(
+            scope,
+            notices,
+            Path.Combine(AgentHome.WorkspacesDirectory, "default"));
         foreach (var notice in notices)
         {
             Log(notice);

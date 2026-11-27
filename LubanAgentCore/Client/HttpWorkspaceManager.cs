@@ -215,6 +215,22 @@ public sealed class HttpWorkspaceManager(AgentServerClient client, HttpSessionMa
     }
 
     /// <inheritdoc />
+    public async Task<bool> IsRootPathUsedByAnyUserAsync(string rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return false;
+        }
+
+        var result = await client.GetOrNullAsync<WorkspaceRootUsedDto>(
+            AgentApiRoutes.Workspace.RootUsed,
+            new Dictionary<string, string?> { ["rootPath"] = rootPath })
+            .ConfigureAwait(false);
+
+        return result?.Used ?? false;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword)
     {
         if (string.IsNullOrWhiteSpace(keyword))

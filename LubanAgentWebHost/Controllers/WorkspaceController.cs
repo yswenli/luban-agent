@@ -33,6 +33,12 @@ public sealed class WorkspaceController : Controller
     [HttpGet]
     public Task<ActionResult> ByRootPath(string? rootPath) => WebWorkspaceService.ByRootPathAsync(rootPath);
 
+    /// <summary>根目录是否已被任一用户登记为工作区（跨用户判重）。</summary>
+    /// <param name="rootPath">根目录路径。</param>
+    /// <returns><c>{used:true|false}</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> RootUsed(string? rootPath) => WebWorkspaceService.RootUsedAsync(rootPath);
+
     /// <summary>按名称片段模糊搜索工作区。</summary>
     /// <param name="keyword">名称关键字。</param>
     /// <returns>匹配的工作区列表。</returns>
@@ -44,6 +50,17 @@ public sealed class WorkspaceController : Controller
     /// <returns>工作区（含 reused 标记）。</returns>
     [HttpPost]
     public Task<ActionResult> Create(string payload) => WebWorkspaceService.CreateAsync(payload);
+
+    /// <summary>允许的工作区根目录（登录用户可读）。</summary>
+    /// <returns><c>{roots:[...]}</c>。</returns>
+    [HttpGet]
+    public Task<ActionResult> Roots() => WebWorkspaceService.ListRootsAsync();
+
+    /// <summary>保存工作区根目录（仅管理员，机器级共享）。</summary>
+    /// <param name="payload">包装后的 <see cref="WorkspaceRootsRequest"/> JSON。</param>
+    /// <returns>实际写入的根目录。</returns>
+    [HttpPost]
+    public Task<ActionResult> SaveRoots(string payload) => WebWorkspaceService.SaveRootsAsync(payload);
 
     /// <summary>
     /// 浏览本机目录（只读，S2d §13.1）：列指定路径的子目录（单层、不递归、不列文件）；

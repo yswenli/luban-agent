@@ -122,6 +122,13 @@ public interface IWorkspaceManager
     Task<WorkspaceInfo?> GetByRootPathAsync(string rootPath);
 
     /// <summary>
+    /// 判断任意用户是否已登记该根目录（跨用户判重，用于「此工作区已被使用」提示）。
+    /// </summary>
+    /// <param name="rootPath">根目录路径；内部做与创建时一致的归一化。</param>
+    /// <returns>已被任一用户登记时返回 true；路径为空或未登记返回 false。</returns>
+    Task<bool> IsRootPathUsedByAnyUserAsync(string rootPath);
+
+    /// <summary>
     /// 按名称片段模糊搜索当前用户的工作区。
     /// </summary>
     /// <param name="keyword">名称关键字。</param>
@@ -507,6 +514,19 @@ public class WorkspaceManager : IWorkspaceManager
 
         var list = await _repo.SearchByNameAsync(keyword.Trim(), _userId);
         return list.Select(ToWorkspaceInfo).ToList();
+    }
+
+    /// <summary>
+    /// 判断任意用户是否已登记该根目录（跨用户判重）。
+    /// </summary>
+    /// <param name="rootPath">根目录路径。</param>
+    /// <returns>已被任一用户登记时返回 true。</returns>
+    public async Task<bool> IsRootPathUsedByAnyUserAsync(string rootPath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath)) return false;
+
+        var ws = await _repo.GetByRootPathAnyUserAsync(rootPath);
+        return ws is not null;
     }
 
     /// <summary>

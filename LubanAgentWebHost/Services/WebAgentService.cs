@@ -59,15 +59,15 @@ public static class WebAgentService
             return WebApi.FailJson(400, "prompt 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IAgentHost)) is not IAgentHost host)
         {
             return WebApi.FailJson(503, AgentDisabled);
         }
 
         var resolution = await WebSessionResolver
-            .ResolveAsync(scope, WebApi.Runtime.UserId, input.SessionId,
-                WebApi.Runtime.GetSessionCreationGate(WebApi.Runtime.UserId))
+            .ResolveAsync(scope, WebApi.UserId, input.SessionId,
+                WebApi.Runtime.GetSessionCreationGate(WebApi.UserId))
             .ConfigureAwait(false);
         if (!resolution.Ok)
         {
@@ -165,7 +165,7 @@ public static class WebAgentService
         }
 
         // 以下校验必须全部在切换 Content-Type 之前完成：一旦开始写 SSE 就不能再改状态码
-        var userId = WebApi.Runtime.UserId;
+        var userId = WebApi.UserId;
         SessionResolution resolution;
         await using (var probe = WebApi.Runtime.CreateRequestScope(userId))
         {
@@ -341,7 +341,7 @@ public static class WebAgentService
             return Task.FromResult(WebApi.FailJson(400, "sessionId 不能为空"));
         }
 
-        var run = WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, input.SessionId.Trim());
+        var run = WebApi.Runtime.Runs.Find(WebApi.UserId, input.SessionId.Trim());
         return Task.FromResult(WebApi.OkJson(new { active = run is not null, runId = run?.RunId, startedAt = run?.StartedAt }));
     });
 
@@ -360,7 +360,7 @@ public static class WebAgentService
             return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        var run = WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, input.SessionId.Trim());
+        var run = WebApi.Runtime.Runs.Find(WebApi.UserId, input.SessionId.Trim());
         if (run is null)
         {
             return NoContent();
@@ -447,7 +447,7 @@ public static class WebAgentService
             return WebApi.FailJson(400, "result 必须是 allow / deny / allowAll / allowSession");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IToolConfirmationBroker)) is not IToolConfirmationBroker broker)
         {
             return WebApi.FailJson(503, "工具确认未启用");
@@ -479,7 +479,7 @@ public static class WebAgentService
             return WebApi.FailJson(400, "answers 不能为空；取消作答请传 cancelled=true");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IUserQuestionBroker)) is not IUserQuestionBroker broker)
         {
             return WebApi.FailJson(503, "用户提问未启用");
@@ -507,7 +507,7 @@ public static class WebAgentService
         {
             // 提问已收尾：立即从轮次快照里摘掉。子代理提问没有父级工具卡，
             // 只靠 tool.completed 永远清不到，同一轮内刷新仍会弹回
-            WebApi.Runtime.Runs.Find(WebApi.Runtime.UserId, sessionId)?.ClearPendingQuestion(questionId);
+            WebApi.Runtime.Runs.Find(WebApi.UserId, sessionId)?.ClearPendingQuestion(questionId);
         }
 
         return resolved
@@ -527,7 +527,7 @@ public static class WebAgentService
         }
 
         var cancelled = WebApi.Runtime.CancelRun(
-            WebApi.Runtime.UserId,
+            WebApi.UserId,
             input.SessionId.Trim(),
             string.IsNullOrWhiteSpace(input.RunId) ? null : input.RunId.Trim());
         return WebApi.OkJson(new { cancelled });
@@ -540,7 +540,7 @@ public static class WebAgentService
     {
         var input = WebApi.TryReadPayload<AgentResetRequest>(payload, out var parsed) ? parsed : null;
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IAgentHost)) is not IAgentHost host)
         {
             return WebApi.FailJson(503, AgentDisabled);
@@ -709,7 +709,7 @@ public static class WebAgentService
             return WebApi.FailJson(400, $"待改写的内容不能超过 {MaxOptimizeChars} 字");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IAgentModelSelection)) is not IAgentModelSelection selection
             || scope.GetService(typeof(IProviderRouter)) is not IProviderRouter router)
         {
@@ -791,7 +791,7 @@ public static class WebAgentService
             return WebApi.FailJson(400, "待概括的内容不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(ISessionAutoNamer)) is not ISessionAutoNamer namer)
         {
             return WebApi.FailJson(503, AgentDisabled);
@@ -815,7 +815,7 @@ public static class WebAgentService
     {
         var id = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (id is not null && await WebSessionService.CheckOwnerAsync(scope, id).ConfigureAwait(false) is { } failure)
         {
             return failure;
@@ -869,7 +869,7 @@ public static class WebAgentService
 
         var id = string.IsNullOrWhiteSpace(input.SessionId) ? null : input.SessionId.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         if (id is null)
         {
@@ -887,7 +887,7 @@ public static class WebAgentService
         }
 
         var updated = await scope.GetRequiredService<SessionRepository>()
-            .UpdateGenerationSettingsAsync(id, WebApi.Runtime.UserId, effort?.ToString(), input.ContextTier)
+            .UpdateGenerationSettingsAsync(id, WebApi.UserId, effort?.ToString(), input.ContextTier)
             .ConfigureAwait(false);
         if (!updated)
         {

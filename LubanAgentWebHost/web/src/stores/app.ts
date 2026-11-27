@@ -94,6 +94,11 @@ export async function loadBootstrap(): Promise<void> {
   }
 }
 
+/** 未登录时不需要读 bootstrap：启动页收尾由这里负责。 */
+export function markBootSkipped(): void {
+  setBooting(false);
+}
+
 export async function refreshSessions(): Promise<void> {
   setSessionsLoading(true);
   setSessionsError(null);
@@ -171,15 +176,45 @@ export function focusSessionSearch(): void {
 }
 
 /**
+ * 新建工作区入参。
+ *
+ * `directory` 用本机已存在的绝对路径；`git` 由宿主克隆到 `~/.luban-agent/repositories/{name}`
+ * （`reuseExisting` 只对 git 有意义，表示用户已确认复用同名目录）。
+ */
+export interface CreateWorkspaceInput {
+  source: 'directory' | 'git';
+  rootPath?: string;
+  gitUrl?: string;
+  name?: string;
+  reuseExisting?: boolean;
+  /** 目录已被其他用户登记时，确认共用（服务端先返回 409 提示）。 */
+  shareExisting?: boolean;
+}
+
+/** 新建工作区结果：失败时带回文案与状态码（409 表示目录已存在或已被他人使用，可确认）。 */
+export interface CreateWorkspaceResult {
+  ok: boolean;
+  code?: number;
+  error?: string;
+  /** 冲突类型：`exists` 目标目录已存在（复用）；`in-use` 已被其他用户使用（共用）。 */
+  reason?: string;
+}
+
+/**
  * 新建工作区并切换过去。
  *
  * 后端要求绝对路径且类型限定 Normal/LlmWiki；网页只创建普通项目。
+ * 失败不弹 toast：新建弹窗需要把错误（尤其是 409 目录冲突）显示在表单里。
  */
-export async function createWorkspace(rootPath: string, name?: string): Promise<boolean> {
+export async function createWorkspace(input: CreateWorkspaceInput): Promise<CreateWorkspaceResult> {
   try {
     const workspace = await post<{ workspaceId?: string } | null>('/workspace/create', {
-      name: name?.trim() || null,
-      rootPath: rootPath.trim(),
+      name: input.name?.trim() || null,
+      source: input.source,
+      rootPath: input.source === 'directory' ? input.rootPath?.trim() : null,
+      gitUrl: input.source === 'git' ? input.gitUrl?.trim() : null,
+      reuseExisting: input.source === 'git' && input.reuseExisting === true,
+      shareExisting: input.shareExisting === true,
       type: 'Normal',
     });
     await refreshWorkspaces();
@@ -191,10 +226,10 @@ export async function createWorkspace(rootPath: string, name?: string): Promise<
       setFilterWorkspaceId(null);
     }
     showToast('已创建项目', 'success');
-    return true;
+    return { ok: true };
   } catch (error) {
-    showToast((error as Error).message, 'error');
-    return false;
+    const failure = error as { code?: number; message?: string; data?: { reason?: string } };
+    return { ok: false, code: failure.code, error: failure.message, reason: failure.data?.reason };
   }
 }
 

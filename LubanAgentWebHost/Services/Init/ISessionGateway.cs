@@ -55,7 +55,7 @@ public sealed record ToolConfirmCall(string ConfirmationId, string ToolName, str
 /// </summary>
 /// <remarks>
 /// <para>
-/// 实现口径（<see cref="SessionGateway"/>）：经 <c>WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId)</c>
+/// 实现口径（<see cref="SessionGateway"/>）：经 <c>WebApi.Runtime.CreateRequestScope(WebApi.UserId)</c>
 /// 解析底层服务（与 <c>WebAgentService</c> 壳同款取 DI），<b>in-process 调用、不走 HTTP 自环</b>。
 /// </para>
 /// <para>

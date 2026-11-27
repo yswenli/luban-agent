@@ -95,6 +95,21 @@ public static class AgentHome
     public static string PrdReceiptDirectory => Path.Combine(WebHostDirectory, "yunxiao-prd");
 
     /// <summary>
+    /// Web 宿主 JWT 签名密钥：<c>~/.luban-agent/webhost/jwt.key</c>。
+    /// </summary>
+    public static string WebHostJwtKeyFile => Path.Combine(WebHostDirectory, "jwt.key");
+
+    /// <summary>
+    /// Web 端从 git 克隆的项目根目录：<c>~/.luban-agent/repositories</c>。
+    /// </summary>
+    public static string RepositoriesDirectory => Path.Combine(Root, "repositories");
+
+    /// <summary>
+    /// 宿主默认工作区根目录：<c>~/.luban-agent/workspaces</c>（Web 首启自动建在 <c>default</c> 子目录）。
+    /// </summary>
+    public static string WorkspacesDirectory => Path.Combine(Root, "workspaces");
+
+    /// <summary>
     /// 宿主发现文件：<c>~/.luban-agent/webhost.json</c>。
     /// </summary>
     public static string WebHostInfoFile => Path.Combine(Root, "webhost.json");

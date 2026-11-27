@@ -253,7 +253,14 @@ public static class AgentHostBuilder
     /// <summary>
     /// 初始化工作区。
     /// </summary>
-    public static async Task InitializeWorkspaceAsync(DiContainer sp, List<string> notices)
+    /// <param name="sp">用户级服务容器。</param>
+    /// <param name="notices">启动提示收集器。</param>
+    /// <param name="defaultRootPath">
+    /// 首次启动隐式创建的工作区路径；为空时用 <see cref="WorkspaceStartupDefaults.SuggestRootPath"/>。
+    /// 宿主可传入自身数据目录下的路径，使自动建的工作区落在其工作区根目录白名单内。
+    /// </param>
+    public static async Task InitializeWorkspaceAsync(
+        DiContainer sp, List<string> notices, string? defaultRootPath = null)
     {
         try
         {
@@ -268,7 +275,9 @@ public static class AgentHostBuilder
             string workspaceId;
             if (existing == null)
             {
-                var rootPath = WorkspaceStartupDefaults.SuggestRootPath();
+                var rootPath = string.IsNullOrWhiteSpace(defaultRootPath)
+                    ? WorkspaceStartupDefaults.SuggestRootPath()
+                    : defaultRootPath;
                 var ws = await workspaceManager.CreateWorkspaceAsync(rootPath, type: WorkspaceTypes.Normal);
                 workspaceId = ws.WorkspaceId;
                 notices.Add($"已创建工作区: {ws.Name} ({ws.RootPath})");

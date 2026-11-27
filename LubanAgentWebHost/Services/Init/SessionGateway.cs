@@ -22,7 +22,7 @@ namespace LubanAgentWebHost.Services.Init;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 取 DI 口径与 <c>WebAgentService</c> 壳同款：<c>WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId)</c>
+/// 取 DI 口径与 <c>WebAgentService</c> 壳同款：<c>WebApi.Runtime.CreateRequestScope(WebApi.UserId)</c>
 /// 解析底层服务。任务在后台线程执行，不受 HTTP 超时约束。
 /// </para>
 /// <para>
@@ -50,7 +50,7 @@ public sealed class SessionGateway : ISessionGateway
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var session = await scope.GetRequiredService<ISessionManager>()
             .CreateSessionAsync(InitSessionTitle, workspaceId.Trim())
             .ConfigureAwait(false);
@@ -62,7 +62,7 @@ public sealed class SessionGateway : ISessionGateway
     {
         try
         {
-            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
             return scope.GetService(typeof(IAgentHost)) is IAgentHost;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -87,7 +87,7 @@ public sealed class SessionGateway : ISessionGateway
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(instruction);
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IAgentHost)) is not IAgentHost host)
         {
             throw new InvalidOperationException("LuBan Agent 未启用：工作区会话通路不可用");
@@ -155,7 +155,7 @@ public sealed class SessionGateway : ISessionGateway
             throw new ArgumentException("result 必须是 allow / deny / allowAll / allowSession", nameof(result));
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         if (scope.GetService(typeof(IToolConfirmationBroker)) is not IToolConfirmationBroker broker)
         {
             throw new InvalidOperationException("工具确认未启用");
@@ -175,7 +175,7 @@ public sealed class SessionGateway : ISessionGateway
         }
 
         // 兜底：SSE 帧缺失（进程重启 / 断流）时回读会话消息，取最后一条助手消息当回执摘要
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var messages = await scope.GetRequiredService<ISessionManager>()
             .GetLatestMessagesAsync(sessionId.Trim(), 20)
             .ConfigureAwait(false);

@@ -41,6 +41,15 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     /// <summary>本次请求所属的连接通道（SSE 写出前据此判定对端是否还在）。</summary>
     public IChannel? Connection { get; private set; }
 
+    /// <summary>本次请求的用户标识；未登录（公开页面）时为 null。</summary>
+    public string? UserId { get; private set; }
+
+    /// <summary>本次请求携带的 JWT 声明；宿主固定令牌与公开页面为 null。</summary>
+    public WebTokenClaims? Claims { get; private set; }
+
+    /// <summary>本次请求是否由 <c>Authorization: Bearer</c>（宿主固定令牌）放行。</summary>
+    public bool IsBearer { get; private set; }
+
     /// <summary>
     /// 记录连接通道后交回 MVC 的默认处理。
     /// </summary>
@@ -79,6 +88,10 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     /// <returns>接管结果；放行时为 null。</returns>
     public override Task<IHttpResult> OnRequestExecutingAsync()
     {
+        UserId = null;
+        Claims = null;
+        IsBearer = false;
+
         var runtime = AgentWebRuntime.Current;
         var entryToken = Request.Query.TryGetValue(WebHostAccess.TokenQueryName, out var query) ? query : null;
         var cookieToken = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var cookie) ? cookie.Value : null;
@@ -91,18 +104,32 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
             WebRequestScheme.Https,
             StringComparison.Ordinal);
 
-        var decision = WebHostAccess.Decide(
+        var decision = WebAccessGate.Decide(
             Request.Url,
+            Request.Method,
             entryToken,
             cookieToken,
             authorization,
             runtime.Settings.Token,
-            runtime.Sessions,
+            runtime.Auth,
+            out var claims,
             out var issueToken);
 
         if (decision == WebEntryDecision.Allow)
         {
-            // 轮换后把新令牌滑回浏览器：活动页面因此不必刷新就能一直续下去
+            // 宿主固定令牌：沿用进程级身份（CLI / Codex / 插件）
+            if (WebHostAccess.IsBearerAuthorized(authorization, runtime.Settings.Token))
+            {
+                UserId = runtime.UserId;
+                IsBearer = true;
+            }
+            else if (claims is not null)
+            {
+                UserId = claims.UserId;
+                Claims = claims;
+            }
+
+            // 令牌过半时续期：活动页面因此不必刷新就能一直续下去
             if (!string.IsNullOrEmpty(issueToken)
                 && !string.Equals(issueToken, cookieToken, StringComparison.Ordinal))
             {
@@ -119,6 +146,8 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
             if (!IsReadRequest())
             {
                 // 302 会把非 GET/HEAD 改成 GET 并丢掉请求体；这类请求直接按令牌已校验放行
+                UserId = claims?.UserId;
+                Claims = claims;
                 return ContinueRouting();
             }
 
@@ -130,8 +159,8 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
         return Task.FromResult<IHttpResult>(WantsHtml()
             ? new ContentResult(expired ? ExpiredHtml : UnauthorizedHtml, HttpStatusCode.Unauthorized)
             : WebApi.FailJson(401, expired
-                ? "未授权：浏览器会话已过期，请重新获取入口地址"
-                : "未授权：缺少或错误的访问令牌"));
+                ? "未授权：登录已过期，请重新登录"
+                : "未授权：请先登录"));
     }
 
     /// <summary>
@@ -205,13 +234,13 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
   <p>{{lead}}</p>
   <details open>
     <summary>帮助</summary>
-    <p>请到启动宿主的终端，复制其中「浏览器入口」那一整条地址（带 <code>?t=</code> 参数）再打开。</p>
+    <p>请先登录。浏览器入口地址不再携带永久令牌，登录成功后由宿主下发短期会话凭据。</p>
     <ul>
-      <li>找不到终端？在宿主机上执行 <code>LubanAgentWebHost --token</code> 重新打印地址。</li>
-      <li>浏览器侧的令牌会定时换新（默认 15 分钟），一直开着的页面自动续期。</li>
-      <li>会话默认不设绝对上限，但宿主重启后旧地址立即失效；配置了 <code>SessionMaxHours</code> 时到点同样失效，都用 <code>LubanAgentWebHost --token</code> 取新地址。</li>
+      <li>不知道密码？内置管理员初始密码在首次启动宿主的终端里只打印一次。</li>
+      <li>忘记密码：请联系管理员在「设置 → 用户」重置，或由管理员在宿主机执行 <code>LubanAgentWebHost --token</code> 取管理员入口地址。</li>
+      <li>浏览器会话会持续续期；配置了 <code>SessionMaxHours</code> 时到点需重新登录。</li>
       <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>。</li>
-      <li>带令牌的地址等同于完整操作权限，不要转发给他人。</li>
+      <li>登录凭据等同于完整操作权限，不要转发给他人。</li>
     </ul>
   </details>
   <details>

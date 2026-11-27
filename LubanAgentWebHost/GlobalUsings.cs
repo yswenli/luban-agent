@@ -35,6 +35,7 @@ global using LubanAgentCore.Protocol.Dtos;
 global using LubanAgentCore.Protocol.Events;
 global using LubanAgentCore.Repositories;
 global using LubanAgentCore.Retrieval;
+global using LubanAgentCore.Security;
 global using LubanAgentCore.Services;
 global using LubanAgentCore.Services.Management;
 global using LubanAgentCore.Services.Management.Models;

@@ -17,7 +17,7 @@ namespace LubanAgentWebHost.Services;
 /// <remarks>
 /// <b>壳层不写业务逻辑</b>：每方法 <see cref="WebApi.RunGuardedAsync"/> 兜底，
 /// POST 走 <see cref="WebApi.TryReadPayload{T}"/>、GET 用 <see cref="WebApi.Query"/>/<see cref="WebApi.QueryInt"/>，
-/// 经 <c>WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId)</c> 解析
+/// 经 <c>WebApi.Runtime.CreateRequestScope(WebApi.UserId)</c> 解析
 /// <see cref="YunxiaoWorkbenchService"/> 后转调；
 /// <see cref="YunxiaoWorkbenchResult{T}"/> → ApiEnvelope 的映射口径见该类型注释
 /// （Ok → <c>WebApi.OkJson(Data)</c>，失败 → <c>WebApi.FailJson(Code, Message)</c>）。
@@ -28,7 +28,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ organizationId, hasPat }</c>（绝不含 PAT 明文）。</returns>
     public static Task<ActionResult> GetSettingsAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoWorkbenchService>();
 
         var result = await service.GetSettingsAsync().ConfigureAwait(false);
@@ -45,7 +45,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoWorkbenchService>();
 
         var result = await service
@@ -64,7 +64,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoWorkbenchService>();
 
         var result = await service
@@ -77,7 +77,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ items, total, page, perPage }</c>。</returns>
     public static Task<ActionResult> ListProjectsAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoWorkbenchService>();
 
         var result = await service
@@ -94,7 +94,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ repos, groups, workspaces, sessionReady }</c>（服务直回结果对象，无 result 包装）。</returns>
     public static Task<ActionResult> ManifestsAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.GetManifestsAsync(CancellationToken.None).ConfigureAwait(false);
@@ -111,7 +111,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.PreflightAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -145,7 +145,7 @@ public static class WebYunxiaoService
             WebApi.Query("newCode") ?? string.Empty,
             ends);
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.DerivePipelinesAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -162,7 +162,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.ExecAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -174,7 +174,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ id, codename, status, libs, … }</c>；404 = 任务不存在。</returns>
     public static Task<ActionResult> InitTaskAsync(string payload) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service
@@ -193,7 +193,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service
@@ -212,7 +212,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.PreviewPipelinesAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -229,7 +229,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.CommitPipelinesAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -249,7 +249,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.SaveProjectInitAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -268,7 +268,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<YunxiaoInitService>();
 
         var result = await service.GetProjectInitAsync(input.ProjectId, input.Identifier, CancellationToken.None)
@@ -284,7 +284,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ projectId, projectName, testRepos, hasTestRepo, message? }</c>。</returns>
     public static Task<ActionResult> PrdSourceAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<PrdSyncService>();
 
         var result = await service
@@ -303,7 +303,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<PrdSyncService>();
 
         var result = await service.SyncAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -320,7 +320,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<PrdSplitService>();
 
         var result = await service.PreviewAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -337,7 +337,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<PrdSubmitService>();
 
         var result = await service.SubmitAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -358,7 +358,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<IterationTestService>();
 
         var result = await service.GenerateAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -375,7 +375,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<IterationTestService>();
 
         var result = await service.SaveAsync(input, CancellationToken.None).ConfigureAwait(false);
@@ -390,7 +390,7 @@ public static class WebYunxiaoService
     /// <returns><c>{ projectName, sprints, columns, totalTasks, doneCount, overdueCount, … }</c>。</returns>
     public static Task<ActionResult> BoardAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<BoardService>();
 
         var query = new BoardQuery
@@ -406,7 +406,7 @@ public static class WebYunxiaoService
     /// <summary>任务详情（GET /yunxiao/taskdetail?projectId=&amp;workitemId=）。</summary>
     public static Task<ActionResult> TaskDetailAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<TaskDetailService>();
         var query = new TaskDetailQuery
         {
@@ -425,7 +425,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<TaskDetailService>();
         var result = await service.CreateCommentAsync(input, CancellationToken.None).ConfigureAwait(false);
         return ToResult(result);
@@ -434,7 +434,7 @@ public static class WebYunxiaoService
     /// <summary>读取任务会话绑定（GET /yunxiao/tasksession?workitemId=）。</summary>
     public static Task<ActionResult> TaskSessionAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<TaskSessionService>();
         var result = await service.GetAsync(WebApi.Query("workitemId"), CancellationToken.None).ConfigureAwait(false);
         return ToResult(result);
@@ -448,7 +448,7 @@ public static class WebYunxiaoService
             return WebApi.FailJson(400, "请求体不是合法的 JSON");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var service = scope.GetRequiredService<TaskSessionService>();
         var result = await service.SaveAsync(input, CancellationToken.None).ConfigureAwait(false);
         return ToResult(result);

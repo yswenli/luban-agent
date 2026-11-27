@@ -43,6 +43,17 @@ public class WorkspaceRepository : AgentRepository<DbWorkspace>
     }
 
     /// <summary>
+    /// 按根路径查找任一用户登记的工作区（不含当前用户过滤，用于「目录已被他人使用」提示）。
+    /// </summary>
+    /// <param name="rootPath">根路径；内部与写入侧做同样的归一化。</param>
+    /// <returns>任意用户的工作区；不存在时返回 null。</returns>
+    public async Task<DbWorkspace?> GetByRootPathAnyUserAsync(string rootPath)
+    {
+        var normalized = WorkspaceIdGenerator.Normalize(rootPath);
+        return await GetFirstAsync(w => w.RootPath == normalized && !w.IsDelete);
+    }
+
+    /// <summary>
     /// 按工作区ID查找当前用户的工作区
     /// </summary>
     public async Task<DbWorkspace?> GetByWorkspaceIdAsync(string workspaceId, string userId)

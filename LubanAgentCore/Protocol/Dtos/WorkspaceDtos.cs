@@ -30,10 +30,14 @@ public sealed record WorkspaceDto(
     bool IsAuthorized,
     bool HasGit);
 
+/// <summary>根目录占用查询结果（跨用户判重，只回布尔值，不暴露他人工作区细节）。</summary>
+/// <param name="Used">是否已被任一用户登记为工作区。</param>
+public sealed record WorkspaceRootUsedDto(bool Used);
+
 /// <summary>创建工作区。</summary>
 public sealed record WorkspaceCreateRequest
 {
-    /// <summary>根目录路径。</summary>
+    /// <summary>根目录路径；来源为 <c>directory</c> 时必填。</summary>
     public string RootPath { get; init; } = "";
 
     /// <summary>显示名；空白时取目录名。</summary>
@@ -41,6 +45,24 @@ public sealed record WorkspaceCreateRequest
 
     /// <summary>类型：Normal / LlmWiki；null 取 Normal。</summary>
     public string? Type { get; init; }
+
+    /// <summary>
+    /// 来源：<c>directory</c>（默认，使用 <see cref="RootPath"/>）或 <c>git</c>
+    /// （按 <see cref="GitUrl"/> 克隆到 <c>~/.luban-agent/repositories/{Name}</c>）。
+    /// </summary>
+    public string? Source { get; init; }
+
+    /// <summary>git 仓库地址；来源为 <c>git</c> 时必填。</summary>
+    public string? GitUrl { get; init; }
+
+    /// <summary>目标目录已存在时是否复用（缺省 false：返回冲突提示，不静默使用）。</summary>
+    public bool ReuseExisting { get; init; }
+
+    /// <summary>
+    /// 目录已被其他用户登记为工作区时是否确认共用（缺省 false：返回 409 提示，不静默共用）。
+    /// </summary>
+    /// <remarks>共用只在物理目录层：每个用户仍持有自己的工作区记录，会话与配置互不影响。</remarks>
+    public bool ShareExisting { get; init; }
 }
 
 /// <summary>仅带工作区标识的请求。</summary>
@@ -48,6 +70,13 @@ public sealed record WorkspaceIdRequest
 {
     /// <summary>工作区标识。</summary>
     public string WorkspaceId { get; init; } = "";
+}
+
+/// <summary>工作区根目录白名单（机器级，所有用户共享）。</summary>
+public sealed record WorkspaceRootsRequest
+{
+    /// <summary>允许创建工作的绝对路径列表；至少一项，空白项忽略。</summary>
+    public List<string> Roots { get; init; } = [];
 }
 
 /// <summary>重命名工作区。</summary>

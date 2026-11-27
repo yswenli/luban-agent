@@ -143,6 +143,9 @@ public static class AgentApiRoutes
         /// <summary>按根目录取工作区。</summary>
         public const string ByRootPath = "/workspace/byRootPath";
 
+        /// <summary>根目录是否已被任一用户登记为工作区（跨用户判重）。</summary>
+        public const string RootUsed = "/workspace/rootUsed";
+
         /// <summary>按名称片段模糊搜索工作区。</summary>
         public const string Search = "/workspace/search";
     }

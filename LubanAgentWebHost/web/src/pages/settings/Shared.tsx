@@ -26,6 +26,8 @@ export function SettingsPane(props: {
   busy?: boolean;
   onSelect: (key: string) => void;
   onCreate?: () => void;
+  /** 条目右侧的删除动作；提供时列表项渲染删除图标。 */
+  onDelete?: (key: string) => void;
   children: JSX.Element;
 }) {
   const count = () => props.entries?.length ?? props.items?.length ?? 0;
@@ -68,21 +70,36 @@ export function SettingsPane(props: {
               <For each={props.entries!}>
                 {(entry, index) => {
                   const previous = () => (index() > 0 ? props.entries![index() - 1] : undefined);
+                  const item = () => (
+                    <button
+                      class="settings-item"
+                      classList={{ active: entry.key === props.activeKey }}
+                      onClick={() => props.onSelect(entry.key)}
+                    >
+                      <span class="settings-item-name">{entry.label}</span>
+                      <Show when={entry.sub}>
+                        <span class="settings-item-sub">{entry.sub}</span>
+                      </Show>
+                    </button>
+                  );
                   return (
                     <>
                       <Show when={entry.group && entry.group !== previous()?.group}>
                         <div class="settings-group">{entry.group}</div>
                       </Show>
-                      <button
-                        class="settings-item"
-                        classList={{ active: entry.key === props.activeKey }}
-                        onClick={() => props.onSelect(entry.key)}
-                      >
-                        <span class="settings-item-name">{entry.label}</span>
-                        <Show when={entry.sub}>
-                          <span class="settings-item-sub">{entry.sub}</span>
-                        </Show>
-                      </button>
+                      <Show when={props.onDelete} fallback={item()}>
+                        <div class="settings-item-row" classList={{ active: entry.key === props.activeKey }}>
+                          {item()}
+                          <button
+                            class="settings-item-delete"
+                            title={`删除 ${entry.label}`}
+                            disabled={props.busy}
+                            onClick={() => props.onDelete?.(entry.key)}
+                          >
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
+                      </Show>
                     </>
                   );
                 }}
@@ -118,6 +135,8 @@ export function TextField(props: {
   type?: 'text' | 'password' | 'number';
   wide?: boolean;
   readOnly?: boolean;
+  /** 浏览器自动填充提示；显示名一类非凭据字段传 `off`，避免密码管理器把口令填进来。 */
+  autocomplete?: string;
   onInput: (value: string) => void;
 }) {
   return (
@@ -127,6 +146,7 @@ export function TextField(props: {
         type={props.type ?? 'text'}
         value={props.value}
         placeholder={props.placeholder}
+        autocomplete={props.autocomplete}
         readOnly={props.readOnly}
         onInput={(event) => props.onInput(event.currentTarget.value)}
       />

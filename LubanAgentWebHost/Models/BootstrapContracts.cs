@@ -88,9 +88,10 @@ public sealed record ReadmeDto(string Markdown);
 public sealed record WebSessionDto(DateTimeOffset RotateAt, DateTimeOffset ExpiresAt, double LifetimeSeconds);
 
 /// <summary>宿主当前入口地址（由终端 <c>--token</c> 命令凭固定令牌取回）。</summary>
-/// <param name="LanUrl">局域网入口（手机扫码用）。</param>
-/// <param name="LocalUrl">本机入口。</param>
-/// <param name="ExpiresAt">会话绝对到期时刻；未配置上限时为 <see cref="DateTimeOffset.MaxValue"/>。</param>
+/// <remarks>两个地址都是短链（<c>/e/{code}</c>），短码在宿主进程内映射到带会话令牌的地址。</remarks>
+/// <param name="LanUrl">局域网入口（手机扫码用，短链）。</param>
+/// <param name="LocalUrl">本机入口（短链）。</param>
+/// <param name="ExpiresAt">短码与本次会话令牌的到期时刻；未配置会话上限时仍以令牌与短码的到期为准。</param>
 public sealed record WebEntryUrlDto(string LanUrl, string LocalUrl, DateTimeOffset ExpiresAt);
 
 /// <summary>斜杠命令（浏览器端）。</summary>

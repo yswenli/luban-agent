@@ -22,7 +22,7 @@ public static class WebRuleService
     /// <returns>规则 Id 数组。</returns>
     public static Task<ActionResult> ListAsync(string? scope) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -46,7 +46,7 @@ public static class WebRuleService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), scope)
             .ConfigureAwait(false);
@@ -76,7 +76,7 @@ public static class WebRuleService
             return WebApi.FailJson(400, "规则 Id 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);
@@ -119,7 +119,7 @@ public static class WebRuleService
             return WebApi.FailJson(400, "key 不能为空");
         }
 
-        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var requestScope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var (root, error) = await SettingsScope
             .ResolveAsync(requestScope.GetRequiredService<IWorkspaceManager>(), input.Scope)
             .ConfigureAwait(false);

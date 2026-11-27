@@ -37,7 +37,7 @@ public interface IWorkspaceDirectoryProvider
 
 /// <summary>
 /// <see cref="IWorkspaceDirectoryProvider"/> 生产实现：经
-/// <c>WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId)</c> 取 <c>IWorkspaceManager</c>
+/// <c>WebApi.Runtime.CreateRequestScope(WebApi.UserId)</c> 取 <c>IWorkspaceManager</c>
 /// （与 <c>WebAgentService</c> 壳同款取 DI）。
 /// </summary>
 public sealed class WorkspaceDirectoryProvider : IWorkspaceDirectoryProvider
@@ -48,7 +48,7 @@ public sealed class WorkspaceDirectoryProvider : IWorkspaceDirectoryProvider
         // 接口为同步（预检同步路径）；异步源经 Task.Run 包装，避免阻塞调用链上的同步上下文
         return Task.Run(async () =>
         {
-            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
             var workspaces = await scope.GetRequiredService<IWorkspaceManager>()
                 .GetUserWorkspacesAsync()
                 .ConfigureAwait(false);

@@ -160,6 +160,8 @@ public class SkillCatalogServiceUnitTest
 
         public Task<WorkspaceInfo?> GetByRootPathAsync(string rootPath) => throw new NotSupportedException();
 
+        public Task<bool> IsRootPathUsedByAnyUserAsync(string rootPath) => throw new NotSupportedException();
+
         public Task<IReadOnlyList<WorkspaceInfo>> SearchByNameAsync(string keyword) => throw new NotSupportedException();
 
         public Task<bool> EnsureAuthorizedAsync(WorkspaceInfo workspace) => throw new NotSupportedException();

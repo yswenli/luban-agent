@@ -210,3 +210,22 @@ export function truncate(text: string, max: number): string {
   const value = text.trim();
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
+
+/**
+ * 解析服务端的 UTC 时间戳。
+ *
+ * 数据库取回的 UTC 时间会丢掉 Kind，序列化后不带时区后缀，直接 `new Date(value)` 会按本地时间
+ * 解读（东八区就差 8 小时）。无后缀的值在此补 `Z`，带后缀的原样解析。
+ */
+export function parseServerUtc(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const normalized = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** UTC 时间戳 → 本机日期时间（如 `2026/12/4 10:00:00`）；无效值返回空串。 */
+export function formatServerDateTime(value: string | null | undefined): string {
+  const date = parseServerUtc(value);
+  return date ? date.toLocaleString('zh-CN') : '';
+}

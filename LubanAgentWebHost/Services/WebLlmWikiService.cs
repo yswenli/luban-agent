@@ -41,7 +41,7 @@ public static class WebLlmWikiService
             ? Path.GetFileName(Path.TrimEndingDirectorySeparator(rootPath))
             : input.Name.Trim();
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var workspace = await scope.GetRequiredService<ILlmWikiManagementService>()
             .CreateAsync(rootPath, string.IsNullOrWhiteSpace(name) ? null : name)
             .ConfigureAwait(false);
@@ -58,13 +58,13 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         // 彼此独立的守卫先放行：级联删除会连同会话一起清掉，其中有正在跑的轮次时先拒绝
         var sessions = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-            .GetByWorkspaceAsync(workspaceId, WebApi.Runtime.UserId)
+            .GetByWorkspaceAsync(workspaceId, WebApi.UserId)
             .ConfigureAwait(false);
-        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.Runtime.UserId, s.SessionId)))
+        if (sessions.Any(s => WebApi.Runtime.Runs.IsRunning(WebApi.UserId, s.SessionId)))
         {
             return WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
         }
@@ -85,7 +85,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var files = await scope.GetRequiredService<ILlmWikiManagementService>()
             .ListFilesAsync(workspaceId.Trim())
             .ConfigureAwait(false);
@@ -104,7 +104,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var report = await scope.GetRequiredService<ILlmWikiManagementService>()
             .IndexFilesAsync(input!.WorkspaceId.Trim(), NormalizeGlob(input.Glob))
             .ConfigureAwait(false);
@@ -122,7 +122,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var task = await scope.GetRequiredService<ILlmWikiManagementService>()
             .StartIndexAsync(input!.WorkspaceId.Trim(), NormalizeGlob(input.Glob))
             .ConfigureAwait(false);
@@ -152,7 +152,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "scope 必须是 WikiThenRaw / WikiOnly / RawOnly");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var results = await scope.GetRequiredService<ILlmWikiManagementService>()
             .SearchAsync(input.WorkspaceId.Trim(), input.Query.Trim(), searchScope)
             .ConfigureAwait(false);
@@ -164,7 +164,7 @@ public static class WebLlmWikiService
     /// <returns>统计。</returns>
     public static Task<ActionResult> StatusAsync(string? workspaceId) => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var status = await scope.GetRequiredService<ILlmWikiManagementService>()
             .GetStatusAsync(string.IsNullOrWhiteSpace(workspaceId) ? null : workspaceId.Trim())
             .ConfigureAwait(false);
@@ -181,7 +181,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var report = await scope.GetRequiredService<ILlmWikiManagementService>()
             .LintAsync(workspaceId)
             .ConfigureAwait(false);
@@ -198,7 +198,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var report = await scope.GetRequiredService<ILlmWikiManagementService>()
             .RebuildAsync(workspaceId)
             .ConfigureAwait(false);
@@ -215,7 +215,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var task = await scope.GetRequiredService<ILlmWikiManagementService>()
             .StartRebuildAsync(workspaceId)
             .ConfigureAwait(false);
@@ -238,7 +238,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "target 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         // 逐文件进度只在宿主侧可见，客户端不传 IProgress
         var draft = await scope.GetRequiredService<ILlmWikiManagementService>()
             .PrepareIngestAsync(input.WorkspaceId.Trim(), input.Target.Trim(), progress: null)
@@ -262,7 +262,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "target 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var task = await scope.GetRequiredService<ILlmWikiManagementService>()
             .StartIngestAsync(input.WorkspaceId.Trim(), input.Target.Trim())
             .ConfigureAwait(false);
@@ -279,7 +279,7 @@ public static class WebLlmWikiService
             return WebApi.FailJson(400, "workspaceId 不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         await scope.GetRequiredService<ILlmWikiManagementService>()
             .ClearAsync(workspaceId)
             .ConfigureAwait(false);

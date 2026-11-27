@@ -31,18 +31,21 @@ public enum WebEntryDecision
 /// <remarks>
 /// <para>
 /// 宿主监听全部网卡，直接放开 <c>GET /</c> 等于把整个 Agent（读写工作区、执行命令）交给同网段任何人。
-/// 因此进程启动即生成访问令牌，只接受三种携带方式：地址栏 <c>?t=</c>（首次进入）、
-/// 由它换来的 Cookie（浏览器后续请求）、<c>Authorization: Bearer</c>（CLI / Codex / 插件）。
+/// 因此浏览器必须先登录，凭据只接受两种携带方式：地址栏 <c>?t=</c>（首次进入，换成 Cookie 后跳回干净地址）、
+/// 由登录或入口令牌换来的 <c>luban_auth</c> Cookie。
 /// </para>
 /// <para>
-/// 两类凭据分工不同：地址栏与 Cookie 只认 <see cref="WebSessionTokens"/> 签发的轮换令牌（短命、活动页面自动续期、
-/// 有绝对上限）；<c>Bearer</c> 只认进程内固定的宿主令牌，客户端因此不会被浏览器会话的过期时间踢下线。
+/// 两类凭据分工不同：地址栏与 Cookie 只认按用户签发的 JWT（短命、活动页面自动续期、有绝对上限）；
+/// <c>Authorization: Bearer</c> 只认进程内固定的宿主令牌，客户端因此不会被浏览器会话的过期时间踢下线。
 /// </para>
 /// </remarks>
 public static class WebHostAccess
 {
     /// <summary>地址栏携带令牌的参数名。</summary>
     public const string TokenQueryName = "t";
+
+    /// <summary>短码入口的路径前缀。</summary>
+    public const string EntryCodePathPrefix = "/e/";
 
     /// <summary>换发凭据用的 Cookie 名。</summary>
     public const string AuthCookieName = "luban_auth";
@@ -123,6 +126,39 @@ public static class WebHostAccess
     /// <returns>形如 <c>https://127.0.0.1:18080/?t=xxx</c>。</returns>
     public static string BuildLocalEntryUrl(int port, string token, bool https)
         => BuildEntryUrl(BuildBaseAddress("127.0.0.1", port, https), token);
+
+    /// <summary>
+    /// 拼出浏览器可直接打开的短码入口地址。
+    /// </summary>
+    /// <remarks>
+    /// 二维码里只放短码，生成矩阵的内容从约 280 字符降到 40 字符；打开后由宿主把短码换回带令牌的地址，
+    /// 再走「地址栏令牌换 Cookie」的同一套门禁流程。
+    /// </remarks>
+    /// <param name="baseAddress">监听地址，形如 <c>https://192.168.3.215:18080</c>。</param>
+    /// <param name="code">宿主进程内登记的入口短码。</param>
+    /// <returns>形如 <c>https://192.168.3.215:18080/e/abc</c>。</returns>
+    public static string BuildCodeEntryUrl(string baseAddress, string code)
+        => $"{baseAddress.TrimEnd('/')}{EntryCodePathPrefix}{Uri.EscapeDataString(code)}";
+
+    /// <summary>
+    /// 拼出手机可直接打开的短码入口（本机监听的局域网地址）。
+    /// </summary>
+    /// <param name="port">本实例监听端口。</param>
+    /// <param name="code">宿主进程内登记的入口短码。</param>
+    /// <param name="https">是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://192.168.3.215:18080/e/abc</c>。</returns>
+    public static string BuildLanCodeEntryUrl(int port, string code, bool https = true)
+        => BuildCodeEntryUrl(BuildBaseAddress(GetPreferredLanHost(), port, https), code);
+
+    /// <summary>
+    /// 拼出本机可直接打开的短码入口。
+    /// </summary>
+    /// <param name="port">本实例监听端口。</param>
+    /// <param name="code">宿主进程内登记的入口短码。</param>
+    /// <param name="https">是否以 HTTPS 提供服务。</param>
+    /// <returns>形如 <c>https://127.0.0.1:18080/e/abc</c>。</returns>
+    public static string BuildLocalCodeEntryUrl(int port, string code, bool https)
+        => BuildCodeEntryUrl(BuildBaseAddress("127.0.0.1", port, https), code);
 
     /// <summary>
     /// 拼出 <c>scheme://host:port</c> 形式的基地址。
@@ -362,6 +398,12 @@ public static class WebHostAccess
     /// <returns>形如 <c>luban_auth=xxx; Path=/; HttpOnly; SameSite=Lax</c>。</returns>
     public static string BuildAuthCookie(string token, bool secure = false)
         => $"{AuthCookieName}={token}; Path=/; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : string.Empty);
+
+    /// <summary>构造清除登录 Cookie 的 <c>Set-Cookie</c> 头（登出用）。</summary>
+    /// <param name="secure">是否为 HTTPS（HTTPS 时必须带 <c>Secure</c>）。</param>
+    /// <returns>形如 <c>luban_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0</c>。</returns>
+    public static string BuildClearAuthCookie(bool secure = false)
+        => $"{AuthCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" + (secure ? "; Secure" : string.Empty);
 
     /// <summary>去掉请求目标里的令牌参数，得到可写进 <c>Location</c> 的干净地址。</summary>
     /// <param name="relativeUrl">原始请求目标（可含查询串）。</param>

@@ -54,6 +54,20 @@ public static class WebApi
     public static AgentWebRuntime Runtime => AgentWebRuntime.Current;
 
     /// <summary>
+    /// 当前请求的用户标识：宿主固定令牌取进程身份，浏览器登录取 JWT 声明。
+    /// </summary>
+    /// <remarks>
+    /// 公开页面（登录页、静态资源）没有用户；此时回退到宿主身份，仅供不触达用户数据的路径使用。
+    /// </remarks>
+    public static string UserId => (HttpContextBase.Current as GatedHttpContext)?.UserId ?? Runtime.UserId;
+
+    /// <summary>当前请求的 JWT 声明；宿主固定令牌或公开页面为 null。</summary>
+    public static WebTokenClaims? CurrentClaims => (HttpContextBase.Current as GatedHttpContext)?.Claims;
+
+    /// <summary>当前请求是否由宿主固定令牌（<c>Authorization: Bearer</c>）放行。</summary>
+    public static bool IsBearerRequest => (HttpContextBase.Current as GatedHttpContext)?.IsBearer == true;
+
+    /// <summary>
     /// 执行令牌校验与用户初始化。
     /// </summary>
     /// <param name="requireToken">是否校验访问令牌（健康检查免校验，便于启动器探测）。</param>
@@ -63,7 +77,17 @@ public static class WebApi
     {
         if (requireToken && !HasValidCredential())
         {
-            return FailJson(401, "未授权：缺少或错误的访问令牌");
+            return FailJson(401, "未授权：请先登录");
+        }
+
+        // 浏览器 JWT：每个动作再查一次库，改密/禁用/删除后旧令牌立即失效
+        if (CurrentClaims is { } claims)
+        {
+            var user = await Runtime.Auth.ValidateAsync(claims).ConfigureAwait(false);
+            if (user is null)
+            {
+                return FailJson(401, "登录已失效，请重新登录");
+            }
         }
 
         if (!ensureUser)
@@ -73,7 +97,7 @@ public static class WebApi
 
         try
         {
-            await Runtime.EnsureUserReadyAsync(Runtime.UserId).ConfigureAwait(false);
+            await Runtime.EnsureUserReadyAsync(UserId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -208,9 +232,10 @@ public static class WebApi
     /// <summary>失败响应。</summary>
     /// <param name="code">HTTP 状态码，同时写入响应壳。</param>
     /// <param name="message">失败原因。</param>
+    /// <param name="data">附加数据（如冲突类型），客户端可按需读取。</param>
     /// <returns>JSON 结果。</returns>
-    public static ActionResult FailJson(int code, string message)
-        => new JsonResult(AgentApiJson.Serialize(ApiEnvelope.Fail(code, message)), (HttpStatusCode)code);
+    public static ActionResult FailJson(int code, string message, object? data = null)
+        => new JsonResult(AgentApiJson.Serialize(ApiEnvelope.Fail(code, message, data)), (HttpStatusCode)code);
 
     /// <summary>取查询串参数；缺失时返回 null。</summary>
     /// <param name="name">参数名。</param>
@@ -231,22 +256,21 @@ public static class WebApi
         => Request.Headers.TryGetValue(name, out var value) ? value : null;
 
     /// <summary>
-    /// 请求是否带来有效凭据：固定令牌（<c>Authorization: Bearer</c>）或浏览器会话 Cookie。
+    /// 请求是否带来有效凭据：宿主固定令牌（<c>Authorization: Bearer</c>）或已通过门禁的登录令牌。
     /// </summary>
     /// <remarks>
-    /// 与门禁同口径：浏览器用轮换的会话令牌，客户端用进程内固定的宿主令牌。
-    /// 这里的会话判定只读不轮换——轮换由门禁负责，避免动作内把刚下发的新 Cookie 又换掉。
+    /// 门禁已在路由前完成签名与有效期校验并写入请求上下文，这里只复核结果；
+    /// 用户级失效（禁用、改密）由 <see cref="GuardAsync"/> 查库确认。
     /// </remarks>
     /// <returns>任一凭据有效返回 true。</returns>
     private static bool HasValidCredential()
     {
-        var runtime = Runtime;
-        if (WebHostAccess.IsBearerAuthorized(Header("Authorization"), runtime.Settings.Token))
+        if (HttpContextBase.Current is GatedHttpContext { UserId: not null })
         {
             return true;
         }
 
-        var cookie = Request.Cookies.TryGetValue(WebHostAccess.AuthCookieName, out var value) ? value.Value : null;
-        return runtime.Sessions.IsAccepted(cookie);
+        var runtime = Runtime;
+        return WebHostAccess.IsBearerAuthorized(Header("Authorization"), runtime.Settings.Token);
     }
 }

@@ -55,7 +55,7 @@ public static class WebPluginService
     /// <returns>插件根与插件项。</returns>
     public static Task<ActionResult> ListAsync() => WebApi.RunGuardedAsync(async () =>
     {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var loader = scope.GetRequiredService<PluginLoader>();
         var manager = scope.GetRequiredService<PluginManager>();
         var root = WebRoot();
@@ -78,7 +78,7 @@ public static class WebPluginService
             return WebApi.FailJson(400, decodeError);
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var loader = scope.GetRequiredService<PluginLoader>();
         var manager = scope.GetRequiredService<PluginManager>();
         var webRoot = WebRoot();
@@ -201,7 +201,7 @@ public static class WebPluginService
             return WebApi.FailJson(400, decodeError);
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var loader = scope.GetRequiredService<PluginLoader>();
         var manager = scope.GetRequiredService<PluginManager>();
         var webRoot = WebRoot();
@@ -297,7 +297,7 @@ public static class WebPluginService
                 return WebApi.FailJson(400, "插件标识不能为空");
             }
 
-            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+            await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
             var loader = scope.GetRequiredService<PluginLoader>();
             var manager = scope.GetRequiredService<PluginManager>();
             var webRoot = WebRoot();
@@ -341,7 +341,7 @@ public static class WebPluginService
             return WebApi.FailJson(400, "插件标识不能为空");
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
         var manager = scope.GetRequiredService<PluginManager>();
         var webRoot = WebRoot();
 

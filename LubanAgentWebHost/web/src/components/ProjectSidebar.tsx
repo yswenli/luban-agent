@@ -20,6 +20,8 @@ import {
   renameWorkspace,
   selectProject,
   sessions,
+  type CreateWorkspaceInput,
+  type CreateWorkspaceResult,
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
 import { ensurePluginsLoaded, pluginPageEntries } from '../stores/plugins';
@@ -332,7 +334,7 @@ export function ProjectSidebar(props: {
       <Show when={newProject()}>
         <NewProjectDialog
           onClose={() => setNewProject(false)}
-          onCreate={(rootPath, name) => createWorkspace(rootPath, name)}
+          onCreate={(input) => createWorkspace(input)}
         />
       </Show>
 
@@ -347,25 +349,66 @@ export function ProjectSidebar(props: {
   );
 }
 
-/** 新建项目弹窗：名称可选，根路径必须是绝对路径。 */
+/**
+ * 新建项目弹窗：可选本机目录或 git 仓库。
+ *
+ * git 模式由宿主克隆到 `~/.luban-agent/repositories/{项目名}`；同名目录已存在时不静默覆盖，
+ * 先返回冲突提示，由用户确认是否复用（复用即在该目录上直接工作）。
+ */
 function NewProjectDialog(props: {
   onClose: () => void;
-  onCreate: (rootPath: string, name: string) => Promise<boolean>;
+  onCreate: (input: CreateWorkspaceInput) => Promise<CreateWorkspaceResult>;
 }) {
+  const [source, setSource] = createSignal<'directory' | 'git'>('directory');
   const [rootPath, setRootPath] = createSignal('');
+  const [gitUrl, setGitUrl] = createSignal('');
   const [name, setName] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  /** 409 冲突：`reuse` 目标目录已存在（git 克隆），`share` 目录已被其他用户登记。 */
+  const [conflict, setConflict] = createSignal<{ message: string; kind: 'reuse' | 'share' } | null>(null);
   let rootInput!: HTMLInputElement;
+  let gitInput!: HTMLInputElement;
 
   onMount(() => {
     window.setTimeout(() => rootInput?.focus(), 30);
   });
 
-  const submit = async () => {
-    if (saving() || !rootPath().trim()) return;
+  const canSubmit = () =>
+    !saving() && (source() === 'directory' ? rootPath().trim().length > 0 : gitUrl().trim().length > 0);
+
+  const changeSource = (next: 'directory' | 'git') => {
+    if (saving() || source() === next) return;
+    setSource(next);
+    setError(null);
+    setConflict(null);
+    window.setTimeout(() => (next === 'git' ? gitInput : rootInput)?.focus(), 30);
+  };
+
+  const submit = async (reuseExisting = false, shareExisting = false) => {
+    if (!canSubmit()) return;
     setSaving(true);
+    setError(null);
     try {
-      if (await props.onCreate(rootPath().trim(), name().trim())) props.onClose();
+      const result = await props.onCreate({
+        source: source(),
+        rootPath: rootPath().trim(),
+        gitUrl: gitUrl().trim(),
+        name: name().trim(),
+        reuseExisting,
+        shareExisting,
+      });
+      if (result.ok) {
+        props.onClose();
+      } else if (result.code === 409) {
+        // 目录冲突单独展示：给用户「复用/共用」与「改名字/换地址」两条出路
+        setConflict({
+          message: result.error ?? '目标目录已存在',
+          kind: result.reason === 'in-use' ? 'share' : 'reuse',
+        });
+      } else {
+        setError(result.error ?? '创建失败');
+      }
     } finally {
       setSaving(false);
     }
@@ -381,7 +424,7 @@ function NewProjectDialog(props: {
           <button class="btn ghost" onClick={props.onClose}>
             取消
           </button>
-          <button class="btn primary" disabled={saving() || !rootPath().trim()} onClick={() => void submit()}>
+          <button class="btn primary" disabled={!canSubmit()} onClick={() => void submit()}>
             {saving() ? '创建中…' : '创建'}
           </button>
         </>
@@ -389,27 +432,95 @@ function NewProjectDialog(props: {
     >
       <div class="form-stack">
         <div class="field">
+          <div class="section-label">项目来源</div>
+          <select
+            class="text-input"
+            value={source()}
+            disabled={saving()}
+            onChange={(event) => changeSource(event.currentTarget.value === 'git' ? 'git' : 'directory')}
+          >
+            <option value="directory">指定目录</option>
+            <option value="git">指定 git 仓库</option>
+          </select>
+        </div>
+
+        <div class="field">
           <div class="section-label">名称（可选）</div>
           <input
             class="text-input"
-            placeholder="默认取目录名"
+            placeholder={source() === 'git' ? '默认取仓库名，同时作为克隆目录名' : '默认取目录名'}
             value={name()}
             onInput={(event) => setName(event.currentTarget.value)}
           />
         </div>
-        <div class="field">
-          <div class="section-label">根路径（绝对路径）</div>
-          <input
-            ref={rootInput}
-            class="text-input mono"
-            placeholder="D:\WorkBench\Walle\my-project"
-            value={rootPath()}
-            onInput={(event) => setRootPath(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit();
-            }}
-          />
-        </div>
+
+        <Show
+          when={source() === 'git'}
+          fallback={
+            <div class="field">
+              <div class="section-label">根路径（绝对路径）</div>
+              <input
+                ref={rootInput}
+                class="text-input mono"
+                placeholder="D:\WorkBench\Walle\my-project"
+                value={rootPath()}
+                onInput={(event) => setRootPath(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void submit();
+                }}
+              />
+              <div class="field-hint">
+                只能建在管理员配置的工作区根目录下（默认 ~/.luban-agent）；不在白名单时会提示允许的目录。
+              </div>
+            </div>
+          }
+        >
+          <div class="field">
+            <div class="section-label">仓库地址</div>
+            <input
+              ref={gitInput}
+              class="text-input mono"
+              placeholder="https://git.example.com/group/repo.git"
+              value={gitUrl()}
+              onInput={(event) => setGitUrl(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
+            />
+            <div class="field-hint">
+              克隆到 ~/.luban-agent/repositories/&lt;项目名&gt;；同名目录已存在时会先提示确认，不会覆盖。
+            </div>
+          </div>
+        </Show>
+
+        <Show when={conflict()}>
+          {(value) => (
+            <>
+              <div class="auth-note">
+                <Icon name="alert" size={15} />
+                <span>{value().message}</span>
+              </div>
+              <button
+                class="btn ghost"
+                disabled={saving()}
+                onClick={() =>
+                  void (value().kind === 'share'
+                    ? submit(source() === 'git', true)
+                    : submit(true))
+                }
+              >
+                {value().kind === 'share' ? '共用此工作区' : '复用已有目录'}
+              </button>
+            </>
+          )}
+        </Show>
+
+        <Show when={error()}>
+          <div class="auth-error">
+            <Icon name="alert" size={15} />
+            <span>{error()}</span>
+          </div>
+        </Show>
       </div>
     </Modal>
   );

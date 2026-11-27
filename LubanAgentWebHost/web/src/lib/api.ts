@@ -5,6 +5,8 @@ export class ApiError extends Error {
   constructor(
     public readonly code: number,
     message: string,
+    /** 失败响应壳里的附加数据（如创建工作区的冲突类型）。 */
+    public readonly data?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -43,37 +45,54 @@ function buildQuery(params?: Record<string, string | number | boolean | null | u
   return text ? `?${text}` : '';
 }
 
-/** 401 说明浏览器侧的令牌已失效，前端无法自愈，统一置位整页提示。 */
-function fail(status: number, code: number, message: string): ApiError {
-  const error = new ApiError(code, message);
-  if (code === 401 || status === 401) blockForAuth(message);
+/**
+ * 401 说明浏览器侧的令牌已失效，前端无法自愈，统一置位整页提示。
+ *
+ * 登录 / 注册这类公开接口必须关掉该行为（`blockOnAuth: false`）：密码输错也是 401，
+ * 但此时应留在登录页显示错误，而不是被整页「令牌已过期」挡住。
+ */
+function fail(status: number, code: number, message: string, blockOnAuth = true, data?: unknown): ApiError {
+  const error = new ApiError(code, message, data);
+  if (blockOnAuth && (code === 401 || status === 401)) blockForAuth(message);
   return error;
 }
 
-async function parseEnvelope<T>(response: Response): Promise<T> {
+async function parseEnvelope<T>(response: Response, blockOnAuth = true): Promise<T> {
   const text = await response.text();
   if (!text) {
     if (response.ok) return undefined as T;
-    throw fail(response.status, response.status, `请求失败（HTTP ${response.status}）`);
+    throw fail(response.status, response.status, `请求失败（HTTP ${response.status}）`, blockOnAuth);
   }
 
   let envelope: ApiEnvelope<T>;
   try {
     envelope = JSON.parse(text) as ApiEnvelope<T>;
   } catch {
-    throw fail(response.status, response.status, text.slice(0, 200));
+    throw fail(response.status, response.status, text.slice(0, 200), blockOnAuth);
   }
 
   if (!envelope.success) {
-    throw fail(response.status, envelope.code || response.status, envelope.message || '请求失败');
+    throw fail(
+      response.status,
+      envelope.code || response.status,
+      envelope.message || '请求失败',
+      blockOnAuth,
+      envelope.data,
+    );
   }
 
   return envelope.data as T;
 }
 
+export interface RequestOptions {
+  /** 收到 401 是否触发整页「会话已过期」；仅登录 / 注册 / 状态查询等公开接口传 false。 */
+  blockOnAuth?: boolean;
+}
+
 export async function get<T>(
   path: string,
   params?: Record<string, string | number | boolean | null | undefined>,
+  options?: RequestOptions,
 ): Promise<T> {
   const response = await fetch(`${path}${buildQuery(params)}`, {
     method: 'GET',
@@ -81,10 +100,10 @@ export async function get<T>(
     // 访问令牌放在 HttpOnly Cookie 里，必须带上同源凭据
     credentials: 'same-origin',
   });
-  return parseEnvelope<T>(response);
+  return parseEnvelope<T>(response, options?.blockOnAuth ?? true);
 }
 
-export async function post<T>(path: string, body: unknown = {}): Promise<T> {
+export async function post<T>(path: string, body: unknown = {}, options?: RequestOptions): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
     headers: {
@@ -95,7 +114,7 @@ export async function post<T>(path: string, body: unknown = {}): Promise<T> {
     body: JSON.stringify({ payload: JSON.stringify(body) }),
     credentials: 'same-origin',
   });
-  return parseEnvelope<T>(response);
+  return parseEnvelope<T>(response, options?.blockOnAuth ?? true);
 }
 
 /** SSE 需要直接拿到 Response 与自定义请求头，故单独暴露请求构造。 */

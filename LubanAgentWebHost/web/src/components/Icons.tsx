@@ -222,6 +222,18 @@ const paths: Record<string, () => JSX.Element> = {
     </>
   ),
   moon: () => <path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5a8.5 8.5 0 1 0 10.8 10.8Z" />,
+  user: () => (
+    <>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  key: () => (
+    <>
+      <circle cx="8" cy="8" r="4.2" />
+      <path d="m11 11 9 9M17 17l2-2M14.5 14.5l2-2" />
+    </>
+  ),
   sun: () => (
     <>
       <circle cx="12" cy="12" r="4" />

@@ -300,6 +300,23 @@ public class WebHostAccessUnitTest
     }
 
     [TestMethod]
+    public void 短码入口地址只含路径短码()
+    {
+        Assert.AreEqual(
+            "https://192.168.3.215:18080/e/abcdefghij",
+            WebHostAccess.BuildCodeEntryUrl("https://192.168.3.215:18080/", "abcdefghij"));
+        Assert.AreEqual(
+            "http://127.0.0.1:18080/e/abcdefghij",
+            WebHostAccess.BuildLocalCodeEntryUrl(18080, "abcdefghij", https: false));
+
+        var lan = WebHostAccess.BuildLanCodeEntryUrl(18080, "abcdefghij");
+        Assert.AreEqual("https", new Uri(lan).Scheme);
+        Assert.AreEqual(WebHostAccess.GetPreferredLanHost(), new Uri(lan).Host);
+        Assert.AreEqual(WebHostAccess.EntryCodePathPrefix + "abcdefghij", new Uri(lan).AbsolutePath);
+        Assert.IsFalse(lan.Contains('?'), "短码入口不应再带查询串里的令牌");
+    }
+
+    [TestMethod]
     public void 每次生成的令牌都可直接进URL()
     {
         var first = WebHostAccess.CreateToken();

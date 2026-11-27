@@ -139,6 +139,12 @@ export const settingsApi = {
   ensureWorkspaceConfig: (workspaceId: string): Promise<Workspace> =>
     post<Workspace>('/workspace/ensureConfig', { workspaceId }),
 
+  /* ── 工作区根目录（机器级；仅管理员可改） ── */
+  listWorkspaceRoots: async (): Promise<string[]> =>
+    (await get<{ roots: string[] }>('/workspace/roots'))?.roots ?? [],
+  saveWorkspaceRoots: async (roots: string[]): Promise<string[]> =>
+    (await post<{ roots: string[] }>('/workspace/saveRoots', { roots }))?.roots ?? roots,
+
   /* ── AGENTS.md ── */
   agentsMdInfo: (workspaceId: string): Promise<AgentsMdInfo> =>
     post<AgentsMdInfo>('/agentsmd/info', { workspaceId }),

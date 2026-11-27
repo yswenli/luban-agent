@@ -20,14 +20,19 @@ public sealed record WebHostSettings
     /// <summary>访问令牌；为空表示启动时随机生成，仅本次运行有效（重启即换）。只用于 <c>Authorization: Bearer</c>。</summary>
     public string? Token { get; init; }
 
-    /// <summary>浏览器会话令牌的有效期（分钟）；到期后的下一次请求自动换新。</summary>
+    /// <summary>浏览器登录令牌的有效期（分钟）；剩余不足一半时自动换新。</summary>
     public double SessionTokenMinutes { get; init; } = 15;
 
-    /// <summary>浏览器会话令牌换新后旧值的宽限期（分钟）；覆盖轮换瞬间还在路上的并发请求。</summary>
-    public double SessionGraceMinutes { get; init; } = 5;
-
-    /// <summary>浏览器会话的绝对上限（小时）；<c>0</c> 表示不设上限，会话随宿主进程存活。</summary>
+    /// <summary>浏览器登录的绝对上限（小时）；<c>0</c> 表示不设上限，登录随令牌版本与有效期存活。</summary>
     public double SessionMaxHours { get; init; } = 0;
+
+    /// <summary>
+    /// 内置管理员初始密码；为空时首次启动生成随机密码并打印一次。
+    /// </summary>
+    public string? AdminPassword { get; init; }
+
+    /// <summary>JWT 签名密钥文件；为空时取 <c>~/.luban-agent/webhost/jwt.key</c>。</summary>
+    public string? JwtKeyPath { get; init; }
 
     /// <summary>SAEA 的 socket 同步等待与会话空闲回收上限（秒）；SSE 连接在写出响应头前已摘出空闲回收。</summary>
     public double TimeoutSeconds { get; init; } = 86400;
@@ -88,8 +93,9 @@ public sealed record WebHostSettings
             Port = section.GetValue("Port", 18080),
             Token = NullIfBlank(section["Token"]),
             SessionTokenMinutes = section.GetValue("SessionTokenMinutes", 15d),
-            SessionGraceMinutes = section.GetValue("SessionGraceMinutes", 5d),
             SessionMaxHours = section.GetValue("SessionMaxHours", 0d),
+            AdminPassword = NullIfBlank(section["AdminPassword"]),
+            JwtKeyPath = NullIfBlank(section["JwtKeyPath"]),
             TimeoutSeconds = section.GetValue("TimeoutSeconds", 86400d),
             HeartbeatSeconds = section.GetValue("HeartbeatSeconds", 15),
             UseHttps = section.GetValue("UseHttps", true),

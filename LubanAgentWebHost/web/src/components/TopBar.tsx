@@ -2,10 +2,11 @@ import { createEffect, createSignal, For, Show } from 'solid-js';
 
 import { beginDragSort } from '../lib/dragSort';
 import { truncate } from '../lib/format';
-import { openSession, openSessions } from '../lib/router';
+import { openSession, openSessions, openSettings } from '../lib/router';
 import { setThemePreference, themePreference, type ThemePreference } from '../lib/theme';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import { createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
+import { currentUser, logout, userLabel } from '../stores/auth';
 import { dropChat, getChat } from '../stores/chats';
 import { forgetSession, moveSession, openSessionIds } from '../stores/tabs';
 
@@ -28,6 +29,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; icon: string }[] =
 export function TopBar(props: { activeSessionId: string | null }) {
   const [creating, setCreating] = createSignal(false);
   const [themeMenu, setThemeMenu] = createSignal<{ x: number; y: number } | null>(null);
+  const [userMenu, setUserMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [draggingTab, setDraggingTab] = createSignal<string | null>(null);
   const [dropSlot, setDropSlot] = createSignal<number | null>(null);
   let tabsEl: HTMLDivElement | undefined;
@@ -168,6 +170,58 @@ export function TopBar(props: { activeSessionId: string | null }) {
       </button>
 
       <div class="spacer" />
+
+      <Show when={currentUser()}>
+        {(user) => (
+          <>
+            <button
+              class="icon-btn user-chip"
+              classList={{ active: userMenu() !== null }}
+              title={`${userLabel(user())}${user().isAdmin ? ' · 管理员' : ''}`}
+              aria-label="账号"
+              aria-haspopup="menu"
+              aria-expanded={userMenu() !== null}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setUserMenu(menuAt(rect, { width: 208, height: 152, align: 'end' }));
+              }}
+            >
+              <span class="user-avatar">{(user().displayName || user().userName).slice(0, 1).toUpperCase()}</span>
+            </button>
+
+            <Show when={userMenu()}>
+              {(position) => (
+                <PopMenu
+                  style={{ left: `${position().x}px`, top: `${position().y}px`, 'min-width': '208px' }}
+                  onClose={() => setUserMenu(null)}
+                >
+                  <div class="menu-note" title={user().userName}>
+                    <span class="menu-note-name">{userLabel(user())}</span>
+                    <span class="menu-note-sub">
+                      {user().userName}
+                      {user().isAdmin ? ' · 管理员' : ''}
+                    </span>
+                  </div>
+                  <button
+                    class="menu-item"
+                    onClick={() => {
+                      setUserMenu(null);
+                      openSettings('account');
+                    }}
+                  >
+                    <Icon name="key" size={15} />
+                    修改密码
+                  </button>
+                  <button class="menu-item" onClick={() => void logout()}>
+                    <Icon name="arrow-left" size={15} />
+                    退出登录
+                  </button>
+                </PopMenu>
+              )}
+            </Show>
+          </>
+        )}
+      </Show>
 
       <button
         class="icon-btn"

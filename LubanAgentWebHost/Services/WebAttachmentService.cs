@@ -49,14 +49,14 @@ public static class WebAttachmentService
             return WebApi.FailJson(400, WebAttachmentLimits.OverRequestLimitReason());
         }
 
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
+        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
         var workspaceManager = scope.GetRequiredService<IWorkspaceManager>();
         WorkspaceInfo? workspace = null;
         if (!string.IsNullOrWhiteSpace(input.SessionId))
         {
             var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-                .GetSessionWorkspaceIdAsync(input.SessionId.Trim(), WebApi.Runtime.UserId)
+                .GetSessionWorkspaceIdAsync(input.SessionId.Trim(), WebApi.UserId)
                 .ConfigureAwait(false);
             if (workspaceId is null)
             {
