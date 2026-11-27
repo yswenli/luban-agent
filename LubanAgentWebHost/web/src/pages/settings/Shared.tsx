@@ -2,6 +2,7 @@ import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 
 import { Icon } from '../../components/Icons';
+import { t } from '../../i18n';
 
 /** 设置页左列表的条目：`label` 为主文本，`sub` 为次要小字，`group` 相同的相邻条目会归到同一分组标题下。 */
 export interface SettingsEntry {
@@ -92,7 +93,7 @@ export function SettingsPane(props: {
                           {item()}
                           <button
                             class="settings-item-delete"
-                            title={`删除 ${entry.label}`}
+                            title={t('common.deleteNamed', { name: entry.label })}
                             disabled={props.busy}
                             onClick={() => props.onDelete?.(entry.key)}
                           >

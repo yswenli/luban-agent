@@ -5,17 +5,18 @@ import { resetAgent, settingsApi } from '../../lib/settings';
 import type { ModelItem, ModelProfile, ProviderListItem } from '../../lib/types';
 import { selectModel, selection, showToast } from '../../stores/app';
 import { FormActions, SettingsPane, TextField } from './Shared';
+import { t, type MessageKey } from '../../i18n';
 
 /** 标准链路能发出的思考档位，顺序即弹窗里的勾选顺序。 */
 const SENDABLE_EFFORTS = ['None', 'Low', 'Medium', 'High', 'ExtraHigh'] as const;
 
 /** 档位显示名；与对话页保持一致。 */
-const EFFORT_LABELS: Record<string, string> = {
-  None: '不思考',
-  Low: '低',
-  Medium: '中',
-  High: '高',
-  ExtraHigh: '极高',
+const EFFORT_LABELS: Record<string, MessageKey> = {
+  None: 'effort.none',
+  Low: 'effort.low',
+  Medium: 'effort.medium',
+  High: 'effort.high',
+  ExtraHigh: 'effort.extraHigh',
 };
 
 /**
@@ -109,7 +110,7 @@ export function ModelTab() {
     try {
       await settingsApi.refreshModels(providerId);
       await loadModels(providerId);
-      showToast('模型列表已刷新', 'success');
+      showToast(t('model.refreshed'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -139,7 +140,7 @@ export function ModelTab() {
       await settingsApi.addModel(providerId, modelId);
       setNewModel('');
       await loadModels(providerId);
-      showToast('已添加自定义模型', 'success');
+      showToast(t('model.added'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -151,14 +152,14 @@ export function ModelTab() {
     const providerId = active();
     if (!providerId) return;
 
-    const next = window.prompt(`把模型「${model.modelId}」重命名为：`, model.modelId);
+    const next = window.prompt(t('model.renamePrompt', { name: model.modelId }), model.modelId);
     if (!next || next.trim() === model.modelId) return;
 
     setBusy(true);
     try {
       await settingsApi.renameModel(providerId, model.modelId, next.trim());
       await loadModels(providerId);
-      showToast('模型已重命名', 'success');
+      showToast(t('model.renamed'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -169,13 +170,13 @@ export function ModelTab() {
   const remove = async (model: ModelItem) => {
     const providerId = active();
     if (!providerId) return;
-    if (!window.confirm(`删除自定义模型「${model.modelId}」？`)) return;
+    if (!window.confirm(t('model.deleteConfirm', { name: model.modelId }))) return;
 
     setBusy(true);
     try {
       await settingsApi.deleteModel(providerId, model.modelId);
       await loadModels(providerId);
-      showToast('模型已删除', 'success');
+      showToast(t('model.deleted'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -234,7 +235,7 @@ export function ModelTab() {
     if (!providerId || !target) return;
 
     if (!reset && profileMode() === 'some' && profileEfforts().length === 0) {
-      showToast('已选「指定档位」但一项都没勾；要表示不支持请选「不支持思考」', 'error');
+      showToast(t('model.effortsNoneSelected'), 'error');
       return;
     }
 
@@ -242,7 +243,7 @@ export function ModelTab() {
     const window = windowText === '' ? null : Number(windowText);
     if (!reset) {
       if (window !== null && (!Number.isInteger(window) || window <= 0)) {
-        showToast('上下文窗口必须是正整数（留空表示未知）', 'error');
+        showToast(t('model.windowInvalid'), 'error');
         return;
       }
     }
@@ -259,7 +260,7 @@ export function ModelTab() {
       applyProfile(info);
       // 配置已落盘；重建 Agent 让下一次对话立刻按新档位下发
       await resetAgent();
-      showToast(reset ? '已恢复内置默认' : '能力档案已保存', 'success');
+      showToast(reset ? t('model.restored') : t('model.profileSaved'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -269,56 +270,56 @@ export function ModelTab() {
 
   return (
     <SettingsPane
-      title="模型"
+      title={t('model.title')}
       items={providers().map((item) => item.name)}
       activeKey={active()}
-      emptyText="还没有配置任何供应商，先在「供应商」页签添加。"
+      emptyText={t('model.empty')}
       busy={busy()}
       onSelect={(key) => void select(key)}
     >
       <Show
         when={active()}
-        fallback={<div class="settings-list-empty">请选择一个供应商。</div>}
+        fallback={<div class="settings-list-empty">{t('model.selectProvider')}</div>}
       >
         <div class="settings-form-head">
           <span class="field-label">{providerLabel(active()!)}</span>
           <span class="spacer" />
           <button class="btn ghost" onClick={() => void refresh()} disabled={busy()}>
-            刷新
+            {t('common.refresh')}
           </button>
         </div>
 
         <div class="field-hint">
-          这里选的是「新会话默认模型」；已单独选过模型的会话不受影响，单个会话的模型在对话页底部切换。
+          {t('model.defaultModelHint')}
         </div>
 
-        <Show when={models().length > 0} fallback={<div class="settings-list-empty">该供应商暂无模型。</div>}>
+        <Show when={models().length > 0} fallback={<div class="settings-list-empty">{t('model.noModels')}</div>}>
           <div class="model-list">
             <For each={models()}>
               {(model) => (
                 <div class="model-row" classList={{ current: model.isSelected }}>
                   <span class="model-row-name">{model.modelId}</span>
                   <Show when={model.isCustom}>
-                    <span class="tag">自定义</span>
+                    <span class="tag">{t('model.custom')}</span>
                   </Show>
                   <span class="spacer" />
                   <button class="btn ghost" onClick={() => void openProfile(model)} disabled={busy() || profileBusy()}>
-                    能力
+                    {t('model.capability')}
                   </button>
                   <Show
                     when={!model.isSelected}
-                    fallback={<span class="tag current">新会话默认</span>}
+                    fallback={<span class="tag current">{t('model.defaultForNew')}</span>}
                   >
                     <button class="btn ghost" onClick={() => void setCurrent(model.modelId)} disabled={busy()}>
-                      设为新会话默认
+                      {t('model.setDefault')}
                     </button>
                   </Show>
                   <Show when={model.isCustom}>
                     <button class="btn ghost" onClick={() => void rename(model)} disabled={busy()}>
-                      重命名
+                      {t('common.rename')}
                     </button>
                     <button class="btn ghost" onClick={() => void remove(model)} disabled={busy()}>
-                      删除
+                      {t('common.delete')}
                     </button>
                   </Show>
                 </div>
@@ -329,16 +330,16 @@ export function ModelTab() {
 
         <div class="field-grid" style={{ 'margin-top': '16px' }}>
           <TextField
-            label="新增自定义模型"
+            label={t('model.addCustom')}
             value={newModel()}
             wide
-            placeholder="模型标识，如 qwen3.8-max"
+            placeholder={t('model.addCustomPlaceholder')}
             onInput={setNewModel}
           />
         </div>
         <FormActions>
           <button class="btn primary" onClick={() => void add()} disabled={busy() || !newModel().trim()}>
-            添加
+            {t('common.add')}
           </button>
         </FormActions>
       </Show>
@@ -346,7 +347,7 @@ export function ModelTab() {
       <Show when={profileTarget()}>
         {(target) => (
           <Modal
-            title="模型能力"
+            title={t('model.profileTitle')}
             subtitle={`${providerLabel(active() ?? '')} / ${target().modelId}`}
             onClose={() => setProfileTarget(null)}
             footer={
@@ -356,24 +357,23 @@ export function ModelTab() {
                   disabled={profileBusy() || !profile()?.hasOverride}
                   onClick={() => void saveProfile(true)}
                 >
-                  恢复内置默认
+                  {t('model.restoreDefault')}
                 </button>
                 <span class="spacer" />
                 <button class="btn ghost" onClick={() => setProfileTarget(null)}>
-                  关闭
+                  {t('common.close')}
                 </button>
                 <button class="btn primary" disabled={profileBusy() || !profile()} onClick={() => void saveProfile(false)}>
-                  {profileBusy() ? '保存中…' : '保存'}
+                  {profileBusy() ? t('common.saving') : t('common.save')}
                 </button>
               </>
             }
           >
             <div class="form-stack">
               <div class="field">
-                <div class="section-label">思考档位</div>
+                <div class="section-label">{t('model.effortsSection')}</div>
                 <div class="field-hint">
-                  三态互斥：「未知」不登记，对话页只给「跟随模型」；「不支持思考」明确不显示档位控件；
-                  「指定档位」按勾选下发。
+                  {t('model.effortsHint')}
                 </div>
                 <div class="field-grid">
                   <label class="check-field">
@@ -383,7 +383,7 @@ export function ModelTab() {
                       checked={profileMode() === 'unknown'}
                       onChange={() => setProfileMode('unknown')}
                     />
-                    <span>未知（不登记）</span>
+                    <span>{t('model.modeUnknown')}</span>
                   </label>
                   <label class="check-field">
                     <input
@@ -392,7 +392,7 @@ export function ModelTab() {
                       checked={profileMode() === 'none'}
                       onChange={() => setProfileMode('none')}
                     />
-                    <span>不支持思考</span>
+                    <span>{t('model.modeNone')}</span>
                   </label>
                   <label class="check-field">
                     <input
@@ -401,7 +401,7 @@ export function ModelTab() {
                       checked={profileMode() === 'some'}
                       onChange={() => setProfileMode('some')}
                     />
-                    <span>指定档位</span>
+                    <span>{t('model.modeSome')}</span>
                   </label>
                 </div>
 
@@ -415,7 +415,7 @@ export function ModelTab() {
                             checked={profileEfforts().includes(name)}
                             onChange={() => toggleEffort(name)}
                           />
-                          <span>{EFFORT_LABELS[name] ?? name}</span>
+                          <span>{EFFORT_LABELS[name] ? t(EFFORT_LABELS[name]) : name}</span>
                           <span class="faint mono">{name}</span>
                         </label>
                       )}
@@ -424,19 +424,19 @@ export function ModelTab() {
                 </Show>
               </div>
               <div class="field">
-                <div class="section-label">上下文窗口（token）</div>
+                <div class="section-label">{t('model.windowSection')}</div>
                 <input
                   class="text-input mono"
                   type="number"
                   min="1"
-                  placeholder="留空表示未知"
+                  placeholder={t('model.windowPlaceholder')}
                   value={profileWindow()}
                   onInput={(event) => setProfileWindow(event.currentTarget.value)}
                 />
                 <div class="field-hint">
                   {profile()?.contextTiers?.length
-                    ? `按窗口派生的上下文预算档位：${profile()!.contextTiers.join(' / ')}`
-                    : '窗口未知时对话页不显示上下文控件。'}
+                    ? t('model.windowTiers', { tiers: profile()!.contextTiers.join(' / ') })
+                    : t('model.windowUnknownHint')}
                 </div>
               </div>
             </div>

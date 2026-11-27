@@ -33,6 +33,9 @@ public sealed record RegisterRequest
 
     /// <summary>邀请码。</summary>
     public string InviteCode { get; init; } = "";
+
+    /// <summary>界面语言代码；为空或不受支持时按未设置处理。</summary>
+    public string? Language { get; init; }
 }
 
 /// <summary>用户信息（不含密码摘要）。</summary>
@@ -44,6 +47,7 @@ public sealed record RegisterRequest
 /// <param name="LastLoginAt">最后登录时间。</param>
 /// <param name="FailedLoginCount">连续登录失败次数。</param>
 /// <param name="LockedUntil">锁定到期时间（UTC）；为空表示未锁定。</param>
+/// <param name="Language">界面语言代码；为空表示沿用浏览器语言。</param>
 public sealed record AuthUserDto(
     string UserId,
     string UserName,
@@ -52,7 +56,8 @@ public sealed record AuthUserDto(
     bool IsBuiltIn,
     DateTime? LastLoginAt,
     int FailedLoginCount,
-    DateTime? LockedUntil);
+    DateTime? LockedUntil,
+    string? Language);
 
 /// <summary>登录 / 注册成功后的响应。</summary>
 /// <param name="User">用户信息。</param>
@@ -93,6 +98,13 @@ public sealed record UpdateProfileRequest
 {
     /// <summary>显示名；空白时回退登录名。</summary>
     public string? DisplayName { get; init; }
+}
+
+/// <summary>修改本人界面语言入参。</summary>
+public sealed record UpdateLanguageRequest
+{
+    /// <summary>界面语言代码；取值见 <see cref="SupportedLanguages"/>。</summary>
+    public string Language { get; init; } = "";
 }
 
 /// <summary>修改本人密码入参。</summary>

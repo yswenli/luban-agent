@@ -1,4 +1,5 @@
 import { createEffect } from 'solid-js';
+import { t } from '../i18n';
 
 /**
  * 输入区富文本编辑器：`@技能` 以「图标 + 名称」胶囊形式内嵌。
@@ -81,7 +82,7 @@ export function ComposerEditor(props: ComposerEditorProps) {
     chip.className = 'mention-chip';
     chip.contentEditable = 'false';
     chip.dataset.chipId = skill.id;
-    chip.title = `技能：@${skill.id}`;
+    chip.title = t('composer.skillPill', { name: skill.id });
 
     const icon = document.createElement('span');
     icon.className = 'chip-icon';
@@ -95,7 +96,7 @@ export function ComposerEditor(props: ComposerEditorProps) {
     remove.type = 'button';
     remove.className = 'chip-x';
     remove.tabIndex = -1;
-    remove.title = '移除';
+    remove.title = t('common.remove');
     remove.textContent = '×';
     // 按下就阻止默认行为，避免点 × 时输入区失焦、候选弹层跟着关掉
     remove.addEventListener('mousedown', (event) => event.preventDefault());

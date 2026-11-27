@@ -1,9 +1,10 @@
 import { createSignal, onMount, Show } from 'solid-js';
 
-import { formatServerDateTime } from '../../lib/format';
+import { formatDayCount, formatServerDateTime } from '../../lib/format';
 import { showToast } from '../../stores/app';
 import { createInvite, deleteInvite, listInvites, revokeInvite, type InviteCode } from '../../stores/auth';
 import { FormActions, SelectField, SettingsPane, TextField } from './Shared';
+import { t } from '../../i18n';
 
 /** 可选有效期：与服务端 1–30 天的限制对齐，只暴露常用档位。 */
 const VALID_DAYS = [1, 3, 7, 14, 30];
@@ -23,7 +24,7 @@ export function InviteTab() {
   const active = () => items().find((item) => item.code === activeCode()) ?? null;
 
   const statusText = (invite: InviteCode): string =>
-    invite.usedBy ? '已使用' : invite.expired ? '已过期' : '未使用';
+    invite.usedBy ? t('invite.used') : invite.expired ? t('invite.expired') : t('invite.unused');
 
   /** 使用者 + 使用时间；时间缺失时只显示标识，避免拖出空的分隔符。 */
   const usedText = (invite: InviteCode): string => {
@@ -40,7 +41,7 @@ export function InviteTab() {
         ? `${statusText(invite)} · ${invite.usedBy}`
         : invite.expired
           ? statusText(invite)
-          : `${statusText(invite)} · ${formatServerDateTime(invite.expiresAt)} 过期`,
+          : t('invite.expiresAtSuffix', { status: statusText(invite), time: formatServerDateTime(invite.expiresAt) }),
     }));
 
   const reload = async (keep?: string | null): Promise<void> => {
@@ -65,7 +66,7 @@ export function InviteTab() {
     setBusy(true);
     try {
       const invite = await createInvite(Number(validDays()));
-      showToast(`已生成邀请码 ${invite.code}`, 'success');
+      showToast(t('invite.created', { code: invite.code }), 'success');
       await reload(invite.code);
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -77,12 +78,12 @@ export function InviteTab() {
   const revoke = async (): Promise<void> => {
     const code = activeCode();
     if (!code) return;
-    if (!window.confirm(`作废邀请码 ${code}？作废后不能再用于注册。`)) return;
+    if (!window.confirm(t('invite.revokeConfirm', { code }))) return;
 
     setBusy(true);
     try {
       await revokeInvite(code);
-      showToast('邀请码已作废', 'success');
+      showToast(t('invite.revoked'), 'success');
       await reload(null);
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -100,14 +101,14 @@ export function InviteTab() {
     if (!invite) return;
 
     const usedNote = invite.usedBy
-      ? `该邀请码已被 ${invite.usedBy} 使用，删除后将无法追溯注册来源。`
-      : '删除后不可恢复。';
-    if (!window.confirm(`删除邀请码 ${invite.code}？${usedNote}`)) return;
+      ? t('invite.usedDeleteNote', { user: invite.usedBy })
+      : t('invite.deleteNote');
+    if (!window.confirm(t('invite.deleteConfirm', { code: invite.code, note: usedNote }))) return;
 
     setBusy(true);
     try {
       await deleteInvite(invite.code);
-      showToast('邀请码已删除', 'success');
+      showToast(t('invite.deleted'), 'success');
       await reload(null);
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -119,19 +120,19 @@ export function InviteTab() {
   const copy = async (text: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
-      showToast('已复制', 'success');
+      showToast(t('common.copied'), 'success');
     } catch {
-      showToast('复制失败，请手动选中复制', 'error');
+      showToast(t('common.copyFailed'), 'error');
     }
   };
 
   return (
     <SettingsPane
-      title="邀请码"
+      title={t('invite.title')}
       entries={entries()}
       activeKey={activeCode()}
-      emptyText="还没有邀请码。点「新建」生成一个发给需要注册的人。"
-      createLabel="新建"
+      emptyText={t('invite.empty')}
+      createLabel={t('common.new')}
       busy={busy()}
       onSelect={(key) => setActiveCode(key)}
       onCreate={() => setActiveCode(null)}
@@ -142,20 +143,20 @@ export function InviteTab() {
         fallback={
           <>
             <div class="settings-form-head">
-              <span class="field-label">生成邀请码</span>
+              <span class="field-label">{t('invite.generateTitle')}</span>
             </div>
             <div class="field-grid">
               <SelectField
-                label="有效天数"
+                label={t('invite.validDays')}
                 value={validDays()}
-                options={VALID_DAYS.map((days) => ({ value: String(days), label: `${days} 天` }))}
-                hint="过期后未使用的码自动失效"
+                options={VALID_DAYS.map((days) => ({ value: String(days), label: formatDayCount(days) }))}
+                hint={t('invite.expireHint')}
                 onChange={(value) => setValidDays(value)}
               />
             </div>
             <FormActions>
               <button class="btn primary" onClick={() => void create()} disabled={busy()}>
-                生成邀请码
+                {t('invite.generate')}
               </button>
             </FormActions>
           </>
@@ -165,28 +166,28 @@ export function InviteTab() {
           <>
             <div class="field-grid">
               <TextField
-                label="邀请码"
+                label={t('invite.code')}
                 value={invite().code}
                 readOnly
                 wide
-                hint="一次性使用：注册成功后立即失效"
+                hint={t('invite.codeHint')}
                 onInput={() => undefined}
               />
-              <TextField label="状态" value={statusText(invite())} readOnly onInput={() => undefined} />
+              <TextField label={t('common.status')} value={statusText(invite())} readOnly onInput={() => undefined} />
               <TextField
-                label="过期时间"
+                label={t('invite.expiresAt')}
                 value={formatServerDateTime(invite().expiresAt)}
                 readOnly
                 onInput={() => undefined}
               />
               <TextField
-                label="创建者"
+                label={t('invite.creator')}
                 value={invite().createdBy || '—'}
                 readOnly
                 onInput={() => undefined}
               />
               <TextField
-                label="使用者"
+                label={t('invite.usedBy')}
                 value={usedText(invite())}
                 readOnly
                 onInput={() => undefined}
@@ -194,11 +195,11 @@ export function InviteTab() {
             </div>
             <FormActions>
               <button class="btn" onClick={() => void copy(invite().code)}>
-                复制邀请码
+                {t('invite.copyCode')}
               </button>
               <Show when={!invite().usedBy && !invite().expired}>
                 <button class="btn danger" onClick={() => void revoke()} disabled={busy()}>
-                  作废
+                  {t('invite.revoke')}
                 </button>
               </Show>
             </FormActions>

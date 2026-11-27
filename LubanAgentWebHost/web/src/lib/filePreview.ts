@@ -1,4 +1,5 @@
 import { ApiError, toApiError } from './api';
+import { t } from '../i18n';
 
 /** 弹层里正在预览的文件：`path` 是会话链接里的原值，`workspaceId` 决定解析根目录。 */
 export interface FilePreviewTarget {
@@ -115,14 +116,14 @@ function extensionOf(path: string): string {
 function previewErrorMessage(status: number): string {
   switch (status) {
     case 404:
-      return '工作区里找不到这个文件，可能已被移动或删除。';
+      return t('filePreview.notFound');
     case 413:
-      return '文件超过预览上限（文本 2 MB、图片 10 MB），请在本地打开。';
+      return t('filePreview.tooLarge');
     case 415:
-      return '这个格式不支持页内预览，请在本地打开。';
+      return t('filePreview.unsupported');
     case 500:
-      return '读取失败：文件可能被其他程序占用，或权限不足。';
+      return t('filePreview.readFailed');
     default:
-      return `预览失败（HTTP ${status}）。`;
+      return t('filePreview.httpFailed', { status });
   }
 }

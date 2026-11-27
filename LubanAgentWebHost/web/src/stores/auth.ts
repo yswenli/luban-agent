@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js';
 
+import { applyAccountLocale } from '../i18n';
 import { get, post } from '../lib/api';
 
 /**
@@ -16,6 +17,8 @@ export interface AuthUser {
   lastLoginAt?: string | null;
   failedLoginCount?: number;
   lockedUntil?: string | null;
+  /** 界面语言；为空表示沿用浏览器语言。 */
+  language?: string | null;
 }
 
 /** 登录页公开状态（`/auth/status`）。 */
@@ -57,6 +60,8 @@ export async function loadAuthStatus(): Promise<AuthStatus | null> {
       user: status?.user ?? null,
     };
     setAuthStatus(value);
+    // 账号语言优先于浏览器检测结果；老用户未设置语言时保留当前选择，不回写账号
+    applyAccountLocale(value.user?.language);
     return value;
   } catch (error) {
     setAuthError((error as Error).message);
@@ -83,6 +88,8 @@ export interface RegisterInput {
   password: string;
   displayName?: string;
   inviteCode: string;
+  /** 界面语言；随注册一起落库，新账号登录后无需再选一次。 */
+  language?: string;
 }
 
 /** 注册并登录；成功返回 null，失败返回可展示的错误文案。 */
@@ -121,6 +128,19 @@ export async function updateDisplayName(displayName: string): Promise<string | n
     const user = await post<AuthUser>('/auth/updateProfile', { displayName });
     const current = authStatus();
     // 就地更新会话身份，顶栏头像与名称即时生效，不必整页重载
+    if (current && user) setAuthStatus({ ...current, user });
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/** 修改本人界面语言；成功返回 null，失败返回可展示的错误文案。 */
+export async function setAccountLanguage(language: string): Promise<string | null> {
+  try {
+    const user = await post<AuthUser>('/auth/updateLanguage', { language });
+    const current = authStatus();
+    // 就地更新会话身份，日后再读状态也拿到同一份语言
     if (current && user) setAuthStatus({ ...current, user });
     return null;
   } catch (error) {

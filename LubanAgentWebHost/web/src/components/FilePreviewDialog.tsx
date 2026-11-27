@@ -6,6 +6,7 @@ import { closeFilePreview, filePreview } from '../stores/filePreview';
 import { Modal } from './Dialog';
 import { FilePreviewActions, previewPlainText } from './FilePreviewActions';
 import { Markdown } from './Markdown';
+import { t } from '../i18n';
 
 /**
  * 会话内文件链接的页内预览弹层。
@@ -64,7 +65,7 @@ export function FilePreviewDialog() {
       })
       .catch((cause: unknown) => {
         if (requestId !== sequence) return;
-        setError(cause instanceof ApiError ? cause.message : '预览失败，请稍后重试。');
+        setError(cause instanceof ApiError ? cause.message : t('filePreview.failed'));
       })
       .finally(() => {
         if (requestId === sequence) setLoading(false);
@@ -92,7 +93,7 @@ export function FilePreviewDialog() {
           }
         >
           <Show when={loading()}>
-            <div class="file-preview-state">正在读取…</div>
+            <div class="file-preview-state">{t('filePreview.reading')}</div>
           </Show>
 
           <Show when={error()}>{(message) => <div class="file-preview-state is-error">{message()}</div>}</Show>
@@ -120,7 +121,7 @@ export function FilePreviewDialog() {
               classList={{ 'is-original': zoomed() }}
               src={url()}
               alt={filePreviewName(target().path)}
-              title={zoomed() ? '点击恢复适应窗口' : '点击按原尺寸查看'}
+              title={zoomed() ? t('filePreview.fitWindow') : t('filePreview.actualSize')}
               onClick={() => setZoomed(!zoomed())}
             />
           </Show>
@@ -133,7 +134,7 @@ export function FilePreviewDialog() {
               autoplay={false}
               onError={() => {
                 setContent(null);
-                setError('浏览器无法播放这个视频（容器或编码不受支持）；请下载后在本地播放。');
+                setError(t('filePreview.videoUnsupported'));
               }}
             />
           </Show>
@@ -145,7 +146,7 @@ export function FilePreviewDialog() {
               controls
               onError={() => {
                 setContent(null);
-                setError('浏览器无法播放这个音频；请下载后在本地播放。');
+                setError(t('filePreview.audioUnsupported'));
               }}
             />
           </Show>

@@ -17,6 +17,7 @@ import { captureScreen, isCaptureSupported } from './capture';
 import { clampSize } from './number';
 import { Toolbar } from './Toolbar';
 import './screenshot.css';
+import { t } from '../../i18n';
 
 export interface ScreenshotOverlayProps {
   /** 由父组件的菜单项置 true 打开；关闭时父组件置回 false */
@@ -349,7 +350,7 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
   async function start(): Promise<void> {
     if (state.visible || state.capturing) return;
     if (!isCaptureSupported()) {
-      props.onError('当前访问地址不支持屏幕截图，请用 https 或 localhost 打开');
+      props.onError(t('screenshot.insecure'));
       props.onClose();
       return;
     }
@@ -372,7 +373,7 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
       resetState();
       // 用户取消共享授权：静默收场，不弹错误
       if (name === 'NotAllowedError' || name === 'AbortError') props.onClose();
-      else props.onError(err instanceof Error ? err.message : '抓屏失败');
+      else props.onError(err instanceof Error ? err.message : t('screenshot.captureError'));
     } finally {
       setState('capturing', false);
     }
@@ -1021,7 +1022,7 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `截图-${stamp()}.png`;
+    link.download = t('screenshot.fileName', { time: stamp() });
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1052,7 +1053,7 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
     return new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
-        else reject(new Error('截图合成失败'));
+        else reject(new Error(t('screenshot.composeFailed')));
       }, 'image/png');
     });
   }
@@ -1067,11 +1068,11 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
     try {
       blob = await canvasToBlob(canvas);
     } catch {
-      props.onError('截图合成失败');
+      props.onError(t('screenshot.composeFailed'));
       return;
     }
     // 直接交给附件链路，等同于用户粘贴图片
-    const name = `截图-${stamp()}.png`;
+    const name = t('screenshot.fileName', { time: stamp() });
     props.onCapture(new File([blob], name, { type: 'image/png' }));
     close();
   }
@@ -1085,11 +1086,11 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
     try {
       blob = await canvasToBlob(canvas);
     } catch {
-      props.onError('截图合成失败');
+      props.onError(t('screenshot.composeFailed'));
       return;
     }
     downloadBlob(blob);
-    setToast('已下载');
+    setToast(t('screenshot.downloaded'));
   }
 
   function cancel(): void {
@@ -1194,7 +1195,7 @@ export function ScreenshotOverlay(props: ScreenshotOverlayProps) {
               style={textInputStyle()}
               rows={1}
               spellcheck={false}
-              placeholder="输入文字"
+              placeholder={t('screenshot.textPlaceholder')}
               value={state.textValue}
               onPointerDown={(event) => event.stopPropagation()}
               onContextMenu={(event) => event.stopPropagation()}

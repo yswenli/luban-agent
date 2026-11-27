@@ -25,6 +25,7 @@ import {
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
 import { ensurePluginsLoaded, pluginPageEntries } from '../stores/plugins';
+import { t } from '../i18n';
 
 type ProjectAction =
   | { kind: 'rename'; workspaceId: string; name: string }
@@ -32,7 +33,7 @@ type ProjectAction =
 
 /** 项目行的悬浮说明：收起态没有项目名，得把名字补进 title。 */
 function projectTitle(workspace: Workspace, collapsed: boolean, selected: boolean): string {
-  const suffix = selected ? ' · 再点一次取消筛选' : '';
+  const suffix = selected ? ` ${t('sidebar.filterAgain')}` : '';
   if (collapsed) return `${workspace.name || workspace.rootPath}${suffix}`;
   return `${workspace.rootPath}${suffix}`;
 }
@@ -121,8 +122,8 @@ export function ProjectSidebar(props: {
           <Show when={!narrow()}>
             <button
               class="icon-btn side-toggle"
-              title={collapsed() ? '展开侧栏' : '收起侧栏'}
-              aria-label={collapsed() ? '展开侧栏' : '收起侧栏'}
+              title={collapsed() ? t('sidebar.expand') : t('sidebar.collapse')}
+              aria-label={collapsed() ? t('sidebar.expand') : t('sidebar.collapse')}
               aria-expanded={!collapsed()}
               onClick={() => toggleSidebarCollapsed()}
             >
@@ -130,19 +131,19 @@ export function ProjectSidebar(props: {
             </button>
           </Show>
           <Show when={!collapsed()}>
-            <span class="section-label">项目</span>
+            <span class="section-label">{t('sidebar.projects')}</span>
           </Show>
           <div class="side-actions">
             <Show when={!props.onSelect && filterWorkspaceId()}>
               <button
                 class="icon-btn side-clear-filter"
-                title="显示全部项目"
+                title={t('sidebar.showAllProjects')}
                 onClick={() => clearProjectFilter()}
               >
                 <Icon name="close" size={15} />
               </button>
             </Show>
-            <button class="icon-btn side-new-project" title="新建项目" onClick={() => setNewProject(true)}>
+            <button class="icon-btn side-new-project" title={t('sidebar.newProject')} onClick={() => setNewProject(true)}>
               <Icon name="new-project" size={17} />
             </button>
           </div>
@@ -180,15 +181,15 @@ export function ProjectSidebar(props: {
                 <Show when={!collapsed()}>
                   <span class="side-name">{workspace.name || workspace.rootPath}</span>
                   <Show when={workspace.hasGit}>
-                    <span class="side-git" title="Git 仓库" role="img" aria-label="Git 仓库">
+                    <span class="side-git" title={t('sidebar.gitRepo')} role="img" aria-label={t('sidebar.gitRepo')}>
                       <Icon name="git" size={14} />
                     </span>
                   </Show>
                   <span class="session-actions">
                     <button
                       class="icon-btn"
-                      title="更多"
-                      aria-label="项目操作"
+                      title={t('common.more')}
+                      aria-label={t('sidebar.projectActions')}
                       onClick={(event) => openProjectMenu(event, workspace.workspaceId)}
                     >
                       <Icon name="more" size={16} />
@@ -199,30 +200,30 @@ export function ProjectSidebar(props: {
             )}
           </For>
           <Show when={workspaces().length === 0 && !collapsed()}>
-            <span class="side-hint faint">还没有项目，点右上角新建。</span>
+            <span class="side-hint faint">{t('sidebar.noProjects')}</span>
           </Show>
         </div>
 
         <div class="side-links">
-          <button class="side-link" title="知识库" onClick={() => openWiki()}>
+          <button class="side-link" title={t('sidebar.wiki')} onClick={() => openWiki()}>
             <Icon name="file" size={16} />
-            <Show when={!collapsed()}>知识库</Show>
+            <Show when={!collapsed()}>{t('sidebar.wiki')}</Show>
           </button>
-          <button class="side-link" title="插件" onClick={() => openPlugins()}>
+          <button class="side-link" title={t('sidebar.plugins')} onClick={() => openPlugins()}>
             <Icon name="plug" size={16} />
-            <Show when={!collapsed()}>插件</Show>
+            <Show when={!collapsed()}>{t('sidebar.plugins')}</Show>
           </button>
-          <button class="side-link" title="设置" onClick={() => openSettings()}>
+          <button class="side-link" title={t('sidebar.settings')} onClick={() => openSettings()}>
             <Icon name="settings" size={16} />
-            <Show when={!collapsed()}>设置</Show>
+            <Show when={!collapsed()}>{t('sidebar.settings')}</Show>
           </button>
-          <button class="side-link" title="帮助" onClick={() => setInfo('help')}>
+          <button class="side-link" title={t('app.help')} onClick={() => setInfo('help')}>
             <Icon name="help" size={16} />
-            <Show when={!collapsed()}>帮助</Show>
+            <Show when={!collapsed()}>{t('app.help')}</Show>
           </button>
-          <button class="side-link" title="关于" onClick={() => setInfo('about')}>
+          <button class="side-link" title={t('app.about')} onClick={() => setInfo('about')}>
             <Icon name="info" size={16} />
-            <Show when={!collapsed()}>关于</Show>
+            <Show when={!collapsed()}>{t('app.about')}</Show>
           </button>
           {/* 插件自带页面的入口：只列已启用且镜像可用的条目，放在这一组底部 */}
           <Show when={pluginPageEntries().length > 0}>
@@ -270,7 +271,7 @@ export function ProjectSidebar(props: {
               }}
             >
               <Icon name="pencil" size={15} />
-              重命名
+              {t('common.rename')}
             </button>
             <button
               class="menu-item"
@@ -283,7 +284,7 @@ export function ProjectSidebar(props: {
               }}
             >
               <Icon name="trash" size={15} />
-              删除
+              {t('common.delete')}
             </button>
           </PopMenu>
         )}
@@ -292,11 +293,11 @@ export function ProjectSidebar(props: {
       <Show when={projectDialog()?.kind === 'rename' ? (projectDialog() as Extract<ProjectAction, { kind: 'rename' }>) : null}>
         {(action) => (
           <TextPromptDialog
-            title="重命名项目"
-            subtitle="只改显示名，磁盘目录不变"
-            label="名称"
+            title={t('sidebar.renameProject')}
+            subtitle={t('sidebar.renameHint')}
+            label={t('common.name')}
             initialValue={action().name}
-            confirmText="保存"
+            confirmText={t('common.save')}
             onClose={() => setProjectDialog(null)}
             onConfirm={(value) => {
               const target = action().workspaceId;
@@ -310,11 +311,11 @@ export function ProjectSidebar(props: {
       <Show when={projectDialog()?.kind === 'delete' ? (projectDialog() as Extract<ProjectAction, { kind: 'delete' }>) : null}>
         {(action) => (
           <ConfirmActionDialog
-            title="删除项目"
+            title={t('sidebar.deleteProject')}
             message={(() => {
               const count = sessions().filter((session) => session.workspaceId === action().workspaceId).length;
-              const cascade = count > 0 ? `该项目下的 ${count} 个会话会一并删除，` : '';
-              return `确定删除项目「${truncate(action().name || '未命名项目', 40)}」？${cascade}.luban-agent 配置目录会一并清理，磁盘目录其他文件不受影响。`;
+              const cascade = count > 0 ? t('sidebar.deleteSessionsNote', { count }) : '';
+              return t('sidebar.deleteConfirm', { name: truncate(action().name || t('topbar.unnamedProject'), 40), cascade });
             })()}
             onClose={() => setProjectDialog(null)}
             onConfirm={() => {
@@ -403,11 +404,11 @@ function NewProjectDialog(props: {
       } else if (result.code === 409) {
         // 目录冲突单独展示：给用户「复用/共用」与「改名字/换地址」两条出路
         setConflict({
-          message: result.error ?? '目标目录已存在',
+          message: result.error ?? t('sidebar.targetExists'),
           kind: result.reason === 'in-use' ? 'share' : 'reuse',
         });
       } else {
-        setError(result.error ?? '创建失败');
+        setError(result.error ?? t('sidebar.createFailed'));
       }
     } finally {
       setSaving(false);
@@ -416,39 +417,39 @@ function NewProjectDialog(props: {
 
   return (
     <Modal
-      title="新建项目"
-      subtitle="项目对应本机上的一个工作区目录"
+      title={t('sidebar.newProject')}
+      subtitle={t('sidebar.newProjectHint')}
       onClose={props.onClose}
       footer={
         <>
           <button class="btn ghost" onClick={props.onClose}>
-            取消
+            {t('common.cancel')}
           </button>
           <button class="btn primary" disabled={!canSubmit()} onClick={() => void submit()}>
-            {saving() ? '创建中…' : '创建'}
+            {saving() ? t('common.creating') : t('common.create')}
           </button>
         </>
       }
     >
       <div class="form-stack">
         <div class="field">
-          <div class="section-label">项目来源</div>
+          <div class="section-label">{t('sidebar.source')}</div>
           <select
             class="text-input"
             value={source()}
             disabled={saving()}
             onChange={(event) => changeSource(event.currentTarget.value === 'git' ? 'git' : 'directory')}
           >
-            <option value="directory">指定目录</option>
-            <option value="git">指定 git 仓库</option>
+            <option value="directory">{t('sidebar.sourceDirectory')}</option>
+            <option value="git">{t('sidebar.sourceGit')}</option>
           </select>
         </div>
 
         <div class="field">
-          <div class="section-label">名称（可选）</div>
+          <div class="section-label">{t('common.nameOptional')}</div>
           <input
             class="text-input"
-            placeholder={source() === 'git' ? '默认取仓库名，同时作为克隆目录名' : '默认取目录名'}
+            placeholder={source() === 'git' ? t('sidebar.nameFromRepo') : t('sidebar.nameFromDir')}
             value={name()}
             onInput={(event) => setName(event.currentTarget.value)}
           />
@@ -458,7 +459,7 @@ function NewProjectDialog(props: {
           when={source() === 'git'}
           fallback={
             <div class="field">
-              <div class="section-label">根路径（绝对路径）</div>
+              <div class="section-label">{t('common.rootPath')}</div>
               <input
                 ref={rootInput}
                 class="text-input mono"
@@ -470,13 +471,13 @@ function NewProjectDialog(props: {
                 }}
               />
               <div class="field-hint">
-                只能建在管理员配置的工作区根目录下（默认 ~/.luban-agent）；不在白名单时会提示允许的目录。
+                {t('sidebar.rootHint')}
               </div>
             </div>
           }
         >
           <div class="field">
-            <div class="section-label">仓库地址</div>
+            <div class="section-label">{t('sidebar.repoUrl')}</div>
             <input
               ref={gitInput}
               class="text-input mono"
@@ -488,7 +489,7 @@ function NewProjectDialog(props: {
               }}
             />
             <div class="field-hint">
-              克隆到 ~/.luban-agent/repositories/&lt;项目名&gt;；同名目录已存在时会先提示确认，不会覆盖。
+              {t('sidebar.cloneHint')}
             </div>
           </div>
         </Show>
@@ -509,7 +510,7 @@ function NewProjectDialog(props: {
                     : submit(true))
                 }
               >
-                {value().kind === 'share' ? '共用此工作区' : '复用已有目录'}
+                {value().kind === 'share' ? t('sidebar.reuseWorkspace') : t('sidebar.reuseDirectory')}
               </button>
             </>
           )}

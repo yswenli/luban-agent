@@ -80,6 +80,12 @@ public sealed class AuthController : Controller
     [HttpPost]
     public Task<ActionResult> UpdateProfile(string payload) => WebAuthService.UpdateProfileAsync(payload);
 
+    /// <summary>修改本人界面语言。</summary>
+    /// <param name="payload">包装后的 <see cref="UpdateLanguageRequest"/> JSON。</param>
+    /// <returns>更新后的用户信息。</returns>
+    [HttpPost]
+    public Task<ActionResult> UpdateLanguage(string payload) => WebAuthService.UpdateLanguageAsync(payload);
+
     /// <summary>用户列表（仅管理员）。</summary>
     /// <returns>全部未删除用户。</returns>
     [HttpGet]

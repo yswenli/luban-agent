@@ -1,3 +1,5 @@
+import { localeTag, t } from '../i18n';
+
 /** 本机日期键，用于「今天 / 更早」分组。 */
 export function localDayKey(value: string | null | undefined): string {
   if (!value) return '';
@@ -35,10 +37,16 @@ function calendarMonthsBetween(from: Date, to: Date): number {
   return Math.max(0, months);
 }
 
+/** 相对时间格式化器；`numeric: 'auto'` 让「昨天」这类词替掉「1 天前」。 */
+function relativeFormat(): Intl.RelativeTimeFormat {
+  return new Intl.RelativeTimeFormat(localeTag(), { numeric: 'auto' });
+}
+
 /**
  * 会话行的时间标签。
  *
  * 今天组按时长递进（秒 / 分 / 小时），更早组按日历阶梯递进（昨天 → 天 → 周 → 月 → 年）。
+ * 交给 `Intl.RelativeTimeFormat` 生成译文，不再手写「N 天前」这类拼接。
  * `now` 由调用方传入，便于列表定时刷新同一批标签。
  */
 export function formatSessionTime(
@@ -50,24 +58,24 @@ export function formatSessionTime(
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
 
+  const rtf = relativeFormat();
+
   if (bucket === 'today') {
     const diff = Math.max(0, now - date.getTime());
-    if (diff < 60_000) return `${Math.max(1, Math.floor(diff / 1000))}秒前`;
-    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`;
-    return `${Math.floor(diff / 3_600_000)}小时前`;
+    if (diff < 60_000) return rtf.format(-Math.max(1, Math.floor(diff / 1000)), 'second');
+    if (diff < 3_600_000) return rtf.format(-Math.floor(diff / 60_000), 'minute');
+    return rtf.format(-Math.floor(diff / 3_600_000), 'hour');
   }
 
   const current = new Date(now);
   const days = calendarDaysBetween(date, current);
-  if (days <= 1) return '昨天';
-  if (days === 2) return '前天';
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
+  if (days <= 1) return rtf.format(-1, 'day');
+  if (days < 7) return rtf.format(-days, 'day');
+  if (days < 30) return rtf.format(-Math.floor(days / 7), 'week');
 
   const months = calendarMonthsBetween(date, current);
-  if (months < 6) return `${Math.max(1, months)}个月前`;
-  if (months < 12) return months === 6 ? '半年前' : `${months}个月前`;
-  return `${Math.floor(months / 12)}年前`;
+  if (months < 12) return rtf.format(-Math.max(1, months), 'month');
+  return rtf.format(-Math.floor(months / 12), 'year');
 }
 
 /** 会话行 time 悬浮提示用的绝对时间。 */
@@ -75,14 +83,14 @@ export function formatAbsoluteTime(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return `${date.toLocaleDateString('zh-CN')} ${formatTime(value)}`;
+  return `${date.toLocaleDateString(localeTag())} ${formatTime(value)}`;
 }
 
 export function formatTime(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
 }
 
 /** 本机日历日差（今天 = 0，昨天 = 1）；跨月跨年也按日历日算，不受时区偏移影响。 */
@@ -101,7 +109,7 @@ function localDateText(date: Date): string {
 }
 
 /**
- * 对话消息时间：今天只显示时分，昨天 / 前天加中文前缀，更早显示 `YYYY-MM-DD HH:mm`。
+ * 对话消息时间：今天只显示时分，昨天 / 前天加对应前缀，更早显示 `YYYY-MM-DD HH:mm`。
  * 日期按本机日历日比较，避免「23 小时前」与「昨天」互相矛盾。
  */
 export function formatMessageTime(value: string | null | undefined): string {
@@ -111,27 +119,51 @@ export function formatMessageTime(value: string | null | undefined): string {
   const time = formatTime(value);
   const offset = calendarDayOffset(date);
   if (offset === 0) return time;
-  if (offset === 1) return `昨天 ${time}`;
-  if (offset === 2) return `前天 ${time}`;
+  if (offset === 1) return t('format.yesterdayAt', { time });
+  if (offset === 2) return t('format.dayBeforeYesterdayAt', { time });
   return `${localDateText(date)} ${time}`;
 }
 
+/** 单位数字格式化（`4 min` / `4 分`），由 Intl 负责译文与复数。 */
+function unitValue(value: number, unit: Intl.NumberFormatOptions['unit']): string {
+  return new Intl.NumberFormat(localeTag(), {
+    style: 'unit',
+    unit,
+    unitDisplay: 'narrow',
+  }).format(value);
+}
+
+/** 天数（邀请码有效期下拉）：长单位形式，由 Intl 处理单复数与语序（`1 day` / `7 days`）。 */
+export function formatDayCount(days: number): string {
+  return new Intl.NumberFormat(localeTag(), {
+    style: 'unit',
+    unit: 'day',
+    unitDisplay: 'long',
+  }).format(days);
+}
+
 /**
- * 把毫秒耗时格式化为紧凑中文：`<1 秒`、`43 秒`、`4 分 43 秒`、`1 小时 2 分`。
+ * 把毫秒耗时格式化为紧凑文案：`<1 秒`、`43 秒`、`4 分 43 秒`、`1 小时 2 分`。
  * 缺失或非正数返回空串，便于调用方直接条件渲染。
  */
 export function formatDuration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return '';
   if (!Number.isFinite(ms) || ms <= 0) return '';
   const totalSeconds = Math.round(ms / 1000);
-  if (totalSeconds < 1) return '<1 秒';
-  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  if (totalSeconds < 1) return t('format.duration.lessThanSecond');
+  if (totalSeconds < 60) return unitValue(totalSeconds, 'second');
   const totalMinutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (totalMinutes < 60) return seconds > 0 ? `${totalMinutes} 分 ${seconds} 秒` : `${totalMinutes} 分`;
+  if (totalMinutes < 60) {
+    const parts = [unitValue(totalMinutes, 'minute')];
+    if (seconds > 0) parts.push(unitValue(seconds, 'second'));
+    return parts.join(t('format.duration.partsSeparator'));
+  }
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return minutes > 0 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
+  const parts = [unitValue(hours, 'hour')];
+  if (minutes > 0) parts.push(unitValue(minutes, 'minute'));
+  return parts.join(t('format.duration.partsSeparator'));
 }
 
 /**
@@ -164,13 +196,15 @@ export function formatRelative(value: string | null | undefined): string {
   const hour = 60 * minute;
   const day = 24 * hour;
 
-  if (diff < minute) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
-  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  const rtf = relativeFormat();
+  if (diff < minute) return t('format.justNow');
+  if (diff < hour) return rtf.format(-Math.floor(diff / minute), 'minute');
+  if (diff < day) return rtf.format(-Math.floor(diff / hour), 'hour');
+  if (diff < 7 * day) return rtf.format(-Math.floor(diff / day), 'day');
+  return date.toLocaleDateString(localeTag(), { month: '2-digit', day: '2-digit' });
 }
 
+/** 文件大小；小数位交给 Intl，千分位与小数点跟着语言走。 */
 export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -180,18 +214,26 @@ export function formatBytes(bytes: number | null | undefined): string {
     value /= 1024;
     unit += 1;
   }
-  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  const text = new Intl.NumberFormat(localeTag(), {
+    maximumFractionDigits: unit === 0 || value >= 10 ? 0 : 1,
+  }).format(value);
+  return `${text} ${units[unit]}`;
 }
 
 /**
- * 紧凑 token 数：满 1 万按万计并保留一位小数（250571 → 25.1万），
- * 小数位为 0 时省掉（70000 → 7万）；不足 1 万显示原值。
+ * 紧凑 token 数：按语言选用万 / K / M 等量级（250571 → 25.1万 / 251K）。
  */
 export function formatTokenCompact(tokens: number): string {
   if (!Number.isFinite(tokens) || tokens <= 0) return '0';
-  if (tokens < 10_000) return `${Math.round(tokens)}`;
-  const value = (tokens / 10_000).toFixed(1);
-  return `${value.endsWith('.0') ? value.slice(0, -2) : value}万`;
+  return new Intl.NumberFormat(localeTag(), {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(tokens);
+}
+
+/** 普通整数分组显示，随当前界面语言变化。 */
+export function formatNumber(value: number): string {
+  return new Intl.NumberFormat(localeTag()).format(value);
 }
 
 /** 文件扩展名（小写，含点）；无扩展名返回空串。 */
@@ -224,8 +266,8 @@ export function parseServerUtc(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** UTC 时间戳 → 本机日期时间（如 `2026/12/4 10:00:00`）；无效值返回空串。 */
+/** UTC 时间戳 → 本机日期时间；无效值返回空串。 */
 export function formatServerDateTime(value: string | null | undefined): string {
   const date = parseServerUtc(value);
-  return date ? date.toLocaleString('zh-CN') : '';
+  return date ? date.toLocaleString(localeTag()) : '';
 }

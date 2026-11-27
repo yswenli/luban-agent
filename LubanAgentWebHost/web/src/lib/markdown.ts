@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
+import { t } from '../i18n';
 
 marked.setOptions({
   gfm: true,
@@ -92,7 +93,7 @@ export function rewriteWorkspaceFileLinks(host: HTMLElement, workspaceId: string
 function markAnchor(anchor: HTMLAnchorElement, path: string, workspaceId?: string): void {
   anchor.setAttribute('target', '_blank');
   anchor.setAttribute('rel', 'noopener noreferrer');
-  anchor.setAttribute('title', '在弹层内预览（Ctrl+点击可新标签页打开）');
+  anchor.setAttribute('title', t('markdown.previewInDialog'));
   anchor.setAttribute('data-workspace-file', path);
   if (workspaceId) {
     anchor.setAttribute('data-workspace-id', workspaceId);

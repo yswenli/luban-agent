@@ -5,6 +5,7 @@ import { Icon } from '../../components/Icons';
 import { pluginStateLabel } from '../../lib/plugins';
 import type { PluginItem } from '../../lib/types';
 import { showToast } from '../../stores/app';
+import { t } from '../../i18n';
 
 /**
  * 插件详情：基本信息、贡献摘要、启停 / 升级 / 卸载。
@@ -28,7 +29,7 @@ export function PluginDetail(props: {
   const pickUpgrade = (file: File | undefined) => {
     if (!file) return;
     if (!/\.zip$/i.test(file.name)) {
-      showToast('请选择 .zip 格式的插件包', 'error');
+      showToast(t('plugins.zipRequired'), 'error');
       return;
     }
     props.onUpgrade(file);
@@ -47,7 +48,7 @@ export function PluginDetail(props: {
         <div class="spacer" />
         <span class={`plugin-state state-${props.plugin.state}`}>{pluginStateLabel(props.plugin.state)}</span>
         <Show when={props.plugin.isBuiltin}>
-          <span class="tag">内置</span>
+          <span class="tag">{t('plugins.builtin')}</span>
         </Show>
       </div>
 
@@ -61,13 +62,13 @@ export function PluginDetail(props: {
           fallback={
             <button class="btn primary" disabled={props.busy} onClick={() => props.onEnable()}>
               <Icon name="check" size={15} />
-              启用
+              {t('plugins.enable')}
             </button>
           }
         >
           <button class="btn" disabled={props.busy} onClick={() => setConfirm('disable')}>
             <Icon name="stop" size={15} />
-            停用
+            {t('plugins.disable')}
           </button>
         </Show>
 
@@ -81,41 +82,41 @@ export function PluginDetail(props: {
         <button
           class="btn"
           disabled={props.busy || props.plugin.isBuiltin}
-          title={props.plugin.isBuiltin ? '内置插件不支持升级' : '选择新版本 zip 覆盖安装'}
+          title={props.plugin.isBuiltin ? t('plugins.upgradeUnsupported') : t('plugins.upgradeHint')}
           onClick={() => upgradeInput.click()}
         >
           <Icon name="arrow-up" size={15} />
-          升级
+          {t('plugins.upgrade')}
         </button>
         <button
           class="btn danger"
           disabled={props.busy || props.plugin.isBuiltin}
-          title={props.plugin.isBuiltin ? '内置插件不支持卸载' : '删除插件目录与状态记录'}
+          title={props.plugin.isBuiltin ? t('plugins.uninstallUnsupported') : t('plugins.uninstallHint')}
           onClick={() => setConfirm('uninstall')}
         >
           <Icon name="trash" size={15} />
-          卸载
+          {t('plugins.uninstall')}
         </button>
       </div>
 
       <Show when={props.plugin.requiresRestart}>
         <div class="notice warn">
           <Icon name="alert" size={16} />
-          <span>有程序集尚未释放，改动需重启宿主后生效。</span>
+          <span>{t('plugins.restartNotice')}</span>
         </div>
       </Show>
 
       <Show when={props.plugin.lastError}>
         <div class="notice error">
           <Icon name="alert" size={16} />
-          <span>上次启用失败：{props.plugin.lastError}</span>
+          <span>{t('plugins.lastError', { message: props.plugin.lastError ?? '' })}</span>
         </div>
       </Show>
 
       <Show when={props.plugin.pageError}>
         <div class="notice warn">
           <Icon name="alert" size={16} />
-          <span>页面镜像写入失败，技能与 MCP 不受影响：{props.plugin.pageError}</span>
+          <span>{t('plugins.pageError', { message: props.plugin.pageError ?? '' })}</span>
         </div>
       </Show>
 
@@ -130,28 +131,28 @@ export function PluginDetail(props: {
 
       <div class="plugin-meta">
         <div class="plugin-meta-row">
-          <span class="plugin-meta-label">标识</span>
+          <span class="plugin-meta-label">{t('plugins.meta.id')}</span>
           <span class="mono">{props.plugin.id}</span>
         </div>
         <div class="plugin-meta-row">
-          <span class="plugin-meta-label">版本</span>
+          <span class="plugin-meta-label">{t('plugins.meta.version')}</span>
           <span class="mono">{props.plugin.version}</span>
         </div>
         <div class="plugin-meta-row">
-          <span class="plugin-meta-label">作者</span>
+          <span class="plugin-meta-label">{t('plugins.meta.author')}</span>
           <span>{props.plugin.author || '—'}</span>
         </div>
         <div class="plugin-meta-row">
-          <span class="plugin-meta-label">状态</span>
+          <span class="plugin-meta-label">{t('plugins.meta.state')}</span>
           <span>{pluginStateLabel(props.plugin.state)}</span>
         </div>
       </div>
 
       <div class="plugin-section">
-        <div class="section-label">技能（{props.plugin.skills.length}）</div>
+        <div class="section-label">{t('plugins.skillsTitle', { count: props.plugin.skills.length })}</div>
         <Show
           when={props.plugin.skills.length > 0}
-          fallback={<span class="faint">该插件不提供技能。</span>}
+          fallback={<span class="faint">{t('plugins.noSkills')}</span>}
         >
           <For each={props.plugin.skills}>
             {(skill) => (
@@ -167,10 +168,10 @@ export function PluginDetail(props: {
       </div>
 
       <div class="plugin-section">
-        <div class="section-label">MCP 服务（{props.plugin.mcpServers.length}）</div>
+        <div class="section-label">{t('plugins.mcpTitle', { count: props.plugin.mcpServers.length })}</div>
         <Show
           when={props.plugin.mcpServers.length > 0}
-          fallback={<span class="faint">该插件不提供 MCP 服务。</span>}
+          fallback={<span class="faint">{t('plugins.noMcp')}</span>}
         >
           <For each={props.plugin.mcpServers}>
             {(server) => (
@@ -184,10 +185,10 @@ export function PluginDetail(props: {
       </div>
 
       <div class="plugin-section">
-        <div class="section-label">页面入口（{props.plugin.pages.length}）</div>
+        <div class="section-label">{t('plugins.pagesTitle', { count: props.plugin.pages.length })}</div>
         <Show
           when={props.plugin.pages.length > 0}
-          fallback={<span class="faint">该插件没有自带页面，启用后不会出现在左侧栏。</span>}
+          fallback={<span class="faint">{t('plugins.noPages')}</span>}
         >
           <For each={props.plugin.pages}>
             {(page) => (
@@ -196,10 +197,10 @@ export function PluginDetail(props: {
                 <span class="mono faint">{page.webPage}</span>
                 <Show
                   when={page.url}
-                  fallback={<span class="tag">启用后可访问</span>}
+                  fallback={<span class="tag">{t('plugins.availableAfterEnable')}</span>}
                 >
                   <a class="plugin-page-link" href={page.url} target="_blank" rel="noreferrer">
-                    打开
+                    {t('plugins.open')}
                   </a>
                 </Show>
               </div>
@@ -209,15 +210,14 @@ export function PluginDetail(props: {
       </div>
 
       <p class="plugin-note">
-        插件目录与状态文件与桌面端隔离。插件贡献的技能会写成当前工作区文件，桌面端打开同一工作区也会看到；MCP
-        只在当前 Web 进程内生效。
+        {t('plugins.note')}
       </p>
 
       <Show when={confirm() === 'disable'}>
         <ConfirmActionDialog
-          title="停用插件"
-          message={`停用「${props.plugin.name || props.plugin.id}」会注销它注册的技能与 MCP，并移除左侧栏页面入口。`}
-          confirmText="停用"
+          title={t('plugins.disableTitle')}
+          message={t('plugins.disableMessage', { name: props.plugin.name || props.plugin.id })}
+          confirmText={t('plugins.disable')}
           onClose={() => setConfirm(null)}
           onConfirm={() => {
             setConfirm(null);
@@ -228,9 +228,9 @@ export function PluginDetail(props: {
 
       <Show when={confirm() === 'uninstall'}>
         <ConfirmActionDialog
-          title="卸载插件"
-          message={`删除「${props.plugin.name || props.plugin.id}」的插件目录与状态记录，该操作不可撤销。若程序集仍被宿主占用，残留文件会在下次启动宿主时自动清理。`}
-          confirmText="卸载"
+          title={t('plugins.uninstallTitle')}
+          message={t('plugins.uninstallMessage', { name: props.plugin.name || props.plugin.id })}
+          confirmText={t('plugins.uninstall')}
           onClose={() => setConfirm(null)}
           onConfirm={() => {
             setConfirm(null);

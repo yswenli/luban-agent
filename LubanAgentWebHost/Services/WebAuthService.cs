@@ -294,6 +294,33 @@ public static class WebAuthService
         ensureUser: false);
 
     /// <summary>
+    /// 修改本人界面语言；只接受白名单内的代码。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="UpdateLanguageRequest"/> JSON。</param>
+    /// <returns>更新后的用户信息。</returns>
+    public static Task<ActionResult> UpdateLanguageAsync(string payload) => WebApi.RunGuardedAsync(
+        async () =>
+        {
+            if (!WebApi.TryReadPayload<UpdateLanguageRequest>(payload, out var request))
+            {
+                return WebApi.FailJson(400, "请求体不合法");
+            }
+
+            try
+            {
+                var user = await WebApi.Runtime.Auth
+                    .UpdateLanguageAsync(WebApi.UserId, request!.Language)
+                    .ConfigureAwait(false);
+                return WebApi.OkJson(user);
+            }
+            catch (AuthException ex)
+            {
+                return WebApi.FailJson(ex.Code, ex.Message);
+            }
+        },
+        ensureUser: false);
+
+    /// <summary>
     /// 用户列表（仅管理员）。
     /// </summary>
     /// <returns>全部未删除用户。</returns>

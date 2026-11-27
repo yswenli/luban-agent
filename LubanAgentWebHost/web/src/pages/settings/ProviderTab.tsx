@@ -4,6 +4,7 @@ import { resetAgent, settingsApi } from '../../lib/settings';
 import type { ProviderListItem, ProviderPreset } from '../../lib/types';
 import { refreshProviders, showToast } from '../../stores/app';
 import { AreaField, FormActions, SelectField, SettingsPane, TextField } from './Shared';
+import { t } from '../../i18n';
 
 interface ProviderForm {
   name: string;
@@ -138,9 +139,7 @@ export function ProviderTab() {
     if (isCustom()) return undefined;
     const preset = currentPreset();
     if (!preset) return undefined;
-    const head = preset.editableBaseUrl
-      ? '该内置供应商需自行填写端点地址'
-      : '内置默认地址；需要修改请在「供应商」中选「自定义」';
+    const head = preset.editableBaseUrl ? t('provider.endpointEditable') : t('provider.endpointFixed');
     const warning = (preset.warning ?? '').trim().replace(/\s+/g, ' ');
     return warning ? `${head}；${warning}` : head;
   };
@@ -148,7 +147,7 @@ export function ProviderTab() {
   const save = async () => {
     const name = form().name.trim();
     if (!name) {
-      showToast('供应商标识不能为空', 'error');
+      showToast(t('provider.required'), 'error');
       return;
     }
 
@@ -156,16 +155,16 @@ export function ProviderTab() {
     const current = active();
     const renaming = current !== null && current !== name;
     if (renaming && items().some((item) => item.name === name)) {
-      showToast(`供应商标识「${name}」已存在`, 'error');
+      showToast(t('provider.exists', { name }), 'error');
       return;
     }
     if (current === null && items().some((item) => item.name === name)) {
-      showToast(`供应商标识「${name}」已存在，请从左侧列表选择后编辑`, 'error');
+      showToast(t('provider.existsEdit', { name }), 'error');
       return;
     }
 
     if (current === null && !form().apiKey.trim()) {
-      showToast('新建供应商时 API Key 不能为空', 'error');
+      showToast(t('provider.apiKeyRequired'), 'error');
       return;
     }
 
@@ -182,7 +181,7 @@ export function ProviderTab() {
       });
       await resetAgent();
       await refreshProviders();
-      showToast('供应商已保存', 'success');
+      showToast(t('provider.saved'), 'success');
       await reload(saved?.name ?? name);
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -194,14 +193,14 @@ export function ProviderTab() {
   const remove = async () => {
     const name = active();
     if (!name) return;
-    if (!window.confirm(`删除供应商「${name}」？如果当前模型属于它，模型选择会一并清空；已单独选过该供应商模型的会话将回落到默认模型。`)) return;
+    if (!window.confirm(t('provider.deleteConfirm', { name }))) return;
 
     setBusy(true);
     try {
       await settingsApi.deleteProvider(name);
       await resetAgent();
       await refreshProviders();
-      showToast('供应商已删除', 'success');
+      showToast(t('provider.deleted'), 'success');
       setActive(null);
       setPresetKey(customKey());
       setForm(empty());
@@ -215,11 +214,11 @@ export function ProviderTab() {
 
   return (
     <SettingsPane
-      title="供应商"
+      title={t('provider.title')}
       items={items().map((item) => item.name)}
       activeKey={active()}
-      emptyText="还没有配置任何供应商。"
-      createLabel="新建"
+      emptyText={t('provider.empty')}
+      createLabel={t('common.new')}
       busy={busy()}
       onSelect={(key) => {
         const item = items().find((entry) => entry.name === key);
@@ -235,28 +234,28 @@ export function ProviderTab() {
         {/* 预设异步加载：加载完成后再渲染下拉，避免选项后到时选中态与表单不一致；加载失败则退化为纯手填 */}
         <Show when={presets().length > 0}>
           <SelectField
-            label="供应商"
+            label={t('provider.preset')}
             wide
             value={presetKey()}
             options={presets().map((preset) => ({ value: preset.name, label: preset.displayName }))}
-            hint="选内置供应商时，标识与基址按预设固定（个别需自填端点）；选「自定义」可自行填写"
+            hint={t('provider.presetHint')}
             onChange={selectPreset}
           />
         </Show>
         <TextField
-          label="标识"
+          label={t('provider.id')}
           value={form().name}
           readOnly={!nameEditable()}
-          hint={nameEditable() ? '小写；作为唯一键，改动即重命名' : '内置供应商标识固定；需要修改请在「供应商」中选「自定义」'}
+          hint={nameEditable() ? t('provider.idHintCustom') : t('provider.idHintBuiltin')}
           onInput={(v) => patch('name', v)}
         />
-        <TextField label="显示名" value={form().displayName} onInput={(v) => patch('displayName', v)} />
+        <TextField label={t('account.displayName')} value={form().displayName} onInput={(v) => patch('displayName', v)} />
         <TextField
           label="API Key"
           type="password"
           value={form().apiKey}
           wide
-          hint={active() ? `当前：${masked()}；留空表示不修改` : '新建时必填'}
+          hint={active() ? t('provider.apiKeyCurrent', { mask: masked() }) : t('provider.apiKeyNew')}
           onInput={(v) => patch('apiKey', v)}
         />
         <TextField
@@ -264,34 +263,34 @@ export function ProviderTab() {
           value={form().baseUrl}
           wide
           readOnly={!baseUrlEditable()}
-          placeholder="留空使用默认地址"
+          placeholder={t('provider.baseUrlPlaceholder')}
           hint={baseUrlHint()}
           onInput={(v) => patch('baseUrl', v)}
         />
         <TextField
-          label="网络超时（秒）"
+          label={t('provider.timeout')}
           type="number"
           value={form().timeout}
-          hint="留空使用默认"
+          hint={t('provider.timeoutHint')}
           onInput={(v) => patch('timeout', v)}
         />
         <AreaField
-          label="自定义模型"
+          label={t('provider.customModels')}
           value={form().customModels.join('\n')}
           rows={4}
           wide
           mono
-          hint="一行一个；保存时按差值增删"
+          hint={t('provider.customModelsHint')}
           onInput={(v) => patch('customModels', v.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))}
         />
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void save()} disabled={busy()}>
-          保存
+          {t('common.save')}
         </button>
         <Show when={active()}>
           <button class="btn danger" onClick={() => void remove()} disabled={busy()}>
-            删除
+            {t('common.delete')}
           </button>
         </Show>
       </FormActions>

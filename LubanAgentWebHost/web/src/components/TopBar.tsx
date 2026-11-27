@@ -5,19 +5,21 @@ import { truncate } from '../lib/format';
 import { openSession, openSessions, openSettings } from '../lib/router';
 import { setThemePreference, themePreference, type ThemePreference } from '../lib/theme';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
+import { t, type MessageKey } from '../i18n';
 import { createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
 import { currentUser, logout, userLabel } from '../stores/auth';
 import { dropChat, getChat } from '../stores/chats';
 import { forgetSession, moveSession, openSessionIds } from '../stores/tabs';
 
 import { Icon } from './Icons';
+import { LocaleMenu } from './LocaleMenu';
 import { menuAt, PopMenu } from './PopMenu';
 
 /** 主题菜单项：图标只用于区分选项，按钮本身始终是调色板。 */
-const THEME_OPTIONS: { value: ThemePreference; label: string; icon: string }[] = [
-  { value: 'follow', label: '跟随系统', icon: 'monitor' },
-  { value: 'dark', label: '深色', icon: 'moon' },
-  { value: 'light', label: '浅色', icon: 'sun' },
+const THEME_OPTIONS: { value: ThemePreference; label: MessageKey; icon: string }[] = [
+  { value: 'follow', label: 'theme.follow', icon: 'monitor' },
+  { value: 'dark', label: 'theme.dark', icon: 'moon' },
+  { value: 'light', label: 'theme.light', icon: 'sun' },
 ];
 
 /**
@@ -100,12 +102,12 @@ export function TopBar(props: { activeSessionId: string | null }) {
 
   return (
     <div class="app-topbar">
-      <button class="icon-btn" title="首页" onClick={() => openSessions()}>
+      <button class="icon-btn" title={t('topbar.home')} onClick={() => openSessions()}>
         <Icon name="home" size={17} />
       </button>
       <button
         class="icon-btn"
-        title="搜索会话"
+        title={t('topbar.search')}
         onClick={() => {
           openSessions();
           focusSessionSearch();
@@ -120,8 +122,8 @@ export function TopBar(props: { activeSessionId: string | null }) {
             const chat = getChat(sessionId);
             const session = () => sessions().find((item) => item.sessionId === sessionId) ?? null;
             const workspaceId = () => session()?.workspaceId ?? null;
-            const project = () => workspaceName(workspaceId()) || '未命名项目';
-            const title = () => session()?.title || '未命名会话';
+            const project = () => workspaceName(workspaceId()) || t('topbar.unnamedProject');
+            const title = () => session()?.title || t('topbar.unnamedSession');
 
             return (
               <div
@@ -143,15 +145,15 @@ export function TopBar(props: { activeSessionId: string | null }) {
                   </span>
                   <span class="session-tab-title">{truncate(title(), 18)}</span>
                   <Show when={chat.streaming()}>
-                    <span class="tab-activity" title="本轮进行中" />
+                    <span class="tab-activity" title={t('topbar.running')} />
                   </Show>
                   <Show when={chat.confirmation()}>
-                    <span class="tab-attention" title="等待工具确认" />
+                    <span class="tab-attention" title={t('topbar.waitingConfirm')} />
                   </Show>
                 </button>
                 <button
                   class="session-tab-close"
-                  title="关闭标签"
+                  title={t('topbar.closeTab')}
                   onClick={(event) => {
                     event.stopPropagation();
                     closeTab(sessionId);
@@ -165,7 +167,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
         </For>
       </div>
 
-      <button class="icon-btn" title="新建会话" disabled={creating()} onClick={() => void createTab()}>
+      <button class="icon-btn" title={t('topbar.newSession')} disabled={creating()} onClick={() => void createTab()}>
         <Icon name="plus" size={17} />
       </button>
 
@@ -177,8 +179,8 @@ export function TopBar(props: { activeSessionId: string | null }) {
             <button
               class="icon-btn user-chip"
               classList={{ active: userMenu() !== null }}
-              title={`${userLabel(user())}${user().isAdmin ? ' · 管理员' : ''}`}
-              aria-label="账号"
+              title={`${userLabel(user())}${user().isAdmin ? t('topbar.adminSuffix') : ''}`}
+              aria-label={t('topbar.account')}
               aria-haspopup="menu"
               aria-expanded={userMenu() !== null}
               onClick={(event) => {
@@ -199,7 +201,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
                     <span class="menu-note-name">{userLabel(user())}</span>
                     <span class="menu-note-sub">
                       {user().userName}
-                      {user().isAdmin ? ' · 管理员' : ''}
+                      {user().isAdmin ? t('topbar.adminSuffix') : ''}
                     </span>
                   </div>
                   <button
@@ -210,11 +212,11 @@ export function TopBar(props: { activeSessionId: string | null }) {
                     }}
                   >
                     <Icon name="key" size={15} />
-                    修改密码
+                    {t('topbar.changePassword')}
                   </button>
                   <button class="menu-item" onClick={() => void logout()}>
                     <Icon name="arrow-left" size={15} />
-                    退出登录
+                    {t('topbar.logout')}
                   </button>
                 </PopMenu>
               )}
@@ -223,11 +225,13 @@ export function TopBar(props: { activeSessionId: string | null }) {
         )}
       </Show>
 
+      <LocaleMenu />
+
       <button
         class="icon-btn"
         classList={{ active: themeMenu() !== null }}
-        title="主题"
-        aria-label="主题"
+        title={t('theme.title')}
+        aria-label={t('theme.title')}
         aria-haspopup="menu"
         aria-expanded={themeMenu() !== null}
         onClick={(event) => {
@@ -255,7 +259,7 @@ export function TopBar(props: { activeSessionId: string | null }) {
                   }}
                 >
                   <Icon name={option.icon} size={15} />
-                  {option.label}
+                  {t(option.label)}
                   <Show when={themePreference() === option.value}>
                     <Icon name="check" size={14} class="menu-check" />
                   </Show>

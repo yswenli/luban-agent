@@ -8,6 +8,8 @@ import type { GlobalSessionStats } from '../../lib/types';
 import { bootstrap, refreshSessions, sessions, showToast } from '../../stores/app';
 import { dropChat } from '../../stores/chats';
 import { SelectField } from './Shared';
+import { formatTokenCompact } from '../../lib/format';
+import { t } from '../../i18n';
 
 /** 一张用量统计卡。 */
 function StatCard(props: { label: string; value: string; hint?: string }) {
@@ -57,7 +59,7 @@ export function DataTab() {
   const clear = async () => {
     if (busy()) return;
     if (target() !== 'all' && !targetWorkspace()) {
-      showToast('所选工作区已不存在，请重新选择清理范围', 'error');
+      showToast(t('data.workspaceGone'), 'error');
       return;
     }
     setBusy('clear');
@@ -77,7 +79,7 @@ export function DataTab() {
       // 被清掉的会话若是当前打开项，退回首页；设置浮层打开时只修底层视图
       pruneSessionView(remaining);
       await load();
-      showToast('会话已清空', 'success');
+      showToast(t('data.cleared'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -87,13 +89,15 @@ export function DataTab() {
 
   const confirmMessage = () =>
     target() === 'all'
-      ? '确定删除全部工作区下的会话与消息？该操作不可恢复。'
-      : `确定删除工作区「${targetWorkspace()?.name || targetWorkspace()?.rootPath || target()}」下的全部会话与消息？该操作不可恢复。`;
+      ? t('data.clearConfirmAll')
+      : t('data.clearConfirmWorkspace', {
+          name: targetWorkspace()?.name || targetWorkspace()?.rootPath || target(),
+        });
 
   return (
     <div class="settings-form">
       <div class="settings-form-head">
-        <span class="field-label">使用概览</span>
+        <span class="field-label">{t('data.overview')}</span>
         <div class="spacer" />
         <select
           class="text-input"
@@ -104,39 +108,39 @@ export function DataTab() {
             void load();
           }}
         >
-          <option value="0">全部时间</option>
-          <option value="7">最近 7 天</option>
-          <option value="30">最近 30 天</option>
+          <option value="0">{t('data.allTime')}</option>
+          <option value="7">{t('data.last7')}</option>
+          <option value="30">{t('data.last30')}</option>
         </select>
-        <button class="icon-btn" title="刷新" onClick={() => void load()}>
+        <button class="icon-btn" title={t('common.refresh')} onClick={() => void load()}>
           <Icon name="refresh" size={16} />
         </button>
       </div>
 
       <div class="stat-grid">
-        <StatCard label="会话数" value={String(stats()?.totalSessions ?? 0)} />
-        <StatCard label="消息数" value={String(stats()?.totalMessages ?? 0)} />
+        <StatCard label={t('data.sessions')} value={String(stats()?.totalSessions ?? 0)} />
+        <StatCard label={t('data.messages')} value={String(stats()?.totalMessages ?? 0)} />
         <StatCard
-          label="累计 Token"
-          value={(stats()?.totalTokens ?? 0).toLocaleString()}
-          hint={stats()?.days ? `统计覆盖 ${stats()!.days} 天` : undefined}
+          label={t('data.totalTokens')}
+          value={formatTokenCompact(stats()?.totalTokens ?? 0)}
+          hint={stats()?.days ? t('data.daysCovered', { days: stats()!.days }) : undefined}
         />
-        <StatCard label="日均 Token" value={Math.round(stats()?.averageDailyTokens ?? 0).toLocaleString()} />
+        <StatCard label={t('data.avgDailyTokens')} value={formatTokenCompact(Math.round(stats()?.averageDailyTokens ?? 0))} />
       </div>
 
       <div class="settings-form-head" style={{ 'margin-top': '26px' }}>
-        <span class="field-label">数据清理</span>
+        <span class="field-label">{t('data.cleanup')}</span>
       </div>
 
       <div class="field-grid">
         <SelectField
-          label="清理范围"
+          label={t('data.scope')}
           value={target()}
           options={[
-            { value: 'all', label: '全部工作区' },
+            { value: 'all', label: t('data.allWorkspaces') },
             ...workspaces().map((item) => ({ value: item.workspaceId, label: item.name || item.rootPath })),
           ]}
-          hint="清理前请先停止正在运行的会话；「全部工作区」清的是各工作区（含知识库工作区）的会话，不会删除知识库内容"
+          hint={t('data.scopeHint')}
           onChange={setTarget}
         />
       </div>
@@ -147,13 +151,13 @@ export function DataTab() {
           disabled={!!busy() || (target() !== 'all' && !targetWorkspace())}
           onClick={() => setPending(true)}
         >
-          {busy() === 'clear' ? '清理中…' : '清空会话数据'}
+          {busy() === 'clear' ? t('data.clearing') : t('data.clearButton')}
         </button>
       </div>
 
       <Show when={pending()}>
         <ConfirmActionDialog
-          title="清空会话数据"
+          title={t('data.clearButton')}
           message={confirmMessage()}
           onClose={() => setPending(false)}
           onConfirm={() => {

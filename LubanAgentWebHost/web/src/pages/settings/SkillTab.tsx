@@ -5,11 +5,12 @@ import type { SkillFile, SkillSummary } from '../../lib/types';
 import { showToast } from '../../stores/app';
 import { AreaField, FormActions, SettingsPane, TextField } from './Shared';
 import type { SettingsEntry } from './Shared';
+import { t } from '../../i18n';
 
 const empty = (): SkillFile => ({ id: '', name: '', description: '', category: '', triggers: '', body: '' });
 
 /** 未填分类的技能归到这一组，并排在最后。 */
-const UNCATEGORIZED = '未分类';
+const UNCATEGORIZED = '\u0000uncategorized';
 
 /** 按分类分组；组内保持列表接口返回的顺序（按显示名），组间按分类名，未分类垫底。 */
 function groupByCategory(items: SkillSummary[]): SettingsEntry[] {
@@ -28,7 +29,7 @@ function groupByCategory(items: SkillSummary[]): SettingsEntry[] {
         key: item.id,
         label: item.name,
         sub: item.id === item.name ? undefined : item.id,
-        group,
+        group: group === UNCATEGORIZED ? t('skill.uncategorized') : group,
       })),
     );
 }
@@ -42,7 +43,7 @@ function fileToBase64(file: File): Promise<string> {
       const index = text.indexOf(',');
       resolve(index >= 0 ? text.slice(index + 1) : text);
     };
-    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.onerror = () => reject(reader.error ?? new Error(t('plugins.fileReadFailed')));
     reader.readAsDataURL(file);
   });
 }
@@ -107,12 +108,12 @@ export function SkillTab(props: { scope: string }) {
 
   const save = async () => {
     if (!form().name.trim()) {
-      showToast('技能的 name 不能为空', 'error');
+      showToast(t('skill.nameRequired'), 'error');
       return;
     }
     if (!form().description.trim()) {
       // 与桌面端一致：description 供模型选择技能时匹配，不能为空
-      showToast('技能的 description 不能为空', 'error');
+      showToast(t('skill.descriptionRequired'), 'error');
       return;
     }
 
@@ -129,7 +130,7 @@ export function SkillTab(props: { scope: string }) {
         body: current.body,
       });
       await resetAgent();
-      showToast('技能已保存', 'success');
+      showToast(t('skill.saved'), 'success');
       await reload(result?.key ?? active());
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -142,13 +143,13 @@ export function SkillTab(props: { scope: string }) {
     const key = active();
     if (!key) return;
     const label = form().name || key;
-    if (!window.confirm(`删除技能「${label}」（目录 ${key}）？该操作不可撤销。`)) return;
+    if (!window.confirm(t('skill.deleteConfirm', { name: label, key }))) return;
 
     setBusy(true);
     try {
       await settingsApi.deleteSkill(props.scope, key);
       await resetAgent();
-      showToast('技能已删除', 'success');
+      showToast(t('skill.deleted'), 'success');
       setActive(null);
       setForm(empty());
       await reload(null);
@@ -171,10 +172,10 @@ export function SkillTab(props: { scope: string }) {
       const imported = result?.imported?.length ?? 0;
       const skipped = result?.skipped?.length ?? 0;
       const ignored = result?.ignored?.length ?? 0;
-      const parts = [`已导入 ${imported} 个技能`];
-      if (skipped > 0) parts.push(`跳过 ${skipped} 个条目`);
-      if (ignored > 0) parts.push(`${ignored} 个非 SKILL.md 文件未导入（仅支持单文件技能）`);
-      showToast(parts.join('，'), imported > 0 ? 'success' : 'error');
+      const parts = [t('skill.imported', { count: imported })];
+      if (skipped > 0) parts.push(t('skill.importSkipped', { count: skipped }));
+      if (ignored > 0) parts.push(t('skill.importIgnored', { count: ignored }));
+      showToast(parts.join(t('common.listSeparator')), imported > 0 ? 'success' : 'error');
       await reload(result?.imported?.[0] ?? null);
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -185,15 +186,15 @@ export function SkillTab(props: { scope: string }) {
 
   return (
     <SettingsPane
-      title="技能"
+      title={t('skill.title')}
       entries={groupByCategory(items())}
       activeKey={active()}
-      emptyText="该作用域下还没有文件型技能。"
-      createLabel="新建"
+      emptyText={t('skill.empty')}
+      createLabel={t('common.new')}
       headActions={
         <>
           <button class="btn ghost" onClick={() => fileInput?.click()} disabled={busy()}>
-            导入 ZIP
+            {t('skill.importZip')}
           </button>
           <input
             ref={(el) => (fileInput = el)}
@@ -217,37 +218,37 @@ export function SkillTab(props: { scope: string }) {
     >
       <div class="field-grid">
         <TextField
-          label="名称"
+          label={t('common.name')}
           value={form().name}
-          hint={active() ? `目录名 ${active()}（保存不移动目录）` : '新建时目录名按名称生成'}
+          hint={active() ? t('skill.nameHintEdit', { key: active() ?? '' }) : t('skill.nameHintNew')}
           onInput={(v) => patch('name', v)}
         />
-        <TextField label="分类" value={form().category} hint="左侧按此分组" onInput={(v) => patch('category', v)} />
-        <TextField label="描述" value={form().description} wide hint="必填，模型据此判断是否选用该技能" onInput={(v) => patch('description', v)} />
+        <TextField label={t('skill.category')} value={form().category} hint={t('skill.categoryHint')} onInput={(v) => patch('category', v)} />
+        <TextField label={t('common.description')} value={form().description} wide hint={t('skill.descriptionHint')} onInput={(v) => patch('description', v)} />
         <TextField
-          label="触发词"
+          label={t('skill.triggers')}
           value={form().triggers}
-          hint="逗号分隔"
+          hint={t('skill.triggersHint')}
           wide
           onInput={(v) => patch('triggers', v)}
         />
         <AreaField
-          label="正文"
+          label={t('skill.body')}
           value={form().body}
           rows={10}
           wide
           mono
-          placeholder="Markdown 正文；写清适用场景与步骤。"
+          placeholder={t('skill.bodyPlaceholder')}
           onInput={(v) => patch('body', v)}
         />
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void save()} disabled={busy()}>
-          保存
+          {t('common.save')}
         </button>
         <Show when={active()}>
           <button class="btn danger" onClick={() => void remove()} disabled={busy()}>
-            删除
+            {t('common.delete')}
           </button>
         </Show>
       </FormActions>

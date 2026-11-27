@@ -16,6 +16,7 @@ import {
   formatCompactDuration,
   formatDuration,
   formatMessageTime,
+  formatNumber,
   formatTokenCompact,
   isImageMediaType,
   truncate,
@@ -62,22 +63,23 @@ import {
   wikiWorkspaceIds,
   workspaceName,
 } from '../stores/app';
+import { t } from '../i18n';
 
 /** 思考档位显示名；未知枚举名原样显示，避免新档位被吞掉。 */
 function effortLabel(value: string): string {
   switch (value) {
     case '':
-      return '跟随模型';
+      return t('effort.followModel');
     case 'None':
-      return '不思考';
+      return t('effort.none');
     case 'Low':
-      return '低';
+      return t('effort.low');
     case 'Medium':
-      return '中';
+      return t('effort.medium');
     case 'High':
-      return '高';
+      return t('effort.high');
     case 'ExtraHigh':
-      return '极高';
+      return t('effort.extraHigh');
     default:
       return value;
   }
@@ -165,7 +167,7 @@ export function ChatPage(props: { sessionId: string }) {
   const [hasNew, setHasNew] = createSignal(false);
 
   const session = createMemo(() => sessions().find((item) => item.sessionId === props.sessionId) ?? null);
-  const title = () => session()?.title || '未命名会话';
+  const title = () => session()?.title || t('chat.untitledSession');
   const totalTokens = () => session()?.totalTokens ?? 0;
 
   /** 本会话生效的生成参数；尚未拉取时为 null，按「跟随模型」处理。 */
@@ -201,14 +203,19 @@ export function ChatPage(props: { sessionId: string }) {
   });
   /** 悬停提示：窗口内用量 / 窗口与百分比，并附会话累计值；窗口来自预算档位时标注为估算。 */
   const tokenUsageTitle = () => {
-    const total = totalTokens().toLocaleString('zh-CN');
+    const total = formatNumber(totalTokens());
     const limit = tokenLimit();
-    if (limit <= 0) return `当前会话累计已消费 ${total} token`;
+    if (limit <= 0) return t('chat.tokenTotalOnly', { total });
     const percent = (tokenRatio() * 100).toFixed(1);
     const fromWindow = (generation()?.contextWindow ?? 0) > 0;
-    const used = tokenUsedInWindow().toLocaleString('zh-CN');
-    const window = limit.toLocaleString('zh-CN');
-    return `当前窗口已用 ${used} / ${window} token（${percent}%${fromWindow ? '' : '，窗口按上下文预算档位估算'}）；会话累计 ${total} token`;
+    const used = formatNumber(tokenUsedInWindow());
+    const window = formatNumber(limit);
+    return t('chat.tokenWindowUsage', {
+      used,
+      window,
+      percent,
+      estimated: fromWindow ? '' : t('chat.windowEstimated'),
+    });
   };
 
   /** 当前思考档位（枚举名）；空串即跟随模型。 */
@@ -555,7 +562,7 @@ export function ChatPage(props: { sessionId: string }) {
     } catch (error) {
       if (epoch !== skillsEpoch) return;
       skillsFailed = true;
-      showToast(error instanceof Error ? error.message : '技能列表加载失败', 'error');
+      showToast(error instanceof Error ? error.message : t('chat.skillsLoadFailed'), 'error');
     } finally {
       if (epoch === skillsEpoch) skillsLoading = false;
     }
@@ -600,7 +607,7 @@ export function ChatPage(props: { sessionId: string }) {
     if (before && before !== after) {
       // 落库值对新模型无效：顺手清掉思考强度，档位保持不变（窗口会由后端按新模型收敛）
       await saveSessionGeneration(props.sessionId, '', currentTier());
-      showToast('当前模型不支持该思考档位，已改为跟随模型', 'info');
+      showToast(t('chat.effortUnsupported'), 'info');
     }
   }
 
@@ -613,7 +620,7 @@ export function ChatPage(props: { sessionId: string }) {
       const command = list[commandIndex()] ?? list[0];
       if (command) {
         if (chat.streaming()) {
-          showToast('本轮进行中，命令暂不可用', 'info');
+          showToast(t('chat.commandBusy'), 'info');
           return;
         }
         runCommand(command);
@@ -629,7 +636,7 @@ export function ChatPage(props: { sessionId: string }) {
     }
     // 附件没传完就发不出去：和发送按钮同一判定，先拦住，不能清空输入或贴底
     if (chat.pending().some((item) => item.status === 'uploading')) {
-      showToast('附件还在上传，请稍候', 'info');
+      showToast(t('chat.attachmentsUploading'), 'info');
       return;
     }
 
@@ -670,14 +677,17 @@ export function ChatPage(props: { sessionId: string }) {
         return;
       case 'action:cyclePermissionMode':
         cyclePermissionMode();
-        showToast(`权限模式：${permissionModeLabel()}`, 'info');
+        showToast(t('chat.permissionModeToast', { mode: permissionModeLabel() }), 'info');
         return;
       case 'action:help':
         setHelpOpen(true);
         return;
       case 'action:showSessionStats':
         showToast(
-          `累计 ${totalTokens()} Token · ${session()?.messageCount ?? 0} 条消息`,
+          t('chat.sessionStats', {
+            tokens: formatNumber(totalTokens()),
+            count: session()?.messageCount ?? 0,
+          }),
           'info',
         );
         return;
@@ -689,7 +699,7 @@ export function ChatPage(props: { sessionId: string }) {
         openWiki();
         return;
       default:
-        showToast(`暂不支持命令 ${command.name}`, 'info');
+        showToast(t('chat.unknownCommand', { name: command.name }), 'info');
     }
   }
 
@@ -698,12 +708,10 @@ export function ChatPage(props: { sessionId: string }) {
     if (command.action === 'action:clearMessages') {
       const count = session()?.messageCount ?? 0;
       const head =
-        count > 0
-          ? `当前会话的 ${count} 条消息将被永久删除，无法恢复。`
-          : '当前会话的消息将被永久删除，无法恢复。';
-      return chat.streaming() ? `${head}正在生成的这一轮会先被中断。` : head;
+        count > 0 ? t('chat.clearWarningCount', { count }) : t('chat.clearWarning');
+      return chat.streaming() ? t('chat.clearWarningStreaming', { head }) : head;
     }
-    return '该命令执行后无法撤销，确定继续？';
+    return t('chat.commandIrreversible');
   }
 
   async function clearMessages() {
@@ -711,7 +719,7 @@ export function ChatPage(props: { sessionId: string }) {
       await post('/session/clearMessages', { sessionId: props.sessionId });
       await chat.loadHistory(true);
       await refreshSessions();
-      showToast('已清空消息', 'success');
+      showToast(t('chat.cleared'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     }
@@ -824,7 +832,7 @@ export function ChatPage(props: { sessionId: string }) {
       .filter((item) => item.workspaceId === workspaceId)
       .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0];
     if (latest) openSession(latest.sessionId);
-    else showToast('该项目还没有会话', 'info');
+    else showToast(t('chat.projectNoSession'), 'info');
   };
 
   return (
@@ -832,18 +840,18 @@ export function ChatPage(props: { sessionId: string }) {
       <div class="chat-body">
         <ProjectSidebar selectedWorkspaceId={session()?.workspaceId ?? null} onSelect={openProjectLatestSession} />
         <Show when={draggable()}>
-          <SideResizer label="调整项目栏宽度" />
+          <SideResizer label={t('chat.resizeProjectBar')} />
         </Show>
 
         <div class="chat-main">
           <div class="chat-head">
-            <button class="icon-btn" title="返回列表" onClick={goBack}>
+            <button class="icon-btn" title={t('chat.backToList')} onClick={goBack}>
           <Icon name="arrow-left" size={18} />
         </button>
         <span
           class="ws-badge sm"
           style={{ background: workspaceColor(session()?.workspaceId) }}
-          title={workspaceName(session()?.workspaceId) || '未知项目'}
+          title={workspaceName(session()?.workspaceId) || t('chat.unknownProject')}
         >
           {workspaceInitial(workspaceName(session()?.workspaceId))}
         </span>
@@ -867,7 +875,7 @@ export function ChatPage(props: { sessionId: string }) {
         <button
           class="icon-btn"
           classList={{ active: workspaceOpen() }}
-          title="查看工作区"
+          title={t('chat.viewWorkspace')}
           aria-pressed={workspaceOpen()}
           onClick={toggleWorkspacePanel}
         >
@@ -875,7 +883,7 @@ export function ChatPage(props: { sessionId: string }) {
         </button>
         <button
           class="icon-btn"
-          title="更多"
+          title={t('chat.more')}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             const position = menuAt(rect, { width: 172, height: 124, align: 'end' });
@@ -889,7 +897,7 @@ export function ChatPage(props: { sessionId: string }) {
       <div class="chat-scroll-wrap">
         <div class="chat-scroll" ref={(element) => (scrollEl = element)}>
           <div class="thread" ref={(element) => (threadEl = element)}>
-            <Show when={!chat.loadingHistory()} fallback={<div class="loading-line">加载消息…</div>}>
+            <Show when={!chat.loadingHistory()} fallback={<div class="loading-line">{t('chat.loadingMessages')}</div>}>
               <Show when={chat.historyError()}>
                 <div class="notice error">
                   <Icon name="alert" size={16} />
@@ -900,8 +908,8 @@ export function ChatPage(props: { sessionId: string }) {
               <Show when={chat.items().length === 0 && !chat.historyError()}>
                 <div class="empty">
                   <Icon name="spark" size={28} />
-                  <h2>开始对话</h2>
-                  <p>输入问题，或点左下角「+」加入图片与文件。</p>
+                  <h2>{t('chat.startTitle')}</h2>
+                  <p>{t('chat.startHint')}</p>
                 </div>
               </Show>
 
@@ -915,7 +923,7 @@ export function ChatPage(props: { sessionId: string }) {
 
               <Show when={chat.plans().length > 0}>
                 <div class="plan-strip">
-                  <span class="section-label">计划</span>
+                  <span class="section-label">{t('chat.plan')}</span>
                   <For each={chat.plans()}>
                     {(entry, index) => (
                       <div class="plan-item">
@@ -929,13 +937,13 @@ export function ChatPage(props: { sessionId: string }) {
 
               <Show when={chat.progress().length > 0}>
                 <div class="plan-strip">
-                  <span class="section-label">子代理进度</span>
+                  <span class="section-label">{t('chat.subagentProgress')}</span>
                   <For each={chat.progress()}>{(text) => <div class="plan-item">{text}</div>}</For>
                 </div>
               </Show>
 
               <Show when={chat.streaming()}>
-                <div class="typing" role="status" aria-label="生成中" />
+                <div class="typing" role="status" aria-label={t('chat.generating')} />
               </Show>
             </Show>
           </div>
@@ -944,7 +952,7 @@ export function ChatPage(props: { sessionId: string }) {
         <Show when={canScroll() && (!atBottom() || !atTop())}>
           <button
             class="chat-fab"
-            title={atBottom() ? '回到顶部' : '回到底部'}
+            title={atBottom() ? t('chat.toTop') : t('chat.toBottom')}
             onClick={() => jumpTo(atBottom() ? 'top' : 'bottom')}
           >
             <Icon name={atBottom() ? 'arrow-up' : 'arrow-down'} size={18} />
@@ -983,7 +991,7 @@ export function ChatPage(props: { sessionId: string }) {
                           class="thumb"
                           src={item.previewUrl}
                           alt={item.fileName}
-                          title="点击查看大图"
+                          title={t('chat.viewLarge')}
                           onClick={() => setThumbZoom({ url: item.previewUrl!, name: item.fileName })}
                         />
                       </Show>
@@ -992,10 +1000,10 @@ export function ChatPage(props: { sessionId: string }) {
                           {item.fileName}
                         </span>
                         <span class="size">
-                          {item.status === 'uploading' ? '上传中…' : item.status === 'error' ? item.error : formatBytes(item.size)}
+                          {item.status === 'uploading' ? t('chat.uploading') : item.status === 'error' ? item.error : formatBytes(item.size)}
                         </span>
                       </span>
-                      <button class="remove" title="移除" onClick={() => chat.removePending(item.id)}>
+                      <button class="remove" title={t('common.remove')} onClick={() => chat.removePending(item.id)}>
                         <Icon name="close" size={13} />
                       </button>
                     </div>
@@ -1007,13 +1015,13 @@ export function ChatPage(props: { sessionId: string }) {
             <Show when={optimizing()}>
               <div class="composer-busy">
                 <span class="busy-dot" />
-                处理中…
+                {t('chat.optimizing')}
               </div>
             </Show>
 
             <ComposerEditor
               api={(handle) => (composerApi = handle)}
-              placeholder="给 Luban Agent 发送消息（Enter 发送，Shift+Enter 换行）"
+              placeholder={t('chat.composerPlaceholder')}
               disabled={optimizing()}
               resolveSkill={(id) => {
                 const skill = mentionSkills().find((item) => item.id === id);
@@ -1089,7 +1097,7 @@ export function ChatPage(props: { sessionId: string }) {
             <div class="composer-bar">
               <button
                 class="pill-btn"
-                title="添加图片和文件 / 命令"
+                title={t('chat.addFilesTitle')}
                 disabled={optimizing()}
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
@@ -1101,7 +1109,7 @@ export function ChatPage(props: { sessionId: string }) {
 
               <button
                 class="pill-btn value"
-                title="切换本会话模型（不影响其他会话）"
+                title={t('chat.switchModel')}
                 disabled={optimizing()}
                 onClick={openModelMenu}
               >
@@ -1112,7 +1120,7 @@ export function ChatPage(props: { sessionId: string }) {
 
               <button
                 class="pill-btn value"
-                title="切换权限模式"
+                title={t('chat.switchPermission')}
                 disabled={optimizing()}
                 onClick={() => {
                   cyclePermissionMode();
@@ -1125,7 +1133,7 @@ export function ChatPage(props: { sessionId: string }) {
               <Show when={effortOptions().length > 1}>
                 <button
                   class="pill-btn value"
-                  title="思考强度（本会话）"
+                  title={t('chat.effortTitle')}
                   disabled={optimizing()}
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
@@ -1144,22 +1152,22 @@ export function ChatPage(props: { sessionId: string }) {
                   fallback={
                     <span
                       class="pill-btn value static"
-                      title={`上下文预算（超出后自动压缩）：窗口 ${formatTier(contextPillValue())}，固定窗口不提前压缩`}
+                      title={t('chat.ctxFixedTitle', { window: formatTier(contextPillValue()) })}
                     >
-                      上下文 {formatTier(contextPillValue())}
+                      {t('chat.ctxLabel', { tier: formatTier(contextPillValue()) })}
                     </span>
                   }
                 >
                   <button
                     class="pill-btn value"
-                    title="上下文预算（超出后自动压缩）：档位越小越早压缩"
+                    title={t('chat.ctxTitle')}
                     disabled={optimizing()}
                     onClick={(event) => {
                       const rect = event.currentTarget.getBoundingClientRect();
                       setCtxMenu(menuAt(rect, { width: 230, height: 64 + tierOptions().length * 34, gap: 6, align: 'start' }));
                     }}
                   >
-                    上下文 {formatTier(contextPillValue())}
+                    {t('chat.ctxLabel', { tier: formatTier(contextPillValue()) })}
                     <Icon name="chevron-down" size={13} />
                   </button>
                 </Show>
@@ -1169,7 +1177,7 @@ export function ChatPage(props: { sessionId: string }) {
 
               <button
                 class="optimize-btn"
-                title="把输入内容改写成更清晰的需求表述"
+                title={t('chat.optimizeTitle')}
                 disabled={!input().trim() || optimizing() || chat.streaming()}
                 onClick={() => void optimizeInput()}
               >
@@ -1179,7 +1187,13 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="send-btn"
                 classList={{ stop: chat.streaming() && !input().trim() }}
-                title={chat.streaming() ? (input().trim() ? '加入发送队列' : '停止本轮') : '发送'}
+                title={
+                  chat.streaming()
+                    ? input().trim()
+                      ? t('chat.sendQueued')
+                      : t('chat.stopRound')
+                    : t('chat.send')
+                }
                 disabled={
                   optimizing() ||
                   (!input().trim() && !chat.streaming()) ||
@@ -1204,7 +1218,7 @@ export function ChatPage(props: { sessionId: string }) {
                     >
                       <span class="command-name">@{skill.id}</span>
                       <span class="command-desc">{skill.description || skill.name}</span>
-                      <span class="command-tag">{skill.isBuiltin ? '内置' : skill.category}</span>
+                      <span class="command-tag">{skill.isBuiltin ? t('chat.builtinSkill') : skill.category}</span>
                     </button>
                   )}
                 </For>
@@ -1232,13 +1246,13 @@ export function ChatPage(props: { sessionId: string }) {
           </div>
 
           <div class="hint">
-            附件最多 {bootstrap()?.attachments.maxCount ?? 5} 个 · 支持拖放与粘贴 · Enter 发送 / Shift+Enter 换行
+            {t('chat.attachmentsHint', { count: bootstrap()?.attachments.maxCount ?? 5 })}
           </div>
         </div>
         </div>
 
         <Show when={workspaceOpen() && !narrow()}>
-          <SideResizer label="调整工作区宽度" target={workspaceResizeTarget} invert />
+          <SideResizer label={t('chat.resizeWorkspace')} target={workspaceResizeTarget} invert />
         </Show>
         {/* 外层只管占位宽度，内层负责横向位移：两者同步才是「抽屉滑出」而不是「被压扁」 */}
         <div
@@ -1278,8 +1292,8 @@ export function ChatPage(props: { sessionId: string }) {
               disabled={!captureSupported}
               title={
                 captureSupported
-                  ? '框选屏幕区域并标注，确认后作为附件加入'
-                  : '当前访问地址不是安全上下文，浏览器不允许抓屏；请改用 https 或 localhost 打开'
+                  ? t('chat.screenshotTitle')
+                  : t('chat.screenshotUnsupported')
               }
               onClick={() => {
                 setPlusMenu(null);
@@ -1287,10 +1301,10 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="camera" size={16} />
-              截图
+              {t('chat.screenshot')}
               <div class="spacer" />
               <Show when={!captureSupported}>
-                <span class="sub">需 https</span>
+                <span class="sub">{t('chat.needsHttps')}</span>
               </Show>
             </button>
             <button
@@ -1301,7 +1315,7 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="image" size={16} />
-              图片和文件
+              {t('chat.imagesAndFiles')}
               <div class="spacer" />
               <span class="sub">Ctrl+U</span>
             </button>
@@ -1315,7 +1329,7 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="terminal" size={16} />
-              命令
+              {t('chat.commands')}
               <div class="spacer" />
               <span class="sub">/</span>
             </button>
@@ -1354,14 +1368,14 @@ export function ChatPage(props: { sessionId: string }) {
           <PopMenu style={{ left: `${menu().x}px`, top: `${menu().y}px`, 'min-width': '230px' }} onClose={() => setCtxMenu(null)}>
             <div class="menu-ctx standalone">
               <div class="menu-ctx-head">
-                上下文预算
+                {t('chat.ctxMenuTitle')}
                 <Show when={tierWindow() > 0}>
                   <span class="win">
-                    窗口 <b>{formatTier(tierWindow())}</b>
+                    {t('chat.windowLabel')} <b>{formatTier(tierWindow())}</b>
                   </span>
                 </Show>
               </div>
-              <div class="menu-ctx-note">超出后自动压缩 · 档位越小越早压缩</div>
+              <div class="menu-ctx-note">{t('chat.ctxNote')}</div>
               <For each={tierOptions()}>
                 {(tier) => {
                   const isDefault = tier === Math.max(...tierOptions());
@@ -1369,7 +1383,7 @@ export function ChatPage(props: { sessionId: string }) {
                     <button
                       class="menu-item"
                       classList={{ active: currentTier() === tier }}
-                      title="档位越小越早触发压缩：省 token，但更早丢弃历史"
+                      title={t('chat.ctxTierTitle')}
                       onClick={() => {
                         setCtxMenu(null);
                         // 档位按整体替换提交：带上当前思考强度，避免切档位时把它清掉
@@ -1377,7 +1391,7 @@ export function ChatPage(props: { sessionId: string }) {
                       }}
                     >
                       <span class="tier">{formatTier(tier)}</span>
-                      <span class="hint-role">{isDefault ? '默认' : '提前压缩'}</span>
+                      <span class="hint-role">{isDefault ? t('chat.tierDefault') : t('chat.tierEarly')}</span>
                       <div class="spacer" />
                       <Show when={currentTier() === tier}>
                         <Icon name="check" size={15} />
@@ -1441,10 +1455,10 @@ export function ChatPage(props: { sessionId: string }) {
                 )}
               </For>
               <Show when={(bootstrap()?.providers ?? []).length === 0}>
-                <div class="menu-item faint">还没有供应商</div>
+                <div class="menu-item faint">{t('chat.noProviders')}</div>
               </Show>
               <Show when={modelsLoading()}>
-                <div class="menu-item faint">正在拉取模型列表…</div>
+                <div class="menu-item faint">{t('chat.loadingModels')}</div>
               </Show>
             </div>
           </PopMenu>
@@ -1462,7 +1476,7 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="pencil" size={15} />
-              重命名
+              {t('common.rename')}
             </button>
             <button
               class="menu-item"
@@ -1472,7 +1486,7 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="refresh" size={15} />
-              清空消息
+              {t('chat.clearMessages')}
             </button>
             <button
               class="menu-item"
@@ -1482,7 +1496,7 @@ export function ChatPage(props: { sessionId: string }) {
               }}
             >
               <Icon name="trash" size={15} />
-              删除会话
+              {t('chat.deleteSession')}
             </button>
           </PopMenu>
         )}
@@ -1524,8 +1538,8 @@ export function ChatPage(props: { sessionId: string }) {
 
       <Show when={dialog() === 'rename'}>
         <TextPromptDialog
-          title="重命名会话"
-          label="标题"
+          title={t('chat.renameSessionTitle')}
+          label={t('chat.titleLabel')}
           initialValue={title()}
           onClose={() => setDialog(null)}
           onConfirm={(value) => {
@@ -1537,8 +1551,8 @@ export function ChatPage(props: { sessionId: string }) {
 
       <Show when={dialog() === 'delete'}>
         <ConfirmActionDialog
-          title="删除会话"
-          message={`确定删除「${truncate(title(), 40)}」？该会话的消息将一并删除。`}
+          title={t('chat.deleteSession')}
+          message={t('chat.deleteSessionConfirm', { name: truncate(title(), 40) })}
           onClose={() => setDialog(null)}
           onConfirm={() => {
             setDialog(null);
@@ -1554,9 +1568,11 @@ export function ChatPage(props: { sessionId: string }) {
       <Show when={pendingCommand()}>
         {(command) => (
           <ConfirmActionDialog
-            title={`执行 ${command().name}？`}
+            title={t('chat.runCommandTitle', { name: command().name })}
             message={commandWarning(command())}
-            confirmText={command().action === 'action:clearMessages' ? '清空消息' : '继续执行'}
+            confirmText={
+              command().action === 'action:clearMessages' ? t('chat.clearMessages') : t('chat.continue')
+            }
             onClose={() => setPendingCommand(null)}
             onConfirm={() => {
               const target = command();
@@ -1651,22 +1667,22 @@ function ChatRow(props: {
             <Show when={item().state}>
               {(state) => (
                 <div class={`msg-state ${state()}`}>
-                  <Switch fallback={<span>排队中 · 本轮结束后自动发送</span>}>
+                  <Switch fallback={<span>{t('chat.queueNote')}</span>}>
                     <Match when={state() === 'sending'}>
-                      <span>发送中…</span>
+                      <span>{t('chat.sending')}</span>
                     </Match>
                     <Match when={state() === 'failed'}>
-                      <span>未发出</span>
+                      <span>{t('chat.notSent')}</span>
                     </Match>
                   </Switch>
                   <Show when={state() === 'failed'}>
                     <button class="msg-state-btn" onClick={() => props.onRetry(item().id)}>
-                      重试
+                      {t('common.retry')}
                     </button>
                   </Show>
                   <Show when={state() !== 'sending'}>
                     <button class="msg-state-btn" onClick={() => props.onCancel(item().id)}>
-                      取消
+                      {t('common.cancel')}
                     </button>
                   </Show>
                 </div>
@@ -1708,14 +1724,14 @@ function ChatRow(props: {
 
             <div class="msg-meta">
               <Show when={item().history}>
-                <span class="status history">历史记录</span>
+                <span class="status history">{t('chat.history')}</span>
               </Show>
               <span>{formatMessageTime(item().time)}</span>
               <Show when={formatDuration(item().durationMs)}>
-                <span class="metric" title="本轮回复耗时">{formatDuration(item().durationMs)}</span>
+                <span class="metric" title={t('chat.replyDuration')}>{formatDuration(item().durationMs)}</span>
               </Show>
               <Show when={item().tokens}>
-                <span class="metric" title="本轮 token 用量">{item().tokens!.toLocaleString('zh-CN')} tok</span>
+                <span class="metric" title={t('chat.tokenUsage')}>{formatNumber(item().tokens!)} tok</span>
               </Show>
             </div>
           </div>
@@ -1726,7 +1742,7 @@ function ChatRow(props: {
 }
 
 function AttachmentChip(props: { attachment: StoredAttachment; workspaceId?: string }) {
-  const name = () => props.attachment.FileName || '附件';
+  const name = () => props.attachment.FileName || t('chat.attachment');
   const size = () => formatBytes(props.attachment.FileSize ?? 0);
 
   // 只有图片且宿主给出了工作区内相对路径才可点：非图片走 /file/read 会得到「不支持预览」提示页
@@ -1759,7 +1775,11 @@ function AttachmentChip(props: { attachment: StoredAttachment; workspaceId?: str
         <button
           type="button"
           class="attachment-chip clickable"
-          title={props.attachment.SourcePath ? `查看 ${name()}（${props.attachment.SourcePath}）` : `查看 ${name()}`}
+          title={
+            props.attachment.SourcePath
+              ? t('chat.viewAttachmentPath', { name: name(), path: props.attachment.SourcePath })
+              : t('chat.viewAttachment', { name: name() })
+          }
           onClick={() => openFilePreview(path(), props.workspaceId)}
         >
           {content()}
@@ -1784,9 +1804,9 @@ function ThinkingBlockView(props: { text: string; durationMs?: number; live: boo
         onClick={() => setOpen((value) => !value)}
       >
         <Icon name="lightbulb" size={14} />
-        思考过程
+        {t('chat.thinking')}
         <Show when={formatCompactDuration(props.durationMs)}>
-          <span class="summary-time" title="思考耗时">
+          <span class="summary-time" title={t('chat.thinkingDuration')}>
             {formatCompactDuration(props.durationMs)}
           </span>
         </Show>
@@ -1824,10 +1844,10 @@ function ToolGroupView(props: { tools: () => ToolCard[] }) {
         onClick={() => setOpen((value) => !value)}
       >
         <Icon name="terminal" size={14} />
-        工具调用
-        <span class="faint">{props.tools().length} 个</span>
+        {t('chat.toolCalls')}
+        <span class="faint">{t('chat.toolCount', { count: props.tools().length })}</span>
         <Show when={formatCompactDuration(durationMs())}>
-          <span class="summary-time" title="工具调用耗时">
+          <span class="summary-time" title={t('chat.toolDuration')}>
             {formatCompactDuration(durationMs())}
           </span>
         </Show>
@@ -1849,15 +1869,15 @@ function ToolCardView(props: { tool: () => ToolCard }) {
   const label = createMemo(() => {
     switch (props.tool().status) {
       case 'running':
-        return '执行中';
+        return t('chat.statusRunning');
       case 'done':
-        return '完成';
+        return t('chat.statusDone');
       case 'failed':
-        return '失败';
+        return t('chat.statusFailed');
       case 'denied':
-        return '已拒绝';
+        return t('chat.statusDenied');
       default:
-        return '历史记录';
+        return t('chat.history');
     }
   });
 
@@ -1877,23 +1897,23 @@ function ToolCardView(props: { tool: () => ToolCard }) {
       <Show when={open()}>
         <div class="tool-body">
           <div>
-            <div class="tool-label">参数</div>
-            <pre class="tool-pre">{props.tool().argumentsText || '（无参数）'}</pre>
+            <div class="tool-label">{t('chat.arguments')}</div>
+            <pre class="tool-pre">{props.tool().argumentsText || t('chat.noArguments')}</pre>
           </div>
           <Show when={props.tool().resultSummary}>
             <div>
-              <div class="tool-label">结果摘要</div>
+              <div class="tool-label">{t('chat.resultSummary')}</div>
               <pre class="tool-pre">{props.tool().resultSummary}</pre>
             </div>
           </Show>
           <Show when={props.tool().error}>
             <div>
-              <div class="tool-label">错误</div>
+              <div class="tool-label">{t('common.error')}</div>
               <pre class="tool-pre">{props.tool().error}</pre>
             </div>
           </Show>
           <Show when={props.tool().status === 'history'}>
-            <div class="faint">历史回放只保留调用参数，不包含工具执行结果。</div>
+            <div class="faint">{t('chat.historyReplayNote')}</div>
           </Show>
         </div>
       </Show>
@@ -1930,7 +1950,7 @@ function ToolConfirmDialog(props: {
 
   const argsText = createMemo(() => {
     const value = props.request.arguments;
-    if (value === null || value === undefined) return '（无参数）';
+    if (value === null || value === undefined) return t('chat.noArguments');
     if (typeof value === 'string') return value;
     try {
       return JSON.stringify(value, null, 2);
@@ -1948,9 +1968,9 @@ function ToolConfirmDialog(props: {
     const desc = origin.description?.trim() ?? '';
     // 三字段全空与框架一致：视为无来源，不占行
     if (!node && !role && !desc) return null;
-    const roleText = role ? `（角色 ${role}）` : '';
-    const descText = desc ? `：${desc}` : '';
-    return `来源：编排节点 ${node || '未命名'}${roleText}${descText}`;
+    const roleText = role ? t('chat.roleSuffix', { role }) : '';
+    const descText = desc ? t('chat.descSuffix', { desc }) : '';
+    return t('chat.origin', { name: node || t('chat.unnamed'), role: roleText, desc: descText });
   });
 
   return (
@@ -1958,33 +1978,35 @@ function ToolConfirmDialog(props: {
       <div class="dialog" role="dialog" aria-modal="true">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title">允许执行 {props.request.toolName}？</div>
-            <div class="dialog-sub">工具调用需要你确认</div>
+            <div class="dialog-title">{t('chat.confirmToolTitle', { name: props.request.toolName })}</div>
+            <div class="dialog-sub">{t('chat.confirmToolSub')}</div>
             <Show when={originText()}>
               {(text) => <div class="dialog-sub">{text()}</div>}
             </Show>
           </div>
         </div>
         <div class="dialog-body">
-          <div class="tool-label">参数</div>
+          <div class="tool-label">{t('chat.arguments')}</div>
           <pre class="tool-pre">{argsText()}</pre>
         </div>
         <div class="dialog-foot">
           {/* 只在最后一分钟提示：长时间等待时秒数只会占位刷屏，临期才需要提醒 */}
           <span class="countdown">
-            <Show when={remaining() <= 60}>{remaining()} 秒后按拒绝处理</Show>
+            <Show when={remaining() <= 60}>
+              {t('chat.rejectIn', { seconds: remaining() })}
+            </Show>
           </span>
           <button class="btn ghost" onClick={() => props.onResolve('deny')}>
-            拒绝
+            {t('chat.deny')}
           </button>
           <button class="btn" onClick={() => props.onResolve('allowSession')}>
-            本会话全允许
+            {t('chat.allowSession')}
           </button>
           <button class="btn" onClick={() => props.onResolve('allowAll')}>
-            本轮全允许
+            {t('chat.allowAll')}
           </button>
           <button class="btn primary" onClick={() => props.onResolve('allow')}>
-            允许
+            {t('chat.allow')}
           </button>
         </div>
       </div>
@@ -2043,9 +2065,9 @@ function QuestionDialog(props: {
     const role = origin.role?.trim() ?? '';
     const desc = origin.description?.trim() ?? '';
     if (!node && !role && !desc) return null;
-    const roleText = role ? `（角色 ${role}）` : '';
-    const descText = desc ? `：${desc}` : '';
-    return `来源：编排节点 ${node || '未命名'}${roleText}${descText}`;
+    const roleText = role ? t('chat.roleSuffix', { role }) : '';
+    const descText = desc ? t('chat.descSuffix', { desc }) : '';
+    return t('chat.origin', { name: node || t('chat.unnamed'), role: roleText, desc: descText });
   });
 
   const current = createMemo(() => questions[step()]);
@@ -2097,8 +2119,10 @@ function QuestionDialog(props: {
   const missingText = createMemo(() => {
     const list = missing();
     if (list.length === 0) return '';
-    if (total === 1) return '本题未作答';
-    return `第 ${list.map((index) => index + 1).join('、')} 题未作答`;
+    if (total === 1) return t('chat.unansweredOne');
+    return t('chat.unansweredMany', {
+      list: list.map((index) => index + 1).join(t('chat.questionListSeparator')),
+    });
   });
 
   /** 每题至少有一个选项或一段自由输入；自由输入与选项可并存，自由输入走独立字段回传。 */
@@ -2136,8 +2160,10 @@ function QuestionDialog(props: {
       <div class="dialog" role="dialog" aria-modal="true">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title">{total > 1 ? `Agent 有 ${total} 个问题` : 'Agent 想请你确认'}</div>
-            <div class="dialog-sub">回答后 Agent 会继续执行</div>
+            <div class="dialog-title">
+              {total > 1 ? t('chat.agentQuestions', { count: total }) : t('chat.agentConfirm')}
+            </div>
+            <div class="dialog-sub">{t('chat.answerHint')}</div>
             <Show when={originText()}>{(text) => <div class="dialog-sub">{text()}</div>}</Show>
           </div>
         </div>
@@ -2150,16 +2176,22 @@ function QuestionDialog(props: {
                     <button
                       type="button"
                       class={`q-dot${answered(index) ? ' done' : ''}${step() === index ? ' now' : ''}`}
-                      aria-label={`第 ${index + 1} 题`}
-                      title={`第 ${index + 1} 题${answered(index) ? '（已作答）' : '（未作答）'}`}
+                      aria-label={t('chat.questionNo', { index: index + 1 })}
+                      title={
+                        answered(index)
+                          ? t('chat.questionNoAnswered', { index: index + 1 })
+                          : t('chat.questionNoUnanswered', { index: index + 1 })
+                      }
                       onClick={() => setStep(index)}
                     />
                   )}
                 </For>
-                <span class="q-counter">第 {step() + 1} / {total} 题</span>
+                <span class="q-counter">
+                  {t('chat.questionCounter', { current: step() + 1, total })}
+                </span>
               </Show>
               <Show when={isMulti()}>
-                <span class="q-flag">可多选</span>
+                <span class="q-flag">{t('chat.multiSelect')}</span>
               </Show>
             </div>
           </Show>
@@ -2197,14 +2229,14 @@ function QuestionDialog(props: {
             when={otherOpen()[step()]}
             fallback={
               <button type="button" class="q-other-toggle" onClick={() => openOther(step())}>
-                <Icon name="plus" size={13} /> 其它答案（自定义）
+                <Icon name="plus" size={13} /> {t('chat.otherAnswer')}
               </button>
             }
           >
             <div class="q-other">
               <input
                 class="text-input"
-                placeholder="输入自定义答案"
+                placeholder={t('chat.customAnswerPlaceholder')}
                 value={other()[step()]}
                 onInput={(event) => changeOther(step(), event.currentTarget.value)}
                 onKeyDown={(event) => {
@@ -2214,8 +2246,13 @@ function QuestionDialog(props: {
                   else goNext();
                 }}
               />
-              <button type="button" class="btn" onClick={() => clearOther(step())} title="清除自定义答案并收起">
-                清除
+              <button
+                type="button"
+                class="btn"
+                onClick={() => clearOther(step())}
+                title={t('chat.clearOtherTitle')}
+              >
+                {t('chat.clear')}
               </button>
             </div>
           </Show>
@@ -2223,7 +2260,9 @@ function QuestionDialog(props: {
         <div class="dialog-foot">
           {/* 只在最后一分钟提示：长时间等待时秒数只会占位刷屏，临期才需要提醒 */}
           <span class="countdown">
-            <Show when={remaining() <= 60}>{remaining()} 秒后自动跳过</Show>
+            <Show when={remaining() <= 60}>
+              {t('chat.skipIn', { seconds: remaining() })}
+            </Show>
           </span>
           <Show when={missing().length > 0}>
             <button type="button" class="btn q-jump" disabled={props.submitting} onClick={() => setStep(missing()[0])}>
@@ -2231,23 +2270,23 @@ function QuestionDialog(props: {
             </button>
           </Show>
           <button class="btn ghost" disabled={props.submitting} onClick={() => props.onCancel()}>
-            跳过作答
+            {t('chat.skip')}
           </button>
           <Show when={step() > 0}>
             <button class="btn" onClick={goPrev}>
-              上一步
+              {t('chat.previous')}
             </button>
           </Show>
           <Show
             when={!isLast()}
             fallback={
               <button class="btn primary" disabled={props.submitting || missing().length > 0} onClick={submit}>
-                {props.submitting ? '提交中…' : '提交'}
+                {props.submitting ? t('chat.submitting') : t('chat.submit')}
               </button>
             }
           >
             <button class="btn primary" disabled={!answered(step())} onClick={goNext}>
-              下一题
+              {t('chat.next')}
             </button>
           </Show>
         </div>
@@ -2266,9 +2305,9 @@ function HelpDialog(props: { onClose: () => void }) {
     >
       <div class="dialog" role="dialog" aria-modal="true">
         <div class="dialog-head">
-          <div class="dialog-title">浏览器端可用命令</div>
+          <div class="dialog-title">{t('chat.helpTitle')}</div>
           <div class="spacer" />
-          <button class="icon-btn" onClick={props.onClose} title="关闭">
+          <button class="icon-btn" onClick={props.onClose} title={t('common.close')}>
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -2284,7 +2323,7 @@ function HelpDialog(props: { onClose: () => void }) {
         </div>
         <div class="dialog-foot">
           <button class="btn primary" onClick={props.onClose}>
-            知道了
+            {t('chat.gotIt')}
           </button>
         </div>
       </div>

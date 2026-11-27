@@ -1,19 +1,20 @@
 import { Icon } from '../../components/Icons';
 import { notifyEnabled, previewNotify, setNotifyEnabled, type NotifyKind } from '../../lib/notify';
 import { CheckField } from './Shared';
+import { t } from '../../i18n';
 
 const KINDS = {
   done: {
-    label: '任务完成',
-    hint: '一轮对话正常跑完时响：高音三连上行；手动停止或本轮出错时不响。',
+    labelKey: 'notify.kind.done.label',
+    hintKey: 'notify.kind.done.hint',
   },
   question: {
-    label: '需要你操作',
-    hint: '弹出提问、或工具调用等待你确认时响：同音两下、短-长。',
+    labelKey: 'notify.kind.question.label',
+    hintKey: 'notify.kind.question.hint',
   },
   error: {
-    label: '对话出错',
-    hint: '本轮失败、连接中断、续流失败时响：低音两下下行；单个工具执行失败不响（Agent 常会自动重试）。',
+    labelKey: 'notify.kind.error.label',
+    hintKey: 'notify.kind.error.hint',
   },
 } as const;
 
@@ -24,17 +25,17 @@ function NotifyRow(props: { kind: NotifyKind }) {
     <div class="notify-row">
       <div class="notify-row-head">
         <CheckField
-          label={meta.label}
+          label={t(meta.labelKey)}
           checked={notifyEnabled(props.kind)}
           onChange={(value) => setNotifyEnabled(props.kind, value)}
         />
         <div class="spacer" />
         <button class="btn ghost sm" onClick={() => previewNotify(props.kind)}>
           <Icon name="play" size={13} />
-          试听
+          {t('notify.preview')}
         </button>
       </div>
-      <div class="field-hint notify-row-hint">{meta.hint}</div>
+      <div class="field-hint notify-row-hint">{t(meta.hintKey)}</div>
     </div>
   );
 }
@@ -49,7 +50,7 @@ export function NotifyTab() {
   return (
     <div class="settings-form">
       <div class="settings-form-head">
-        <span class="field-label">提示音</span>
+        <span class="field-label">{t('notify.title')}</span>
       </div>
 
       <div class="form-stack">
@@ -59,7 +60,7 @@ export function NotifyTab() {
       </div>
 
       <div class="field-hint" style={{ 'margin-top': '18px' }}>
-        浏览器标签页或系统静音时听不到属于系统设置问题。
+        {t('notify.mutedHint')}
       </div>
     </div>
   );

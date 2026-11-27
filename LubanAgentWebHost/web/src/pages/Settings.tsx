@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMo
 
 import { hasOpenModal } from '../components/Dialog';
 import { Icon, type IconName } from '../components/Icons';
+import { t, type MessageKey } from '../i18n';
 import { bootstrap, projectWorkspaces } from '../stores/app';
 import { currentUser } from '../stores/auth';
 import { AccountTab } from './settings/AccountTab';
@@ -19,7 +20,8 @@ import { WorkspaceTab } from './settings/WorkspaceTab';
 
 interface TabDef {
   id: string;
-  label: string;
+  /** 展示名走词表：模块级常量不能存已翻译的字符串，否则切换语言后列表不刷新。 */
+  labelKey: MessageKey;
   icon: IconName;
   /** 是否提供「★ 全局 + 工作区」作用域下拉；供应商与模型固定全局。 */
   scoped: boolean;
@@ -33,18 +35,18 @@ interface TabDef {
 // 管理员紧接着看邀请码，供应商与模型随后，文件型配置（技能/规则/MCP）再后，
 // 用户治理与数据清理收尾。
 const tabs: TabDef[] = [
-  { id: 'account', label: '账号', icon: 'user', scoped: false },
-  { id: 'invites', label: '邀请码', icon: 'key', scoped: false, adminOnly: true },
-  { id: 'roots', label: '工作区根目录', icon: 'folder', scoped: false, adminOnly: true },
-  { id: 'provider', label: '供应商', icon: 'folder', scoped: false },
-  { id: 'model', label: '模型', icon: 'brain', scoped: false },
-  { id: 'skill', label: '技能', icon: 'spark', scoped: true },
-  { id: 'rule', label: '规则', icon: 'shield', scoped: true },
-  { id: 'mcp', label: 'MCP 服务', icon: 'terminal', scoped: true },
-  { id: 'workspace', label: '工作区', icon: 'file', scoped: false, requiresWorkspace: true },
-  { id: 'notify', label: '通知', icon: 'bell', scoped: false },
-  { id: 'users', label: '用户', icon: 'shield', scoped: false, adminOnly: true },
-  { id: 'data', label: '数据与用量', icon: 'grid', scoped: false },
+  { id: 'account', labelKey: 'settings.tab.account', icon: 'user', scoped: false },
+  { id: 'invites', labelKey: 'settings.tab.invites', icon: 'key', scoped: false, adminOnly: true },
+  { id: 'roots', labelKey: 'settings.tab.roots', icon: 'folder', scoped: false, adminOnly: true },
+  { id: 'provider', labelKey: 'settings.tab.provider', icon: 'folder', scoped: false },
+  { id: 'model', labelKey: 'settings.tab.model', icon: 'brain', scoped: false },
+  { id: 'skill', labelKey: 'settings.tab.skill', icon: 'spark', scoped: true },
+  { id: 'rule', labelKey: 'settings.tab.rule', icon: 'shield', scoped: true },
+  { id: 'mcp', labelKey: 'settings.tab.mcp', icon: 'terminal', scoped: true },
+  { id: 'workspace', labelKey: 'settings.tab.workspace', icon: 'file', scoped: false, requiresWorkspace: true },
+  { id: 'notify', labelKey: 'settings.tab.notify', icon: 'bell', scoped: false },
+  { id: 'users', labelKey: 'settings.tab.users', icon: 'shield', scoped: false, adminOnly: true },
+  { id: 'data', labelKey: 'settings.tab.data', icon: 'grid', scoped: false },
 ];
 
 /**
@@ -78,7 +80,10 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
   const visibleTabs = createMemo(() => {
     const keyword = search().trim().toLowerCase();
     if (!keyword) return allowedTabs();
-    return allowedTabs().filter((tab) => tab.label.toLowerCase().includes(keyword) || tab.id.includes(keyword));
+    return allowedTabs().filter((tab) => {
+      const label = t(tab.labelKey).toLowerCase();
+      return label.includes(keyword) || tab.id.includes(keyword);
+    });
   });
 
   /** 用户下的项目工作区（不含知识库），顺序沿用首页拖动结果。 */
@@ -112,7 +117,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
 
   const scopeOptions = () => {
     const list = projects().map((item) => ({ value: item.workspaceId, label: item.name || item.rootPath }));
-    return hasGlobal() ? [{ value: 'global', label: '★ 全局' }, ...list] : list;
+    return hasGlobal() ? [{ value: 'global', label: t('settings.globalOption') }, ...list] : list;
   };
 
   /** 需要工作区却一个都没有：给出提示，不渲染表单。无作用域的全局页签不受此限。 */
@@ -120,16 +125,18 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
 
   const subtitle = () => {
     if (showScope()) {
-      if (scopeValue() === 'global') return '作用域：★ 全局';
-      return scopeValue() ? `作用域：${workspaceLabel(scopeValue())}` : '作用域：未选择工作区';
+      if (scopeValue() === 'global') return t('settings.scopeGlobal');
+      return scopeValue()
+        ? t('settings.scopeWorkspace', { name: workspaceLabel(scopeValue()) })
+        : t('settings.scopeNone');
     }
-    if (activeTab().id === 'notify') return '保存位置：本机浏览器（不随账号同步）';
-    if (activeTab().id === 'account') return '密码只保存哈希，改密后其他设备上的登录立即失效';
-    if (activeTab().id === 'users') return '仅管理员可见：重置后旧密码与该用户的登录状态立即失效';
-    if (activeTab().id === 'invites') return '仅管理员可见：邀请码一次性使用，注册成功后即失效';
-    if (activeTab().id === 'roots') return '仅管理员可见：机器级白名单，所有用户新建项目都受此限制';
-    if (activeTab().id === 'data') return '统计范围：全部会话';
-    return '作用域：★ 全局';
+    if (activeTab().id === 'notify') return t('settings.subtitleNotify');
+    if (activeTab().id === 'account') return t('settings.subtitleAccount');
+    if (activeTab().id === 'users') return t('settings.subtitleUsers');
+    if (activeTab().id === 'invites') return t('settings.subtitleInvites');
+    if (activeTab().id === 'roots') return t('settings.subtitleRoots');
+    if (activeTab().id === 'data') return t('settings.subtitleData');
+    return t('settings.scopeGlobal');
   };
 
   return (
@@ -141,11 +148,11 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     >
       <div class="settings-panel" role="dialog" aria-modal="true">
         <div class="settings-panel-head">
-          <span class="dialog-title">设置</span>
+          <span class="dialog-title">{t('settings.title')}</span>
           <div class="spacer" />
           <Show when={showScope()}>
             <label class="scope-select">
-              <span>作用域</span>
+              <span>{t('settings.scope')}</span>
               <select
                 class="text-input"
                 value={scopeValue()}
@@ -156,7 +163,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               </select>
             </label>
           </Show>
-          <button class="icon-btn" title="关闭设置（Esc）" onClick={() => props.onClose()}>
+          <button class="icon-btn" title={t('settings.close')} onClick={() => props.onClose()}>
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -167,7 +174,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               <Icon name="search" size={15} />
               <input
                 type="search"
-                placeholder="搜索设置"
+                placeholder={t('settings.search')}
                 value={search()}
                 onInput={(event) => setSearch(event.currentTarget.value)}
                 style={{ height: '34px', 'padding-left': '36px' }}
@@ -177,7 +184,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               {(tab) => (
                 <a class="nav-item" classList={{ active: tab.id === activeTab().id }} href={`#/settings/${tab.id}`}>
                   <Icon name={tab.icon} size={16} />
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </a>
               )}
             </For>
@@ -186,7 +193,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
           <div class="settings-body">
             <div class="settings-head">
               <div>
-                <div class="dialog-title">{activeTab().label}</div>
+                <div class="dialog-title">{t(activeTab().labelKey)}</div>
                 <div class="dialog-sub">{subtitle()}</div>
               </div>
             </div>
@@ -196,7 +203,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               fallback={
                 <div class="notice warn">
                   <Icon name="alert" size={16} />
-                  <span>还没有可用的工作区：请先在首页「项目」里新建或导入一个工作区。</span>
+                  <span>{t('settings.noWorkspace')}</span>
                 </div>
               }
             >
@@ -243,7 +250,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
             <Show when={activeTab().id === 'provider' && (bootstrap()?.providers.length ?? 0) === 0}>
               <div class="notice" style={{ 'margin-top': '12px' }}>
                 <Icon name="alert" size={16} />
-                <span>首屏尚未读到模型缓存；保存供应商后到「模型」页签点「刷新」即可拉取。</span>
+                <span>{t('settings.noProviders')}</span>
               </div>
             </Show>
           </div>

@@ -7,6 +7,7 @@ import type {
   WikiStatus,
   Workspace,
 } from './types';
+import { t } from '../i18n';
 
 /**
  * LLM Wiki 知识库接口封装。
@@ -34,13 +35,13 @@ export const wikiApi = {
 export function indexSummary(report: IndexReport | null | undefined): string {
   if (!report) return '';
   const parts = [
-    `扫描 ${report.scannedFiles}`,
-    `新增 ${report.newFiles}`,
-    `更新 ${report.updatedFiles}`,
-    `跳过 ${report.skippedFiles}`,
-    `删除 ${report.deletedFiles}`,
-    `切块 ${report.totalChunks}`,
-    `向量化 ${report.embeddedChunks}`,
+    t('wiki.summary.scanned', { count: report.scannedFiles }),
+    t('wiki.summary.new', { count: report.newFiles }),
+    t('wiki.summary.updated', { count: report.updatedFiles }),
+    t('wiki.summary.skipped', { count: report.skippedFiles }),
+    t('wiki.summary.deleted', { count: report.deletedFiles }),
+    t('wiki.summary.chunks', { count: report.totalChunks }),
+    t('wiki.summary.embedded', { count: report.embeddedChunks }),
   ];
   return parts.join(' · ');
 }

@@ -17,6 +17,7 @@ import type {
 } from '../lib/types';
 import { indexSummary, wikiApi } from '../lib/wiki';
 import { createSessionInWorkspace, refreshSessions, refreshWorkspaces, renameWorkspace, sessions, showToast } from '../stores/app';
+import { t, type MessageKey } from '../i18n';
 
 /** 一张统计卡。 */
 function Stat(props: { label: string; value: string }) {
@@ -122,12 +123,12 @@ export function LlmWikiPage() {
     }
   };
 
-  const summarize = (result: IndexReport, prefix: string) => {
-    setReport(`${prefix}：${indexSummary(result)}`);
+  const summarize = (result: IndexReport, prefix: MessageKey) => {
+    setReport(t('wiki.report', { prefix: t(prefix), summary: indexSummary(result) }));
     if (result.errors.length > 0) {
-      showToast(`${prefix}完成，但有 ${result.errors.length} 项失败`, 'error');
+      showToast(t('wiki.doneWithErrors', { prefix: t(prefix), count: result.errors.length }), 'error');
     } else {
-      showToast(`${prefix}完成`, 'success');
+      showToast(t('wiki.done', { prefix: t(prefix) }), 'success');
     }
   };
 
@@ -135,7 +136,7 @@ export function LlmWikiPage() {
     run('index', async () => {
       const id = selected();
       if (!id) return;
-      summarize(await wikiApi.index(id, glob()), '索引');
+      summarize(await wikiApi.index(id, glob()), 'wiki.op.index');
       await loadStatus(id);
       await loadFiles(id);
     });
@@ -144,7 +145,7 @@ export function LlmWikiPage() {
     run('rebuild', async () => {
       const id = selected();
       if (!id) return;
-      summarize(await wikiApi.rebuild(id), '重建');
+      summarize(await wikiApi.rebuild(id), 'wiki.op.rebuild');
       await loadStatus(id);
     });
 
@@ -154,7 +155,10 @@ export function LlmWikiPage() {
       if (!id) return;
       const result = await wikiApi.lint(id);
       setLint(result);
-      showToast(`lint 完成：${result.findings.length} 项发现`, result.findings.length > 0 ? 'error' : 'success');
+      showToast(
+        t('wiki.lintDone', { count: result.findings.length }),
+        result.findings.length > 0 ? 'error' : 'success',
+      );
       await loadStatus(id);
     });
 
@@ -177,7 +181,7 @@ export function LlmWikiPage() {
       setNewName('');
       await refreshWorkspaces();
       await reload(workspace?.workspaceId ?? null);
-      showToast('已创建知识库', 'success');
+      showToast(t('wiki.created'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     } finally {
@@ -190,12 +194,12 @@ export function LlmWikiPage() {
       await wikiApi.remove(workspace.workspaceId);
       await refreshWorkspaces();
       await reload(null);
-      showToast('已删除知识库', 'success');
+      showToast(t('wiki.deleted'), 'success');
     });
 
   /** 只改显示名，磁盘目录与索引都不动（与项目重命名同一接口）。 */
   const rename = async (workspace: Workspace, name: string) => {
-    if (await renameWorkspace(workspace.workspaceId, name, '已重命名知识库')) {
+    if (await renameWorkspace(workspace.workspaceId, name, t('wiki.renamed'))) {
       await reload(workspace.workspaceId);
     }
   };
@@ -206,7 +210,7 @@ export function LlmWikiPage() {
       await settingsApi.authorizeWorkspace(workspaceId);
       await refreshWorkspaces();
       await reload(workspaceId);
-      showToast('已授权访问该目录', 'success');
+      showToast(t('wiki.authorized'), 'success');
     });
 
   const clear = () =>
@@ -216,7 +220,7 @@ export function LlmWikiPage() {
       await wikiApi.clear(id);
       await loadStatus(id);
       await loadFiles(id);
-      showToast('已清空索引', 'success');
+      showToast(t('wiki.cleared'), 'success');
     });
 
   /** 只有已索引文件与切块都存在时才允许对话，避免打开一个零召回的知识库会话。 */
@@ -239,7 +243,7 @@ export function LlmWikiPage() {
         .filter((item) => item.workspaceId === workspace.workspaceId)
         .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0];
       const sessionId = existing?.sessionId
-        ?? await createSessionInWorkspace(workspace.workspaceId, '知识库对话');
+        ?? await createSessionInWorkspace(workspace.workspaceId, t('wiki.chatSessionTitle'));
       if (sessionId) openSession(sessionId);
     } finally {
       setChatBusy(false);
@@ -260,9 +264,9 @@ export function LlmWikiPage() {
         style={sidebarCollapsed() || narrow() ? undefined : { 'flex-basis': `${sideWidth()}px` }}
       >
         <div class="side-head">
-          <span class="section-label">知识库</span>
+          <span class="section-label">{t('wiki.sectionTitle')}</span>
           <div class="side-actions">
-            <button class="icon-btn" title="新建知识库" onClick={() => setCreating(true)}>
+            <button class="icon-btn" title={t('wiki.new')} onClick={() => setCreating(true)}>
               <Icon name="plus" size={17} />
             </button>
           </div>
@@ -291,7 +295,7 @@ export function LlmWikiPage() {
                 <span class="session-actions">
                   <button
                     class="icon-btn"
-                    title="重命名知识库"
+                    title={t('wiki.renameTitle')}
                     onClick={(event) => {
                       event.stopPropagation();
                       setPendingRename(item);
@@ -301,7 +305,7 @@ export function LlmWikiPage() {
                   </button>
                   <button
                     class="icon-btn"
-                    title="删除知识库"
+                    title={t('wiki.deleteTitle')}
                     onClick={(event) => {
                       event.stopPropagation();
                       setPendingDelete(item);
@@ -314,12 +318,12 @@ export function LlmWikiPage() {
             )}
           </For>
           <Show when={bases().length === 0}>
-            <span class="side-hint faint">还没有知识库，点右上角新建。</span>
+            <span class="side-hint faint">{t('wiki.emptySide')}</span>
           </Show>
         </div>
       </aside>
       <Show when={draggable()}>
-        <SideResizer label="调整知识库栏宽度" />
+        <SideResizer label={t('wiki.resizeLabel')} />
       </Show>
 
       <div class="home-main">
@@ -328,11 +332,11 @@ export function LlmWikiPage() {
           fallback={
             <div class="empty">
               <Icon name="brain" size={30} />
-              <h2>还没有知识库</h2>
-              <p>知识库把目录里的资料切块索引，供对话检索引用。</p>
+              <h2>{t('wiki.emptyTitle')}</h2>
+              <p>{t('wiki.emptyHint')}</p>
               <button class="btn primary" onClick={() => setCreating(true)}>
                 <Icon name="plus" size={16} />
-                新建知识库
+                {t('wiki.new')}
               </button>
             </div>
           }
@@ -348,45 +352,45 @@ export function LlmWikiPage() {
                   <div class="spacer" />
                   <Show when={!workspace().isAuthorized}>
                     <button class="btn ghost" disabled={!!busy()} onClick={() => void authorize(workspace().workspaceId)}>
-                      {busy() === 'authorize' ? '授权中…' : '授权目录访问'}
+                      {busy() === 'authorize' ? t('wiki.authorizing') : t('wiki.authorize')}
                     </button>
                   </Show>
                   <button class="btn ghost" disabled={!!busy()} onClick={() => void reload(selected())}>
                     <Icon name="refresh" size={15} />
-                    刷新
+                    {t('common.refresh')}
                   </button>
                 </div>
 
                 <div class="stat-grid">
-                  <Stat label="wiki 页面" value={String(status()?.pageCount ?? 0)} />
-                  <Stat label="已索引文件" value={String(status()?.indexedFiles ?? 0)} />
-                  <Stat label="已索引切块" value={String(status()?.indexedChunks ?? 0)} />
+                  <Stat label={t('wiki.pageCount')} value={String(status()?.pageCount ?? 0)} />
+                  <Stat label={t('wiki.indexedFiles')} value={String(status()?.indexedFiles ?? 0)} />
+                  <Stat label={t('wiki.indexedChunks')} value={String(status()?.indexedChunks ?? 0)} />
                 </div>
                 <Show when={status()?.lastRebuildSummary}>
                   <div class="notice ok" style={{ 'margin-bottom': '12px' }}>
                     <Icon name="check" size={16} />
-                    <span>最近重建：{status()!.lastRebuildSummary}</span>
+                    <span>{t('wiki.lastRebuild', { summary: status()!.lastRebuildSummary ?? '' })}</span>
                   </div>
                 </Show>
 
                 <div class="wiki-actions">
                   <input
                     class="text-input mono"
-                    placeholder="索引文件匹配（可选，如 **/*.md）"
+                    placeholder={t('wiki.globPlaceholder')}
                     value={glob()}
                     onInput={(event) => setGlob(event.currentTarget.value)}
                   />
                   <button class="btn" disabled={!!busy()} onClick={() => void doIndex()}>
-                    {busy() === 'index' ? '索引中…' : '索引'}
+                    {busy() === 'index' ? t('wiki.indexing') : t('wiki.index')}
                   </button>
                   <button class="btn" disabled={!!busy()} onClick={() => void doRebuild()}>
-                    {busy() === 'rebuild' ? '重建中…' : '重建'}
+                    {busy() === 'rebuild' ? t('wiki.rebuilding') : t('wiki.rebuild')}
                   </button>
                   <button class="btn ghost" disabled={!!busy()} onClick={() => void doLint()}>
-                    {busy() === 'lint' ? '校验中…' : 'Lint'}
+                    {busy() === 'lint' ? t('wiki.linting') : 'Lint'}
                   </button>
                   <button class="btn danger" disabled={!!busy()} onClick={() => setPendingClear(true)}>
-                    清空索引
+                    {t('wiki.clearIndex')}
                   </button>
                 </div>
 
@@ -401,7 +405,7 @@ export function LlmWikiPage() {
                   <Icon name="search" size={16} />
                   <input
                     type="search"
-                    placeholder="在知识库中检索"
+                    placeholder={t('wiki.searchPlaceholder')}
                     value={query()}
                     onInput={(event) => setQuery(event.currentTarget.value)}
                     onKeyDown={(event) => {
@@ -410,7 +414,7 @@ export function LlmWikiPage() {
                   />
                   <button
                     class="icon-btn search-action"
-                    title="检索"
+                    title={t('wiki.search')}
                     disabled={!!busy() || !query().trim()}
                     onClick={() => void doSearch()}
                   >
@@ -420,7 +424,7 @@ export function LlmWikiPage() {
 
                 <Show when={hits().length > 0}>
                   <div class="wiki-section">
-                    <div class="section-label">检索命中（{hits().length}）</div>
+                    <div class="section-label">{t('wiki.hits', { count: hits().length })}</div>
                     <For each={hits()}>
                       {(hit) => (
                         <div class="wiki-row">
@@ -441,14 +445,17 @@ export function LlmWikiPage() {
                   {(result) => (
                     <div class="wiki-section">
                       <div class="section-label">
-                        Lint 报告 · 扫描 {result().pageCount} 个页面 · {result().findings.length} 项发现
+                        {t('wiki.lintReport', {
+                          pages: result().pageCount,
+                          findings: result().findings.length,
+                        })}
                       </div>
                       <Show
                         when={result().findings.length > 0}
                         fallback={
                           <div class="notice ok">
                             <Icon name="check" size={16} />
-                            <span>未发现问题</span>
+                            <span>{t('wiki.lintClean')}</span>
                           </div>
                         }
                       >
@@ -466,17 +473,17 @@ export function LlmWikiPage() {
                 </Show>
 
                 <div class="wiki-section">
-                  <div class="section-label">已索引文件（{files().length}）</div>
+                  <div class="section-label">{t('wiki.indexedFilesHeading', { count: files().length })}</div>
                   <Show
                     when={files().length > 0}
-                    fallback={<span class="side-hint faint">还没有索引，点上方「索引」开始。</span>}
+                    fallback={<span class="side-hint faint">{t('wiki.noIndex')}</span>}
                   >
                     <For each={files()}>
                       {(file) => (
                         <div class="wiki-row">
                           <span class="mono wiki-path">{file.filePath}</span>
-                          <span class="tag">{file.language ?? '未知语言'}</span>
-                          <span class="faint">{file.chunkCount} 块</span>
+                          <span class="tag">{file.language ?? t('wiki.unknownLanguage')}</span>
+                          <span class="faint">{t('wiki.chunks', { count: file.chunkCount })}</span>
                         </div>
                       )}
                     </For>
@@ -485,16 +492,16 @@ export function LlmWikiPage() {
               </div>
               <div class="wiki-footer">
                 <Show when={!indexReady()}>
-                  <span class="stat-hint">先完成索引（需有已索引文件与切块）后才能对话</span>
+                  <span class="stat-hint">{t('wiki.needIndex')}</span>
                 </Show>
                 <button
                   class="btn primary"
                   disabled={!indexReady() || !!busy() || chatBusy()}
-                  title={indexReady() ? '与知识库对话（自动检索增强）' : '先完成索引后才能对话'}
+                  title={indexReady() ? t('wiki.chatTitleReady') : t('wiki.chatTitleNotReady')}
                   onClick={() => void startChat()}
                 >
                   <Icon name="message" size={16} />
-                  {chatBusy() ? '正在打开…' : '对话'}
+                  {chatBusy() ? t('wiki.opening') : t('wiki.chat')}
                 </button>
               </div>
             </>
@@ -504,32 +511,32 @@ export function LlmWikiPage() {
 
       <Show when={creating()}>
         <Modal
-          title="新建知识库"
-          subtitle="知识库对应本机上的一个目录，索引其中的资料"
+          title={t('wiki.new')}
+          subtitle={t('wiki.createSubtitle')}
           onClose={() => setCreating(false)}
           footer={
             <>
               <button class="btn ghost" onClick={() => setCreating(false)}>
-                取消
+                {t('common.cancel')}
               </button>
               <button class="btn primary" disabled={saving() || !newPath().trim()} onClick={() => void create()}>
-                {saving() ? '创建中…' : '创建'}
+                {saving() ? t('wiki.creating') : t('wiki.create')}
               </button>
             </>
           }
         >
           <div class="form-stack">
             <div class="field">
-              <div class="section-label">名称（可选）</div>
+              <div class="section-label">{t('wiki.nameOptional')}</div>
               <input
                 class="text-input"
-                placeholder="默认取目录名"
+                placeholder={t('wiki.defaultNamePlaceholder')}
                 value={newName()}
                 onInput={(event) => setNewName(event.currentTarget.value)}
               />
             </div>
             <div class="field">
-              <div class="section-label">根路径（绝对路径）</div>
+              <div class="section-label">{t('common.rootPath')}</div>
               <input
                 class="text-input mono"
                 placeholder="D:\WorkBench\Walle\my-wiki"
@@ -547,11 +554,11 @@ export function LlmWikiPage() {
       <Show when={pendingRename()}>
         {(workspace) => (
           <TextPromptDialog
-            title="重命名知识库"
-            subtitle="只改显示名，磁盘目录与索引都不受影响"
-            label="名称"
+            title={t('wiki.renameTitle')}
+            subtitle={t('wiki.renameSubtitle')}
+            label={t('wiki.name')}
             initialValue={workspace().name || workspace().rootPath}
-            confirmText="保存"
+            confirmText={t('common.save')}
             onClose={() => setPendingRename(null)}
             onConfirm={(value) => {
               const target = workspace();
@@ -565,8 +572,8 @@ export function LlmWikiPage() {
       <Show when={pendingDelete()}>
         {(workspace) => (
           <ConfirmActionDialog
-            title="删除知识库"
-            message={`确定删除「${workspace().name || workspace().rootPath}」？该知识库的会话、索引与 .luban-agent 配置会一并清理，磁盘目录其他文件不受影响。`}
+            title={t('wiki.deleteTitle')}
+            message={t('wiki.deleteMessage', { name: workspace().name || workspace().rootPath })}
             onClose={() => setPendingDelete(null)}
             onConfirm={() => {
               const target = workspace();
@@ -579,8 +586,8 @@ export function LlmWikiPage() {
 
       <Show when={pendingClear()}>
         <ConfirmActionDialog
-          title="清空索引"
-          message="确定清空该知识库的文件与切块索引？磁盘资料不受影响，之后可重新索引。"
+          title={t('wiki.clearIndex')}
+          message={t('wiki.clearMessage')}
           onClose={() => setPendingClear(false)}
           onConfirm={() => {
             setPendingClear(false);

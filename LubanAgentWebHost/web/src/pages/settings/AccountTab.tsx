@@ -1,7 +1,10 @@
 import { createSignal, Show } from 'solid-js';
 
+import { LocaleMenu } from '../../components/LocaleMenu';
+import { t } from '../../i18n';
 import { showToast } from '../../stores/app';
 import { changePassword, currentUser, updateDisplayName, userLabel } from '../../stores/auth';
+
 import { Field, FormActions, TextField } from './Shared';
 
 /**
@@ -28,20 +31,20 @@ export function AccountTab() {
     const wantsPasswordChange = Boolean(oldPassword() || newPassword() || confirmPassword());
 
     if (!nameChanged && !wantsPasswordChange) {
-      showToast('没有需要保存的修改');
+      showToast(t('account.noChanges'));
       return;
     }
     if (wantsPasswordChange) {
       if (!oldPassword()) {
-        showToast('请填写当前密码', 'error');
+        showToast(t('account.errorCurrentRequired'), 'error');
         return;
       }
       if (newPassword().length < 8) {
-        showToast('新密码至少 8 位', 'error');
+        showToast(t('account.errorNewShort'), 'error');
         return;
       }
       if (newPassword() !== confirmPassword()) {
-        showToast('两次输入的新密码不一致', 'error');
+        showToast(t('account.errorMismatch'), 'error');
         return;
       }
     }
@@ -74,60 +77,76 @@ export function AccountTab() {
     }
 
     if (nameChanged && wantsPasswordChange) {
-      showToast('显示名与密码已更新，其他设备上的登录已失效', 'success');
+      showToast(t('account.updatedBoth'), 'success');
     } else if (nameChanged) {
-      showToast('显示名已更新', 'success');
+      showToast(t('account.updatedName'), 'success');
     } else {
-      showToast('密码已更新，其他设备上的登录已失效', 'success');
+      showToast(t('account.updatedPassword'), 'success');
     }
   };
 
   return (
     <div class="settings-form">
       <div class="settings-form-head">
-        <span class="field-label">我的账号</span>
+        <span class="field-label">{t('account.title')}</span>
       </div>
       <Show when={currentUser()}>
         {(user) => (
           <div class="field-grid">
-            <TextField label="登录名" value={user().userName} readOnly onInput={() => undefined} />
+            <TextField label={t('account.userName')} value={user().userName} readOnly onInput={() => undefined} />
             <TextField
-              label="显示名"
+              label={t('account.displayName')}
               value={displayName()}
               placeholder={user().userName}
-              hint="留空即使用登录名"
+              hint={t('account.displayNameHint')}
               autocomplete="off"
               onInput={(value) => setDisplayName(value)}
             />
-            <TextField label="用户标识" value={user().userId} readOnly hint="同时作为工作区归属值，注册后不可变" onInput={() => undefined} />
-            <Field label="角色">
-              <input class="text-input" type="text" value={user().isAdmin ? '管理员' : '普通用户'} readOnly />
+            <TextField
+              label={t('account.userId')}
+              value={user().userId}
+              readOnly
+              hint={t('account.userIdHint')}
+              onInput={() => undefined}
+            />
+            <Field label={t('account.role')}>
+              <input
+                class="text-input"
+                type="text"
+                value={user().isAdmin ? t('account.roleAdmin') : t('account.roleUser')}
+                readOnly
+              />
             </Field>
+            <div class="field">
+              <span class="field-label">{t('account.language')}</span>
+              <LocaleMenu variant="text" />
+              <span class="field-hint">{t('account.languageHint')}</span>
+            </div>
           </div>
         )}
       </Show>
 
       <div class="settings-form-head" style={{ 'margin-top': '20px' }}>
-        <span class="field-label">修改密码</span>
+        <span class="field-label">{t('account.changePassword')}</span>
       </div>
       <div class="field-grid">
         <TextField
-          label="当前密码"
+          label={t('account.currentPassword')}
           type="password"
           wide
           value={oldPassword()}
-          hint="仅在需要改密时填写"
+          hint={t('account.currentPasswordHint')}
           onInput={(value) => setOldPassword(value)}
         />
         <TextField
-          label="新密码"
+          label={t('account.newPassword')}
           type="password"
           value={newPassword()}
-          hint="至少 8 位"
+          hint={t('account.newPasswordHint')}
           onInput={(value) => setNewPassword(value)}
         />
         <TextField
-          label="确认新密码"
+          label={t('account.confirmPassword')}
           type="password"
           value={confirmPassword()}
           onInput={(value) => setConfirmPassword(value)}
@@ -135,7 +154,7 @@ export function AccountTab() {
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void submit()} disabled={busy()}>
-          保存
+          {t('common.save')}
         </button>
       </FormActions>
     </div>

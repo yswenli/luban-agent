@@ -25,6 +25,7 @@ import {
   workspaceName,
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
+import { t } from '../i18n';
 
 type RowAction =
   | { kind: 'rename'; sessionId: string; title: string }
@@ -94,8 +95,8 @@ export function SessionListPage(props: { main?: JSX.Element }) {
     void todayKey(); // 跨过午夜要重新分组，否则「今天」标题下会挂着标签写着「昨天」的行
     const items = filtered();
     return [
-      { key: 'today' as const, title: '今天', items: items.filter((s) => dayBucket(sessionTime(s)) === 'today') },
-      { key: 'earlier' as const, title: '更早', items: items.filter((s) => dayBucket(sessionTime(s)) === 'earlier') },
+      { key: 'today' as const, title: t('sessionList.today'), items: items.filter((s) => dayBucket(sessionTime(s)) === 'today') },
+      { key: 'earlier' as const, title: t('sessionList.earlier'), items: items.filter((s) => dayBucket(sessionTime(s)) === 'earlier') },
     ].filter((group) => group.items.length > 0);
   });
 
@@ -127,7 +128,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
     <div class="home-body">
       <ProjectSidebar />
       <Show when={draggable()}>
-        <SideResizer label="调整项目栏宽度" />
+        <SideResizer label={t('sessionList.resizeLabel')} />
       </Show>
 
       <Show when={!props.main} fallback={props.main}>
@@ -137,11 +138,11 @@ export function SessionListPage(props: { main?: JSX.Element }) {
           <input
             ref={searchEl}
             type="search"
-            placeholder="搜索会话"
+            placeholder={t('topbar.search')}
             value={search()}
             onInput={(event) => setSearch(event.currentTarget.value)}
           />
-          <button class="icon-btn search-action" title="刷新会话" onClick={() => void refreshSessions()}>
+          <button class="icon-btn search-action" title={t('sessionList.refresh')} onClick={() => void refreshSessions()}>
             <Icon name="refresh" size={16} />
           </button>
         </div>
@@ -154,7 +155,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
             </div>
           </Show>
 
-          <Show when={!sessionsLoading()} fallback={<div class="loading-line">加载会话…</div>}>
+          <Show when={!sessionsLoading()} fallback={<div class="loading-line">{t('sessionList.loading')}</div>}>
             <Show
               when={filtered().length > 0}
               fallback={
@@ -167,22 +168,22 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                         when={filterWorkspaceId()}
                         fallback={
                           <>
-                            <h2>还没有会话</h2>
-                            <p>新建一个会话开始对话；会话会绑定到当前工作区。</p>
+                            <h2>{t('sessionList.emptyTitle')}</h2>
+                            <p>{t('sessionList.emptyBody')}</p>
                           </>
                         }
                       >
-                        <h2>该项目还没有会话</h2>
-                        <p>新建一个会话；它会绑定到当前项目。</p>
+                        <h2>{t('sessionList.emptyProjectTitle')}</h2>
+                        <p>{t('sessionList.emptyProjectBody')}</p>
                       </Show>
                     }
                   >
-                    <h2>没有匹配的会话</h2>
-                    <p>换个关键词，或清空搜索查看全部会话。</p>
+                    <h2>{t('sessionList.noMatchTitle')}</h2>
+                    <p>{t('sessionList.noMatchBody')}</p>
                   </Show>
                   <button class="btn primary" disabled={creating()} onClick={() => void onNewSession()}>
                     <Icon name="plus" size={16} />
-                    新建会话
+                    {t('topbar.newSession')}
                   </button>
                 </div>
               }
@@ -195,7 +196,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                       <Show when={groupIndex() === 0}>
                         <button class="group-action" disabled={creating()} onClick={() => void onNewSession()}>
                           <Icon name="plus" size={15} />
-                          新建会话
+                          {t('topbar.newSession')}
                         </button>
                       </Show>
                     </div>
@@ -233,7 +234,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
               }}
             >
               <Icon name="pencil" size={15} />
-              重命名
+              {t('common.rename')}
             </button>
             <button
               class="menu-item"
@@ -244,7 +245,7 @@ export function SessionListPage(props: { main?: JSX.Element }) {
               }}
             >
               <Icon name="trash" size={15} />
-              删除
+              {t('common.delete')}
             </button>
           </PopMenu>
         )}
@@ -253,10 +254,10 @@ export function SessionListPage(props: { main?: JSX.Element }) {
       <Show when={dialog()?.kind === 'rename' ? (dialog() as Extract<RowAction, { kind: 'rename' }>) : null}>
         {(action) => (
           <TextPromptDialog
-            title="重命名会话"
-            label="标题"
+            title={t('sessionList.renameTitle')}
+            label={t('sessionList.renameLabel')}
             initialValue={action().title}
-            confirmText="保存"
+            confirmText={t('common.save')}
             onClose={() => setDialog(null)}
             onConfirm={(value) => {
               const target = action().sessionId;
@@ -270,8 +271,8 @@ export function SessionListPage(props: { main?: JSX.Element }) {
       <Show when={dialog()?.kind === 'delete' ? (dialog() as Extract<RowAction, { kind: 'delete' }>) : null}>
         {(action) => (
           <ConfirmActionDialog
-            title="删除会话"
-            message={`确定删除「${truncate(action().title || '未命名会话', 40)}」？该会话的消息将一并删除。`}
+            title={t('sessionList.deleteTitle')}
+            message={t('sessionList.deleteMessage', { name: truncate(action().title || t('topbar.unnamedSession'), 40) })}
             onClose={() => setDialog(null)}
             onConfirm={() => {
               const target = action().sessionId;
@@ -306,11 +307,11 @@ function sessionRow(
         class="ws-badge sm"
         classList={{ muted: !workspaceId }}
         style={workspaceId ? { background: workspaceColor(workspaceId) } : {}}
-        title={name || '未知项目'}
+        title={name || t('sessionList.unknownProject')}
       >
         {workspaceInitial(name)}
       </span>
-      <span class="session-title">{truncate(title || '未命名会话', 60)}</span>
+      <span class="session-title">{truncate(title || t('topbar.unnamedSession'), 60)}</span>
       <span class="session-meta">
         <span class="session-time" title={formatAbsoluteTime(time)}>{timeLabel()}</span>
         <span class="session-ws" title={name}>{name}</span>
@@ -318,7 +319,7 @@ function sessionRow(
       <span class="session-actions">
         <button
           class="icon-btn"
-          title="更多"
+          title={t('common.more')}
           onClick={(event) => onMenu(event, sessionId)}
         >
           <Icon name="more" size={16} />

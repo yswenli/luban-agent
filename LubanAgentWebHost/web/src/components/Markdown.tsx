@@ -2,6 +2,7 @@ import { createEffect, onCleanup, onMount } from 'solid-js';
 
 import { renderMarkdown, rewriteWorkspaceFileLinks } from '../lib/markdown';
 import { openFilePreview } from '../stores/filePreview';
+import { locale, t } from '../i18n';
 
 /**
  * Markdown 渲染 + 代码块复制按钮（按钮在渲染后注入，避免扩大 DOMPurify 白名单）。
@@ -32,6 +33,8 @@ export function Markdown(props: { text: string; workspaceId?: string }) {
   });
 
   createEffect(() => {
+    // 语言切换后重刷按钮与链接提示文案；正文来自用户内容，不随语言变化
+    locale();
     const workspaceId = props.workspaceId;
     host.innerHTML = renderMarkdown(props.text);
     if (workspaceId) rewriteWorkspaceFileLinks(host, workspaceId);
@@ -42,20 +45,20 @@ export function Markdown(props: { text: string; workspaceId?: string }) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'code-copy';
-      button.textContent = '复制';
+      button.textContent = t('markdown.copyCode');
       button.addEventListener('click', () => {
         const code = pre.querySelector('code')?.textContent ?? '';
         void navigator.clipboard?.writeText(code).then(
           () => {
-            button.textContent = '已复制';
+            button.textContent = t('markdown.copied');
             window.setTimeout(() => {
-              button.textContent = '复制';
+              button.textContent = t('markdown.copyCode');
             }, 1200);
           },
           () => {
-            button.textContent = '复制失败';
+            button.textContent = t('markdown.copyFailed');
             window.setTimeout(() => {
-              button.textContent = '复制';
+              button.textContent = t('markdown.copyCode');
             }, 1200);
           },
         );

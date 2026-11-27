@@ -226,6 +226,11 @@ public sealed class UserAuthService
 
         var displayName = SanitizeDisplayName(requestedDisplayName, userName);
 
+        // 语言只是展示偏好，非法值不值得让注册失败：按未设置处理
+        var language = SupportedLanguages.TryNormalize(request.Language, out var normalizedLanguage)
+            ? normalizedLanguage
+            : null;
+
         var code = (request.InviteCode ?? string.Empty).Trim().ToUpperInvariant();
         if (string.IsNullOrEmpty(code))
         {
@@ -259,6 +264,7 @@ public sealed class UserAuthService
             UserId = userId,
             UserName = userName,
             DisplayName = displayName,
+            Language = language,
             PasswordHash = PasswordHasher.Hash(password),
             IsAdmin = false,
             IsBuiltIn = false,
@@ -573,6 +579,32 @@ public sealed class UserAuthService
         return ToDto(user);
     }
 
+    /// <summary>
+    /// 修改本人界面语言。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="language">界面语言代码；必须在 <see cref="SupportedLanguages"/> 白名单内。</param>
+    /// <returns>更新后的用户信息。</returns>
+    /// <exception cref="AuthException">用户不存在或语言代码不受支持。</exception>
+    public async Task<AuthUserDto> UpdateLanguageAsync(string userId, string? language)
+    {
+        if (!SupportedLanguages.TryNormalize(language, out var normalized))
+        {
+            throw new AuthException(400, "界面语言不受支持");
+        }
+
+        var user = await _users.GetByUserIdAsync(userId).ConfigureAwait(false)
+                   ?? throw new AuthException(404, "用户不存在");
+
+        if (!string.Equals(user.Language, normalized, StringComparison.Ordinal))
+        {
+            await _users.UpdateLanguageAsync(user.UserId, normalized).ConfigureAwait(false);
+            user.Language = normalized;
+        }
+
+        return ToDto(user);
+    }
+
     /// <summary>把用户实体转成不含密码的传输模型。</summary>
     /// <param name="user">用户实体。</param>
     /// <returns>用户信息。</returns>
@@ -585,7 +617,8 @@ public sealed class UserAuthService
             user.IsBuiltIn,
             user.LastLoginAt,
             user.FailedLoginCount,
-            user.LockedUntil);
+            user.LockedUntil,
+            user.Language);
 
     private WebTokenClaims BuildClaims(DbAgentUser user, DateTimeOffset now)
     {

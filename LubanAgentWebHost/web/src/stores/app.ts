@@ -3,6 +3,7 @@ import { createSignal } from 'solid-js';
 import { get, post } from '../lib/api';
 import type { Bootstrap, SessionGenerationSettings, SessionSummary, WebCommand, Workspace } from '../lib/types';
 import { forgetSession, pruneSessions } from './tabs';
+import { t } from '../i18n';
 
 export interface ToastItem {
   id: number;
@@ -225,7 +226,7 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
       // 新项目还没有会话；清掉旧筛选，避免右侧空白让人误以为列表坏了
       setFilterWorkspaceId(null);
     }
-    showToast('已创建项目', 'success');
+    showToast(t('app.toast.projectCreated'), 'success');
     return { ok: true };
   } catch (error) {
     const failure = error as { code?: number; message?: string; data?: { reason?: string } };
@@ -241,7 +242,7 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
 export async function renameWorkspace(
   workspaceId: string,
   name: string,
-  successText = '已重命名项目',
+  successText = t('app.toast.projectRenamed'),
 ): Promise<boolean> {
   const trimmed = name.trim();
   if (!trimmed) return false;
@@ -287,7 +288,7 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
   if (wasFiltered) setFilterWorkspaceId(currentWorkspaceId());
 
   await refreshSessions();
-  showToast('已删除项目', 'success');
+  showToast(t('app.toast.projectDeleted'), 'success');
   return true;
 }
 
@@ -320,7 +321,7 @@ export async function renameSession(sessionId: string, title: string): Promise<b
   try {
     await post('/session/rename', { sessionId, title });
     await refreshSessions();
-    showToast('已重命名', 'success');
+    showToast(t('app.toast.renamed'), 'success');
     return true;
   } catch (error) {
     showToast((error as Error).message, 'error');
@@ -333,7 +334,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     await post('/session/delete', { sessionId });
     forgetSession(sessionId);
     await refreshSessions();
-    showToast('已删除会话', 'success');
+    showToast(t('app.toast.sessionDeleted'), 'success');
     return true;
   } catch (error) {
     showToast((error as Error).message, 'error');
@@ -348,7 +349,7 @@ export async function selectModel(providerId: string, modelId: string): Promise<
       modelId,
     });
     setSelection(data ?? { providerId, modelId });
-    showToast('已设为新会话默认模型', 'success');
+    showToast(t('app.toast.defaultModelSet'), 'success');
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
@@ -371,7 +372,7 @@ export async function selectSessionModel(sessionId: string, providerId: string, 
     );
     // 换模型后可选档位与窗口都可能变，重新拉一次生效值；调用方据此判断是否回落
     await loadSessionGeneration(sessionId);
-    showToast('已切换本会话模型', 'success');
+    showToast(t('app.toast.sessionModelSwitched'), 'success');
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
@@ -460,7 +461,7 @@ export async function refreshProviderModels(providerId: string): Promise<void> {
       };
     });
   } catch (error) {
-    showToast(`模型列表拉取失败：${(error as Error).message}`, 'error');
+    showToast(t('app.toast.modelsFailed', { message: (error as Error).message }), 'error');
   }
 }
 
@@ -475,7 +476,7 @@ export function cyclePermissionMode(): void {
 
 export function permissionModeLabel(): string {
   const modes = bootstrap()?.permissionModes ?? [];
-  return modes.find((mode) => mode.key === permissionModeKey())?.displayName ?? '默认 (Default)';
+  return modes.find((mode) => mode.key === permissionModeKey())?.displayName ?? t('permission.defaultMode');
 }
 
 /** 会话当前使用的模型：会话单独选过就用会话的，否则跟随全局默认。 */
@@ -490,7 +491,7 @@ export function sessionModel(sessionId: string): { providerId?: string | null; m
 /** 会话模型的展示名（供应商显示名 / 模型名）。 */
 export function sessionModelLabel(sessionId: string): string {
   const selected = sessionModel(sessionId);
-  if (!selected?.providerId || !selected.modelId) return '未选择模型';
+  if (!selected?.providerId || !selected.modelId) return t('app.modelUnselected');
   const provider = bootstrap()?.providers.find((item) => item.id === selected.providerId);
   return `${provider?.displayName ?? selected.providerId} / ${selected.modelId}`;
 }

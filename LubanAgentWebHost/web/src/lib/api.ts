@@ -1,5 +1,6 @@
 import { blockForAuth } from '../stores/session';
 import type { ApiEnvelope } from './types';
+import { t } from '../i18n';
 
 export class ApiError extends Error {
   constructor(
@@ -61,7 +62,7 @@ async function parseEnvelope<T>(response: Response, blockOnAuth = true): Promise
   const text = await response.text();
   if (!text) {
     if (response.ok) return undefined as T;
-    throw fail(response.status, response.status, `请求失败（HTTP ${response.status}）`, blockOnAuth);
+    throw fail(response.status, response.status, t('api.httpFailed', { status: response.status }), blockOnAuth);
   }
 
   let envelope: ApiEnvelope<T>;
@@ -75,7 +76,7 @@ async function parseEnvelope<T>(response: Response, blockOnAuth = true): Promise
     throw fail(
       response.status,
       envelope.code || response.status,
-      envelope.message || '请求失败',
+      envelope.message || t('api.requestFailed'),
       blockOnAuth,
       envelope.data,
     );
@@ -138,11 +139,11 @@ export async function toApiError(response: Response): Promise<ApiError> {
     try {
       const envelope = JSON.parse(text) as ApiEnvelope<unknown>;
       if (envelope && envelope.success === false) {
-        return fail(response.status, envelope.code || response.status, envelope.message || '请求失败');
+        return fail(response.status, envelope.code || response.status, envelope.message || t('api.requestFailed'));
       }
     } catch {
       /* 非 JSON：走兜底 */
     }
   }
-  return fail(response.status, response.status, `请求失败（HTTP ${response.status}）`);
+  return fail(response.status, response.status, t('api.httpFailed', { status: response.status }));
 }

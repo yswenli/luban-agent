@@ -4,6 +4,7 @@ import { resetAgent, settingsApi } from '../../lib/settings';
 import type { McpFile } from '../../lib/types';
 import { showToast } from '../../stores/app';
 import { AreaField, CheckField, FormActions, SelectField, SettingsPane, TextField } from './Shared';
+import { t } from '../../i18n';
 
 const empty = (): McpFile => ({
   name: '',
@@ -69,7 +70,7 @@ export function McpTab(props: { scope: string }) {
 
   const save = async () => {
     if (!form().name.trim()) {
-      showToast('服务名不能为空', 'error');
+      showToast(t('mcp.nameRequired'), 'error');
       return;
     }
 
@@ -77,7 +78,7 @@ export function McpTab(props: { scope: string }) {
     try {
       const result = await settingsApi.saveMcp({ scope: props.scope, originalId: active(), ...form() });
       await resetAgent();
-      showToast('MCP 配置已保存', 'success');
+      showToast(t('mcp.saved'), 'success');
       await reload(result?.key ?? form().name.trim());
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -89,13 +90,13 @@ export function McpTab(props: { scope: string }) {
   const remove = async () => {
     const key = active();
     if (!key) return;
-    if (!window.confirm(`删除 MCP 配置「${key}」？该操作不可撤销。`)) return;
+    if (!window.confirm(t('mcp.deleteConfirm', { name: key }))) return;
 
     setBusy(true);
     try {
       await settingsApi.deleteMcp(props.scope, key);
       await resetAgent();
-      showToast('MCP 配置已删除', 'success');
+      showToast(t('mcp.deleted'), 'success');
       setActive(null);
       setForm(empty());
       await reload(null);
@@ -108,11 +109,11 @@ export function McpTab(props: { scope: string }) {
 
   return (
     <SettingsPane
-      title="MCP 服务"
+      title={t('mcp.title')}
       items={items()}
       activeKey={active()}
-      emptyText="该作用域下还没有文件型 MCP 配置。"
-      createLabel="新建"
+      emptyText={t('mcp.empty')}
+      createLabel={t('common.new')}
       busy={busy()}
       onSelect={(key) => void open(key)}
       onCreate={() => {
@@ -121,45 +122,45 @@ export function McpTab(props: { scope: string }) {
       }}
     >
       <div class="field-grid">
-        <TextField label="名称" value={form().name} hint="同时作为文件名" onInput={(v) => patch('name', v)} />
-        <TextField label="描述" value={form().description} onInput={(v) => patch('description', v)} />
+        <TextField label={t('common.name')} value={form().name} hint={t('mcp.nameHint')} onInput={(v) => patch('name', v)} />
+        <TextField label={t('common.description')} value={form().description} onInput={(v) => patch('description', v)} />
         <SelectField
-          label="传输方式"
+          label={t('mcp.transport')}
           value={form().transport}
           options={[
-            { value: 'stdio', label: 'stdio（本地进程）' },
-            { value: 'http', label: 'http（Streamable HTTP）' },
-            { value: 'sse', label: 'sse（旧版 HTTP+SSE）' },
+            { value: 'stdio', label: t('mcp.transportStdio') },
+            { value: 'http', label: t('mcp.transportHttp') },
+            { value: 'sse', label: t('mcp.transportSse') },
           ]}
           onChange={(v) => patch('transport', v)}
         />
         <TextField
-          label={form().transport === 'stdio' ? '启动命令' : '服务地址'}
+          label={form().transport === 'stdio' ? t('mcp.startCommand') : t('mcp.serverUrl')}
           value={form().target}
           wide
-          placeholder={form().transport === 'stdio' ? '如 npx -y @modelcontextprotocol/server-filesystem' : '如 http://127.0.0.1:3000/mcp'}
+          placeholder={form().transport === 'stdio' ? t('mcp.startPlaceholder') : t('mcp.urlPlaceholder')}
           onInput={(v) => patch('target', v)}
         />
         <Show when={form().transport === 'stdio'}>
           <AreaField
-            label="启动参数"
+            label={t('mcp.args')}
             value={form().args.join('\n')}
             rows={4}
             wide
             mono
-            hint="一行一个参数"
+            hint={t('mcp.argsHint')}
             onInput={(v) => patch('args', v.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))}
           />
         </Show>
-        <CheckField label="启用" checked={form().enabled} onChange={(v) => patch('enabled', v)} />
+        <CheckField label={t('common.enabled')} checked={form().enabled} onChange={(v) => patch('enabled', v)} />
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void save()} disabled={busy()}>
-          保存
+          {t('common.save')}
         </button>
         <Show when={active()}>
           <button class="btn danger" onClick={() => void remove()} disabled={busy()}>
-            删除
+            {t('common.delete')}
           </button>
         </Show>
       </FormActions>

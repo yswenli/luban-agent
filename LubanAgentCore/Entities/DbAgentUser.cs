@@ -32,6 +32,10 @@ public class DbAgentUser : EntityBase
     [SugarColumn(ColumnDescription = "显示名", Length = 128, IsNullable = true)]
     public string? DisplayName { get; set; }
 
+    /// <summary>界面语言代码；为空表示沿用浏览器语言。</summary>
+    [SugarColumn(ColumnDescription = "界面语言", Length = 16, IsNullable = true)]
+    public string? Language { get; set; }
+
     /// <summary>PBKDF2 密码摘要（格式见 <c>PasswordHasher</c>）。</summary>
     [SugarColumn(ColumnDescription = "密码摘要", Length = 512, IsNullable = false)]
     public string PasswordHash { get; set; } = "";

@@ -4,29 +4,14 @@ import { Icon } from '../../components/Icons';
 import { fileToBase64, pluginsApi } from '../../lib/plugins';
 import type { PluginChangeResult } from '../../lib/types';
 import { showToast } from '../../stores/app';
+import { t } from '../../i18n';
 
 /** 单个插件包上限，与服务端校验一致；超限直接在前端拦掉，不浪费一次上传。 */
 const MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
 
-const PACKAGE_TREE = `my-plugin.zip
-└─ com.example.myplugin/          # 顶层目录名随意，建议与 id 一致
-   ├─ plugin.json                 # 必需
-   ├─ lib/                        # 入口程序集及其依赖
-   │  └─ Com.Example.MyPlugin.dll
-   ├─ web/                        # 可选：自带页面（webPage 必须在此之下）
-   │  ├─ index.html
-   │  └─ app.js
-   └─ assets/                     # 可选：图标等资源`;
+const packageTree = () => t('plugins.install.tree');
 
-const MANIFEST_SAMPLE = `{
-  "id": "com.example.myplugin",
-  "name": "示例插件",
-  "version": "1.0.0",
-  "entryAssembly": "Com.Example.MyPlugin.dll",
-  "uiContributions": [
-    { "id": "main", "label": "示例", "icon": "plug", "webPage": "web/index.html" }
-  ]
-}`;
+const manifestSample = () => t('plugins.install.manifest');
 
 /**
  * 安装插件：选 zip → Base64 → `/plugin/install`。
@@ -52,13 +37,13 @@ export function InstallPanel(props: {
 
     if (!/\.zip$/i.test(selected.name)) {
       setFile(null);
-      setError('请选择 .zip 格式的插件包');
+      setError(t('plugins.zipRequired'));
       return;
     }
 
     if (selected.size > MAX_PACKAGE_BYTES) {
       setFile(null);
-      setError(`插件包超过 ${MAX_PACKAGE_BYTES / 1024 / 1024}MB 上限`);
+      setError(t('plugins.install.tooLarge', { max: MAX_PACKAGE_BYTES / 1024 / 1024 }));
       return;
     }
 
@@ -92,9 +77,9 @@ export function InstallPanel(props: {
 
   const copySample = () => {
     void navigator.clipboard
-      ?.writeText(MANIFEST_SAMPLE)
-      .then(() => showToast('已复制 plugin.json 示例', 'success'))
-      .catch(() => showToast('复制失败，请手动选中示例文本', 'error'));
+      ?.writeText(manifestSample())
+      .then(() => showToast(t('plugins.install.sampleCopied'), 'success'))
+      .catch(() => showToast(t('plugins.install.copyFailed'), 'error'));
   };
 
   return (
@@ -102,9 +87,9 @@ export function InstallPanel(props: {
       <div class="plugin-install-head">
         <button class="btn ghost" onClick={() => setOpen(!open())}>
           <Icon name={open() ? 'chevron-down' : 'plus'} size={15} />
-          安装插件
+          {t('plugins.install.title')}
         </button>
-        <span class="faint">上传浏览器选中的 zip 包；安装成功后自动启用。</span>
+        <span class="faint">{t('plugins.install.hint')}</span>
       </div>
 
       <Show when={open()}>
@@ -119,17 +104,17 @@ export function InstallPanel(props: {
             />
             <button class="btn" disabled={props.busy} onClick={() => input.click()}>
               <Icon name="folder" size={15} />
-              选择 zip 包
+              {t('plugins.install.pick')}
             </button>
-            <span class="faint">{file() ? `${file()!.name}（${formatSize(file()!.size)}）` : '尚未选择文件'}</span>
+            <span class="faint">{file() ? t('plugins.install.selectedFile', { name: file()!.name, size: formatSize(file()!.size) }) : t('plugins.install.notPicked')}</span>
             <div class="spacer" />
             <Show when={file()}>
               <button class="btn ghost" disabled={props.busy} onClick={reset}>
-                清除
+                {t('plugins.install.clear')}
               </button>
             </Show>
             <button class="btn primary" disabled={!file() || props.busy} onClick={() => void install()}>
-              {props.busy ? '安装中…' : '上传并安装'}
+              {props.busy ? t('plugins.install.installing') : t('plugins.install.uploadAndInstall')}
             </button>
           </div>
 
@@ -142,43 +127,31 @@ export function InstallPanel(props: {
 
           <div class="plugin-doc">
             <div class="plugin-doc-section">
-              <div class="section-label">包结构</div>
-              <pre class="plugin-doc-pre">{PACKAGE_TREE}</pre>
+              <div class="section-label">{t('plugins.install.structure')}</div>
+              <pre class="plugin-doc-pre">{packageTree()}</pre>
               <ul class="plugin-doc-list">
-                <li>
-                  <code>plugin.json</code> 必须有 <code>id</code>、<code>name</code>、<code>version</code>、
-                  <code>entryAssembly</code>；<code>uiContributions</code>、<code>skills</code>、<code>mcpServers</code>{' '}
-                  可选。
-                </li>
-                <li>
-                  必须有 DLL，且 <code>entryAssembly</code> 里的入口类型实现 <code>IPlugin</code>；插件只共享宿主已加载的{' '}
-                  <code>LuBan.*</code> / <code>Microsoft.*</code> / <code>System.*</code>，不要自带这些程序集。
-                </li>
-                <li>
-                  <code>webPage</code> 必须指向本包 <code>web/</code> 下的 <code>.html</code> 文件；页面里的相对路径可用，
-                  白名单外扩展名（如 <code>.woff2</code>、<code>.json</code>）可能无法加载。
-                </li>
-                <li>
-                  清单放压缩包根目录，或只保留一个顶层目录；单包不超过 32MB，解压后不超过 128MB。
-                </li>
-                <li>安装后自动启用；同 id 已存在时请改用「升级」。</li>
+                <li>{t('plugins.install.requiredFields')}</li>
+                <li>{t('plugins.install.dll')}</li>
+                <li>{t('plugins.install.webPageRule')}</li>
+                <li>{t('plugins.install.packageRule')}</li>
+                <li>{t('plugins.install.autoEnable')}</li>
               </ul>
             </div>
 
             <div class="plugin-doc-section">
               <div class="plugin-doc-section-head">
-                <div class="section-label">plugin.json 最小示例</div>
+                <div class="section-label">{t('plugins.install.minExample')}</div>
                 <button class="btn ghost" onClick={copySample}>
-                  复制
+                  {t('plugins.install.copy')}
                 </button>
               </div>
-              <pre class="plugin-doc-pre mono">{MANIFEST_SAMPLE}</pre>
+              <pre class="plugin-doc-pre mono">{manifestSample()}</pre>
             </div>
 
             <div class="notice warn">
               <Icon name="alert" size={16} />
               <span>
-                插件页面与宿主同源运行，脚本可访问浏览器存储与当前页面 DOM。只安装可信来源的插件。
+                {t('plugins.install.securityNotice')}
               </span>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { createSignal, onMount, Show } from 'solid-js';
 import { settingsApi } from '../../lib/settings';
 import { showToast } from '../../stores/app';
 import { FormActions, SettingsPane, TextField } from './Shared';
+import { t } from '../../i18n';
 
 /**
  * 工作区根目录页（仅管理员）：配置允许创建项目的本机目录白名单。
@@ -30,7 +31,7 @@ export function RootsTab() {
     setBusy(true);
     try {
       setRoots(await settingsApi.saveWorkspaceRoots(next));
-      showToast('已保存工作区根目录', 'success');
+      showToast(t('roots.saved'), 'success');
       return true;
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -45,7 +46,7 @@ export function RootsTab() {
     const value = draft().trim();
     if (!value) return;
     if (roots().some((root) => root.toLowerCase() === value.toLowerCase())) {
-      showToast('该目录已在列表中', 'error');
+      showToast(t('roots.duplicate'), 'error');
       return;
     }
 
@@ -56,53 +57,52 @@ export function RootsTab() {
 
   const remove = async (root: string): Promise<void> => {
     if (roots().length <= 1) {
-      showToast('至少保留一个工作区根目录', 'error');
+      showToast(t('roots.keepOne'), 'error');
       return;
     }
 
-    if (!window.confirm(`移除根目录 ${root}？\n已登记在该目录下的工作区仍可继续使用，但不能再在其中新建项目。`)) {
+    if (!window.confirm(t('roots.removeConfirm', { root }))) {
       return;
     }
 
     await save(roots().filter((item) => item !== root));
   };
 
-  const entries = () => roots().map((root) => ({ key: root, label: root, sub: '允许在该目录下新建项目' }));
+  const entries = () => roots().map((root) => ({ key: root, label: root, sub: t('roots.allowedNote') }));
 
   return (
     <SettingsPane
-      title="根目录"
+      title={t('roots.title')}
       entries={entries()}
       activeKey={null}
-      emptyText="还没有配置根目录；服务端会回落到 ~/.luban-agent。"
+      emptyText={t('roots.empty')}
       busy={busy()}
       onSelect={() => undefined}
       onDelete={(key) => void remove(key)}
     >
       <div class="settings-form-head">
-        <span class="field-label">新增根目录</span>
+        <span class="field-label">{t('roots.newRoot')}</span>
       </div>
       <div class="field-grid">
         <TextField
-          label="绝对路径"
+          label={t('roots.absolutePath')}
           value={draft()}
           placeholder="D:\WorkBench\projects"
           wide
-          hint="必须填写本机绝对路径；已存在的文件不能作为根目录"
+          hint={t('roots.absolutePathHint')}
           onInput={(value) => setDraft(value)}
         />
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void add()} disabled={busy() || draft().trim().length === 0}>
-          添加
+          {t('common.add')}
         </button>
       </FormActions>
 
       <Show when={roots().length > 0}>
         <div class="notice" style={{ 'margin-top': '12px' }}>
           <span>
-            机器级配置，所有用户共用：新建项目（指定目录与 git 克隆）都只能落在上述根目录内。
-            从列表移除不会影响已登记的工作区。
+            {t('roots.globalNote')}
           </span>
         </div>
       </Show>

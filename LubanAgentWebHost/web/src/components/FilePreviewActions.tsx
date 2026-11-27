@@ -4,6 +4,7 @@ import { fileDownloadUrl, filePreviewName, type FilePreviewContent } from '../li
 import { showToast } from '../stores/app';
 
 import { Icon } from './Icons';
+import { t } from '../i18n';
 
 /** 有「渲染态 / 原文」两种呈现的文本类型；纯文本本来即源码，不需要切换。 */
 export function hasSourceView(kind: FilePreviewContent['kind'] | null): boolean {
@@ -67,10 +68,10 @@ export function FilePreviewActions(props: {
   const copy = async () => {
     const text = plainText();
     if (!(await writeClipboard(text || props.path))) {
-      showToast('复制失败：当前页面不允许写入剪贴板', 'error');
+      showToast(t('fileActions.copyFailed'), 'error');
       return;
     }
-    showToast(text ? '已复制文件内容' : '已复制文件路径', 'success');
+    showToast(text ? t('fileActions.copiedContent') : t('fileActions.copiedPath'), 'success');
   };
 
   return (
@@ -79,7 +80,7 @@ export function FilePreviewActions(props: {
         <button
           class="icon-btn"
           classList={{ active: props.showingSource }}
-          title={props.showingSource ? '返回预览' : '查看源码'}
+          title={props.showingSource ? t('fileActions.backToPreview') : t('fileActions.viewSource')}
           aria-pressed={props.showingSource}
           onClick={() => props.onToggleSource()}
         >
@@ -87,7 +88,7 @@ export function FilePreviewActions(props: {
         </button>
       </Show>
 
-      <button class="icon-btn" title={plainText() ? '复制文件内容' : '复制文件路径'} onClick={() => void copy()}>
+      <button class="icon-btn" title={plainText() ? t('fileActions.copyContent') : t('fileActions.copyPath')} onClick={() => void copy()}>
         <Icon name="copy" size={16} />
       </button>
 
@@ -95,7 +96,7 @@ export function FilePreviewActions(props: {
         class="icon-btn"
         href={fileDownloadUrl({ path: props.path, workspaceId: props.workspaceId })}
         download={filePreviewName(props.path)}
-        title="下载"
+        title={t('common.download')}
       >
         <Icon name="download" size={16} />
       </a>

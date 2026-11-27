@@ -8,6 +8,7 @@ import {
   sideDragging,
   sideWidth,
 } from '../lib/sidebar';
+import { t } from '../i18n';
 
 /** 方向键一次挪动的距离：比鼠标拖拽粗糙，但可预期。 */
 const KEYBOARD_STEP = 16;
@@ -97,12 +98,12 @@ export function SideResizer(props: { label?: string; target?: ResizeTarget; inve
       classList={{ dragging: target().dragging() }}
       role="separator"
       aria-orientation="vertical"
-      aria-label={props.label ?? '调整侧栏宽度'}
+      aria-label={props.label ?? t('resizer.sidebarWidth')}
       aria-valuemin={target().minWidth}
       aria-valuemax={target().maxWidth()}
       aria-valuenow={target().width()}
       tabIndex={0}
-      title="拖动调整宽度，双击恢复默认"
+      title={t('resizer.dragHint')}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}

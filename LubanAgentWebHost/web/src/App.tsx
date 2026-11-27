@@ -6,6 +6,7 @@ import { AboutDialog, ConnectionHelpDialog } from './components/InfoDialogs';
 import { LoginPage } from './components/LoginPage';
 import { ToastStack } from './components/ToastStack';
 import { TopBar } from './components/TopBar';
+import { t } from './i18n';
 import { get } from './lib/api';
 import { closePlugins, closeSettings, lastView, useRoute } from './lib/router';
 import { ChatPage } from './pages/Chat';
@@ -74,10 +75,15 @@ export function App() {
 
   return (
     <>
-      <Show when={authReady()} fallback={<BootScreen text="正在校验登录状态…" />}>
+      <Show when={authReady()} fallback={<BootScreen text={t('app.checkingAuth')} />}>
         <Show
           when={authStatus()}
-          fallback={<AuthUnavailable message={authError() ?? '无法连接后端'} onRetry={() => void start()} />}
+          fallback={
+            <AuthUnavailable
+              message={authError() ?? t('app.backendUnavailable')}
+              onRetry={() => void start()}
+            />
+          }
         >
           <Show when={currentUser()} fallback={<LoginPage notice={authBlocked()} />}>
             {/* 令牌在会话中途失效：留在登录页重新登录，不把用户赶去终端取入口地址 */}
@@ -115,7 +121,7 @@ export function App() {
                     </div>
                   }
                 >
-                  <ErrorScreen message={bootError() ?? '启动失败'} />
+                  <ErrorScreen message={bootError() ?? t('app.bootFailed')} />
                 </Show>
               </Show>
             </>}>
@@ -134,8 +140,8 @@ function BootScreen(props: { text?: string }) {
     <div class="boot">
       <div class="boot-card">
         <div class="spinner" />
-        <h1>正在连接 LuBan Agent</h1>
-        <p>{props.text ?? '读取工作区、供应商与模型配置…'}</p>
+        <h1>{t('app.connectingTitle')}</h1>
+        <p>{props.text ?? t('app.connectingDetail')}</p>
       </div>
     </div>
   );
@@ -147,12 +153,12 @@ function AuthUnavailable(props: { message: string; onRetry: () => void }) {
     <div class="boot">
       <div class="boot-card">
         <Icon name="alert" size={28} />
-        <h1>无法连接后端</h1>
+        <h1>{t('app.backendUnavailable')}</h1>
         <p>{props.message}</p>
         <div class="boot-actions">
           <button class="btn primary" onClick={props.onRetry}>
             <Icon name="refresh" size={16} />
-            重试
+            {t('app.retry')}
           </button>
         </div>
       </div>
@@ -168,20 +174,20 @@ function ErrorScreen(props: { message: string }) {
     <div class="boot">
       <div class="boot-card">
         <Icon name="alert" size={28} />
-        <h1>无法连接后端</h1>
+        <h1>{t('app.backendUnavailable')}</h1>
         <p>{props.message}</p>
         <div class="boot-actions">
           <button class="btn primary" onClick={() => void loadBootstrap()}>
             <Icon name="refresh" size={16} />
-            重试
+            {t('app.retry')}
           </button>
           <button class="btn ghost" onClick={() => setDialog('help')}>
             <Icon name="help" size={16} />
-            帮助
+            {t('app.help')}
           </button>
           <button class="btn ghost" onClick={() => setDialog('about')}>
             <Icon name="info" size={16} />
-            关于
+            {t('app.about')}
           </button>
         </div>
       </div>

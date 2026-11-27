@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 export function isCaptureSupported(): boolean {
 	return typeof navigator !== 'undefined' && !!navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function';
 }
@@ -20,12 +21,12 @@ export async function captureScreen(delay = 0): Promise<HTMLCanvasElement> {
 		await waitFirstFrame(video);
 		const width = video.videoWidth;
 		const height = video.videoHeight;
-		if (!width || !height) throw new Error('未能获取屏幕画面');
+		if (!width || !height) throw new Error(t('screenshot.captureFailed'));
 		const canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
 		const ctx = canvas.getContext('2d');
-		if (!ctx) throw new Error('当前浏览器不支持 Canvas 2D');
+		if (!ctx) throw new Error(t('screenshot.noCanvas'));
 		ctx.drawImage(video, 0, 0, width, height);
 		return canvas;
 	} finally {

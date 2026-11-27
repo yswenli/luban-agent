@@ -16,6 +16,7 @@ import {
   iconText,
   iconUndo,
 } from './icons';
+import { t, type MessageKey } from '../../i18n';
 
 export interface ToolbarProps {
   tool: ToolType | null;
@@ -55,19 +56,19 @@ export interface ToolbarProps {
   onConfirm: () => void;
 }
 
-const toolItems: { key: ToolType; title: string; icon: () => JSX.Element }[] = [
-  { key: 'rect', title: '方框', icon: iconRect },
-  { key: 'ellipse', title: '椭圆', icon: iconEllipse },
-  { key: 'arrow', title: '箭头', icon: iconArrow },
-  { key: 'brush', title: '画笔', icon: iconBrush },
-  { key: 'mosaic', title: '马赛克', icon: iconMosaic },
-  { key: 'text', title: '文字', icon: iconText },
+const toolItems: { key: ToolType; titleKey: MessageKey; icon: () => JSX.Element }[] = [
+  { key: 'rect', titleKey: 'screenshot.tool.rect', icon: iconRect },
+  { key: 'ellipse', titleKey: 'screenshot.tool.ellipse', icon: iconEllipse },
+  { key: 'arrow', titleKey: 'screenshot.tool.arrow', icon: iconArrow },
+  { key: 'brush', titleKey: 'screenshot.tool.pen', icon: iconBrush },
+  { key: 'mosaic', titleKey: 'screenshot.tool.mosaic', icon: iconMosaic },
+  { key: 'text', titleKey: 'screenshot.tool.text', icon: iconText },
 ];
 
-const arrowStyleItems: { key: ArrowStyle; title: string; icon: () => JSX.Element }[] = [
-  { key: 'thin', title: '细尾箭头', icon: iconArrow },
-  { key: 'wedge', title: '楔形粗尾箭头', icon: iconArrowWedge },
-  { key: 'double', title: '双向箭头', icon: iconArrowDouble },
+const arrowStyleItems: { key: ArrowStyle; titleKey: MessageKey; icon: () => JSX.Element }[] = [
+  { key: 'thin', titleKey: 'screenshot.tool.arrowThin', icon: iconArrow },
+  { key: 'wedge', titleKey: 'screenshot.tool.arrowWedge', icon: iconArrowWedge },
+  { key: 'double', titleKey: 'screenshot.tool.arrowDouble', icon: iconArrowDouble },
 ];
 
 export function Toolbar(props: ToolbarProps) {
@@ -75,9 +76,9 @@ export function Toolbar(props: ToolbarProps) {
   const [box, setBox] = createSignal({ w: 0, h: 0 });
 
   const sizeLabel = () => {
-    if (props.tool === 'text') return '字号';
-    if (props.tool === 'mosaic') return '块大小';
-    return '大小';
+    if (props.tool === 'text') return t('screenshot.fontSize');
+    if (props.tool === 'mosaic') return t('screenshot.blockSize');
+    return t('screenshot.size');
   };
 
   const showFill = () => props.tool === 'rect' || props.tool === 'ellipse';
@@ -149,7 +150,7 @@ export function Toolbar(props: ToolbarProps) {
               type="button"
               class="vws-tb__btn"
               classList={{ 'is-active': props.tool === item.key }}
-              title={item.title}
+              title={t(item.titleKey)}
               onClick={() => props.onToolChange(props.tool === item.key ? null : item.key)}
             >
               {item.icon()}
@@ -160,19 +161,19 @@ export function Toolbar(props: ToolbarProps) {
         <button
           type="button"
           class="vws-tb__btn"
-          title="撤销 (Ctrl+Z)"
+          title={t('screenshot.undo')}
           disabled={!props.canUndo}
           onClick={() => props.onUndo()}
         >
           {iconUndo()}
         </button>
-        <button type="button" class="vws-tb__btn" title="下载" onClick={() => props.onDownload()}>
+        <button type="button" class="vws-tb__btn" title={t('common.download')} onClick={() => props.onDownload()}>
           {iconDownload()}
         </button>
-        <button type="button" class="vws-tb__btn" title="取消 (Esc)" onClick={() => props.onCancel()}>
+        <button type="button" class="vws-tb__btn" title={t('screenshot.cancel')} onClick={() => props.onCancel()}>
           {iconClose()}
         </button>
-        <button type="button" class="vws-tb__btn is-primary" title="完成 (Enter)" onClick={() => props.onConfirm()}>
+        <button type="button" class="vws-tb__btn is-primary" title={t('screenshot.done')} onClick={() => props.onConfirm()}>
           {iconCheck()}
         </button>
       </div>
@@ -180,15 +181,15 @@ export function Toolbar(props: ToolbarProps) {
       <Show when={props.tool}>
         <div class="vws-tb__options">
           <Show when={props.tool === 'arrow'}>
-            <span class="vws-tb__label">样式</span>
+            <span class="vws-tb__label">{t('screenshot.style')}</span>
             <For each={arrowStyleItems}>
               {(item) => (
                 <button
                   type="button"
                   class="vws-tb__btn vws-tb__btn--style"
                   classList={{ 'is-active': props.arrowStyle === item.key }}
-                  title={item.title}
-                  aria-label={item.title}
+                  title={t(item.titleKey)}
+                  aria-label={t(item.titleKey)}
                   aria-pressed={props.arrowStyle === item.key}
                   onClick={() => props.onArrowStyleChange(item.key)}
                 >
@@ -211,7 +212,7 @@ export function Toolbar(props: ToolbarProps) {
                   step="0.1"
                   inputmode="decimal"
                   value={sizeField.draft()}
-                  title={`${sizeLabel()}，可直接输入`}
+                  title={t('screenshot.inputDirectly', { label: sizeLabel() })}
                   onPointerDown={(event) => event.stopPropagation()}
                   onInput={sizeField.onInput}
                   onChange={sizeField.onCommit}
@@ -224,7 +225,7 @@ export function Toolbar(props: ToolbarProps) {
             <select
               class="vws-tb__select"
               value={String(props.width)}
-              title={`字号 ${props.width}px`}
+              title={t('screenshot.fontSizeValue', { size: props.width })}
               onPointerDown={(event) => event.stopPropagation()}
               onChange={(event) => props.onWidthChange(Number(event.currentTarget.value))}
             >
@@ -234,25 +235,25 @@ export function Toolbar(props: ToolbarProps) {
 
           <Show when={props.tool !== 'mosaic'}>
             <span class="vws-tb__sep" />
-            <span class="vws-tb__label">颜色</span>
+            <span class="vws-tb__label">{t('screenshot.color')}</span>
             <input
               class="vws-tb__pick"
               type="color"
               value={props.color}
-              title={`颜色 ${props.color}`}
+              title={t('screenshot.colorValue', { color: props.color })}
               onPointerDown={(event) => event.stopPropagation()}
               onInput={(event) => props.onColorChange(event.currentTarget.value)}
             />
 
             <span class="vws-tb__sep" />
-            <span class="vws-tb__label">描边</span>
+            <span class="vws-tb__label">{t('screenshot.stroke')}</span>
             <button
               type="button"
               class="vws-tb__switch"
               classList={{ 'is-on': props.strokeEnabled }}
               role="switch"
               aria-checked={props.strokeEnabled}
-              title={props.strokeEnabled ? '关闭描边' : '开启描边'}
+              title={props.strokeEnabled ? t('screenshot.strokeOff') : t('screenshot.strokeOn')}
               onClick={() => props.onStrokeEnabledChange(!props.strokeEnabled)}
             >
               <span class="vws-tb__knob" />
@@ -265,7 +266,7 @@ export function Toolbar(props: ToolbarProps) {
                 step="0.1"
                 inputmode="decimal"
                 value={strokeField.draft()}
-                title="描边宽度，0.1px 起，可直接输入"
+                title={t('screenshot.strokeWidthHint')}
                 onPointerDown={(event) => event.stopPropagation()}
                 onInput={strokeField.onInput}
                 onChange={strokeField.onCommit}
@@ -276,7 +277,7 @@ export function Toolbar(props: ToolbarProps) {
                 class="vws-tb__pick"
                 type="color"
                 value={props.strokeColor}
-                title={`描边色 ${props.strokeColor}`}
+                title={t('screenshot.strokeColorValue', { color: props.strokeColor })}
                 onPointerDown={(event) => event.stopPropagation()}
                 onInput={(event) => props.onStrokeColorChange(event.currentTarget.value)}
               />
@@ -285,14 +286,14 @@ export function Toolbar(props: ToolbarProps) {
 
           <Show when={showFill()}>
             <span class="vws-tb__sep" />
-            <span class="vws-tb__label">填充</span>
+            <span class="vws-tb__label">{t('screenshot.fill')}</span>
             <button
               type="button"
               class="vws-tb__switch"
               classList={{ 'is-on': props.fillEnabled }}
               role="switch"
               aria-checked={props.fillEnabled}
-              title={props.fillEnabled ? '关闭填充' : '开启填充'}
+              title={props.fillEnabled ? t('screenshot.fillOff') : t('screenshot.fillOn')}
               onClick={() => props.onFillEnabledChange(!props.fillEnabled)}
             >
               <span class="vws-tb__knob" />
@@ -302,7 +303,7 @@ export function Toolbar(props: ToolbarProps) {
                 class="vws-tb__pick"
                 type="color"
                 value={props.fillColor}
-                title={`填充色 ${props.fillColor}`}
+                title={t('screenshot.fillColorValue', { color: props.fillColor })}
                 onPointerDown={(event) => event.stopPropagation()}
                 onInput={(event) => props.onFillColorChange(event.currentTarget.value)}
               />

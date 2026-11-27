@@ -1,6 +1,9 @@
 import { createSignal, Show } from 'solid-js';
 
+import { locale, t } from '../i18n';
+
 import { Icon } from './Icons';
+import { LocaleMenu } from './LocaleMenu';
 import { authStatus, login, register } from '../stores/auth';
 
 /**
@@ -33,18 +36,18 @@ export function LoginPage(props: { notice?: string | null }) {
 
     const name = userName().trim();
     if (!name || !password()) {
-      setError('请输入用户名和密码');
+      setError(t('login.errorMissing'));
       return;
     }
 
     if (mode() === 'register') {
       if (password().length < 8) {
-        setError('密码至少 8 位');
+        setError(t('login.errorPasswordShort'));
         return;
       }
 
       if (!inviteCode().trim()) {
-        setError('请填写邀请码');
+        setError(t('login.errorInviteRequired'));
         return;
       }
     }
@@ -59,6 +62,8 @@ export function LoginPage(props: { notice?: string | null }) {
             password: password(),
             displayName: displayName().trim() || undefined,
             inviteCode: inviteCode().trim(),
+            // 匿名阶段可能已经选过语言，注册时一并落库，免得登录后再选一次
+            language: locale(),
           });
     setBusy(false);
 
@@ -74,13 +79,17 @@ export function LoginPage(props: { notice?: string | null }) {
   return (
     <div class="boot">
       <form class="auth-card" onSubmit={(event) => void submit(event)}>
+        <div class="auth-locale">
+          <LocaleMenu variant="text" />
+        </div>
+
         <div class="auth-head">
           <span class="auth-logo">
             <Icon name="spark" size={20} />
           </span>
           <div>
             <h1>LuBan Agent</h1>
-            <p>{mode() === 'login' ? '登录后继续使用你的工作区与会话' : '凭邀请码创建账号'}</p>
+            <p>{mode() === 'login' ? t('login.subtitle') : t('login.registerSubtitle')}</p>
           </div>
         </div>
 
@@ -94,7 +103,7 @@ export function LoginPage(props: { notice?: string | null }) {
         <Show when={!initialized()}>
           <div class="auth-note">
             <Icon name="info" size={15} />
-            <span>管理员账号尚未初始化，请查看宿主终端输出的初始密码。</span>
+            <span>{t('login.uninitialized')}</span>
           </div>
         </Show>
 
@@ -106,7 +115,7 @@ export function LoginPage(props: { notice?: string | null }) {
               classList={{ active: mode() === 'login' }}
               onClick={() => switchMode('login')}
             >
-              登录
+              {t('login.tabLogin')}
             </button>
             <button
               type="button"
@@ -114,30 +123,34 @@ export function LoginPage(props: { notice?: string | null }) {
               classList={{ active: mode() === 'register' }}
               onClick={() => switchMode('register')}
             >
-              注册
+              {t('login.tabRegister')}
             </button>
           </div>
         </Show>
 
         <div class="form-stack">
           <div class="field">
-            <div class="section-label">用户名</div>
+            <div class="section-label">{t('login.userName')}</div>
             <input
               class="text-input"
               autocomplete="username"
-              placeholder="登录名"
+              placeholder={t('login.userNamePlaceholder')}
               value={userName()}
               onInput={(event) => setUserName(event.currentTarget.value)}
             />
           </div>
 
           <div class="field">
-            <div class="section-label">密码</div>
+            <div class="section-label">{t('login.password')}</div>
             <input
               class="text-input"
               type="password"
               autocomplete={mode() === 'login' ? 'current-password' : 'new-password'}
-              placeholder={mode() === 'login' ? '密码' : '至少 8 位'}
+              placeholder={
+                mode() === 'login'
+                  ? t('login.passwordPlaceholder')
+                  : t('login.passwordNewPlaceholder')
+              }
               value={password()}
               onInput={(event) => setPassword(event.currentTarget.value)}
             />
@@ -145,20 +158,20 @@ export function LoginPage(props: { notice?: string | null }) {
 
           <Show when={mode() === 'register'}>
             <div class="field">
-              <div class="section-label">显示名（可选）</div>
+              <div class="section-label">{t('login.displayName')}</div>
               <input
                 class="text-input"
-                placeholder="默认与用户名相同"
+                placeholder={t('login.displayNamePlaceholder')}
                 autocomplete="off"
                 value={displayName()}
                 onInput={(event) => setDisplayName(event.currentTarget.value)}
               />
             </div>
             <div class="field">
-              <div class="section-label">邀请码</div>
+              <div class="section-label">{t('login.inviteCode')}</div>
               <input
                 class="text-input mono"
-                placeholder="由管理员生成"
+                placeholder={t('login.inviteCodePlaceholder')}
                 value={inviteCode()}
                 onInput={(event) => setInviteCode(event.currentTarget.value.toUpperCase())}
               />
@@ -174,7 +187,7 @@ export function LoginPage(props: { notice?: string | null }) {
         </Show>
 
         <button class="btn primary auth-submit" type="submit" disabled={busy()}>
-          {busy() ? '请稍候…' : mode() === 'login' ? '登录' : '注册并登录'}
+          {busy() ? t('login.submitting') : mode() === 'login' ? t('login.submit') : t('login.submitRegister')}
         </button>
       </form>
     </div>

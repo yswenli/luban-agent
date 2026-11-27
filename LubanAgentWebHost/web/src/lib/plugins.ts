@@ -1,5 +1,6 @@
 import { get, post } from './api';
 import type { PluginChangeResult, PluginList } from './types';
+import { t } from '../i18n';
 
 /**
  * 插件接口封装。
@@ -27,7 +28,7 @@ export function fileToBase64(file: File): Promise<string> {
       const index = text.indexOf(',');
       resolve(index >= 0 ? text.slice(index + 1) : text);
     };
-    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.onerror = () => reject(reader.error ?? new Error(t('plugins.fileReadFailed')));
     reader.readAsDataURL(file);
   });
 }
@@ -36,12 +37,12 @@ export function fileToBase64(file: File): Promise<string> {
 export function pluginStateLabel(state: string): string {
   switch (state) {
     case 'enabled':
-      return '已启用';
+      return t('plugins.state.enabled');
     case 'disabled':
-      return '已停用';
+      return t('plugins.state.disabled');
     case 'error':
-      return '错误';
+      return t('plugins.state.error');
     default:
-      return '已安装';
+      return t('plugins.state.installed');
   }
 }

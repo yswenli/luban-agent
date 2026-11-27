@@ -5,6 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <meta name="author" content="yswenli" />
+    <!-- 首屏语言：与 src/i18n/index.ts 的 normalizeLocale 保持一致（键 luban.web.locale）。
+         先按本地缓存，其次按浏览器语言匹配 14 种受支持语言，都命中不了按简体中文。 -->
+    <script>
+      (function () {
+        var supported = [
+          'en',
+          'az',
+          'es',
+          'id',
+          'it',
+          'ja',
+          'ko',
+          'pt',
+          'pl',
+          'ru',
+          'th',
+          'tr',
+          'zh-CN',
+          'zh-TW',
+        ];
+        function normalize(value) {
+          var raw = (value || '').trim().replace('_', '-');
+          if (!raw) return null;
+          if (/^zh/i.test(raw)) {
+            return /hant|tw|hk|mo/i.test(raw) ? 'zh-TW' : 'zh-CN';
+          }
+          var base = raw.split('-')[0].toLowerCase();
+          return supported.indexOf(base) >= 0 ? base : null;
+        }
+        var cached = null;
+        try {
+          cached = normalize(localStorage.getItem('luban.web.locale'));
+        } catch (e) {
+          /* 隐私模式下读不到，走浏览器语言 */
+        }
+        var locale = cached;
+        if (!locale) {
+          var list = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+          for (var i = 0; i < list.length && !locale; i += 1) {
+            locale = normalize(list[i]);
+          }
+        }
+        document.documentElement.lang = locale || 'zh-CN';
+      })();
+    </script>
     <!-- 首屏防闪：必须在样式表与首绘之前写 data-theme。
          解析规则与 src/lib/theme.ts 一致（键 luban.web.theme，三态 follow/dark/light），改键名时两处同步。 -->
     <script>

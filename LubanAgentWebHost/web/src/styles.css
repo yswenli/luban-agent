@@ -3090,6 +3090,51 @@ button.attachment-chip:focus-visible {
   color: var(--accent);
 }
 
+/* 登录页语言入口：右上角一行，负外边距吃掉卡片内边距，不额外撑高 */
+.auth-locale {
+  display: flex;
+  justify-content: flex-end;
+  margin: -12px -12px -8px;
+}
+
+/* 带文字的语言按钮（登录页、设置页） */
+.locale-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  max-width: 100%;
+}
+
+.locale-btn:hover,
+.locale-btn.active {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* 语言菜单左侧标识：固定 3:2 比例，避免各面旗帜高度不一 */
+.flag {
+  flex: none;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.flag-badge {
+  display: inline-grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--text-dim);
+  font-weight: 600;
+  line-height: 1;
+}
+
 .auth-tabs {
   display: flex;
   gap: 4px;

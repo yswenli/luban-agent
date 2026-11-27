@@ -115,4 +115,13 @@ public class AgentUserRepository : AgentRepository<DbAgentUser>
         => UpdateAsync(
             u => new DbAgentUser { DisplayName = displayName, UpdateTime = DateTime.Now },
             u => u.UserId == userId && !u.IsDelete);
+
+    /// <summary>修改界面语言。</summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="language">界面语言代码（已由业务层校验）。</param>
+    /// <returns>是否更新到行。</returns>
+    public Task<bool> UpdateLanguageAsync(string userId, string language)
+        => UpdateAsync(
+            u => new DbAgentUser { Language = language, UpdateTime = DateTime.Now },
+            u => u.UserId == userId && !u.IsDelete);
 }

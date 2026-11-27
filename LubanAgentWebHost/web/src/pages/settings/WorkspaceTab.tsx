@@ -4,6 +4,7 @@ import { settingsApi } from '../../lib/settings';
 import type { AgentsMdInfo, AgentsMdResult } from '../../lib/types';
 import { bootstrap, refreshWorkspaces, showToast } from '../../stores/app';
 import { AreaField, CheckField, FormActions, SelectField, TextField } from './Shared';
+import { t } from '../../i18n';
 
 interface AgentsMdForm {
   agentName: string;
@@ -90,7 +91,7 @@ export function WorkspaceTab(props: { workspaceId: string }) {
       if (!id) return;
       await settingsApi.authorizeWorkspace(id);
       await refreshWorkspaces();
-      showToast('已授权访问该目录', 'success');
+      showToast(t('workspace.authorizedToast'), 'success');
     });
 
   const ensureConfig = () =>
@@ -99,14 +100,14 @@ export function WorkspaceTab(props: { workspaceId: string }) {
       if (!id) return;
       await settingsApi.ensureWorkspaceConfig(id);
       await refreshWorkspaces();
-      showToast('配置目录已就绪', 'success');
+      showToast(t('workspace.configReady'), 'success');
     });
 
   const applyResult = (result: AgentsMdResult) => {
     setMarkdown(result.markdown);
     setVerification(result.verificationPrompt);
     setOverwrite(true);
-    showToast('AGENTS.md 已写入工作区根目录', 'success');
+    showToast(t('workspace.written'), 'success');
     if (workspaceId()) void loadInfo(workspaceId());
   };
 
@@ -116,7 +117,7 @@ export function WorkspaceTab(props: { workspaceId: string }) {
       if (!id) return;
       const value = form();
       if (!value.agentName.trim() || !value.scene.trim()) {
-        showToast('Agent 名称与业务场景为必填项', 'error');
+        showToast(t('workspace.required'), 'error');
         return;
       }
       const result = await settingsApi.agentsMdGenerate({
@@ -148,16 +149,16 @@ export function WorkspaceTab(props: { workspaceId: string }) {
     if (!verification()) return;
     try {
       await navigator.clipboard.writeText(verification());
-      showToast('校验提示词已复制', 'success');
+      showToast(t('workspace.verificationCopied'), 'success');
     } catch {
-      showToast('浏览器拒绝访问剪贴板，请手动选中复制', 'error');
+      showToast(t('workspace.clipboardDenied'), 'error');
     }
   };
 
   return (
     <div class="settings-form">
       <div class="settings-form-head">
-        <span class="field-label">工作区</span>
+        <span class="field-label">{t('workspace.title')}</span>
         <div class="spacer" />
         <Show when={info()}>
           {(data) => <span class="tag">{data().workspaceName}</span>}
@@ -165,16 +166,16 @@ export function WorkspaceTab(props: { workspaceId: string }) {
       </div>
 
       <div class="field-grid">
-        <TextField label="根目录" value={info()?.rootPath ?? current()?.rootPath ?? ''} readOnly wide onInput={() => {}} />
-        <Show when={workspace()?.isAuthorized} fallback={<div class="notice warn"><span>目录尚未授权，Agent 无法读写该工作区。</span></div>}>
+        <TextField label={t('workspace.rootPath')} value={info()?.rootPath ?? current()?.rootPath ?? ''} readOnly wide onInput={() => {}} />
+        <Show when={workspace()?.isAuthorized} fallback={<div class="notice warn"><span>{t('workspace.unauthorized')}</span></div>}>
           <div class="notice ok">
-            <span>目录已授权，Agent 可读写该工作区。</span>
+            <span>{t('workspace.authorized')}</span>
           </div>
         </Show>
         <TextField
-          label="配置目录"
-          value={workspace()?.configPath ?? '（尚未生成）'}
-          hint="技能、规则与 MCP 配置都存放在该目录下"
+          label={t('workspace.configDir')}
+          value={workspace()?.configPath ?? t('workspace.notGenerated')}
+          hint={t('workspace.configDirHint')}
           readOnly
           onInput={() => {}}
         />
@@ -182,20 +183,20 @@ export function WorkspaceTab(props: { workspaceId: string }) {
 
       <FormActions>
         <button class="btn" disabled={!!busy() || !workspaceId() || !!workspace()?.isAuthorized} onClick={() => void authorize()}>
-          {busy() === 'authorize' ? '授权中…' : '授权目录访问'}
+          {busy() === 'authorize' ? t('workspace.authorizing') : t('workspace.authorize')}
         </button>
         <button class="btn ghost" disabled={!!busy() || !workspaceId()} onClick={() => void ensureConfig()}>
-          {busy() === 'config' ? '生成中…' : '生成配置目录'}
+          {busy() === 'config' ? t('workspace.generating') : t('workspace.generateConfig')}
         </button>
       </FormActions>
 
       <div class="settings-form-head" style={{ 'margin-top': '26px' }}>
-        <span class="field-label">AGENTS.md 初始化</span>
+        <span class="field-label">{t('workspace.agentsInit')}</span>
         <div class="spacer" />
         <Show when={info()}>
           {(data) => (
             <span class="tag" classList={{ current: data().exists }}>
-              {data().exists ? `已存在 · ${data().existingLength} 字符` : '尚未创建'}
+              {data().exists ? t('workspace.existsChars', { count: data().existingLength }) : t('workspace.notCreated')}
             </span>
           )}
         </Show>
@@ -203,45 +204,45 @@ export function WorkspaceTab(props: { workspaceId: string }) {
 
       <div class="field-grid">
         <TextField
-          label="Agent 名称"
+          label={t('workspace.agentName')}
           value={form().agentName}
-          placeholder="例如：支付网关助手"
+          placeholder={t('workspace.agentNamePlaceholder')}
           onInput={(value) => setForm({ ...form(), agentName: value })}
         />
         <SelectField
-          label="输出模式"
+          label={t('workspace.outputMode')}
           value={form().outputMode}
           options={[
-            { value: 'full', label: '完整版' },
-            { value: 'lite', label: '精简版' },
+            { value: 'full', label: t('workspace.full') },
+            { value: 'lite', label: t('workspace.lite') },
           ]}
           onChange={(value) => setForm({ ...form(), outputMode: value })}
         />
         <AreaField
-          label="业务场景"
-          hint="必填：这个工作区要解决什么问题"
+          label={t('workspace.scene')}
+          hint={t('workspace.sceneHint')}
           rows={3}
           wide
           value={form().scene}
           onInput={(value) => setForm({ ...form(), scene: value })}
         />
         <AreaField
-          label="能力清单"
-          hint="选填：逗号或换行分隔"
+          label={t('workspace.capabilities')}
+          hint={t('workspace.capabilitiesHint')}
           rows={3}
           value={form().capabilities}
           onInput={(value) => setForm({ ...form(), capabilities: value })}
         />
         <AreaField
-          label="工具 / API"
-          hint="选填：逗号或换行分隔"
+          label={t('workspace.tools')}
+          hint={t('workspace.toolsHint')}
           rows={3}
           value={form().tools}
           onInput={(value) => setForm({ ...form(), tools: value })}
         />
         <AreaField
-          label="补充说明"
-          hint="选填：额外约束、边界与禁止事项"
+          label={t('workspace.description')}
+          hint={t('workspace.descriptionHint')}
           rows={3}
           wide
           value={form().description}
@@ -252,9 +253,9 @@ export function WorkspaceTab(props: { workspaceId: string }) {
       <Show when={info()?.exists}>
         <div style={{ 'margin-top': '10px' }}>
           <CheckField
-            label="覆盖已有的 AGENTS.md"
+            label={t('workspace.overwrite')}
             checked={overwrite()}
-            hint="不勾选时，已存在会直接拒绝生成与保存"
+            hint={t('workspace.overwriteHint')}
             onChange={setOverwrite}
           />
         </div>
@@ -266,21 +267,21 @@ export function WorkspaceTab(props: { workspaceId: string }) {
 
       <FormActions>
         <button class="btn primary" disabled={!!busy() || !workspaceId()} onClick={() => void generate()}>
-          {busy() === 'generate' ? '生成中…' : '生成并写入'}
+          {busy() === 'generate' ? t('workspace.generating') : t('workspace.generateAndWrite')}
         </button>
         <button class="btn" disabled={!!busy() || !markdown().trim()} onClick={() => void save()}>
-          {busy() === 'save' ? '保存中…' : '保存编辑内容'}
+          {busy() === 'save' ? t('common.saving') : t('workspace.saveEdits')}
         </button>
         <Show when={verification()}>
           <button class="btn ghost" onClick={() => void copyVerification()}>
-            复制校验提示词
+            {t('workspace.copyVerification')}
           </button>
         </Show>
       </FormActions>
 
       <Show when={markdown()}>
         <AreaField
-          label="生成结果（可编辑后保存）"
+          label={t('workspace.result')}
           rows={18}
           wide
           mono

@@ -1,4 +1,5 @@
 import { sseRequest, toApiError } from './api';
+import { t } from '../i18n';
 
 export interface SseFrame {
   event: string;
@@ -35,7 +36,7 @@ export const DEFAULT_FIRST_FRAME_MS = 30_000;
 export const DEFAULT_IDLE_MS = 45_000;
 
 /** 判死时对外的错误文案：区分「连接被静默掐断」与主动取消。 */
-const SilentDropMessage = '与服务器的连接已静默断开（长时间没有收到数据），正在尝试重连';
+const silentDropMessage = () => t('sse.silentDrop');
 
 /**
  * 客户端判死（长时间无数据 / 首帧未到）时抛出的错误。
@@ -48,7 +49,7 @@ export class SseTimeoutError extends Error {
   readonly beforeFirstFrame: boolean;
 
   constructor(beforeFirstFrame: boolean) {
-    super(SilentDropMessage);
+    super(silentDropMessage());
     this.name = 'SseTimeoutError';
     this.beforeFirstFrame = beforeFirstFrame;
   }

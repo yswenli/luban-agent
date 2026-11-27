@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 /**
  * 浏览器端图片预处理：超过阈值（最长边 / 体积 / 像素数）时先缩放并重编码。
  *
@@ -50,7 +51,11 @@ export async function prepareImageForUpload(
       return {
         file,
         compressed: false,
-        rejectReason: `图片像素过大（${size.width}×${size.height}，上限 ${Math.floor(maxPixels / 10_000)} 万像素），请先缩小后再上传`,
+        rejectReason: t('image.tooLarge', {
+      width: size.width,
+      height: size.height,
+      max: Math.floor(maxPixels / 10_000),
+    }),
       };
     }
   }

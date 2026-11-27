@@ -5,6 +5,7 @@ import { bootstrap } from '../stores/app';
 import { Modal } from './Dialog';
 import { Icon } from './Icons';
 import { Markdown } from './Markdown';
+import { t } from '../i18n';
 
 const REPO_URL = 'https://github.com/yswenli/luban-agent';
 const AUTHOR_URL = 'https://github.com/yswenli';
@@ -40,18 +41,18 @@ export function HelpDialog(props: { onClose: () => void }) {
   onMount(() => {
     void get<{ markdown: string }>('/system/readme')
       .then((data) => setMarkdown(data.markdown))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : '读取 README 失败'));
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : t('info.readmeFailed')));
   });
 
   return (
     <Modal
-      title="帮助"
-      subtitle="LuBan Agent README（随宿主构建同步）"
+      title={t('app.help')}
+      subtitle={t('info.readmeTitle')}
       wide
       onClose={props.onClose}
       footer={
         <button class="btn primary" onClick={props.onClose}>
-          关闭
+          {t('common.close')}
         </button>
       }
     >
@@ -65,7 +66,7 @@ export function HelpDialog(props: { onClose: () => void }) {
         when={markdown()}
         fallback={
           <Show when={!error()}>
-            <div class="loading-line">读取 README…</div>
+            <div class="loading-line">{t('info.readmeLoading')}</div>
           </Show>
         }
       >
@@ -85,32 +86,30 @@ export function AboutDialog(props: { onClose: () => void }) {
 
   return (
     <Modal
-      title="关于"
+      title={t('app.about')}
       subtitle="LuBan Agent"
       onClose={props.onClose}
       footer={
         <button class="btn primary" onClick={props.onClose}>
-          知道了
+          {t('info.ok')}
         </button>
       }
     >
       <figure class="about-qr">
-        <img src="/system/entryQr" alt="手机扫码打开本界面" width="180" height="180" />
-        <figcaption>手机与电脑连同一局域网，扫码即可在手机上打开本界面</figcaption>
+        <img src="/system/entryQr" alt={t('info.qrTitle')} width="180" height="180" />
+        <figcaption>{t('info.qrHint')}</figcaption>
       </figure>
-      <p class="about-intro">
-        基于 Microsoft Agent Framework 的 AI Agent 解决方案：一套核心运行时，命令行 TUI、跨平台桌面客户端与本地 Agent 服务三端统一。
-      </p>
+      <p class="about-intro">{t('info.description')}</p>
       <dl class="about-grid">
-        <dt>版本</dt>
-        <dd>{version() ? `v${version()}` : '未知（未读到宿主版本）'}</dd>
-        <dt>仓库</dt>
+        <dt>{t('info.version')}</dt>
+        <dd>{version() ? `v${version()}` : t('info.versionUnknown')}</dd>
+        <dt>{t('info.repo')}</dt>
         <dd>
           <a href={REPO_URL} target="_blank" rel="noreferrer">
             {REPO_URL.replace('https://', '')}
           </a>
         </dd>
-        <dt>作者</dt>
+        <dt>{t('info.author')}</dt>
         <dd>
           yswenli ·{' '}
           <a href={AUTHOR_URL} target="_blank" rel="noreferrer">
@@ -118,7 +117,7 @@ export function AboutDialog(props: { onClose: () => void }) {
           </a>{' '}
           · <a href={`mailto:${AUTHOR_EMAIL}`}>{AUTHOR_EMAIL}</a>
         </dd>
-        <dt>许可</dt>
+        <dt>{t('info.license')}</dt>
         <dd>MIT License</dd>
       </dl>
     </Modal>
@@ -131,25 +130,35 @@ export function AboutDialog(props: { onClose: () => void }) {
 export function ConnectionHelpDialog(props: { onClose: () => void }) {
   return (
     <Modal
-      title="帮助"
-      subtitle="连不上宿主时怎么办"
+      title={t('app.help')}
+      subtitle={t('info.helpTitle')}
       onClose={props.onClose}
       footer={
         <button class="btn primary" onClick={props.onClose}>
-          知道了
+          {t('info.ok')}
         </button>
       }
     >
       <ul class="about-steps">
         <li>
-          宿主的浏览器入口带登录令牌（<code>?t=</code> 参数），打开后换成 Cookie 并落在登录页。登录有效期默认 15 分钟，
-          页面一直开着会自动续期；宿主重启后入口短链失效（浏览器登录只要未过期仍然有效），配置了会话上限时到点需重新登录。
+          {t('info.help.tokenPrefix')} <code>?t=</code>
+          {t('info.help.tokenBody')}
         </li>
-        <li>在宿主机终端执行 <code>LubanAgentWebHost --token</code>，重新打印「浏览器入口」并整条复制打开。</li>
-        <li>找不到终端或宿主已退出：重新启动 <code>LubanAgentWebHost</code>，再看启动日志里的浏览器入口。</li>
-        <li>忘记密码：请管理员在「设置 → 用户」重置（内置管理员只能本人在「设置 → 账号」修改）。</li>
-        <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>；端口被占用时用 <code>--port</code> 换一个。</li>
-        <li>登录有效期内，持有入口地址与账号者可读写工作区、执行命令，不要转发给他人。</li>
+        <li>
+          {t('info.help.runInTerminal')} <code>LubanAgentWebHost --token</code>
+          {t('info.help.rerun')}
+        </li>
+        <li>
+          {t('info.help.restartPrefix')} <code>LubanAgentWebHost</code>
+          {t('info.help.restartSuffix')}
+        </li>
+        <li>{t('info.help.forgotPassword')}</li>
+        <li>
+          {t('info.help.stopPrefix')} <code>LubanAgentWebHost --stop</code>
+          {t('info.help.portPrefix')} <code>--port</code>
+          {t('info.help.portSuffix')}
+        </li>
+        <li>{t('info.help.security')}</li>
       </ul>
     </Modal>
   );

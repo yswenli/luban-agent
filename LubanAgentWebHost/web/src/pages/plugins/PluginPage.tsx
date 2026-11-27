@@ -6,6 +6,7 @@ import { applyThemeTo } from '../../lib/theme';
 import type { PluginPageInfo } from '../../lib/types';
 import { showToast } from '../../stores/app';
 import { ensurePluginsLoaded, findPlugin, pluginsLoaded } from '../../stores/plugins';
+import { t } from '../../i18n';
 
 type PageState = { kind: 'loading' } | { kind: 'ok' } | { kind: 'error'; message: string };
 
@@ -37,19 +38,19 @@ export function PluginPage(props: { pluginId: string; entryId: string }) {
     if (!pluginsLoaded()) return;
     const current = plugin();
     if (!current) {
-      showToast('插件已卸载，已返回首页。', 'error');
+      showToast(t('plugins.page.uninstalled'), 'error');
       openSessions();
       return;
     }
 
     if (current.state !== 'enabled') {
-      showToast('插件已停用，已返回首页。', 'error');
+      showToast(t('plugins.page.disabled'), 'error');
       openSessions();
       return;
     }
 
     if (!page()?.url) {
-      showToast('插件页面入口不存在或不可用，已返回首页。', 'error');
+      showToast(t('plugins.page.missing'), 'error');
       openSessions();
     }
   });
@@ -73,13 +74,13 @@ export function PluginPage(props: { pluginId: string; entryId: string }) {
 
         const message =
           response.status === 401
-            ? '浏览器会话已过期，请重新获取带令牌的入口地址后再打开。'
-            : `页面资源不可用（HTTP ${response.status}）。可在插件管理里停用后重新启用，或升级插件。`;
+            ? t('plugins.page.sessionExpired')
+            : t('plugins.page.httpFailed', { status: response.status });
         setState({ kind: 'error', message });
       })
       .catch(() => {
         if (cancelled) return;
-        setState({ kind: 'error', message: '页面资源加载失败，请检查宿主是否在线。' });
+        setState({ kind: 'error', message: t('plugins.page.loadFailed') });
       });
 
     return () => {
@@ -107,11 +108,11 @@ export function PluginPage(props: { pluginId: string; entryId: string }) {
         <div class="spacer" />
         <button class="btn ghost" onClick={() => setReloadToken(reloadToken() + 1)}>
           <Icon name="refresh" size={15} />
-          重新加载
+          {t('plugins.page.reload')}
         </button>
         <button class="btn ghost" onClick={() => openPlugins()}>
           <Icon name="plug" size={15} />
-          插件管理
+          {t('plugins.page.manage')}
         </button>
       </div>
 
@@ -124,7 +125,7 @@ export function PluginPage(props: { pluginId: string; entryId: string }) {
             </div>
           </Match>
           <Match when={state().kind === 'loading'}>
-            <div class="loading-line">加载插件页面…</div>
+            <div class="loading-line">{t('plugins.page.loading')}</div>
           </Match>
           <Match when={state().kind === 'ok' ? frame() : null} keyed>
             {(target) => {

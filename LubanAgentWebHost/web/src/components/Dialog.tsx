@@ -2,6 +2,7 @@ import type { JSX } from 'solid-js';
 import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 
 import { Icon } from './Icons';
+import { t } from '../i18n';
 
 /** 当前打开的弹窗数量：设置浮层自己监听 Esc，有弹窗时需让位，避免两者一起关闭。 */
 let openModals = 0;
@@ -49,7 +50,7 @@ export function Modal(props: {
             </Show>
           </div>
           <div class="spacer" />
-          <button class="icon-btn" onClick={props.onClose} aria-label="关闭">
+          <button class="icon-btn" onClick={props.onClose} aria-label={t('common.close')}>
             <Icon name="close" />
           </button>
         </div>
@@ -96,10 +97,10 @@ export function TextPromptDialog(props: {
       footer={
         <>
           <button class="btn ghost" onClick={props.onClose}>
-            取消
+            {t('common.cancel')}
           </button>
           <button class="btn primary" disabled={!value().trim()} onClick={submit}>
-            {props.confirmText ?? '保存'}
+            {props.confirmText ?? t('common.save')}
           </button>
         </>
       }
@@ -137,10 +138,10 @@ export function ConfirmActionDialog(props: {
       footer={
         <>
           <button class="btn ghost" onClick={props.onClose}>
-            取消
+            {t('common.cancel')}
           </button>
           <button class="btn danger" onClick={props.onConfirm}>
-            {props.confirmText ?? '确认删除'}
+            {props.confirmText ?? t('common.confirmDelete')}
           </button>
         </>
       }

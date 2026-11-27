@@ -16,6 +16,7 @@ import type {
 } from '../lib/types';
 
 import { bootstrap, refreshSessions, showToast } from './app';
+import { t } from '../i18n';
 
 export type ToolStatus = 'running' | 'done' | 'failed' | 'denied' | 'history';
 
@@ -364,7 +365,7 @@ function toHistoryItems(messages: SessionMessage[]): ChatItem[] {
       return {
         kind: 'notice',
         id: `msg-${message.id}`,
-        text: '📦 上下文已压缩（历史摘要）',
+        text: t('chat.ctxCompactedHistory'),
         tone: 'info',
       };
     }
@@ -386,7 +387,7 @@ function fileToBase64(file: File): Promise<string> {
       const index = text.indexOf(',');
       resolve(index >= 0 ? text.slice(index + 1) : text);
     };
-    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
+    reader.onerror = () => reject(reader.error ?? new Error(t('common.fileReadFailed')));
     reader.readAsDataURL(file);
   });
 }
@@ -590,20 +591,20 @@ export function createChat(sessionId: string) {
         const at = frameAt(payload.at);
         updateTool(assistantId, String(payload.callId ?? ''), (tool) => {
           tool.status = 'failed';
-          tool.error = String(payload.error ?? '工具执行失败');
+          tool.error = String(payload.error ?? t('chat.toolFailed'));
           if (tool.startedAt) tool.durationMs = Math.max(0, at - tool.startedAt);
         });
         return false;
       }
 
       case 'tool.denied':
-        pushFrameNotice(`已拒绝工具调用：${String(payload.toolName ?? '')}`, 'warn', noticeKey);
+        pushFrameNotice(t('chat.toolDeniedNotice', { name: String(payload.toolName ?? '') }), 'warn', noticeKey);
         return false;
 
       case 'tool.confirm':
         setConfirmation({
           confirmationId: String(payload.confirmationId ?? ''),
-          toolName: String(payload.toolName ?? '工具调用'),
+          toolName: String(payload.toolName ?? t('chat.toolCallFallback')),
           arguments: payload.arguments,
           timeoutSeconds: Number(payload.timeoutSeconds ?? 60),
           origin: (payload.origin as ToolConfirmOrigin | null | undefined) ?? null,
@@ -642,7 +643,14 @@ export function createChat(sessionId: string) {
         return false;
 
       case 'attachment.skipped':
-        pushFrameNotice(`附件已跳过：${String(payload.source ?? '')} — ${String(payload.reason ?? '')}`, 'warn', noticeKey);
+        pushFrameNotice(
+          t('chat.attachmentSkipped', {
+            source: String(payload.source ?? ''),
+            reason: String(payload.reason ?? ''),
+          }),
+          'warn',
+          noticeKey,
+        );
         return false;
 
       case 'plan.item':
@@ -658,16 +666,20 @@ export function createChat(sessionId: string) {
       case 'api.retry': {
         // 自动重试是系统自愈过程：用可恢复的提示让用户知道「在重试」而不是卡死。
         // 不写具体等待秒数——提示经心跳节拍送出，到达时延已不可忽略
-        const label = String(payload.label ?? payload.category ?? '请求失败');
+        const label = String(payload.label ?? payload.category ?? t('chat.requestFailed'));
         const attempt = Math.max(1, Number(payload.attempt ?? 1));
         const maxRetries = Math.max(1, Number(payload.maxAttempts ?? 2) - 1);
-        pushFrameNotice(`⟳ ${label}：正在自动重试（第 ${attempt} 次，最多 ${maxRetries} 次）`, 'warn', noticeKey);
+        pushFrameNotice(
+          t('chat.retrying', { label, attempt, maxRetries }),
+          'warn',
+          noticeKey,
+        );
         return false;
       }
 
       case 'context.compacted': {
         // 服务端已给出面向用户的完整文案（压缩中 / 已压缩 + 归档条数与 token 估算）
-        const message = String(payload.message ?? '📦 上下文已压缩');
+        const message = String(payload.message ?? t('chat.ctxCompacted'));
         pushFrameNotice(message, 'info', noticeKey);
         return false;
       }
@@ -680,7 +692,7 @@ export function createChat(sessionId: string) {
       case 'error':
         // 快照回放（带 key）只还原历史提示，不再补响一次
         roundErrored = true;
-        pushFrameNotice(String(payload.message ?? '对话失败'), 'error', noticeKey);
+        pushFrameNotice(String(payload.message ?? t('chat.chatFailed')), 'error', noticeKey);
         if (noticeKey === undefined) notify('error');
         return false;
 
@@ -764,7 +776,7 @@ export function createChat(sessionId: string) {
         : Number(pendingConfirm.timeoutSeconds ?? 60);
       setConfirmation({
         confirmationId: String(pendingConfirm.confirmationId ?? ''),
-        toolName: String(pendingConfirm.toolName ?? '工具调用'),
+        toolName: String(pendingConfirm.toolName ?? t('chat.toolCallFallback')),
         arguments: pendingConfirm.arguments,
         timeoutSeconds: remaining,
         origin: (pendingConfirm.origin as ToolConfirmOrigin | null | undefined) ?? null,
@@ -981,7 +993,7 @@ export function createChat(sessionId: string) {
       }
       if (attempt >= 3) {
         finishStream(targetId, false, streamController);
-        showToast('续流失败，请重新打开该会话', 'error');
+        showToast(t('chat.resumeFailed'), 'error');
         notify('error');
         return false;
       }
@@ -1018,7 +1030,7 @@ export function createChat(sessionId: string) {
         if (await resume(assistantId, awaitRunRegistration)) return;
       }
 
-      pushNotice((error as Error | undefined)?.message ?? '对话连接失败', 'error');
+      pushNotice((error as Error | undefined)?.message ?? t('chat.connectionFailed'), 'error');
       notify('error');
       finishStream(assistantId, false);
     } finally {
@@ -1041,7 +1053,7 @@ export function createChat(sessionId: string) {
 
     const attachments = pending();
     if (attachments.some((item) => item.status === 'uploading')) {
-      showToast('附件还在上传，请稍候', 'info');
+      showToast(t('chat.attachmentsUploading'), 'info');
       return;
     }
 
@@ -1242,7 +1254,7 @@ export function createChat(sessionId: string) {
             if (!done) {
               // 没收到 done 就断了：服务端轮次不受影响（断连只摘订阅者）。
               // 代理空闲回收、服务端寿命兜底都会走到这里，自动接回而不是让气泡静默停住
-              void recoverAfterDrop(assistantId, new Error('连接已中断，本轮仍在后台运行'));
+              void recoverAfterDrop(assistantId, new Error(t('chat.connectionInterrupted')));
               return;
             }
             finishStream(assistantId, true, streamController);
@@ -1258,7 +1270,7 @@ export function createChat(sessionId: string) {
         finishStream(assistantId, false, streamController);
         setItems((list) => list.filter((item) => item.id !== assistantId));
         setUserItemState(message.id, 'failed');
-        pushNotice('上一轮尚未结束，这条消息未能发出', 'warn');
+        pushNotice(t('chat.previousRoundNotFinished'), 'warn');
         return false;
       }
       await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
@@ -1272,7 +1284,7 @@ export function createChat(sessionId: string) {
     stoppedByUser = true;
     try {
       await post('/agent/cancel', { sessionId, runId: runId() });
-      showToast('已请求停止本轮', 'info');
+      showToast(t('chat.stopRequested'), 'info');
     } catch (error) {
       // 取消没发出去，本轮仍会自然跑完：恢复完成提示音
       stoppedByUser = false;
@@ -1291,7 +1303,7 @@ export function createChat(sessionId: string) {
         result,
       });
       if (result === 'deny') {
-        showToast('已拒绝该工具调用', 'info');
+        showToast(t('chat.toolDenied'), 'info');
       }
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -1300,7 +1312,7 @@ export function createChat(sessionId: string) {
 
   function confirmTimeout(): void {
     setConfirmation(null);
-    showToast('确认已超时，按拒绝处理', 'error');
+    showToast(t('chat.confirmTimeout'), 'error');
   }
 
   /** 清空待作答提问并复位提交态。 */
@@ -1373,7 +1385,7 @@ export function createChat(sessionId: string) {
     if (questionSubmitting()) return;
     const request = pendingQuestion();
     clearQuestion();
-    showToast('提问已超时，已跳过作答', 'error');
+    showToast(t('chat.questionTimeout'), 'error');
     if (!request) return;
     void post('/agent/answer', {
       sessionId,
@@ -1393,11 +1405,11 @@ export function createChat(sessionId: string) {
     if (policy) {
       const remaining = policy.maxCount - current.length;
       if (remaining <= 0) {
-        showToast(`每轮最多 ${policy.maxCount} 个附件`, 'error');
+        showToast(t('chat.maxAttachments', { count: policy.maxCount }), 'error');
         return;
       }
       if (files.length > remaining) {
-        showToast(`每轮最多 ${policy.maxCount} 个附件，多余的已忽略`, 'error');
+        showToast(t('chat.maxAttachmentsIgnored', { count: policy.maxCount }), 'error');
         files = files.slice(0, remaining);
       }
     }
@@ -1406,19 +1418,19 @@ export function createChat(sessionId: string) {
     for (const file of files) {
       const extension = extensionOf(file.name);
       if (!extension) {
-        showToast(`无法识别文件类型：${file.name}`, 'error');
+        showToast(t('chat.unknownFileType', { name: file.name }), 'error');
         continue;
       }
       if (policy && !policy.extensions.some((item) => item.toLowerCase() === extension)) {
-        showToast(`不支持的附件类型：${extension}`, 'error');
+        showToast(t('chat.unsupportedAttachment', { ext: extension }), 'error');
         continue;
       }
       if (policy && policy.undecodableExtensions.some((item) => item.toLowerCase() === extension)) {
-        showToast(`${extension} 无法解码，请先转换为 PNG 或 JPEG`, 'error');
+        showToast(t('chat.undecodable', { ext: extension }), 'error');
         continue;
       }
       if (policy && !isImageAttachment(policy, file) && file.size > policy.maxTextBytes) {
-        showToast(`文本类附件不能超过 ${formatBytes(policy.maxTextBytes)}`, 'error');
+        showToast(t('chat.textTooLarge', { size: formatBytes(policy.maxTextBytes) }), 'error');
         continue;
       }
       accepted.push(file);
@@ -1454,7 +1466,7 @@ export function createChat(sessionId: string) {
       let upload = file;
       if (policy && imageLike) {
         if (file.size > policy.maxImageUploadBytes) {
-          reject(`图片不能超过 ${formatBytes(policy.maxImageUploadBytes)}`);
+          reject(t('chat.imageTooLarge', { size: formatBytes(policy.maxImageUploadBytes) }));
           continue;
         }
 
@@ -1517,7 +1529,7 @@ export function createChat(sessionId: string) {
             ),
           );
         } else {
-          const reason = rejected?.reason ?? '上传失败';
+          const reason = rejected?.reason ?? t('chat.uploadFailed');
           setPending((list) =>
             list.map((entry) => (entry.id === id ? { ...entry, status: 'error', error: reason } : entry)),
           );
@@ -1534,7 +1546,11 @@ export function createChat(sessionId: string) {
 
     if (compressedCount > 0) {
       showToast(
-        `已压缩 ${compressedCount} 张图片：${formatBytes(originalTotal)} → ${formatBytes(compressedTotal)}`,
+        t('chat.compressedImages', {
+          count: compressedCount,
+          from: formatBytes(originalTotal),
+          to: formatBytes(compressedTotal),
+        }),
         'info',
       );
     }
@@ -1559,7 +1575,7 @@ export function createChat(sessionId: string) {
     // 先掐掉本地流：被 NAT / 休眠半死的连接可能永远不会自己报错，
     // 不收掉就会出现「旧流 + 新 attach」两条流同时写同一气泡
     controller?.abort();
-    void recoverAfterDrop(activeAssistantId, new Error('连接已中断，正在重连'));
+    void recoverAfterDrop(activeAssistantId, new Error(t('chat.reconnecting')));
   }
 
   const onVisibilityChange = (): void => {

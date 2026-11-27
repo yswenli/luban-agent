@@ -4,6 +4,7 @@ import { resetAgent, settingsApi } from '../../lib/settings';
 import type { RuleFile } from '../../lib/types';
 import { showToast } from '../../stores/app';
 import { AreaField, CheckField, FormActions, SelectField, SettingsPane, TextField } from './Shared';
+import { t } from '../../i18n';
 
 const empty = (): RuleFile => ({
   id: '',
@@ -72,7 +73,7 @@ export function RuleTab(props: { scope: string }) {
 
   const save = async () => {
     if (!form().id.trim()) {
-      showToast('规则 Id 不能为空', 'error');
+      showToast(t('rule.idRequired'), 'error');
       return;
     }
 
@@ -80,7 +81,7 @@ export function RuleTab(props: { scope: string }) {
     try {
       const result = await settingsApi.saveRule({ scope: props.scope, originalId: active(), ...form() });
       await resetAgent();
-      showToast('规则已保存', 'success');
+      showToast(t('rule.saved'), 'success');
       await reload(result?.key ?? form().id.trim());
     } catch (error) {
       showToast((error as Error).message, 'error');
@@ -92,13 +93,13 @@ export function RuleTab(props: { scope: string }) {
   const remove = async () => {
     const key = active();
     if (!key) return;
-    if (!window.confirm(`删除规则「${key}」？该操作不可撤销。`)) return;
+    if (!window.confirm(t('rule.deleteConfirm', { name: key }))) return;
 
     setBusy(true);
     try {
       await settingsApi.deleteRule(props.scope, key);
       await resetAgent();
-      showToast('规则已删除', 'success');
+      showToast(t('rule.deleted'), 'success');
       setActive(null);
       setForm(empty());
       await reload(null);
@@ -111,11 +112,11 @@ export function RuleTab(props: { scope: string }) {
 
   return (
     <SettingsPane
-      title="规则"
+      title={t('rule.title')}
       items={items()}
       activeKey={active()}
-      emptyText="该作用域下还没有文件型规则。"
-      createLabel="新建"
+      emptyText={t('rule.empty')}
+      createLabel={t('common.new')}
       busy={busy()}
       onSelect={(key) => void open(key)}
       onCreate={() => {
@@ -124,45 +125,45 @@ export function RuleTab(props: { scope: string }) {
       }}
     >
       <div class="field-grid">
-        <TextField label="Id" value={form().id} hint="同时作为文件名" onInput={(v) => patch('id', v)} />
-        <TextField label="名称" value={form().name} onInput={(v) => patch('name', v)} />
-        <TextField label="描述" value={form().description} wide onInput={(v) => patch('description', v)} />
-        <TextField label="动作类型通配" value={form().actionTypePattern} onInput={(v) => patch('actionTypePattern', v)} />
-        <TextField label="目标通配" value={form().targetPattern} onInput={(v) => patch('targetPattern', v)} />
+        <TextField label="Id" value={form().id} hint={t('mcp.nameHint')} onInput={(v) => patch('id', v)} />
+        <TextField label={t('common.name')} value={form().name} onInput={(v) => patch('name', v)} />
+        <TextField label={t('common.description')} value={form().description} wide onInput={(v) => patch('description', v)} />
+        <TextField label={t('rule.actionTypePattern')} value={form().actionTypePattern} onInput={(v) => patch('actionTypePattern', v)} />
+        <TextField label={t('rule.targetPattern')} value={form().targetPattern} onInput={(v) => patch('targetPattern', v)} />
         <SelectField
-          label="动作"
+          label={t('rule.action')}
           value={form().action}
           options={[
-            { value: 'allow', label: 'allow（放行）' },
-            { value: 'deny', label: 'deny（拒绝）' },
+            { value: 'allow', label: t('rule.actionAllow') },
+            { value: 'deny', label: t('rule.actionDeny') },
           ]}
           onChange={(v) => patch('action', v)}
         />
         <TextField
-          label="优先级"
+          label={t('rule.priority')}
           type="number"
           value={String(form().priority)}
-          hint="数字越大优先级越高"
+          hint={t('rule.priorityHint')}
           onInput={(v) => patch('priority', Number.parseInt(v, 10) || 0)}
         />
-        <CheckField label="启用" checked={form().enabled} onChange={(v) => patch('enabled', v)} />
+        <CheckField label={t('common.enabled')} checked={form().enabled} onChange={(v) => patch('enabled', v)} />
         <AreaField
-          label="引导正文"
+          label={t('rule.content')}
           value={form().content}
           rows={8}
           wide
           mono
-          placeholder="命中规则后追加给模型的引导文本；可留空。"
+          placeholder={t('rule.contentPlaceholder')}
           onInput={(v) => patch('content', v)}
         />
       </div>
       <FormActions>
         <button class="btn primary" onClick={() => void save()} disabled={busy()}>
-          保存
+          {t('common.save')}
         </button>
         <Show when={active()}>
           <button class="btn danger" onClick={() => void remove()} disabled={busy()}>
-            删除
+            {t('common.delete')}
           </button>
         </Show>
       </FormActions>

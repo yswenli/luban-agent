@@ -18,6 +18,7 @@ import { workspaceName } from '../stores/app';
 import { Icon } from './Icons';
 import { FilePreviewActions, previewPlainText } from './FilePreviewActions';
 import { Markdown } from './Markdown';
+import { t } from '../i18n';
 
 /** 一层目录的加载状态；键是相对工作区根的路径（根为空串）。 */
 interface DirState {
@@ -135,7 +136,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
         setContentError(
           cause instanceof ApiError
             ? cause.message
-            : '读取失败：文件可能已被移动、删除，或当前账号没有权限。',
+            : t('workspacePanel.readFailed'),
         );
       })
       .finally(() => {
@@ -181,11 +182,11 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
     const state = () => dirs()[level.parent];
 
     return (
-      <Show when={state()} fallback={<div class="ws-tree-note">加载中…</div>}>
+      <Show when={state()} fallback={<div class="ws-tree-note">{t('common.loading')}</div>}>
         {(dir) => (
           <>
             <Show when={dir().loading && dir().entries.length === 0}>
-              <div class="ws-tree-note">加载中…</div>
+              <div class="ws-tree-note">{t('common.loading')}</div>
             </Show>
             <Show when={dir().error}>
               {(message) => <div class="ws-tree-note is-error">{message()}</div>}
@@ -229,7 +230,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
               )}
             </For>
             <Show when={dir().truncated}>
-              <div class="ws-tree-note">条目过多，仅显示前一部分。</div>
+              <div class="ws-tree-note">{t('workspacePanel.tooMany')}</div>
             </Show>
           </>
         )}
@@ -248,30 +249,30 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
   return (
     <aside
       class="workspace-panel"
-      aria-label="工作区"
+      aria-label={t('workspacePanel.title')}
       style={{ '--ws-width': `${props.width}px` }}
     >
       <div class="ws-head">
         <div class="ws-title">
-          <span class="ws-title-main">工作区</span>
+          <span class="ws-title-main">{t('workspacePanel.title')}</span>
           <span class="ws-title-sub" title={workspaceName(props.workspaceId)}>
-            {workspaceName(props.workspaceId) || '当前会话'}
+            {workspaceName(props.workspaceId) || t('workspacePanel.currentSession')}
           </span>
         </div>
         <div class="ws-actions">
           <button
             class="icon-btn"
             classList={{ active: workspaceShowIgnored() }}
-            title={workspaceShowIgnored() ? '隐藏 .git、node_modules 等目录' : '显示被忽略的目录'}
+            title={workspaceShowIgnored() ? t('workspacePanel.hideIgnored') : t('workspacePanel.showIgnored')}
             aria-pressed={workspaceShowIgnored()}
             onClick={() => setWorkspaceShowIgnored(!workspaceShowIgnored())}
           >
             <Icon name="shield" size={16} />
           </button>
-          <button class="icon-btn" title="刷新" onClick={() => setReloadToken((value) => value + 1)}>
+          <button class="icon-btn" title={t('common.refresh')} onClick={() => setReloadToken((value) => value + 1)}>
             <Icon name="refresh" size={16} />
           </button>
-          <button class="icon-btn" title="关闭工作区" onClick={closeWorkspacePanel}>
+          <button class="icon-btn" title={t('workspacePanel.close')} onClick={closeWorkspacePanel}>
             <Icon name="close" size={16} />
           </button>
         </div>
@@ -281,29 +282,29 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
         <Icon name="search" size={14} />
         <input
           value={filter()}
-          placeholder="筛选文件"
-          aria-label="筛选文件"
+          placeholder={t('workspacePanel.filter')}
+          aria-label={t('workspacePanel.filter')}
           onInput={(event) => setFilter(event.currentTarget.value)}
         />
         <Show when={filter()}>
-          <button class="ws-filter-clear" title="清空筛选" onClick={() => setFilter('')}>
+          <button class="ws-filter-clear" title={t('workspacePanel.clearFilter')} onClick={() => setFilter('')}>
             <Icon name="close" size={12} />
           </button>
         </Show>
       </div>
 
       <div class="ws-body">
-        <div class="ws-tree" role="group" aria-label="工作区文件">
+        <div class="ws-tree" role="group" aria-label={t('workspacePanel.files')}>
           <Show
             when={props.workspaceId}
-            fallback={<div class="ws-tree-note">当前会话未绑定工作区。</div>}
+            fallback={<div class="ws-tree-note">{t('workspacePanel.noWorkspace')}</div>}
           >
             <TreeLevel parent="" depth={0} />
           </Show>
         </div>
 
         <div class="ws-preview">
-          <Show when={selected()} fallback={<div class="ws-empty">选择左侧文件查看内容</div>}>
+          <Show when={selected()} fallback={<div class="ws-empty">{t('workspacePanel.selectFile')}</div>}>
             {(path) => (
               <>
                 <div class="ws-preview-head">
@@ -325,7 +326,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
 
                 <div class="ws-preview-body">
                   <Show when={contentLoading()}>
-                    <div class="ws-preview-state">正在读取…</div>
+                    <div class="ws-preview-state">{t('filePreview.reading')}</div>
                   </Show>
 
                   <Show when={contentError()}>
@@ -363,7 +364,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       src={previewUrl()}
                       controls
                       onError={() =>
-                        setContentError('浏览器无法播放这个视频（容器或编码不受支持）；请下载后在本地播放。')
+                        setContentError(t('filePreview.videoUnsupported'))
                       }
                     />
                   </Show>
@@ -373,7 +374,7 @@ export function WorkspacePanel(props: { sessionId: string; workspaceId: string |
                       class="ws-preview-audio"
                       src={previewUrl()}
                       controls
-                      onError={() => setContentError('浏览器无法播放这个音频；请下载后在本地播放。')}
+                      onError={() => setContentError(t('filePreview.audioUnsupported'))}
                     />
                   </Show>
 

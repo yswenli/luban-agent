@@ -13,6 +13,7 @@ import {
 } from '../../stores/plugins';
 import { InstallPanel } from './InstallPanel';
 import { PluginDetail } from './PluginDetail';
+import { t } from '../../i18n';
 
 /**
  * 插件管理浮层：左列插件列表，右列安装区 + 选中项详情。
@@ -54,8 +55,8 @@ export function PluginsOverlay(props: { onClose: () => void }) {
     const message = tips.length === 0
       ? okText
       : result.plugin
-        ? `${okText}（${tips.length} 条提示，见详情）`
-        : `${okText}：${tips[0]}`;
+        ? t('plugins.toast.withWarnings', { text: okText, count: tips.length })
+        : t('plugins.toast.withFirstWarning', { text: okText, message: tips[0] });
     showToast(message, tips.length > 0 ? 'info' : 'success');
   };
 
@@ -76,7 +77,10 @@ export function PluginsOverlay(props: { onClose: () => void }) {
     setBusy(true);
     try {
       const contentBase64 = await fileToBase64(file);
-      await applyResult(await pluginsApi.upgrade({ id, fileName: file.name, contentBase64 }), '升级完成');
+      await applyResult(
+        await pluginsApi.upgrade({ id, fileName: file.name, contentBase64 }),
+        t('plugins.toast.upgraded'),
+      );
     } catch (cause) {
       showToast((cause as Error).message, 'error');
     } finally {
@@ -93,15 +97,15 @@ export function PluginsOverlay(props: { onClose: () => void }) {
     >
       <div class="settings-panel" role="dialog" aria-modal="true">
         <div class="settings-panel-head">
-          <span class="dialog-title">插件</span>
+          <span class="dialog-title">{t('plugins.title')}</span>
           <span class="dialog-sub mono" title={rootPath()}>
-            {rootPath() || '加载中…'}
+            {rootPath() || t('common.loading')}
           </span>
           <div class="spacer" />
-          <button class="icon-btn" title="刷新插件列表" disabled={loading()} onClick={() => void refreshPlugins()}>
+          <button class="icon-btn" title={t('plugins.refreshList')} disabled={loading()} onClick={() => void refreshPlugins()}>
             <Icon name="refresh" size={16} />
           </button>
-          <button class="icon-btn" title="关闭插件管理（Esc）" onClick={() => props.onClose()}>
+          <button class="icon-btn" title={t('plugins.closeManager')} onClick={() => props.onClose()}>
             <Icon name="close" size={17} />
           </button>
         </div>
@@ -109,13 +113,13 @@ export function PluginsOverlay(props: { onClose: () => void }) {
         <div class="settings-layout">
           <div class="settings-nav">
             <div class="settings-list-head">
-              <span class="section-label">已安装（{plugins().length}）</span>
+              <span class="section-label">{t('plugins.installedCount', { count: plugins().length })}</span>
             </div>
             <Show
               when={plugins().length > 0}
               fallback={
                 <div class="side-hint faint">
-                  还没有插件。Web 端安装的插件与桌面端分开存放，点右侧「安装插件」上传 zip 包。
+                  {t('plugins.emptyList')}
                 </div>
               }
             >
@@ -140,21 +144,21 @@ export function PluginsOverlay(props: { onClose: () => void }) {
             <InstallPanel
               busy={busy()}
               onBusy={setBusy}
-              onInstalled={(result) => void applyResult(result, '插件已安装并启用')}
+              onInstalled={(result) => void applyResult(result, t('plugins.toast.installed'))}
             />
 
             <Show
               when={active()}
-              fallback={<div class="settings-list-empty">选择左侧插件查看详情，或先安装一个。</div>}
+              fallback={<div class="settings-list-empty">{t('plugins.selectEmpty')}</div>}
             >
               {(plugin) => (
                 <PluginDetail
                   plugin={plugin()}
                   warnings={warningsOf(plugin().id)}
                   busy={busy()}
-                  onEnable={() => void run(() => pluginsApi.enable(plugin().id), '已启用')}
-                  onDisable={() => void run(() => pluginsApi.disable(plugin().id), '已停用')}
-                  onUninstall={() => void run(() => pluginsApi.uninstall(plugin().id), '已卸载')}
+                  onEnable={() => void run(() => pluginsApi.enable(plugin().id), t('plugins.toast.enabled'))}
+                  onDisable={() => void run(() => pluginsApi.disable(plugin().id), t('plugins.toast.disabled'))}
+                  onUninstall={() => void run(() => pluginsApi.uninstall(plugin().id), t('plugins.toast.uninstalled'))}
                   onUpgrade={(file) => void upgrade(plugin().id, file)}
                 />
               )}
