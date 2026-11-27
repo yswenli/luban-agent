@@ -171,6 +171,8 @@ export function ChatPage(props: { sessionId: string }) {
   const session = createMemo(() => sessions().find((item) => item.sessionId === props.sessionId) ?? null);
   const title = () => session()?.title || t('chat.untitledSession');
   const totalTokens = () => session()?.totalTokens ?? 0;
+  /** 未归属项目的旧会话：没有工作区根，只能看历史与删除，不能发消息或加附件。 */
+  const unassigned = createMemo(() => !!session() && !session()!.workspaceId);
 
   /** 本会话生效的生成参数；尚未拉取时为 null，按「跟随模型」处理。 */
   const generation = createMemo(() => sessionGeneration(props.sessionId));
@@ -616,6 +618,16 @@ export function ChatPage(props: { sessionId: string }) {
   async function submit() {
     if (optimizing()) return;
 
+    // 未归属会话只读：保留「停止本轮」这一个出口（历史遗留的运行中轮次），其余动作一律不执行
+    if (unassigned()) {
+      if (chat.streaming() && !input().trim()) {
+        await chat.stop();
+        return;
+      }
+      showToast(t('chat.unassignedReadonly'), 'info');
+      return;
+    }
+
     // 斜杠命令是本地动作；本轮运行期间不执行，避免清空/切换类命令打断正在写库的轮次
     if (commandQuery() !== null) {
       const list = matchedCommands();
@@ -728,6 +740,11 @@ export function ChatPage(props: { sessionId: string }) {
   }
 
   async function addFiles(files: File[]) {
+    // 未归属会话没有工作区根，附件无处落盘：拖放 / 粘贴 / ＋菜单都从这里拦住
+    if (unassigned()) {
+      showToast(t('chat.unassignedReadonly'), 'info');
+      return;
+    }
     await chat.addFiles(files);
   }
 
@@ -922,7 +939,14 @@ export function ChatPage(props: { sessionId: string }) {
               <Index each={chat.items()}>{(item) => <ChatRow
                 item={item}
                 workspaceId={session()?.workspaceId ?? undefined}
-                onRetry={(id) => chat.retryQueued(id)}
+                onRetry={(id) => {
+                  // 重试会把失败的那条重新发出去，未归属会话同样要拦住
+                  if (unassigned()) {
+                    showToast(t('chat.unassignedReadonly'), 'info');
+                    return;
+                  }
+                  chat.retryQueued(id);
+                }}
                 onCancel={(id) => chat.removeQueued(id)}
               />}</Index>
 
@@ -969,6 +993,12 @@ export function ChatPage(props: { sessionId: string }) {
       </div>
 
       <div class="composer-wrap">
+          <Show when={unassigned()}>
+            <div class="composer-notice">
+              <Icon name="info" size={15} />
+              <span>{t('chat.unassignedNotice')}</span>
+            </div>
+          </Show>
           <div
             class="composer"
             classList={{ focused: focused(), dragging: dragging() }}
@@ -1027,7 +1057,7 @@ export function ChatPage(props: { sessionId: string }) {
             <ComposerEditor
               api={(handle) => (composerApi = handle)}
               placeholder={t('chat.composerPlaceholder')}
-              disabled={optimizing()}
+              disabled={optimizing() || unassigned()}
               resolveSkill={(id) => {
                 const skill = mentionSkills().find((item) => item.id === id);
                 return skill ? { id: skill.id, label: skill.name || skill.id } : null;
@@ -1103,7 +1133,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="pill-btn"
                 title={t('chat.addFilesTitle')}
-                disabled={optimizing()}
+                disabled={optimizing() || unassigned()}
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
                   setPlusMenu(menuAt(rect, { width: 214, height: plusMenuHeight, gap: 6, align: 'start' }));
@@ -1115,7 +1145,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="pill-btn value"
                 title={t('chat.switchModel')}
-                disabled={optimizing()}
+                disabled={optimizing() || unassigned()}
                 onClick={openModelMenu}
               >
                 <Icon name="brain" size={14} />
@@ -1126,7 +1156,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="pill-btn value"
                 title={t('chat.switchPermission')}
-                disabled={optimizing()}
+                disabled={optimizing() || unassigned()}
                 onClick={() => {
                   cyclePermissionMode();
                 }}
@@ -1139,7 +1169,7 @@ export function ChatPage(props: { sessionId: string }) {
                 <button
                   class="pill-btn value"
                   title={t('chat.effortTitle')}
-                  disabled={optimizing()}
+                  disabled={optimizing() || unassigned()}
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
                     setEffortMenu(menuAt(rect, { width: 170, height: 190, gap: 6, align: 'start' }));
@@ -1166,7 +1196,7 @@ export function ChatPage(props: { sessionId: string }) {
                   <button
                     class="pill-btn value"
                     title={t('chat.ctxTitle')}
-                    disabled={optimizing()}
+                    disabled={optimizing() || unassigned()}
                     onClick={(event) => {
                       const rect = event.currentTarget.getBoundingClientRect();
                       setCtxMenu(menuAt(rect, { width: 230, height: 64 + tierOptions().length * 34, gap: 6, align: 'start' }));
@@ -1183,7 +1213,7 @@ export function ChatPage(props: { sessionId: string }) {
               <button
                 class="optimize-btn"
                 title={t('chat.optimizeTitle')}
-                disabled={!input().trim() || optimizing() || chat.streaming()}
+                disabled={!input().trim() || optimizing() || chat.streaming() || unassigned()}
                 onClick={() => void optimizeInput()}
               >
                 <Icon name="wand" size={16} />
@@ -1202,6 +1232,7 @@ export function ChatPage(props: { sessionId: string }) {
                 disabled={
                   optimizing() ||
                   (!input().trim() && !chat.streaming()) ||
+                  (!!input().trim() && unassigned()) ||
                   (!!input().trim() && chat.pending().some((item) => item.status === 'uploading'))
                 }
                 onClick={() => void submit()}

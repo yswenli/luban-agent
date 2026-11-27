@@ -621,6 +621,8 @@ const pl = {
   'chat.uploading': 'Przesyłanie…',
   'chat.optimizing': 'Przetwarzanie…',
   'chat.composerPlaceholder': 'Wyślij wiadomość do Luban Agent (Enter wysyła, Shift+Enter nowy wiersz)',
+  'chat.unassignedNotice': 'Ta sesja nie należy do żadnego projektu. Historia jest tylko do odczytu; aby kontynuować rozmowę, utwórz nową sesję w projekcie.',
+  'chat.unassignedReadonly': 'Ta sesja nie należy do żadnego projektu; historia jest tylko do odczytu',
   'chat.addFilesTitle': 'Dodaj obrazy i pliki / polecenia',
   'chat.switchModel': 'Zmień model tej sesji (nie wpływa na inne sesje)',
   'chat.switchPermission': 'Zmień tryb uprawnień',

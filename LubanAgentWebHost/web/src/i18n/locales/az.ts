@@ -670,6 +670,8 @@ const az = {
   'chat.uploading': 'Yüklənir…',
   'chat.optimizing': 'İşlənir…',
   'chat.composerPlaceholder': 'Luban Agent-a mesaj göndərin (Enter göndərir, Shift+Enter yeni sətir)',
+  'chat.unassignedNotice': 'Bu sessiya heç bir layihəyə aid deyil. Tarixçə yalnız oxuna bilər; söhbətə davam etmək üçün layihədə yeni sessiya yaradın.',
+  'chat.unassignedReadonly': 'Bu sessiya heç bir layihəyə aid deyil; tarixçə yalnız oxuna bilər',
   'chat.addFilesTitle': 'Şəkil və fayl / əmr əlavə et',
   'chat.switchModel': 'Bu sessiyanın modelini dəyiş (digər sessiyalara təsir etmir)',
   'chat.switchPermission': 'İcazə rejimini dəyiş',

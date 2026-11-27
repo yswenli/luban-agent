@@ -196,7 +196,15 @@ export function SessionListPage(props: { main?: JSX.Element }) {
                           <span class="group-title">{group.title}</span>
                         </div>
                         <For each={group.items}>
-                          {(session) => sessionRow(session, group.key, now, sessionActions.openMenu)}
+                          {(session) =>
+                            sessionRow(
+                              session,
+                              group.key,
+                              now,
+                              (event, item) =>
+                                sessionActions.openMenu(event, item, { deleteOnly: unassigned() }),
+                            )
+                          }
                         </For>
                       </div>
                     )}

@@ -612,6 +612,8 @@ const ko = {
   'chat.uploading': '업로드 중…',
   'chat.optimizing': '처리 중…',
   'chat.composerPlaceholder': 'Luban Agent에 메시지 보내기(Enter 전송, Shift+Enter 줄바꿈)',
+  'chat.unassignedNotice': '이 세션은 프로젝트에 속해 있지 않아 기록만 볼 수 있습니다. 계속 대화하려면 프로젝트에서 새 세션을 만드세요.',
+  'chat.unassignedReadonly': '이 세션은 프로젝트에 속해 있지 않아 기록만 볼 수 있습니다',
   'chat.addFilesTitle': '이미지와 파일 / 명령 추가',
   'chat.switchModel': '이 세션의 모델 전환(다른 세션에 영향 없음)',
   'chat.switchPermission': '권한 모드 전환',

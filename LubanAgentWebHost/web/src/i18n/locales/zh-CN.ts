@@ -626,6 +626,8 @@ const zhCN = {
   'chat.uploading': '上传中…',
   'chat.optimizing': '处理中…',
   'chat.composerPlaceholder': '给 Luban Agent 发送消息（Enter 发送，Shift+Enter 换行）',
+  'chat.unassignedNotice': '该会话未归属项目，只能查看历史记录；如需继续对话，请在项目中新建会话。',
+  'chat.unassignedReadonly': '该会话未归属项目，只能查看历史记录',
   'chat.addFilesTitle': '添加图片和文件 / 命令',
   'chat.switchModel': '切换本会话模型（不影响其他会话）',
   'chat.switchPermission': '切换权限模式',

@@ -19,20 +19,32 @@ type RowAction =
  * 不要塞进可点击的行里——否则菜单与遮罩的点击会冒泡成「打开会话」。
  */
 export function createSessionActions() {
-  const [menu, setMenu] = createSignal<{ x: number; y: number; sessionId: string; title: string } | null>(null);
+  const [menu, setMenu] = createSignal<{
+    x: number;
+    y: number;
+    sessionId: string;
+    title: string;
+    deleteOnly: boolean;
+  } | null>(null);
   const [dialog, setDialog] = createSignal<RowAction | null>(null);
 
-  function openMenu(event: MouseEvent, session: { sessionId: string; title?: string | null }): void {
+  function openMenu(
+    event: MouseEvent,
+    session: { sessionId: string; title?: string | null },
+    options?: { deleteOnly?: boolean },
+  ): void {
     event.stopPropagation();
     event.preventDefault();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const position = menuAt(rect, { width: 168, height: 92, align: 'end' });
+    const deleteOnly = options?.deleteOnly ?? false;
+    const position = menuAt(rect, { width: 168, height: deleteOnly ? 48 : 92, align: 'end' });
     setMenu({
       ...position,
       sessionId: session.sessionId,
       // 保留原始标题（空标题为空串）：重命名框不该预填「未命名会话」这种占位文案，
       // 否则用户直接保存会把占位文案写成真标题。占位只在删除提示里补。
       title: session.title ?? '',
+      deleteOnly,
     });
   }
 
@@ -45,17 +57,19 @@ export function createSessionActions() {
               style={{ left: `${item().x}px`, top: `${item().y}px`, 'min-width': '168px' }}
               onClose={() => setMenu(null)}
             >
-              <button
-                class="menu-item"
-                onClick={() => {
-                  const target = item();
-                  setMenu(null);
-                  setDialog({ kind: 'rename', sessionId: target.sessionId, title: target.title });
-                }}
-              >
-                <Icon name="pencil" size={15} />
-                {t('common.rename')}
-              </button>
+              <Show when={!item().deleteOnly}>
+                <button
+                  class="menu-item"
+                  onClick={() => {
+                    const target = item();
+                    setMenu(null);
+                    setDialog({ kind: 'rename', sessionId: target.sessionId, title: target.title });
+                  }}
+                >
+                  <Icon name="pencil" size={15} />
+                  {t('common.rename')}
+                </button>
+              </Show>
               <button
                 class="menu-item"
                 onClick={() => {

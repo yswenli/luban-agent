@@ -689,6 +689,8 @@ const es = {
   'chat.optimizing': 'Procesando…',
   'chat.composerPlaceholder':
     'Enviar un mensaje a Luban Agent (Enter para enviar, Shift+Enter para nueva línea)',
+  'chat.unassignedNotice': 'Esta sesión no pertenece a ningún proyecto. El historial es de solo lectura; crea una nueva sesión en un proyecto para seguir conversando.',
+  'chat.unassignedReadonly': 'Esta sesión no pertenece a ningún proyecto; el historial es de solo lectura',
   'chat.addFilesTitle': 'Añadir imágenes y archivos / comandos',
   'chat.switchModel': 'Cambiar el modelo de esta conversación (no afecta a otras)',
   'chat.switchPermission': 'Cambiar el modo de permisos',

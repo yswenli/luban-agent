@@ -620,6 +620,8 @@ const ja = {
   'chat.uploading': 'アップロード中…',
   'chat.optimizing': '処理中…',
   'chat.composerPlaceholder': 'Luban Agent にメッセージを送信（Enter で送信、Shift+Enter で改行）',
+  'chat.unassignedNotice': 'このセッションはプロジェクトに属していないため、履歴の閲覧のみ可能です。続けて会話するにはプロジェクト内で新しいセッションを作成してください。',
+  'chat.unassignedReadonly': 'このセッションはプロジェクトに属していないため、履歴の閲覧のみ可能です',
   'chat.addFilesTitle': '画像とファイルを追加 / コマンド',
   'chat.switchModel': 'このセッションのモデルを切り替え（他のセッションには影響しません）',
   'chat.switchPermission': '権限モードを切り替え',

@@ -621,6 +621,8 @@ const it = {
   'chat.uploading': 'Caricamento…',
   'chat.optimizing': 'Elaborazione…',
   'chat.composerPlaceholder': 'Scrivi a Luban Agent (Enter invia, Shift+Enter va a capo)',
+  'chat.unassignedNotice': 'Questa sessione non appartiene a nessun progetto. La cronologia è in sola lettura; crea una nuova sessione in un progetto per continuare a conversare.',
+  'chat.unassignedReadonly': 'Questa sessione non appartiene a nessun progetto; la cronologia è in sola lettura',
   'chat.addFilesTitle': 'Aggiungi immagini e file / comandi',
   'chat.switchModel': 'Cambia il modello di questa conversazione (non influisce sulle altre)',
   'chat.switchPermission': 'Cambia modalità permessi',

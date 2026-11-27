@@ -621,6 +621,8 @@ const id = {
   'chat.uploading': 'Mengunggah…',
   'chat.optimizing': 'Memproses…',
   'chat.composerPlaceholder': 'Kirim pesan ke Luban Agent (Enter untuk kirim, Shift+Enter untuk baris baru)',
+  'chat.unassignedNotice': 'Sesi ini tidak termasuk proyek mana pun. Riwayat hanya dapat dibaca; buat sesi baru di proyek untuk melanjutkan percakapan.',
+  'chat.unassignedReadonly': 'Sesi ini tidak termasuk proyek mana pun; riwayat hanya dapat dibaca',
   'chat.addFilesTitle': 'Tambah gambar dan file / perintah',
   'chat.switchModel': 'Ganti model sesi ini (tidak memengaruhi sesi lain)',
   'chat.switchPermission': 'Ganti mode izin',

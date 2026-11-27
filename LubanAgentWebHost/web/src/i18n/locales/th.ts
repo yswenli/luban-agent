@@ -601,6 +601,8 @@ const th = {
   'chat.uploading': 'กำลังอัปโหลด…',
   'chat.optimizing': 'กำลังประมวลผล…',
   'chat.composerPlaceholder': 'ส่งข้อความถึง Luban Agent (Enter ส่ง, Shift+Enter ขึ้นบรรทัดใหม่)',
+  'chat.unassignedNotice': 'เซสชันนี้ไม่ได้อยู่ในโปรเจกต์ใด จึงดูประวัติได้อย่างเดียว หากต้องการสนทนาต่อ โปรดสร้างเซสชันใหม่ในโปรเจกต์',
+  'chat.unassignedReadonly': 'เซสชันนี้ไม่ได้อยู่ในโปรเจกต์ใด ดูประวัติได้อย่างเดียว',
   'chat.addFilesTitle': 'เพิ่มรูปภาพและไฟล์ / คำสั่ง',
   'chat.switchModel': 'สลับโมเดลของเซสชันนี้ (ไม่กระทบเซสชันอื่น)',
   'chat.switchPermission': 'สลับโหมดสิทธิ์',

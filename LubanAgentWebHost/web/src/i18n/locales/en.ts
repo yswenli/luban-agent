@@ -669,6 +669,8 @@ const en = {
   'chat.uploading': 'Uploading…',
   'chat.optimizing': 'Processing…',
   'chat.composerPlaceholder': 'Message Luban Agent (Enter to send, Shift+Enter for a new line)',
+  'chat.unassignedNotice': 'This session does not belong to a project. History is read-only; create a new session in a project to continue chatting.',
+  'chat.unassignedReadonly': 'This session does not belong to a project; history is read-only',
   'chat.addFilesTitle': 'Add images and files / commands',
   'chat.switchModel': 'Switch the model for this session (does not affect other sessions)',
   'chat.switchPermission': 'Switch permission mode',

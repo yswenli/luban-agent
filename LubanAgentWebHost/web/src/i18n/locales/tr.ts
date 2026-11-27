@@ -620,6 +620,8 @@ const tr = {
   'chat.uploading': 'Yükleniyor…',
   'chat.optimizing': 'İşleniyor…',
   'chat.composerPlaceholder': 'Luban Agent\'a mesaj gönder (Enter gönderir, Shift+Enter yeni satır)',
+  'chat.unassignedNotice': 'Bu oturum bir projeye ait değil. Geçmiş yalnızca okunabilir; sohbete devam etmek için projede yeni bir oturum oluşturun.',
+  'chat.unassignedReadonly': 'Bu oturum bir projeye ait değil; geçmiş yalnızca okunabilir',
   'chat.addFilesTitle': 'Resim ve dosya ekle / komut',
   'chat.switchModel': 'Bu oturumun modelini değiştir (diğer oturumları etkilemez)',
   'chat.switchPermission': 'İzin modunu değiştir',

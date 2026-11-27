@@ -399,7 +399,7 @@ export function ProjectSidebar(props: { searchFocus?: boolean }) {
                             class="icon-btn"
                             title={t('common.more')}
                             aria-label={t('common.more')}
-                            onClick={(event) => sessionActions.openMenu(event, session)}
+                            onClick={(event) => sessionActions.openMenu(event, session, { deleteOnly: true })}
                           >
                             <Icon name="more" size={15} />
                           </button>

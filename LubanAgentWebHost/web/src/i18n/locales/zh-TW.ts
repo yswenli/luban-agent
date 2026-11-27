@@ -619,6 +619,8 @@ const zhTW = {
   'chat.uploading': '上傳中…',
   'chat.optimizing': '處理中…',
   'chat.composerPlaceholder': '給 Luban Agent 傳送訊息（Enter 傳送，Shift+Enter 換行）',
+  'chat.unassignedNotice': '此會話未歸屬專案，只能檢視歷史記錄；如需繼續對話，請在專案中新建會話。',
+  'chat.unassignedReadonly': '此會話未歸屬專案，只能檢視歷史記錄',
   'chat.addFilesTitle': '新增圖片與檔案 / 指令',
   'chat.switchModel': '切換本會話模型（不影響其他會話）',
   'chat.switchPermission': '切換權限模式',
