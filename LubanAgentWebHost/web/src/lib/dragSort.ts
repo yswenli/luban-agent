@@ -108,6 +108,13 @@ export function beginDragSort(options: DragSortOptions): void {
         return;
       }
       active = true;
+      // 指针捕获必须等到「确实在拖」之后再建立：按下即捕获会把 pointerup 重定向到捕获元素，
+      // 浏览器据此把 click 派发给容器，容器内按钮自己的 onClick 收不到，普通点击就等于失效。
+      try {
+        item.setPointerCapture(event.pointerId);
+      } catch {
+        /* 合成事件或指针已失效：退化为普通 window 监听 */
+      }
       document.body.classList.add('is-sorting');
       options.onStart?.();
       frame = window.requestAnimationFrame(edgeScroll);
@@ -153,11 +160,6 @@ export function beginDragSort(options: DragSortOptions): void {
     end(false);
   };
 
-  try {
-    item.setPointerCapture(event.pointerId);
-  } catch {
-    /* 合成事件或指针已失效：退化为普通 window 监听 */
-  }
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onCancel);
