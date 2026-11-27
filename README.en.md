@@ -346,6 +346,27 @@ The WebHost is a standalone service, so clients don't have to start it manually:
 
 > 🔐 How browser login (JWT cookie) and the client host token are split, the built-in administrator and invite-only registration, how to recover from a 401, renewal and the optional session ceiling, multi-device and post-restart behaviour, and the risk boundaries you must know are covered in "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below.
 
+#### Option 4: Container Deployment (Docker)
+
+`LubanAgentWebHost/Docker/` holds the Linux container setup. Images are built locally: the .NET output is published first and then used as the build context, so the Dockerfile never restores or compiles.
+
+```bash
+cd LubanAgentWebHost/Docker
+cp .env.example .env          # runtime config: port, admin password, model download URL, host project directory
+pwsh -File ./build-image.ps1  # dotnet publish + docker build (tag from the csproj version, plus latest)
+docker compose up -d
+docker compose logs -f        # the first start prints the built-in administrator password
+```
+
+- All runtime configuration comes from the sibling `.env` (injected via compose `env_file`; use `--env-file` with `docker run`). `.env` is git-ignored — only the template is committed.
+- Data lives on the `/data` volume: database, models, repositories, workspaces, JWT key, plugins and logs. `HOME` points at `/data` too, so the framework-level `~/.luban-agent` (skills/rules/mcps) and git credentials persist as well.
+- The host project directory is mapped to `/data/projects` by `LUBAN_WORKSPACE_HOST_DIR`, which already sits inside the workspace-roots allowlist (the data root by default) — no allowlist edit is needed for new workspaces.
+- The image ships no embedding-model bundle (52 MB): on first start it downloads from `LuBanAgent__Tools__Retrieval__DownloadUrl` into `/data/models` and unzips it. Leave the URL empty for offline deployments — retrieval is disabled automatically and everything else keeps working.
+- The container has `git` and `python3` (`RunPython` needs `LuBanAgent__Tools__Script__PythonPath=python3`); it has no `openssh-client` (ssh remotes fail, HTTPS remotes work) and no Chromium dependencies (the browser tool is unavailable).
+- It starts with `--http --port 18080` and leaves TLS to an outer reverse proxy; the health check hits `/system/health`, and logs go to both `/data/logs` and container stdout.
+
+See [`LubanAgentWebHost/Docker/README.md`](LubanAgentWebHost/Docker/README.md) for build flags, ARM hosts, HTTPS and volume backups.
+
 ### 5. Configure an AI Provider and Start Chatting
 
 Configure your first Provider in either client:
@@ -510,6 +531,7 @@ luban-agent/
 │   ├── Services/             # Endpoint business logic (sessions, chat, workspaces, wiki, settings…)
 │   ├── Models/               # Request / response models for the browser endpoints
 │   ├── Hosting/              # Process runtime, SSE writer, startup settings, shared guards
+│   ├── Docker/               # Container deployment (Dockerfile / compose / .env template / build script)
 │   ├── web/                  # Web UI sources (SolidJS + TypeScript + Vite)
 │   └── wwwroot/              # Web UI build output (copied into the build output by dotnet build)
 │

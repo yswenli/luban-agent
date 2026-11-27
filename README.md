@@ -346,6 +346,27 @@ WebHost 是独立服务，客户端不必手工启动它：`LubanAgentCore` 内�
 
 > 🔐 浏览器登录（JWT Cookie）与客户端宿主令牌的分工、初始管理员与邀请码注册、401 怎么处理、续期与绝对上限、多设备与重启后的行为、以及必须了解的风险边界，见下文「[WebHost 访问令牌与安全](#-webhost-访问令牌与安全)」。
 
+#### 方式四：容器部署（Docker）
+
+`LubanAgentWebHost/Docker/` 提供 Linux 容器化配置。镜像在本机构建：先发布 .NET 产物，再以产物目录为上下文打镜像，Dockerfile 内不做还原与编译。
+
+```bash
+cd LubanAgentWebHost/Docker
+cp .env.example .env          # 运行期配置：端口、管理员密码、模型下载地址、宿主机项目目录
+pwsh -File ./build-image.ps1  # dotnet publish + docker build（标签取 csproj 版本，另打 latest）
+docker compose up -d
+docker compose logs -f        # 首次启动会打印内置管理员初始密码
+```
+
+- 运行期配置全部走同目录 `.env`（compose 的 `env_file` 注入容器，`docker run` 用 `--env-file`）；`.env` 已被 `.gitignore` 忽略，仓库只提交模板。
+- 数据统一落 `/data` 卷：数据库、模型、仓库、工作区、JWT 密钥、插件与日志；`HOME` 同样指向 `/data`，框架级 `~/.luban-agent`（skills/rules/mcps）与 git 凭据一并持久化。
+- 宿主机项目目录由 `LUBAN_WORKSPACE_HOST_DIR` 挂到容器内 `/data/projects`，正好落在工作区根目录白名单（默认即数据根）内，新建工作区不用再改白名单。
+- 镜像不带嵌入模型包（52 MB）：首次启动按 `LuBanAgent__Tools__Retrieval__DownloadUrl` 下载到 `/data/models` 再解压；离线部署把地址留空即可，检索自动禁用、其余功能不受影响。
+- 容器内有 `git` 与 `python3`（`RunPython` 需把 `LuBanAgent__Tools__Script__PythonPath` 配成 `python3`）；未装 `openssh-client`（ssh 形式远端不可用，HTTPS 远端正常）与 Chromium 依赖（浏览器工具不可用）。
+- 容器内按 `--http --port 18080` 启动，TLS 交给外层反向代理；健康检查探 `/system/health`，日志同时写 `/data/logs` 与容器 stdout。
+
+构建参数、ARM 宿主、HTTPS 与卷备份等细节见 [`LubanAgentWebHost/Docker/README.md`](LubanAgentWebHost/Docker/README.md)。
+
 ### 5. 配置 AI Provider 并开始对话
 
 在任一客户端中配置你的第一个 Provider：
@@ -510,6 +531,7 @@ luban-agent/
 │   ├── Services/             # 接口业务实现（会话、对话、工作区、知识库、设置…）
 │   ├── Models/               # 浏览器端接口的请求 / 响应模型
 │   ├── Hosting/              # 进程运行时、SSE 写出、启动参数与公共守卫
+│   ├── Docker/               # 容器部署（Dockerfile / compose / .env 模板 / 构建脚本）
 │   ├── web/                  # 网页前端源码（SolidJS + TypeScript + Vite）
 │   └── wwwroot/              # 网页构建产物（随 dotnet build 拷到输出目录）
 │
