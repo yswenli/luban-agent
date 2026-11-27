@@ -150,8 +150,11 @@ export const settingsApi = {
   /* ── 数据与用量 ── */
   globalStats: (days?: number | null): Promise<GlobalSessionStats> =>
     get<GlobalSessionStats>('/session/globalStats', { days }),
-  clearAllSessions: (workspaceId?: string | null): Promise<void> =>
-    post<void>('/session/clearAll', { workspaceId: workspaceId ?? null }),
+  clearAllSessions: (target: { workspaceId?: string | null; allWorkspaces?: boolean }): Promise<void> =>
+    post<void>('/session/clearAll', {
+      workspaceId: target.workspaceId ?? null,
+      allWorkspaces: target.allWorkspaces === true,
+    }),
 };
 
 /**

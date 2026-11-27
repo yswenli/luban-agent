@@ -46,45 +46,122 @@ This repository is the complete LuBan Agent solution, containing a shared core l
 
 ## 📸 UI Preview
 
-![LuBan Agent web UI overview: home entry and horizontally scrollable session tabs on top, project-grouped sessions on the left, multi-tab chat on the right](lubanagent.png)
+![LuBan Agent web workspace overview: project-grouped working directories and feature entries on the left, sessions grouped by time on the right](lubanagent.png)
 
-*Web UI overview: the top bar holds the home entry and session tabs; the left column holds projects plus the knowledge base / settings / help / about entries (collapsible into an icon-only rail); the right side groups sessions by date*
+*First thing you see: projects group your working directories in the left rail, followed by knowledge base, plugins, settings, help and about entries; sessions are listed by time on the right, with a one-click new-session button up top.*
 
 ### Chat: empty state
 
-![Chat page empty state: start prompt, model selector, default/follow-model switches, attachment entry and composer](lubanagent-chat1.png)
+![Chat empty state: centered start prompt, composer at the bottom with attachment entry and model, permission, reasoning and context budget controls](lubanagent-chat1.png)
 
-*New session empty state: the "+" button adds images and files, the model and reasoning mode can be switched, Enter sends and Shift+Enter wraps*
+*New session empty state: the "+" button adds images and files; the model, permission mode, reasoning strength and context budget can be switched per session. Enter sends, Shift+Enter wraps.*
 
-### Chat: Markdown and tool calls
+### Chat: history and Markdown rendering
 
-![Chat page: rendered Markdown with tables, history record and token count, back button on the left of the title](lubanagent-chat2.png)
+![Chat page: agent reply rendered as Markdown with lists and formatting, back button on the left of the title, token count on the top right](lubanagent-chat2.png)
 
-*Chat page: rendered Markdown with tables, history record and token count; the back button returns to the session list or the knowledge base*
+*Chat page: replies render as Markdown (lists, code and tables format cleanly); the back button returns to the session list, and the top right shows the workspace and token usage.*
 
 ### Knowledge base
 
-![Knowledge base page: rename/delete per library on the left, stat cards, indexing and search entries, indexed file list and "Chat" button on the right](lubanagent-llmwiki.png)
+![Knowledge base page: three stat cards for pages, files and chunks, indexing and search entries, indexed file list, and a "Chat" button at the bottom right](lubanagent-llmwiki.png)
 
-*Knowledge base page: wiki page / indexed files / indexed chunks counters with index, rebuild, lint, clear and search; the "Chat" button opens the session bound to that library*
+*Knowledge base page: wiki pages, indexed files and indexed chunks at a glance; index, rebuild, lint, clear and semantic search are available, and the "Chat" button opens the session bound to this library.*
 
 ### Settings
 
-![Settings page: global vs current workspace scope switch, eight tabs on the left, skill editor on the right](lubanagent-settings.png)
+![Settings page: scope switch at the top, nine tabs on the left, provider configuration form on the right](lubanagent-settings.png)
 
-*Settings page: eight tabs — Providers, Models, Skills, Rules, MCP servers, A2A collaboration, Workspace and Data & usage; on the Skills tab "New / Import ZIP" sit above the list and the body is edited on the right*
+*Settings page: nine tabs — Providers, Models, Skills, Rules, MCP servers, A2A collaboration, Workspace, Notifications and Data & usage; the scope can be switched between global and the current workspace at the top.*
 
 ### Help
 
 ![Help dialog: renders the repository README in place, including badges, project table and previews](lubanagent-help.png)
 
-*Help: the repository README is rendered inside the dialog and stays in sync with the host build*
+*Help: the repository README is rendered inside the dialog, so commands, configuration and endpoints stay in sync with the host build — no need to leave the UI to look them up.*
 
 ### About
 
-![About dialog: LAN entry QR code on top, then version, repository, author and license](lubanagent-about.png)
+![About dialog: LAN entry QR code in the center, then version, repository, author and license](lubanagent-about.png)
 
-*About: scan the QR code on a phone in the same LAN to open this UI; version, repository, author and license follow below*
+*About: scan the QR code on a phone in the same LAN to open this instance; version, repository, author and license follow below.*
+
+---
+
+## 🖥️ Walkthrough: From Opening the Page to Your First Conversation
+
+No desktop client to install — the browser is your Agent workspace. Below is a tour of each area you'll meet after opening the page, what it does and how to get started.
+
+### ① Entering the workspace
+
+- **From the terminal entry**: once the host is up, the terminal prints an entry address with a session token, `https://<LAN IP>:18080/?t=<token>`; opening it in a browser lands you in the workspace. While the page stays open, the token is renewed automatically by the frontend heartbeat, so no re-login is needed.
+- **Scan the QR code on a phone**: open the QR code in the About dialog; on a phone joined to the same LAN you can scan it to reach the same instance.
+- **Certificate notice**: the local self-signed cert is installed only into the current user's trusted root, so a phone or a first-visit browser may warn that the certificate is untrusted — trust it or bypass the warning. See "[WebHost Access Token and Security](#-webhost-access-token-and-security)" below for details.
+
+### ② Home: projects and sessions
+
+You start on the session list, with every conversation grouped by time.
+
+- **Left rail · Projects**: working directories are grouped by project; pick one to filter the sessions on the right. "New project" adds a working directory, and the action button beside a project offers rename and delete.
+- **Right side · Session list**: the search box at the top looks up sessions by title; the refresh button pulls the latest list; "New session" starts a fresh conversation. The "More" menu on each session offers rename and delete.
+- **Top bar tabs**: running conversations stay as tabs in the top bar; a turn keeps streaming when you switch to home or settings, with an activity dot on the tab showing its state. Only closing a tab or deleting a session disposes of the instance and aborts the stream.
+
+### ③ Chat: hand your idea to the Agent
+
+Open a session to reach the chat page; the composer sits at the bottom.
+
+- **Send and wrap**: type your question and press `Enter` to send, `Shift+Enter` for a line break; the "+" button adds images and files (up to 5 attachments per message).
+- **Per-session toggles**: above the composer you can switch the model, permission mode (default / follow-model), reasoning strength and context budget (a lower budget compresses earlier); these affect only the current session and leave other conversations untouched.
+- **Skills and commands**: type `@` to bring up the available skill picker; slash commands offer quick actions. Tool calls needing confirmation show a confirmation dialog, and interactive questions are listed one by one — the flow continues once you answer.
+- **Page actions**: the back button by the title returns to the session list; "Open workspace" opens the current working directory (see the next section); more session actions sit on the top right.
+
+### ④ Chat and workspace side by side
+
+![Chat plus workspace side by side: the conversation flow and composer on the left, the workspace file tree and selected file preview on the right](lubanagent-chat-workspace.png)
+
+*The chat page can sit beside the workspace: keep reading the Agent's replies, reasoning and tool calls on the left, while browsing workspace files and checking code or docs on the right.*
+
+- **Open and collapse**: click "Open workspace" in the title bar to slide the workspace panel out on the right; close it with the × in the panel or "Close workspace", and drag the splitter to resize the two columns.
+- **File tree**: folders expand and collapse by level; the filter box at the top narrows files by name; you can toggle "Show ignored directories", and the refresh button reloads the current tree.
+- **File preview**: pick any file to view its raw content on the right (text and images render in place); the preview area supports copying the file content and downloading the file.
+- **Two-pane sync**: while the conversation runs on the left, related files can be looked up on the right; relative links and images in a session also open in this panel.
+
+### ⑤ Knowledge base: let the Agent read your docs
+
+Feed your scattered documents into a library, and the Agent retrieves relevant passages before answering.
+
+- **Manage libraries**: create, rename or delete libraries in the left rail; the top shows three counters — wiki pages, indexed files and indexed chunks.
+- **Index and maintenance**: optionally enter a file match pattern (e.g. `**/*.md`) and click "Index"; "Rebuild" re-ingests from the current state, "Lint" checks index health, and "Clear index" removes all indexed content.
+- **Search and chat**: run a semantic search in the search box; the "Chat" button at the bottom right opens a session bound to this library, with retrieval augmentation applied automatically.
+
+### ⑥ Plugins: extend the workspace
+
+The plugins page manages extensions under the web plugin root, which is separate from the desktop client's plugin directory.
+
+- **Install**: click "Install plugin" and upload the selected ZIP from the browser; it enables automatically once installed.
+- **Manage**: installed plugins can be disabled or re-enabled; "Upgrade" picks a new ZIP to install over the old one; "Uninstall" removes the plugin directory and state record.
+- **Details**: the detail area shows the plugin's ID, version, author and status, along with the skills, MCP services and page entries it provides; a plugin with a page entry appears at the bottom of the left rail once enabled.
+
+### ⑦ Settings: nine tabs for global and workspace config
+
+Settings is an overlay above the current view; close it with ×, `Esc`, or a backdrop click to return to where you were. The scope at the top switches between **global** and the **current workspace**, and the configuration below applies to that scope.
+
+| Tab | What you can do |
+|-----|-----------------|
+| **Providers** | Configure built-in or custom OpenAI-compatible providers: ID, display name, API key, base URL, network timeout and custom models |
+| **Models** | Browse available models per provider, inspect capability details, or set a model as the default for new sessions |
+| **Skills** | Create skills or import a ZIP, managed per global / workspace scope; edit name, category, description, trigger words and body on the right |
+| **Rules** | Add file-based rules: action type / target glob, allow or deny, priority and enabled state, with an optional guidance body |
+| **MCP servers** | Add an MCP server, pick a transport such as stdio, fill in the launch command and arguments, and enable it per scope |
+| **A2A collaboration** | Configure A2A server / client: listen address, port, endpoint prefix, external name and version, and API key requirements |
+| **Workspace** | View and authorize the workspace root and config directory, initialize AGENTS.md, and fill in the business scenario and capability list |
+| **Notifications** | Toggle the three sound cues — task complete, action needed, chat error — with a preview; preferences persist in the local browser |
+| **Data & usage** | Review session count, message count, cumulative / daily-token stats filtered by time range; clear session data by scope (knowledge base content is not deleted) |
+
+### ⑧ Help and About
+
+- **Help**: open "Help" in the side bar to render the repository README inside a dialog; commands, configuration and endpoints stay in sync with the host build.
+- **About**: shows the LAN QR code along with the version, repository URL, author and license.
 
 ---
 
@@ -528,7 +605,7 @@ npm run build          # output goes to LubanAgentWebHost/wwwroot
 - **Development loop**: start the WebHost first (`--port` to choose the port) and put the **host token** into `VITE_HOST_TOKEN` — take `token` from `~/.luban-agent/webhost.json`, or the value you passed with `--host-token` (the `?t=` in the browser entry is a session token: it can only be exchanged for a cookie and cannot be used as a Bearer token); then run `npm run dev` in `LubanAgentWebHost/web/`; `VITE_HOST_PORT` sets the upstream port (default 18080, matching the host default) and `VITE_HOST_PROTOCOL` sets the upstream protocol (default `https`, matching the host default; set it to `http` when the host runs with `--http`; the proxy accepts the self-signed cert for https); `server.proxy` forwards `/agent`, `/session`, `/workspace`, `/system`, `/attachment`, `/provider`, `/skill`, `/rule`, `/mcp`, `/model`, `/a2a`, `/llmwiki`, `/plugin` and `/plugin-web` with an added `Authorization` header, while Vite keeps serving the static assets.
 - **Global top bar and SSE**: session state lives in a frontend-wide chat pool, so tabs are decoupled from routing — a running turn keeps streaming when you switch to the home page or settings, signalled by an activity dot on its tab. Only closing a tab or deleting a session disposes the instance and aborts the stream.
 - **Settings is an overlay**: `#/settings/<tab>` covers the current view; closing it with ×, Esc or a backdrop click returns to where you were. There is no separate settings page and no "back to app" link.
-- **Scope**: the web UI covers the global top bar (home entry + session tabs), the two-column home (project filter plus create/rename/delete project on the left, session list with create/rename/delete session on the right), chat (attachments, `@` skill picker, slash commands, tool confirmation dialog, back button on the left of a tab title), the knowledge-base page (create/rename/index/rebuild/search, with a "Chat" button at the bottom that opens a session for that library), the plugin management overlay (install / upgrade / enable / disable / uninstall for web plugins only), plugin pages (a same-origin iframe; a plugin with a page shows an entry at the bottom of the left sidebar once enabled) and the eight-tab settings overlay (provider / model / skill / rule / MCP / A2A / workspace / data & usage); up to 5 attachments per message, a 10MB per-file limit for text attachments, and a 20MB / 50-megapixel cap for images (images over 2000px or 5MB are downscaled and re-encoded in the browser before upload). Connectors, `@` file-path context and the Shell command entry point are out of scope for the web UI.
+- **Scope**: the web UI covers the global top bar (home entry + session tabs), the two-column home (project filter plus create/rename/delete project on the left, session list with create/rename/delete session on the right), chat (attachments, `@` skill picker, slash commands, tool confirmation dialog, back button on the left of a tab title), the knowledge-base page (create/rename/index/rebuild/search, with a "Chat" button at the bottom that opens a session for that library), the plugin management overlay (install / upgrade / enable / disable / uninstall for web plugins only), plugin pages (a same-origin iframe; a plugin with a page shows an entry at the bottom of the left sidebar once enabled) and the nine-tab settings overlay (provider / model / skill / rule / MCP / A2A / workspace / notifications / data & usage); up to 5 attachments per message, a 10MB per-file limit for text attachments, and a 20MB / 50-megapixel cap for images (images over 2000px or 5MB are downscaled and re-encoded in the browser before upload). Connectors, `@` file-path context and the Shell command entry point are out of scope for the web UI.
 
 ---
 

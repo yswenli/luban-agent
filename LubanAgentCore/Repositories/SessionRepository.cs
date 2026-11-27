@@ -51,10 +51,11 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
-    /// 判断指定用户是否拥有该会话（含软删除；用于消息读写的越权防护）。
+    /// 判断指定用户是否拥有该会话（不含已软删除的会话；用于消息读写的越权防护）。
     /// </summary>
     /// <remarks>
-    /// 含软删除是刻意的：删除会话为“先软删会话行、再物理清消息”，清理前的归属校验在软删后仍须成立。
+    /// 软删过滤由 <see cref="IDeletedFilter"/> 表过滤器统一施加，故会话被删除后此处返回 false——
+    /// 这正是写入侧需要的语义：删掉的会话不再接受新消息。
     /// <c>ai_session.SessionId</c> 建有唯一索引，故命中索引后过滤 <c>UserId</c>（UserId 无独立索引亦可）。
     /// </remarks>
     public async Task<bool> ExistsForUserAsync(string sessionId, string userId)
@@ -87,12 +88,34 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
-    /// 获取用户全部会话ID（含软删除，用于级联清理消息）
+    /// 获取用户全部会话ID（含软删除，用于级联清理消息与 worktree 登记）
     /// </summary>
+    /// <remarks>
+    /// 用 <c>ClearFilter&lt;IDeletedFilter&gt;()</c> 只绕开软删过滤器：会话行随后由
+    /// <see cref="PurgeAllAsync"/> 一并物理删除，若此处漏掉软删会话，其从属数据会永久孤立。
+    /// 不用无参 <c>ClearFilter()</c>，避免连其它全局过滤器（租户、数据权限）一起丢掉而扩大清理范围。
+    /// </remarks>
     public async Task<List<string>> GetSessionIdsAsync(string userId)
     {
         return await AsQueryable()
+            .ClearFilter<IDeletedFilter>()
             .Where(s => s.UserId == userId)
+            .Select(s => s.SessionId)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 从给定会话集合中筛出仍然有效的会话ID（排除已软删除）
+    /// </summary>
+    /// <param name="sessionIds">待检查的会话ID集合。</param>
+    /// <returns>仍存在的会话ID；集合为空时返回空列表。</returns>
+    public async Task<List<string>> GetActiveSessionIdsAsync(IReadOnlyCollection<string> sessionIds)
+    {
+        if (sessionIds.Count == 0) return new List<string>();
+
+        var ids = sessionIds.ToList();
+        return await AsQueryable()
+            .Where(s => ids.Contains(s.SessionId))
             .Select(s => s.SessionId)
             .ToListAsync();
     }
@@ -245,6 +268,20 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     }
 
     /// <summary>
+    /// 物理删除指定用户的全部会话（含此前已软删除的会话）
+    /// </summary>
+    /// <param name="userId">归属用户。</param>
+    /// <returns>删除的行数。</returns>
+    public async Task<int> PurgeAllAsync(string userId)
+    {
+        var db = Context;
+        db.QueryFilter.Clear<IDeletedFilter>();
+        return await db.Deleteable<DbSession>()
+            .Where(s => s.UserId == userId)
+            .ExecuteCommandAsync();
+    }
+
+    /// <summary>
     /// 仅累加 Token（用于摘要消息：token 计入，消息数不计；限所属用户）
     /// </summary>
     public async Task IncrementTokenCountAsync(string sessionId, int tokens, string userId)
@@ -300,14 +337,15 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
     /// </summary>
     /// <remarks>
     /// 消息与 worktree 记录只带 SessionId，删除工作区时要先按工作区取 ID；
-    /// 用 <see cref="ISugarQueryable{T}.ClearFilter"/> 绕开软删过滤器，连同此前单独删除过的会话一起清掉。
+    /// 用 <c>ClearFilter&lt;IDeletedFilter&gt;()</c> 只绕开软删过滤器（不清其它全局过滤器），
+    /// 连同此前单独删除过的会话一起清掉。
     /// </remarks>
     public async Task<List<string>> GetAllSessionIdsByWorkspaceAsync(string workspaceId, string userId)
     {
         if (string.IsNullOrWhiteSpace(workspaceId)) return new List<string>();
 
         return await AsQueryable()
-            .ClearFilter()
+            .ClearFilter<IDeletedFilter>()
             .Where(s => s.WorkspaceId == workspaceId && s.UserId == userId)
             .Select(s => s.SessionId)
             .ToListAsync();

@@ -525,12 +525,8 @@ public class WorkspaceManager : IWorkspaceManager
 
         var workspace = await _repo.GetByWorkspaceIdAsync(workspaceId, _userId);
 
-        // 消息与 worktree 记录只带 SessionId，先按工作区取全部会话ID（含此前单独删过的会话）
-        var sessionIds = await _sessionRepo.GetAllSessionIdsByWorkspaceAsync(workspaceId, _userId);
-
-        await new SessionMessageRepository().PurgeBySessionIdsAsync(sessionIds);
-        await new WorktreeSessionRepository().PurgeBySessionIdsAsync(sessionIds);
-        await _sessionRepo.PurgeByWorkspaceAsync(workspaceId, _userId);
+        // 会话级联清理（消息 → worktree 登记 → 会话行，含此前单独删过的会话）与清理会话数据共用同一实现
+        await new SessionDataPurger().PurgeWorkspaceAsync(workspaceId, _userId);
 
         var wikiFileRepo = new LlmWikiFileRepository();
         var wikiChunkRepo = new LlmWikiChunkRepository();

@@ -445,33 +445,67 @@ public static class WebSessionService
         return WebApi.OkJson(new { cleared = true });
     });
 
-    /// <summary>物理删除全部会话（可重建一个空会话）。</summary>
-    /// <param name="payload">包装后的 <see cref="SessionCreateRequest"/> JSON；可为空。</param>
+    /// <summary>物理删除会话：指定工作区，或多工作区一次清空（可重建一个空会话）。</summary>
+    /// <param name="payload">包装后的 <see cref="SessionClearAllRequest"/> JSON；可为空。</param>
     /// <returns>清空结果。</returns>
     public static Task<ActionResult> ClearAllAsync(string payload) => WebApi.RunGuardedAsync(async () =>
     {
-        var input = WebApi.TryReadPayload<SessionCreateRequest>(payload, out var parsed) ? parsed : null;
+        var input = WebApi.TryReadPayload<SessionClearAllRequest>(payload, out var parsed) ? parsed : null;
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.Runtime.UserId);
         var manager = scope.GetRequiredService<ISessionManager>();
-        var workspaceId = string.IsNullOrWhiteSpace(input?.WorkspaceId)
-            ? scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId
-            : input!.WorkspaceId.Trim();
+        var workspaces = scope.GetRequiredService<IWorkspaceManager>();
+
+        // 目标工作区按「当前用户名下」校验：既拒绝越权，也让「目标已不存在」能被明确提示而不是假成功
+        var ownedWorkspaceIds = (await workspaces.GetUserWorkspacesAsync().ConfigureAwait(false))
+            .Select(item => item.WorkspaceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var clearScope = SessionClearScope.Resolve(
+            input?.AllWorkspaces == true,
+            input?.WorkspaceId,
+            workspaces.CurrentWorkspace?.WorkspaceId,
+            ownedWorkspaceIds.Contains);
+
+        if (clearScope.MissingWorkspaceId is not null)
+        {
+            return WebApi.FailJson(404, "工作区不存在");
+        }
 
         // 批量删会话前先判定：删掉之后运行中这一轮的内容无法回填
-        var running = string.IsNullOrWhiteSpace(workspaceId)
+        var running = clearScope.ClearAll
             ? (await manager.GetUserSessionsAsync().ConfigureAwait(false)).Select(session => session.SessionId)
             : (await scope.GetRequiredService<ISessionWorkspaceQuery>()
-                .GetByWorkspaceAsync(workspaceId, WebApi.Runtime.UserId)
+                .GetByWorkspaceAsync(clearScope.WorkspaceId!, WebApi.Runtime.UserId)
                 .ConfigureAwait(false)).Select(session => session.SessionId);
         if (WebApi.Runtime.Runs.IsAnyRunning(WebApi.Runtime.UserId, running))
         {
-            return string.IsNullOrWhiteSpace(workspaceId)
+            return clearScope.ClearAll
                 ? WebApi.FailJson(409, "有会话正在进行中，请先停止")
                 : WebApi.FailJson(409, "该工作区下有正在进行中的会话，请先停止");
         }
 
-        await manager.ClearAllSessionsAsync(workspaceId).ConfigureAwait(false);
+        if (clearScope.ClearAll)
+        {
+            // 框架语义即「清空该用户全部会话」；补建由下面统一处理
+            await manager.ClearAllSessionsAsync().ConfigureAwait(false);
+        }
+        else if (manager is IWorkspaceSessionCleaner cleaner)
+        {
+            await cleaner.ClearWorkspaceSessionsAsync(clearScope.WorkspaceId!).ConfigureAwait(false);
+        }
+        else
+        {
+            return WebApi.FailJson(500, "当前会话管理器不支持按工作区清理");
+        }
+
+        // 保持「有当前工作区必有当前会话」：清理范围覆盖当前工作区时该区会话已全被删除，
+        // 补建一个空会话，否则对话框失去持久化目标；清理其它工作区时 RebuildWorkspaceId 为 null，不动活动会话。
+        if (!string.IsNullOrWhiteSpace(clearScope.RebuildWorkspaceId))
+        {
+            await manager.CreateSessionAsync(title: "新会话", workspaceId: clearScope.RebuildWorkspaceId)
+                .ConfigureAwait(false);
+        }
+
         return WebApi.OkJson(new { cleared = true, current = manager.CurrentSession?.SessionId });
     });
 

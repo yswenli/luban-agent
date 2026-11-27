@@ -24,6 +24,7 @@ namespace LubanAgentCore.Services;
 public sealed class WorktreeReconciler
 {
     private readonly WorktreeSessionRepository _repo;
+    private readonly SessionRepository _sessions;
     private readonly IWorkspaceManager _workspaces;
     private readonly GitProcess _git;
 
@@ -31,11 +32,17 @@ public sealed class WorktreeReconciler
     /// 创建 worktree 对账器。
     /// </summary>
     /// <param name="repo">worktree 会话仓储。</param>
+    /// <param name="sessions">会话仓储（判断登记对应的会话是否仍存在）。</param>
     /// <param name="workspaces">工作区管理器（枚举工作区根）。</param>
     /// <param name="git">git 命令封装。</param>
-    public WorktreeReconciler(WorktreeSessionRepository repo, IWorkspaceManager workspaces, GitProcess git)
+    public WorktreeReconciler(
+        WorktreeSessionRepository repo,
+        SessionRepository sessions,
+        IWorkspaceManager workspaces,
+        GitProcess git)
     {
         _repo = repo;
+        _sessions = sessions;
         _workspaces = workspaces;
         _git = git;
     }
@@ -60,14 +67,34 @@ public sealed class WorktreeReconciler
             return messages;
         }
 
-        // 1) 有登记但目录已缺失：需人工恢复或放弃
+        // 1) 登记对应的会话已删除（含软删）：登记不会被任何会话使用，磁盘目录需人工清理
+        HashSet<string>? activeSessionIds = null;
+        try
+        {
+            activeSessionIds = (await _sessions
+                    .GetActiveSessionIdsAsync(records.Select(record => record.SessionId).ToList())
+                    .ConfigureAwait(false))
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            messages.Add($"读取会话状态失败：{ex.Message}");
+        }
+
+        // 2) 会话仍在但目录已缺失：需人工恢复或放弃
         foreach (var record in records)
         {
+            if (activeSessionIds is not null && !activeSessionIds.Contains(record.SessionId))
+            {
+                messages.Add($"worktree 登记 {record.SessionId} 对应会话已删除：{record.WorktreePath}（可执行 git worktree remove 清理）");
+                continue;
+            }
+
             if (!Directory.Exists(record.WorktreePath))
                 messages.Add($"worktree 登记 {record.SessionId} 对应目录缺失：{record.WorktreePath}（可放弃或人工恢复）");
         }
 
-        // 2) 各工作区磁盘上存在但无登记：孤儿 worktree，可 prune
+        // 3) 各工作区磁盘上存在但无登记：孤儿 worktree，可 prune
         IEnumerable<WorkspaceInfo> workspaceList;
         try
         {

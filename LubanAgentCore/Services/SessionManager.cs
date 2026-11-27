@@ -20,10 +20,11 @@ namespace LubanAgentCore.Services;
 /// <summary>
 /// Session 管理服务实现 - 使用 SQLite 数据库
 /// </summary>
-public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSessionNotifier
+public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSessionNotifier, IWorkspaceSessionCleaner
 {
     private readonly SessionRepository _sessionRepo;
     private readonly SessionMessageRepository _messageRepo;
+    private readonly SessionDataPurger _purger;
     private readonly string _userId;
 
     /// <summary>
@@ -48,6 +49,7 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
         _userId = string.IsNullOrWhiteSpace(userId) ? LubanAgentCore.Hosting.LocalUserDefaults.DefaultUserId : userId;
         _sessionRepo = new SessionRepository();
         _messageRepo = new SessionMessageRepository();
+        _purger = new SessionDataPurger(_sessionRepo, _messageRepo, new WorktreeSessionRepository());
     }
 
     /// <summary>
@@ -301,14 +303,13 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
     }
 
     /// <summary>
-    /// 物理删除全部会话及消息数据
+    /// 物理删除全部会话及其消息、worktree 登记
     /// </summary>
+    /// <param name="workspaceId">清除后需重建「新会话」时绑定的工作区ID（可选；为空时不重建）。</param>
     public async Task ClearAllSessionsAsync(string? workspaceId = null)
     {
-        // 仅清理当前用户数据：先取该用户全部会话ID（含软删），级联物理删消息，再物理删会话
-        var sessionIds = await _sessionRepo.GetSessionIdsAsync(_userId);
-        await _messageRepo.DeleteBySessionIdsAsync(sessionIds);
-        await _sessionRepo.DeleteAllAsync(_userId);
+        // 仅清理当前用户数据：会话行与消息、worktree 登记一起物理删除（含此前软删的会话）
+        await _purger.PurgeAllForUserAsync(_userId).ConfigureAwait(false);
         _currentSession = null;
 
         // 保持"有当前工作区必有当前会话"不变量：清空后立即重建“新会话”，
@@ -316,6 +317,27 @@ public class SessionManager : LuBan.AIAgent.Sessions.ISessionManager, ICurrentSe
         if (!string.IsNullOrEmpty(workspaceId))
         {
             await CreateSessionAsync(title: "新会话", workspaceId: workspaceId);
+        }
+    }
+
+    /// <summary>
+    /// 物理删除指定工作区下当前用户的会话及其消息、worktree 登记（不重建活动会话）
+    /// </summary>
+    /// <remarks>
+    /// 只清理该工作区（含此前软删的会话），不波及其它工作区；活动会话指针只在其
+    /// 本身被删时清空，是否补建空会话由调用方按「当前工作区」决定。
+    /// </remarks>
+    /// <param name="workspaceId">目标工作区；为空时不做任何删除。</param>
+    public async Task ClearWorkspaceSessionsAsync(string workspaceId)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return;
+
+        var purgedSessionIds = await _purger.PurgeWorkspaceAsync(workspaceId, _userId).ConfigureAwait(false);
+
+        // 活动会话不在被删集合里时保持指针不变：清理其它工作区不能影响当前工作区的活动会话
+        if (_currentSession is not null && purgedSessionIds.Contains(_currentSession.SessionId))
+        {
+            _currentSession = null;
         }
     }
 

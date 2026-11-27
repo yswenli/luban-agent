@@ -101,8 +101,8 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     return hasGlobal() ? [{ value: 'global', label: '★ 全局' }, ...list] : list;
   };
 
-  /** 需要工作区却一个都没有：给出提示，不渲染表单。 */
-  const needWorkspace = () => scopeValue() === '';
+  /** 需要工作区却一个都没有：给出提示，不渲染表单。无作用域的全局页签不受此限。 */
+  const needWorkspace = () => showScope() && scopeValue() === '';
 
   const subtitle = () => {
     if (showScope()) {
@@ -110,7 +110,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
       return scopeValue() ? `作用域：${workspaceLabel(scopeValue())}` : '作用域：未选择工作区';
     }
     if (activeTab().id === 'notify') return '保存位置：本机浏览器（不随账号同步）';
-    if (activeTab().id === 'data') return '统计范围：全部工作区';
+    if (activeTab().id === 'data') return '统计范围：全部会话';
     return '作用域：★ 全局';
   };
 
@@ -131,7 +131,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
               <select
                 class="text-input"
                 value={scopeValue()}
-                disabled={projects().length === 0}
+                disabled={scopeOptions().length <= 1}
                 onChange={(event) => setSelection(event.currentTarget.value)}
               >
                 <For each={scopeOptions()}>{(item) => <option value={item.value}>{item.label}</option>}</For>

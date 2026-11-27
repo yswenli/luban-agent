@@ -19,6 +19,19 @@ public sealed record SessionCreateRequest
     public string? WorkspaceId { get; init; }
 }
 
+/// <summary>清空会话。</summary>
+public sealed record SessionClearAllRequest
+{
+    /// <summary>
+    /// 目标工作区；为空表示当前工作区，当前工作区也为空时按清全部处理。
+    /// <see cref="AllWorkspaces"/> 为 true 时仅作为清空后重建新会话的绑定目标（省略或不属于当前用户时用宿主当前工作区）。
+    /// </summary>
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>是否清空该用户的全部会话（含知识库工作区与未绑定工作区的会话）。</summary>
+    public bool AllWorkspaces { get; init; }
+}
+
 /// <summary>重命名会话。</summary>
 public sealed record SessionRenameRequest
 {

@@ -193,11 +193,15 @@ public sealed class HttpSessionManager(AgentServerClient client) : ISessionManag
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 接口语义是「删全部」：显式下发 <c>allWorkspaces</c>，避免服务端把缺省目标回退成
+    /// 「只清当前工作区」；<c>workspaceId</c> 仅作为清空后重建新会话的绑定目标传给服务端。
+    /// </remarks>
     public async Task ClearAllSessionsAsync(string? workspaceId = null)
     {
         await client.PostAsync(
             AgentApiRoutes.Session.ClearAll,
-            new SessionCreateRequest { WorkspaceId = workspaceId })
+            new SessionClearAllRequest { WorkspaceId = workspaceId, AllWorkspaces = true })
             .ConfigureAwait(false);
 
         ClearCurrentSession();

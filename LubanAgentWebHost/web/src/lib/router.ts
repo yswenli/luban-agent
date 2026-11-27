@@ -99,6 +99,21 @@ export function closePlugins(): void {
   closeOverlay();
 }
 
+/**
+ * 会话被批量删除（如设置页清空会话数据）后修正视图。
+ *
+ * 当前路由或「打开浮层前的视图」指向已删会话时回首页：否则会停留在已清空的对话页，
+ * 消息来自内存池、发送又会被服务端按「会话不存在」拒绝。浮层本身打开时不改 hash，只修底层视图。
+ */
+export function pruneSessionView(existing: Iterable<string>): void {
+  const keep = new Set(existing);
+  const view = lastView();
+  if (view.name === 'chat' && !keep.has(view.sessionId)) setLastView({ name: 'sessions' });
+
+  const current = parseHash(window.location.hash);
+  if (current.name === 'chat' && !keep.has(current.sessionId)) navigate('#/');
+}
+
 function closeOverlay(): void {
   const view = lastView();
   if (view.name === 'chat') navigate(`#/s/${encodeURIComponent(view.sessionId)}`);

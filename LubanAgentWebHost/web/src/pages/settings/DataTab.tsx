@@ -2,9 +2,11 @@ import { createSignal, onMount, Show } from 'solid-js';
 
 import { ConfirmActionDialog } from '../../components/Dialog';
 import { Icon } from '../../components/Icons';
+import { pruneSessionView } from '../../lib/router';
 import { settingsApi } from '../../lib/settings';
 import type { GlobalSessionStats } from '../../lib/types';
-import { bootstrap, refreshSessions, showToast } from '../../stores/app';
+import { bootstrap, refreshSessions, sessions, showToast } from '../../stores/app';
+import { dropChat } from '../../stores/chats';
 import { SelectField } from './Shared';
 
 /** 一张用量统计卡。 */
@@ -60,27 +62,20 @@ export function DataTab() {
     }
     setBusy('clear');
     try {
-      if (target() !== 'all') {
-        await settingsApi.clearAllSessions(target());
-      } else {
-        // 接口的 workspaceId 留空只清后端当前工作区，清空全部必须逐个工作区下发
-        const list = await settingsApi.listWorkspaces();
-        const failures: string[] = [];
-        for (const workspace of list) {
-          try {
-            await settingsApi.clearAllSessions(workspace.workspaceId);
-          } catch (error) {
-            failures.push(workspace.name || workspace.rootPath);
-          }
-        }
-        if (failures.length > 0) {
-          await refreshSessions();
-          await load();
-          showToast(`有 ${failures.length} 个工作区未能清空（可能存在运行中的会话）：${failures.join('、')}`, 'error');
-          return;
-        }
-      }
+      const before = sessions().map((item) => item.sessionId);
+      // 「全部工作区」由宿主一次清空（含知识库工作区与未绑定工作区的会话），不再逐区下发；
+      // 指定工作区则只清该区，宿主按 workspaceId 过滤
+      await settingsApi.clearAllSessions(
+        target() === 'all' ? { allWorkspaces: true } : { workspaceId: target() },
+      );
       await refreshSessions();
+      // 会话实例常驻内存：销毁已删会话，避免回退或残留页面继续展示清空前的内容
+      const remaining = new Set(sessions().map((item) => item.sessionId));
+      for (const sessionId of before) {
+        if (!remaining.has(sessionId)) dropChat(sessionId);
+      }
+      // 被清掉的会话若是当前打开项，退回首页；设置浮层打开时只修底层视图
+      pruneSessionView(remaining);
       await load();
       showToast('会话已清空', 'success');
     } catch (error) {
@@ -141,7 +136,7 @@ export function DataTab() {
             { value: 'all', label: '全部工作区' },
             ...workspaces().map((item) => ({ value: item.workspaceId, label: item.name || item.rootPath })),
           ]}
-          hint="清理前请先停止正在运行的会话；「全部工作区」也包含知识库"
+          hint="清理前请先停止正在运行的会话；「全部工作区」清的是各工作区（含知识库工作区）的会话，不会删除知识库内容"
           onChange={setTarget}
         />
       </div>
