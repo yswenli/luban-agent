@@ -29,7 +29,7 @@ public static class RetrievalBootstrap
     /// <param name="report">进度/提示回调。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>
-    /// 成功时返回嵌入生成器与模型管理器；检索未启用、模型规格未知或本地模型包缺失时返回
+    /// 成功时返回嵌入生成器与模型管理器；检索未启用、模型规格未知，或模型包缺失且下载失败时返回
     /// <c>(null, null)</c>，调用方应将检索功能降级关闭（LLM Wiki 知识库问答不可用，但不影响其余功能）。
     /// </returns>
     public static async Task<(OnnxEmbeddingGenerator? embedder, ModelManager? modelManager)> PrepareAsync(
@@ -39,6 +39,10 @@ public static class RetrievalBootstrap
     {
         var retrieval = configuration.GetSection("LuBanAgent:Tools:Retrieval").Get<RetrievalToolOptions>() ?? new RetrievalToolOptions();
         if (!retrieval.Enabled) return (null, null);
+
+        // 下载地址不落在 RetrievalToolOptions 上（框架类型，加属性要连带发框架包），
+        // 直接从同一配置节读：环境变量 LuBanAgent__Tools__Retrieval__DownloadUrl 同样生效。
+        var downloadUrl = configuration["LuBanAgent:Tools:Retrieval:DownloadUrl"];
 
         var spec = EmbeddingModelCatalog.Find(retrieval.ModelId);
         if (spec == null)
@@ -50,11 +54,12 @@ public static class RetrievalBootstrap
         var mm = new ModelManager(spec);
         if (mm.IsModelReady()) return (new OnnxEmbeddingGenerator(mm.ModelDirectory, spec), mm);
 
-        var ok = await mm.EnsureModelAsync(report, ct);
+        var ok = await mm.EnsureModelAsync(report, ct, downloadUrl, retrieval.AutoDownload);
         if (!ok || !mm.IsModelReady())
         {
             report($"本地嵌入模型 {spec.ModelId} 未就绪，检索功能已禁用");
-            report($"请将模型包放到: {mm.LocalZipPath}");
+            report($"请将模型包放到: {string.Join(" 或 ", mm.ZipPathCandidates)}");
+            report("或配置 LuBanAgent:Tools:Retrieval:DownloadUrl（环境变量 LuBanAgent__Tools__Retrieval__DownloadUrl）自动下载");
             return (null, null);
         }
 
