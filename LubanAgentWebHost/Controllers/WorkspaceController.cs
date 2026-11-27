@@ -71,6 +71,44 @@ public sealed class WorkspaceController : Controller
     [HttpGet]
     public Task<ActionResult> Dirs(string? path) => WebWorkspaceService.ListDirsAsync(path);
 
+    /// <summary>
+    /// 在白名单根目录内浏览子目录（只读、单层），供新建项目向导选择落点。
+    /// </summary>
+    /// <param name="root">白名单根目录（绝对路径）。</param>
+    /// <param name="path">当前目录相对根目录的路径；空表示根目录本身。</param>
+    /// <returns><see cref="WorkspaceBrowseDto"/>。</returns>
+    [HttpGet]
+    public Task<ActionResult> Browse(string? root, string? path) => WebWorkspaceService.BrowseAsync(root, path);
+
+    /// <summary>预检 Git 仓库地址（地址 / 网络 / 凭据是否可用）。</summary>
+    /// <param name="payload">包装后的 <see cref="GitVerifyRequest"/> JSON。</param>
+    /// <returns><see cref="GitVerifyResultDto"/>。</returns>
+    [HttpPost]
+    public Task<ActionResult> VerifyGit(string payload) => WebWorkspaceService.VerifyGitAsync(payload);
+
+    /// <summary>某个仓库地址对应的已保存凭据状态（不含密码）。</summary>
+    /// <param name="gitUrl">仓库地址。</param>
+    /// <returns><see cref="GitCredentialStatusDto"/>。</returns>
+    [HttpGet]
+    public Task<ActionResult> GitCredential(string? gitUrl) => WebWorkspaceService.GitCredentialStatusAsync(gitUrl);
+
+    /// <summary>列出 Git 凭据（普通用户仅自己，管理员为全部）。</summary>
+    /// <returns><see cref="GitCredentialDto"/> 列表。</returns>
+    [HttpGet]
+    public Task<ActionResult> GitCredentials() => WebWorkspaceService.ListGitCredentialsAsync();
+
+    /// <summary>新增或覆盖当前用户某个 HTTPS 域名的凭据（设置页用）。</summary>
+    /// <param name="payload">包装后的 <see cref="GitCredentialSaveRequest"/> JSON。</param>
+    /// <returns>保存后的 <see cref="GitCredentialDto"/>。</returns>
+    [HttpPost]
+    public Task<ActionResult> SaveGitCredential(string payload) => WebWorkspaceService.SaveGitCredentialAsync(payload);
+
+    /// <summary>删除 Git 凭据（普通用户仅自己的，管理员可按主键删任意用户的）。</summary>
+    /// <param name="payload">包装后的 <see cref="GitCredentialDeleteRequest"/> JSON。</param>
+    /// <returns><c>{deleted:true}</c>。</returns>
+    [HttpPost]
+    public Task<ActionResult> DeleteGitCredential(string payload) => WebWorkspaceService.DeleteGitCredentialAsync(payload);
+
     /// <summary>切换工作区。</summary>
     /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>
     /// <returns>切换后的工作区。</returns>

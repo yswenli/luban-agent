@@ -63,7 +63,129 @@ public sealed record WorkspaceCreateRequest
     /// </summary>
     /// <remarks>共用只在物理目录层：每个用户仍持有自己的工作区记录，会话与配置互不影响。</remarks>
     public bool ShareExisting { get; init; }
+
+    /// <summary>
+    /// 相对子目录（可多级，允许 <c>/</c> 与 <c>\</c>）；与 <see cref="RootPath"/> 组成最终目录。
+    /// </summary>
+    /// <remarks>
+    /// 为空时保持旧语义：目录来源直接用 <see cref="RootPath"/> 作为工作区目录；
+    /// git 来源在 <see cref="RootPath"/> 下再取项目名/仓库名作为子目录。
+    /// </remarks>
+    public string? SubPath { get; init; }
+
+    /// <summary>本次请求携带的 HTTPS 凭据；为空时回落到当前用户已保存的同域名凭据。</summary>
+    public GitCredentialInput? GitCredential { get; init; }
+
+    /// <summary>创建成功后是否保存本次凭据（按用户 + 域名覆盖）。</summary>
+    public bool SaveCredential { get; init; }
 }
+
+/// <summary>HTTPS 用户名与密码 / 令牌。</summary>
+public sealed record GitCredentialInput
+{
+    /// <summary>用户名。</summary>
+    public string? UserName { get; init; }
+
+    /// <summary>密码 / 访问令牌。</summary>
+    public string? Secret { get; init; }
+}
+
+/// <summary>仓库地址预检请求。</summary>
+public sealed record GitVerifyRequest
+{
+    /// <summary>仓库地址。</summary>
+    public string GitUrl { get; init; } = "";
+
+    /// <summary>本次填写的凭据；为空时用当前用户已保存的同域名凭据。</summary>
+    public GitCredentialInput? GitCredential { get; init; }
+}
+
+/// <summary>仓库地址预检结果（始终 200，用 <see cref="Ok"/> 表达成败）。</summary>
+/// <param name="Ok">是否可访问。</param>
+/// <param name="Kind">协议：https / http / ssh / git / file。</param>
+/// <param name="Host">域名（小写）。</param>
+/// <param name="Port">端口。</param>
+/// <param name="Reason">失败原因：git-auth / git-not-found / git-network / git-timeout / git-unknown。</param>
+/// <param name="Message">失败说明。</param>
+public sealed record GitVerifyResultDto(
+    bool Ok,
+    string Kind,
+    string Host,
+    int Port,
+    string? Reason,
+    string? Message);
+
+/// <summary>某个仓库地址对应的已保存凭据状态（不含密码）。</summary>
+/// <param name="Kind">协议。</param>
+/// <param name="Host">域名。</param>
+/// <param name="Port">端口。</param>
+/// <param name="Saved">是否已有当前用户的凭据。</param>
+/// <param name="UserName">已保存凭据的用户名。</param>
+public sealed record GitCredentialStatusDto(
+    string Kind,
+    string Host,
+    int Port,
+    bool Saved,
+    string? UserName);
+
+/// <summary>凭据列表项（永不包含密码）。</summary>
+/// <param name="Id">凭据主键。</param>
+/// <param name="UserId">归属用户标识。</param>
+/// <param name="Owner">归属用户展示名（管理员视图用）。</param>
+/// <param name="Scheme">协议。</param>
+/// <param name="Host">域名。</param>
+/// <param name="Port">端口。</param>
+/// <param name="GitUserName">凭据用户名。</param>
+/// <param name="UpdatedAt">更新时间。</param>
+public sealed record GitCredentialDto(
+    long Id,
+    string UserId,
+    string Owner,
+    string Scheme,
+    string Host,
+    int Port,
+    string GitUserName,
+    DateTime? UpdatedAt);
+
+/// <summary>删除凭据：按主键（管理员可删任意用户）或按仓库地址（只删自己的）。</summary>
+public sealed record GitCredentialDeleteRequest
+{
+    /// <summary>凭据主键。</summary>
+    public long? Id { get; init; }
+
+    /// <summary>仓库地址；按地址删除当前用户该域名的凭据。</summary>
+    public string? GitUrl { get; init; }
+}
+
+/// <summary>单独保存一条 HTTPS 凭据（设置页用，不依赖仓库地址）。</summary>
+public sealed record GitCredentialSaveRequest
+{
+    /// <summary>域名，可选带端口：<c>git.example.com</c> 或 <c>git.example.com:8443</c>。</summary>
+    public string Host { get; init; } = "";
+
+    /// <summary>用户名。</summary>
+    public string? UserName { get; init; }
+
+    /// <summary>密码 / 访问令牌。</summary>
+    public string? Secret { get; init; }
+}
+
+/// <summary>根目录内的目录条目。</summary>
+/// <param name="Name">目录名。</param>
+/// <param name="Path">相对根目录的路径（使用 <c>/</c> 分隔）。</param>
+/// <param name="HasGit">目录下是否存在 <c>.git</c>。</param>
+public sealed record WorkspaceBrowseEntryDto(string Name, string Path, bool HasGit);
+
+/// <summary>根目录内的只读目录浏览结果。</summary>
+/// <param name="Root">根目录。</param>
+/// <param name="Path">当前目录相对根目录的路径；根目录本身为空串。</param>
+/// <param name="Parent">上一级相对路径；已在根目录时为 <c>null</c>。</param>
+/// <param name="Entries">子目录（单层，不含文件）。</param>
+public sealed record WorkspaceBrowseDto(
+    string Root,
+    string Path,
+    string? Parent,
+    List<WorkspaceBrowseEntryDto> Entries);
 
 /// <summary>仅带工作区标识的请求。</summary>
 public sealed record WorkspaceIdRequest

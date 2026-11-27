@@ -20,12 +20,14 @@ export function Modal(props: {
   footer?: JSX.Element;
   /** 宽弹窗：README 这类长文档用，单列表单不要开。 */
   wide?: boolean;
+  /** 提交中：遮罩、Esc 与右上角关闭都失效，避免请求还在服务端跑却把弹窗关掉。 */
+  busy?: boolean;
   onClose: () => void;
 }) {
   onMount(() => {
     openModals += 1;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') props.onClose();
+      if (event.key === 'Escape' && !props.busy) props.onClose();
     };
     window.addEventListener('keydown', onKey);
     onCleanup(() => {
@@ -38,7 +40,7 @@ export function Modal(props: {
     <div
       class="overlay"
       onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
+        if (event.target === event.currentTarget && !props.busy) props.onClose();
       }}
     >
       <div class="dialog" classList={{ wide: props.wide }} role="dialog" aria-modal="true">
@@ -50,7 +52,7 @@ export function Modal(props: {
             </Show>
           </div>
           <div class="spacer" />
-          <button class="icon-btn" onClick={props.onClose} aria-label={t('common.close')}>
+          <button class="icon-btn" disabled={props.busy} onClick={props.onClose} aria-label={t('common.close')}>
             <Icon name="close" />
           </button>
         </div>

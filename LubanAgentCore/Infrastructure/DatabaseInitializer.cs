@@ -54,6 +54,7 @@ public static class DatabaseInitializer
         EnsureLlmWikiTablesAndCleanupLegacy(messages);
         EnsureWorktreeSessionTable();
         EnsureAuthTables();
+        EnsureGitCredentialTable();
 
         return messages;
     }
@@ -237,6 +238,22 @@ public static class DatabaseInitializer
         catch (Exception ex)
         {
             Logger.Error("初始化用户与邀请码表失败", ex);
+        }
+    }
+
+    /// <summary>
+    /// 确保 Git 仓库凭据表存在。
+    /// 现有数据库超过阈值时会跳过 CodeFirst 建表，故此处显式建表（幂等）。
+    /// </summary>
+    private static void EnsureGitCredentialTable()
+    {
+        try
+        {
+            new GitCredentialRepository().Context.CodeFirst.InitTables<DbGitCredential>();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("初始化 Git 仓库凭据表失败", ex);
         }
     }
 

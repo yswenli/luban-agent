@@ -7,6 +7,7 @@ import { bootstrap, projectWorkspaces } from '../stores/app';
 import { currentUser } from '../stores/auth';
 import { AccountTab } from './settings/AccountTab';
 import { DataTab } from './settings/DataTab';
+import { GitCredentialsTab } from './settings/GitCredentialsTab';
 import { InviteTab } from './settings/InviteTab';
 import { McpTab } from './settings/McpTab';
 import { ModelTab } from './settings/ModelTab';
@@ -36,6 +37,7 @@ interface TabDef {
 // 用户治理与数据清理收尾。
 const tabs: TabDef[] = [
   { id: 'account', labelKey: 'settings.tab.account', icon: 'user', scoped: false },
+  { id: 'git-credentials', labelKey: 'settings.tab.gitCredentials', icon: 'git', scoped: false },
   { id: 'invites', labelKey: 'settings.tab.invites', icon: 'key', scoped: false, adminOnly: true },
   { id: 'roots', labelKey: 'settings.tab.roots', icon: 'folder', scoped: false, adminOnly: true },
   { id: 'provider', labelKey: 'settings.tab.provider', icon: 'folder', scoped: false },
@@ -132,6 +134,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     }
     if (activeTab().id === 'notify') return t('settings.subtitleNotify');
     if (activeTab().id === 'account') return t('settings.subtitleAccount');
+    if (activeTab().id === 'git-credentials') return t('settings.subtitleGitCredentials');
     if (activeTab().id === 'users') return t('settings.subtitleUsers');
     if (activeTab().id === 'invites') return t('settings.subtitleInvites');
     if (activeTab().id === 'roots') return t('settings.subtitleRoots');
@@ -234,6 +237,9 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                 </Match>
                 <Match when={activeTab().id === 'account'}>
                   <AccountTab />
+                </Match>
+                <Match when={activeTab().id === 'git-credentials'}>
+                  <GitCredentialsTab />
                 </Match>
                 <Match when={activeTab().id === 'users'}>
                   <UsersTab />

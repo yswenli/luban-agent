@@ -179,14 +179,20 @@ export function focusSessionSearch(): void {
 /**
  * 新建工作区入参。
  *
- * `directory` 用本机已存在的绝对路径；`git` 由宿主克隆到 `~/.luban-agent/repositories/{name}`
- * （`reuseExisting` 只对 git 有意义，表示用户已确认复用同名目录）。
+ * 位置统一为「管理员白名单根目录 + 相对子目录」；`git` 由宿主克隆到该位置，
+ * `subPath` 留空时服务端取项目名/仓库名作为子目录。
  */
 export interface CreateWorkspaceInput {
   source: 'directory' | 'git';
   rootPath?: string;
+  /** 相对根目录的子目录（可多级，使用 `/` 分隔）。 */
+  subPath?: string;
   gitUrl?: string;
   name?: string;
+  /** 本次填写的 HTTPS 凭据；缺省回落当前用户已保存的同域名凭据。 */
+  gitCredential?: { userName?: string; secret?: string } | null;
+  /** 创建成功后保存本次凭据（按用户 + 域名覆盖）。 */
+  saveCredential?: boolean;
   reuseExisting?: boolean;
   /** 目录已被其他用户登记时，确认共用（服务端先返回 409 提示）。 */
   shareExisting?: boolean;
@@ -212,8 +218,11 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
     const workspace = await post<{ workspaceId?: string } | null>('/workspace/create', {
       name: input.name?.trim() || null,
       source: input.source,
-      rootPath: input.source === 'directory' ? input.rootPath?.trim() : null,
+      rootPath: input.rootPath?.trim() || null,
+      subPath: input.subPath?.trim() || null,
       gitUrl: input.source === 'git' ? input.gitUrl?.trim() : null,
+      gitCredential: input.source === 'git' ? input.gitCredential ?? null : null,
+      saveCredential: input.source === 'git' && input.saveCredential === true,
       reuseExisting: input.source === 'git' && input.reuseExisting === true,
       shareExisting: input.shareExisting === true,
       type: 'Normal',

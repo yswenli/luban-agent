@@ -14,6 +14,10 @@ namespace LubanAgentWebHost.Services;
 /// </summary>
 public static class WebWorkspaceService
 {
+    /// <summary>git 克隆目标的进程内互斥（按归一化路径），避免并发克隆同一目录时互相删改。</summary>
+    /// <remarks>条目数量与创建过的目标路径同阶，不做回收。</remarks>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> CloneGates = new(StringComparer.Ordinal);
+
     /// <summary>当前用户的工作区列表。</summary>
     /// <returns>工作区列表。</returns>
     public static Task<ActionResult> ListAsync() => WebApi.RunGuardedAsync(async () =>
@@ -170,8 +174,14 @@ public static class WebWorkspaceService
             return WebApi.FailJson(400, "source 必须是 directory 或 git");
         }
 
-        string rootPath;
         var name = string.IsNullOrWhiteSpace(input.Name) ? null : input.Name!.Trim();
+        var hasSubPath = !string.IsNullOrWhiteSpace(input.SubPath);
+
+        // 分支只做校验与路径计算，不产生写盘副作用：
+        // 克隆必须等「已是我自己的 / 已被他人登记」这类冲突判断之后再做。
+        string rootPath;
+        GitUrlInfo? gitInfo = null;
+
         if (source == "git")
         {
             var gitUrl = (input.GitUrl ?? string.Empty).Trim();
@@ -180,10 +190,12 @@ public static class WebWorkspaceService
                 return WebApi.FailJson(400, "gitUrl 不能为空");
             }
 
-            if (!IsSafeGitUrl(gitUrl))
+            if (!IsSafeGitUrl(gitUrl) || !GitUrl.TryParse(gitUrl, out var parsed))
             {
                 return WebApi.FailJson(400, "gitUrl 只支持 http(s) / ssh / git / file 协议或 scp 形式的地址");
             }
+
+            gitInfo = parsed;
 
             var folder = ToFolderName(name) is { Length: > 0 } explicitName
                 ? explicitName
@@ -193,53 +205,40 @@ public static class WebWorkspaceService
                 return WebApi.FailJson(400, "无法从仓库地址推断项目名，请填写项目名");
             }
 
-            var target = Path.GetFullPath(Path.Combine(AgentHome.RepositoriesDirectory, folder));
-
-            // 克隆前就校验白名单：克隆是写盘副作用，先失败可以避免克隆完再回 403 留下无主目录
-            if (RejectIfOutsideRoots(target) is { } rejected)
+            if (string.IsNullOrWhiteSpace(input.RootPath))
             {
-                return rejected;
-            }
-
-            if (Directory.Exists(target))
-            {
-                if (!input.ReuseExisting)
-                {
-                    // 不静默复用：目录里可能是别的项目或上次未完成的克隆，交给用户确认
-                    return WebApi.FailJson(
-                        409,
-                        $"目标目录已存在：{target}。该目录可能属于其他项目或上次克隆的残留，"
-                        + "复用会直接在这个目录上工作。是否复用？",
-                        new { reason = "exists" });
-                }
-            }
-            else if (File.Exists(target))
-            {
-                // 同名文件占位：clone 会以「目标已存在」失败，这里先给出明确冲突
-                return WebApi.FailJson(
-                    409,
-                    $"目标路径已存在同名文件：{target}。请改名或先移走该文件。",
-                    new { reason = "exists" });
+                // 旧客户端：未给根目录时保持原行为，克隆到 ~/.luban-agent/repositories/{名称}
+                rootPath = Path.GetFullPath(Path.Combine(AgentHome.RepositoriesDirectory, folder));
+                name ??= folder;
             }
             else
             {
-                try
+                var root = input.RootPath.Trim();
+                if (!Path.IsPathFullyQualified(root))
                 {
-                    Directory.CreateDirectory(AgentHome.RepositoriesDirectory);
-                    var git = new GitProcess(new LuBan.AIAgent.Infrastructure.ProcessRunner());
-                    await git.RunAsync(AgentHome.Root, ["clone", "--", gitUrl, target]).ConfigureAwait(false);
+                    return WebApi.FailJson(400, "rootPath 必须是绝对路径");
                 }
-                catch (Exception ex)
-                {
-                    // 只清理本次新建的目录：克隆失败会留下半个仓库，留着会让下次尝试误判为「已存在」
-                    TryDeleteDirectory(target);
-                    AgentWebRuntime.Log($"克隆仓库失败：{ex}");
-                    return WebApi.FailJson(500, "克隆仓库失败，请检查仓库地址与网络");
-                }
-            }
 
-            rootPath = target;
-            name ??= folder;
+                if (File.Exists(root))
+                {
+                    return WebApi.FailJson(400, "rootPath 指向的是文件，请填写目录");
+                }
+
+                if (!Directory.Exists(root))
+                {
+                    return WebApi.FailJson(409, $"根目录不存在：{root}", new { reason = "root-missing" });
+                }
+
+                // 未给子目录时按项目名/仓库名落一层，避免把仓库直接克隆进管理员根目录
+                var sub = hasSubPath ? input.SubPath : folder;
+                if (!WorkspaceSubPath.TryResolve(root, sub, out var target, out var pathError))
+                {
+                    return WebApi.FailJson(400, pathError);
+                }
+
+                rootPath = target;
+                name ??= Path.GetFileName(target);
+            }
         }
         else
         {
@@ -248,17 +247,54 @@ public static class WebWorkspaceService
                 return WebApi.FailJson(400, "rootPath 不能为空");
             }
 
-            rootPath = input.RootPath.Trim();
-            if (!Path.IsPathFullyQualified(rootPath))
+            var root = input.RootPath.Trim();
+            if (!Path.IsPathFullyQualified(root))
             {
                 return WebApi.FailJson(400, "rootPath 必须是绝对路径");
             }
 
             // 指向文件时后续会当作目录建配置，必然失败；提前拒绝避免半截残留
-            if (File.Exists(rootPath))
+            if (File.Exists(root))
             {
                 return WebApi.FailJson(400, "rootPath 指向的是文件，请填写目录");
             }
+
+            if (hasSubPath)
+            {
+                if (!Directory.Exists(root))
+                {
+                    return WebApi.FailJson(409, $"根目录不存在：{root}", new { reason = "root-missing" });
+                }
+
+                if (!WorkspaceSubPath.TryResolve(root, input.SubPath, out var target, out var pathError))
+                {
+                    return WebApi.FailJson(400, pathError);
+                }
+
+                rootPath = target;
+                name ??= Path.GetFileName(target);
+            }
+            else
+            {
+                // 旧语义：rootPath 本身就是工作区目录
+                rootPath = root;
+            }
+        }
+
+        // HTTPS 凭据：请求里带了就用请求的，否则回落到当前用户同域名已保存的凭据。
+        // 只认服务端从地址解析出的 host/port，不接受客户端另传。
+        string? credentialUserName = null;
+        string? credentialSecret = null;
+        if (gitInfo is { IsHttps: true })
+        {
+            var resolved = await ResolveCredentialAsync(gitInfo, input.GitCredential).ConfigureAwait(false);
+            if (resolved.Error is { } credentialError)
+            {
+                return WebApi.FailJson(400, credentialError);
+            }
+
+            credentialUserName = resolved.UserName;
+            credentialSecret = resolved.Secret;
         }
 
         var type = string.IsNullOrWhiteSpace(input.Type) ? WorkspaceTypes.Normal : input.Type.Trim();
@@ -302,7 +338,75 @@ public static class WebWorkspaceService
                 new { reason = "in-use" });
         }
 
-        // ② 磁盘已存在目录未注册 → 注册（不重建目录）；③ 不存在 → 建目录 + 注册。
+        // ② git 克隆：先查占用（上面已做），再落盘；失败只清理本次新建的目录。
+        if (source == "git" && gitInfo is not null)
+        {
+            // 同一目标串行化：两个请求同时看到「空目录」会互相覆盖，
+            // 后失败的一方还会把先成功的一方刚克隆出来的仓库删掉。
+            var gate = CloneGates.GetOrAdd(
+                WorkspaceIdGenerator.Normalize(rootPath),
+                _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var state = InspectGitTarget(rootPath);
+                switch (state)
+                {
+                    case GitTargetState.File:
+                        return WebApi.FailJson(
+                            409,
+                            $"目标路径已存在同名文件：{rootPath}。请改名或先移走该文件。",
+                            new { reason = "target-file" });
+
+                    case GitTargetState.NonEmptyDirectory:
+                        return WebApi.FailJson(
+                            409,
+                            $"目标目录非空且不是 git 仓库：{rootPath}。请换一个子目录，或先清空该目录。",
+                            new { reason = "target-not-empty" });
+
+                    case GitTargetState.Repository when !input.ReuseExisting:
+                        // 不静默复用：目录里可能是别的项目，交给用户确认
+                        return WebApi.FailJson(
+                            409,
+                            $"目标目录已存在 git 仓库：{rootPath}。是否直接在既有仓库上工作？",
+                            new { reason = "exists" });
+                }
+
+                if (state != GitTargetState.Repository)
+                {
+                    var parent = Path.GetDirectoryName(rootPath);
+                    if (!string.IsNullOrEmpty(parent))
+                    {
+                        Directory.CreateDirectory(parent);
+                    }
+
+                    var git = new GitProcess(new LuBan.AIAgent.Infrastructure.ProcessRunner());
+                    var clone = await git.RunWithCredentialAsync(
+                            AgentHome.Root,
+                            ["clone", "--", input.GitUrl!.Trim(), rootPath],
+                            gitInfo.IsHttps ? gitInfo : null,
+                            credentialUserName,
+                            credentialSecret,
+                            timeoutMs: 10 * 60 * 1000)
+                        .ConfigureAwait(false);
+
+                    if (!clone.Succeeded)
+                    {
+                        // 只清理本次克隆写入的内容：用户预先建好的空目录要保留
+                        CleanFailedClone(rootPath, deleteDirectory: state == GitTargetState.Missing);
+                        var kind = GitErrorClassifier.Classify(clone.StandardError, clone.StandardOutput, clone.TimedOut);
+                        AgentWebRuntime.Log($"克隆仓库失败（{GitErrorClassifier.ToReason(kind)}）：{clone.StandardError}");
+                        return FailGit(kind);
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        // ③ 磁盘已存在目录未注册 → 注册（不重建目录）；不存在 → 建目录 + 注册。
         // 两者同一注册路径（CreateWorkspaceAsync 幂等补缺配置目录，不触碰既有目录内容），
         // 差异仅在磁盘副作用（Directory.Exists 为真时不会重建目录），无需分支。
         try
@@ -310,17 +414,214 @@ public static class WebWorkspaceService
             var created = await manager
                 .CreateWorkspaceAsync(rootPath, name, normalizedType)
                 .ConfigureAwait(false);
+
+            if (input.SaveCredential && gitInfo is { IsHttps: true })
+            {
+                await SaveCredentialAsync(gitInfo, credentialUserName, credentialSecret).ConfigureAwait(false);
+            }
+
             return WebApi.OkJson(WithReusedFlag(created, reused: false));
         }
         catch (InvalidOperationException)
         {
             // TOCTOU 兜底：并发下另一请求先注册同 rootPath → 回读既有工作区，幂等复用返回
             var hit = await manager.GetByRootPathAsync(rootPath).ConfigureAwait(false);
-            return hit is null
-                ? WebApi.FailJson(500, "工作区创建失败")
-                : WebApi.OkJson(WithReusedFlag(hit, reused: true));
+            if (hit is null)
+            {
+                return WebApi.FailJson(500, "工作区创建失败");
+            }
+
+            if (input.SaveCredential && gitInfo is { IsHttps: true })
+            {
+                await SaveCredentialAsync(gitInfo, credentialUserName, credentialSecret).ConfigureAwait(false);
+            }
+
+            return WebApi.OkJson(WithReusedFlag(hit, reused: true));
         }
     });
+
+    /// <summary>
+    /// 解析本次请求要用的 HTTPS 凭据。
+    /// </summary>
+    /// <remarks>
+    /// 优先级：请求里显式填写的凭据 → 当前用户在该域名下已保存的凭据 → 匿名。
+    /// 用户名与密码必须成对出现：只填一个通常是想「改用户名但仍用旧令牌」，
+    /// 这里直接报错，避免拿半截凭据去猜。
+    /// </remarks>
+    /// <param name="url">仓库地址解析结果。</param>
+    /// <param name="input">请求携带的凭据。</param>
+    /// <returns>用户名、密码与错误信息（错误信息非空时前两者无意义）。</returns>
+    private static async Task<(string? UserName, string? Secret, string? Error)> ResolveCredentialAsync(
+        GitUrlInfo url,
+        GitCredentialInput? input)
+    {
+        var userName = input?.UserName?.Trim();
+        var secret = input?.Secret;
+        var hasUserName = !string.IsNullOrEmpty(userName);
+        var hasSecret = !string.IsNullOrEmpty(secret);
+
+        if (hasUserName != hasSecret)
+        {
+            return (null, null, "用户名与密码 / 令牌需要同时填写");
+        }
+
+        if (hasUserName)
+        {
+            if (secret!.Length > DbGitCredential.SecretMaxLength)
+            {
+                return (null, null, $"密码 / 令牌过长（最多 {DbGitCredential.SecretMaxLength} 个字符）");
+            }
+
+            return (userName, secret, null);
+        }
+
+        var saved = await new GitCredentialRepository()
+            .GetAsync(WebApi.UserId, url.Scheme, url.Host, url.Port)
+            .ConfigureAwait(false);
+
+        return saved is null
+            ? (null, null, null)
+            : (saved.UserName, saved.Secret, null);
+    }
+
+    /// <summary>
+    /// 保存本次使用的 HTTPS 凭据（按用户 + 协议 + 域名 + 端口覆盖）。
+    /// </summary>
+    /// <remarks>保存失败不阻断工作区创建：仓库已经克隆成功，凭据只是下次省输入。</remarks>
+    /// <param name="url">仓库地址解析结果。</param>
+    /// <param name="userName">用户名。</param>
+    /// <param name="secret">密码 / 令牌。</param>
+    private static async Task SaveCredentialAsync(GitUrlInfo url, string? userName, string? secret)
+    {
+        if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(secret))
+        {
+            return;
+        }
+
+        try
+        {
+            await new GitCredentialRepository()
+                .UpsertAsync(WebApi.UserId, url.Scheme, url.Host, url.Port, userName!, secret!)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            AgentWebRuntime.Log($"保存 Git 凭据失败：{url.Host}:{url.Port}：{ex.Message}");
+        }
+    }
+
+    /// <summary>git 目标目录的即时状态。</summary>
+    private enum GitTargetState
+    {
+        /// <summary>不存在（可直接克隆）。</summary>
+        Missing,
+
+        /// <summary>存在且为空目录（可直接克隆）。</summary>
+        EmptyDirectory,
+
+        /// <summary>已是 git 仓库（<c>.git</c> 存在）。</summary>
+        Repository,
+
+        /// <summary>存在、非空，但不是 git 仓库（克隆会被 git 拒绝）。</summary>
+        NonEmptyDirectory,
+
+        /// <summary>同名文件。</summary>
+        File,
+    }
+
+    /// <summary>
+    /// 判定 git 克隆目标的状态。
+    /// </summary>
+    /// <remarks>
+    /// 克隆进非空目录会被 git 拒绝，提前判定才能给出「换个子目录」这类可操作提示，
+    /// 而不是把 git 的 <c>destination path already exists</c> 原样透出。
+    /// </remarks>
+    /// <param name="path">目标目录。</param>
+    /// <returns>目标状态。</returns>
+    private static GitTargetState InspectGitTarget(string path)
+    {
+        if (System.IO.File.Exists(path))
+        {
+            return GitTargetState.File;
+        }
+
+        if (!Directory.Exists(path))
+        {
+            return GitTargetState.Missing;
+        }
+
+        var gitEntry = Path.Combine(path, ".git");
+        if (Directory.Exists(gitEntry) || System.IO.File.Exists(gitEntry))
+        {
+            return GitTargetState.Repository;
+        }
+
+        return Directory.EnumerateFileSystemEntries(path).Any()
+            ? GitTargetState.NonEmptyDirectory
+            : GitTargetState.EmptyDirectory;
+    }
+
+    /// <summary>git 失败原因对应的可读说明。</summary>
+    /// <param name="kind">失败原因。</param>
+    /// <returns>提示文案。</returns>
+    private static string GitErrorMessage(GitFailureKind kind) => kind switch
+    {
+        GitFailureKind.Auth => "Git 认证失败：请检查用户名与密码 / 访问令牌，或先在设置页为这个域名保存凭据。",
+        GitFailureKind.NotFound => "仓库不存在，或当前账号没有访问权限，请检查地址与权限。",
+        GitFailureKind.Network => "无法连接仓库：请检查网络、代理与证书配置。",
+        GitFailureKind.Timeout => "连接仓库超时，请检查网络或稍后重试。",
+        _ => "访问仓库失败，请检查仓库地址、网络与凭据。",
+    };
+
+    /// <summary>把 git 失败原因转成前端可分支的响应。</summary>
+    /// <remarks>认证失败不用 401：前端把 401 统一当「登录过期」整页跳转。</remarks>
+    /// <param name="kind">失败原因。</param>
+    /// <returns>失败响应。</returns>
+    private static ActionResult FailGit(GitFailureKind kind)
+        => WebApi.FailJson(
+            kind == GitFailureKind.Unknown ? 500 : 409,
+            GitErrorMessage(kind),
+            new { reason = GitErrorClassifier.ToReason(kind) });
+
+    /// <summary>当前请求是否为管理员（宿主固定令牌视为管理员）。</summary>
+    /// <returns>管理员返回 true。</returns>
+    private static async Task<bool> IsAdminAsync()
+    {
+        if (WebApi.IsBearerRequest)
+        {
+            return true;
+        }
+
+        if (WebApi.CurrentClaims is not { } claims)
+        {
+            return false;
+        }
+
+        return await WebApi.Runtime.Auth.ValidateAsync(claims).ConfigureAwait(false) is { IsAdmin: true };
+    }
+
+    /// <summary>用户标识 → 展示名（管理员凭据视图用；查不到时回落用户标识）。</summary>
+    /// <returns>展示名映射。</returns>
+    private static async Task<Dictionary<string, string>> LoadUserNamesAsync()
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        try
+        {
+            var users = await WebApi.Runtime.Auth.ListUsersAsync().ConfigureAwait(false);
+            foreach (var user in users)
+            {
+                map[user.UserId] = string.IsNullOrWhiteSpace(user.DisplayName)
+                    ? user.UserName
+                    : user.DisplayName!;
+            }
+        }
+        catch (Exception ex)
+        {
+            AgentWebRuntime.Log($"读取用户列表失败（凭据视图回落用户标识）：{ex.Message}");
+        }
+
+        return map;
+    }
 
     /// <summary>
     /// 新建工作区（含 git 克隆目标）必须落在机器级白名单根目录内。
@@ -333,7 +634,11 @@ public static class WebWorkspaceService
     private static ActionResult? RejectIfOutsideRoots(string path)
     {
         var roots = WorkspaceRootsStore.Load();
-        if (WorkspaceRootsStore.IsAllowed(path, roots))
+
+        // 同时校验物理路径：中间段的符号链接 / junction 可能把不存在的尾段带到白名单之外
+        var physical = WorkspaceSubPath.ResolvePhysicalPath(path);
+        if (WorkspaceRootsStore.IsAllowed(path, roots)
+            && WorkspaceRootsStore.IsAllowed(physical, roots))
         {
             return null;
         }
@@ -428,8 +733,73 @@ public static class WebWorkspaceService
         return folder is "." or ".." ? string.Empty : folder;
     }
 
-    /// <summary>删除本次克隆失败留下的目录；失败只记日志。</summary>
-    /// <param name="path">目标目录。</param>
+    /// <summary>
+    /// 清理克隆失败留下的内容：只删本次写入的部分，用户预先建好的空目录保留。
+    /// </summary>
+    /// <remarks>
+    /// 目标里已有 <c>.git</c> 说明并发请求可能已经克隆成功，此时一律不动，
+    /// 宁可在下次创建时提示「已存在仓库」，也不能删掉别人的仓库。
+    /// </remarks>
+    /// <param name="path">克隆目标。</param>
+    /// <param name="deleteDirectory">目标目录是否由本次克隆创建（是则连目录一起删）。</param>
+    private static void CleanFailedClone(string path, bool deleteDirectory)
+    {
+        try
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            var gitEntry = Path.Combine(path, ".git");
+            if (Directory.Exists(gitEntry) || File.Exists(gitEntry))
+            {
+                AgentWebRuntime.Log($"克隆失败但目标已是 git 仓库，跳过清理：{path}");
+                return;
+            }
+
+            if (deleteDirectory)
+            {
+                TryDeleteDirectory(path);
+                return;
+            }
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(path))
+            {
+                TryDeleteEntry(entry);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AgentWebRuntime.Log($"清理克隆残留失败：{path}：{ex.Message}");
+        }
+    }
+
+    /// <summary>删除一个文件或目录；失败只记日志。</summary>
+    /// <param name="path">文件或目录路径。</param>
+    private static void TryDeleteEntry(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            try
+            {
+                // 克隆留下的文件可能带只读属性
+                File.SetAttributes(path, FileAttributes.Normal);
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AgentWebRuntime.Log($"清理克隆残留文件失败：{path}：{ex.Message}");
+            }
+
+            return;
+        }
+
+        TryDeleteDirectory(path);
+    }
+
+    /// <summary>删除目录（含只读文件）；失败只记日志。</summary>
+    /// <param name="path">目录路径。</param>
     private static void TryDeleteDirectory(string path)
     {
         try
@@ -522,6 +892,401 @@ public static class WebWorkspaceService
         {
             return Task.FromResult(WebApi.FailJson(400, "读取目录失败"));
         }
+    });
+
+    /// <summary>
+    /// 在白名单根目录内浏览子目录（只读，单层）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="ListDirsAsync"/> 的区别：本接口的浏览起点必须是管理员配置的根目录，
+    /// 相对路径由 <see cref="WorkspaceSubPath.TryResolve"/> 校验，不能借浏览接口翻到根目录之外。
+    /// 只回目录（不含文件），供「在根目录下选一个子目录」的向导使用。
+    /// </remarks>
+    /// <param name="root">白名单根目录（绝对路径）。</param>
+    /// <param name="path">当前目录相对根目录的路径；空表示根目录本身。</param>
+    /// <returns><see cref="WorkspaceBrowseDto"/>。</returns>
+    public static Task<ActionResult> BrowseAsync(string? root, string? path) => WebApi.RunGuardedAsync(() =>
+    {
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return Task.FromResult(WebApi.FailJson(400, "root 不能为空"));
+        }
+
+        var rootText = root!.Trim();
+        if (!Path.IsPathFullyQualified(rootText))
+        {
+            return Task.FromResult(WebApi.FailJson(400, "root 必须是绝对路径"));
+        }
+
+        if (!WorkspaceRootsStore.IsAllowed(rootText, WorkspaceRootsStore.Load()))
+        {
+            return Task.FromResult(WebApi.FailJson(403, "只能浏览管理员配置的工作区根目录"));
+        }
+
+        if (!Directory.Exists(rootText))
+        {
+            return Task.FromResult(WebApi.FailJson(
+                409,
+                $"根目录不存在：{rootText}",
+                new { reason = "root-missing" }));
+        }
+
+        string fullRoot;
+        string fullTarget;
+        try
+        {
+            fullRoot = WorkspaceIdGenerator.Normalize(rootText);
+            if (!WorkspaceSubPath.TryResolve(fullRoot, path, out fullTarget, out var error))
+            {
+                return Task.FromResult(WebApi.FailJson(400, error));
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return Task.FromResult(WebApi.FailJson(400, "路径不合法"));
+        }
+
+        if (!Directory.Exists(fullTarget))
+        {
+            return Task.FromResult(WebApi.FailJson(404, "目录不存在", new { reason = "path-missing" }));
+        }
+
+        var relative = Path.GetRelativePath(fullRoot, fullTarget);
+        if (relative == ".")
+        {
+            relative = string.Empty;
+        }
+        else
+        {
+            relative = relative.Replace('\\', '/');
+        }
+
+        string? parent = null;
+        if (relative.Length > 0)
+        {
+            var slash = relative.LastIndexOf('/');
+            parent = slash > 0 ? relative[..slash] : string.Empty;
+        }
+
+        try
+        {
+            var entries = new DirectoryInfo(fullTarget)
+                .EnumerateDirectories()
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(d => new WorkspaceBrowseEntryDto(
+                    d.Name,
+                    relative.Length == 0 ? d.Name : $"{relative}/{d.Name}",
+                    Directory.Exists(Path.Combine(d.FullName, ".git")) || System.IO.File.Exists(Path.Combine(d.FullName, ".git"))))
+                .ToList();
+
+            return Task.FromResult(WebApi.OkJson(new WorkspaceBrowseDto(fullRoot, relative, parent, entries)));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Task.FromResult(WebApi.FailJson(400, "无权访问该目录"));
+        }
+        catch (Exception ex) when (ex is IOException or DirectoryNotFoundException)
+        {
+            return Task.FromResult(WebApi.FailJson(400, "读取目录失败"));
+        }
+    });
+
+    /// <summary>
+    /// 预检 Git 仓库地址：用 <c>git ls-remote</c> 验证地址、网络与凭据是否可用。
+    /// </summary>
+    /// <remarks>
+    /// 始终 200，用 <see cref="GitVerifyResultDto.Ok"/> 表达成败：
+    /// 前端在向导里「下一步」时就要知道凭据对不对，不应等到克隆阶段才报错。
+    /// SSH 地址可解析但网页端暂不提供凭据录入，返回 <c>git-ssh-unsupported</c>。
+    /// </remarks>
+    /// <param name="payload">包装后的 <see cref="GitVerifyRequest"/> JSON。</param>
+    /// <returns><see cref="GitVerifyResultDto"/>。</returns>
+    public static Task<ActionResult> VerifyGitAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<GitVerifyRequest>(payload, out var request) || request is null)
+        {
+            return WebApi.FailJson(400, "请求体不合法");
+        }
+
+        var text = (request.GitUrl ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return WebApi.FailJson(400, "gitUrl 不能为空");
+        }
+
+        if (!IsSafeGitUrl(text) || !GitUrl.TryParse(text, out var info))
+        {
+            return WebApi.FailJson(400, "gitUrl 只支持 http(s) / ssh / git / file 协议或 scp 形式的地址");
+        }
+
+        if (info.Kind == GitUrlKind.Ssh)
+        {
+            return WebApi.OkJson(new GitVerifyResultDto(
+                false,
+                info.Scheme,
+                info.Host,
+                info.Port,
+                "git-ssh-unsupported",
+                "暂不支持 SSH 地址：请改用 HTTPS 地址（SSH 密钥需在服务器上单独配置）。"));
+        }
+
+        string? userName = null;
+        string? secret = null;
+        if (info.SupportsCredential)
+        {
+            var resolved = await ResolveCredentialAsync(info, request.GitCredential).ConfigureAwait(false);
+            if (resolved.Error is { } credentialError)
+            {
+                return WebApi.FailJson(400, credentialError);
+            }
+
+            userName = resolved.UserName;
+            secret = resolved.Secret;
+        }
+
+        var git = new GitProcess(new LuBan.AIAgent.Infrastructure.ProcessRunner());
+        var result = await git.RunWithCredentialAsync(
+                AgentHome.Root,
+                ["ls-remote", "--heads", "--", text],
+                info.SupportsCredential ? info : null,
+                userName,
+                secret,
+                timeoutMs: 60_000)
+            .ConfigureAwait(false);
+
+        if (result.Succeeded)
+        {
+            return WebApi.OkJson(new GitVerifyResultDto(true, info.Scheme, info.Host, info.Port, null, null));
+        }
+
+        var kind = GitErrorClassifier.Classify(result.StandardError, result.StandardOutput, result.TimedOut);
+        AgentWebRuntime.Log($"预检仓库失败（{GitErrorClassifier.ToReason(kind)}）：{info.Host}/{info.Port}");
+        return WebApi.OkJson(new GitVerifyResultDto(
+            false,
+            info.Scheme,
+            info.Host,
+            info.Port,
+            GitErrorClassifier.ToReason(kind),
+            GitErrorMessage(kind)));
+    });
+
+    /// <summary>某个仓库地址对应的已保存凭据状态（只回用户名，永不回密码）。</summary>
+    /// <param name="gitUrl">仓库地址。</param>
+    /// <returns><see cref="GitCredentialStatusDto"/>。</returns>
+    public static Task<ActionResult> GitCredentialStatusAsync(string? gitUrl) => WebApi.RunGuardedAsync(async () =>
+    {
+        var text = (gitUrl ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return WebApi.FailJson(400, "gitUrl 不能为空");
+        }
+
+        if (!GitUrl.TryParse(text, out var info))
+        {
+            return WebApi.FailJson(400, "gitUrl 不合法");
+        }
+
+        if (!info.SupportsCredential)
+        {
+            return WebApi.OkJson(new GitCredentialStatusDto(info.Scheme, info.Host, info.Port, false, null));
+        }
+
+        var saved = await new GitCredentialRepository()
+            .GetAsync(WebApi.UserId, info.Scheme, info.Host, info.Port)
+            .ConfigureAwait(false);
+
+        return WebApi.OkJson(new GitCredentialStatusDto(
+            info.Scheme,
+            info.Host,
+            info.Port,
+            saved is not null,
+            saved?.UserName));
+    });
+
+    /// <summary>
+    /// 列出 Git 凭据：普通用户只看到自己的，管理员看到全部（含归属用户）。
+    /// </summary>
+    /// <returns><see cref="GitCredentialDto"/> 列表。</returns>
+    public static Task<ActionResult> ListGitCredentialsAsync() => WebApi.RunGuardedAsync(async () =>
+    {
+        var isAdmin = await IsAdminAsync().ConfigureAwait(false);
+        var repository = new GitCredentialRepository();
+        var list = isAdmin
+            ? await repository.ListAllAsync().ConfigureAwait(false)
+            : await repository.ListByUserAsync(WebApi.UserId).ConfigureAwait(false);
+
+        var owners = isAdmin
+            ? await LoadUserNamesAsync().ConfigureAwait(false)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var dtos = list.Select(c => new GitCredentialDto(
+            c.Id,
+            c.UserId,
+            owners.TryGetValue(c.UserId, out var owner) ? owner : c.UserId,
+            c.Scheme,
+            c.Host,
+            c.Port,
+            c.UserName,
+            c.UpdateTime ?? c.CreateTime)).ToList();
+
+        return WebApi.OkJson(dtos);
+    });
+
+    /// <summary>
+    /// 单独保存一条 HTTPS 凭据（设置页用）。
+    /// </summary>
+    /// <remarks>
+    /// 只接受 <c>host[:port]</c> 或完整的 HTTPS 地址：SSH 凭据网页端不提供，
+    /// 这里显式拒绝 <c>ssh://</c>，避免把 token 存成用不上的记录。
+    /// </remarks>
+    /// <param name="payload">包装后的 <see cref="GitCredentialSaveRequest"/> JSON。</param>
+    /// <returns>保存后的 <see cref="GitCredentialDto"/>。</returns>
+    public static Task<ActionResult> SaveGitCredentialAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<GitCredentialSaveRequest>(payload, out var request) || request is null)
+        {
+            return WebApi.FailJson(400, "请求体不合法");
+        }
+
+        var hostText = (request.Host ?? string.Empty).Trim();
+        var userName = request.UserName?.Trim();
+        if (hostText.Length == 0)
+        {
+            return WebApi.FailJson(400, "域名不能为空");
+        }
+
+        if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(request.Secret))
+        {
+            return WebApi.FailJson(400, "用户名与密码 / 令牌不能为空");
+        }
+
+        if (request.Secret.Length > DbGitCredential.SecretMaxLength)
+        {
+            return WebApi.FailJson(400, $"密码 / 令牌过长（最多 {DbGitCredential.SecretMaxLength} 个字符）");
+        }
+
+        string host;
+        int port;
+        if (hostText.Contains("://", StringComparison.Ordinal))
+        {
+            if (!GitUrl.TryParse(hostText, out var parsed) || parsed.Kind != GitUrlKind.Https)
+            {
+                return WebApi.FailJson(400, "凭据只支持 HTTPS 地址或域名");
+            }
+
+            host = parsed.Host;
+            port = parsed.Port;
+        }
+        else
+        {
+            port = 443;
+            host = hostText;
+
+            if (hostText.StartsWith('['))
+            {
+                // IPv6 字面量：[::1] / [::1]:8443（与 Uri.Host 的返回形式一致）
+                var close = hostText.IndexOf(']');
+                if (close < 0)
+                {
+                    return WebApi.FailJson(400, "IPv6 地址格式不正确，例如 [::1]:8443");
+                }
+
+                host = hostText[..(close + 1)].ToLowerInvariant();
+                var rest = hostText[(close + 1)..];
+                if (rest.Length > 0
+                    && (rest[0] != ':' || !int.TryParse(rest[1..], out port)))
+                {
+                    return WebApi.FailJson(400, "IPv6 地址格式不正确，例如 [::1]:8443");
+                }
+
+                if (!IPAddress.TryParse(host[1..^1], out var address)
+                    || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+                {
+                    return WebApi.FailJson(400, "IPv6 地址格式不正确，例如 [::1]:8443");
+                }
+            }
+            else
+            {
+                var colon = hostText.LastIndexOf(':');
+                if (colon > 0 && int.TryParse(hostText[(colon + 1)..], out var parsedPort))
+                {
+                    host = hostText[..colon];
+                    port = parsedPort;
+                }
+
+                host = host.Trim().TrimEnd('.').ToLowerInvariant();
+                if (host.Length == 0
+                    || host.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_')))
+                {
+                    return WebApi.FailJson(400, "域名格式不正确，例如 git.example.com 或 git.example.com:8443");
+                }
+            }
+
+            if (port is < 1 or > 65535)
+            {
+                return WebApi.FailJson(400, "端口必须在 1-65535 之间");
+            }
+        }
+
+        var saved = await new GitCredentialRepository()
+            .UpsertAsync(WebApi.UserId, "https", host, port, userName, request.Secret)
+            .ConfigureAwait(false);
+
+        return WebApi.OkJson(new GitCredentialDto(
+            saved.Id,
+            saved.UserId,
+            WebApi.CurrentClaims?.UserName ?? saved.UserId,
+            saved.Scheme,
+            saved.Host,
+            saved.Port,
+            saved.UserName,
+            saved.UpdateTime ?? saved.CreateTime));
+    });
+
+    /// <summary>
+    /// 删除 Git 凭据：普通用户只能删自己的，管理员可按主键删任意用户的。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="GitCredentialDeleteRequest"/> JSON。</param>
+    /// <returns><c>{deleted:true}</c>。</returns>
+    public static Task<ActionResult> DeleteGitCredentialAsync(string payload) => WebApi.RunGuardedAsync(async () =>
+    {
+        if (!WebApi.TryReadPayload<GitCredentialDeleteRequest>(payload, out var request) || request is null)
+        {
+            return WebApi.FailJson(400, "请求体不合法");
+        }
+
+        var isAdmin = await IsAdminAsync().ConfigureAwait(false);
+        var repository = new GitCredentialRepository();
+
+        if (request.Id is { } id)
+        {
+            var target = await repository.GetByIdAsync(id).ConfigureAwait(false);
+            if (target is null)
+            {
+                return WebApi.FailJson(404, "凭据不存在");
+            }
+
+            if (!isAdmin && !string.Equals(target.UserId, WebApi.UserId, StringComparison.Ordinal))
+            {
+                return WebApi.FailJson(403, "只能删除自己保存的凭据");
+            }
+
+            await repository.DeleteByIdAsync(id).ConfigureAwait(false);
+            return WebApi.OkJson(new { deleted = true });
+        }
+
+        var gitUrl = (request.GitUrl ?? string.Empty).Trim();
+        if (gitUrl.Length == 0 || !GitUrl.TryParse(gitUrl, out var info) || !info.SupportsCredential)
+        {
+            return WebApi.FailJson(400, "需要提供凭据 id，或一个 HTTP(S) 仓库地址");
+        }
+
+        var deleted = await repository
+            .DeleteAsync(WebApi.UserId, info.Scheme, info.Host, info.Port)
+            .ConfigureAwait(false);
+        return deleted > 0
+            ? WebApi.OkJson(new { deleted = true })
+            : WebApi.FailJson(404, "凭据不存在");
     });
 
     /// <summary>切换工作区。</summary>

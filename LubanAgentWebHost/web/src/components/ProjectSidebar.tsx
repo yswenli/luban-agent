@@ -1,8 +1,9 @@
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
 
-import { ConfirmActionDialog, Modal, TextPromptDialog } from './Dialog';
+import { ConfirmActionDialog, TextPromptDialog } from './Dialog';
 import { Icon } from './Icons';
 import { AboutDialog, HelpDialog } from './InfoDialogs';
+import { NewProjectWizard } from './NewProjectWizard';
 import { PopMenu, menuAt } from './PopMenu';
 import { beginDragSort } from '../lib/dragSort';
 import { truncate } from '../lib/format';
@@ -20,8 +21,6 @@ import {
   renameWorkspace,
   selectProject,
   sessions,
-  type CreateWorkspaceInput,
-  type CreateWorkspaceResult,
 } from '../stores/app';
 import { dropChat } from '../stores/chats';
 import { ensurePluginsLoaded, pluginPageEntries } from '../stores/plugins';
@@ -333,7 +332,7 @@ export function ProjectSidebar(props: {
       </Show>
 
       <Show when={newProject()}>
-        <NewProjectDialog
+        <NewProjectWizard
           onClose={() => setNewProject(false)}
           onCreate={(input) => createWorkspace(input)}
         />
@@ -350,179 +349,3 @@ export function ProjectSidebar(props: {
   );
 }
 
-/**
- * 新建项目弹窗：可选本机目录或 git 仓库。
- *
- * git 模式由宿主克隆到 `~/.luban-agent/repositories/{项目名}`；同名目录已存在时不静默覆盖，
- * 先返回冲突提示，由用户确认是否复用（复用即在该目录上直接工作）。
- */
-function NewProjectDialog(props: {
-  onClose: () => void;
-  onCreate: (input: CreateWorkspaceInput) => Promise<CreateWorkspaceResult>;
-}) {
-  const [source, setSource] = createSignal<'directory' | 'git'>('directory');
-  const [rootPath, setRootPath] = createSignal('');
-  const [gitUrl, setGitUrl] = createSignal('');
-  const [name, setName] = createSignal('');
-  const [saving, setSaving] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  /** 409 冲突：`reuse` 目标目录已存在（git 克隆），`share` 目录已被其他用户登记。 */
-  const [conflict, setConflict] = createSignal<{ message: string; kind: 'reuse' | 'share' } | null>(null);
-  let rootInput!: HTMLInputElement;
-  let gitInput!: HTMLInputElement;
-
-  onMount(() => {
-    window.setTimeout(() => rootInput?.focus(), 30);
-  });
-
-  const canSubmit = () =>
-    !saving() && (source() === 'directory' ? rootPath().trim().length > 0 : gitUrl().trim().length > 0);
-
-  const changeSource = (next: 'directory' | 'git') => {
-    if (saving() || source() === next) return;
-    setSource(next);
-    setError(null);
-    setConflict(null);
-    window.setTimeout(() => (next === 'git' ? gitInput : rootInput)?.focus(), 30);
-  };
-
-  const submit = async (reuseExisting = false, shareExisting = false) => {
-    if (!canSubmit()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await props.onCreate({
-        source: source(),
-        rootPath: rootPath().trim(),
-        gitUrl: gitUrl().trim(),
-        name: name().trim(),
-        reuseExisting,
-        shareExisting,
-      });
-      if (result.ok) {
-        props.onClose();
-      } else if (result.code === 409) {
-        // 目录冲突单独展示：给用户「复用/共用」与「改名字/换地址」两条出路
-        setConflict({
-          message: result.error ?? t('sidebar.targetExists'),
-          kind: result.reason === 'in-use' ? 'share' : 'reuse',
-        });
-      } else {
-        setError(result.error ?? t('sidebar.createFailed'));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      title={t('sidebar.newProject')}
-      subtitle={t('sidebar.newProjectHint')}
-      onClose={props.onClose}
-      footer={
-        <>
-          <button class="btn ghost" onClick={props.onClose}>
-            {t('common.cancel')}
-          </button>
-          <button class="btn primary" disabled={!canSubmit()} onClick={() => void submit()}>
-            {saving() ? t('common.creating') : t('common.create')}
-          </button>
-        </>
-      }
-    >
-      <div class="form-stack">
-        <div class="field">
-          <div class="section-label">{t('sidebar.source')}</div>
-          <select
-            class="text-input"
-            value={source()}
-            disabled={saving()}
-            onChange={(event) => changeSource(event.currentTarget.value === 'git' ? 'git' : 'directory')}
-          >
-            <option value="directory">{t('sidebar.sourceDirectory')}</option>
-            <option value="git">{t('sidebar.sourceGit')}</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <div class="section-label">{t('common.nameOptional')}</div>
-          <input
-            class="text-input"
-            placeholder={source() === 'git' ? t('sidebar.nameFromRepo') : t('sidebar.nameFromDir')}
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value)}
-          />
-        </div>
-
-        <Show
-          when={source() === 'git'}
-          fallback={
-            <div class="field">
-              <div class="section-label">{t('common.rootPath')}</div>
-              <input
-                ref={rootInput}
-                class="text-input mono"
-                placeholder="D:\WorkBench\Walle\my-project"
-                value={rootPath()}
-                onInput={(event) => setRootPath(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void submit();
-                }}
-              />
-              <div class="field-hint">
-                {t('sidebar.rootHint')}
-              </div>
-            </div>
-          }
-        >
-          <div class="field">
-            <div class="section-label">{t('sidebar.repoUrl')}</div>
-            <input
-              ref={gitInput}
-              class="text-input mono"
-              placeholder="https://git.example.com/group/repo.git"
-              value={gitUrl()}
-              onInput={(event) => setGitUrl(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void submit();
-              }}
-            />
-            <div class="field-hint">
-              {t('sidebar.cloneHint')}
-            </div>
-          </div>
-        </Show>
-
-        <Show when={conflict()}>
-          {(value) => (
-            <>
-              <div class="auth-note">
-                <Icon name="alert" size={15} />
-                <span>{value().message}</span>
-              </div>
-              <button
-                class="btn ghost"
-                disabled={saving()}
-                onClick={() =>
-                  void (value().kind === 'share'
-                    ? submit(source() === 'git', true)
-                    : submit(true))
-                }
-              >
-                {value().kind === 'share' ? t('sidebar.reuseWorkspace') : t('sidebar.reuseDirectory')}
-              </button>
-            </>
-          )}
-        </Show>
-
-        <Show when={error()}>
-          <div class="auth-error">
-            <Icon name="alert" size={15} />
-            <span>{error()}</span>
-          </div>
-        </Show>
-      </div>
-    </Modal>
-  );
-}
