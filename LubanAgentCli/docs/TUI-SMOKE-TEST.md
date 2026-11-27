@@ -205,7 +205,7 @@ CLI 启动时会连统一 Agent 服务：找不到地址就拉起 `LubanAgentWeb
 - [ ] 101. `/mode plan` — 工作区/已授权范围内的只读工具（`ReadFileAsync`/`ListDirectoryAsync`/`SearchFilesAsync`/`GrepAsync`/`GetFileInfoAsync`）免确认放行；写操作仅记录为计划项不执行；**越界只读也被记录为计划项、不实际读取**
 - [ ] 102. `/mode accept-edits` — 工作区/已授权范围内、有路径且非删除的编辑类工具免确认；脚本与删除仍确认
 - [ ] 103. `/mode bypass` — 切换时弹二次确认；确认后所有工具免确认；`Shift+Tab` 四模式循环且状态显示 `default/plan/accept-edits/bypass` 正确
-- [ ] 103a. 复合任务触发编排（子代理执行敏感操作）— 工作区内放行；工作区外路径默认弹确认（与主代理一致）；A2A 进程内执行器恒全放行（无配置开关，子代理无 UI，不弹确认，工作区外**直接拒绝**）
+- [ ] 103a. 复合任务触发编排（子代理执行敏感操作）— 工作区内放行；工作区外路径默认弹确认（与主代理一致），子代理无 UI，工作区外**直接拒绝**
 
 ### Codex（手动冒烟）
 

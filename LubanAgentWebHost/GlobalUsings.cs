@@ -20,9 +20,6 @@ global using LuBan.Common;
 global using LuBan.Common.IO;
 global using LuBan.DI;
 
-global using LubanAgentCore.A2A;
-global using LubanAgentCore.A2A.Configuration;
-global using LubanAgentCore.A2A.Runtime;
 global using LubanAgentCore.Client;
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Entities;

@@ -40,6 +40,6 @@
   <ItemGroup>
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
     <!-- 云效连接器已并入 LubanAgentCore（Connectors/AliyunDevOps/），不再单独引用 -->
-    <!-- A2A 协作、传输协议（DTO/路由/SSE 帧）、客户端 SDK 均已并入 LubanAgentCore，不再单独引用 -->
+    <!-- 传输协议（DTO/路由/SSE 帧）、客户端 SDK 均已并入 LubanAgentCore，不再单独引用 -->
   </ItemGroup>
 </Project>

@@ -313,26 +313,6 @@ public class AgentProtocolUnitTest
     }
 
     [TestMethod]
-    public void A2A路由包含只读状态与工作区配置读写()
-    {
-        var constants = typeof(AgentApiRoutes.A2A)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .ToList();
-
-        Assert.AreEqual(7, constants.Count, "A2A 路由应为 1 条状态 + 6 条工作区配置读写（启停仍下沉到宿主进程）");
-        foreach (var constant in constants)
-        {
-            Assert.IsTrue(
-                ((string)constant.GetRawConstantValue()!).StartsWith("/a2a/", StringComparison.Ordinal),
-                constant.Name);
-        }
-
-        Assert.AreEqual("/a2a/status", (string)typeof(AgentApiRoutes.A2A)
-            .GetField(nameof(AgentApiRoutes.A2A.Status))!.GetRawConstantValue()!);
-    }
-
-    [TestMethod]
     public void 知识库路由全部落在llmwiki前缀下()
     {
         var routes = typeof(AgentApiRoutes.LlmWiki)

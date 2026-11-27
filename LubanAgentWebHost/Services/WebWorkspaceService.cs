@@ -213,6 +213,14 @@ public static class WebWorkspaceService
                         new { reason = "exists" });
                 }
             }
+            else if (File.Exists(target))
+            {
+                // 同名文件占位：clone 会以「目标已存在」失败，这里先给出明确冲突
+                return WebApi.FailJson(
+                    409,
+                    $"目标路径已存在同名文件：{target}。请改名或先移走该文件。",
+                    new { reason = "exists" });
+            }
             else
             {
                 try
@@ -244,6 +252,12 @@ public static class WebWorkspaceService
             if (!Path.IsPathFullyQualified(rootPath))
             {
                 return WebApi.FailJson(400, "rootPath 必须是绝对路径");
+            }
+
+            // 指向文件时后续会当作目录建配置，必然失败；提前拒绝避免半截残留
+            if (File.Exists(rootPath))
+            {
+                return WebApi.FailJson(400, "rootPath 指向的是文件，请填写目录");
             }
         }
 

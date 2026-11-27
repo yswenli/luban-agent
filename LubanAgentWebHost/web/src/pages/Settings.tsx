@@ -4,7 +4,6 @@ import { hasOpenModal } from '../components/Dialog';
 import { Icon, type IconName } from '../components/Icons';
 import { bootstrap, projectWorkspaces } from '../stores/app';
 import { currentUser } from '../stores/auth';
-import { A2aTab } from './settings/A2aTab';
 import { AccountTab } from './settings/AccountTab';
 import { DataTab } from './settings/DataTab';
 import { InviteTab } from './settings/InviteTab';
@@ -24,8 +23,6 @@ interface TabDef {
   icon: IconName;
   /** 是否提供「★ 全局 + 工作区」作用域下拉；供应商与模型固定全局。 */
   scoped: boolean;
-  /** 只支持工作区作用域（A2A）。 */
-  workspaceOnly?: boolean;
   /** 只作用于工作区（授权、配置目录、AGENTS.md），没有全局作用域。 */
   requiresWorkspace?: boolean;
   /** 仅管理员可见（用户与邀请码管理）；非管理员连入口都不显示。 */
@@ -34,7 +31,7 @@ interface TabDef {
 
 // 导航顺序即用户使用频率顺序：账号在最前（登录后第一件事通常是认人/改密），
 // 管理员紧接着看邀请码，供应商与模型随后，文件型配置（技能/规则/MCP）再后，
-// A2A 协作垫底，用户治理与数据清理收尾。
+// 用户治理与数据清理收尾。
 const tabs: TabDef[] = [
   { id: 'account', label: '账号', icon: 'user', scoped: false },
   { id: 'invites', label: '邀请码', icon: 'key', scoped: false, adminOnly: true },
@@ -44,7 +41,6 @@ const tabs: TabDef[] = [
   { id: 'skill', label: '技能', icon: 'spark', scoped: true },
   { id: 'rule', label: '规则', icon: 'shield', scoped: true },
   { id: 'mcp', label: 'MCP 服务', icon: 'terminal', scoped: true },
-  { id: 'a2a', label: 'A2A 协作', icon: 'message', scoped: true, workspaceOnly: true },
   { id: 'workspace', label: '工作区', icon: 'file', scoped: false, requiresWorkspace: true },
   { id: 'notify', label: '通知', icon: 'bell', scoped: false },
   { id: 'users', label: '用户', icon: 'shield', scoped: false, adminOnly: true },
@@ -88,8 +84,8 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
   /** 用户下的项目工作区（不含知识库），顺序沿用首页拖动结果。 */
   const projects = () => projectWorkspaces();
 
-  /** 带全局作用域的页签（A2A 即使 `scoped` 也只支持工作区）。 */
-  const hasGlobal = () => activeTab().scoped && !activeTab().workspaceOnly;
+  /** 该页签是否提供「★ 全局」作用域。 */
+  const hasGlobal = () => activeTab().scoped;
 
   // 每个页签回到自己的默认作用域：带全局的页签默认 ★ 全局，仅工作区的页签默认第一个项目
   createEffect(
@@ -99,7 +95,7 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
     ),
   );
 
-  const showScope = () => activeTab().scoped || !!activeTab().workspaceOnly || !!activeTab().requiresWorkspace;
+  const showScope = () => activeTab().scoped || !!activeTab().requiresWorkspace;
 
   const workspaceLabel = (workspaceId: string): string => {
     const workspace = projects().find((item) => item.workspaceId === workspaceId);
@@ -213,9 +209,6 @@ export function SettingsOverlay(props: { tab: string; onClose: () => void }) {
                 </Match>
                 <Match when={activeTab().id === 'mcp'}>
                   <McpTab scope={scopeValue()} />
-                </Match>
-                <Match when={activeTab().id === 'a2a'}>
-                  <A2aTab scope={scopeValue()} />
                 </Match>
                 <Match when={activeTab().id === 'provider'}>
                   <ProviderTab />

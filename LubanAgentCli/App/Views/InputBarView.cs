@@ -451,7 +451,9 @@ internal sealed class InputBarView : View
             return;
         }
 
-        var matches = _catalog.MatchByPrefix(trimmed, SlashCommandClient.Cli);
+        var matches = _catalog.MatchByPrefix(trimmed, SlashCommandClient.Cli)
+            .ExcludeRemoved(c => c.Name)
+            .ToList();
         if (matches.Count == 0)
         {
             HideCompletion();

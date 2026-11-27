@@ -27,8 +27,6 @@ global using Avalonia.Threading;
 global using CommunityToolkit.Mvvm.ComponentModel;
 global using CommunityToolkit.Mvvm.Input;
 
-global using LuBan.AIAgent.A2A;
-global using LuBan.AIAgent.A2A.Abstractions;
 // LuBan
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Configuration;
@@ -41,9 +39,6 @@ global using LuBan.AIAgent.Sessions;
 global using LuBan.AIAgent.Skills;
 global using LuBan.DI;
 global using LuBan.Orm;
-
-global using LubanAgentCore.A2A.Configuration;
-global using LubanAgentCore.A2A.Runtime;
 
 global using LubanAgentCore.Protocol;
 global using LubanAgentCore.Protocol.Dtos;
@@ -99,7 +94,6 @@ global using LuBan.AIAgent.Retrieval;
 global using LuBan.AIAgent.Wiki;
 global using LuBan.Common.IO;
 global using LuBan.Logging;
-global using LubanAgentCore.A2A;
 global using LubanAgentCodex.Security;
 global using LubanAgentCodex.Services;
 global using LubanAgentCodex.ViewModels;

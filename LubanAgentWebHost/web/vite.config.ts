@@ -28,7 +28,6 @@ const apiPrefixes = [
   '/rule',
   '/mcp',
   '/model',
-  '/a2a',
   '/llmwiki',
   '/plugin',
   '/plugin-web',

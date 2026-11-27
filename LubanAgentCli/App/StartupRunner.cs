@@ -49,13 +49,6 @@ internal static class StartupRunner
             configuration, embedder, modelManager,
             services =>
             {
-                // 远程模式（connection 非空）：A2A 服务端都在 WebHost 侧，客户端再注册会重复起一套生命周期
-                if (connection is null)
-                {
-                    // A2A：注册 SDK 实现与运行时生命周期（实际启动在进入工作区后由 StartupDialog 触发）
-                    services.AddLubanAgentA2A(configuration);
-                }
-
                 // 编排进度出口：本机编排由框架直接 Publish；远程模式下 HttpAgentHost 收到
                 // orchestration.progress 帧后经 Raise 投递到同一出口。两种模式都注册，界面无需分叉。
                 services.AddSingleton<HostOrchestrationProgressSink>();

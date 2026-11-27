@@ -32,9 +32,6 @@ public sealed class SettingsWindowViewModel(DiContainer? services)
     /// <summary>供应商 / 模型页。</summary>
     public ProviderModelTabViewModel ProviderModel { get; } = new(services);
 
-    /// <summary>A2A 协作页。</summary>
-    public A2aTabViewModel A2a { get; } = new();
-
     /// <summary>云效连接页。</summary>
     public YunxiaoTabViewModel Yunxiao { get; } = new(services);
 
@@ -49,7 +46,7 @@ public sealed class SettingsWindowViewModel(DiContainer? services)
 
     /// <summary>
     /// 当前选中条目键：技能=目录名，规则/MCP=文件名（去 .json），供应商=Name，
-    /// 模型=<c>provider:model</c>，A2A=文件名，云效固定 <c>yunxiao</c>。
+    /// 模型=<c>provider:model</c>，云效固定 <c>yunxiao</c>。
     /// </summary>
     public string? SelectedItemKey { get; set; }
 

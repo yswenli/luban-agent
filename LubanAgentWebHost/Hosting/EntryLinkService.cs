@@ -77,8 +77,12 @@ public sealed class EntryLinkService
     }
 
     /// <summary>
-    /// 用短码换回令牌。
+    /// 用短码换回令牌；成功后短码立即作废（一次性）。
     /// </summary>
+    /// <remarks>
+    /// 换回的地址里带令牌，若短码可重复解析，令牌就会长期留在浏览器历史/扫码记录里，
+    /// 拿到历史的人可以反复打开。因此解析成功即移除，刷新页面由换到的 Cookie 继续。
+    /// </remarks>
     /// <param name="code">路径里的短码。</param>
     /// <param name="token">换回的令牌；失败时为 null。</param>
     /// <returns>短码存在且未过期时返回 true。</returns>
@@ -103,6 +107,7 @@ public sealed class EntryLinkService
                 return false;
             }
 
+            _links.Remove(code);
             token = link.Token;
             return true;
         }

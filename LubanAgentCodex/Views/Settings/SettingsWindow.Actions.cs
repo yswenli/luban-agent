@@ -31,25 +31,6 @@ public partial class SettingsWindow
         // 云效：固定单条目，无需新建（按钮已隐藏，此处兜底）
         if (Tab == SettingsTabKind.Yunxiao) return;
 
-        // A2A：服务端文件（若不存在）或新客户端文件
-        if (Tab == SettingsTabKind.A2A)
-        {
-            if (IsGlobal || SelectedWorkspace == null)
-            {
-                SetHint("A2A 配置仅作用于工作区，请先在顶栏选择一个工作区。", true);
-                return;
-            }
-
-            var a2a = _vm.A2a.CreateDefault(SelectedWorkspace.RootPath);
-            if (!a2a.Ok) { SetHint(a2a.Message, true); return; }
-
-            SelectedItemKey = a2a.Key;
-            RefreshItems();
-            BuildEditor();
-            SetHint(a2a.Message, false);
-            return;
-        }
-
         // 供应商：创建草稿（占位 Name），待编辑器填写后保存
         if (Tab == SettingsTabKind.Provider)
         {
@@ -151,9 +132,6 @@ public partial class SettingsWindow
                 case SettingsTabKind.Mcp:
                     await SaveMcpAsync();
                     break;
-                case SettingsTabKind.A2A:
-                    await SaveA2AAsync();
-                    break;
                 case SettingsTabKind.Provider:
                     await SaveProviderAsync();
                     break;
@@ -230,58 +208,6 @@ public partial class SettingsWindow
         return Task.CompletedTask;
     }
 
-    private async Task SaveA2AAsync()
-    {
-        if (IsGlobal || SelectedWorkspace == null)
-        {
-            SetHint("A2A 配置仅作用于工作区。", true);
-            return;
-        }
-
-        var root = SelectedWorkspace.RootPath;
-        var key = SelectedItemKey ?? "";
-
-        if (key == "server")
-        {
-            var serverForm = new A2aServerForm(
-                GetText("Host"),
-                GetText("Port"),
-                GetText("Path"),
-                GetToggle("RequireApiKey"),
-                GetText("ApiKeys"),
-                GetText("AgentName"),
-                GetText("AgentDescription"),
-                GetText("AgentVersion"));
-
-            var saved = _vm.A2a.SaveServer(root, serverForm);
-            if (!saved.Ok) { SetHint(saved.Message, true); return; }
-
-            SelectedItemKey = saved.Key;
-            RefreshItems();
-            BuildEditor();
-            SetSavedHint();
-            return;
-        }
-
-        // 客户端文件
-        var clientForm = new A2aClientForm(
-            GetText("Name"),
-            GetText("Endpoint"),
-            GetText("ApiKey"),
-            GetToggle("RegisterAsSubAgent"),
-            GetText("RemoteAgentName"),
-            GetToggle("AllowAll"));
-
-        var result = _vm.A2a.SaveClient(root, key, clientForm);
-        if (!result.Ok) { SetHint(result.Message, true); return; }
-
-        SelectedItemKey = result.Key;
-        RefreshItems();
-        BuildEditor();
-        SetSavedHint();
-        await Task.CompletedTask;
-    }
-
     private Task SaveProviderAsync()
     {
         if (!_vm.ProviderModel.Available)
@@ -332,27 +258,6 @@ public partial class SettingsWindow
 
         // 云效：固定单条目，不可删除（按钮已隐藏，此处兜底）
         if (Tab == SettingsTabKind.Yunxiao) return;
-
-        if (Tab == SettingsTabKind.A2A)
-        {
-            if (IsGlobal || SelectedWorkspace == null) return;
-            var root = SelectedWorkspace.RootPath;
-            var isServer = key == "server";
-            var ok = await Dialogs.ShowConfirmAsync(this, "确认删除",
-                isServer ? "确定删除服务端配置 server.json 吗？" : $"确定删除客户端配置 {key} 吗？",
-                "删除后该角色将不再启用，且不可恢复。",
-                "确定删除", danger: true);
-            if (!ok) return;
-
-            var deleted = _vm.A2a.Delete(root, key);
-            if (!deleted.Ok) { SetHint(deleted.Message, true); return; }
-
-            SelectedItemKey = null;
-            RefreshItems();
-            BuildEditor();
-            SetHint(deleted.Message, false);
-            return;
-        }
 
         if (Tab == SettingsTabKind.Provider)
         {
@@ -427,7 +332,6 @@ public partial class SettingsWindow
     private bool CanApply()
     {
         if (Tab == SettingsTabKind.Provider || Tab == SettingsTabKind.Model) return true;
-        if (Tab == SettingsTabKind.A2A) return false;
         // 云效：保存即写入共享选项与凭据存储、即时生效，无需「应用配置」触发工作区回放
         if (Tab == SettingsTabKind.Yunxiao) return false;
         if (IsGlobal) return true;

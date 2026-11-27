@@ -91,40 +91,7 @@ internal static class StartupWorkspaceResolver
             }
         }
 
-        // A2A：运行时随宿主进程启停，本进程只读状态（远程模式下本进程没有 A2A 运行时）
-        await AddA2AStatusNoticeAsync(services, notices);
-
         return true;
-    }
-
-    /// <summary>
-    /// 读取 A2A 状态并作为启动提示。运行时由宿主进程启停，本进程不提供启停；失败仅提示。
-    /// </summary>
-    private static async Task AddA2AStatusNoticeAsync(DiContainer services, List<string> notices)
-    {
-        var statusProvider = services.GetService<IA2AStatusProvider>();
-        if (statusProvider is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var status = await statusProvider.GetStatusAsync();
-            if (status.IsRunning)
-            {
-                notices.Add($"A2A 运行中（{status.LocalAgentName}）");
-            }
-            else if (status.Enabled)
-            {
-                notices.Add("A2A 已启用但未运行");
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("读取 A2A 状态失败", ex);
-            notices.Add($"读取 A2A 状态失败: {ex.Message}");
-        }
     }
 
     /// <summary>

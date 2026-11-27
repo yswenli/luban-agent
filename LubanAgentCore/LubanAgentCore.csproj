@@ -26,12 +26,7 @@
 		     ProtectedData 不在共享框架内，必须显式引用；非 Windows 平台运行时 IsAvailable=false。 -->
 		<PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
 		<PackageReference Include="SqlSugarCore" Version="5.1.4.221" />
-		<!-- A2A 协议 SDK（A2A/ 目录）：core 包 + ASP.NET Core 宿主扩展 -->
-		<PackageReference Include="A2A" Version="1.0.0-preview2" />
-		<PackageReference Include="A2A.AspNetCore" Version="1.0.0-preview2" />
 	</ItemGroup>
-
-	<!-- A2A Server 宿主（A2A/Server/A2AServerHost）：基于 ASP.NET Core，仅库引用，不启用 Generic Host -->
 
 	<ItemGroup>
 		<!-- 测试工程需要验证子进程参数装配（ServerProcessLauncher.BuildArguments），不对外暴露 -->

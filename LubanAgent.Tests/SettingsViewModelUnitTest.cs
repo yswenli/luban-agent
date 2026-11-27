@@ -8,7 +8,7 @@
 *      覆盖：技能/规则/MCP 的必填校验与提示文案、字段修剪、优先级解析、
 *            默认 transport 与参数解析、文件来源删除、新建重名避让、
 *            Provider upsert 与自定义模型差异同步、删除供应商清理默认模型、
-*            A2A 新建服务端/客户端与必填校验、壳 VM 的按页签枚举路由。
+*            壳 VM 的按页签枚举路由。
 *      说明：ViewModel 不持有任何 Avalonia 类型，故可直接构造；管理服务用假实现，
 *            Provider 页经真实 ConfigManager（临时配置文件）验证落盘语义。
 *
@@ -235,56 +235,6 @@ public class SettingsViewModelUnitTest
         Assert.AreEqual("已删除该供应商。", outcome.Message);
         Assert.IsNull(config.GetProvider("p1"));
         Assert.IsNull(config.SelectedModel);
-    }
-
-    // ---------------- A2A ----------------
-
-    [TestMethod]
-    public void CreateDefault_A2a_CreatesServerThenClientFile()
-    {
-        var workspace = Path.Combine(_tempDir, "ws");
-        Directory.CreateDirectory(workspace);
-        var vm = new A2aTabViewModel();
-
-        var server = vm.CreateDefault(workspace);
-
-        Assert.IsTrue(server.Ok);
-        Assert.AreEqual("server", server.Key);
-        Assert.AreEqual(1, vm.BuildList(workspace).Count);
-        StringAssert.Contains(vm.BuildList(workspace)[0].Display, "服务端");
-
-        var client = vm.CreateDefault(workspace);
-
-        Assert.IsTrue(client.Ok);
-        Assert.IsNotNull(client.Key);
-        Assert.AreNotEqual("server", client.Key);
-        Assert.IsTrue(File.Exists(Path.Combine(workspace, ".luban-agent", "a2a", client.Key!)));
-        Assert.AreEqual(2, vm.BuildList(workspace).Count);
-    }
-
-    [TestMethod]
-    public void CreateDefault_A2a_WithoutWorkspace_ReturnsFailureText()
-    {
-        var outcome = new A2aTabViewModel().CreateDefault(null);
-
-        Assert.IsFalse(outcome.Ok);
-        Assert.AreEqual("A2A 配置仅作用于工作区，请先在顶栏选择一个工作区。", outcome.Message);
-    }
-
-    [TestMethod]
-    public void SaveClient_A2a_RequiresNameAndEndpoint()
-    {
-        var workspace = Path.Combine(_tempDir, "ws2");
-        Directory.CreateDirectory(workspace);
-        var vm = new A2aTabViewModel();
-
-        var missingName = vm.SaveClient(workspace, null, new A2aClientForm(" ", "https://x", "", false, "", false));
-        Assert.IsFalse(missingName.Ok);
-        Assert.AreEqual("客户端的 Name 不能为空。", missingName.Message);
-
-        var missingEndpoint = vm.SaveClient(workspace, null, new A2aClientForm("n", " ", "", false, "", false));
-        Assert.IsFalse(missingEndpoint.Ok);
-        Assert.AreEqual("客户端的 Endpoint 不能为空。", missingEndpoint.Message);
     }
 
     // ---------------- 壳 VM ----------------

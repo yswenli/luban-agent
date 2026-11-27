@@ -236,13 +236,12 @@ LuBan Agent Codex 提供了简洁而强大的命令系统，所有命令均以 `
 | `/stats` | `/st` | 查看统计（消息数量、权限模式、当前会话） |
 | `/work` | `/w` | 打开「工作区管理」窗口 |
 | `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | 打开「LLM Wiki 知识库管理」窗口 |
-| `/a2a` | — | A2A 协作管理（`-list` / `-server` / `-client` / `-start` / `-stop`） |
 
 > `/agi`、`/init` 仅在 CLI 端提供，Codex 不可用。
 
 ### 子命令简写
 
-GUI 与 CLI 共用同一套简写展开（`SlashCommandAliases.Expand`），但 Codex 端只有 `/model`、`/session`、`/a2a` 真正解析子命令，其余管理命令忽略参数、直接打开对应界面。
+GUI 与 CLI 共用同一套简写展开（`SlashCommandAliases.Expand`），但 Codex 端只有 `/model`、`/session` 真正解析子命令，其余管理命令忽略参数、直接打开对应界面。
 
 | 简写 | 展开 | 说明 |
 |------|------|------|
@@ -250,9 +249,9 @@ GUI 与 CLI 共用同一套简写展开（`SlashCommandAliases.Expand`），但 
 | `-a` | `-add` | 新增 |
 | `-u` | `-update` | 更新 |
 | `-d` | `-delete` | 删除 |
-| `-s` | `-switch` | 切换；`/a2a` 中展开为 `-server`，`/llmwiki` 中展开为 `-search` |
+| `-s` | `-switch` | 切换；`/llmwiki` 中展开为 `-search` |
 | `-n` | `-new` | 新建 |
-| `-c` | `-clear` | 清空；`/a2a` 中展开为 `-client` |
+| `-c` | `-clear` | 清空 |
 | `-i` | `-index` | 仅 `/llmwiki` 展开 |
 | `-t` | `-tools` | 工具列表（Codex 端无命令解析该子命令） |
 
@@ -260,7 +259,6 @@ GUI 与 CLI 共用同一套简写展开（`SlashCommandAliases.Expand`），但 
 - `/m -l` = `/model -list`
 - `/m -s kimi:k3` = `/model -switch kimi:k3`
 - `/se -n 项目讨论` = `/session -new 项目讨论`
-- `/a2a -s` = `/a2a -server`（不是 `-switch`）
 
 ---
 

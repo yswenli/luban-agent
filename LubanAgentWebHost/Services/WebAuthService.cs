@@ -19,13 +19,16 @@ namespace LubanAgentWebHost.Services;
 public static class WebAuthService
 {
     /// <summary>
-    /// 登录页公开状态：是否已初始化管理员、是否允许注册、当前是否已登录。
+    /// 登录页公开状态：是否允许注册、当前是否已登录。
     /// </summary>
+    /// <remarks>
+    /// 内置管理员由宿主启动时创建（<c>Program</c> 调 <c>EnsureBuiltInAdminAsync</c>），
+    /// 这里不再查库回填 <c>initialized</c>：公开接口不该让人探测管理员是否已初始化。
+    /// </remarks>
     /// <returns>状态。</returns>
     public static Task<ActionResult> StatusAsync() => WebApi.RunAsync(async () =>
     {
         var runtime = WebApi.Runtime;
-        var admin = await runtime.Auth.GetUserAsync(UserAuthService.BuiltInAdminUserId).ConfigureAwait(false);
 
         AuthUserDto? user = null;
         if (WebApi.CurrentClaims is { } claims
@@ -39,7 +42,7 @@ public static class WebAuthService
             user = UserAuthService.ToDto(host);
         }
 
-        return WebApi.OkJson(new AuthStatusDto(admin is not null, true, user));
+        return WebApi.OkJson(new AuthStatusDto(true, true, user));
     });
 
     /// <summary>

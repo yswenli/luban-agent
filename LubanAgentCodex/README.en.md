@@ -237,13 +237,12 @@ LuBan Agent Codex provides a concise and powerful command system, all commands s
 | `/stats` | `/st` | Show statistics (message count, permission mode, current session) |
 | `/work` | `/w` | Open the "Workspace Management" window |
 | `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | Open the "LLM Wiki Knowledge Base Management" window |
-| `/a2a` | — | A2A collaboration management (`-list` / `-server` / `-client` / `-start` / `-stop`) |
 
 > `/agi` and `/init` are CLI-only and unavailable in Codex.
 
 ### Sub-command Shortcuts
 
-GUI and CLI share the same alias expansion (`SlashCommandAliases.Expand`), but in Codex only `/model`, `/session`, and `/a2a` actually parse sub-commands; the other management commands ignore arguments and open their UI directly.
+GUI and CLI share the same alias expansion (`SlashCommandAliases.Expand`), but in Codex only `/model` and `/session` actually parse sub-commands; the other management commands ignore arguments and open their UI directly.
 
 | Shortcut | Expands to | Notes |
 |----------|------------|-------|
@@ -251,9 +250,9 @@ GUI and CLI share the same alias expansion (`SlashCommandAliases.Expand`), but i
 | `-a` | `-add` | Add |
 | `-u` | `-update` | Update |
 | `-d` | `-delete` | Delete |
-| `-s` | `-switch` | Switch; expands to `-server` for `/a2a` and `-search` for `/llmwiki` |
+| `-s` | `-switch` | Switch; expands to `-search` for `/llmwiki` |
 | `-n` | `-new` | New |
-| `-c` | `-clear` | Clear; expands to `-client` for `/a2a` |
+| `-c` | `-clear` | Clear |
 | `-i` | `-index` | Expands only for `/llmwiki` |
 | `-t` | `-tools` | Tool list (no Codex command parses this sub-command) |
 
@@ -261,7 +260,6 @@ GUI and CLI share the same alias expansion (`SlashCommandAliases.Expand`), but i
 - `/m -l` = `/model -list`
 - `/m -s kimi:k3` = `/model -switch kimi:k3`
 - `/se -n Project Discussion` = `/session -new Project Discussion`
-- `/a2a -s` = `/a2a -server` (not `-switch`)
 
 ---
 

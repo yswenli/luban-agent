@@ -23,8 +23,8 @@ public sealed record WebHostSettings
     /// <summary>浏览器登录令牌的有效期（分钟）；剩余不足一半时自动换新。</summary>
     public double SessionTokenMinutes { get; init; } = 15;
 
-    /// <summary>浏览器登录的绝对上限（小时）；<c>0</c> 表示不设上限，登录随令牌版本与有效期存活。</summary>
-    public double SessionMaxHours { get; init; } = 0;
+    /// <summary>浏览器登录的绝对上限（小时），默认 24；<c>0</c> 表示不设上限。</summary>
+    public double SessionMaxHours { get; init; } = 24;
 
     /// <summary>
     /// 内置管理员初始密码；为空时首次启动生成随机密码并打印一次。
@@ -93,7 +93,7 @@ public sealed record WebHostSettings
             Port = section.GetValue("Port", 18080),
             Token = NullIfBlank(section["Token"]),
             SessionTokenMinutes = section.GetValue("SessionTokenMinutes", 15d),
-            SessionMaxHours = section.GetValue("SessionMaxHours", 0d),
+            SessionMaxHours = section.GetValue("SessionMaxHours", 24d),
             AdminPassword = NullIfBlank(section["AdminPassword"]),
             JwtKeyPath = NullIfBlank(section["JwtKeyPath"]),
             TimeoutSeconds = section.GetValue("TimeoutSeconds", 86400d),

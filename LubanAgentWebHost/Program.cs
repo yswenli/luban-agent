@@ -114,9 +114,6 @@ public static class Program
             Report("④ 构建服务容器...");
             var host = AgentHostBuilder.Build(configuration, embedder, modelManager, services =>
             {
-                // A2A：注册 SDK 实现与运行时生命周期（实际启动在用户工作区就绪后由 AgentWebRuntime 触发）
-                services.AddLubanAgentA2A(configuration);
-
                 // C28：可写凭据存储覆盖框架默认只读实现（ConfigurationCredentialStore.SetAsync 抛 NotSupportedException）；
                 // 云效设置服务供 YunxiaoController 的工作台服务使用。
                 services.AddSingleton<LubanAgentCore.Security.CredentialStore>();

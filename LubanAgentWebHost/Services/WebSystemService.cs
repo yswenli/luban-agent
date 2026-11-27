@@ -115,6 +115,7 @@ public static class WebSystemService
     public static Task<ActionResult> CommandsAsync() => WebApi.RunGuardedAsync(() =>
     {
         var commands = new CommandCatalog().All
+            .ExcludeRemoved(command => command.Name)
             .Where(command => command.Supports(SlashCommandClient.Codex))
             .Where(command => !string.Equals(command.Name, "/exit", StringComparison.OrdinalIgnoreCase))
             .Select(command => new WebCommandDto(
@@ -265,7 +266,6 @@ public static class WebSystemService
         "/skill" => "openSettings:skill",
         "/rule" => "openSettings:rule",
         "/mcp" => "openSettings:mcp",
-        "/a2a" => "openSettings:a2a",
         _ => "action:none"
     };
 }

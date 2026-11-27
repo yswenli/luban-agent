@@ -43,16 +43,6 @@ global using LuBan.Orm.Models;
 // Global using 引用 - 内部命名空间
 global using LubanAgentCore.Connectors.AliyunDevOps;
 
-global using LubanAgentCore.A2A.Client;
-global using LubanAgentCore.A2A.Configuration;
-global using LubanAgentCore.A2A.Executor;
-global using LubanAgentCore.A2A.InProcess;
-global using LubanAgentCore.A2A.Mapping;
-global using LubanAgentCore.A2A.Runtime;
-global using LubanAgentCore.A2A.Security;
-global using LubanAgentCore.A2A.Server;
-global using LubanAgentCore.A2A.Storage;
-
 global using LubanAgentCore.Client;
 global using LubanAgentCore.Protocol;
 global using LubanAgentCore.Protocol.Dtos;
@@ -92,9 +82,6 @@ global using System.Text;
 global using System.Text.Json;
 
 // 由代码文件上移的命名空间（2026-10-28 规范化）
-global using LuBan.AIAgent.A2A;
-global using LuBan.AIAgent.A2A.Abstractions;
-global using LuBan.AIAgent.A2A.Models;
 global using LuBan.AIAgent.Abstractions.Models;
 global using LuBan.AIAgent.Configuration.Providers;
 global using LuBan.AIAgent.Connectors;
@@ -129,8 +116,6 @@ global using System.Runtime.ExceptionServices;
 global using System.Text.Encodings.Web;
 global using System.Text.Json.Serialization;
 global using System.Text.RegularExpressions;
-
-global using A2A.AspNetCore;
 
 global using Microsoft.Agents.AI;
 global using Microsoft.AspNetCore.Builder;

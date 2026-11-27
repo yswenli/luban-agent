@@ -8,9 +8,6 @@
 *****************************************************************************/
 
 // Global using 引用 - 框架依赖
-global using LuBan.AIAgent.A2A;
-global using LuBan.AIAgent.A2A.Abstractions;
-global using LuBan.AIAgent.A2A.Models;
 global using LuBan.AIAgent.Abstractions;
 global using LuBan.AIAgent.Attachments;
 global using LuBan.AIAgent.Configuration;
@@ -35,7 +32,6 @@ global using LubanAgentCodex.ViewModels;
 global using LubanAgentCodex.ViewModels.Messages;
 global using LubanAgentCodex.ViewModels.Settings;
 global using LubanAgentCodex.Views;
-global using LubanAgentCore.A2A.Runtime;
 global using LubanAgentCore.Client;
 global using LubanAgentCore.Configuration;
 global using LubanAgentCore.Connectors.AliyunDevOps;

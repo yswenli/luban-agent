@@ -267,7 +267,20 @@ public sealed class UserAuthService
             CreateTime = DateTime.Now
         };
 
-        await _users.InsertAsync(user).ConfigureAwait(false);
+        try
+        {
+            await _users.InsertAsync(user).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // 并发注册同一用户名：唯一约束在落库时才会失败，回查确认后按 409 返回，避免冒成 500
+            if (await _users.GetAnyByUserIdAsync(userId).ConfigureAwait(false) is not null)
+            {
+                throw new AuthException(409, "用户名已存在");
+            }
+
+            throw;
+        }
 
         // 先建用户再原子占用邀请码：并发下只有一个能抢到，抢不到的账号回滚（软删）
         var claimed = await _invites.TryClaimAsync(code, userId, _time.GetUtcNow().UtcDateTime).ConfigureAwait(false);

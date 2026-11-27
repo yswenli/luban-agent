@@ -18,7 +18,7 @@ namespace LubanAgentCore.Plugins;
 /// 无 UI 宿主的默认封送实现：所有回调就地执行。
 /// </summary>
 /// <remarks>
-/// 供 CLI / A2A 等无 UI 宿主与单元测试使用；桌面端必须注册覆盖实现，
+/// 供 CLI 等无 UI 宿主与单元测试使用；桌面端必须注册覆盖实现，
 /// 否则面板注销会落在后台线程，插件程序集将无法被 ALC 回收。
 /// </remarks>
 public sealed class ImmediatePluginUiDispatcher : IPluginUiDispatcher

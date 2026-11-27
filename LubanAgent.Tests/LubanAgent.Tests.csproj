@@ -38,7 +38,7 @@
     <ProjectReference Include="..\LubanAgentCore\LubanAgentCore.csproj" />
     <!-- Web 宿主侧插件路径与页面清单纯函数（WebPluginPaths / PluginPageManifest / zip 解包校验） -->
     <ProjectReference Include="..\LubanAgentWebHost\LubanAgentWebHost.csproj" />
-    <!-- 传输协议（DTO/路由/SSE 帧）、客户端 SDK、A2A 协作均已并入 LubanAgentCore，不再单独引用 -->
+    <!-- 传输协议（DTO/路由/SSE 帧）、客户端 SDK 均已并入 LubanAgentCore，不再单独引用 -->
     <!-- 「新建项目」插件的共享能力层（步骤状态归并等纯逻辑，供单测覆盖；UI 部分不参与测试） -->
     <ProjectReference Include="..\LubanAgent.Plugin.NewProject\LubanAgent.Plugin.NewProject.csproj" />
     <!-- Codex 设置窗的分页 ViewModel（Task 19：业务已从窗口下沉到 ViewModels/Settings，纯逻辑无 Avalonia 依赖） -->

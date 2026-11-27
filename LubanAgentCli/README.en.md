@@ -351,7 +351,6 @@ Limits: up to **5** attachments per message; images require a vision-capable mod
 | `/stats` | `/st` | Session & Token statistics |
 | `/work` | `/w` | Workspace management |
 | `/llmwiki` | `/lw`, `/rag`, `/rg`, `/wiki`, `/wk` | LLM Wiki knowledge base management |
-| `/a2a` | — | A2A collaboration management (status/server/client/start-stop) |
 | `/init <description>` | — | Initialize the workspace AGENTS.md |
 
 ### Subcommand Shorthands
@@ -362,9 +361,9 @@ Limits: up to **5** attachments per message; images require a vision-capable mod
 | `-a` | `-add` | All management commands (note: in `/work`, `-add` is an alias of `-authorize`) |
 | `-u` | `-update` | Provider/Model/Skill/Rule/MCP |
 | `-d` | `-delete` | Provider/Model/Skill/Rule/MCP/Work/LLM Wiki |
-| `-s` | `-switch` | All management commands (note: in `/llmwiki` `-s` is `-search`, in `/a2a` `-s` is `-server`) |
+| `-s` | `-switch` | All management commands (note: in `/llmwiki` `-s` is `-search`) |
 | `-n` | `-new` | Session/Work/LLM Wiki |
-| `-c` | `-clear` | Session (note: in `/a2a` `-c` is `-client`) |
+| `-c` | `-clear` | Session |
 | `-t` | `-tools` | MCP |
 | `-i` | `-index` | LLM Wiki (index files) |
 | `-info` | `-info` | Work (workspace info) |
@@ -753,7 +752,7 @@ LubanAgentCli/
 │   ├── CommandBase.cs / ICommand.cs
 │   ├── ProviderCommand.cs / ModelCommand.cs / SkillCommand.cs / RuleCommand.cs
 │   ├── MCPCommand.cs / SessionCommand.cs / StatsCommand.cs / WorkCommand.cs
-│   └── LlmWikiCommand.cs / A2ACommand.cs / InitCommand.cs
+│   └── LlmWikiCommand.cs / InitCommand.cs
 ├── Infrastructure/         # TUI infrastructure
 │   ├── FastInputBootstrapper.cs  # Fast input bootstrap
 │   └── TuiDiag.cs                # TUI diagnostics switch

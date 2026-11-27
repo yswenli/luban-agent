@@ -283,33 +283,6 @@ export interface ProviderModels {
   models: ModelItem[];
 }
 
-export interface A2AServer {
-  host: string;
-  port: number;
-  path: string;
-  requireApiKey: boolean;
-  apiKeys: string[];
-  agentName?: string | null;
-  agentDescription?: string | null;
-  agentVersion?: string | null;
-}
-
-export interface A2AClientListItem {
-  key: string;
-  name?: string | null;
-  endpoint?: string | null;
-}
-
-export interface A2AClient {
-  key: string;
-  name?: string | null;
-  endpoint?: string | null;
-  apiKey?: string | null;
-  registerAsSubAgent: boolean;
-  remoteAgentName?: string | null;
-  allowAll: boolean;
-}
-
 /* ── 工作区 AGENTS.md 初始化 ─────────────────────────────────────────── */
 
 export interface AgentsMdInfo {

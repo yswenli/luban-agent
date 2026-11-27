@@ -238,7 +238,7 @@ public sealed class GatedHttpContext : SAEA.MVC.Hosting.HttpContext
     <ul>
       <li>不知道密码？内置管理员初始密码在首次启动宿主的终端里只打印一次。</li>
       <li>忘记密码：请联系管理员在「设置 → 用户」重置，或由管理员在宿主机执行 <code>LubanAgentWebHost --token</code> 取管理员入口地址。</li>
-      <li>浏览器会话会持续续期；配置了 <code>SessionMaxHours</code> 时到点需重新登录。</li>
+      <li>浏览器会话会持续续期，但默认 24 小时后需重新登录（<code>SessionMaxHours</code> 可调）。</li>
       <li>停止常驻实例：<code>LubanAgentWebHost --stop</code>。</li>
       <li>登录凭据等同于完整操作权限，不要转发给他人。</li>
     </ul>

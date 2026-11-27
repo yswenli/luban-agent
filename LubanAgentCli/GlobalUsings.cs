@@ -66,8 +66,6 @@ global using Terminal.Gui.ViewBase;
 global using Terminal.Gui.Views;
 
 // 由代码文件上移的命名空间（2026-10-28 规范化）
-global using LuBan.AIAgent.A2A;
-global using LuBan.AIAgent.A2A.Abstractions;
 global using LuBan.AIAgent.Configuration.Providers;
 global using LuBan.AIAgent.Defaults;
 global using LuBan.AIAgent.Hosting;
@@ -76,9 +74,6 @@ global using LuBan.AIAgent.Orchestration;
 global using LuBan.AIAgent.Wiki;
 global using LuBan.AIAgent.Wiki.Extractors;
 global using LuBan.Common.IO;
-global using LubanAgentCore.A2A;
-global using LubanAgentCore.A2A.Configuration;
-global using LubanAgentCore.A2A.Runtime;
 global using LubanAgentCli.App.Dialogs;
 global using LubanAgentCli.App.Services;
 global using LubanAgentCli.App.ViewModels;

@@ -102,7 +102,6 @@ internal sealed class CommandViewModel
             case "/work":     case "/w":         ExecuteManagementCommand<WorkCommand>(parts); return true;
             case "/llmwiki":  case "/lw": case "/rag": case "/rg": case "/wiki": case "/wk":
                                   ExecuteManagementCommand<LlmWikiCommand>(parts); return true;
-            case "/a2a":                        ExecuteManagementCommand<A2ACommand>(parts); return true;
             case "/init":                        ExecuteManagementCommand<InitCommand>(parts); return true;
 
             // ── Agent 对话（默认激活）──
@@ -127,7 +126,10 @@ internal sealed class CommandViewModel
         _writer.WriteLine("可用命令:");
 
         // 按 Category 分组遍历 catalog，自动同步新增命令
-        var cliCmds = _catalog.All.Where(c => c.Supports(SlashCommandClient.Cli)).ToList();
+        var cliCmds = _catalog.All
+            .ExcludeRemoved(c => c.Name)
+            .Where(c => c.Supports(SlashCommandClient.Cli))
+            .ToList();
         var groups = cliCmds.GroupBy(c => c.Category).OrderBy(g => g.Key);
         foreach (var grp in groups)
         {
@@ -276,9 +278,6 @@ internal sealed class CommandViewModel
                 _services.GetRequiredService<IWorkspaceManager>(),
                 _services.GetRequiredService<ILuBanAgentFactory>(), _spinner, _writer, _ui,
                 _conversationVm),
-            nameof(A2ACommand) => (TCommand)(object)new A2ACommand(configManager, configuration,
-                _services.GetRequiredService<IWorkspaceManager>(),
-                _services.GetRequiredService<IA2AStatusProvider>(), _writer, _ui),
             _ => null
         };
     }

@@ -33,14 +33,14 @@ public class WebHostAccessUnitTest
     }
 
     [TestMethod]
-    public void 命令行用host_token钉住宿主令牌且会话上限默认不设()
+    public void 命令行用host_token钉住宿主令牌且会话上限默认一天()
     {
         var configuration = new ConfigurationBuilder().Build();
 
         // --token 已让给「打印入口」命令，钉住固定令牌改走 --host-token
         var pinned = LubanAgentWebHost.Hosting.WebHostSettings.Create(configuration, ["--host-token", "abc_123"]);
         Assert.AreEqual("abc_123", pinned.Token);
-        Assert.AreEqual(0d, pinned.SessionMaxHours, "会话绝对上限默认 0，即不设上限");
+        Assert.AreEqual(24d, pinned.SessionMaxHours, "会话绝对上限默认 24 小时");
 
         var byConfig = LubanAgentWebHost.Hosting.WebHostSettings.Create(
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

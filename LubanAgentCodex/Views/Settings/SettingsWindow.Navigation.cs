@@ -12,7 +12,7 @@
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/27
 *描述：设置窗的导航与列表部分（Task 19 从 SettingsWindow.axaml.cs 拆出，行为与文案原样保留）。
-*      条目枚举 / 供应商 / 模型 / A2A 列表均经 ViewModels.Settings 取数。
+*      条目枚举 / 供应商 / 模型列表均经 ViewModels.Settings 取数。
 *
 *****************************************************************************/
 
@@ -37,10 +37,6 @@ public partial class SettingsWindow
         var baseDir = Path.Combine(SelectedWorkspace!.RootPath, ".luban-agent");
         return (Path.Combine(baseDir, "skills"), Path.Combine(baseDir, "rules"), Path.Combine(baseDir, "mcps"));
     }
-
-    /// <summary>当前工作区的 A2A 配置目录；未选工作区时为 null。</summary>
-    private string? CurrentA2ADir()
-        => IsGlobal || SelectedWorkspace == null ? null : A2AWorkspaceConfigStore.ResolveDir(SelectedWorkspace.RootPath);
 
     // ---------------- 左栏：分类导航 ----------------
 
@@ -80,7 +76,6 @@ public partial class SettingsWindow
         AddItem("技能", SettingsTabKind.Skill);
         AddItem("规则", SettingsTabKind.Rule);
         AddItem("MCP 服务", SettingsTabKind.Mcp);
-        AddItem("A2A 协作", SettingsTabKind.A2A);
         AddGroup("供应商与模型");
         AddItem("供应商", SettingsTabKind.Provider);
         AddItem("模型", SettingsTabKind.Model);
@@ -169,15 +164,6 @@ public partial class SettingsWindow
     private void RefreshItems()
     {
         if (_itemList == null) return;
-
-        // A2A 类：服务端（server.json，若存在）+ 各客户端文件
-        if (Tab == SettingsTabKind.A2A)
-        {
-            var list = _vm.A2a.BuildList(IsGlobal ? null : SelectedWorkspace?.RootPath);
-            ApplyListSelection(list);
-            UpdateActionBar();
-            return;
-        }
 
         // 供应商类：对象列表（含脱敏 ApiKey 与默认标记）
         if (Tab == SettingsTabKind.Provider)
@@ -272,7 +258,7 @@ public partial class SettingsWindow
     /// <summary>
     /// 绑定对象列表并把选中项回落到「原选中项 → 首项」。
     /// </summary>
-    /// <param name="list">对象列表（供应商 / 模型 / A2A）。</param>
+    /// <param name="list">对象列表（供应商 / 模型）。</param>
     private void ApplyListSelection(IReadOnlyList<SettingsListItem> list)
     {
         if (_itemList == null) return;

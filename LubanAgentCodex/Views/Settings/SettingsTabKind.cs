@@ -28,9 +28,6 @@ public enum SettingsTabKind
     /// <summary>MCP 服务（mcps/&lt;name&gt;.json）</summary>
     Mcp,
 
-    /// <summary>A2A 协作（.luban-agent/a2a/server.json + client.&lt;name&gt;.json）</summary>
-    A2A,
-
     /// <summary>供应商（全局 config.json）</summary>
     Provider,
 

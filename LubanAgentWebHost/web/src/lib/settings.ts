@@ -1,8 +1,5 @@
 import { get, post } from './api';
 import type {
-  A2AClient,
-  A2AClientListItem,
-  A2AServer,
   AgentsMdInfo,
   AgentsMdResult,
   AvailableSkill,
@@ -118,19 +115,6 @@ export const settingsApi = {
   }): Promise<ModelProfile> => post<ModelProfile>('/model/saveProfile', body),
   selectModel: (providerId: string, modelId: string): Promise<void> =>
     post<void>('/provider/select', { providerId, modelId }),
-
-  /* ── A2A ── */
-  getA2AServer: (scope: ScopeValue): Promise<A2AServer> => get<A2AServer>('/a2a/getServer', { scope }),
-  saveA2AServer: (body: Record<string, unknown>): Promise<{ key: string }> =>
-    post<{ key: string }>('/a2a/saveServer', body),
-  listA2AClients: async (scope: ScopeValue): Promise<A2AClientListItem[]> =>
-    (await get<ListResponse<A2AClientListItem>>('/a2a/listClients', { scope }))?.items ?? [],
-  getA2AClient: (scope: ScopeValue, key: string): Promise<A2AClient> =>
-    get<A2AClient>('/a2a/getClient', { scope, key }),
-  saveA2AClient: (body: Record<string, unknown>): Promise<{ key: string }> =>
-    post<{ key: string }>('/a2a/saveClient', body),
-  deleteA2A: (scope: ScopeValue, key: string): Promise<void> =>
-    post<void>('/a2a/deleteClient', { scope, key }),
 
   /* ── 工作区 ── */
   listWorkspaces: async (): Promise<Workspace[]> => (await get<Workspace[]>('/workspace/list')) ?? [],

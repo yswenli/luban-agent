@@ -174,7 +174,7 @@ export function WorkspaceTab(props: { workspaceId: string }) {
         <TextField
           label="配置目录"
           value={workspace()?.configPath ?? '（尚未生成）'}
-          hint="技能、规则、MCP 与 A2A 配置都存放在该目录下"
+          hint="技能、规则与 MCP 配置都存放在该目录下"
           readOnly
           onInput={() => {}}
         />

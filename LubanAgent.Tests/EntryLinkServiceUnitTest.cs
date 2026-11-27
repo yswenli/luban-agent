@@ -41,6 +41,19 @@ public class EntryLinkServiceUnitTest
     }
 
     [TestMethod]
+    public void 短码解析成功后立即失效()
+    {
+        var service = new EntryLinkService();
+        var code = service.Register("token-1", DateTimeOffset.UtcNow.AddMinutes(5));
+
+        Assert.IsTrue(service.TryResolve(code, out var token));
+        Assert.AreEqual("token-1", token);
+
+        Assert.IsFalse(service.TryResolve(code, out token), "短码一次性：不能在浏览器历史里反复打开");
+        Assert.IsNull(token);
+    }
+
+    [TestMethod]
     public void 每次登记得到不同的短码()
     {
         var service = new EntryLinkService();
@@ -86,12 +99,17 @@ public class EntryLinkServiceUnitTest
         var service = new EntryLinkService(clock);
 
         var first = service.Register("token-0", clock.Now.AddMinutes(1));
-        for (var i = 1; i < EntryLinkService.MaxLinks; i++)
+        var second = service.Register("token-1", clock.Now.AddMinutes(2));
+        for (var i = 2; i < EntryLinkService.MaxLinks; i++)
         {
             service.Register($"token-{i}", clock.Now.AddMinutes(1 + i));
         }
 
-        Assert.IsTrue(service.TryResolve(first, out _), "未超上限时不淘汰");
+        // 解析是一次性的：这里用 second 验证「未超上限时未淘汰」
+        Assert.IsTrue(service.TryResolve(second, out _), "未超上限时不淘汰");
+
+        // 解析消耗掉一条，补回来让表仍处于容量上限，才能验证新增时的淘汰
+        service.Register("token-refill", clock.Now.AddMinutes(3));
 
         var extra = service.Register("token-extra", clock.Now.AddMinutes(200));
 

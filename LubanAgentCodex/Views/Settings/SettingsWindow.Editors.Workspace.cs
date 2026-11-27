@@ -43,9 +43,6 @@ public partial class SettingsWindow
             case SettingsTabKind.Mcp:
                 BuildMcpEditor(host, key);
                 break;
-            case SettingsTabKind.A2A:
-                BuildA2AEditor(host, key);
-                break;
             case SettingsTabKind.Provider:
                 BuildProviderEditor(host, key);
                 break;

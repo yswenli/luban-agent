@@ -68,7 +68,7 @@ public class App : Application
                 splash.SetStatus("正在加载应用配置…");
                 var configuration = AgentHostBuilder.BuildConfiguration(Array.Empty<string>());
 
-                // 2.1) 连接统一 Agent 服务：数据库、会话、工作区、A2A 都在 WebHost 进程内；
+                // 2.1) 连接统一 Agent 服务：数据库、会话、工作区都在 WebHost 进程内；
                 //      未探测到服务时按本机空闲端口拉起子进程，退出时由本对象一并结束
                 splash.SetStatus("正在连接 Agent 服务…");
                 var connection = await AgentClientHostBuilder.ConnectAsync(new AgentClientOptions
@@ -94,13 +94,6 @@ public class App : Application
                 splash.SetStatus("正在初始化核心服务…");
                 _services = AgentHostBuilder.Build(configuration, embedder, modelManager, services =>
                 {
-                    // A2A：注册 SDK 实现与运行时生命周期。
-                    // 远程模式下 A2A 服务端/客户端都在 WebHost 进程内启停，客户端再注册会重复起一套生命周期。
-                    if (connection is null)
-                    {
-                        services.AddLubanAgentA2A(configuration);
-                    }
-
                     // 编排进度出口：本机编排由框架直接 Publish；远程模式下 HttpAgentHost 收到
                     // orchestration.progress 帧后经 Raise 投递到同一出口，界面订阅方无需区分。
                     services.AddSingleton<HostOrchestrationProgressSink>();
@@ -201,17 +194,6 @@ public class App : Application
                     catch (Exception ex)
                     {
                         Logger.Error("worktree 启动对账失败", ex);
-                    }
-
-                    // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
-                    splash.SetStatus("正在启动 A2A…");
-                    try
-                    {
-                        await _services.GetRequiredService<IA2ALifecycle>().StartAsync(target.RootPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error("启动 A2A 失败", ex);
                     }
                 }
 

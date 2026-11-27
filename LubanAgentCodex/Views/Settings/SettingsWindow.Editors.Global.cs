@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/10/27
-*描述：设置窗右栏编辑器的全局配置与 A2A 部分（Task 19 从 SettingsWindow.axaml.cs 拆出）。
+*描述：设置窗右栏编辑器的全局配置部分（Task 19 从 SettingsWindow.axaml.cs 拆出）。
 *      控件构建顺序、标签文案、默认值与改动前逐字一致。
 *
 *****************************************************************************/
@@ -19,7 +19,7 @@
 namespace LubanAgentCodex.Views;
 
 /// <summary>
-/// 设置窗口（编辑器-全局部分）：构建供应商与模型、A2A 等全局配置的右栏编辑表单。
+/// 设置窗口（编辑器-全局部分）：构建供应商与模型等全局配置的右栏编辑表单。
 /// </summary>
 public partial class SettingsWindow
 {
@@ -216,88 +216,6 @@ public partial class SettingsWindow
             SetHint("已添加自定义模型。", false);
         };
         host.Children.Add(addBtn);
-    }
-
-    // ---------------- A2A 编辑器 ----------------
-
-    /// <summary>
-    /// A2A 编辑器：服务端条目（server.json）与客户端条目（client.&lt;name&gt;.json）。
-    /// 角色由工作区文件是否存在决定，不使用独立开关。
-    /// </summary>
-    private void BuildA2AEditor(StackPanel host, string key)
-    {
-        if (IsGlobal || SelectedWorkspace == null)
-        {
-            host.Children.Add(new TextBlock
-            {
-                Text = "A2A 配置仅作用于工作区。请先在顶栏选择一个工作区。",
-                FontSize = 12,
-                Foreground = Brush.Parse("#8A8A8A"),
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 16, 0, 0),
-            });
-            return;
-        }
-
-        var root = SelectedWorkspace.RootPath;
-
-        if (key == "server")
-        {
-            var cfg = _vm.A2a.ReadServer(root) ?? new A2AWorkspaceFile();
-            host.Children.Add(new TextBlock
-            {
-                Text = "服务端角色（server.json）：存在该文件即对外开放 A2A 端点。",
-                FontSize = 12,
-                Foreground = Brushes.White,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8),
-            });
-
-            SetField("Host", AddField(host, "Host（仅回环：127.0.0.1 / ::1）",
-                string.IsNullOrWhiteSpace(cfg.Host) ? "127.0.0.1" : cfg.Host));
-            SetField("Port", AddField(host, "Port（0 = 随机可用端口）", (cfg.Port ?? 0).ToString()));
-            SetField("Path", AddField(host, "Path（端点前缀）",
-                string.IsNullOrWhiteSpace(cfg.Path) ? "/a2a" : cfg.Path));
-            SetField("RequireApiKey", AddToggle(host, "要求 API Key（X-Api-Key）", cfg.RequireApiKey ?? true));
-            SetField("ApiKeys", AddField(host, "ApiKeys（一行一个）",
-                string.Join(Environment.NewLine, cfg.ApiKeys ?? new List<string>()), multiline: true, height: 80));
-            SetField("AgentName", AddField(host, "AgentName（对外名称）",
-                string.IsNullOrWhiteSpace(cfg.AgentName) ? "luban-agent" : cfg.AgentName));
-            SetField("AgentDescription", AddField(host, "AgentDescription（可选）", cfg.AgentDescription ?? ""));
-            SetField("AgentVersion", AddField(host, "AgentVersion",
-                string.IsNullOrWhiteSpace(cfg.AgentVersion) ? "1.0.0" : cfg.AgentVersion));
-            return;
-        }
-
-        // 客户端文件
-        var fallbackName = Path.GetFileNameWithoutExtension(key);
-        var client = _vm.A2a.ReadClient(root, key)
-            ?? new A2AWorkspaceFile { Mode = "client", Name = fallbackName };
-
-        host.Children.Add(new TextBlock
-        {
-            Text = $"客户端角色（{key}）：连接一个远端 A2A agent。",
-            FontSize = 12,
-            Foreground = Brushes.White,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
-
-        SetField("Name", AddField(host, "Name（唯一标识，用于编排角色路由）", client.Name ?? fallbackName));
-        SetField("Endpoint", AddField(host, "Endpoint（远端基址，如 https://host/a2a）", client.Endpoint ?? ""));
-        SetField("ApiKey", AddPasswordField(host, "ApiKey（明文，勿提交版本库）", client.ApiKey));
-        SetField("RegisterAsSubAgent", AddToggle(host, "注册为本地 SubAgent 角色（registerAsSubAgent）", client.RegisterAsSubAgent ?? false));
-        SetField("RemoteAgentName", AddField(host, "RemoteAgentName（可选）", client.RemoteAgentName ?? ""));
-        SetField("AllowAll", AddToggle(host, "AllowAll（对外身份声明）", client.AllowAll ?? false));
-
-        host.Children.Add(new TextBlock
-        {
-            Text = "安全提示：工作区 client*.json 中的 apiKey 为明文，建议将 .luban-agent/a2a/ 加入 .gitignore。",
-            FontSize = 10,
-            Foreground = Brush.Parse("#8A8A8A"),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 8, 0, 0),
-        });
     }
 
     // ---------------- 云效连接编辑器（外部集成） ----------------

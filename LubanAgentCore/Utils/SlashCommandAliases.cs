@@ -18,7 +18,7 @@ namespace LubanAgentCore.Utils;
 
 /// <summary>
 /// 斜杠命令子命令简写展开规则。歧义简写（如 <c>-s</c>）按命令区分：
-/// <c>/a2a</c> 为 <c>-server</c>，LLM Wiki 为 <c>-search</c>，其余为 <c>-switch</c>。
+/// LLM Wiki 为 <c>-search</c>，其余为 <c>-switch</c>。
 /// </summary>
 public static class SlashCommandAliases
 {
@@ -33,7 +33,6 @@ public static class SlashCommandAliases
         if (parts.Length == 0) return parts;
 
         var isLlmWiki = IsLlmWikiCommand(cmd);
-        var isA2A = cmd == "/a2a";
 
         var result = new string[parts.Length];
         result[0] = parts[0];
@@ -46,9 +45,9 @@ public static class SlashCommandAliases
                 "-a" => "-add",
                 "-u" => "-update",
                 "-d" => "-delete",
-                "-s" => isA2A ? "-server" : (isLlmWiki ? "-search" : "-switch"),
+                "-s" => isLlmWiki ? "-search" : "-switch",
                 "-i" when isLlmWiki => "-index",
-                "-c" => isA2A ? "-client" : "-clear",
+                "-c" => "-clear",
                 "-n" => "-new",
                 "-t" => "-tools",
                 _ => parts[i]

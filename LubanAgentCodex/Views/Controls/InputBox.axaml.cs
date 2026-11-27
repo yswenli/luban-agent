@@ -368,7 +368,9 @@ public partial class InputBox : UserControl
             return;
         }
 
-        var matches = _commandCatalog.MatchByPrefix(trimmed, SlashCommandClient.Codex);
+        var matches = _commandCatalog.MatchByPrefix(trimmed, SlashCommandClient.Codex)
+            .ExcludeRemoved(c => c.Name)
+            .ToList();
         _completionItems = matches;
 
         if (matches.Count == 0)

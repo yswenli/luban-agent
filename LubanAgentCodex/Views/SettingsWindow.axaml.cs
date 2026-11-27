@@ -11,7 +11,7 @@
 *创建人：yswenli
 *电子邮箱：yswenli@outlook.com
 *创建时间：2026/9/4
-*描述：三栏 IDE 风设置窗，合并「工作区配置（技能/规则/MCP/A2A）」与「供应商与模型/云效连接」两类配置。
+*描述：三栏 IDE 风设置窗，合并「工作区配置（技能/规则/MCP）」与「供应商与模型/云效连接」两类配置。
 *      左栏为分类导航，顶栏为作用域下拉（工作区类）或全局说明（供应商/模型类），
 *      中栏条目列表，右栏编辑器。
 *
@@ -28,7 +28,7 @@
 namespace LubanAgentCodex.Views;
 
 /// <summary>
-/// 统一设置中心：编辑工作区作用域下 <c>.luban-agent</c> 的 skills/rules/mcps/a2a，
+/// 统一设置中心：编辑工作区作用域下 <c>.luban-agent</c> 的 skills/rules/mcps，
 /// 以及全局 <c>config.json</c> 中的供应商、模型与云效连接。
 /// </summary>
 public partial class SettingsWindow : Window

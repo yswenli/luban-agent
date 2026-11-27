@@ -13,7 +13,7 @@ namespace LubanAgentCore.Client;
 /// 客户端到 WebHost 的连接。
 /// </summary>
 /// <remarks>
-/// 会话、工作区、知识库、对话与 A2A 状态都经本对象里的实现转发给 WebHost。
+/// 会话、工作区、知识库与对话都经本对象里的实现转发给 WebHost。
 /// 宿主是独立服务：<see cref="DisposeAsync"/> 只释放连接，不结束宿主进程
 /// （自动拉起或接管的实例都会继续常驻，停止用 <c>LubanAgentWebHost --stop</c>）。
 /// </remarks>
@@ -37,7 +37,6 @@ public sealed class AgentClientConnection : IAsyncDisposable
         Sessions = sessions;
         Workspaces = workspaces;
         LlmWiki = new HttpLlmWikiManagementService(client);
-        A2AStatus = new HttpA2AStatusProvider(client);
         _launcher = launcher;
     }
 
@@ -55,9 +54,6 @@ public sealed class AgentClientConnection : IAsyncDisposable
 
     /// <summary>LLM Wiki 知识库管理的 HTTP 实现。</summary>
     public HttpLlmWikiManagementService LlmWiki { get; }
-
-    /// <summary>A2A 运行状态的 HTTP 实现（只读）。</summary>
-    public HttpA2AStatusProvider A2AStatus { get; }
 
     /// <summary>
     /// 创建绑定到本连接的宿主实现。
@@ -89,11 +85,9 @@ public sealed class AgentClientConnection : IAsyncDisposable
         services.AddSingleton<HttpSessionWorkspaceQuery>();
         services.AddSingleton<HttpSessionMessageQuery>();
         services.AddSingleton(LlmWiki);
-        services.AddSingleton(A2AStatus);
         services.ReplaceScoped<ISessionManager>(_ => Sessions);
         services.ReplaceScoped<IWorkspaceManager>(_ => Workspaces);
         services.ReplaceScoped<ILlmWikiManagementService>(_ => LlmWiki);
-        services.ReplaceScoped<IA2AStatusProvider>(_ => A2AStatus);
         // 查询缝在原注册里是单例：用 ReplaceSingleton 保持生存期一致，避免降为 scoped 后
         // 被单例消费者形成 captive dependency
         services.ReplaceSingleton<ISessionWorkspaceQuery>(sp => sp.GetRequiredService<HttpSessionWorkspaceQuery>());

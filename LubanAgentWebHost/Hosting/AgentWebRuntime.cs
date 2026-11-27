@@ -129,11 +129,9 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         }
 
         var notices = new List<string>();
-        // 首启工作区落在 Web 自己的数据目录下，与机器级工作区根目录白名单（默认 ~/.luban-agent）保持一致
-        await AgentHostBuilder.InitializeWorkspaceAsync(
-            scope,
-            notices,
-            Path.Combine(AgentHome.WorkspacesDirectory, "default"));
+        // 首启不隐式创建工作区：多用户共享宿主时，同一个默认目录会让不同用户静默共用。
+        // 用户自己在左侧「新建项目」建，位置仍受机器级工作区根目录白名单约束。
+        await AgentHostBuilder.InitializeWorkspaceAsync(scope, notices, createDefault: false);
         foreach (var notice in notices)
         {
             Log(notice);
@@ -154,20 +152,6 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         catch (Exception ex)
         {
             Log("worktree 启动对账失败：" + ex.Message);
-        }
-
-        // A2A：工作区确定后按工作区并集配置启动服务端/客户端角色（未启用时为 no-op）
-        try
-        {
-            var lifecycle = scope.GetService<IA2ALifecycle>();
-            if (lifecycle is not null)
-            {
-                await lifecycle.StartAsync(workspaceManager.CurrentWorkspace?.RootPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log("启动 A2A 失败：" + ex.Message);
         }
 
         await PluginBootstrap.InitializeAsync(scope, Log, PluginRoots());

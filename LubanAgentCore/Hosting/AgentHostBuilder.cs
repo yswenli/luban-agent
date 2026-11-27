@@ -259,8 +259,12 @@ public static class AgentHostBuilder
     /// 首次启动隐式创建的工作区路径；为空时用 <see cref="WorkspaceStartupDefaults.SuggestRootPath"/>。
     /// 宿主可传入自身数据目录下的路径，使自动建的工作区落在其工作区根目录白名单内。
     /// </param>
+    /// <param name="createDefault">
+    /// 当前用户没有任何工作区时是否隐式创建一个；<c>false</c> 只切换到既有工作区，
+    /// 没有就保持无工作区状态（Web 端由用户自己新建）。
+    /// </param>
     public static async Task InitializeWorkspaceAsync(
-        DiContainer sp, List<string> notices, string? defaultRootPath = null)
+        DiContainer sp, List<string> notices, string? defaultRootPath = null, bool createDefault = true)
     {
         try
         {
@@ -275,6 +279,13 @@ public static class AgentHostBuilder
             string workspaceId;
             if (existing == null)
             {
+                if (!createDefault)
+                {
+                    // 交给用户自己新建：不隐式锚定任何目录，避免多用户共享同一个默认目录
+                    notices.Add("尚未创建工作区，请在左侧「新建项目」");
+                    return;
+                }
+
                 var rootPath = string.IsNullOrWhiteSpace(defaultRootPath)
                     ? WorkspaceStartupDefaults.SuggestRootPath()
                     : defaultRootPath;

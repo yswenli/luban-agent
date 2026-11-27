@@ -22,7 +22,7 @@ public sealed record SettingsKeyRequest
     /// <summary>作用域（<c>global</c> 或工作区标识）。</summary>
     public string Scope { get; init; } = "global";
 
-    /// <summary>条目键（技能目录名 / 规则 Id / MCP 名 / A2A 文件名）。</summary>
+    /// <summary>条目键（技能目录名 / 规则 Id / MCP 名）。</summary>
     public string Key { get; init; } = string.Empty;
 }
 

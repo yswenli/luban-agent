@@ -305,30 +305,4 @@ public static class AgentApiRoutes
         /// <summary>清空文件与切块索引。</summary>
         public const string Clear = "/llmwiki/clear";
     }
-
-    /// <summary>A2A 协作接口。</summary>
-    /// <remarks>A2A 运行时只在 WebHost 启动，客户端能读到的只有状态（启停由宿主进程负责）。</remarks>
-    public static class A2A
-    {
-        /// <summary>读取 A2A 运行状态。</summary>
-        public const string Status = "/a2a/status";
-
-        /// <summary>读取工作区服务端配置。</summary>
-        public const string GetServer = "/a2a/getServer";
-
-        /// <summary>保存工作区服务端配置。</summary>
-        public const string SaveServer = "/a2a/saveServer";
-
-        /// <summary>列出工作区客户端配置。</summary>
-        public const string ListClients = "/a2a/listClients";
-
-        /// <summary>读取单个客户端配置。</summary>
-        public const string GetClient = "/a2a/getClient";
-
-        /// <summary>保存客户端配置。</summary>
-        public const string SaveClient = "/a2a/saveClient";
-
-        /// <summary>删除 A2A 配置（<c>server</c> 或客户端文件名）。</summary>
-        public const string DeleteClient = "/a2a/deleteClient";
-    }
 }
