@@ -5,9 +5,9 @@
 *文件名： SessionClearScopeUnitTest
 *创建时间：2026/11/26
 *描述：清空会话的范围判定单测——
-*      ① 显式清全部：指定工作区只决定补建落点，无效则回退当前工作区；
-*      ② 无目标无当前工作区沿用旧语义清全部且不补建；
-*      ③ 指定工作区：只清该区，仅当前工作区才补建，非本人工作区直接拒绝。
+*      ① 显式清全部：指定工作区只决定补建落点，无效或未指定则不补建；
+*      ② 未指定工作区且非清全部：要求调用方显式指定工作区；
+*      ③ 指定工作区：只清该区、不补建，非本人工作区直接拒绝。
 *      纯计算，不触碰 LuBanOrm / WebApi 静态宿主。
 *
 *****************************************************************************/
@@ -29,40 +29,40 @@ public class SessionClearScopeUnitTest
     // ---------------- 显式清全部 ----------------
 
     [TestMethod]
-    public void All_RebuildsCurrentWorkspaceWhenNoTarget()
-    {
-        var scope = SessionClearScope.Resolve(true, null, "ws-a", Owns("ws-a"));
-
-        Assert.IsTrue(scope.ClearAll);
-        Assert.IsNull(scope.WorkspaceId);
-        Assert.AreEqual("ws-a", scope.RebuildWorkspaceId);
-        Assert.IsNull(scope.MissingWorkspaceId);
-    }
-
-    [TestMethod]
     public void All_RebuildsRequestedWorkspaceWhenOwned()
     {
-        var scope = SessionClearScope.Resolve(true, " ws-b ", "ws-a", Owns("ws-a", "ws-b"));
+        var scope = SessionClearScope.Resolve(true, " ws-b ", Owns("ws-a", "ws-b"));
 
         Assert.IsTrue(scope.ClearAll);
         Assert.IsNull(scope.WorkspaceId);
-        Assert.AreEqual("ws-b", scope.RebuildWorkspaceId, "远端调用方的当前工作区应作为补建落点");
+        Assert.AreEqual("ws-b", scope.RebuildWorkspaceId);
+        Assert.IsNull(scope.MissingWorkspaceId);
+        Assert.IsFalse(scope.WorkspaceRequired);
     }
 
     [TestMethod]
-    public void All_FallsBackToCurrentWorkspaceWhenTargetNotOwned()
+    public void All_DoesNotRebuildWithoutTarget()
     {
-        var scope = SessionClearScope.Resolve(true, "ws-x", "ws-a", Owns("ws-a"));
+        var scope = SessionClearScope.Resolve(true, null, Owns("ws-a"));
 
         Assert.IsTrue(scope.ClearAll);
-        Assert.AreEqual("ws-a", scope.RebuildWorkspaceId);
-        Assert.IsNull(scope.MissingWorkspaceId);
+        Assert.IsNull(scope.RebuildWorkspaceId);
+    }
+
+    [TestMethod]
+    public void All_DoesNotRebuildWhenTargetNotOwned()
+    {
+        var scope = SessionClearScope.Resolve(true, "ws-x", Owns("ws-a"));
+
+        Assert.IsTrue(scope.ClearAll);
+        Assert.IsNull(scope.RebuildWorkspaceId);
+        Assert.IsNull(scope.MissingWorkspaceId, "清全部时无效落点只跳过补建，不报工作区不存在");
     }
 
     [TestMethod]
     public void All_DoesNotRebuildWithoutAnyWorkspace()
     {
-        var scope = SessionClearScope.Resolve(true, null, null, Owns());
+        var scope = SessionClearScope.Resolve(true, null, Owns());
 
         Assert.IsTrue(scope.ClearAll);
         Assert.IsNull(scope.RebuildWorkspaceId);
@@ -71,50 +71,43 @@ public class SessionClearScopeUnitTest
     // ---------------- 未指定工作区 ----------------
 
     [TestMethod]
-    public void Implicit_CurrentWorkspaceClearsOnlyThatWorkspaceAndRebuilds()
+    public void Workspace_RequiredWhenNotSpecified()
     {
-        var scope = SessionClearScope.Resolve(false, null, "ws-a", Owns("ws-a"));
+        var scope = SessionClearScope.Resolve(false, null, Owns("ws-a"));
 
         Assert.IsFalse(scope.ClearAll);
-        Assert.AreEqual("ws-a", scope.WorkspaceId);
-        Assert.AreEqual("ws-a", scope.RebuildWorkspaceId);
+        Assert.IsTrue(scope.WorkspaceRequired);
+        Assert.IsNull(scope.WorkspaceId);
+        Assert.IsNull(scope.RebuildWorkspaceId);
     }
 
     [TestMethod]
-    public void Implicit_NoCurrentWorkspaceKeepsLegacyClearAllWithoutRebuild()
+    public void Workspace_RequiredWhenBlank()
     {
-        var scope = SessionClearScope.Resolve(false, "   ", null, Owns());
+        var scope = SessionClearScope.Resolve(false, "   ", Owns());
 
-        Assert.IsTrue(scope.ClearAll, "无目标且无当前工作区时沿用旧语义清全部");
-        Assert.IsNull(scope.RebuildWorkspaceId);
+        Assert.IsFalse(scope.ClearAll);
+        Assert.IsTrue(scope.WorkspaceRequired);
+        Assert.IsNull(scope.MissingWorkspaceId);
     }
 
     // ---------------- 指定工作区 ----------------
 
     [TestMethod]
-    public void Workspace_OtherWorkspaceClearsWithoutTouchingCurrentSession()
+    public void Workspace_ClearsOnlyTargetWithoutRebuild()
     {
-        var scope = SessionClearScope.Resolve(false, "ws-b", "ws-a", Owns("ws-a", "ws-b"));
+        var scope = SessionClearScope.Resolve(false, "ws-b", Owns("ws-a", "ws-b"));
 
         Assert.IsFalse(scope.ClearAll);
         Assert.AreEqual("ws-b", scope.WorkspaceId);
-        Assert.IsNull(scope.RebuildWorkspaceId, "清理非当前工作区不应补建");
-    }
-
-    [TestMethod]
-    public void Workspace_CurrentWorkspaceRebuilds()
-    {
-        var scope = SessionClearScope.Resolve(false, "ws-a", "ws-a", Owns("ws-a"));
-
-        Assert.IsFalse(scope.ClearAll);
-        Assert.AreEqual("ws-a", scope.WorkspaceId);
-        Assert.AreEqual("ws-a", scope.RebuildWorkspaceId);
+        Assert.IsNull(scope.RebuildWorkspaceId, "按项目清理后不自动补建空会话");
+        Assert.IsFalse(scope.WorkspaceRequired);
     }
 
     [TestMethod]
     public void Workspace_NotOwnedReportsMissing()
     {
-        var scope = SessionClearScope.Resolve(false, "ws-x", "ws-a", Owns("ws-a"));
+        var scope = SessionClearScope.Resolve(false, "ws-x", Owns("ws-a"));
 
         Assert.IsFalse(scope.ClearAll);
         Assert.IsNull(scope.WorkspaceId);

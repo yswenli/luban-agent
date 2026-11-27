@@ -51,25 +51,25 @@ public static class WebAttachmentService
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
 
-        var workspaceManager = scope.GetRequiredService<IWorkspaceManager>();
-        WorkspaceInfo? workspace = null;
-        if (!string.IsNullOrWhiteSpace(input.SessionId))
+        if (string.IsNullOrWhiteSpace(input.SessionId))
         {
-            var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
-                .GetSessionWorkspaceIdAsync(input.SessionId.Trim(), WebApi.UserId)
-                .ConfigureAwait(false);
-            if (workspaceId is null)
-            {
-                return WebApi.FailJson(404, "会话不存在或未绑定工作区");
-            }
-
-            workspace = await workspaceManager.GetWorkspaceAsync(workspaceId).ConfigureAwait(false);
+            return WebApi.FailJson(400, "sessionId 不能为空");
         }
 
-        workspace ??= workspaceManager.CurrentWorkspace;
+        var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
+            .GetSessionWorkspaceIdAsync(input.SessionId.Trim(), WebApi.UserId)
+            .ConfigureAwait(false);
+        if (workspaceId is null)
+        {
+            return WebApi.FailJson(404, "会话不存在或未绑定工作区");
+        }
+
+        var workspace = await scope.GetRequiredService<IWorkspaceManager>()
+            .GetWorkspaceAsync(workspaceId)
+            .ConfigureAwait(false);
         if (workspace is null)
         {
-            return WebApi.FailJson(400, "尚未选择工作区，无法暂存附件");
+            return WebApi.FailJson(404, "工作区不存在或已被删除");
         }
 
         var directory = Path.Combine(

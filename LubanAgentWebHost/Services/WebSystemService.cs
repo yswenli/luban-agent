@@ -66,7 +66,6 @@ public static class WebSystemService
             WebApi.UserId,
             Version,
             workspaces.Select(WorkspaceMapping.ToDto).ToList(),
-            workspaceManager.CurrentWorkspace?.WorkspaceId,
             providers,
             providerId is null && modelId is null ? null : new ModelSelectionDto(providerId, modelId),
             Enum.GetValues<ToolPermissionMode>()

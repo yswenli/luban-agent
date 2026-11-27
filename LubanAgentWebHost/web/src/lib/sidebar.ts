@@ -122,7 +122,7 @@ export function toggleSidebarCollapsed(): void {
 /**
  * 左栏项目二级菜单的展开集合与选中项目。
  *
- * 都是纯前端状态：与后端「当前工作区」无关，多个标签页各记各的。
+ * 都是纯前端状态：多个标签页各记各的，与后端无关。
  * 解析失败（隐私模式、旧格式）一律按默认值处理，不让损坏的 localStorage 卡住首屏。
  */
 export function readExpandedProjects(): string[] {

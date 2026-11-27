@@ -22,11 +22,6 @@ public sealed class WorkspaceController : Controller
     [HttpGet]
     public Task<ActionResult> List() => WebWorkspaceService.ListAsync();
 
-    /// <summary>当前工作区。</summary>
-    /// <returns>工作区；未设置时 data 为 null。</returns>
-    [HttpGet]
-    public Task<ActionResult> Current() => WebWorkspaceService.CurrentAsync();
-
     /// <summary>按根目录取工作区。</summary>
     /// <param name="rootPath">根目录路径。</param>
     /// <returns>工作区；不存在时 data 为 null。</returns>
@@ -108,12 +103,6 @@ public sealed class WorkspaceController : Controller
     /// <returns><c>{deleted:true}</c>。</returns>
     [HttpPost]
     public Task<ActionResult> DeleteGitCredential(string payload) => WebWorkspaceService.DeleteGitCredentialAsync(payload);
-
-    /// <summary>切换工作区。</summary>
-    /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>
-    /// <returns>切换后的工作区。</returns>
-    [HttpPost]
-    public Task<ActionResult> Switch(string payload) => WebWorkspaceService.SwitchAsync(payload);
 
     /// <summary>删除工作区（级联清理会话与知识库索引）。</summary>
     /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>

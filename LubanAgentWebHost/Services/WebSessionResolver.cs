@@ -30,6 +30,7 @@ public sealed record SessionResolution(bool Ok, int Code, string? Error, string 
 /// <remarks>
 /// 未指定会话时复用该用户最近活跃的会话；一个都没有时新建并标记 <c>created</c>，
 /// 不静默新建替代「指定但不存在」的会话（后者按 404 处理）。
+/// 补建需要落点工作区：取该用户最近活跃的项目；一个项目都没有时按 400「请先创建项目」拒绝。
 /// 「查最近 + 补建」由调用方提供的 <paramref name="creationGate"/> 串行化：并发请求同时发现无会话时只补建一条。
 /// </remarks>
 public static class WebSessionResolver
@@ -100,7 +101,18 @@ public static class WebSessionResolver
                 return SessionResolution.Success(latest.SessionId, false);
             }
 
-            var workspaceId = services.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId;
+            var workspaces = await services.GetRequiredService<IWorkspaceManager>()
+                .GetUserWorkspacesAsync()
+                .ConfigureAwait(false);
+            var workspaceId = workspaces
+                .OrderByDescending(item => item.LastActiveAt ?? DateTime.MinValue)
+                .Select(item => item.WorkspaceId)
+                .FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return SessionResolution.Fail(400, "请先创建项目");
+            }
+
             var created = await sessions.CreateSessionAsync(null, workspaceId).ConfigureAwait(false);
             return SessionResolution.Success(created.SessionId, true);
         }

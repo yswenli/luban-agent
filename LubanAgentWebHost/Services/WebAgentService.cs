@@ -19,6 +19,9 @@ public static class WebAgentService
 
     private const string CancelledMessage = "本轮对话已取消";
 
+    /// <summary>会话未绑定工作区时的拒绝对话文案（历史遗留会话只能查看与删除）。</summary>
+    private const string SessionUnbound = "会话未绑定工作区，无法继续对话";
+
     /// <summary>提示词改写的输入上限（字符数），超长直接拒绝，避免用户误把长文档丢进来。</summary>
     private const int MaxOptimizeChars = 4000;
 
@@ -72,6 +75,13 @@ public static class WebAgentService
         if (!resolution.Ok)
         {
             return WebApi.FailJson(resolution.Code, resolution.Error ?? "会话解析失败");
+        }
+
+        if (await scope.GetRequiredService<ISessionWorkspaceQuery>()
+                .GetSessionWorkspaceIdAsync(resolution.SessionId, WebApi.UserId)
+                .ConfigureAwait(false) is null)
+        {
+            return WebApi.FailJson(409, SessionUnbound);
         }
 
         var request = new AgentRunRequest
@@ -180,6 +190,13 @@ public static class WebAgentService
             if (!resolution.Ok)
             {
                 return WebApi.FailJson(resolution.Code, resolution.Error ?? "会话解析失败");
+            }
+
+            if (await probe.GetRequiredService<ISessionWorkspaceQuery>()
+                    .GetSessionWorkspaceIdAsync(resolution.SessionId, userId)
+                    .ConfigureAwait(false) is null)
+            {
+                return WebApi.FailJson(409, SessionUnbound);
             }
         }
 

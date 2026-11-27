@@ -163,30 +163,15 @@ export async function refreshWorkspaces(): Promise<void> {
 }
 
 /**
- * 同步后端「当前工作区」指针。
- *
- * 阶段 A 暂时保留：文件读写 / 附件上传在缺少 `workspaceId` 时仍按该指针回落。
- * 阶段 B 删除该概念后，本函数连同 `/workspace/switch` 一起移除。
- */
-async function switchWorkspace(workspaceId: string): Promise<void> {
-  try {
-    await post('/workspace/switch', { workspaceId });
-  } catch (error) {
-    showToast((error as Error).message, 'error');
-  }
-}
-
-/**
  * 左栏选中项目。
  *
- * 只是前端选中态（并按阶段 A 约定同步后端指针），不改变展开集合——
- * 展开/收起由 `toggleProjectExpanded` 单独维护，这样「收起但保持选中」也能成立。
+ * 只改前端选中态，不改变展开集合——展开/收起由 `toggleProjectExpanded`
+ * 单独维护，这样「收起但保持选中」也能成立。
  */
 export function selectProject(workspaceId: string | null): void {
   if (selectedProjectId() === workspaceId) return;
   setSelectedProjectId(workspaceId);
   persistSelectedProject(workspaceId);
-  if (workspaceId && workspaceId !== UNASSIGNED_PROJECT) void switchWorkspace(workspaceId);
 }
 
 /** 展开某个项目的会话子树。 */
@@ -363,10 +348,10 @@ export async function createSession(title?: string): Promise<string | null> {
 }
 
 /**
- * 在指定工作区新建会话，不改变后端「当前工作区」。
+ * 在指定工作区新建会话。
  *
- * 知识库会话归属知识库工作区，但首页不展示知识库项目；若复用 `createSession`
- * 先切工作区，之后首页「新建会话」会莫名落进知识库。
+ * 知识库会话归属知识库工作区，但首页不展示知识库项目；传显式 `workspaceId`
+ * 可保证会话落进目标项目，不会误落到首页当前选中的项目。
  */
 export async function createSessionInWorkspace(workspaceId: string | null, title?: string): Promise<string | null> {
   try {

@@ -12,7 +12,7 @@ namespace LubanAgentWebHost.Models;
 /// <summary>附件上传请求。</summary>
 public sealed record AttachmentUploadRequest
 {
-    /// <summary>目标会话；为空时落到当前工作区。</summary>
+    /// <summary>目标会话；必填，为空按 400 拒绝（不回落任何工作区）。</summary>
     public string? SessionId { get; init; }
 
     /// <summary>待上传文件。</summary>

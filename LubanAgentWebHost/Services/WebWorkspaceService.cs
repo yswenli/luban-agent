@@ -29,15 +29,6 @@ public static class WebWorkspaceService
         return WebApi.OkJson(workspaces.Select(WorkspaceMapping.ToDto).ToList());
     });
 
-    /// <summary>当前工作区。</summary>
-    /// <returns>工作区；未设置时 data 为 null。</returns>
-    public static Task<ActionResult> CurrentAsync() => WebApi.RunGuardedAsync(async () =>
-    {
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var current = scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace;
-        return WebApi.OkJson(current is null ? null : WorkspaceMapping.ToDto(current));
-    });
-
     /// <summary>按根目录取工作区。</summary>
     /// <param name="rootPath">根目录路径。</param>
     /// <returns>工作区；不存在时 data 为 null。</returns>
@@ -1287,30 +1278,6 @@ public static class WebWorkspaceService
         return deleted > 0
             ? WebApi.OkJson(new { deleted = true })
             : WebApi.FailJson(404, "凭据不存在");
-    });
-
-    /// <summary>切换工作区。</summary>
-    /// <param name="payload">包装后的 <see cref="WorkspaceIdRequest"/> JSON。</param>
-    /// <returns>切换后的工作区。</returns>
-    public static Task<ActionResult> SwitchAsync(string payload) => WebApi.RunGuardedAsync(async () =>
-    {
-        if (!WebApi.TryReadPayload<WorkspaceIdRequest>(payload, out var input)
-            || string.IsNullOrWhiteSpace(input?.WorkspaceId))
-        {
-            return WebApi.FailJson(400, "workspaceId 不能为空");
-        }
-
-        await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var manager = scope.GetRequiredService<IWorkspaceManager>();
-        var target = await manager.GetWorkspaceAsync(input!.WorkspaceId.Trim()).ConfigureAwait(false);
-        if (target is null)
-        {
-            return WebApi.FailJson(404, "工作区不存在");
-        }
-
-        await manager.SwitchWorkspaceAsync(target.WorkspaceId).ConfigureAwait(false);
-        var current = manager.CurrentWorkspace ?? target;
-        return WebApi.OkJson(WorkspaceMapping.ToDto(current));
     });
 
     /// <summary>删除工作区（物理清理会话、索引与 .luban-agent 配置目录，保留根目录文件）。</summary>

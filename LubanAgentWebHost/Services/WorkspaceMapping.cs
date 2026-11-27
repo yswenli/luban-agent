@@ -19,7 +19,7 @@ public static class WorkspaceMapping
     /// <returns>对外模型。</returns>
     /// <remarks>
     /// <c>HasGit</c> 来自根目录的一次存在性探测（<see cref="WorkspaceGit.IsRepository"/>）：
-    /// 工作区列表、当前工作区、创建 / 切换 / 重命名等所有出参都在这里映射，
+    /// 工作区列表、创建 / 重命名 / 删除等所有出参都在这里映射，
     /// 放在单一映射点避免各服务各写一遍、口径不一致。
     /// </remarks>
     public static WorkspaceDto ToDto(WorkspaceInfo workspace) => new(

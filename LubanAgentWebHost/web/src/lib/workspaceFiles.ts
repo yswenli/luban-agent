@@ -22,7 +22,7 @@ export interface WorkspaceListing {
  * 列举工作区内某个目录的直接子项。
  *
  * `showIgnored` 为假时后端会跳过 `.git`、`node_modules`、`bin`、`obj` 等目录；
- * 未绑定工作区（`workspaceId` 为空）时后端回落到宿主当前工作区，与 `/file/read` 同口径。
+ * `workspaceId` 必传，后端按它定位项目根目录。
  */
 export function listWorkspaceDir(
   workspaceId: string | null | undefined,

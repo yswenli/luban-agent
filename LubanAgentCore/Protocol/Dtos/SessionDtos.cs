@@ -23,8 +23,8 @@ public sealed record SessionCreateRequest
 public sealed record SessionClearAllRequest
 {
     /// <summary>
-    /// 目标工作区；为空表示当前工作区，当前工作区也为空时按清全部处理。
-    /// <see cref="AllWorkspaces"/> 为 true 时仅作为清空后重建新会话的绑定目标（省略或不属于当前用户时用宿主当前工作区）。
+    /// 目标工作区。<see cref="AllWorkspaces"/> 为 true 时仅作为清空后重建新会话的绑定目标
+    /// （省略或不属于当前用户时不重建）；否则必填，只清该工作区的会话且不重建。
     /// </summary>
     public string? WorkspaceId { get; init; }
 

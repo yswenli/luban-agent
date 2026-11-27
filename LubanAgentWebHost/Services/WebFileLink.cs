@@ -29,7 +29,7 @@ public static class WebFileLink
     /// 拼出宿主文件接口的绝对地址。
     /// </summary>
     /// <param name="baseAddress">宿主基地址，形如 <c>http://192.168.3.215:18080</c>。</param>
-    /// <param name="workspaceId">工作区标识；为空时链接不带该参数（文件接口回落当前工作区）。</param>
+    /// <param name="workspaceId">工作区标识；为空时链接不带该参数（文件接口按 400 拒绝，不回落任何项目）。</param>
     /// <param name="rootPath">工作区根目录。</param>
     /// <param name="path">模型给出的文件路径：相对工作区根，或工作区内绝对路径。</param>
     /// <param name="link">成功时的绝对地址。</param>

@@ -935,7 +935,7 @@ export function ChatPage(props: { sessionId: string }) {
                 </div>
               </Show>
 
-              {/* 会话没绑工作区时传 undefined（不改写相对链接）：让宿主回落到「当前工作区」会读到另一个项目的同名文件 */}
+              {/* 会话没绑工作区时传 undefined（不改写相对链接）：文件接口要求 workspaceId，链接会按「缺少工作区」提示，不会读到别的项目的同名文件 */}
               <Index each={chat.items()}>{(item) => <ChatRow
                 item={item}
                 workspaceId={session()?.workspaceId ?? undefined}

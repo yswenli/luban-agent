@@ -13,7 +13,6 @@ namespace LubanAgentWebHost.Models;
 /// <param name="UserId">当前宿主身份。</param>
 /// <param name="Version">程序集信息版本。</param>
 /// <param name="Workspaces">工作区列表。</param>
-/// <param name="CurrentWorkspaceId">当前工作区标识；未设置时为 null。</param>
 /// <param name="Providers">供应商与模型（不含密钥）。</param>
 /// <param name="Selection">当前全局模型选择。</param>
 /// <param name="PermissionModes">权限模式清单。</param>
@@ -26,7 +25,6 @@ public sealed record BootstrapDto(
     string UserId,
     string? Version,
     IReadOnlyList<WorkspaceDto> Workspaces,
-    string? CurrentWorkspaceId,
     IReadOnlyList<ProviderSummaryDto> Providers,
     ModelSelectionDto? Selection,
     IReadOnlyList<PermissionModeDto> PermissionModes,

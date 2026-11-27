@@ -172,9 +172,11 @@ public static class WebSessionService
         var input = WebApi.TryReadPayload<SessionCreateRequest>(payload, out var parsed) ? parsed : null;
 
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var workspaceId = string.IsNullOrWhiteSpace(input?.WorkspaceId)
-            ? scope.GetRequiredService<IWorkspaceManager>().CurrentWorkspace?.WorkspaceId
-            : input!.WorkspaceId.Trim();
+        var workspaceId = input?.WorkspaceId?.Trim();
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return WebApi.FailJson(400, "workspaceId 不能为空");
+        }
 
         var session = await scope.GetRequiredService<ISessionManager>()
             .CreateSessionAsync(string.IsNullOrWhiteSpace(input?.Title) ? null : input!.Title!.Trim(), workspaceId)
@@ -463,8 +465,12 @@ public static class WebSessionService
         var clearScope = SessionClearScope.Resolve(
             input?.AllWorkspaces == true,
             input?.WorkspaceId,
-            workspaces.CurrentWorkspace?.WorkspaceId,
             ownedWorkspaceIds.Contains);
+
+        if (clearScope.WorkspaceRequired)
+        {
+            return WebApi.FailJson(400, "workspaceId 不能为空");
+        }
 
         if (clearScope.MissingWorkspaceId is not null)
         {
@@ -498,8 +504,7 @@ public static class WebSessionService
             return WebApi.FailJson(500, "当前会话管理器不支持按工作区清理");
         }
 
-        // 保持「有当前工作区必有当前会话」：清理范围覆盖当前工作区时该区会话已全被删除，
-        // 补建一个空会话，否则对话框失去持久化目标；清理其它工作区时 RebuildWorkspaceId 为 null，不动活动会话。
+        // 只有显式「清全部 + 指定工作区」才补建落点（远程客户端依赖）
         if (!string.IsNullOrWhiteSpace(clearScope.RebuildWorkspaceId))
         {
             await manager.CreateSessionAsync(title: "新会话", workspaceId: clearScope.RebuildWorkspaceId)
@@ -586,12 +591,12 @@ public static class WebSessionService
     };
 
     /// <summary>
-    /// 取会话所属工作区的根目录；只有「没有会话上下文」时才回落宿主当前工作区。
+    /// 取会话所属工作区的根目录。
     /// </summary>
     /// <remarks>
-    /// 会话绑定工作区后一旦解析不到（工作区被删除、会话被解绑），必须返回 null 而不是回落当前工作区：
-    /// 两者根目录不同（甚至可能是父子目录）时，用错误的根换算附件绝对路径会得到指向别处的相对路径，
-    /// 点击后 404 或打开错文件。返回 null 时附件按「不可点」降级。
+    /// 会话绑定工作区后一旦解析不到（工作区被删除、会话被解绑），必须返回 null：
+    /// 用错误的根换算附件绝对路径会得到指向别处的相对路径，点击后 404 或打开错文件。
+    /// 返回 null 时附件按「不可点」降级。没有会话上下文时同样返回 null。
     /// </remarks>
     /// <param name="scope">请求作用域。</param>
     /// <param name="sessionId">会话标识。</param>
@@ -600,10 +605,10 @@ public static class WebSessionService
     {
         var manager = scope.GetRequiredService<IWorkspaceManager>();
 
-        // 无会话上下文：附件按宿主当前工作区落盘，读取也用同一根换算
+        // 无会话上下文：没有可信的落盘根，附件按不可点降级
         if (string.IsNullOrWhiteSpace(sessionId))
         {
-            return manager.CurrentWorkspace?.RootPath;
+            return null;
         }
 
         var workspaceId = await scope.GetRequiredService<ISessionWorkspaceQuery>()
@@ -616,7 +621,7 @@ public static class WebSessionService
             return null;
         }
 
-        // 绑定的工作区可能已被删除：同样不回落当前工作区
+        // 绑定的工作区可能已被删除：同样返回 null
         var workspace = await manager.GetWorkspaceAsync(workspaceId).ConfigureAwait(false);
         return workspace?.RootPath;
     }

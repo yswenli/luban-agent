@@ -36,7 +36,7 @@ public static class WebFileService
     /// <summary>
     /// 读取工作区内文件原文。
     /// </summary>
-    /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
+    /// <param name="workspaceId">工作区标识；必填。</param>
     /// <param name="path">会话里链接的相对路径。</param>
     /// <returns>纯文本内容，或可用于浏览器直接展示的提示页。</returns>
     public static Task<ActionResult> ReadAsync(string? workspaceId, string? path) => WebApi.RunGuardedAsync(async () =>
@@ -47,11 +47,15 @@ public static class WebFileService
             return MessagePage(400, "缺少文件路径", "链接里没有可读取的文件路径。");
         }
 
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return MessagePage(400, "缺少工作区", "链接里没有工作区标识，无法定位文件所在项目。");
+        }
+
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var manager = scope.GetRequiredService<IWorkspaceManager>();
-        var workspace = string.IsNullOrWhiteSpace(workspaceId)
-            ? manager.CurrentWorkspace
-            : await manager.GetWorkspaceAsync(workspaceId.Trim()).ConfigureAwait(false);
+        var workspace = await scope.GetRequiredService<IWorkspaceManager>()
+            .GetWorkspaceAsync(workspaceId.Trim())
+            .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(workspace?.RootPath))
         {
@@ -131,7 +135,7 @@ public static class WebFileService
     /// 预览只放行文本、图片、音视频，下载要能取回 <c>.jar</c>、<c>.zip</c> 这类任意文件。
     /// 传输按流式交给 <see cref="BigDataResult"/>，不把大文件整段读进内存。
     /// </remarks>
-    /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
+    /// <param name="workspaceId">工作区标识；必填。</param>
     /// <param name="path">相对工作区根的文件路径。</param>
     /// <returns>二进制流；路径越界或文件不存在时回提示页。</returns>
     public static Task<ActionResult> DownloadAsync(string? workspaceId, string? path) => WebApi.RunGuardedAsync(async () =>
@@ -142,11 +146,15 @@ public static class WebFileService
             return MessagePage(400, "缺少文件路径", "下载链接里没有可读取的文件路径。");
         }
 
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return MessagePage(400, "缺少工作区", "下载链接里没有工作区标识，无法定位文件所在项目。");
+        }
+
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var manager = scope.GetRequiredService<IWorkspaceManager>();
-        var workspace = string.IsNullOrWhiteSpace(workspaceId)
-            ? manager.CurrentWorkspace
-            : await manager.GetWorkspaceAsync(workspaceId.Trim()).ConfigureAwait(false);
+        var workspace = await scope.GetRequiredService<IWorkspaceManager>()
+            .GetWorkspaceAsync(workspaceId.Trim())
+            .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(workspace?.RootPath))
         {
@@ -177,17 +185,21 @@ public static class WebFileService
     /// <summary>
     /// 列举工作区内某个目录的直接子项（不递归）。
     /// </summary>
-    /// <param name="workspaceId">工作区标识；空白时取宿主当前工作区。</param>
+    /// <param name="workspaceId">工作区标识；必填。</param>
     /// <param name="path">相对工作区根的目录路径；空白表示工作区根。</param>
     /// <param name="showIgnored">是否包含 <see cref="WebFileIgnore"/> 默认跳过的目录；<c>1</c>/<c>true</c> 为包含。</param>
     /// <returns>子目录与文件清单（相对路径、类型、大小、修改时间），超出单目录上限时带 <c>truncated</c>。</returns>
     public static Task<ActionResult> ListAsync(string? workspaceId, string? path, string? showIgnored = null) => WebApi.RunGuardedAsync(async () =>
     {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return WebApi.FailJson(400, "workspaceId 不能为空");
+        }
+
         await using var scope = WebApi.Runtime.CreateRequestScope(WebApi.UserId);
-        var manager = scope.GetRequiredService<IWorkspaceManager>();
-        var workspace = string.IsNullOrWhiteSpace(workspaceId)
-            ? manager.CurrentWorkspace
-            : await manager.GetWorkspaceAsync(workspaceId.Trim()).ConfigureAwait(false);
+        var workspace = await scope.GetRequiredService<IWorkspaceManager>()
+            .GetWorkspaceAsync(workspaceId.Trim())
+            .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(workspace?.RootPath))
         {

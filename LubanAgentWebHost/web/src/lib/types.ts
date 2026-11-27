@@ -49,7 +49,6 @@ export interface Bootstrap {
   userId: string;
   version?: string | null;
   workspaces: Workspace[];
-  currentWorkspaceId?: string | null;
   providers: ProviderSummary[];
   selection?: { providerId?: string | null; modelId?: string | null } | null;
   permissionModes: PermissionMode[];

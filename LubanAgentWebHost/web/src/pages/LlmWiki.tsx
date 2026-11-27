@@ -230,7 +230,7 @@ export function LlmWikiPage() {
   /**
    * 打开知识库对话：每个知识库固定复用同一个会话。
    *
-   * 直接按 workspaceId 建会话，不切换后端「当前工作区」——否则首页「新建会话」会落进知识库。
+   * 直接按 workspaceId 建会话，不改动首页的项目选中态——否则首页「新建会话」会落进知识库。
    */
   const startChat = async () => {
     const workspace = current();

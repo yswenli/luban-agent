@@ -52,7 +52,7 @@ public sealed class SessionController : Controller
     /// <summary>当前活动会话。</summary>
     /// <returns>会话详情；尚未确定活动会话时 data 为 null。</returns>
     /// <remarks>
-    /// 工作区切换后服务端会恢复/新建活动会话，客户端据此刷新本地镜像（远程模式下客户端不持有会话数据）。
+    /// 远程模式下客户端不持有会话数据，据此刷新本地镜像。
     /// </remarks>
     [HttpGet]
     public Task<ActionResult> Current() => WebSessionService.CurrentAsync();
@@ -64,7 +64,7 @@ public sealed class SessionController : Controller
     public Task<ActionResult> WorkspaceId(string? sessionId) => WebSessionService.WorkspaceIdAsync(sessionId);
 
     /// <summary>新建会话。</summary>
-    /// <param name="payload">包装后的 <see cref="SessionCreateRequest"/> JSON；可为空。</param>
+    /// <param name="payload">包装后的 <see cref="SessionCreateRequest"/> JSON；必须带 <c>workspaceId</c>。</param>
     /// <returns>新会话。</returns>
     [HttpPost]
     public Task<ActionResult> Create(string payload) => WebSessionService.CreateAsync(payload);
@@ -133,8 +133,8 @@ public sealed class SessionController : Controller
     [HttpPost]
     public Task<ActionResult> ClearMessages(string payload) => WebSessionService.ClearMessagesAsync(payload);
 
-    /// <summary>物理删除全部会话（可重建一个空会话）。</summary>
-    /// <param name="payload">包装后的 <see cref="SessionCreateRequest"/> JSON；可为空。</param>
+    /// <summary>物理删除全部会话（<c>allWorkspaces</c> 时可重建一个空会话，按项目清理则只删不建）。</summary>
+    /// <param name="payload">包装后的 <see cref="SessionClearAllRequest"/> JSON；非清全部时必须带 <c>workspaceId</c>。</param>
     /// <returns>清空结果。</returns>
     [HttpPost]
     public Task<ActionResult> ClearAll(string payload) => WebSessionService.ClearAllAsync(payload);

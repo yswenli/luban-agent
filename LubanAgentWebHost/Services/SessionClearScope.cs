@@ -27,46 +27,41 @@ public sealed record SessionClearScope
     /// <summary>请求指定的工作区不属于当前用户；非 null 时应按「工作区不存在」拒绝，不做任何删除。</summary>
     public string? MissingWorkspaceId { get; init; }
 
+    /// <summary>未显式清全部且没有指定工作区；调用方应按「workspaceId 不能为空」拒绝。</summary>
+    public bool WorkspaceRequired { get; init; }
+
     /// <summary>
-    /// 按请求与宿主当前工作区解析清理范围。
+    /// 按请求解析清理范围（不再依赖宿主「当前工作区」）。
     /// </summary>
     /// <remarks>
     /// 判定规则：
     /// <list type="bullet">
-    /// <item>显式清全部：指定工作区只作为补建落点，无效或未指定时用宿主当前工作区；</item>
-    /// <item>未指定工作区且无当前工作区：沿用旧语义清全部且不补建；</item>
-    /// <item>未指定工作区但有当前工作区：清该工作区并补建；</item>
-    /// <item>指定工作区：只清该区，仅当它正是当前工作区时补建；不属于当前用户则拒绝。</item>
+    /// <item>显式清全部：指定工作区只作为补建落点，未指定或不属于当前用户时不补建；</item>
+    /// <item>未指定工作区：拒绝（<see cref="WorkspaceRequired"/>），不再隐式清全部；</item>
+    /// <item>指定工作区：只清该区，不补建；不属于当前用户则拒绝。</item>
     /// </list>
-    /// 补建只发生在清理范围覆盖「当前工作区」时，清理其它工作区不影响当前活动会话。
     /// </remarks>
     /// <param name="allWorkspaces">是否显式清理全部工作区。</param>
     /// <param name="requestedWorkspaceId">请求指定的工作区（可空、可含首尾空白）。</param>
-    /// <param name="currentWorkspaceId">宿主当前工作区（可空）。</param>
     /// <param name="workspaceExists">判断工作区是否属于当前用户。</param>
     /// <returns>范围判定结果。</returns>
     public static SessionClearScope Resolve(
         bool allWorkspaces,
         string? requestedWorkspaceId,
-        string? currentWorkspaceId,
         Func<string, bool> workspaceExists)
     {
         var requested = string.IsNullOrWhiteSpace(requestedWorkspaceId) ? null : requestedWorkspaceId.Trim();
-        var current = string.IsNullOrWhiteSpace(currentWorkspaceId) ? null : currentWorkspaceId;
 
         if (allWorkspaces)
         {
-            // 指定工作区只用于决定补建落点：必须是自己的有效工作区，否则回退到宿主当前工作区
-            var rebuild = requested is not null && workspaceExists(requested) ? requested : current;
+            // 指定工作区只用于决定补建落点：必须是自己的有效工作区，否则不补建
+            var rebuild = requested is not null && workspaceExists(requested) ? requested : null;
             return new SessionClearScope { ClearAll = true, RebuildWorkspaceId = rebuild };
         }
 
         if (requested is null)
         {
-            // 无目标、无当前工作区（旧客户端或无工作区部署）：清全部，不补建
-            if (current is null) return new SessionClearScope { ClearAll = true };
-
-            return new SessionClearScope { WorkspaceId = current, RebuildWorkspaceId = current };
+            return new SessionClearScope { WorkspaceRequired = true };
         }
 
         if (!workspaceExists(requested))
@@ -74,10 +69,6 @@ public sealed record SessionClearScope
             return new SessionClearScope { MissingWorkspaceId = requested };
         }
 
-        return new SessionClearScope
-        {
-            WorkspaceId = requested,
-            RebuildWorkspaceId = string.Equals(requested, current, StringComparison.Ordinal) ? requested : null
-        };
+        return new SessionClearScope { WorkspaceId = requested };
     }
 }
