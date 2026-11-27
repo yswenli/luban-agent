@@ -1019,6 +1019,33 @@ const ja = {
   'gitCred.adminNote': '管理者はすべてのユーザーの資格情報を表示・削除できます。',
   'gitCred.dedupNote': 'ユーザーとホストごとに 1 件です。再保存すると古い資格情報は上書きされます。',
   'gitCred.ownerCount': '{count} ユーザー',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'ワークスペースキャッシュ',
+  'cache.hint': '各ワークスペースの .luban-agent/temp のみを集計します。過去のセッションが参照するアップロードは既定で保持します。',
+  'cache.keep1': '直近1日を保持',
+  'cache.keep7': '直近7日を保持',
+  'cache.keep30': '直近30日を保持',
+  'cache.keepAll': '保持期間なし',
+  'cache.colWorkspace': 'ワークスペース',
+  'cache.colTemp': '一時ファイル',
+  'cache.colOrphan': '未参照の添付',
+  'cache.colReferenced': '参照済みの添付',
+  'cache.colReclaimable': '回収可能',
+  'cache.clean': 'クリーン',
+  'cache.cleanAll': 'すべてのワークスペースをクリーン',
+  'cache.cleaning': 'クリーン中…',
+  'cache.total': '合計 {size} · 回収可能 {reclaimable}',
+  'cache.empty': 'クリーンできるワークスペースキャッシュはありません',
+  'cache.cleanTitle': 'ワークスペースキャッシュをクリーン — {name}',
+  'cache.cleanTitleAll': 'すべてのワークスペースのキャッシュをクリーン',
+  'cache.optTemp': '一時的な中間ファイル（サムネイル、処理済み画像、ナレッジの集約、ツールの残留物）を削除',
+  'cache.optOrphan': 'どのセッションからも参照されていないアップロードを削除',
+  'cache.optReferenced': 'セッションから参照されているアップロードを削除',
+  'cache.optReferencedWarn': 'これらの添付は過去のセッションで開けなくなり、復元できません。',
+  'cache.estimate': '約 {size}（{files} ファイル）を解放します。サーバーが保持期間と参照状況を再確認します。',
+  'cache.cleaned': '{size} をクリーンしました',
+  'cache.cleanedPartial': '{size} をクリーンしました。{files} ファイルを削除できませんでした',
 } satisfies Record<MessageKey, string>;
 
 export default ja;

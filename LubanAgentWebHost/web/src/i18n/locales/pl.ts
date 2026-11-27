@@ -1022,6 +1022,33 @@ const pl = {
   'gitCred.adminNote': 'Administratorzy mogą przeglądać i usuwać poświadczenia wszystkich użytkowników.',
   'gitCred.dedupNote': 'Jedno poświadczenie na użytkownika i host; ponowne zapisanie nadpisze poprzednie.',
   'gitCred.ownerCount': '{count} użytkowników',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Pamięć podręczna obszaru roboczego',
+  'cache.hint': 'Liczy tylko .luban-agent/temp w każdym obszarze roboczym; załączniki przywoływane przez poprzednie sesje są domyślnie zachowywane.',
+  'cache.keep1': 'Zachowaj ostatni dzień',
+  'cache.keep7': 'Zachowaj ostatnie 7 dni',
+  'cache.keep30': 'Zachowaj ostatnie 30 dni',
+  'cache.keepAll': 'Bez limitu przechowywania',
+  'cache.colWorkspace': 'Obszar roboczy',
+  'cache.colTemp': 'Pliki tymczasowe',
+  'cache.colOrphan': 'Załączniki nieprzywoływane',
+  'cache.colReferenced': 'Załączniki przywoływane',
+  'cache.colReclaimable': 'Do odzyskania',
+  'cache.clean': 'Wyczyść',
+  'cache.cleanAll': 'Wyczyść wszystkie obszary',
+  'cache.cleaning': 'Czyszczenie…',
+  'cache.total': 'Razem {size} · do odzyskania {reclaimable}',
+  'cache.empty': 'Brak pamięci podręcznej do wyczyszczenia',
+  'cache.cleanTitle': 'Wyczyść pamięć podręczną — {name}',
+  'cache.cleanTitleAll': 'Wyczyść pamięć podręczną wszystkich obszarów roboczych',
+  'cache.optTemp': 'Usuń tymczasowe pliki pośrednie (miniatury, przetworzone obrazy, podsumowania wiedzy, pozostałości narzędzi)',
+  'cache.optOrphan': 'Usuń załączniki nieprzywoływane przez żadną sesję',
+  'cache.optReferenced': 'Usuń załączniki przywoływane przez sesje',
+  'cache.optReferencedWarn': 'Tych załączników nie będzie można już otworzyć ani podejrzeć w poprzednich sesjach; nie da się ich odzyskać.',
+  'cache.estimate': 'Zwolnione zostanie około {size} ({files} plików); serwer ponownie sprawdzi okres przechowywania i odwołania.',
+  'cache.cleaned': 'Wyczyszczono {size}',
+  'cache.cleanedPartial': 'Wyczyszczono {size}; nie udało się usunąć {files} plików',
 } satisfies Record<MessageKey, string>;
 
 export default pl;

@@ -1021,6 +1021,33 @@ const tr = {
   'gitCred.adminNote': 'Yöneticiler tüm kullanıcıların kimlik bilgilerini görüntüleyebilir ve silebilir.',
   'gitCred.dedupNote': 'Kullanıcı ve ana makine başına bir kimlik bilgisi; yeniden kaydetmek eskisinin üzerine yazar.',
   'gitCred.ownerCount': '{count} kullanıcı',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Çalışma alanı önbelleği',
+  'cache.hint': 'Yalnızca her çalışma alanındaki .luban-agent/temp sayılır; geçmiş oturumların başvurduğu ekler varsayılan olarak korunur.',
+  'cache.keep1': 'Son 1 günü sakla',
+  'cache.keep7': 'Son 7 günü sakla',
+  'cache.keep30': 'Son 30 günü sakla',
+  'cache.keepAll': 'Saklama süresi yok',
+  'cache.colWorkspace': 'Çalışma alanı',
+  'cache.colTemp': 'Geçici dosyalar',
+  'cache.colOrphan': 'Başvurulmayan ekler',
+  'cache.colReferenced': 'Başvurulan ekler',
+  'cache.colReclaimable': 'Geri kazanılabilir',
+  'cache.clean': 'Temizle',
+  'cache.cleanAll': 'Tüm çalışma alanlarını temizle',
+  'cache.cleaning': 'Temizleniyor…',
+  'cache.total': 'Toplam {size} · geri kazanılabilir {reclaimable}',
+  'cache.empty': 'Temizlenecek çalışma alanı önbelleği yok',
+  'cache.cleanTitle': 'Çalışma alanı önbelleğini temizle — {name}',
+  'cache.cleanTitleAll': 'Tüm çalışma alanlarının önbelleğini temizle',
+  'cache.optTemp': 'Geçici ara dosyaları sil (küçük resimler, işlenmiş görseller, bilgi özetleri, araç kalıntıları)',
+  'cache.optOrphan': 'Hiçbir oturumun başvurmadığı ekleri sil',
+  'cache.optReferenced': 'Oturumların başvurduğu ekleri sil',
+  'cache.optReferencedWarn': 'Bu ekler geçmiş oturumlarda artık açılamaz veya önizlenemez ve geri alınamaz.',
+  'cache.estimate': 'Yaklaşık {size} ({files} dosya) serbest bırakılacak; sunucu saklama süresini ve başvuruları yeniden denetler.',
+  'cache.cleaned': '{size} temizlendi',
+  'cache.cleanedPartial': '{size} temizlendi; {files} dosya silinemedi',
 } satisfies Record<MessageKey, string>;
 
 export default tr;

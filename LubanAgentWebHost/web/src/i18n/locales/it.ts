@@ -1022,6 +1022,33 @@ const it = {
   'gitCred.adminNote': 'Gli amministratori possono vedere ed eliminare le credenziali di tutti gli utenti.',
   'gitCred.dedupNote': 'Una credenziale per utente e host; salvando di nuovo si sovrascrive la precedente.',
   'gitCred.ownerCount': '{count} utenti',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Cache dell\'area di lavoro',
+  'cache.hint': 'Conta solo .luban-agent/temp in ogni area di lavoro; gli allegati referenziati dalle sessioni passate vengono conservati per impostazione predefinita.',
+  'cache.keep1': 'Mantieni l\'ultimo giorno',
+  'cache.keep7': 'Mantieni gli ultimi 7 giorni',
+  'cache.keep30': 'Mantieni gli ultimi 30 giorni',
+  'cache.keepAll': 'Nessun limite di conservazione',
+  'cache.colWorkspace': 'Area di lavoro',
+  'cache.colTemp': 'File temporanei',
+  'cache.colOrphan': 'Allegati non referenziati',
+  'cache.colReferenced': 'Allegati referenziati',
+  'cache.colReclaimable': 'Recuperabile',
+  'cache.clean': 'Pulisci',
+  'cache.cleanAll': 'Pulisci tutte le aree di lavoro',
+  'cache.cleaning': 'Pulizia in corso…',
+  'cache.total': 'Totale {size} · recuperabile {reclaimable}',
+  'cache.empty': 'Nessuna cache dell\'area di lavoro da pulire',
+  'cache.cleanTitle': 'Pulisci la cache dell\'area di lavoro — {name}',
+  'cache.cleanTitleAll': 'Pulisci la cache di tutte le aree di lavoro',
+  'cache.optTemp': 'Elimina i file temporanei intermedi (miniature, immagini elaborate, riepiloghi della knowledge base, residui degli strumenti)',
+  'cache.optOrphan': 'Elimina gli allegati non referenziati da alcuna sessione',
+  'cache.optReferenced': 'Elimina gli allegati referenziati dalle sessioni',
+  'cache.optReferencedWarn': 'Questi allegati non potranno più essere aperti o visualizzati nelle sessioni passate e non saranno recuperabili.',
+  'cache.estimate': 'Verranno liberati circa {size} ({files} file); il server ricontrolla conservazione e riferimenti.',
+  'cache.cleaned': 'Puliti {size}',
+  'cache.cleanedPartial': 'Puliti {size}; impossibile eliminare {files} file',
 } satisfies Record<MessageKey, string>;
 
 export default it;

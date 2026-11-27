@@ -1022,6 +1022,33 @@ const pt = {
   'gitCred.adminNote': 'Administradores podem ver e excluir as credenciais de todos os usuários.',
   'gitCred.dedupNote': 'Uma credencial por usuário e host; salvar de novo substitui a anterior.',
   'gitCred.ownerCount': '{count} usuários',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Cache do espaço de trabalho',
+  'cache.hint': 'Conta apenas .luban-agent/temp em cada espaço de trabalho; anexos referenciados por sessões anteriores são mantidos por padrão.',
+  'cache.keep1': 'Manter o último dia',
+  'cache.keep7': 'Manter os últimos 7 dias',
+  'cache.keep30': 'Manter os últimos 30 dias',
+  'cache.keepAll': 'Sem limite de retenção',
+  'cache.colWorkspace': 'Espaço de trabalho',
+  'cache.colTemp': 'Arquivos temporários',
+  'cache.colOrphan': 'Anexos sem referência',
+  'cache.colReferenced': 'Anexos referenciados',
+  'cache.colReclaimable': 'Recuperável',
+  'cache.clean': 'Limpar',
+  'cache.cleanAll': 'Limpar todos os espaços',
+  'cache.cleaning': 'Limpando…',
+  'cache.total': 'Total {size} · recuperável {reclaimable}',
+  'cache.empty': 'Não há cache de espaço de trabalho para limpar',
+  'cache.cleanTitle': 'Limpar cache do espaço de trabalho — {name}',
+  'cache.cleanTitleAll': 'Limpar cache de todos os espaços de trabalho',
+  'cache.optTemp': 'Excluir arquivos temporários intermediários (miniaturas, imagens processadas, resumos de conhecimento, resíduos de ferramentas)',
+  'cache.optOrphan': 'Excluir anexos não referenciados por nenhuma sessão',
+  'cache.optReferenced': 'Excluir anexos referenciados por sessões',
+  'cache.optReferencedWarn': 'Esses anexos não poderão mais ser abertos ou visualizados em sessões anteriores e não poderão ser recuperados.',
+  'cache.estimate': 'Cerca de {size} ({files} arquivos) serão liberados; o servidor verifica novamente retenção e referências.',
+  'cache.cleaned': 'Limpou {size}',
+  'cache.cleanedPartial': 'Limpou {size}; {files} arquivos não puderam ser excluídos',
 } satisfies Record<MessageKey, string>;
 
 export default pt;

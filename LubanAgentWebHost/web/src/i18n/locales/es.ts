@@ -1121,6 +1121,33 @@ const es = {
   'gitCred.adminNote': 'Los administradores pueden ver y eliminar las credenciales de todos los usuarios.',
   'gitCred.dedupNote': 'Una credencial por usuario y host; al guardar de nuevo se sobrescribe la anterior.',
   'gitCred.ownerCount': '{count} usuarios',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Caché del espacio de trabajo',
+  'cache.hint': 'Solo cuenta .luban-agent/temp de cada espacio de trabajo; los adjuntos referenciados por sesiones anteriores se conservan por defecto.',
+  'cache.keep1': 'Conservar el último día',
+  'cache.keep7': 'Conservar los últimos 7 días',
+  'cache.keep30': 'Conservar los últimos 30 días',
+  'cache.keepAll': 'Sin límite de retención',
+  'cache.colWorkspace': 'Espacio de trabajo',
+  'cache.colTemp': 'Archivos temporales',
+  'cache.colOrphan': 'Adjuntos sin referencia',
+  'cache.colReferenced': 'Adjuntos referenciados',
+  'cache.colReclaimable': 'Recuperable',
+  'cache.clean': 'Limpiar',
+  'cache.cleanAll': 'Limpiar todos los espacios',
+  'cache.cleaning': 'Limpiando…',
+  'cache.total': 'Total {size} · recuperable {reclaimable}',
+  'cache.empty': 'No hay caché de espacio de trabajo para limpiar',
+  'cache.cleanTitle': 'Limpiar caché del espacio de trabajo — {name}',
+  'cache.cleanTitleAll': 'Limpiar la caché de todos los espacios de trabajo',
+  'cache.optTemp': 'Eliminar archivos temporales intermedios (miniaturas, imágenes procesadas, resúmenes de conocimiento, restos de herramientas)',
+  'cache.optOrphan': 'Eliminar adjuntos no referenciados por ninguna sesión',
+  'cache.optReferenced': 'Eliminar adjuntos referenciados por sesiones',
+  'cache.optReferencedWarn': 'Estos adjuntos ya no se podrán abrir ni previsualizar en sesiones anteriores y no se podrán recuperar.',
+  'cache.estimate': 'Se liberarán unos {size} ({files} archivos); el servidor revisa la retención y las referencias.',
+  'cache.cleaned': 'Se limpiaron {size}',
+  'cache.cleanedPartial': 'Se limpiaron {size}; no se pudieron eliminar {files} archivos',
 } satisfies Record<MessageKey, string>;
 
 export default es;

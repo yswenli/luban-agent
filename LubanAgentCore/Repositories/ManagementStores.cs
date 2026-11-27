@@ -36,6 +36,27 @@ public interface ISessionWorkspaceQuery
 }
 
 /// <summary>
+/// 工作区共用场景下的会话读取（工作区缓存回收判断跨用户引用）。
+/// </summary>
+/// <remarks>
+/// 与 <see cref="ISessionWorkspaceQuery"/> 分开：后者有 HTTP 客户端实现，本能力只在宿主侧使用，
+/// 不应为它新增一条服务端接口。
+/// </remarks>
+public interface IWorkspaceSharedSessionQuery
+{
+    /// <summary>
+    /// 取绑定到指定工作区的全部会话标识（不按用户过滤）。
+    /// </summary>
+    /// <remarks>
+    /// 同一目录可被多个用户「共用」登记（<c>WorkspaceId</c> 由路径派生，跨用户相同）。
+    /// 清理该目录下的附件时，必须把共用者的会话一并计入引用集合，否则会误删他人仍在使用的附件。
+    /// </remarks>
+    /// <param name="workspaceIds">工作区标识集合。</param>
+    /// <returns>会话标识列表；入参为空时返回空列表。</returns>
+    Task<IReadOnlyList<string>> GetAllSessionIdsByWorkspacesAsync(IReadOnlyCollection<string> workspaceIds);
+}
+
+/// <summary>
 /// 会话消息的预览查询（<c>/session -list</c> 的列表预览）。
 /// </summary>
 public interface ISessionMessageQuery
@@ -47,6 +68,19 @@ public interface ISessionMessageQuery
     /// <param name="maxLength">单条预览最大长度。</param>
     /// <returns>会话标识到预览文本的映射；无用户消息的会话不出现。</returns>
     Task<Dictionary<string, string>> GetFirstUserMessagePreviewAsync(IEnumerable<string> sessionIds, int maxLength = 60);
+}
+
+/// <summary>
+/// 会话消息附件元数据的读取（工作区缓存回收时判断附件是否仍被历史消息引用）。
+/// </summary>
+public interface ISessionAttachmentQuery
+{
+    /// <summary>
+    /// 批量取会话消息的附件元数据 JSON（仅未删除消息、附件列非空）。
+    /// </summary>
+    /// <param name="sessionIds">会话标识集合。</param>
+    /// <returns>附件元数据 JSON 列表；入参为空时返回空列表。</returns>
+    Task<IReadOnlyList<string>> GetAttachmentsJsonAsync(IReadOnlyCollection<string> sessionIds);
 }
 
 /// <summary>

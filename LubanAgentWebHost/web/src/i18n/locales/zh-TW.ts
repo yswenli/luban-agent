@@ -1018,6 +1018,33 @@ const zhTW = {
   'gitCred.adminNote': '管理員可檢視並刪除所有使用者的憑證。',
   'gitCred.dedupNote': '同一使用者同一網域只保留一筆，重複儲存會覆寫舊憑證。',
   'gitCred.ownerCount': '{count} 位使用者',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': '工作區快取',
+  'cache.hint': '僅統計各工作區 .luban-agent/temp；預設不刪除已被歷史會話引用的上傳附件。',
+  'cache.keep1': '保留最近 1 天',
+  'cache.keep7': '保留最近 7 天',
+  'cache.keep30': '保留最近 30 天',
+  'cache.keepAll': '不設保留期',
+  'cache.colWorkspace': '工作區',
+  'cache.colTemp': '暫存檔案',
+  'cache.colOrphan': '未引用附件',
+  'cache.colReferenced': '已引用附件',
+  'cache.colReclaimable': '可回收',
+  'cache.clean': '清理',
+  'cache.cleanAll': '清理全部工作區',
+  'cache.cleaning': '清理中…',
+  'cache.total': '合計 {size} · 可回收 {reclaimable}',
+  'cache.empty': '沒有需要清理的工作區快取',
+  'cache.cleanTitle': '清理工作區快取 — {name}',
+  'cache.cleanTitleAll': '清理全部工作區快取',
+  'cache.optTemp': '刪除暫存中間檔案（縮圖、處理後圖片、知識庫彙總、工具殘留）',
+  'cache.optOrphan': '刪除未被任何會話引用的上傳附件',
+  'cache.optReferenced': '刪除已被會話引用的上傳附件',
+  'cache.optReferencedWarn': '歷史會話中的這些附件將無法再開啟或預覽，且不可復原。',
+  'cache.estimate': '預計釋放 {size}（{files} 個檔案）；伺服端會依保留期與實際引用情況複核。',
+  'cache.cleaned': '已清理 {size}',
+  'cache.cleanedPartial': '已清理 {size}，{files} 個檔案刪除失敗',
 } satisfies Record<MessageKey, string>;
 
 export default zhTW;

@@ -1022,6 +1022,33 @@ const id = {
   'gitCred.adminNote': 'Administrator dapat melihat dan menghapus kredensial semua pengguna.',
   'gitCred.dedupNote': 'Satu kredensial per pengguna dan host; menyimpan lagi menimpa yang lama.',
   'gitCred.ownerCount': '{count} pengguna',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Cache ruang kerja',
+  'cache.hint': 'Hanya menghitung .luban-agent/temp di setiap ruang kerja; lampiran yang dirujuk sesi lama dipertahankan secara default.',
+  'cache.keep1': 'Simpan 1 hari terakhir',
+  'cache.keep7': 'Simpan 7 hari terakhir',
+  'cache.keep30': 'Simpan 30 hari terakhir',
+  'cache.keepAll': 'Tanpa batas penyimpanan',
+  'cache.colWorkspace': 'Ruang kerja',
+  'cache.colTemp': 'File sementara',
+  'cache.colOrphan': 'Lampiran tanpa rujukan',
+  'cache.colReferenced': 'Lampiran dirujuk',
+  'cache.colReclaimable': 'Dapat diklaim',
+  'cache.clean': 'Bersihkan',
+  'cache.cleanAll': 'Bersihkan semua ruang kerja',
+  'cache.cleaning': 'Membersihkan…',
+  'cache.total': 'Total {size} · dapat diklaim {reclaimable}',
+  'cache.empty': 'Tidak ada cache ruang kerja untuk dibersihkan',
+  'cache.cleanTitle': 'Bersihkan cache ruang kerja — {name}',
+  'cache.cleanTitleAll': 'Bersihkan cache semua ruang kerja',
+  'cache.optTemp': 'Hapus file sementara perantara (thumbnail, gambar hasil proses, ringkasan pengetahuan, sisa alat)',
+  'cache.optOrphan': 'Hapus lampiran yang tidak dirujuk sesi mana pun',
+  'cache.optReferenced': 'Hapus lampiran yang dirujuk sesi',
+  'cache.optReferencedWarn': 'Lampiran ini tidak akan bisa dibuka atau dipratinjau lagi di sesi lama, dan tidak dapat dipulihkan.',
+  'cache.estimate': 'Sekitar {size} ({files} file) akan dibebaskan; server memeriksa ulang masa simpan dan rujukan.',
+  'cache.cleaned': 'Berhasil membersihkan {size}',
+  'cache.cleanedPartial': 'Berhasil membersihkan {size}; {files} file gagal dihapus',
 } satisfies Record<MessageKey, string>;
 
 export default id;

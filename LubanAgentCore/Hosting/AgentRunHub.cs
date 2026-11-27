@@ -173,6 +173,20 @@ public sealed class AgentRunHub : IAsyncDisposable
     public bool IsAnyRunning(string userId, IEnumerable<string> sessionIds)
         => sessionIds.Any(sessionId => IsRunning(userId, sessionId));
 
+    /// <summary>给定会话中是否有任一在跑（不按用户过滤）。</summary>
+    /// <remarks>
+    /// 同一目录可被多个用户共用登记，会话分属不同用户却共享同一份 <c>temp</c>；
+    /// 清理这类目录前必须把所有共用者的在跑轮次都算进来，否则会删掉他人本轮正在写入的附件。
+    /// </remarks>
+    /// <param name="sessionIds">会话集合。</param>
+    /// <returns>是否有任一在跑。</returns>
+    public bool IsAnyRunning(IEnumerable<string> sessionIds)
+    {
+        var wanted = new HashSet<string>(sessionIds, StringComparer.Ordinal);
+        return wanted.Count > 0
+            && _runs.Values.Any(handle => !handle.IsCompleted && wanted.Contains(handle.SessionId));
+    }
+
     /// <summary>取消指定会话的轮次。</summary>
     /// <param name="userId">用户标识。</param>
     /// <param name="sessionId">会话标识。</param>

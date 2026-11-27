@@ -997,6 +997,33 @@ const th = {
   'gitCred.adminNote': 'ผู้ดูแลระบบสามารถดูและลบข้อมูลรับรองของผู้ใช้ทุกคนได้',
   'gitCred.dedupNote': 'หนึ่งข้อมูลรับรองต่อผู้ใช้และโฮสต์ การบันทึกซ้ำจะเขียนทับของเดิม',
   'gitCred.ownerCount': '{count} ผู้ใช้',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'แคชพื้นที่ทำงาน',
+  'cache.hint': 'นับเฉพาะ .luban-agent/temp ในแต่ละพื้นที่ทำงาน; ไฟล์แนบที่ถูกอ้างอิงโดยเซสชันก่อนหน้าจะถูกเก็บไว้โดยค่าเริ่มต้น',
+  'cache.keep1': 'เก็บ 1 วันล่าสุด',
+  'cache.keep7': 'เก็บ 7 วันล่าสุด',
+  'cache.keep30': 'เก็บ 30 วันล่าสุด',
+  'cache.keepAll': 'ไม่จำกัดระยะเก็บ',
+  'cache.colWorkspace': 'พื้นที่ทำงาน',
+  'cache.colTemp': 'ไฟล์ชั่วคราว',
+  'cache.colOrphan': 'ไฟล์แนบที่ไม่อ้างอิง',
+  'cache.colReferenced': 'ไฟล์แนบที่อ้างอิง',
+  'cache.colReclaimable': 'เรียกคืนได้',
+  'cache.clean': 'ล้าง',
+  'cache.cleanAll': 'ล้างทุกพื้นที่ทำงาน',
+  'cache.cleaning': 'กำลังล้าง…',
+  'cache.total': 'รวม {size} · เรียกคืนได้ {reclaimable}',
+  'cache.empty': 'ไม่มีแคชพื้นที่ทำงานให้ล้าง',
+  'cache.cleanTitle': 'ล้างแคชพื้นที่ทำงาน — {name}',
+  'cache.cleanTitleAll': 'ล้างแคชทุกพื้นที่ทำงาน',
+  'cache.optTemp': 'ลบไฟล์ชั่วคราวกลางทาง (ภาพย่อ รูปที่ประมวลผลแล้ว สรุปฐานความรู้ เศษไฟล์จากเครื่องมือ)',
+  'cache.optOrphan': 'ลบไฟล์แนบที่ไม่มีเซสชันใดอ้างอิง',
+  'cache.optReferenced': 'ลบไฟล์แนบที่เซสชันอ้างอิง',
+  'cache.optReferencedWarn': 'ไฟล์แนบเหล่านี้จะเปิดหรือดูตัวอย่างในเซสชันก่อนหน้าไม่ได้อีก และกู้คืนไม่ได้',
+  'cache.estimate': 'จะปลดปล่อยประมาณ {size} ({files} ไฟล์); เซิร์ฟเวอร์จะตรวจสอบระยะเก็บและการอ้างอิงอีกครั้ง',
+  'cache.cleaned': 'ล้างแล้ว {size}',
+  'cache.cleanedPartial': 'ล้างแล้ว {size}; ลบไม่ได้ {files} ไฟล์',
 } satisfies Record<MessageKey, string>;
 
 export default th;

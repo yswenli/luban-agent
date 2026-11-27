@@ -1087,6 +1087,33 @@ const az = {
   'gitCred.adminNote': 'Administratorlar bütün istifadəçilərin etimadnamələrini görə və silə bilər.',
   'gitCred.dedupNote': 'Hər istifadəçi və host üçün bir etimadnamə; yenidən saxlama köhnəsini üzərinə yazır.',
   'gitCred.ownerCount': '{count} istifadəçi',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'İş sahəsi keşi',
+  'cache.hint': 'Yalnız hər iş sahəsindəki .luban-agent/temp hesablanır; keçmiş sessiyaların istinad etdiyi yükləmələr standart olaraq saxlanılır.',
+  'cache.keep1': 'Son 1 günü saxla',
+  'cache.keep7': 'Son 7 günü saxla',
+  'cache.keep30': 'Son 30 günü saxla',
+  'cache.keepAll': 'Saxlama müddəti yoxdur',
+  'cache.colWorkspace': 'İş sahəsi',
+  'cache.colTemp': 'Müvəqqəti fayllar',
+  'cache.colOrphan': 'İstinadsız yükləmələr',
+  'cache.colReferenced': 'İstinad edilən yükləmələr',
+  'cache.colReclaimable': 'Bərpa oluna bilən',
+  'cache.clean': 'Təmizlə',
+  'cache.cleanAll': 'Bütün iş sahələrini təmizlə',
+  'cache.cleaning': 'Təmizlənir…',
+  'cache.total': 'Cəmi {size} · bərpa oluna bilən {reclaimable}',
+  'cache.empty': 'Təmizlənəcək iş sahəsi keşi yoxdur',
+  'cache.cleanTitle': 'İş sahəsi keşini təmizlə — {name}',
+  'cache.cleanTitleAll': 'Bütün iş sahələrinin keşini təmizlə',
+  'cache.optTemp': 'Müvəqqəti ara faylları sil (kiçik şəkillər, işlənmiş şəkillər, bilik xülasələri, alət qalıqları)',
+  'cache.optOrphan': 'Heç bir sessiyanın istinad etmədiyi yükləmələri sil',
+  'cache.optReferenced': 'Sessiyaların istinad etdiyi yükləmələri sil',
+  'cache.optReferencedWarn': 'Bu qoşmalar keçmiş sessiyalarda artıq açılmayacaq və bərpa oluna bilməyəcək.',
+  'cache.estimate': 'Təxminən {size} ({files} fayl) azad olunacaq; server saxlama müddətini və istinadları yenidən yoxlayır.',
+  'cache.cleaned': '{size} təmizləndi',
+  'cache.cleanedPartial': '{size} təmizləndi; {files} fayl silinə bilmədi',
 } satisfies Record<MessageKey, string>;
 
 export default az;

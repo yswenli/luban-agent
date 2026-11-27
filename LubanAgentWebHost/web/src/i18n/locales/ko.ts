@@ -1006,6 +1006,33 @@ const ko = {
   'gitCred.adminNote': '관리자는 모든 사용자의 자격 증명을 보고 삭제할 수 있습니다.',
   'gitCred.dedupNote': '사용자와 호스트당 하나의 자격 증명이며 다시 저장하면 이전 것이 덮어써집니다.',
   'gitCred.ownerCount': '사용자 {count}명',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': '워크스페이스 캐시',
+  'cache.hint': '각 워크스페이스의 .luban-agent/temp만 집계합니다. 지난 세션이 참조하는 업로드는 기본적으로 유지합니다.',
+  'cache.keep1': '최근 1일 유지',
+  'cache.keep7': '최근 7일 유지',
+  'cache.keep30': '최근 30일 유지',
+  'cache.keepAll': '보존 기간 없음',
+  'cache.colWorkspace': '워크스페이스',
+  'cache.colTemp': '임시 파일',
+  'cache.colOrphan': '미참조 첨부',
+  'cache.colReferenced': '참조된 첨부',
+  'cache.colReclaimable': '회수 가능',
+  'cache.clean': '정리',
+  'cache.cleanAll': '모든 워크스페이스 정리',
+  'cache.cleaning': '정리 중…',
+  'cache.total': '합계 {size} · 회수 가능 {reclaimable}',
+  'cache.empty': '정리할 워크스페이스 캐시가 없습니다',
+  'cache.cleanTitle': '워크스페이스 캐시 정리 — {name}',
+  'cache.cleanTitleAll': '모든 워크스페이스 캐시 정리',
+  'cache.optTemp': '임시 중간 파일 삭제(썸네일, 처리된 이미지, 지식 요약, 도구 잔여물)',
+  'cache.optOrphan': '어떤 세션에서도 참조하지 않는 업로드 삭제',
+  'cache.optReferenced': '세션에서 참조하는 업로드 삭제',
+  'cache.optReferencedWarn': '이 첨부는 지난 세션에서 더 이상 열거나 미리 볼 수 없으며 복구할 수 없습니다.',
+  'cache.estimate': '약 {size}({files}개 파일)가 해제됩니다. 서버가 보존 기간과 참조 여부를 다시 확인합니다.',
+  'cache.cleaned': '{size} 정리 완료',
+  'cache.cleanedPartial': '{size} 정리 완료, {files}개 파일을 삭제하지 못했습니다',
 } satisfies Record<MessageKey, string>;
 
 export default ko;

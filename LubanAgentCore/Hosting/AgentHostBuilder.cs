@@ -95,7 +95,9 @@ public static class AgentHostBuilder
 
         // 管理服务只依赖最小仓储缝（便于脱离数据库做单测），由具体仓储解析
         services.AddSingleton<ISessionWorkspaceQuery>(sp => sp.GetRequiredService<SessionRepository>());
+        services.AddSingleton<IWorkspaceSharedSessionQuery>(sp => sp.GetRequiredService<SessionRepository>());
         services.AddSingleton<ISessionMessageQuery>(sp => sp.GetRequiredService<SessionMessageRepository>());
+        services.AddSingleton<ISessionAttachmentQuery>(sp => sp.GetRequiredService<SessionMessageRepository>());
         services.AddSingleton<ILlmWikiFileStore>(sp => sp.GetRequiredService<LlmWikiFileRepository>());
         services.AddSingleton<ILlmWikiChunkStore>(sp => sp.GetRequiredService<LlmWikiChunkRepository>());
         services.AddSingleton<WorktreeSessionRepository>();

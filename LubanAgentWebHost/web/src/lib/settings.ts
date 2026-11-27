@@ -14,6 +14,8 @@ import type {
   SkillFile,
   SkillSummary,
   Workspace,
+  WorkspaceCacheClean,
+  WorkspaceCacheScan,
 } from './types';
 
 /**
@@ -144,6 +146,26 @@ export const settingsApi = {
     post<void>('/session/clearAll', {
       workspaceId: target.workspaceId ?? null,
       allWorkspaces: target.allWorkspaces === true,
+    }),
+
+  /* ── 工作区缓存 ── */
+  workspaceCacheScan: (keepDays: number): Promise<WorkspaceCacheScan> =>
+    get<WorkspaceCacheScan>('/system/cache', { keepDays }),
+  workspaceCacheClean: (body: {
+    workspaceId?: string | null;
+    allWorkspaces?: boolean;
+    keepDays?: number | null;
+    includeTempFiles: boolean;
+    includeOrphanUploads: boolean;
+    includeReferencedUploads: boolean;
+  }): Promise<WorkspaceCacheClean> =>
+    post<WorkspaceCacheClean>('/system/cacheClean', {
+      workspaceId: body.workspaceId ?? null,
+      allWorkspaces: body.allWorkspaces === true,
+      keepDays: body.keepDays ?? null,
+      includeTempFiles: body.includeTempFiles,
+      includeOrphanUploads: body.includeOrphanUploads,
+      includeReferencedUploads: body.includeReferencedUploads,
     }),
 };
 

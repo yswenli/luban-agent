@@ -3697,6 +3697,83 @@ a.nav-item {
   border-top: 1px solid var(--border);
 }
 
+/* ── 工作区缓存（设置 → 数据） ─────────────────────────────────────────── */
+.cache-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.cache-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.cache-head {
+  padding-top: 0;
+  padding-bottom: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.cache-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.cache-reclaim {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cache-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cache-footer {
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: none;
+}
+
+.cache-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.cache-option-label {
+  flex: 1;
+}
+
+.cache-option-size {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.cache-warn {
+  margin: 2px 0 8px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .model-list {
   display: flex;
   flex-direction: column;

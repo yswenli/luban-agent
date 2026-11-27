@@ -69,4 +69,19 @@ public sealed class SystemController : Controller
     /// <returns>入口地址与会话到期时刻。</returns>
     [HttpGet]
     public Task<ActionResult> EntryUrl() => WebSystemService.EntryUrlAsync();
+
+    /// <summary>
+    /// 工作区缓存占用扫描。
+    /// </summary>
+    /// <returns>各工作区的临时文件与上传附件占用。</returns>
+    [HttpGet]
+    public Task<ActionResult> Cache() => WebWorkspaceCacheService.ScanAsync();
+
+    /// <summary>
+    /// 清理工作区缓存。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="WorkspaceCacheCleanRequest"/> JSON。</param>
+    /// <returns>释放的字节与文件数。</returns>
+    [HttpPost]
+    public Task<ActionResult> CacheClean(string payload) => WebWorkspaceCacheService.CleanAsync(payload);
 }

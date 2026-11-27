@@ -312,6 +312,43 @@ export interface GlobalSessionStats {
   averageDailyTokens: number;
 }
 
+/* ── 工作区缓存 ───────────────────────────────────────────────────────── */
+
+/** 单个工作区 .luban-agent/temp 的占用。 */
+export interface WorkspaceCacheItem {
+  workspaceId: string;
+  name: string;
+  rootPath: string;
+  type: string;
+  tempPath: string;
+  exists: boolean;
+  error?: string | null;
+  tempBytes: number;
+  tempFiles: number;
+  uploadBytes: number;
+  uploadFiles: number;
+  referencedBytes: number;
+  referencedFiles: number;
+  reclaimableBytes: number;
+  reclaimableFiles: number;
+}
+
+/** 工作区缓存扫描结果。 */
+export interface WorkspaceCacheScan {
+  keepDays: number;
+  items: WorkspaceCacheItem[];
+  totalBytes: number;
+  reclaimableBytes: number;
+}
+
+/** 工作区缓存清理结果。 */
+export interface WorkspaceCacheClean {
+  freedBytes: number;
+  freedFiles: number;
+  failedFiles: number;
+  workspaces: number;
+}
+
 /* ── LLM Wiki 知识库 ─────────────────────────────────────────────────── */
 
 export interface WikiStatus {

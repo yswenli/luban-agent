@@ -781,6 +781,28 @@ public class AgentRunHubUnitTest
     }
 
     [TestMethod]
+    public async Task 工作区判定不区分用户()
+    {
+        var hub = NewHub();
+        try
+        {
+            await hub.StartAsync("u1", "s1", HangAsync);
+
+            // 共用工作区里他人的会话同样可能在写 temp，必须被算作在跑
+            Assert.IsTrue(hub.IsAnyRunning(new[] { "s1" }));
+            Assert.IsFalse(hub.IsAnyRunning(new[] { "s2" }));
+            Assert.IsFalse(hub.IsAnyRunning(Array.Empty<string>()));
+
+            Assert.IsTrue(await hub.CancelAndWaitAsync("u1", "s1"));
+            Assert.IsFalse(hub.IsAnyRunning(new[] { "s1" }));
+        }
+        finally
+        {
+            await hub.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
     public async Task 无轮次时取消返回false()
     {
         var hub = NewHub();

@@ -1085,6 +1085,33 @@ const en = {
   'gitCred.adminNote': 'Administrators can view and delete every user\'s credentials.',
   'gitCred.dedupNote': 'One credential per user and host; saving again overwrites the old one.',
   'gitCred.ownerCount': '{count} users',
+
+  // ── 工作区缓存（pages/settings/DataTab.tsx） ───────────────────────────
+  'cache.title': 'Workspace cache',
+  'cache.hint': 'Only counts .luban-agent/temp in each workspace. Uploaded attachments referenced by past sessions are kept by default.',
+  'cache.keep1': 'Keep last 1 day',
+  'cache.keep7': 'Keep last 7 days',
+  'cache.keep30': 'Keep last 30 days',
+  'cache.keepAll': 'No retention limit',
+  'cache.colWorkspace': 'Workspace',
+  'cache.colTemp': 'Temp files',
+  'cache.colOrphan': 'Unreferenced uploads',
+  'cache.colReferenced': 'Referenced uploads',
+  'cache.colReclaimable': 'Reclaimable',
+  'cache.clean': 'Clean',
+  'cache.cleanAll': 'Clean all workspaces',
+  'cache.cleaning': 'Cleaning…',
+  'cache.total': 'Total {size} · reclaimable {reclaimable}',
+  'cache.empty': 'No workspace cache to clean',
+  'cache.cleanTitle': 'Clean workspace cache — {name}',
+  'cache.cleanTitleAll': 'Clean cache for all workspaces',
+  'cache.optTemp': 'Delete temporary intermediate files (thumbnails, processed images, knowledge summaries, tool leftovers)',
+  'cache.optOrphan': 'Delete uploads not referenced by any session',
+  'cache.optReferenced': 'Delete uploads referenced by sessions',
+  'cache.optReferencedWarn': 'These attachments will no longer open or preview in past sessions, and cannot be recovered.',
+  'cache.estimate': 'About {size} ({files} files) will be freed; the server rechecks retention and references.',
+  'cache.cleaned': 'Cleaned {size}',
+  'cache.cleanedPartial': 'Cleaned {size}; {files} files could not be deleted',
 } satisfies Record<MessageKey, string>;
 
 export default en;

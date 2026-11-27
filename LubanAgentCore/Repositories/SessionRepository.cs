@@ -19,7 +19,7 @@ namespace LubanAgentCore.Repositories;
 /// <summary>
 /// Session 仓储
 /// </summary>
-public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQuery, IAutoTitleStore
+public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQuery, IWorkspaceSharedSessionQuery, IAutoTitleStore
 {
     /// <summary>
     /// 创建 Session 仓储实例。
@@ -48,6 +48,33 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
         var session = await GetFirstAsync(
             s => s.SessionId == sessionId && s.UserId == userId && !s.IsDelete);
         return string.IsNullOrWhiteSpace(session?.WorkspaceId) ? null : session!.WorkspaceId;
+    }
+
+    /// <summary>
+    /// 取绑定到指定工作区的全部会话标识（不按用户过滤）。
+    /// </summary>
+    /// <remarks>
+    /// 工作区可被多个用户共用，<c>WorkspaceId</c> 按路径派生、跨用户相同，故此处不能再按用户过滤。
+    /// 会话较多时按 500 个一批切分，避免 SQLite 的 IN 参数上限。
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> GetAllSessionIdsByWorkspacesAsync(
+        IReadOnlyCollection<string> workspaceIds)
+    {
+        if (workspaceIds.Count == 0) return Array.Empty<string>();
+
+        var result = new List<string>();
+        foreach (var chunk in workspaceIds.Chunk(500))
+        {
+            var ids = chunk.ToList();
+            var rows = await AsQueryable()
+                .Where(s => s.WorkspaceId != null && ids.Contains(s.WorkspaceId) && !s.IsDelete)
+                .Select(s => s.SessionId)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            result.AddRange(rows);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -385,7 +412,7 @@ public class SessionRepository : AgentRepository<DbSession>, ISessionWorkspaceQu
 /// <summary>
 /// Session 消息仓储
 /// </summary>
-public class SessionMessageRepository : AgentRepository<DbSessionMessage>, ISessionMessageQuery
+public class SessionMessageRepository : AgentRepository<DbSessionMessage>, ISessionMessageQuery, ISessionAttachmentQuery
 {
     /// <summary>
     /// 创建 Session 消息仓储实例。
@@ -422,6 +449,32 @@ public class SessionMessageRepository : AgentRepository<DbSessionMessage>, ISess
                 result[msg.SessionId] = preview;
             }
         }
+        return result;
+    }
+
+    /// <summary>
+    /// 批量取会话消息的附件元数据 JSON（仅未删除消息、附件列非空）。
+    /// </summary>
+    /// <remarks>
+    /// 会话较多时按 500 个一批切分，避免 SQLite 的 IN 参数上限；消息行没有用户列，
+    /// 调用方须先按用户过滤出会话标识再传入。
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> GetAttachmentsJsonAsync(IReadOnlyCollection<string> sessionIds)
+    {
+        if (sessionIds.Count == 0) return Array.Empty<string>();
+
+        var result = new List<string>();
+        foreach (var chunk in sessionIds.Chunk(500))
+        {
+            var ids = chunk.ToList();
+            var rows = await Context.Queryable<DbSessionMessage>()
+                .Where(m => ids.Contains(m.SessionId) && !m.IsDelete && m.Attachments != null)
+                .Select(m => m.Attachments!)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            result.AddRange(rows);
+        }
+
         return result;
     }
 
