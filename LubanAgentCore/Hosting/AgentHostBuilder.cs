@@ -265,8 +265,13 @@ public static class AgentHostBuilder
     /// 当前用户没有任何工作区时是否隐式创建一个；<c>false</c> 只切换到既有工作区，
     /// 没有就保持无工作区状态（Web 端由用户自己新建）。
     /// </param>
+    /// <param name="reportCurrentWorkspace">
+    /// 切到既有工作区时是否回报「当前工作区」提示。无人值守的多用户宿主由界面自行展示当前项目，
+    /// 传 <c>false</c> 可省掉每用户首次请求的一行控制台噪音。
+    /// </param>
     public static async Task InitializeWorkspaceAsync(
-        DiContainer sp, List<string> notices, string? defaultRootPath = null, bool createDefault = true)
+        DiContainer sp, List<string> notices, string? defaultRootPath = null, bool createDefault = true,
+        bool reportCurrentWorkspace = true)
     {
         try
         {
@@ -298,7 +303,10 @@ public static class AgentHostBuilder
             else
             {
                 workspaceId = existing.WorkspaceId;
-                notices.Add($"当前工作区: {existing.Name} ({existing.RootPath})");
+                if (reportCurrentWorkspace)
+                {
+                    notices.Add($"当前工作区: {existing.Name} ({existing.RootPath})");
+                }
             }
 
             // 设置为当前工作区

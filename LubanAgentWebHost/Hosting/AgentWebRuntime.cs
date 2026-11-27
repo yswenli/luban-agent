@@ -131,7 +131,9 @@ public sealed class AgentWebRuntime : IAsyncDisposable
         var notices = new List<string>();
         // 首启不隐式创建工作区：多用户共享宿主时，同一个默认目录会让不同用户静默共用。
         // 用户自己在左侧「新建项目」建，位置仍受机器级工作区根目录白名单约束。
-        await AgentHostBuilder.InitializeWorkspaceAsync(scope, notices, createDefault: false);
+        // 也不回报「当前工作区」：左栏项目区已显示当前项目，多用户各打一行只是启动噪音。
+        await AgentHostBuilder.InitializeWorkspaceAsync(
+            scope, notices, createDefault: false, reportCurrentWorkspace: false);
         foreach (var notice in notices)
         {
             Log(notice);
