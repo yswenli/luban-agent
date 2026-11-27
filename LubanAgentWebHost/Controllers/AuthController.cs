@@ -102,4 +102,10 @@ public sealed class AuthController : Controller
     /// <returns>是否清除了锁定状态。</returns>
     [HttpPost]
     public Task<ActionResult> Unlock(string payload) => WebAuthService.UnlockAsync(payload);
+
+    /// <summary>删除指定用户（仅管理员；内置管理员与自己不可删）。</summary>
+    /// <param name="payload">包装后的 <see cref="DeleteUserRequest"/> JSON。</param>
+    /// <returns>成功壳。</returns>
+    [HttpPost]
+    public Task<ActionResult> DeleteUser(string payload) => WebAuthService.DeleteUserAsync(payload);
 }

@@ -119,4 +119,14 @@ public class GitCredentialRepository : AgentRepository<DbGitCredential>
         => Context.Deleteable<DbGitCredential>()
             .Where(c => c.UserId == userId && c.Scheme == scheme && c.Host == host && c.Port == port)
             .ExecuteCommandAsync();
+
+    /// <summary>
+    /// 按用户硬删除全部凭据（删除账号时清理明文令牌）。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <returns>删除的行数。</returns>
+    public Task<int> DeleteByUserAsync(string userId)
+        => Context.Deleteable<DbGitCredential>()
+            .Where(c => c.UserId == userId)
+            .ExecuteCommandAsync();
 }

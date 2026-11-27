@@ -416,6 +416,11 @@ const id = {
   'users.noLock': 'Pengguna ini tidak punya catatan kunci saat ini',
   'users.resetConfirm': 'Reset kata sandi "{name}"? Login pengguna itu saat ini akan langsung tidak berlaku.',
   'users.resetOk': 'Kata sandi baru dibuat; segera serahkan ke pengguna tersebut',
+  'users.deleteConfirm': 
+    'Hapus pengguna "{name}"? Sesi langsung berakhir dan tidak dapat masuk lagi; kredensial Git yang tersimpan juga akan dihapus.',
+  'users.deleted': 'Pengguna dihapus',
+  'users.deleteSelf': 'Anda tidak dapat menghapus akun sendiri',
+  'users.deleteBuiltIn': 'Administrator bawaan tidak dapat dihapus',
   'users.adminSuffix': ' · Admin',
   'users.builtinSuffix': ' · Bawaan',
 

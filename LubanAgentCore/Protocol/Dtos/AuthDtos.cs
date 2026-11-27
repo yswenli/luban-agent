@@ -136,6 +136,13 @@ public sealed record UnlockAccountRequest
     public string UserId { get; init; } = "";
 }
 
+/// <summary>管理员删除用户入参。</summary>
+public sealed record DeleteUserRequest
+{
+    /// <summary>被删除的用户标识。</summary>
+    public string UserId { get; init; } = "";
+}
+
 /// <summary>登录页需要的公开状态。</summary>
 /// <param name="Initialized">是否已经初始化出管理员账号。</param>
 /// <param name="AllowRegistration">是否启用邀请码注册。</param>

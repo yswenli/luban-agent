@@ -422,6 +422,10 @@ const zhCN = {
   'users.noLock': '该用户当前没有锁定记录',
   'users.resetConfirm': '重置「{name}」的密码？该用户当前的登录会立即失效。',
   'users.resetOk': '已生成新密码，请立即转交该用户',
+  'users.deleteConfirm': '删除用户「{name}」？该账号会立即退出登录且无法再登录，其保存的 Git 凭据也会一并删除。',
+  'users.deleted': '已删除用户',
+  'users.deleteSelf': '不能删除自己的账号',
+  'users.deleteBuiltIn': '内置管理员不可删除',
   'users.adminSuffix': ' · 管理员',
   'users.builtinSuffix': ' · 内置',
 

@@ -416,6 +416,10 @@ const ja = {
   'users.noLock': 'このユーザーにロック記録はありません',
   'users.resetConfirm': '「{name}」のパスワードをリセットしますか？このユーザーの現在のログインは即座に無効になります。',
   'users.resetOk': '新しいパスワードを生成しました。すぐに本人へ渡してください',
+  'users.deleteConfirm': 'ユーザー「{name}」を削除しますか？ただちにログアウトされ、以後ログインできなくなります。保存済みの Git 認証情報も削除されます。',
+  'users.deleted': 'ユーザーを削除しました',
+  'users.deleteSelf': '自分のアカウントは削除できません',
+  'users.deleteBuiltIn': '組み込み管理者は削除できません',
   'users.adminSuffix': ' · 管理者',
   'users.builtinSuffix': ' · 組み込み',
 

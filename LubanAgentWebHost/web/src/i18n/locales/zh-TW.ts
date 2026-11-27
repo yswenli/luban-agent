@@ -415,6 +415,10 @@ const zhTW = {
   'users.noLock': '該使用者目前沒有鎖定記錄',
   'users.resetConfirm': '重設「{name}」的密碼？該使用者目前的登入會立即失效。',
   'users.resetOk': '已產生新密碼，請立即轉交該使用者',
+  'users.deleteConfirm': '刪除使用者「{name}」？該帳號會立即登出且無法再登入，其儲存的 Git 憑證也會一併刪除。',
+  'users.deleted': '已刪除使用者',
+  'users.deleteSelf': '不能刪除自己的帳號',
+  'users.deleteBuiltIn': '內建管理員不可刪除',
   'users.adminSuffix': ' · 管理員',
   'users.builtinSuffix': ' · 內建',
 

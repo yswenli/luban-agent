@@ -416,6 +416,11 @@ const pt = {
   'users.noLock': 'Este utilizador não tem registos de bloqueio',
   'users.resetConfirm': 'Repor a palavra-passe de «{name}»? A sessão atual desse utilizador expira de imediato.',
   'users.resetOk': 'Nova palavra-passe gerada; entregue-a ao utilizador de imediato',
+  'users.deleteConfirm': 
+    'Excluir o usuário "{name}"? A sessão será encerrada imediatamente e ele não poderá entrar novamente; as credenciais Git salvas também serão excluídas.',
+  'users.deleted': 'Usuário excluído',
+  'users.deleteSelf': 'Você não pode excluir sua própria conta',
+  'users.deleteBuiltIn': 'O administrador integrado não pode ser excluído',
   'users.adminSuffix': ' · Administrador',
   'users.builtinSuffix': ' · Incorporado',
 

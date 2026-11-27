@@ -543,6 +543,29 @@ public sealed class UserAuthService
         return true;
     }
 
+    /// <summary>
+    /// 管理员删除他人账号：软删除并立即失效其登录状态。
+    /// </summary>
+    /// <remarks>
+    /// 软删除让审计仍可追溯，同时 <see cref="ValidateAsync"/> 不再返回该用户，已签发的令牌即刻作废。
+    /// 账号保存的 Git 凭据里是明文令牌，随账号一起硬删除，避免残留。工作区与磁盘文件不动。
+    /// </remarks>
+    /// <param name="targetUserId">被删除的用户标识。</param>
+    /// <exception cref="AuthException">用户不存在，或目标是内置管理员。</exception>
+    public async Task DeleteUserAsync(string targetUserId)
+    {
+        var user = await _users.GetByUserIdAsync(targetUserId).ConfigureAwait(false)
+                   ?? throw new AuthException(404, "用户不存在");
+
+        if (user.IsBuiltIn)
+        {
+            throw new AuthException(400, "内置管理员不可删除");
+        }
+
+        await _users.LogicDeleteAsync(u => u.Id == user.Id && !u.IsDelete).ConfigureAwait(false);
+        await new GitCredentialRepository().DeleteByUserAsync(user.UserId).ConfigureAwait(false);
+    }
+
     /// <summary>列出全部未删除用户（管理员视图）。</summary>
     /// <returns>用户列表（按创建时间正序）。</returns>
     public async Task<List<AuthUserDto>> ListUsersAsync()

@@ -416,6 +416,11 @@ const it = {
   'users.noLock': 'Questo utente non ha blocchi attivi',
   'users.resetConfirm': 'Reimpostare la password di «{name}»? L\'accesso attuale dell\'utente scadrà subito.',
   'users.resetOk': 'Nuova password generata: consegnala subito all\'utente',
+  'users.deleteConfirm': 
+    'Eliminare l’utente "{name}"? Verrà disconnesso subito e non potrà più accedere; anche le credenziali Git salvate verranno eliminate.',
+  'users.deleted': 'Utente eliminato',
+  'users.deleteSelf': 'Non puoi eliminare il tuo account',
+  'users.deleteBuiltIn': 'L’amministratore integrato non può essere eliminato',
   'users.adminSuffix': ' · amministratore',
   'users.builtinSuffix': ' · integrato',
 

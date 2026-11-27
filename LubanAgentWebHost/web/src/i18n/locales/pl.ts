@@ -416,6 +416,11 @@ const pl = {
   'users.noLock': 'Ten użytkownik nie ma obecnie blokady',
   'users.resetConfirm': 'Zresetować hasło „{name}”? Bieżące sesje tego użytkownika natychmiast wygasną.',
   'users.resetOk': 'Wygenerowano nowe hasło — przekaż je użytkownikowi niezwłocznie',
+  'users.deleteConfirm': 
+    'Usunąć użytkownika „{name}”? Zostanie natychmiast wylogowany i nie będzie mógł się ponownie zalogować; zapisane dane logowania Git również zostaną usunięte.',
+  'users.deleted': 'Usunięto użytkownika',
+  'users.deleteSelf': 'Nie możesz usunąć własnego konta',
+  'users.deleteBuiltIn': 'Wbudowanego administratora nie można usunąć',
   'users.adminSuffix': ' · Administrator',
   'users.builtinSuffix': ' · Wbudowany',
 

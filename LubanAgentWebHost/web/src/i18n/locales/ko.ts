@@ -411,6 +411,10 @@ const ko = {
   'users.noLock': '이 사용자에게는 현재 잠금 기록이 없습니다',
   'users.resetConfirm': '「{name}」의 비밀번호를 재설정할까요? 해당 사용자의 현재 로그인이 즉시 무효화됩니다.',
   'users.resetOk': '새 비밀번호를 생성했습니다. 즉시 해당 사용자에게 전달하세요',
+  'users.deleteConfirm': '사용자 "{name}"을(를) 삭제할까요? 즉시 로그아웃되며 다시 로그인할 수 없고, 저장된 Git 자격 증명도 함께 삭제됩니다.',
+  'users.deleted': '사용자를 삭제했습니다',
+  'users.deleteSelf': '자신의 계정은 삭제할 수 없습니다',
+  'users.deleteBuiltIn': '기본 제공 관리자는 삭제할 수 없습니다',
   'users.adminSuffix': ' · 관리자',
   'users.builtinSuffix': ' · 내장',
 

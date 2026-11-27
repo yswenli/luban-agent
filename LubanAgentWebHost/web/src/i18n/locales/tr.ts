@@ -415,6 +415,11 @@ const tr = {
   'users.noLock': 'Bu kullanıcının geçerli bir kilit kaydı yok',
   'users.resetConfirm': '“{name}” kullanıcısının parolası sıfırlansın mı? Kullanıcının geçerli oturumları hemen geçersiz olur.',
   'users.resetOk': 'Yeni parola oluşturuldu; lütfen hemen kullanıcıya iletin',
+  'users.deleteConfirm': 
+    '"{name}" kullanıcısı silinsin mi? Oturumu hemen kapatılır ve bir daha giriş yapamaz; kayıtlı Git kimlik bilgileri de silinir.',
+  'users.deleted': 'Kullanıcı silindi',
+  'users.deleteSelf': 'Kendi hesabınızı silemezsiniz',
+  'users.deleteBuiltIn': 'Yerleşik yönetici silinemez',
   'users.adminSuffix': ' · Yönetici',
   'users.builtinSuffix': ' · Yerleşik',
 

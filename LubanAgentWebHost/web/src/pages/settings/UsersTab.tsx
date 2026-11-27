@@ -2,7 +2,7 @@ import { createSignal, onMount, Show } from 'solid-js';
 
 import { formatServerDateTime, parseServerUtc } from '../../lib/format';
 import { showToast } from '../../stores/app';
-import { listUsers, resetPassword, unlockUser, userLabel, currentUser, type AuthUser } from '../../stores/auth';
+import { listUsers, deleteUser, resetPassword, unlockUser, userLabel, currentUser, type AuthUser } from '../../stores/auth';
 import { FormActions, SettingsPane, TextField } from './Shared';
 import { t } from '../../i18n';
 
@@ -87,6 +87,31 @@ export function UsersTab() {
     }
   };
 
+  const remove = async (userId: string): Promise<void> => {
+    const user = users().find((item) => item.userId === userId);
+    if (!user) return;
+    if (user.isBuiltIn) {
+      showToast(t('users.deleteBuiltIn'), 'error');
+      return;
+    }
+    if (self(user)) {
+      showToast(t('users.deleteSelf'), 'error');
+      return;
+    }
+    if (!window.confirm(t('users.deleteConfirm', { name: userLabel(user) }))) return;
+
+    setBusy(true);
+    try {
+      await deleteUser(user.userId);
+      showToast(t('users.deleted'), 'success');
+      await reload();
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const copy = async (text: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
@@ -114,6 +139,7 @@ export function UsersTab() {
         setActiveId(key);
         setNewPassword('');
       }}
+      onDelete={(key) => void remove(key)}
     >
       <Show when={active()} fallback={<div class="settings-list-empty">{t('users.selectEmpty')}</div>}>
         {(user) => (

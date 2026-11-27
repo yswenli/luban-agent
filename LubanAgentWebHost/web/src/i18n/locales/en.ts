@@ -450,6 +450,11 @@ const en = {
   'users.resetConfirm':
     "Reset the password for \"{name}\"? That user's current sign-in will be invalidated immediately.",
   'users.resetOk': 'New password generated; hand it to the user right away',
+  'users.deleteConfirm': 
+    'Delete the user "{name}"? They will be signed out immediately and cannot sign in again; their saved Git credentials will also be deleted.',
+  'users.deleted': 'User deleted',
+  'users.deleteSelf': 'You cannot delete your own account',
+  'users.deleteBuiltIn': 'The built-in administrator cannot be deleted',
   'users.adminSuffix': ' · Admin',
   'users.builtinSuffix': ' · Built-in',
 

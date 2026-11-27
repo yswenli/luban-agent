@@ -463,6 +463,11 @@ const es = {
   'users.resetConfirm':
     '¿Restablecer la contraseña de «{name}»? La sesión actual de ese usuario caducará de inmediato.',
   'users.resetOk': 'Se ha generado una nueva contraseña; entréguesela al usuario de inmediato',
+  'users.deleteConfirm': 
+    '¿Eliminar al usuario «{name}»? Se cerrará su sesión de inmediato y no podrá volver a iniciar sesión; también se eliminarán sus credenciales Git guardadas.',
+  'users.deleted': 'Usuario eliminado',
+  'users.deleteSelf': 'No puedes eliminar tu propia cuenta',
+  'users.deleteBuiltIn': 'El administrador integrado no se puede eliminar',
   'users.adminSuffix': ' · Administrador',
   'users.builtinSuffix': ' · Integrado',
 

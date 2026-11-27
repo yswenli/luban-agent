@@ -194,3 +194,8 @@ export async function unlockUser(userId: string): Promise<boolean> {
   const result = await post<{ unlocked: boolean }>('/auth/unlock', { userId });
   return result?.unlocked ?? false;
 }
+
+/** 删除指定用户（仅管理员）：内置管理员与自己不可删。 */
+export async function deleteUser(userId: string): Promise<void> {
+  await post<void>('/auth/deleteUser', { userId });
+}

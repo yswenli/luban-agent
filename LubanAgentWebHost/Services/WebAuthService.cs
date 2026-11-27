@@ -410,6 +410,45 @@ public static class WebAuthService
         },
         ensureUser: false);
 
+    /// <summary>
+    /// 删除指定用户（仅管理员）：软删除账号并立即失效其登录状态。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="DeleteUserRequest"/> JSON。</param>
+    /// <returns>成功壳。</returns>
+    public static Task<ActionResult> DeleteUserAsync(string payload) => WebApi.RunGuardedAsync(
+        async () =>
+        {
+            if (await EnsureAdminAsync().ConfigureAwait(false) is { } denied)
+            {
+                return denied;
+            }
+
+            if (!WebApi.TryReadPayload<DeleteUserRequest>(payload, out var request)
+                || string.IsNullOrWhiteSpace(request?.UserId))
+            {
+                return WebApi.FailJson(400, "用户标识不能为空");
+            }
+
+            var userId = request!.UserId.Trim();
+
+            // 删自己会让当前管理员立即掉线，且可能删掉唯一可用账号；本人注销不在本接口范围内。
+            if (string.Equals(userId, WebApi.UserId, StringComparison.Ordinal))
+            {
+                return WebApi.FailJson(400, "不能删除自己的账号");
+            }
+
+            try
+            {
+                await WebApi.Runtime.Auth.DeleteUserAsync(userId).ConfigureAwait(false);
+                return WebApi.OkJson(new { deleted = true });
+            }
+            catch (AuthException ex)
+            {
+                return WebApi.FailJson(ex.Code, ex.Message);
+            }
+        },
+        ensureUser: false);
+
     /// <summary>把登录令牌写进 HttpOnly Cookie。</summary>
     /// <param name="token">JWT。</param>
     private static void SetAuthCookie(string token)

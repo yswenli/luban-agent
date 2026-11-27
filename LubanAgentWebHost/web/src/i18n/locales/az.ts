@@ -451,6 +451,11 @@ const az = {
   'users.resetConfirm':
     '«{name}» istifadəçisinin parolu sıfırlansın? Onun cari girişi dərhal etibarsız olacaq.',
   'users.resetOk': 'Yeni parol yaradıldı, onu dərhal istifadəçiyə çatdırın',
+  'users.deleteConfirm': 
+    '"{name}" istifadəçisi silinsin? Sessiya dərhal bağlanacaq və bir daha daxil ola bilməyəcək; saxlanmış Git etimad məlumatları da silinəcək.',
+  'users.deleted': 'İstifadəçi silindi',
+  'users.deleteSelf': 'Öz hesabınızı silə bilməzsiniz',
+  'users.deleteBuiltIn': 'Daxili administrator silinə bilməz',
   'users.adminSuffix': ' · Administrator',
   'users.builtinSuffix': ' · Daxili',
 
