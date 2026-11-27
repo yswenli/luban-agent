@@ -347,6 +347,39 @@ public static class WebAuthService
         },
         ensureUser: false);
 
+    /// <summary>
+    /// 解锁指定用户（仅管理员）：清零失败计数并清除锁定。
+    /// </summary>
+    /// <param name="payload">包装后的 <see cref="UnlockAccountRequest"/> JSON。</param>
+    /// <returns>是否清除了锁定状态。</returns>
+    public static Task<ActionResult> UnlockAsync(string payload) => WebApi.RunGuardedAsync(
+        async () =>
+        {
+            if (await EnsureAdminAsync().ConfigureAwait(false) is { } denied)
+            {
+                return denied;
+            }
+
+            if (!WebApi.TryReadPayload<UnlockAccountRequest>(payload, out var request)
+                || string.IsNullOrWhiteSpace(request?.UserId))
+            {
+                return WebApi.FailJson(400, "用户标识不能为空");
+            }
+
+            try
+            {
+                var cleared = await WebApi.Runtime.Auth
+                    .UnlockAsync(request!.UserId.Trim())
+                    .ConfigureAwait(false);
+                return WebApi.OkJson(new { unlocked = cleared });
+            }
+            catch (AuthException ex)
+            {
+                return WebApi.FailJson(ex.Code, ex.Message);
+            }
+        },
+        ensureUser: false);
+
     /// <summary>把登录令牌写进 HttpOnly Cookie。</summary>
     /// <param name="token">JWT。</param>
     private static void SetAuthCookie(string token)

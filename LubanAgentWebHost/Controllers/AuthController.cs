@@ -90,4 +90,10 @@ public sealed class AuthController : Controller
     /// <returns>被重置的用户与一次性新密码。</returns>
     [HttpPost]
     public Task<ActionResult> ResetPassword(string payload) => WebAuthService.ResetPasswordAsync(payload);
+
+    /// <summary>解锁指定用户（仅管理员）。</summary>
+    /// <param name="payload">包装后的 <see cref="UnlockAccountRequest"/> JSON。</param>
+    /// <returns>是否清除了锁定状态。</returns>
+    [HttpPost]
+    public Task<ActionResult> Unlock(string payload) => WebAuthService.UnlockAsync(payload);
 }

@@ -55,4 +55,12 @@ public class DbAgentUser : EntityBase
     /// <summary>最后登录时间（UTC）。</summary>
     [SugarColumn(ColumnDescription = "最后登录时间", IsNullable = true)]
     public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>连续登录失败次数：登录成功后清零。</summary>
+    [SugarColumn(ColumnDescription = "连续登录失败次数", IsNullable = false)]
+    public int FailedLoginCount { get; set; }
+
+    /// <summary>锁定到期时间（UTC）；为空表示未锁定。管理员解锁或登录成功后清零。</summary>
+    [SugarColumn(ColumnDescription = "锁定到期时间", IsNullable = true)]
+    public DateTime? LockedUntil { get; set; }
 }

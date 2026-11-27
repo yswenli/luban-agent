@@ -14,6 +14,8 @@ export interface AuthUser {
   isAdmin: boolean;
   isBuiltIn: boolean;
   lastLoginAt?: string | null;
+  failedLoginCount?: number;
+  lockedUntil?: string | null;
 }
 
 /** 登录页公开状态（`/auth/status`）。 */
@@ -165,4 +167,10 @@ export async function listUsers(): Promise<AuthUser[]> {
 export async function resetPassword(userId: string): Promise<string> {
   const result = await post<{ userId: string; password: string }>('/auth/resetPassword', { userId });
   return result?.password ?? '';
+}
+
+/** 解锁指定用户（仅管理员）：清零失败计数并清除锁定。 */
+export async function unlockUser(userId: string): Promise<boolean> {
+  const result = await post<{ unlocked: boolean }>('/auth/unlock', { userId });
+  return result?.unlocked ?? false;
 }

@@ -42,13 +42,17 @@ public sealed record RegisterRequest
 /// <param name="IsAdmin">是否管理员。</param>
 /// <param name="IsBuiltIn">是否内置账号。</param>
 /// <param name="LastLoginAt">最后登录时间。</param>
+/// <param name="FailedLoginCount">连续登录失败次数。</param>
+/// <param name="LockedUntil">锁定到期时间（UTC）；为空表示未锁定。</param>
 public sealed record AuthUserDto(
     string UserId,
     string UserName,
     string? DisplayName,
     bool IsAdmin,
     bool IsBuiltIn,
-    DateTime? LastLoginAt);
+    DateTime? LastLoginAt,
+    int FailedLoginCount,
+    DateTime? LockedUntil);
 
 /// <summary>登录 / 注册成功后的响应。</summary>
 /// <param name="User">用户信息。</param>
@@ -112,6 +116,13 @@ public sealed record ResetPasswordRequest
 /// <param name="UserId">被重置的用户标识。</param>
 /// <param name="Password">随机生成的新密码；只在本次响应里返回一次。</param>
 public sealed record ResetPasswordResult(string UserId, string Password);
+
+/// <summary>管理员解锁账号入参。</summary>
+public sealed record UnlockAccountRequest
+{
+    /// <summary>被解锁的用户标识。</summary>
+    public string UserId { get; init; } = "";
+}
 
 /// <summary>登录页需要的公开状态。</summary>
 /// <param name="Initialized">是否已经初始化出管理员账号。</param>

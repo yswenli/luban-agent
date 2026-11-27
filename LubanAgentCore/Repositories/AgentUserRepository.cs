@@ -50,13 +50,61 @@ public class AgentUserRepository : AgentRepository<DbAgentUser>
             .OrderBy(u => u.CreateTime)
             .ToListAsync();
 
-    /// <summary>记录一次成功登录。</summary>
+    /// <summary>记录一次成功登录，同时清零失败计数与锁定状态。</summary>
     /// <param name="userId">用户标识。</param>
     /// <param name="at">登录时间（UTC）。</param>
-    /// <returns>更新任务。</returns>
-    public Task TouchLoginAsync(string userId, DateTime at)
+    /// <returns>是否更新到行。</returns>
+    public Task<bool> TouchLoginAsync(string userId, DateTime at)
         => UpdateAsync(
-            u => new DbAgentUser { LastLoginAt = at, UpdateTime = DateTime.Now },
+            u => new DbAgentUser
+            {
+                LastLoginAt = at,
+                FailedLoginCount = 0,
+                LockedUntil = null,
+                UpdateTime = DateTime.Now
+            },
+            u => u.UserId == userId && !u.IsDelete);
+
+    /// <summary>失败计数原子加一，并返回加一后的真实值。</summary>
+    /// <remarks>
+    /// 计数用单条 UPDATE 自增，避免并发登录各读各写漏计；读取回真实值后再由业务层决定是否落锁定。
+    /// </remarks>
+    /// <param name="userId">用户标识。</param>
+    /// <returns>本次失败后的连续失败次数；用户不存在时为 0。</returns>
+    public async Task<int> RegisterLoginFailureAsync(string userId)
+    {
+        await Context.Updateable<DbAgentUser>()
+            .SetColumns(u => u.FailedLoginCount == u.FailedLoginCount + 1)
+            .SetColumns(u => u.UpdateTime == DateTime.Now)
+            .Where(u => u.UserId == userId && !u.IsDelete)
+            .ExecuteCommandAsync()
+            .ConfigureAwait(false);
+
+        var user = await GetByUserIdAsync(userId).ConfigureAwait(false);
+        return user?.FailedLoginCount ?? 0;
+    }
+
+    /// <summary>写入失败计数与锁定到期时间。</summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="failedCount">失败次数。</param>
+    /// <param name="lockedUntil">锁定到期时间（UTC）；为空表示未锁定。</param>
+    /// <returns>是否更新到行。</returns>
+    public Task<bool> SetLoginLockAsync(string userId, int failedCount, DateTime? lockedUntil)
+        => UpdateAsync(
+            u => new DbAgentUser
+            {
+                FailedLoginCount = failedCount,
+                LockedUntil = lockedUntil,
+                UpdateTime = DateTime.Now
+            },
+            u => u.UserId == userId && !u.IsDelete);
+
+    /// <summary>清零失败计数并解除锁定（管理员解锁、锁定到期后重新计数、改密重置）。</summary>
+    /// <param name="userId">用户标识。</param>
+    /// <returns>是否更新到行。</returns>
+    public Task<bool> ClearLoginFailureAsync(string userId)
+        => UpdateAsync(
+            u => new DbAgentUser { FailedLoginCount = 0, LockedUntil = null, UpdateTime = DateTime.Now },
             u => u.UserId == userId && !u.IsDelete);
 
     /// <summary>修改显示名。</summary>

@@ -1,8 +1,8 @@
 import { createSignal, onMount, Show } from 'solid-js';
 
-import { formatServerDateTime } from '../../lib/format';
+import { formatServerDateTime, parseServerUtc } from '../../lib/format';
 import { showToast } from '../../stores/app';
-import { listUsers, resetPassword, userLabel, currentUser, type AuthUser } from '../../stores/auth';
+import { listUsers, resetPassword, unlockUser, userLabel, currentUser, type AuthUser } from '../../stores/auth';
 import { FormActions, SettingsPane, TextField } from './Shared';
 
 /**
@@ -36,6 +36,33 @@ export function UsersTab() {
 
   /* 自我重置会让当前会话立即失效、新密码只返回一次；本人改密走「账号」页。 */
   const self = (user: AuthUser): boolean => user.userId === currentUser()?.userId;
+
+  /* 服务端 UTC 时间不带时区后缀，直接 new Date 会按本地时间解读，必须走 parseServerUtc。 */
+  const locked = (user: AuthUser): boolean => {
+    const until = parseServerUtc(user.lockedUntil)?.getTime() ?? 0;
+    return until > Date.now();
+  };
+
+  const lockState = (user: AuthUser): string => {
+    if (locked(user)) return `已锁定，至 ${formatServerDateTime(user.lockedUntil)}`;
+    const failed = user.failedLoginCount ?? 0;
+    return failed > 0 ? `可登录（连续失败 ${failed} 次）` : '正常';
+  };
+
+  const unlock = async (): Promise<void> => {
+    const user = active();
+    if (!user) return;
+    setBusy(true);
+    try {
+      const cleared = await unlockUser(user.userId);
+      showToast(cleared ? '已解锁' : '该用户当前没有锁定记录', 'success');
+      await reload(user.userId);
+    } catch (error) {
+      showToast((error as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const reset = async (): Promise<void> => {
     const user = active();
@@ -110,6 +137,13 @@ export function UsersTab() {
                 readOnly
                 onInput={() => undefined}
               />
+              <TextField
+                label="登录状态"
+                value={lockState(user())}
+                readOnly
+                hint="连续 5 次密码错误会锁定 30 分钟，到期自动解除"
+                onInput={() => undefined}
+              />
               <Show when={newPassword()}>
                 <TextField
                   label="新密码"
@@ -135,6 +169,14 @@ export function UsersTab() {
                 }
               >
                 重置密码
+              </button>
+              <button
+                class="btn"
+                onClick={() => void unlock()}
+                disabled={busy() || (!locked(user()) && !(user().failedLoginCount ?? 0))}
+                title={locked(user()) ? '清除锁定，让该用户立即可以重新登录' : '清零失败计数'}
+              >
+                解锁
               </button>
               <Show when={newPassword()}>
                 <button class="btn" onClick={() => void copy(newPassword())}>

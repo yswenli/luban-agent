@@ -132,10 +132,44 @@ public sealed class UserAuthService
             throw new AuthException(400, "用户名和密码不能为空");
         }
 
+        var nowUtc = _time.GetUtcNow().UtcDateTime;
         var user = await _users.GetByUserNameAsync(userName).ConfigureAwait(false);
-        if (user is null || !PasswordHasher.Verify(password, user.PasswordHash))
+
+        // 未知用户名同样回通用 401：不落失败计数，否则等于给出用户名字典探测通道
+        if (user is null)
         {
-            throw new AuthException(401, "用户名或密码错误");
+            throw new AuthException(401, LoginLockoutPolicy.InvalidCredentialsMessage);
+        }
+
+        if (LoginLockoutPolicy.IsLocked(user.LockedUntil, nowUtc))
+        {
+            throw new AuthException(429, LoginLockoutPolicy.BuildLockedMessage(user.LockedUntil, nowUtc));
+        }
+
+        // 上次锁定已到期：从零重新计数，避免「到期后再错一次又锁 30 分钟」
+        if (user.LockedUntil is not null || user.FailedLoginCount >= LoginLockoutPolicy.MaxFailedAttempts)
+        {
+            await _users.ClearLoginFailureAsync(user.UserId).ConfigureAwait(false);
+            user.FailedLoginCount = 0;
+            user.LockedUntil = null;
+        }
+
+        if (!PasswordHasher.Verify(password, user.PasswordHash))
+        {
+            // 计数用单条 UPDATE 自增拿到真实值，再按规则决定是否落锁定
+            var failed = await _users.RegisterLoginFailureAsync(user.UserId).ConfigureAwait(false);
+            var lockedUntil = LoginLockoutPolicy.NextLockedUntil(failed, user.LockedUntil, nowUtc);
+            if (lockedUntil != user.LockedUntil)
+            {
+                await _users.SetLoginLockAsync(user.UserId, failed, lockedUntil).ConfigureAwait(false);
+            }
+
+            if (LoginLockoutPolicy.IsLocked(lockedUntil, nowUtc))
+            {
+                throw new AuthException(429, LoginLockoutPolicy.BuildLockedMessage(lockedUntil, nowUtc));
+            }
+
+            throw new AuthException(401, LoginLockoutPolicy.InvalidCredentialsMessage);
         }
 
         if (user.Disabled)
@@ -468,6 +502,28 @@ public sealed class UserAuthService
         return password;
     }
 
+    /// <summary>
+    /// 管理员解锁：清零失败计数并清除锁定到期时间。
+    /// </summary>
+    /// <param name="targetUserId">目标用户标识。</param>
+    /// <returns>原本处于锁定或计数状态并已清除时返回 true。</returns>
+    /// <exception cref="AuthException">用户不存在。</exception>
+    public async Task<bool> UnlockAsync(string targetUserId)
+    {
+        var user = await _users.GetByUserIdAsync(targetUserId).ConfigureAwait(false)
+                   ?? throw new AuthException(404, "用户不存在");
+
+        if (user.FailedLoginCount == 0 && user.LockedUntil is null)
+        {
+            return false;
+        }
+
+        await _users.ClearLoginFailureAsync(user.UserId).ConfigureAwait(false);
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
+        return true;
+    }
+
     /// <summary>列出全部未删除用户（管理员视图）。</summary>
     /// <returns>用户列表（按创建时间正序）。</returns>
     public async Task<List<AuthUserDto>> ListUsersAsync()
@@ -508,7 +564,15 @@ public sealed class UserAuthService
     /// <param name="user">用户实体。</param>
     /// <returns>用户信息。</returns>
     public static AuthUserDto ToDto(DbAgentUser user)
-        => new(user.UserId, user.UserName, user.DisplayName, user.IsAdmin, user.IsBuiltIn, user.LastLoginAt);
+        => new(
+            user.UserId,
+            user.UserName,
+            user.DisplayName,
+            user.IsAdmin,
+            user.IsBuiltIn,
+            user.LastLoginAt,
+            user.FailedLoginCount,
+            user.LockedUntil);
 
     private WebTokenClaims BuildClaims(DbAgentUser user, DateTimeOffset now)
     {
@@ -528,14 +592,21 @@ public sealed class UserAuthService
             now);
     }
 
-    private static InviteCodeDto ToDto(DbInviteCode code)
+    private InviteCodeDto ToDto(DbInviteCode code)
+        => ToDto(code, _time.GetUtcNow().UtcDateTime);
+
+    /// <summary>把邀请码实体转成传输模型，过期判定使用调用方给出的时间。</summary>
+    /// <param name="code">邀请码实体。</param>
+    /// <param name="nowUtc">当前时间（UTC）。</param>
+    /// <returns>邀请码信息。</returns>
+    internal static InviteCodeDto ToDto(DbInviteCode code, DateTime nowUtc)
         => new(
             code.Code,
             code.CreatedBy,
             code.ExpiresAt,
             code.UsedBy,
             code.UsedAt,
-            code.ExpiresAt <= DateTime.UtcNow);
+            code.ExpiresAt <= nowUtc);
 
     private static string NormalizeUserName(string? userName)
         => (userName ?? string.Empty).Trim();
@@ -588,12 +659,16 @@ public sealed class UserAuthService
             {
                 PasswordHash = PasswordHasher.Hash(password),
                 TokenVersion = user.TokenVersion + 1,
+                FailedLoginCount = 0,
+                LockedUntil = null,
                 UpdateTime = DateTime.Now
             },
             u => u.Id == user.Id).ConfigureAwait(false);
 
         // 保持内存实体与库一致：调用方随后要按新版本签发令牌
         user.TokenVersion += 1;
+        user.FailedLoginCount = 0;
+        user.LockedUntil = null;
 
         // 新密码恰好等于显示名时，显示名会明文泄露口令：回退登录名（显示与「未设置」等价）
         if (!string.IsNullOrWhiteSpace(user.DisplayName)

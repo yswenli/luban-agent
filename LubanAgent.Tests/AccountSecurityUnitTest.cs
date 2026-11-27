@@ -7,6 +7,7 @@
 *
 *****************************************************************************/
 
+using LubanAgentCore.Entities;
 using LubanAgentCore.Security;
 
 namespace LubanAgent.Tests;
@@ -160,5 +161,55 @@ public class AccountSecurityUnitTest
     public void Jwt_KeyShorterThan32Bytes_Throws()
     {
         Assert.ThrowsExactly<ArgumentException>(() => new JwtTokenService(new byte[31]));
+    }
+
+    [TestMethod]
+    public void 登录失败达到阈值后锁定30分钟()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // 前 4 次只计数，不锁定
+        for (var i = 1; i <= 4; i++)
+        {
+            Assert.IsNull(LoginLockoutPolicy.NextLockedUntil(i, null, now));
+            Assert.IsFalse(LoginLockoutPolicy.IsLocked(null, now));
+            Assert.AreEqual(0, LoginLockoutPolicy.RemainingMinutes(null, now));
+        }
+
+        // 第 5 次触发锁定
+        var lockedUntil = LoginLockoutPolicy.NextLockedUntil(LoginLockoutPolicy.MaxFailedAttempts, null, now);
+        Assert.AreEqual(now.Add(LoginLockoutPolicy.LockoutDuration), lockedUntil);
+        Assert.IsTrue(LoginLockoutPolicy.IsLocked(lockedUntil, now));
+        Assert.AreEqual(30, LoginLockoutPolicy.RemainingMinutes(lockedUntil, now));
+        StringAssert.Contains(LoginLockoutPolicy.BuildLockedMessage(lockedUntil, now), "30 分钟");
+
+        // 锁定期间再次失败不延长、不缩短原到期时间
+        Assert.AreEqual(lockedUntil, LoginLockoutPolicy.NextLockedUntil(6, lockedUntil, now));
+    }
+
+    [TestMethod]
+    public void 锁定到期后不再算锁定()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var lockedUntil = now.Add(LoginLockoutPolicy.LockoutDuration);
+        var after = lockedUntil.AddMinutes(1);
+
+        Assert.IsFalse(LoginLockoutPolicy.IsLocked(lockedUntil, after));
+        Assert.AreEqual(0, LoginLockoutPolicy.RemainingMinutes(lockedUntil, after));
+
+        // 登录流程在锁定到期后会先清零计数（UserAuthService.LoginAsync），因此下一次失败从 1 开始：
+        // 只计数、不立刻重新锁定
+        Assert.IsNull(LoginLockoutPolicy.NextLockedUntil(1, null, after));
+        Assert.IsFalse(LoginLockoutPolicy.IsLocked(null, after));
+    }
+
+    [TestMethod]
+    public void 邀请码过期判定使用调用方时间()
+    {
+        var expiresAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var code = new DbInviteCode { Code = "ABCD2345", ExpiresAt = expiresAt };
+
+        Assert.IsFalse(UserAuthService.ToDto(code, expiresAt.AddSeconds(-1)).Expired);
+        Assert.IsTrue(UserAuthService.ToDto(code, expiresAt).Expired, "到达过期时刻即视为过期");
     }
 }
