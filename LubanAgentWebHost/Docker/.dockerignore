@@ -1,0 +1,15 @@
+# 构建上下文 = dotnet publish 产物目录，本文件由 build-image.ps1 复制到该目录后生效。
+# 手动构建时需自行把本文件放到产物目录根部（Docker 只认上下文根目录的 .dockerignore）。
+
+# Playwright 驱动：Linux node 143 MB + Windows node.exe 95 MB + JS 包。
+# 镜像里跑不了 Chromium（缺 libnss3 等系统库），且驱动解析器在应用旁找不到时会按需
+# 下载到 ~/.luban-agent/playwright-driver/{version}，因此默认不进镜像。
+.playwright/
+playwright.ps1
+
+# 嵌入模型包（52 MB）：镜像不带，首次启动按 DownloadUrl 下载到 /data/models 并解压。
+# 该能力需要 LubanAgentCore 的 ModelManager 支持下载（本地缺包 → 下载 → 解压）。
+EmbeddingModels/
+
+# 调试符号
+*.pdb

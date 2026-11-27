@@ -1,0 +1,34 @@
+# LubanAgentWebHost 单容器编排。
+#
+# 用法：
+#   cp .env.example .env            # 首次：按需改端口、管理员密码、模型下载地址、项目目录
+#   pwsh -File ./build-image.ps1    # 发布并构建镜像（默认打 latest）
+#   docker compose up -d            # 启动
+#   docker compose logs -f          # 看启动日志（首次会打印内置管理员初始密码）
+#   docker compose down             # 停止（数据留在 luban-agent-data 卷里）
+#
+# 运行期配置全部来自同目录 .env：compose 用它做 ${} 插值，并通过 env_file 注入容器。
+# 文件缺失时 compose 直接报错——这是有意的：漏配 LUBAN_AGENT_HOME 会把数据写进容器层，
+# 容器一重建就全丢。路径类配置（HOME、日志目录、工作区宿主目录）都改 .env，不改本文件。
+
+services:
+  webhost:
+    image: luban-agent-webhost:${LUBAN_WEBHOST_TAG:-latest}
+    container_name: luban-agent-webhost
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${LUBAN_WEBHOST_PORT:-18080}:18080"
+    volumes:
+      # 数据卷：数据库、模型、仓库、工作区、JWT 密钥、插件、日志
+      - luban-agent-data:/data
+      # Agent 要读写的宿主机项目目录，挂到 /data 之下：工作区根目录白名单默认就是 /data
+      # （WorkspaceRootsStore 默认根 = AgentHome.Root），因此容器内路径填 /data/projects/xxx
+      # 即可直接新建工作区，不用再改白名单。宿主侧路径由 .env 的 LUBAN_WORKSPACE_HOST_DIR 指定。
+      - "${LUBAN_WORKSPACE_HOST_DIR:-./workspace}:/data/projects"
+
+volumes:
+  luban-agent-data:
+    # 固定卷名：避免随 compose 项目名（目录名）变化，运维命令与备份脚本才能稳定引用
+    name: luban-agent-data

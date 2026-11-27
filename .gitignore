@@ -38,5 +38,8 @@
 /LubanAgentWebHost/wwwroot/runtime-config.js
 /logs
 
+# 容器部署的运行期配置（含管理员初始密码等），只提交模板
+/LubanAgentWebHost/Docker/.env
+
 # 头脑风暴可视化窗口的本地产物
 /.superpowers/
