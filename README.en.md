@@ -568,7 +568,7 @@ luban-agent/
 
 - **UI/Business Separation**: CLI and Codex handle only interaction and rendering; all Agent capabilities come from Core
 - **Unified Service Entry**: chat, sessions and workspaces are exposed by `LubanAgentWebHost`; the transport protocol (`Core/Protocol/`) and the client implementation (`Core/Client/`) both live in `LubanAgentCore` — see "Unified Agent Service" above
-- **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow
+- **Single Source for Embedding Models**: `bge-small-zh-v1.5.zip` is maintained only in Core and propagated to each client's output directory via ProjectReference content flow; when the bundle is missing and `LuBanAgent:Tools:Retrieval:DownloadUrl` is set, startup downloads it to `<data root>/models/{modelId}.zip` before unzipping (this is how the container image works, so it carries no 52 MB model bundle)
 - **Unified Configuration**: Both clients share the user configuration in `.luban-agent/` under the user's home directory (Windows: `%USERPROFILE%\.luban-agent\`; Linux/macOS: `~/.luban-agent/`); the session database `luban-ai-agent.db` is owned exclusively by the WebHost and lives in the same root (`Data Source=./luban-ai-agent.db` in `appsettings.json` is a relative path that the host rewrites to `~/.luban-agent/luban-ai-agent.db`), and clients never open it
 
 ---
@@ -722,7 +722,7 @@ The host binds its listening socket to `0.0.0.0` (SAEA.MVC exposes no bind-addre
       "FileSystem": { "Enabled": true, "AllowedRoots": ["C:\\Work"] },
       "Script":     { "Enabled": true, "Shell": "cmd" },
       "Web":        { "Enabled": true },
-      "Retrieval":  { "Enabled": true, "ModelId": "bge-small-zh-v1.5" }
+      "Retrieval":  { "Enabled": true, "ModelId": "bge-small-zh-v1.5", "AutoDownload": true, "DownloadUrl": "https://tejingcai.oss-cn-shanghai.aliyuncs.com/onnx/bge-small-zh-v1.5.zip" }
     },
     "Orchestration": {
       "Enabled": true,
@@ -732,6 +732,8 @@ The host binds its listening socket to `0.0.0.0` (SAEA.MVC exposes no bind-addre
   }
 }
 ```
+
+> Retrieval uses the `EmbeddingModels/bge-small-zh-v1.5.zip` shipped with the published output by default; when the bundle is missing (as in the container image) it is downloaded from `DownloadUrl` into `models/` under the data root — set `AutoDownload=false` or leave the URL empty to skip. A failed download only disables retrieval (LLM Wiki Q&A); startup is unaffected.
 
 ### User Configuration (~/.luban-agent/users/<userId>/config.json)
 

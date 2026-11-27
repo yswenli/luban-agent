@@ -568,7 +568,7 @@ luban-agent/
 
 - **UI 与业务分离**：CLI 与 Codex 只负责交互与渲染，全部 Agent 能力由 Core 提供
 - **统一服务入口**：对话、会话、工作区经 `LubanAgentWebHost` 暴露，传输协议（`Core/Protocol/`）与客户端实现（`Core/Client/`）同属 `LubanAgentCore`，接入方式见上方「统一 Agent 服务」
-- **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录
+- **嵌入模型单一来源**：`bge-small-zh-v1.5.zip` 仅在 Core 中维护，经 ProjectReference 内容传播带入各客户端输出目录；本地缺包且配置了 `LuBanAgent:Tools:Retrieval:DownloadUrl` 时，启动阶段会先下载到 `<数据根>/models/{modelId}.zip` 再解压（容器镜像即走这条路，因此不带 52 MB 模型包）
 - **统一配置**：两个客户端共享用户主目录下 `.luban-agent/`（Windows：`%USERPROFILE%\.luban-agent\`，Linux/macOS：`~/.luban-agent/`）中的用户配置；会话数据库 `luban-ai-agent.db` 由 WebHost 独占，落在同一根目录（`appsettings.json` 中的 `Data Source=./luban-ai-agent.db` 是相对路径，宿主会改写到 `~/.luban-agent/luban-ai-agent.db`），客户端不打开数据库
 
 ---
@@ -722,7 +722,7 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
       "FileSystem": { "Enabled": true, "AllowedRoots": ["C:\\Work"] },
       "Script":     { "Enabled": true, "Shell": "cmd" },
       "Web":        { "Enabled": true },
-      "Retrieval":  { "Enabled": true, "ModelId": "bge-small-zh-v1.5" }
+      "Retrieval":  { "Enabled": true, "ModelId": "bge-small-zh-v1.5", "AutoDownload": true, "DownloadUrl": "https://tejingcai.oss-cn-shanghai.aliyuncs.com/onnx/bge-small-zh-v1.5.zip" }
     },
     "Orchestration": {
       "Enabled": true,
@@ -732,6 +732,8 @@ npm run build          # 产物落 LubanAgentWebHost/wwwroot
   }
 }
 ```
+
+> 检索默认使用随发布产物提供的 `EmbeddingModels/bge-small-zh-v1.5.zip`；该包缺失时（如容器镜像）按 `DownloadUrl` 下载到数据根的 `models/` 下，`AutoDownload=false` 或地址留空则跳过。下载失败只关闭检索（LLM Wiki 问答不可用），不影响启动。
 
 ### 用户配置 (~/.luban-agent/users/<userId>/config.json)
 
