@@ -21,7 +21,8 @@ export function parseHash(hash: string): Route {
   if (chat) return { name: 'chat', sessionId: decodeURIComponent(chat[1]) };
 
   const settings = value.match(/^\/settings(?:\/([^/?#]+))?/);
-  if (settings) return { name: 'settings', tab: settings[1] ?? 'provider' };
+  // 省略页签时落到导航第一项（账号），与侧栏「设置」入口的预期一致
+  if (settings) return { name: 'settings', tab: settings[1] ?? 'account' };
 
   if (/^\/wiki(?:[/?#]|$)/.test(value)) return { name: 'wiki' };
 
@@ -65,7 +66,7 @@ export function openSessions(): void {
   navigate('#/');
 }
 
-export function openSettings(tab = 'provider'): void {
+export function openSettings(tab = 'account'): void {
   navigate(`#/settings/${tab}`);
 }
 
