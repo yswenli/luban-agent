@@ -698,6 +698,164 @@ body.is-sorting .side-item {
   line-height: 1.5;
 }
 
+/* ── 左栏搜索与「项目 → 会话」二级菜单 ─────────────────────────────────── */
+
+.side-search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin: 0 2px 8px 8px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  transition: border-color 0.13s ease, background 0.13s ease;
+}
+
+.side-search:focus-within {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text-dim);
+}
+
+.side-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.side-search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* 原生清除按钮与自定义清除按钮重复，隐藏原生的 */
+.side-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.side-search .icon-btn {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+/* 行首展开箭头：只做纯展开/收起，不承担选中 */
+.side-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
+.side-chevron:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* 会话子树：项目行展开后挂在它下面；拖动排序时临时隐藏，插入槽位只按项目行算 */
+.side-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+body.is-sorting .side-sessions {
+  display: none;
+}
+
+.side-session {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  /* 缩进到项目名附近，视觉上从属于上面的项目 */
+  padding: 0 6px 0 44px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
+.side-session:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.side-session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.side-session-time {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.13s ease;
+}
+
+/* 「更多」覆盖在时间标签原本的位置：行太窄，再多留一列会把标题挤没 */
+.side-session .session-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding-left: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  opacity: 0;
+}
+
+.side-session:hover .session-actions,
+.side-session .session-actions:focus-within {
+  opacity: 1;
+}
+
+.side-session:hover .side-session-time {
+  opacity: 0;
+}
+
+.side-session .session-actions .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.side-session-more {
+  height: 28px;
+  padding: 0 6px 0 44px;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-session-more:hover {
+  background: var(--surface-2);
+}
+
 .side-links {
   flex: 0 0 auto;
   margin-top: auto;
@@ -785,15 +943,7 @@ body.is-sorting .side-item {
   margin-left: 0;
 }
 
-/* 竖排顺序：开关 → 新建项目 → 清空筛选；DOM 里「清空」在前，靠 order 换位（仅收起态） */
-.home-side.collapsed .side-head .side-new-project {
-  order: 1;
-}
-
-.home-side.collapsed .side-head .side-clear-filter {
-  order: 2;
-}
-
+/* 竖排顺序：开关 → 新建项目（DOM 顺序即如此） */
 .home-side.collapsed .side-head .icon-btn {
   width: 34px;
   height: 34px;
@@ -876,8 +1026,55 @@ body.is-sorting .side-item {
   margin-inline: auto;
 }
 
-.home-search {
-  margin: 18px 0 0;
+/* 项目详情页头：徽标 + 名称/根路径 + 会话数 + 刷新/新建 */
+.project-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0 12px;
+}
+
+.project-head-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.project-head-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.project-head-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.project-head-sub {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.project-count {
+  flex: 0 0 auto;
+}
+
+/* 没有任何项目时的整页空态：让空态块在剩余高度内居中 */
+.home-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
 }
 
 .home-scroll {
@@ -965,10 +1162,6 @@ body.is-sorting .side-item {
   color: var(--text-faint);
 }
 
-.home-search input {
-  padding-right: 44px;
-}
-
 .group {
   margin-top: 18px;
 }
@@ -1026,8 +1219,7 @@ body.is-sorting .side-item {
   font-weight: 500;
 }
 
-/* 时间标签 + 工作区名成组靠右；此处必须是 flex，否则内部 .session-ws 退回行内元素，
-   max-width / overflow / text-overflow 全部失效，长名字会撑破行。 */
+/* 时间标签靠右成组；此处必须是 flex，右侧「更多」按钮才能与时间垂直居中对齐。 */
 .session-meta {
   display: flex;
   align-items: center;
@@ -1036,18 +1228,7 @@ body.is-sorting .side-item {
   min-width: 0;
 }
 
-.session-ws {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-size: 12.5px;
-  color: var(--text-faint);
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 时间标签：紧贴工作区名左侧，胶囊形状以区分正文文本 */
+/* 时间标签：胶囊形状以区分正文文本 */
 .session-time {
   flex: 0 0 auto;
   padding: 1px 7px;
@@ -3293,10 +3474,6 @@ button.attachment-chip:focus-visible {
     white-space: nowrap;
   }
 
-  .session-ws {
-    max-width: 80px;
-  }
-
   .home-side {
     flex: 0 0 auto;
     padding: 12px 14px 10px;
@@ -3320,6 +3497,17 @@ button.attachment-chip:focus-visible {
     max-width: 190px;
     flex: 0 0 auto;
     border: 1px solid var(--border);
+  }
+
+  /* 窄屏是横排 chip：二级菜单与行首箭头都不展示，点 chip 只切换右栏项目 */
+  .side-chevron,
+  .side-sessions {
+    display: none;
+  }
+
+  /* 搜索框占满整行，放在 chip 行上方 */
+  .side-search {
+    margin: 0 0 8px;
   }
 
   .side-links {
@@ -3358,10 +3546,6 @@ button.attachment-chip:focus-visible {
   /* 会话页同理：左栏变横排 chip 后必须上下堆叠，否则 chip 行会把正文挤成一条竖带 */
   .chat-body {
     flex-direction: column;
-  }
-
-  .home-search {
-    margin-top: 12px;
   }
 
   .model-pill .model-name {

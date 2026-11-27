@@ -129,20 +129,17 @@ const es = {
   'sessionList.resizeLabel': 'Ajustar el ancho de la barra de proyectos',
   'sessionList.refresh': 'Actualizar conversaciones',
   'sessionList.loading': 'Cargando conversaciones…',
-  'sessionList.emptyTitle': 'Aún no hay conversaciones',
-  'sessionList.emptyBody':
-    'Cree una conversación para empezar; se vinculará al espacio de trabajo actual.',
   'sessionList.emptyProjectTitle': 'Este proyecto aún no tiene conversaciones',
   'sessionList.emptyProjectBody': 'Cree una conversación; se vinculará al proyecto actual.',
-  'sessionList.noMatchTitle': 'No hay conversaciones coincidentes',
-  'sessionList.noMatchBody':
-    'Pruebe con otra palabra clave o borre la búsqueda para ver todas las conversaciones.',
+  'sessionList.projectSessions': '{count} conversaciones',
+  'sessionList.unassignedHint': 'Esta conversación no está asignada a ningún proyecto',
+  'sessionList.noProjectTitle': 'Aún no hay proyectos',
+  'sessionList.noProjectBody': 'Crea un proyecto primero; las conversaciones se agrupan por proyecto.',
   'sessionList.renameTitle': 'Renombrar conversación',
   'sessionList.renameLabel': 'Título',
   'sessionList.deleteTitle': 'Eliminar conversación',
   'sessionList.deleteMessage':
     '¿Eliminar «{name}»? También se eliminarán los mensajes de esta conversación.',
-  'sessionList.unknownProject': 'Proyecto desconocido',
 
   // ── Detalle del plugin (pages/plugins/PluginDetail.tsx) ─────────────────
   'plugins.zipRequired': 'Seleccione un paquete de plugin en formato .zip',
@@ -673,7 +670,6 @@ const es = {
   'chat.commandIrreversible':
     'Este comando no se puede deshacer una vez ejecutado. ¿Desea continuar?',
   'chat.cleared': 'Mensajes borrados',
-  'chat.projectNoSession': 'Este proyecto aún no tiene conversaciones',
   'chat.resizeProjectBar': 'Ajustar el ancho de la barra de proyectos',
   'chat.backToList': 'Volver a la lista',
   'chat.unknownProject': 'Proyecto desconocido',
@@ -972,11 +968,17 @@ const es = {
     'Vista previa en un diálogo (Ctrl+clic para abrir en una pestaña nueva)',
 
   // ── Barra lateral de proyectos (components/ProjectSidebar.tsx) ──────────
-  'sidebar.filterAgain': '· pulse otra vez para quitar el filtro',
   'sidebar.expand': 'Expandir la barra lateral',
   'sidebar.collapse': 'Contraer la barra lateral',
   'sidebar.projects': 'Proyectos',
-  'sidebar.showAllProjects': 'Mostrar todos los proyectos',
+  'sidebar.searchProjects': 'Buscar proyectos o conversaciones',
+  'sidebar.clearSearch': 'Borrar búsqueda',
+  'sidebar.expandProject': 'Expandir proyecto',
+  'sidebar.collapseProject': 'Contraer proyecto',
+  'sidebar.viewAllSessions': 'Ver todo ({count})',
+  'sidebar.unassigned': 'Sin asignar',
+  'sidebar.selectProjectFirst': 'Selecciona un proyecto primero',
+  'sidebar.noMatch': 'No hay proyectos ni conversaciones que coincidan',
   'sidebar.newProject': 'Nuevo proyecto',
   'sidebar.gitRepo': 'Repositorio Git',
   'sidebar.projectActions': 'Acciones del proyecto',

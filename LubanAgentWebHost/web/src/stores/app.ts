@@ -1,6 +1,12 @@
 import { createSignal } from 'solid-js';
 
 import { get, post } from '../lib/api';
+import {
+  persistExpandedProjects,
+  persistSelectedProject,
+  readExpandedProjects,
+  readSelectedProject,
+} from '../lib/sidebar';
 import type { Bootstrap, SessionGenerationSettings, SessionSummary, WebCommand, Workspace } from '../lib/types';
 import { forgetSession, pruneSessions } from './tabs';
 import { t } from '../i18n';
@@ -21,18 +27,34 @@ const [sessionsError, setSessionsError] = createSignal<string | null>(null);
 
 const [commands, setCommands] = createSignal<WebCommand[]>([]);
 
-const [currentWorkspaceId, setCurrentWorkspaceId] = createSignal<string | null>(null);
+/**
+ * 「未归属」虚拟项目：旧会话没有 `workspaceId`，不能凭空归到某个真实项目，
+ * 在左栏单列一个节点供查看与删除。它不是工作区，不参与排序，也不能新建会话。
+ */
+export const UNASSIGNED_PROJECT = '__unassigned__';
+
+/** 左栏选中的项目；`UNASSIGNED_PROJECT` 表示「未归属」节点。 */
+const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(readSelectedProject());
+
+/** 左栏已展开的项目集合（可同时展开多个）。 */
+const [expandedProjects, setExpandedProjects] = createSignal<string[]>(readExpandedProjects());
+
+/** 「查看全部」触发一次右栏滚到会话区顶部。 */
+const [revealSessionsToken, setRevealSessionsToken] = createSignal(0);
+
+/** 顶栏点搜索时递增，左栏据此把焦点放回搜索框。 */
+const [searchFocusToken, setSearchFocusToken] = createSignal(0);
 
 /**
- * 首页左栏选中的项目（仅前端筛选）。
+ * 已消费的搜索聚焦请求水位。
  *
- * 与后端「当前工作区」分开保存：筛选只影响右侧列表，切换当前工作区另由
- * `selectProject` 负责，两者在同一动作里更新以保持新建会话归属一致。
+ * 会话页与首页都会挂载左栏，若各自都在 effect 里响应 token，切页后每次挂载都会抢焦点。
+ * 由首页左栏通过 {@link consumeSearchFocus} 取走一次；同一 token 只生效一次。
  */
-const [filterWorkspaceId, setFilterWorkspaceId] = createSignal<string | null>(null);
+let handledSearchFocusToken = 0;
 
-/** 顶栏点搜索时递增，首页据此把焦点放回搜索框。 */
-const [searchFocusToken, setSearchFocusToken] = createSignal(0);
+/** 左栏搜索关键词：同时匹配项目名与会话标题。 */
+const [projectQuery, setProjectQuery] = createSignal('');
 
 const [selection, setSelection] = createSignal<{ providerId?: string | null; modelId?: string | null } | null>(null);
 
@@ -58,9 +80,11 @@ export {
   sessionsLoading,
   sessionsError,
   commands,
-  currentWorkspaceId,
-  filterWorkspaceId,
-  searchFocusToken,
+  selectedProjectId,
+  expandedProjects,
+  revealSessionsToken,
+  projectQuery,
+  setProjectQuery,
   selection,
   permissionModeKey,
   setPermissionModeKey,
@@ -83,8 +107,8 @@ export async function loadBootstrap(): Promise<void> {
   try {
     const data = await get<Bootstrap>('/system/bootstrap');
     setBootstrap(data);
-    setCurrentWorkspaceId(data.currentWorkspaceId ?? null);
     setSelection(data.selection ?? null);
+    selectValidProject();
     if (data.permissionModes.length > 0 && !data.permissionModes.some((mode) => mode.key === permissionModeKey())) {
       setPermissionModeKey(data.permissionModes[0].key);
     }
@@ -108,6 +132,8 @@ export async function refreshSessions(): Promise<void> {
     setSessions(list);
     // 已删除的会话不应继续留在顶栏标签里
     pruneSessions(list.map((session) => session.sessionId));
+    // 会话归属变了（删除项目、首次加载）后重新校验左栏选中项
+    selectValidProject();
   } catch (error) {
     setSessionsError((error as Error).message);
   } finally {
@@ -125,55 +151,84 @@ export async function loadCommands(): Promise<void> {
   }
 }
 
-/** 重新拉取工作区列表并回写 bootstrap（新建项目后需要）。 */
+/** 重新拉取工作区列表并回写 bootstrap（新建/删除项目后需要）。 */
 export async function refreshWorkspaces(): Promise<void> {
   try {
     const list = await get<Workspace[]>('/workspace/list');
     setBootstrap((current) => (current ? { ...current, workspaces: list ?? [] } : current));
+    selectValidProject();
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
 }
 
 /**
- * 切换后端当前工作区。
+ * 同步后端「当前工作区」指针。
  *
- * 成功不提示：首页点项目即触发，属常规导航动作；失败才提示。
+ * 阶段 A 暂时保留：文件读写 / 附件上传在缺少 `workspaceId` 时仍按该指针回落。
+ * 阶段 B 删除该概念后，本函数连同 `/workspace/switch` 一起移除。
  */
-export async function switchWorkspace(workspaceId: string): Promise<void> {
+async function switchWorkspace(workspaceId: string): Promise<void> {
   try {
     await post('/workspace/switch', { workspaceId });
-    setCurrentWorkspaceId(workspaceId);
   } catch (error) {
     showToast((error as Error).message, 'error');
   }
 }
 
 /**
- * 首页左栏点项目：筛选右侧列表并把该项目设为当前工作区。
+ * 左栏选中项目。
  *
- * 再点一次已选中的项目则取消筛选（不改回后端工作区，避免来回切换）。
+ * 只是前端选中态（并按阶段 A 约定同步后端指针），不改变展开集合——
+ * 展开/收起由 `toggleProjectExpanded` 单独维护，这样「收起但保持选中」也能成立。
  */
-export async function selectProject(workspaceId: string): Promise<void> {
-  if (filterWorkspaceId() === workspaceId) {
-    setFilterWorkspaceId(null);
-    return;
-  }
-
-  setFilterWorkspaceId(workspaceId);
-  if (workspaceId !== currentWorkspaceId()) {
-    await switchWorkspace(workspaceId);
-  }
+export function selectProject(workspaceId: string | null): void {
+  if (selectedProjectId() === workspaceId) return;
+  setSelectedProjectId(workspaceId);
+  persistSelectedProject(workspaceId);
+  if (workspaceId && workspaceId !== UNASSIGNED_PROJECT) void switchWorkspace(workspaceId);
 }
 
-/** 清除项目筛选，恢复展示全部会话。 */
-export function clearProjectFilter(): void {
-  setFilterWorkspaceId(null);
+/** 展开某个项目的会话子树。 */
+export function expandProject(workspaceId: string): void {
+  if (expandedProjects().includes(workspaceId)) return;
+  const next = [...expandedProjects(), workspaceId];
+  setExpandedProjects(next);
+  persistExpandedProjects(next);
+}
+
+/** 切换项目的展开态（项目行点击 / chevron 共用）。 */
+export function toggleProjectExpanded(workspaceId: string): void {
+  const current = expandedProjects();
+  const next = current.includes(workspaceId)
+    ? current.filter((id) => id !== workspaceId)
+    : [...current, workspaceId];
+  setExpandedProjects(next);
+  persistExpandedProjects(next);
+}
+
+/** 「查看全部」：选中并展开该项目，同时请右栏滚到会话区顶部。 */
+export function revealProjectSessions(workspaceId: string): void {
+  selectProject(workspaceId);
+  expandProject(workspaceId);
+  setRevealSessionsToken((value) => value + 1);
 }
 
 /** 顶栏搜索入口：回到首页并把焦点交给搜索框。 */
 export function focusSessionSearch(): void {
   setSearchFocusToken((value) => value + 1);
+}
+
+/**
+ * 首页左栏取走一次搜索聚焦请求。
+ *
+ * 返回 true 表示这是尚未处理过的新请求；调用方随后展开侧栏并聚焦输入框。
+ */
+export function consumeSearchFocus(): boolean {
+  const token = searchFocusToken();
+  if (token === 0 || token === handledSearchFocusToken) return false;
+  handledSearchFocusToken = token;
+  return true;
 }
 
 /**
@@ -230,10 +285,9 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
     await refreshWorkspaces();
     const workspaceId = workspace?.workspaceId;
     if (workspaceId) {
-      await post('/workspace/switch', { workspaceId });
-      setCurrentWorkspaceId(workspaceId);
-      // 新项目还没有会话；清掉旧筛选，避免右侧空白让人误以为列表坏了
-      setFilterWorkspaceId(null);
+      // 新项目直接选中并展开，和旧行为一致（旧行为还会把后端指针切过去）
+      selectProject(workspaceId);
+      expandProject(workspaceId);
     }
     showToast(t('app.toast.projectCreated'), 'success');
     return { ok: true };
@@ -270,11 +324,10 @@ export async function renameWorkspace(
 /**
  * 删除项目（工作区）：物理清理会话、索引与 .luban-agent 配置目录，磁盘根目录及用户文件保持不动。
  *
- * 删的正好是当前工作区时自动切到剩余第一个，避免之后新建的会话落到「未绑定项目」；
- * 若原本正筛选着这个项目，选中态跟随切换后的当前工作区，不留「无选中」的空档。
+ * 删的正好是选中项时回落第一个剩余项目（没有项目则落到「未归属」，再没有就清空选中）；
+ * 同时把它从展开集合里摘掉，避免下次新建同名项目时莫名处于展开态。
  */
 export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
-  const wasFiltered = filterWorkspaceId() === workspaceId;
   try {
     await post('/workspace/delete', { workspaceId });
   } catch (error) {
@@ -282,27 +335,31 @@ export async function deleteWorkspace(workspaceId: string): Promise<boolean> {
     return false;
   }
 
-  if (wasFiltered) setFilterWorkspaceId(null);
+  if (expandedProjects().includes(workspaceId)) {
+    const next = expandedProjects().filter((id) => id !== workspaceId);
+    setExpandedProjects(next);
+    persistExpandedProjects(next);
+  }
+  if (selectedProjectId() === workspaceId) {
+    setSelectedProjectId(null);
+    persistSelectedProject(null);
+  }
 
   await refreshWorkspaces();
-  if (currentWorkspaceId() === workspaceId) {
-    const next = projectWorkspaces()[0] ?? null;
-    if (next) {
-      await switchWorkspace(next.workspaceId);
-    } else {
-      setCurrentWorkspaceId(null);
-    }
-  }
-  // 选中态始终跟随当前工作区：左栏「选中」既表示筛选，也表示新建会话归属哪个项目
-  if (wasFiltered) setFilterWorkspaceId(currentWorkspaceId());
-
   await refreshSessions();
+  // 会话列表变了，未归属回落的判断要用最新数据再算一次
+  selectValidProject();
   showToast(t('app.toast.projectDeleted'), 'success');
   return true;
 }
 
 export async function createSession(title?: string): Promise<string | null> {
-  return createSessionInWorkspace(currentWorkspaceId(), title);
+  const workspaceId = activeProjectId();
+  if (!workspaceId) {
+    showToast(t('sidebar.selectProjectFirst'), 'info');
+    return null;
+  }
+  return createSessionInWorkspace(workspaceId, title);
 }
 
 /**
@@ -578,4 +635,130 @@ export function wikiWorkspaceIds(): Set<string> {
       .filter((item) => item.type === LLM_WIKI_TYPE)
       .map((item) => item.workspaceId),
   );
+}
+
+/* ── 项目 → 会话二级菜单 ─────────────────────────────────────────────── */
+
+/** 当前选中项目；选中「未归属」或未选中时返回 null（不能作为新会话的归属）。 */
+export function activeProjectId(): string | null {
+  const id = selectedProjectId();
+  return id && id !== UNASSIGNED_PROJECT ? id : null;
+}
+
+/** 当前选中的项目对象；未选中或选中「未归属」时返回 null。 */
+export function selectedProject(): Workspace | null {
+  const id = activeProjectId();
+  if (!id) return null;
+  return (bootstrap()?.workspaces ?? []).find((item) => item.workspaceId === id) ?? null;
+}
+
+/** 会话排序键：优先更新时间。 */
+function sessionOrder(session: SessionSummary): string {
+  return session.updatedAt ?? session.createdAt;
+}
+
+/**
+ * 某项目下的会话，按最近更新倒序。
+ *
+ * `null` 表示未归属：只取没有 `workspaceId` 的会话。知识库会话始终排除。
+ */
+export function sessionsOfProject(workspaceId: string | null): SessionSummary[] {
+  const wiki = wikiWorkspaceIds();
+  return sessions()
+    .filter((session) => {
+      if (session.workspaceId && wiki.has(session.workspaceId)) return false;
+      return workspaceId ? session.workspaceId === workspaceId : !session.workspaceId;
+    })
+    .sort((left, right) => sessionOrder(right).localeCompare(sessionOrder(left)));
+}
+
+/** 没有归属任何项目的会话（左栏「未归属」节点）。 */
+export function unassignedSessions(): SessionSummary[] {
+  return sessionsOfProject(null);
+}
+
+/** 会话的展示标题（未命名时用占位文案，搜索与列表同源）。 */
+export function sessionTitle(session: { title?: string | null }): string {
+  return session.title?.trim() || t('topbar.unnamedSession');
+}
+
+/** 项目名（未命名时回落到根路径，和侧栏展示一致）。 */
+export function projectName(workspace: Workspace): string {
+  return workspace.name?.trim() || workspace.rootPath;
+}
+
+/** 左栏一个项目节点：命中搜索时只带命中的会话。 */
+export interface VisibleProject {
+  project: Workspace;
+  /** 该项目在左栏展示的会话；搜索时已按标题过滤。 */
+  sessions: SessionSummary[];
+  /** 项目名本身命中：项目与其全部会话都保留。 */
+  matchedByName: boolean;
+}
+
+/**
+ * 左栏项目树（已被搜索过滤）。
+ *
+ * 无关键词时返回全部项目与各自会话；有关键词时：
+ * 项目名命中 → 项目与其全部会话都保留；仅会话标题命中 → 只保留命中的会话。
+ * 两者都没命中的项目整行隐藏，避免左栏出现一串空项目。
+ */
+export function visibleProjects(): VisibleProject[] {
+  const keyword = projectQuery().trim().toLowerCase();
+  const result: VisibleProject[] = [];
+
+  for (const project of projectWorkspaces()) {
+    const all = sessionsOfProject(project.workspaceId);
+    if (!keyword) {
+      result.push({ project, sessions: all, matchedByName: false });
+      continue;
+    }
+
+    const matchedByName = projectName(project).toLowerCase().includes(keyword);
+    if (matchedByName) {
+      result.push({ project, sessions: all, matchedByName });
+      continue;
+    }
+
+    const hits = all.filter((session) => sessionTitle(session).toLowerCase().includes(keyword));
+    if (hits.length > 0) result.push({ project, sessions: hits, matchedByName: false });
+  }
+
+  return result;
+}
+
+/** 左栏「未归属」节点：搜索时按节点名或会话标题过滤。 */
+export interface VisibleUnassigned {
+  visible: boolean;
+  sessions: SessionSummary[];
+}
+
+export function visibleUnassigned(): VisibleUnassigned {
+  const all = unassignedSessions();
+  const keyword = projectQuery().trim().toLowerCase();
+  if (!keyword) return { visible: all.length > 0, sessions: all };
+  if (t('sidebar.unassigned').toLowerCase().includes(keyword)) return { visible: true, sessions: all };
+
+  const hits = all.filter((session) => sessionTitle(session).toLowerCase().includes(keyword));
+  return { visible: hits.length > 0, sessions: hits };
+}
+
+/**
+ * 选中项失效时回落：先取第一个真实项目，再取「未归属」，都没有就清空。
+ *
+ * 首次进入（localStorage 为空）、项目被删、只剩未归属会话都会走到这里。
+ */
+function selectValidProject(): void {
+  const current = selectedProjectId();
+  const projects = projectWorkspaces();
+  if (current === UNASSIGNED_PROJECT) {
+    if (unassignedSessions().length > 0) return;
+  } else if (current && projects.some((project) => project.workspaceId === current)) {
+    return;
+  }
+
+  const fallback = projects[0]?.workspaceId ?? (unassignedSessions().length > 0 ? UNASSIGNED_PROJECT : null);
+  if (fallback === current) return;
+  setSelectedProjectId(fallback);
+  persistSelectedProject(fallback);
 }

@@ -6,7 +6,7 @@ import { openSession, openSessions, openSettings } from '../lib/router';
 import { setThemePreference, themePreference, type ThemePreference } from '../lib/theme';
 import { workspaceColor, workspaceInitial } from '../lib/workspace';
 import { t, type MessageKey } from '../i18n';
-import { createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
+import { activeProjectId, createSession, focusSessionSearch, sessions, workspaceName } from '../stores/app';
 import { currentUser, logout, userLabel } from '../stores/auth';
 import { dropChat, getChat } from '../stores/chats';
 import { forgetSession, moveSession, openSessionIds } from '../stores/tabs';
@@ -167,7 +167,12 @@ export function TopBar(props: { activeSessionId: string | null }) {
         </For>
       </div>
 
-      <button class="icon-btn" title={t('topbar.newSession')} disabled={creating()} onClick={() => void createTab()}>
+      <button
+        class="icon-btn"
+        title={activeProjectId() ? t('topbar.newSession') : t('sidebar.selectProjectFirst')}
+        disabled={creating() || !activeProjectId()}
+        onClick={() => void createTab()}
+      >
         <Icon name="plus" size={17} />
       </button>
 

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, untrack } from 'solid-js';
 
 import { ComposerEditor, type ComposerEditorHandle, type MentionToken } from '../components/ComposerEditor';
 import { ConfirmActionDialog, Modal, TextPromptDialog } from '../components/Dialog';
@@ -21,7 +21,7 @@ import {
   isImageMediaType,
   truncate,
 } from '../lib/format';
-import { openSession, openSettings, openSessions, openWiki } from '../lib/router';
+import { openSettings, openSessions, openWiki } from '../lib/router';
 import { settingsApi } from '../lib/settings';
 import { sidebarCollapsed, useNarrowViewport } from '../lib/sidebar';
 import type { AvailableSkill, StoredAttachment, WebCommand } from '../lib/types';
@@ -42,6 +42,7 @@ import type { ChatItem, PendingQuestionRequest, ToolCard, UserQuestionAnswer } f
 import { dropChat, getChat } from '../stores/chats';
 import { openFilePreview } from '../stores/filePreview';
 import {
+  UNASSIGNED_PROJECT,
   bootstrap,
   commands,
   cyclePermissionMode,
@@ -54,6 +55,7 @@ import {
   refreshSessions,
   renameSession,
   saveSessionGeneration,
+  selectProject,
   selectSessionModel,
   sessionGeneration,
   sessionModel,
@@ -820,25 +822,28 @@ export function ChatPage(props: { sessionId: string }) {
   };
 
   /**
-   * 项目栏点项目：跳到该项目最近更新过的会话。
+   * 会话页保持左栏选中态跟随当前会话所属项目：从顶栏标签或多开标签切过来时，
+   * 左栏高亮与「新建会话落到哪个项目」才不会停在旧项目上。
    *
-   * 只刷新列表、不切换后端「当前工作区」——切了会让之后新建的会话落到别处；
-   * 该项目一个会话都没有时留在此页，让用户自己决定新建。
+   * 写入包在 `untrack` 里：否则 effect 会跟踪 `selectedProjectId`，用户在会话页
+   * 点别的项目时又会被立刻拉回当前会话的项目。会话未加载（`session()` 为空）时不动。
    */
-  const openProjectLatestSession = async (workspaceId: string) => {
-    if (workspaceId === session()?.workspaceId) return;
-    await refreshSessions();
-    const latest = sessions()
-      .filter((item) => item.workspaceId === workspaceId)
-      .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0];
-    if (latest) openSession(latest.sessionId);
-    else showToast(t('chat.projectNoSession'), 'info');
-  };
+  createEffect(() => {
+    const current = session();
+    if (!current) return;
+    const workspaceId = current.workspaceId;
+    if (workspaceId) {
+      // 知识库会话不进项目树，归属项目已删除的旧会话也不选中一个不存在的项目
+      if (wikiWorkspaceIds().has(workspaceId)) return;
+      if (!(bootstrap()?.workspaces ?? []).some((item) => item.workspaceId === workspaceId)) return;
+    }
+    untrack(() => selectProject(workspaceId ?? UNASSIGNED_PROJECT));
+  });
 
   return (
     <>
       <div class="chat-body">
-        <ProjectSidebar selectedWorkspaceId={session()?.workspaceId ?? null} onSelect={openProjectLatestSession} />
+        <ProjectSidebar />
         <Show when={draggable()}>
           <SideResizer label={t('chat.resizeProjectBar')} />
         </Show>

@@ -8,6 +8,8 @@ import { createSignal, onCleanup, onMount } from 'solid-js';
 
 const WIDTH_STORAGE_KEY = 'luban.web.sideWidth';
 const COLLAPSED_STORAGE_KEY = 'luban.web.sidebarCollapsed';
+const EXPANDED_PROJECTS_STORAGE_KEY = 'luban.web.expandedProjects';
+const SELECTED_PROJECT_STORAGE_KEY = 'luban.web.selectedProject';
 
 /** 宽度区间：再窄放不下项目名与徽标；上限按分栏容器比例算，见 {@link SIDE_MAX_RATIO}。 */
 export const SIDE_MIN_WIDTH = 160;
@@ -112,6 +114,50 @@ export function toggleSidebarCollapsed(): void {
   setSidebarCollapsed(next);
   try {
     window.localStorage.setItem(COLLAPSED_STORAGE_KEY, next ? '1' : '0');
+  } catch {
+    /* 只影响刷新后恢复 */
+  }
+}
+
+/**
+ * 左栏项目二级菜单的展开集合与选中项目。
+ *
+ * 都是纯前端状态：与后端「当前工作区」无关，多个标签页各记各的。
+ * 解析失败（隐私模式、旧格式）一律按默认值处理，不让损坏的 localStorage 卡住首屏。
+ */
+export function readExpandedProjects(): string[] {
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_PROJECTS_STORAGE_KEY);
+    if (!raw) return [];
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    /* 隐私模式读不到：按全部收起处理 */
+    return [];
+  }
+}
+
+export function persistExpandedProjects(projectIds: string[]): void {
+  try {
+    window.localStorage.setItem(EXPANDED_PROJECTS_STORAGE_KEY, JSON.stringify(projectIds));
+  } catch {
+    /* 只影响刷新后恢复 */
+  }
+}
+
+export function readSelectedProject(): string | null {
+  try {
+    const raw = window.localStorage.getItem(SELECTED_PROJECT_STORAGE_KEY);
+    return raw && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistSelectedProject(projectId: string | null): void {
+  try {
+    if (projectId) window.localStorage.setItem(SELECTED_PROJECT_STORAGE_KEY, projectId);
+    else window.localStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY);
   } catch {
     /* 只影响刷新后恢复 */
   }
