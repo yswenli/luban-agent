@@ -91,4 +91,5 @@
 		<Delete Files="$(OutDir)libSkiaSharp.pdb;$(OutDir)onnxruntime.lib;$(OutDir)onnxruntime_providers_shared.lib;$(OutDir)playwright.ps1" />
 		<Delete Condition="'$(PublishDir)' != ''" Files="$(PublishDir)libSkiaSharp.pdb;$(PublishDir)onnxruntime.lib;$(PublishDir)onnxruntime_providers_shared.lib;$(PublishDir)playwright.ps1" />
 	</Target>
+	<ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="https://www.schemastore.org/global.json" /></VisualStudio></ProjectExtensions>
 </Project>

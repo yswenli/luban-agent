@@ -53,4 +53,6 @@
 		<Content Include="..\lubanagent-about.png" Link="wwwroot\lubanagent-about.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>
 
+	<ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="https://www.schemastore.org/global.json" /></VisualStudio></ProjectExtensions>
+
 </Project>
